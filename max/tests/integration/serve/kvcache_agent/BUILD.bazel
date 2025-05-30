@@ -4,6 +4,7 @@ modular_py_test(
     name = "tests",
     srcs = glob(["*.py"]),
     deps = [
+        "//SDK/lib/API/python/max/serve:process_control",
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/queue",
         requirement("grpcio"),

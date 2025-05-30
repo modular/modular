@@ -80,6 +80,9 @@ async def test_dispatcher_client_to_service_communication():
         client_app.start()
         server_app.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Test message from client to server
         test_payload = {"request": "test_data", "value": 42}
 
@@ -108,10 +111,14 @@ async def test_dispatcher_client_to_service_communication():
         )
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await client_dispatcher_service.stop()
         await server_dispatcher_service.stop()
         client_app.stop()
         server_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -175,6 +182,9 @@ async def test_dispatcher_request_reply_pattern():
         instance_a_client.start()
         instance_b_client.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Send request from client to server
         request_payload = {"value": 21, "operation": "double"}
         instance_a_client.send(
@@ -200,10 +210,14 @@ async def test_dispatcher_request_reply_pattern():
         assert instance_a_received_replies[0]["status"] == "success"
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await instance_a_dispatcher.stop()
         await instance_b_dispatcher.stop()
         instance_a_client.stop()
         instance_b_client.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -292,6 +306,9 @@ async def test_multiple_clients_one_server_dispatcher():
         for client in clients:
             client.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Each client sends a request
         for i, client in enumerate(clients):
             request_payload = {
@@ -324,6 +341,8 @@ async def test_multiple_clients_one_server_dispatcher():
             )
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await server_dispatcher.stop()
         server_app.stop()
 
@@ -332,6 +351,8 @@ async def test_multiple_clients_one_server_dispatcher():
         for client in clients:
             client.stop()
 
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -408,6 +429,9 @@ async def test_composable_handlers():
         instance_a_client.start()
         instance_b_client.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Send request
         request_payload = {"value": 10, "operation": "triple"}
         instance_a_client.send(
@@ -451,10 +475,14 @@ async def test_composable_handlers():
         assert instance_a_reply_messages[0][1]["status"] == "processed"
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await instance_a_dispatcher.stop()
         await instance_b_dispatcher.stop()
         instance_a_client.stop()
         instance_b_client.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -526,6 +554,9 @@ async def test_error_handling_and_resilience():
         server_app.start()
         client_app.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Send mix of successful and failing requests
         test_requests = [
             {"id": 1, "should_fail": False},
@@ -563,10 +594,14 @@ async def test_error_handling_and_resilience():
         )
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_app.stop()
         client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -632,6 +667,9 @@ async def test_high_throughput_performance():
         server_app.start()
         client_app.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Send high volume of messages
         num_messages = 1000
         start_time = time.time()
@@ -674,10 +712,14 @@ async def test_high_throughput_performance():
         assert throughput > 100, f"Throughput too low: {throughput:.1f} msg/s"
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_app.stop()
         client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -707,6 +749,9 @@ async def test_connection_failure_recovery():
         await client_dispatcher.start()
         client_app.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Try to send to non-existent server (should not crash)
         invalid_endpoint = "tcp://127.0.0.1:99999"  # Invalid port
 
@@ -723,6 +768,351 @@ async def test_connection_failure_recovery():
             # Should not reach here - errors should be handled internally
             pytest.fail(f"Unexpected exception: {e}")
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await client_dispatcher.stop()
         client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
+        zmq_ctx.term()
+
+
+@pytest.mark.asyncio
+async def test_handler_exception_isolation():
+    """Test that handler exceptions don't crash the process and other messages are still processed."""
+    zmq_ctx = zmq.Context()
+
+    try:
+        # Create dispatcher configs
+        server_bind_address = generate_zmq_inproc_endpoint()
+        server_config = DispatcherConfig(
+            transport=TransportType.DYNAMIC_ZMQ,
+            transport_config=TransportFactory.DynamicZmqTransportConfig(
+                bind_address=server_bind_address,
+                instance_id="server",
+            ),
+        )
+        client_config = DispatcherConfig(
+            transport=TransportType.DYNAMIC_ZMQ,
+            transport_config=TransportFactory.DynamicZmqTransportConfig(
+                bind_address=generate_zmq_inproc_endpoint(),
+                instance_id="client",
+            ),
+        )
+
+        # Create factories
+        server_factory = DispatcherFactory(server_config)
+        client_factory = DispatcherFactory(client_config)
+
+        # Create dispatcher services and clients using factories
+        server_dispatcher = server_factory.create_service(zmq_ctx)
+        server_app = server_factory.create_client(zmq_ctx)
+
+        client_dispatcher = client_factory.create_service(zmq_ctx)
+        client_app = client_factory.create_client(zmq_ctx)
+
+        # Track messages
+        received_requests: list[Any] = []
+        received_replies: list[Any] = []
+        exception_count = 0
+
+        # Server handler that throws exception on specific requests
+        @server_app.request_handler(MessageType.PREFILL_REQUEST)
+        def handle_request_with_exception(
+            payload: Any, reply_context: ReplyContext
+        ) -> None:
+            nonlocal exception_count
+            received_requests.append(payload)
+
+            if payload.get("should_throw", False):
+                exception_count += 1
+                raise RuntimeError("Intentional test exception")
+
+            # Send normal reply for non-exception requests
+            reply_payload = {
+                "result": payload["value"] * 2,
+                "status": "success",
+            }
+            server_app.send_reply(
+                MessageType.PREFILL_RESPONSE, reply_payload, reply_context
+            )
+
+        # Client handler for replies
+        @client_app.reply_handler(MessageType.PREFILL_RESPONSE)
+        def handle_reply(payload: Any) -> None:
+            received_replies.append(payload)
+
+        # Start everything
+        await server_dispatcher.start()
+        await client_dispatcher.start()
+        server_app.start()
+        client_app.start()
+
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
+        # Send request that should cause exception
+        exception_request = {"value": 10, "should_throw": True}
+        client_app.send(
+            MessageType.PREFILL_REQUEST,
+            exception_request,
+            destination_address=server_bind_address,
+        )
+
+        # Wait a bit for the exception to be processed
+        await asyncio.sleep(0.1)
+
+        # Send normal request to verify the process is still working
+        normal_request = {"value": 20, "should_throw": False}
+        client_app.send(
+            MessageType.PREFILL_REQUEST,
+            normal_request,
+            destination_address=server_bind_address,
+        )
+
+        # Give time for message processing
+        await asyncio.sleep(0.1)
+
+        # Verify both requests were received
+        assert len(received_requests) == 2, (
+            f"Expected 2 requests, got {len(received_requests)}"
+        )
+        assert exception_count == 1, (
+            f"Expected 1 exception, got {exception_count}"
+        )
+
+        # Verify only the normal request got a reply (exception request should not reply)
+        assert len(received_replies) == 1, (
+            f"Expected 1 reply, got {len(received_replies)}"
+        )
+        assert received_replies[0]["result"] == 40, (
+            "Normal request should have been processed correctly"
+        )
+
+    finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
+        await server_dispatcher.stop()
+        await client_dispatcher.stop()
+        server_app.stop()
+        client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
+        zmq_ctx.term()
+
+
+@pytest.mark.asyncio
+async def test_no_handler_registered():
+    """Test that messages with no registered handler are handled gracefully."""
+    zmq_ctx = zmq.Context()
+
+    try:
+        # Create dispatcher configs
+        server_bind_address = generate_zmq_inproc_endpoint()
+        server_config = DispatcherConfig(
+            transport=TransportType.DYNAMIC_ZMQ,
+            transport_config=TransportFactory.DynamicZmqTransportConfig(
+                bind_address=server_bind_address,
+                instance_id="server",
+            ),
+        )
+        client_config = DispatcherConfig(
+            transport=TransportType.DYNAMIC_ZMQ,
+            transport_config=TransportFactory.DynamicZmqTransportConfig(
+                bind_address=generate_zmq_inproc_endpoint(),
+                instance_id="client",
+            ),
+        )
+
+        # Create factories
+        server_factory = DispatcherFactory(server_config)
+        client_factory = DispatcherFactory(client_config)
+
+        # Create dispatcher services and clients using factories
+        server_dispatcher = server_factory.create_service(zmq_ctx)
+        server_app = server_factory.create_client(zmq_ctx)
+
+        client_dispatcher = client_factory.create_service(zmq_ctx)
+        client_app = client_factory.create_client(zmq_ctx)
+
+        # Intentionally DO NOT register any handlers for server
+        # This will test what happens when a message is received with no handler
+
+        # Start everything
+        await server_dispatcher.start()
+        await client_dispatcher.start()
+        server_app.start()
+        client_app.start()
+
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
+        # Send request to server which has no handler registered
+        request_payload = {"value": 42, "operation": "test"}
+        client_app.send(
+            MessageType.PREFILL_REQUEST,
+            request_payload,
+            destination_address=server_bind_address,
+        )
+
+        # Give time for message processing
+        await asyncio.sleep(0.2)
+
+        # Send another message to verify the system is still responsive
+        client_app.send(
+            MessageType.PREFILL_REQUEST,
+            {"value": 123, "operation": "test2"},
+            destination_address=server_bind_address,
+        )
+
+        await asyncio.sleep(0.1)
+
+        # If we reach here without exceptions, the test passes
+        # The system should handle unhandled messages gracefully
+
+    finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
+        await server_dispatcher.stop()
+        await client_dispatcher.stop()
+        server_app.stop()
+        client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
+        zmq_ctx.term()
+
+
+@pytest.mark.asyncio
+async def test_invalid_destination_address():
+    """Test that sending to invalid addresses is handled gracefully."""
+    zmq_ctx = zmq.Context()
+
+    try:
+        # Create dispatcher config
+        client_config = DispatcherConfig(
+            transport=TransportType.DYNAMIC_ZMQ,
+            transport_config=TransportFactory.DynamicZmqTransportConfig(
+                bind_address=generate_zmq_inproc_endpoint(),
+                instance_id="client",
+            ),
+        )
+
+        # Create factory
+        client_factory = DispatcherFactory(client_config)
+
+        # Create dispatcher service and client using factory
+        client_dispatcher = client_factory.create_service(zmq_ctx)
+        client_app = client_factory.create_client(zmq_ctx)
+
+        # Start dispatcher and client
+        await client_dispatcher.start()
+        client_app.start()
+
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
+        # Test various invalid addresses
+        invalid_addresses = [
+            "invalid://bad.address",  # Invalid protocol
+            "tcp://",  # Incomplete address
+            "not-an-address-at-all",  # Completely malformed
+            "",  # Empty string
+            "tcp://nonexistent.host:99999",  # Non-existent host
+        ]
+
+        for invalid_address in invalid_addresses:
+            # Send request to invalid address
+            request_payload = {"value": 42, "target": invalid_address}
+            client_app.send(
+                MessageType.PREFILL_REQUEST,
+                request_payload,
+                destination_address=invalid_address,
+            )
+
+            # Give time for error handling
+            await asyncio.sleep(0.05)
+
+        # If we reach here without exceptions, the test passes
+        # The system should handle invalid addresses gracefully
+
+    finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
+        await client_dispatcher.stop()
+        client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
+        zmq_ctx.term()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_handler_registration():
+    """Test that registering duplicate handlers raises ValueError."""
+    zmq_ctx = zmq.Context()
+
+    try:
+        # Create dispatcher config
+        client_config = DispatcherConfig(
+            transport=TransportType.DYNAMIC_ZMQ,
+            transport_config=TransportFactory.DynamicZmqTransportConfig(
+                bind_address=generate_zmq_inproc_endpoint(),
+                instance_id="client",
+            ),
+        )
+
+        # Create factory
+        client_factory = DispatcherFactory(client_config)
+
+        # Create client
+        client_app = client_factory.create_client(zmq_ctx)
+
+        # Register first handler
+        @client_app.request_handler(MessageType.PREFILL_REQUEST)
+        def first_handler(payload: Any, reply_context: ReplyContext) -> None:
+            pass
+
+        # Attempt to register second handler for same message type - should raise ValueError
+        with pytest.raises(
+            ValueError,
+            match="Request handler for message type .* already registered",
+        ):
+
+            @client_app.request_handler(MessageType.PREFILL_REQUEST)
+            def second_handler(
+                payload: Any, reply_context: ReplyContext
+            ) -> None:
+                pass
+
+        # Test duplicate reply handler registration
+        @client_app.reply_handler(MessageType.PREFILL_RESPONSE)
+        def first_reply_handler(payload: Any) -> None:
+            pass
+
+        with pytest.raises(
+            ValueError,
+            match="Reply handler for message type .* already registered",
+        ):
+
+            @client_app.reply_handler(MessageType.PREFILL_RESPONSE)
+            def second_reply_handler(payload: Any) -> None:
+                pass
+
+        # Test duplicate general handler registration
+        @client_app.handler(MessageType.PREFILL_REQUEST)
+        def first_general_handler(payload: Any) -> None:
+            pass
+
+        with pytest.raises(
+            ValueError,
+            match="General handler for message type .* already registered",
+        ):
+
+            @client_app.handler(MessageType.PREFILL_REQUEST)
+            def second_general_handler(payload: Any) -> None:
+                pass
+
+    finally:
+        client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()

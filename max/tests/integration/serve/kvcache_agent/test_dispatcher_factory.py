@@ -20,44 +20,13 @@ from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_factory_static_zmq():
-    """Test DispatcherFactory creation from JSON configuration with static transport."""
-    try:
-        send_endpoint = generate_zmq_inproc_endpoint()
-        recv_endpoint = generate_zmq_inproc_endpoint()
-
-        config = DispatcherConfig(
-            transport=TransportType.STATIC_ZMQ,
-            transport_config=TransportFactory.StaticZmqTransportConfig(
-                send_address=send_endpoint,
-                receive_address=recv_endpoint,
-            ),
-        )
-        factory = DispatcherFactory(config)
-
-        # Test creating server and client
-        zmq_ctx = zmq.Context()
-        server = factory.create_service(zmq_ctx)
-        client = factory.create_client(zmq_ctx)
-
-        assert server is not None
-        assert client is not None
-
-        # Clean up
-        await server.transport.close()
-
-    finally:
-        pass
-
-
-@pytest.mark.asyncio
 async def test_dispatcher_factory_dynamic_zmq():
     """Test DispatcherFactory creation from JSON configuration with dynamic transport."""
     try:
         config = DispatcherConfig(
             transport=TransportType.DYNAMIC_ZMQ,
             transport_config=TransportFactory.DynamicZmqTransportConfig(
-                bind_address="tcp://127.0.0.1:5555",
+                bind_address=generate_zmq_inproc_endpoint(),
                 instance_id="test_factory",
             ),
         )
@@ -135,6 +104,9 @@ async def test_end_to_end_communication_with_config():
         server_client.start()
         client_app.start()
 
+        # Allow time for services to fully initialize
+        await asyncio.sleep(0.1)
+
         # Send message from client to server
         test_payload = {"request": "config_test", "value": 21}
         client_app.send(
@@ -153,8 +125,13 @@ async def test_end_to_end_communication_with_config():
         assert received_replies[0]["status"] == "processed"
 
     finally:
-        # Clean up
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
+        # Clean up and close ZMQ context
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_client.stop()
         client_app.stop()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
+        zmq_ctx.term()

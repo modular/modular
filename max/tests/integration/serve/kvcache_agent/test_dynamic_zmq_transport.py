@@ -69,8 +69,12 @@ async def test_simple_send_receive():
         )
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await sender.close()
         await receiver.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -129,8 +133,12 @@ async def test_request_reply_pattern():
         assert received_reply.message.is_reply is True
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await client.close()
         await server.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -191,9 +199,13 @@ async def test_multiple_clients_one_server():
         )
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await server.close()
         for client in clients:
             await client.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -334,10 +346,14 @@ async def test_multiple_clients_multiple_servers():
         print(f" Server 1 handled {len(server_received[1])} requests")
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         for server in servers:
             await server.close()
         for client in clients:
             await client.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -370,7 +386,11 @@ async def test_connection_failure():
             assert "Failed to establish connection" in str(e)
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await sender.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
 
 
@@ -407,13 +427,168 @@ async def test_high_throughput():
                 if received_count == num_messages:
                     break
             else:
-                await asyncio.sleep(0.001)
+                # Allow time for message processing
+                await asyncio.sleep(0.1)
 
         assert received_count == num_messages, (
             f"Expected {num_messages} messages, got {received_count}"
         )
 
     finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
         await sender.close()
         await receiver.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
+        zmq_ctx.term()
+
+
+@pytest.mark.asyncio
+async def test_no_destination_address_provided():
+    """Test behavior when no destination address is provided and no default is set."""
+    zmq_ctx = zmq.Context()
+
+    try:
+        # Create transport with NO default destination address
+        transport = DynamicZmqTransport(
+            zmq_ctx=zmq_ctx,
+            bind_address=generate_zmq_inproc_endpoint(),
+            instance_id="test_transport",
+            default_destination_address=None,  # Explicitly set to None
+        )
+
+        await transport.start()
+
+        # Send message without destination_address parameter (should use None)
+        message_1 = create_test_message(
+            "test-msg-1", {"test_case": "no_destination_param"}
+        )
+        await transport.send_message(
+            message_1
+        )  # No destination_address provided
+
+        # Send message with explicit None destination_address
+        message_2 = create_test_message(
+            "test-msg-2", {"test_case": "explicit_none_destination"}
+        )
+        await transport.send_message(message_2, destination_address=None)
+
+        # Send message with empty string destination_address
+        message_3 = create_test_message(
+            "test-msg-3", {"test_case": "empty_string_destination"}
+        )
+        await transport.send_message(message_3, destination_address="")
+
+        await asyncio.sleep(0.1)
+
+        # If we reach here without exceptions, the transport handled the errors gracefully
+        # The transport should log errors but not crash
+
+        # Verify transport can still send to a valid destination after errors
+        # Create a receiver to test that the transport still works
+        receiver = DynamicZmqTransport(
+            zmq_ctx=zmq_ctx,
+            bind_address=generate_zmq_inproc_endpoint(),
+            instance_id="receiver",
+        )
+        await receiver.start()
+
+        # Send a valid message to verify the transport is still functional
+        valid_message = create_test_message(
+            "test-msg-4", {"test_case": "valid_destination"}
+        )
+        await transport.send_message(
+            valid_message, destination_address=receiver.get_address()
+        )
+
+        # Verify the valid message was received
+        received = None
+        for _ in range(10):
+            received = await receiver.receive_message()
+            if received:
+                break
+            await asyncio.sleep(0.1)
+
+        assert received is not None, (
+            "Valid message should have been received after error cases"
+        )
+        assert received.message.payload["test_case"] == "valid_destination"
+
+        await receiver.close()
+
+    finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
+        await transport.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
+        zmq_ctx.term()
+
+
+@pytest.mark.asyncio
+async def test_default_destination_address():
+    """Test behavior when default destination address is set and used."""
+    zmq_ctx = zmq.Context()
+
+    try:
+        # Create receiver first to get its address
+        receiver = DynamicZmqTransport(
+            zmq_ctx=zmq_ctx,
+            bind_address=generate_zmq_inproc_endpoint(),
+            instance_id="receiver",
+        )
+        await receiver.start()
+
+        # Create sender with default destination address set to receiver
+        sender = DynamicZmqTransport(
+            zmq_ctx=zmq_ctx,
+            bind_address=generate_zmq_inproc_endpoint(),
+            instance_id="sender",
+            default_destination_address=receiver.get_address(),
+        )
+        await sender.start()
+
+        # Send message without destination_address (should use default)
+        message_1 = create_test_message(
+            "test-msg-1", {"test_case": "use_default"}
+        )
+        await sender.send_message(message_1)  # No destination_address provided
+
+        # Send message with explicit None (should use default)
+        message_2 = create_test_message(
+            "test-msg-2", {"test_case": "explicit_none_use_default"}
+        )
+        await sender.send_message(message_2, destination_address=None)
+
+        # Receive both messages
+        received_messages = []
+        for _ in range(20):
+            received = await receiver.receive_message()
+            if received:
+                received_messages.append(received)
+                if len(received_messages) == 2:
+                    break
+            await asyncio.sleep(0.1)
+
+        # Verify both messages were received using the default destination
+        assert len(received_messages) == 2, (
+            f"Expected 2 messages, got {len(received_messages)}"
+        )
+
+        test_cases = {
+            msg.message.payload["test_case"] for msg in received_messages
+        }
+        expected_cases = {"use_default", "explicit_none_use_default"}
+        assert test_cases == expected_cases, (
+            f"Expected {expected_cases}, got {test_cases}"
+        )
+
+    finally:
+        # Allow pending operations to complete before shutdown
+        await asyncio.sleep(0.1)
+        await sender.close()
+        await receiver.close()
+        # Allow cleanup before terminating ZMQ context
+        await asyncio.sleep(0.1)
         zmq_ctx.term()
