@@ -20,12 +20,14 @@ from max.graph import (
     DeviceRef,
     Dim,
     Graph,
-    Shape,
     TensorType,
-    TensorValue,
     ops,
 )
-from max.nn.kernels import apply_penalties_to_logits, update_frequency_data
+from max.nn.kernels import (
+    apply_penalties_to_logits,
+    topk_fused_sampling,
+    update_frequency_data,
+)
 from max.nn.sampling import RejectionSampler
 
 from .max_config import SamplingConfig
@@ -188,26 +190,12 @@ def token_sampler(
             )
 
         # Apply top_k sampling
-        shape = Shape(logits.shape)
-        shape[-1] = Dim(1)
-        tokens = ops.custom(
-            "topk_fused_sampling",
-            [
-                ops.constant(
-                    sampling_config.top_k,
-                    dtype=DType.int64,
-                    device=DeviceRef.CPU(),
-                ),
-                ops.constant(
-                    sampling_config.temperature,
-                    dtype=DType.float32,
-                    device=DeviceRef.CPU(),
-                ),
-                logits,
-            ],
-            [TensorType(DType.int64, shape, device=device)],
-        )[0]
-        assert isinstance(tokens, TensorValue)
+        tokens = topk_fused_sampling(
+            logits=logits,
+            top_k=sampling_config.top_k,
+            temperature=sampling_config.temperature,
+            seed=sampling_config.seed,
+        )
 
         # Update frequency data for penalties that are actually enabled
         if sampling_config.do_penalties:
@@ -265,7 +253,12 @@ def token_sampler(
         return graph
 
 
-def rejection_sampler(top_k: int, device: DeviceRef) -> Graph:
+def rejection_sampler(
+    top_k: int,
+    device: DeviceRef,
+    *,
+    seed: int = 0,
+) -> Graph:
     # We have two distributions:
     #   p(x) - The target model distribution
     #   q(x) - The draft model distribution
@@ -299,7 +292,7 @@ def rejection_sampler(top_k: int, device: DeviceRef) -> Graph:
             target_logit_offsets,
         ) = graph.inputs
 
-        sampler = RejectionSampler(device=device, top_k=top_k)
+        sampler = RejectionSampler(device=device, top_k=top_k, seed=seed)
         first_rejected_token, sampled_target_tokens = sampler(
             draft_tokens.tensor,
             draft_logits_for_sampled_tokens.tensor,

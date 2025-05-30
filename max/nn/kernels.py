@@ -2197,3 +2197,57 @@ def update_frequency_data(
         ],
         device=tokens.device,
     )
+
+
+def topk_fused_sampling(
+    logits: TensorValue,
+    top_k: int,
+    temperature: float,
+    *,
+    seed: int = 0,
+) -> TensorValue:
+    """Performs top-k sampling with temperature scaling.
+
+    Args:
+        logits: Input logits tensor of shape [batch_size, vocab_size].
+        top_k: Number of top tokens to consider for sampling.
+        temperature: Temperature for scaling logits before sampling.
+        seed: Seed for the random number generator.
+    Returns:
+        Sampled tokens tensor of shape [batch_size, 1].
+
+    Raises:
+        ValueError: If input validation fails.
+    """
+    if logits.rank != 2:
+        raise ValueError(f"expected logits to have rank 2, got {logits.rank}")
+
+    if top_k <= 0:
+        raise ValueError(f"expected top_k to be positive, got {top_k}")
+
+    if temperature <= 0:
+        raise ValueError(
+            f"expected temperature to be positive, got {temperature}"
+        )
+
+    batch_shape = logits.shape[:-1]
+    device = logits.device
+
+    return ops.custom(
+        "sampler.topk_fused_sampling",
+        values=[
+            ops.constant(top_k, dtype=DType.int64, device=DeviceRef.CPU()),
+            ops.constant(
+                temperature, dtype=DType.float32, device=DeviceRef.CPU()
+            ),
+            ops.constant(seed, dtype=DType.uint64, device=DeviceRef.CPU()),
+            logits,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int64,
+                shape=batch_shape + [1],
+                device=device,
+            )
+        ],
+    )[0].tensor

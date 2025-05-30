@@ -14,7 +14,6 @@
 from collections import List, OptionalReg
 from collections.string import StaticString
 from math import ceildiv, exp, iota
-from random import random_float64
 from sys import alignof, simdwidthof, sizeof
 
 import gpu.warp as warp
@@ -48,8 +47,6 @@ from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList
 from utils.numerics import max_or_inf, min_or_neg_inf
-
-alias SEED = 0
 
 
 @always_inline
@@ -277,6 +274,7 @@ fn top_k_fused_sampling_cpu[
     input: NDBuffer[type, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     temperature: Scalar[type] = 1,
+    seed: UInt64 = 0,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -293,6 +291,7 @@ fn top_k_fused_sampling_cpu[
         input: NDBuffer[type, rank] (Any shape)- The input tensor.
         out_idxs: NDBuffer[out_idx_type, rank] (shape of [input_shape[:-1]] + [1]) - The output indices.
         temperature: The temperature based scaling.
+        seed: The seed to use for the random number generator.
     """
     constrained[out_idx_type is DType.int64, "out_idx_type must be int64"]()
     # materialize the out_vals which is of shape [input[:-1]] + [k]
@@ -309,6 +308,7 @@ fn top_k_fused_sampling_cpu[
         out_vals,
         rebind[NDBuffer[DType.int64, rank, out_idxs.origin]](out_idxs),
         temperature,
+        seed,
     )
 
     out_vals.data.free()
@@ -323,6 +323,7 @@ fn _top_k_sampling[
     out_vals: NDBuffer[mut=True, type, rank],
     out_idxs: NDBuffer[mut=True, DType.int64, rank],
     temperature: Scalar[type] = 1,
+    seed: UInt64 = 0,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -339,6 +340,7 @@ fn _top_k_sampling[
         out_vals: NDBuffer[type, rank] (shape of [input[:-1]] + [k]) - The output values.
         out_idxs: NDBuffer[DType.int64, rank] (shape of [input[:-1]] + [1]) - The output indices.
         temperature: The temperature based scaling.
+        seed: The seed to use for the random number generator.
     """
     # Now reshape for sampling
     var orig_in_shape: IndexList[rank] = input.get_shape()
@@ -395,8 +397,14 @@ fn _top_k_sampling[
             exp_vals.append(exp_val)
             sum_exp += exp_val
 
+        # Use the same RNG as the GPU sampling implementation
+        var rng_state = Random(
+            seed=seed, offset=out_idxs_tmp[batch, 0].cast[DType.uint64]()
+        )
+        var rng = rng_state.step_uniform()
+
         # Sample using the normalized probabilities
-        var r = sum_exp * random_float64().cast[type]()
+        var r = sum_exp * rng[0].cast[type]()
         for i in range(k):
             r -= exp_vals[i]
             if r <= 0 or i == k - 1:
@@ -688,6 +696,7 @@ fn _topk_stage2[
         Scalar[out_idx_type]
     ],  # sampling ? sampled token : Output array of size K
     temperature: Scalar[T] = 1,
+    seed: UInt64 = 0,
 ):
     """
     Computes the global Top-K elements from the local Top-K results produced by stage 1.
@@ -709,6 +718,7 @@ fn _topk_stage2[
         global_topk_vals: Pointer to store the final global Top-K values (size: batch_size * K).
         global_topk_idxs: Pointer to store the final global Top-K indices (size: batch_size * (1 if sampling else K)).
         temperature: The temperature based scaling.
+        seed: The seed to use for the random number generator.
 
     The function uses shared memory to store and process the local Top-K results,
     and performs a block-level reduction to find the global Top-K elements.
@@ -814,7 +824,7 @@ fn _topk_stage2[
         @parameter
         if sampling:
             if tid == 0:
-                var rng_state = Random(seed=SEED)
+                var rng_state = Random(seed=seed)
                 var rng = rng_state.step_uniform()
                 var softmax_norm = s_sum[0]
                 var r = softmax_norm * rng[0].cast[T]()
@@ -847,6 +857,7 @@ fn _topk_gpu[
     block_size: Int = 256,
     num_blocks_per_input: OptionalReg[Int] = None,
     temperature: Scalar[type] = 1,
+    seed: UInt64 = 0,
 ) raises:
     """Computes the Top-K elements from the input tensor using a GPU-accelerated two-stage algorithm.
 
@@ -882,6 +893,7 @@ fn _topk_gpu[
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
         temperature: The temperature based scaling.
+        seed: The seed to use for the random number generator.
 
     The implementation uses shared memory and warp-level primitives for efficient GPU execution.
     It's modeled from the following similar algos in [InternLM]
@@ -957,6 +969,7 @@ fn _topk_gpu[
         out_vals.data,
         out_idxs.data,
         temperature,
+        seed,
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
@@ -980,6 +993,7 @@ fn topk_gpu[
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     temperature: Scalar[type] = 1,
+    seed: UInt64 = 0,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with/without sampling.
@@ -1011,6 +1025,7 @@ fn topk_gpu[
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
         temperature: The temperature based scaling.
+        seed: The seed to use for the random number generator.
     """
     constrained[rank > 0, "Input rank must be positive"]()
     var orig_in_shape: IndexList[rank] = input.get_shape()
@@ -1111,6 +1126,7 @@ fn topk_gpu[
         temperature=temperature,
         block_size=block_size_,
         num_blocks_per_input=num_blocks_per_input_,
+        seed=seed,
     )
 
     _ = internal_vals_buf^
@@ -1130,6 +1146,7 @@ fn topk_fused_sampling_gpu[
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     temperature: Scalar[type] = 1,
+    seed: UInt64 = 0,
 ) raises:
     """
     Top K algorithm with fused sampling.
@@ -1155,6 +1172,7 @@ fn topk_fused_sampling_gpu[
         temperature=temperature,
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
+        seed=seed,
     )
 
     _ = out_vals_buf^

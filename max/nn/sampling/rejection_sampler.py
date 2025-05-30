@@ -14,7 +14,8 @@
 
 from max import nn
 from max.dtype import DType
-from max.graph import DeviceRef, Dim, Shape, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Dim, TensorValue, ops
+from max.nn.kernels import topk_fused_sampling
 
 
 class RejectionSampler(nn.Module):
@@ -25,12 +26,14 @@ class RejectionSampler(nn.Module):
         device: DeviceRef,
         top_k: int = 1,
         temperature: float = 1,
+        seed: int = 0,
         eps: float = 1e-5,
     ):
         self.device = device
         self.top_k = top_k
         self.temperature = temperature
         self.eps = eps
+        self.seed = seed
 
     def __call__(
         self,
@@ -122,26 +125,11 @@ class RejectionSampler(nn.Module):
             target_logit_offsets[:-1], shape=[Dim("batch_size")]
         ) + ops.squeeze(first_rejected_token, axis=1)
 
-        sampled_target_tokens = ops.custom(
-            "topk_fused_sampling",
-            [
-                ops.constant(
-                    self.top_k, dtype=DType.int64, device=DeviceRef.CPU()
-                ),
-                ops.constant(
-                    self.temperature,
-                    dtype=DType.float32,
-                    device=DeviceRef.CPU(),
-                ),
-                ops.gather(target_logits, rejected_offsets, axis=0),
-            ],
-            [
-                TensorType(
-                    DType.int64,
-                    Shape((Dim("batch_size"), Dim(1))),
-                    device=self.device,
-                )
-            ],
-        )[0]
+        sampled_target_tokens = topk_fused_sampling(
+            logits=ops.gather(target_logits, rejected_offsets, axis=0),
+            top_k=self.top_k,
+            temperature=self.temperature,
+            seed=self.seed,
+        )
 
-        return first_rejected_token, sampled_target_tokens.tensor
+        return first_rejected_token, sampled_target_tokens
