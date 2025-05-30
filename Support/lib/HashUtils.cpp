@@ -145,7 +145,8 @@ bool areBlocksSame(mlir::Block &b1, mlir::Block &b2) {
 
 FailureOr<std::string> getBytecodeHash(mlir::Operation *op) {
   mlir::OwningOpRef<mlir::Operation *> opClone{
-      op->clone(mlir::Operation::CloneOptions{true, false})};
+      op->clone(mlir::Operation::CloneOptions(/*cloneRegions=*/true,
+                                              /*cloneOperands=*/false))};
   auto unknownLoc = UnknownLoc::get(opClone->getContext());
 
   // cf mlir/lib/Transforms/StripDebugInfo.cpp, didn't want to run a pass
