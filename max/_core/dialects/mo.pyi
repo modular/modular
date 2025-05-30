@@ -7,8 +7,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import enum
-from collections.abc import Sequence
-from typing import Callable, overload
+from collections.abc import Callable, Sequence
+from typing import Protocol, overload
 
 import max._core
 import max._core.dialects.builtin
@@ -299,6 +299,668 @@ class CoordinateTransformModeAttr(max._core.Attribute):
     def __init__(self, value: CoordinateTransformMode) -> None: ...
     @property
     def value(self) -> CoordinateTransformMode: ...
+
+class MOConditionallyInPlaceInterface(Protocol):
+    """
+    Interface that ops that can conditionally represent an in-place computation
+    (e.g. a custom op that directly operates on a mo.buffer value or a
+     mogg.kernel after it has been load and store fused).
+
+    Should be used in conjunction with MOMutableOpInterface.
+    """
+
+    @property
+    def in_place(self) -> bool: ...
+
+class ConstantLike(Protocol):
+    """Interface for modeling constant operations."""
+
+    @property
+    def type(self) -> TensorType: ...
+    @property
+    def result(self) -> max._core.Value[TensorType]: ...
+
+class MOControlOpInterface(Protocol):
+    """Interface marking ops that are control flow"""
+
+class DefaultParameterization(Protocol):
+    """
+    Interface providing a default (naive) parameterization that is appropriate
+    for ops without strict invariants on arguments and results (e.g. shape
+    and/or dimension equalities). The interface can only handle ops with a
+    single result, and ignores all arguments/results that are not MO tensors.
+    """
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class DeviceInput(Protocol):
+    """Trait to indicate the only input to consider for device assignment"""
+
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+
+class DeviceInputs(Protocol):
+    """Trait to indicate the inputs to consider for device assignment"""
+
+    @property
+    def inputs(self) -> Sequence[max._core.Value]: ...
+
+class Distributed(Protocol):
+    """
+    Interface for modeling distributed operations which have
+    variadic number of inputs and outputs which can be on different devices.
+    """
+
+class ElementWiseBinary(Protocol):
+    """Interface for modeling binary element-wise operations."""
+
+    @property
+    def lhs_input(self) -> max._core.Value[TensorType]: ...
+    @lhs_input.setter
+    def lhs_input(self, arg: max._core.Value, /) -> None: ...
+    @property
+    def rhs_input(self) -> max._core.Value[TensorType]: ...
+    @rhs_input.setter
+    def rhs_input(self, arg: max._core.Value, /) -> None: ...
+    @property
+    def result(self) -> max._core.Value[TensorType]: ...
+
+class ElementWiseLike(Protocol):
+    """Represents an generic element-wise op."""
+
+class ElementWiseUnary(Protocol):
+    """Interface for modeling unary element-wise operations."""
+
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @input.setter
+    def input(self, arg: max._core.Value, /) -> None: ...
+    @property
+    def result(self) -> max._core.Value[TensorType]: ...
+
+class MOHasDeviceInterface(Protocol):
+    """
+    Interface for ops with an optional `#M.device_ref` attribute describing the
+    intended execution device. The reference must resolve to an `#M.device_spec`
+    in the op's containing `mo.graph` 'device_specs' attribute.
+    """
+
+    @property
+    def execution_devices(self) -> list[max._core.dialects.m.DeviceRefAttr]: ...
+    @property
+    def execution_device(self) -> max._core.dialects.m.DeviceRefAttr: ...
+
+class MatmulLike(Protocol):
+    """
+    Interface for modeling operations that implement matmul-like behavior,
+    including vanilla matmul and batchmatmul.
+
+    Dynamically ranked/shaped inputs and results are permitted, but if the shape
+    is known, the last 2 dimensions of each input are assumed to be the matrix
+    dimension. This interface refers to the left and right matrices as A and B,
+    respectively.
+    """
+
+    @property
+    def tensor_a(self) -> max._core.Value[TensorType]: ...
+    @property
+    def tensor_b(self) -> max._core.Value[TensorType]: ...
+    @property
+    def tensor_result(self) -> max._core.Value[TensorType]: ...
+
+class MOMutableOpInterface(Protocol):
+    """
+    Interface that all mutable ops under rmo/mo implement and any ops that
+    could represent in-place compute should implement as well.
+
+    In the case where an op can be conditionally in-place (e.g. mo.custom) it
+    should also implement the MOConditionallyInPlaceInterface as well.
+    """
+
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def out_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def in_chain_mutable(self) -> max._core.OpOperand: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+
+class PadLike(Protocol):
+    """Interface for modeling pad operations."""
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def paddings(self) -> max._core.Value[TensorType]: ...
+    @property
+    def type(self) -> TensorType: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class ParamDeclarationInterface(Protocol):
+    """
+    Interface to be implemented by ops that declare shape or dimension
+    parameters.
+    """
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class ParameterizationInterface(Protocol):
+    """
+    Interface to be implemented by ops that support resolving unknown shape and
+    dimension parameters in their tensors.
+    """
+
+class PreservedDuringKernelLowering(Protocol):
+    """
+    Represents a MO operation that must have must lowered using a kernel
+    implementation.
+    """
+
+class Reduction(Protocol):
+    """Interface for modeling reduction operations."""
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def axis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def axis_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def result(self) -> max._core.Value[TensorType]: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class SameFirstArgumentOutputShapesParameterization(Protocol):
+    """
+    Interface providing a default parameterization for ops that should have the
+    same output shape as the first operand.
+    """
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class SameInputOutputShapesParameterization(Protocol):
+    """
+    Interface providing a default parameterization for ops that should have the
+    same input and output shapes.
+    """
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class ScatterLike(Protocol):
+    """
+    Interface for modeling Scatter-like operations (i.e., regular Scatter
+    and Scatter with reductions).
+    """
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def updates(self) -> max._core.Value[TensorType]: ...
+    @property
+    def updates_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def indices(self) -> max._core.Value[TensorType]: ...
+    @property
+    def indices_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def axis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def axis_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def result(self) -> max._core.Value[TensorType]: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class ScatterNdLike(Protocol):
+    """
+    Interface for modeling ScatterND-like operations (i.e., regular ScatterND
+    and ScatterND with reductions).
+    """
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def updates(self) -> max._core.Value[TensorType]: ...
+    @property
+    def updates_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def indices(self) -> max._core.Value[TensorType]: ...
+    @property
+    def indices_mutable(self) -> max._core.OpOperand: ...
+    @property
+    def result(self) -> max._core.Value[TensorType]: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+
+class ShapeMaterialization(Protocol):
+    """
+    Interface that models ops which
+    1. declare parameters whose values depend on the op's input shape or data.
+    2. might know how to define the declared parameters in terms of new ops
+       (a best effort process that depends on the op type and its inputs).
+    """
+
+    @property
+    def implicitly_parametric(self) -> bool: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    @property
+    def data_dependent_input_indices(self) -> list[int]: ...
+    def get_effects(
+        self, arg: Sequence[max._core._MemoryEffect], /
+    ) -> None: ...
+    def walk_declarations(
+        self, arg: Callable[[max._core.dialects.kgen.ParamDeclAttr], None], /
+    ) -> None: ...
+    def walk_definitions(
+        self,
+        arg: Callable[
+            [
+                max._core.dialects.kgen.ParamDeclAttr,
+                max._core.dialects.kgen.ParamDefValue,
+            ],
+            None,
+        ],
+        /,
+    ) -> None: ...
+    def rename_declarations(
+        self, arg: Sequence[max._core.dialects.kgen.ParamDeclAttr], /
+    ) -> None: ...
+    def collect_parameter_uses(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def collect_parameter_uses_below(
+        self,
+        arg0: Callable[[max._core.Attribute], None],
+        arg1: Callable[[max._core.Type], None],
+        /,
+    ) -> None: ...
+    def materialize_shape_defs(
+        self, arg: Sequence[max._core.dialects.builtin.TypedAttr], /
+    ) -> ShapeMaterializeResult: ...
+
+class SlidingWindow(Protocol):
+    """Interface for modeling operations that have sliding window semantics."""
+
+    @property
+    def strides(self) -> max._core.Value[TensorType]: ...
+    @property
+    def dilations(self) -> max._core.Value[TensorType]: ...
+    @property
+    def paddings(self) -> max._core.Value[TensorType]: ...
+
+class Staticization(Protocol):
+    """
+    Interface that models op which, if given staticized versions of its inputs,
+    might be able to get staticized as well, where "being staticized" means
+    having the op's output value represented as a parameter expression, i.e.,
+    one of:
+    - `IntegerAttr` for a integer or boolean constant, e.g., `42`.
+    - `BoolAttr` for a boolean constant, e.g., `true`.
+    - `KGEN::ParamDeclRefAttr` for a parameter reference, e.g., `D0`.
+    - `KGEN::ParamOperatorAttr` for a parameter expression, e.g., `add(D1, 2)`.
+    """
+
+    def try_staticize(
+        self,
+        arg0: Sequence[max._core.dialects.builtin.TypedAttr],
+        arg1: ParamExprBuilder,
+        /,
+    ) -> max._core.dialects.builtin.TypedAttr | None: ...
+
+class MOTensorOpInterface(Protocol):
+    """
+    Interface that all MO ops should implement, mainly providing typed accessors
+    to inputs, outputs, and their shapes.
+    """
+
+    def get_input_tensor(self, arg: int, /) -> max._core.Value[TensorType]: ...
+    def get_output_tensor(self, arg: int, /) -> max._core.Value[TensorType]: ...
+
+class ViewLike(Protocol):
+    """Represents a view op."""
 
 class IfOp(max._core.Operation):
     """
@@ -6274,3 +6936,9 @@ class WhileOp(max._core.Operation):
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value]: ...
+
+class ParamExprBuilder:
+    pass
+
+class ShapeMaterializeResult:
+    pass

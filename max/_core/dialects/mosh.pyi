@@ -6,8 +6,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
-from collections.abc import Sequence
-from typing import Callable, overload
+from collections.abc import Callable, Sequence
+from typing import overload
 
 import max._core
 import max._core.dialects.builtin
