@@ -74,6 +74,36 @@ def test_var_decl_patterns(c: Bool):
   # expected-warning @+1 {{'var' pattern didn't declare a new variable, it can be removed}}
   (var lf.field) = []
 
+# CHECK-LABEL: lit.fn @"test_ref_decl_patterns
+fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: [[ASUB:%.*]] = lit.call {{.*}}List::@"__getitem__{{.*}}(%a, [[ZERO]])
+    # CHECK-NEXT: %r = lit.var.decl "r" ref
+    ref r = a[0]
+
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: [[BSUB:%.*]] = lit.call {{.*}}List::@"__getitem__{{.*}}(%b, [[ZERO]])
+    # CHECK-NEXT: %r2 = lit.var.decl "r2" ref
+    ref r2 = b[0]
+
+    # CHECK-NEXT: %r3 = lit.var.decl "r3" ref
+    ref r3 = r
+
+    # CHECK-NEXT: [[AVAL:%.*]] = lit.ref.load [[ASUB]]
+    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[BSUB]], [[AVAL]])
+    r2 += r
+
+    # CHECK-NEXT: [[AVAL:%.*]] = lit.ref.load [[ASUB]]
+    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[BSUB]], [[AVAL]])
+    r2 += r3
+
+    # CHECK-NEXT: %r4 = lit.var.decl "r4" ref
+    ref r4 = r2
+
+    # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[BSUB]], [[ONE]])
+    r4 += 1
+
 
 ##===----------------------------------------------------------------------===##
 # Test return slot optimization

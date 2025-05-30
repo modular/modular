@@ -701,19 +701,23 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
           << spelling << "' in this context" << getRange();
       return {};
     }
-
-    // TODO: Introduce VarDeclKind::Ref and use it in emitVarDecl.
-    assert(dest.patternDeclKind != PatternDeclKind::kRef &&
-           "TODO: ref pattern not supported yet");
+    // This is either a var or ref pattern binding.
+    bool isRef = dest.patternDeclKind == PatternDeclKind::kRef;
+    auto declKind = isRef ? VarDeclKind::Ref : VarDeclKind::Var;
+    // The ultimate reference will be a !lit.ref<lit.ref<T>> but we don't know
+    // the origin of the input value type yet. Just use a placeholder for it,
+    // the emitStoreToLValue function will replace it with the actual type.
+    if (isRef)
+      varType = RefType::getAnyOrigin(varType, true);
 
     VarDeclOp varDecl =
-        emitter.emitVarDecl(spelling, varType, getLocation(emitter),
-                            // Marked Implicit to disable warnings.
-                            VarDeclKind::Var);
+        emitter.emitVarDecl(spelling, varType, getLocation(emitter), declKind);
     ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
     emitter.shared.notifyListenerOnVariableDecl(varASTDecl, getLoc());
-    return emitter.emitCResult(MLValue(varDecl), this, dest);
+
+    CValue result = isRef ? CValue(RLValue(varDecl)) : MLValue(varDecl);
+    return emitter.emitCResult(result, this, dest);
   }
 
   // Notify the listener of a normal decl reference lookup.
@@ -881,7 +885,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Narrow the decl to a CValue.
   CValue value;
   if (auto var = dyn_cast<VarDeclOp>(decl)) {
-    value = MLValue(var); // Var decls are always mutable.
+    value = MLValue(var);
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     // If this is a parameter context then we cannot return a dynamic field.
     if (!emitter.builder) {
