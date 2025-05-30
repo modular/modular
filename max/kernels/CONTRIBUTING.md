@@ -21,7 +21,7 @@ If you’re interested in making a significant change (one that doesn’t fall i
 Contributors are encouraged to react with a 👍 to proposal PRs if they support the high-level direction. Proposals are reviewed and assigned to MAX AI Kernels leads. A proposal can be merged once the lead approves, all blocking issues are resolved, and relevant decisions are incorporated. If a lead chooses to defer or reject the proposal, they will explain the reasoning and close the PR. This process is inspired by successful practices in other open source communities.
 
 ### Changes we accept
-We welcome contributions across all hardware platforms and are particularly interested in Blackwell, Hopper, MI3xx, and other data center GPUS.
+We welcome contributions across all hardware platforms and are particularly interested in Blackwell, Hopper, MI3xx, and other data center GPUs.
 
 In particular, we welcome contributions of the following kernels:
 - Batched matrix multiplication (BMM)
