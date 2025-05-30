@@ -39,7 +39,7 @@ trait PythonConvertible:
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
-    fn to_python_object(self) -> PythonObject:
+    fn to_python_object(owned self) -> PythonObject:
         """Convert a value to a PythonObject.
 
         Returns:
@@ -393,7 +393,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: PythonConvertible
+        *Ts: PythonConvertible & Copyable
     ](out self, owned *values: *Ts, __list_literal__: ()):
         """Construct an Python list of objects.
 
@@ -411,7 +411,7 @@ struct PythonObject(
 
     @always_inline
     fn __init__[
-        *Ts: PythonConvertible
+        *Ts: PythonConvertible & Copyable
     ](out self, owned *values: *Ts, __set_literal__: ()) raises:
         """Construct an Python set of objects.
 
@@ -1407,13 +1407,13 @@ struct PythonObject(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(self) -> PythonObject:
+    fn to_python_object(owned self) -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
             A PythonObject representing the value.
         """
-        return self
+        return self^
 
     fn unsafe_as_py_object_ptr(self) -> PyObjectPtr:
         """Get the underlying PyObject pointer.

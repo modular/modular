@@ -478,8 +478,10 @@ struct Python:
 
     @staticmethod
     fn _list[
-        *Ts: PythonConvertible
-    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> PythonObject:
+        *Ts: PythonConvertible & Copyable
+    ](
+        values: VariadicPack[True, _, PythonConvertible & Copyable, *Ts]
+    ) -> PythonObject:
         """Initialize the object from a list literal.
 
         Parameters:
@@ -503,7 +505,9 @@ struct Python:
 
     @always_inline
     @staticmethod
-    fn list[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
+    fn list[
+        *Ts: PythonConvertible & Copyable
+    ](owned *values: *Ts) -> PythonObject:
         """Construct an Python list of objects.
 
         Parameters:
@@ -519,8 +523,10 @@ struct Python:
 
     @staticmethod
     fn _tuple[
-        *Ts: PythonConvertible
-    ](values: VariadicPack[_, _, PythonConvertible, *Ts]) -> PythonObject:
+        *Ts: PythonConvertible & Copyable
+    ](
+        values: VariadicPack[True, _, PythonConvertible & Copyable, *Ts]
+    ) -> PythonObject:
         """Initialize the object from a tuple literal.
 
         Parameters:
@@ -544,7 +550,9 @@ struct Python:
 
     @always_inline
     @staticmethod
-    fn tuple[*Ts: PythonConvertible](*values: *Ts) -> PythonObject:
+    fn tuple[
+        *Ts: PythonConvertible & Copyable
+    ](owned *values: *Ts) -> PythonObject:
         """Construct an Python tuple of objects.
 
         Parameters:

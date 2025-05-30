@@ -541,7 +541,7 @@ struct Bool(
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
 
-    fn to_python_object(self) -> PythonObject:
+    fn to_python_object(owned self) -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
