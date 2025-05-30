@@ -229,7 +229,12 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
     llvm::append_range(work, getOperation().getOps<GeneratorOp>());
     parallelForEach(&getContext(), work, workFunc, paramCache);
 
+    // This effectively disable the verifier, because MLIR assumes that
+    // if the pass said that it preserved all analyses then it can't have
+    // permuted the IR. Hence no need to verify.
+    // This pass mutates the IR that will fail verifier :-(.
     markAllAnalysesPreserved();
+
     numDedupedApplies = totNumDedupedApplies;
   }
 };
