@@ -180,7 +180,7 @@ class MoArgMaxOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -236,7 +236,7 @@ class MoArgMinOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -286,7 +286,7 @@ class MoReduceMaxOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -336,7 +336,7 @@ class MoReduceMinOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -378,7 +378,7 @@ class MoAtanhOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -418,7 +418,7 @@ class MoAbsOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -450,7 +450,7 @@ class MoAddOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -496,7 +496,7 @@ class MoAndOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -543,7 +543,7 @@ class MoArgNonzeroOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -615,7 +615,7 @@ class MoAvgPoolCeilModeTrueOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -705,7 +705,7 @@ class MoAvgPoolOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -794,7 +794,7 @@ class MoLinalgBandPartOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -925,7 +925,7 @@ class MoBottomKOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -966,7 +966,7 @@ class MoBroadcastShapeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1000,7 +1000,7 @@ class MoBroadcastToOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1076,7 +1076,7 @@ class MoCeilOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1123,7 +1123,7 @@ class MoConcatOp(max._core.Operation):
         location: Location,
         result: max._core.dialects.mo.TensorType,
         axis: max._core.Value[max._core.dialects.mo.TensorType],
-        inputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @overload
@@ -1131,13 +1131,13 @@ class MoConcatOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
     def axis(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def output_param_decls(
         self,
@@ -1232,7 +1232,7 @@ class MoConvOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1353,7 +1353,7 @@ class MoConvTransposeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1406,7 +1406,7 @@ class MoCosOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1473,7 +1473,7 @@ class MoCumsumOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1519,7 +1519,7 @@ class MoDivOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1565,7 +1565,7 @@ class MoEqualOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1607,7 +1607,7 @@ class MoErfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1647,7 +1647,7 @@ class MoExpOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1686,7 +1686,7 @@ class MoFloorOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1749,7 +1749,7 @@ class MoGatherNdOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1816,7 +1816,7 @@ class MoGatherOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1861,7 +1861,7 @@ class MoGeluOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1905,7 +1905,7 @@ class MoGreaterEqualOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1951,7 +1951,7 @@ class MoGreaterOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -1995,7 +1995,7 @@ class MoIsInfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2037,7 +2037,7 @@ class MoIsNanOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2077,7 +2077,7 @@ class MoIsqrtOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2118,7 +2118,7 @@ class MoLog1pOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2158,7 +2158,7 @@ class MoLogOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2200,7 +2200,7 @@ class MoLogsoftmaxOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2243,7 +2243,7 @@ class MoMatmulOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2277,7 +2277,7 @@ class MoMaxOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2350,7 +2350,7 @@ class MoMaxPoolCeilModeTrueOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2433,7 +2433,7 @@ class MoMaxPoolOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2493,7 +2493,7 @@ class MoMeanOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2527,7 +2527,7 @@ class MoMinOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2561,7 +2561,7 @@ class MoModOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2595,7 +2595,7 @@ class MoMulOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2628,7 +2628,7 @@ class MoMutableLoadOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2663,7 +2663,7 @@ class MoMutableStoreOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2705,7 +2705,7 @@ class MoMutableStoreSliceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2757,7 +2757,7 @@ class MoNegativeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2813,7 +2813,7 @@ class MoNonMaximumSuppressionOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2871,7 +2871,7 @@ class MoNotEqualOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2913,7 +2913,7 @@ class MoNotOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -2957,7 +2957,7 @@ class MoOrOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3013,7 +3013,7 @@ class MoPadConstantOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3070,7 +3070,7 @@ class MoPadReflectOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3125,7 +3125,7 @@ class MoPadRepeatOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3161,7 +3161,7 @@ class MoPowOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3216,7 +3216,7 @@ class MoRandomNormalOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3275,7 +3275,7 @@ class MoRandomUniformOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3349,7 +3349,7 @@ class MoRangeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3401,7 +3401,7 @@ class MoReduceAddOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3451,7 +3451,7 @@ class MoReduceMulOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3493,7 +3493,7 @@ class MoReluOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3525,7 +3525,7 @@ class MoReshapeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3570,7 +3570,7 @@ class MoResizeLinearOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3644,7 +3644,7 @@ class MoResizeNearestOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3718,7 +3718,7 @@ class MoRoiAlignOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3782,7 +3782,7 @@ class MoRoundOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3847,7 +3847,7 @@ class MoScatterAddOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3918,7 +3918,7 @@ class MoScatterMaxOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -3989,7 +3989,7 @@ class MoScatterMinOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4060,7 +4060,7 @@ class MoScatterMulOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4122,7 +4122,7 @@ class MoScatterNdAddOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4182,7 +4182,7 @@ class MoScatterNdMaxOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4242,7 +4242,7 @@ class MoScatterNdMinOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4302,7 +4302,7 @@ class MoScatterNdMulOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4362,7 +4362,7 @@ class MoScatterNdOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4430,7 +4430,7 @@ class MoScatterOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4481,7 +4481,7 @@ class MoSelectOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4516,7 +4516,7 @@ class MoShapeOfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4555,7 +4555,7 @@ class MoSinOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4628,7 +4628,7 @@ class MoSliceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4676,7 +4676,7 @@ class MoSoftmaxOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4725,7 +4725,7 @@ class MoSplitOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         input: max._core.Value[max._core.dialects.mo.TensorType],
         split_sizes: max._core.Value[max._core.dialects.mo.TensorType],
         axis: max._core.Value[max._core.dialects.mo.TensorType],
@@ -4736,7 +4736,7 @@ class MoSplitOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4782,7 +4782,7 @@ class MoSqrtOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4836,7 +4836,7 @@ class MoSqueezeShapeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4874,7 +4874,7 @@ class MoSubOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4916,7 +4916,7 @@ class MoTanhOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -4963,7 +4963,7 @@ class MoTileOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -5019,7 +5019,7 @@ class MoTopKOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -5077,7 +5077,7 @@ class MoTransposeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -5118,7 +5118,7 @@ class MoTruncOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -5168,7 +5168,7 @@ class MoUnsqueezeShapeOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
@@ -5218,7 +5218,7 @@ class MoXorOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        input_values: Sequence[max._core.Value],
+        input_values: Sequence[max._core.Value[max._core.Type]],
         graph_op: max._core.dialects.mo.GraphOp,
     ) -> None: ...
     @property
