@@ -3174,7 +3174,7 @@ fn _convert_float8_to_f32_scaler[
     ]()
     var mantissa: UInt32 = (f8 & FP8_MANTISSA_MASK).cast[DType.uint32]()
 
-    var f: UInt32 = (sign << (FP32_NUM_BITS - 1))
+    var f: UInt32 = sign << (FP32_NUM_BITS - 1)
 
     if IS_E4M3 and exp == 15 and mantissa == 0x7:
         f = kF32_NaN
@@ -3379,7 +3379,7 @@ fn _convert_f32_to_float8_scaler[
     var NUM_BITS_SHIFT: Int32 = FP32_NUM_MANTISSA_BITS - (
         FP8_NUM_MANTISSA_BITS + 1
     )
-    var round_bit: Int32 = ((mantissa >> NUM_BITS_SHIFT) & 1)
+    var round_bit: Int32 = (mantissa >> NUM_BITS_SHIFT) & 1
     sticky_bit |= ((mantissa & ((1 << NUM_BITS_SHIFT) - 1)) != 0).cast[
         DType.int32
     ]()

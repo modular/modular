@@ -1114,7 +1114,9 @@ fn _apply_mask[
     var fragment_col: UInt32 = (lane * p_frag_simdwidth % MMA_N) % 8
     # Offset to current thread's fragment
     var mask_warp_row: UInt32 = mask_warp_row_arg + fragment_row
-    var mask_warp_col: UInt32 = mask_warp_col_arg + kv_tile_start_row + fragment_col
+    var mask_warp_col: UInt32 = (
+        mask_warp_col_arg + kv_tile_start_row + fragment_col
+    )
 
     @parameter
     @always_inline
@@ -1943,7 +1945,9 @@ fn _mha_sm90[
             mask_warp_col: UInt32,
             kv_tile_start_row: UInt32,
         ):
-            var max_len: UInt32 = num_keys_arg if decoding else max_seq_len.as_uint32()
+            var max_len: UInt32 = (
+                num_keys_arg if decoding else max_seq_len.as_uint32()
+            )
             _apply_mask[
                 MMA_M,
                 MMA_N,
@@ -2174,7 +2178,9 @@ fn _mha_sm90[
                                         partition, batch_size
                                     )
                                 )
-                                var q_head_idx = position_prev.head_idx * group + lane // 4
+                                var q_head_idx = (
+                                    position_prev.head_idx * group + lane // 4
+                                )
                                 exp_sum_ptr[q_head_idx] = rebind[
                                     Scalar[partition_t.accum_dtype]
                                 ](rowsum[0])

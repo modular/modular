@@ -61,12 +61,16 @@ fn _bilinear_interpolate[
 ):
     # Compute central point (y, x) by mapping (py, ph) into a grid of size
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
-    var y = roi_start_h + ph * bin_size_h + (
-        iy + Float32(0.5)
-    ) * bin_size_h / roi_bin_grid_h
-    var x = roi_start_w + pw * bin_size_w + (
-        ix + Float32(0.5)
-    ) * bin_size_w / roi_bin_grid_w
+    var y = (
+        roi_start_h
+        + ph * bin_size_h
+        + (iy + Float32(0.5)) * bin_size_h / roi_bin_grid_h
+    )
+    var x = (
+        roi_start_w
+        + pw * bin_size_w
+        + (ix + Float32(0.5)) * bin_size_w / roi_bin_grid_w
+    )
 
     if not (Float32(-1.0) <= y <= height) or not (Float32(-1.0) <= x <= width):
         var zeroPoint = Weighted2DPoint[type](0, 0, 0)

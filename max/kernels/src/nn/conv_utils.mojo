@@ -450,15 +450,15 @@ fn get_conv_tile_shape[
     # Max C tile size, assuming R, S, and micro_kernel_f are covered.
     # Round up to multiple simd_size
     var CF_tile_size = tile_size // filter_window_size
-    var max_c_tile_size = max(
-        CF_tile_size // micro_kernel_f // simd_size, 1
-    ) * simd_size
+    var max_c_tile_size = (
+        max(CF_tile_size // micro_kernel_f // simd_size, 1) * simd_size
+    )
     # C tile size is bounded by the input channels.
     var c_tile_size = min(max_c_tile_size, c)
     # F tile size is rounded up to multiple micro_kernel_f.
-    var f_tile_size = max(
-        CF_tile_size // c_tile_size // micro_kernel_f, 1
-    ) * micro_kernel_f
+    var f_tile_size = (
+        max(CF_tile_size // c_tile_size // micro_kernel_f, 1) * micro_kernel_f
+    )
 
     return Index(c_tile_size, f_tile_size)
 
@@ -673,9 +673,10 @@ fn get_micro_kernel_shape[
                 var micro_kernel_width = -1
                 for n in range(2, 4):
                     var m = (num_avx2_registers - 1) // n - 1
-                    var num_residual = WO_val * (F_val % (n * simd_size)) + (
-                        WO_val % m
-                    ) * F_val
+                    var num_residual = (
+                        WO_val * (F_val % (n * simd_size))
+                        + (WO_val % m) * F_val
+                    )
                     if num_residual < min_num_residual:
                         micro_kernel_height = m
                         micro_kernel_width = n
@@ -828,9 +829,10 @@ fn get_conv_num_partitions[
     num_row_tasks = min(max_num_row_tasks, num_row_tasks)
 
     # Do not partition channels when num_groups > 1.
-    var max_num_channel_tasks = max(
-        conv_shape.c // min_c_per_task, 1
-    ) if conv_shape.num_groups == 1 and conv_shape.rank == 2 else 1
+    var max_num_channel_tasks = (
+        max(conv_shape.c // min_c_per_task, 1) if conv_shape.num_groups == 1
+        and conv_shape.rank == 2 else 1
+    )
     var num_channel_tasks = min(
         max_num_channel_tasks,
         max_num_tasks // (num_row_tasks * num_col_tasks),
@@ -880,7 +882,9 @@ fn get_partition(
     # TODO: generalize to 1D and 3D.
     var merge_loop = not conv_shape.padded() and conv_shape.rank == 2
     var work_unit = micro_kernel_height if merge_loop else 1
-    var work_load = conv_shape.output_image_flat_size() if merge_loop else conv_shape.ho()
+    var work_load = (
+        conv_shape.output_image_flat_size() if merge_loop else conv_shape.ho()
+    )
     var howo_range = partition_work(
         task_id_howo, num_partitions[3], work_load, work_unit
     )

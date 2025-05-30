@@ -303,7 +303,9 @@ fn flash_attention[
         #       We'll just implement a flag on the cache object which is true
         #       when the batch contains all cache_lens == 0. Remove this when
         #       such flag (part of ContiguousKVCache) is implemented.
-        var is_token_generation = k.max_prompt_length() == 1 and not k.empty_cache()
+        var is_token_generation = (
+            k.max_prompt_length() == 1 and not k.empty_cache()
+        )
 
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
@@ -1205,12 +1207,16 @@ fn mha_single_batch[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Rowwise max and sum for online softmax
     alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
@@ -1449,7 +1455,9 @@ fn mha_single_batch[
                     for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
-                        var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                        var score_row = (
+                            mask_block_row + mask_frag_row + i * MMA_M // 2
+                        )
                         var score_col = mask_frag_col
 
                         score_row_with_start_pos = score_row + start_pos
@@ -1879,12 +1887,16 @@ fn mha_single_batch_pipelined[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Rowwise max and sum for online softmax
     alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
@@ -2116,8 +2128,10 @@ fn mha_single_batch_pipelined[
                     for i in range(2 if is_nvidia_gpu() else 1):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
-                        var score_row = mask_block_row + mask_frag_row + (
-                            i * MMA_M // 2 if is_nvidia_gpu() else 0
+                        var score_row = (
+                            mask_block_row
+                            + mask_frag_row
+                            + (i * MMA_M // 2 if is_nvidia_gpu() else 0)
                         )
                         var score_col = mask_frag_col
 
@@ -2503,8 +2517,13 @@ fn mha_decoding[
 
     # split-k offsets
     var partition_idx = block_idx.x
-    var output_batch_offset = depth * num_heads * batch_idx + depth * num_heads * batch_size * partition_idx
-    var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx
+    var output_batch_offset = (
+        depth * num_heads * batch_idx
+        + depth * num_heads * batch_size * partition_idx
+    )
+    var qk_max_offset = (
+        num_heads * batch_idx + num_heads * batch_size * partition_idx
+    )
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
@@ -2697,7 +2716,9 @@ fn _scale_and_mask_helper_nvidia[
             @parameter
             for i in range(simd_width):
                 var score_row = batch_cache_valid_length
-                var score_col = kv_tile_start_row + key_offset + frag_lane_col + i
+                var score_col = (
+                    kv_tile_start_row + key_offset + frag_lane_col + i
+                )
 
                 p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
                     Index(
@@ -3061,12 +3082,16 @@ fn mha_decoding_single_batch[
     alias num_output_rows = num_m_mmas * num_n_mmas
     alias num_output_rows_full = num_warps_n * num_output_rows if decoding_warp_split_k else num_output_rows
     # alias num_output_rows = num_warps_n * num_m_mmas * num_n_mmas if decoding_warp_split_k else num_m_mmas * num_n_mmas
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_output_rows_full, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0.0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_output_rows_full, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0.0)
+    )
 
     # Rowwise max and sum for online softmax
     var rowmax = stack_allocation[WM, accum_type]()
@@ -3164,11 +3189,11 @@ fn mha_decoding_single_batch[
 
         q_gmem_iter._incr()
 
-    var scale_log2e: Float32 = scale.cast[
-        DType.float32
-    ]() if use_score_mod or mask_t.apply_log2e_after_mask or not is_nvidia_gpu() else scale.cast[
-        DType.float32
-    ]() * log2e
+    var scale_log2e: Float32 = (
+        scale.cast[DType.float32]() if use_score_mod
+        or mask_t.apply_log2e_after_mask
+        or not is_nvidia_gpu() else scale.cast[DType.float32]() * log2e
+    )
 
     @always_inline
     @parameter
@@ -3497,9 +3522,9 @@ fn mha_decoding_single_batch[
             qk_max_ptr[q_head_idx] = row_max
 
     # Pack resutls in shared memory for wider simd width.
-    var accum_smem_warp_ptr = q_smem.bitcast[
-        Scalar[output_type]
-    ]() + warp_id * WM * WN
+    var accum_smem_warp_ptr = (
+        q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN
+    )
 
     @parameter
     if decoding_warp_split_k:
@@ -3695,12 +3720,16 @@ fn mha_decoding_single_batch_pipelined[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0.0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0.0)
+    )
 
     # Rowwise max and sum for online softmax
     var rowmax = stack_allocation[WM, accum_type]()
@@ -3776,11 +3805,11 @@ fn mha_decoding_single_batch_pipelined[
         num_keys, num_partitions, block_idx.x
     )
 
-    var scale_log2e: Float32 = scale.cast[
-        DType.float32
-    ]() if use_score_mod or mask_t.apply_log2e_after_mask else scale.cast[
-        DType.float32
-    ]() * log2e
+    var scale_log2e: Float32 = (
+        scale.cast[DType.float32]() if use_score_mod
+        or mask_t.apply_log2e_after_mask else scale.cast[DType.float32]()
+        * log2e
+    )
 
     @always_inline
     @parameter
@@ -4125,7 +4154,11 @@ fn mha_splitk_reduce[
     var partition_idx = lane_id()
     var l = min_or_neg_inf[accum_type]()
     if partition_idx < num_partitions:
-        var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx + q_head_idx
+        var qk_max_offset = (
+            num_heads * batch_idx
+            + num_heads * batch_size * partition_idx
+            + q_head_idx
+        )
         l = qk_max_ptr[qk_max_offset]
 
     # TODO: use warp.lane_group_max since partition is going to be much smaller than WARP_SIZE
@@ -4134,20 +4167,30 @@ fn mha_splitk_reduce[
     # since num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
     var exp_sums = tb[accum_type]().layout[WARP_SIZE]().shared().alloc()
 
-    var intermediate_output = tb[output_type]().row_major(
-        num_partitions,
-        batch_size,
-        static[num_heads](),
-        static[depth](),
-    ).view(intermediate_ptr)
-    var output = tb[output_type]().row_major(
-        batch_size, static[num_heads](), static[depth]()
-    ).view(output_ptr)
+    var intermediate_output = (
+        tb[output_type]()
+        .row_major(
+            num_partitions,
+            batch_size,
+            static[num_heads](),
+            static[depth](),
+        )
+        .view(intermediate_ptr)
+    )
+    var output = (
+        tb[output_type]()
+        .row_major(batch_size, static[num_heads](), static[depth]())
+        .view(output_ptr)
+    )
 
     var rescaled_exp_sum: Scalar[accum_type] = 0
     alias exp_fn = _exp2_concrete if use_exp2 else _exp_concrete
     if partition_idx < num_partitions:
-        var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx + q_head_idx
+        var qk_max_offset = (
+            num_heads * batch_idx
+            + num_heads * batch_size * partition_idx
+            + q_head_idx
+        )
         rescaled_exp_sum = exp_sum_ptr[qk_max_offset] * exp_fn(l - qk_max)
         exp_sums[partition_idx] = rescaled_exp_sum
 
@@ -4168,9 +4211,13 @@ fn mha_splitk_reduce[
             @parameter
             for w in range(width):
                 d = thread_idx.x + w * num_threads
-                var x = intermediate_output[
-                    partition_idx, batch_idx, q_head_idx, d
-                ].cast[accum_type]() * inv_global_exp_sum * partition_exp_sum
+                var x = (
+                    intermediate_output[
+                        partition_idx, batch_idx, q_head_idx, d
+                    ].cast[accum_type]()
+                    * inv_global_exp_sum
+                    * partition_exp_sum
+                )
                 acc[w] += x[0]
 
     @parameter

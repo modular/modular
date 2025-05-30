@@ -334,14 +334,17 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
         elif q_chunk_idx == k_start_chunk_idx or q_chunk_idx == k_end_chunk_idx:
             # partial mask
             var retval = score_vec
-            var boundary = UInt32(
-                (k_start_idx + local_window_size - 1) // local_window_size
-            ) * local_window_size
+            var boundary = (
+                UInt32(
+                    (k_start_idx + local_window_size - 1) // local_window_size
+                )
+                * local_window_size
+            )
 
             var mask_val = SIMD[DType.bool, width](False)
-            var k_indices = k_start_idx.cast[DType.uint32]() + iota[
-                DType.uint32, width
-            ]()
+            var k_indices = (
+                k_start_idx.cast[DType.uint32]() + iota[DType.uint32, width]()
+            )
             if q_chunk_idx == k_start_chunk_idx:
                 mask_val = k_indices >= boundary
             elif q_chunk_idx == k_end_chunk_idx:
@@ -369,7 +372,9 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
             tile_offset[1] + tile_size[1] - 1
         ) // local_window_size
 
-        var overlapping_windows = k_end_window >= q_start_window and q_end_window >= k_start_window
+        var overlapping_windows = (
+            k_end_window >= q_start_window and q_end_window >= k_start_window
+        )
 
         if q_start_window == k_start_window == k_end_window == q_end_window:
             return TileMaskStatus.NO_MASK
@@ -464,10 +469,9 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask):
 
         # Case 2: If the entire tile is too far to the left
         # (all query positions are more than window_size away from all key positions)
-        var queries_too_far_ahead_of_keys = (
-            tile_offset.data[0] - window_size + 1
-            >= (tile_offset.data[1] + tile_size.data[1])
-        )
+        var queries_too_far_ahead_of_keys = tile_offset.data[
+            0
+        ] - window_size + 1 >= (tile_offset.data[1] + tile_size.data[1])
 
         if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
             return TileMaskStatus.FULL_MASK
@@ -478,15 +482,16 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask):
 
         # Condition 1: The earliest query position must be after the latest key position
         # (diagonal condition)
-        var min_query_after_max_key = tile_offset.data[0] >= tile_offset.data[
-            1
-        ] + tile_size.data[1] - 1
+        var min_query_after_max_key = (
+            tile_offset.data[0] >= tile_offset.data[1] + tile_size.data[1] - 1
+        )
 
         # Condition 2: The latest query position must be within the window range of the
         # earliest key position
-        var max_query_within_window_of_min_key = tile_offset.data[
-            0
-        ] + tile_size.data[0] - 1 < tile_offset.data[1] + window_size
+        var max_query_within_window_of_min_key = (
+            tile_offset.data[0] + tile_size.data[0] - 1
+            < tile_offset.data[1] + window_size
+        )
 
         if min_query_after_max_key and max_query_within_window_of_min_key:
             return TileMaskStatus.NO_MASK

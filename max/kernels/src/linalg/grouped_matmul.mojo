@@ -536,13 +536,17 @@ fn grouped_matmul_kernel[
         if warp_group_thread_idx == 0 and lane_predicate:
             var write_pipeline_states = PipelineState[pipeline_stages]()
 
-            var m_coord = block_idx.y * BM if CLUSTER_N > 1 else UInt(
-                Int(a_start_row)
-            ) + UInt(block_idx_swizzle[1]) * BM
+            var m_coord = (
+                block_idx.y * BM if CLUSTER_N
+                > 1 else UInt(Int(a_start_row))
+                + UInt(block_idx_swizzle[1]) * BM
+            )
 
-            var n_coord = block_idx.x * BN if CLUSTER_M > 1 else UInt(
-                Int(b_start_row)
-            ) + UInt(block_idx_swizzle[0]) * BN
+            var n_coord = (
+                block_idx.x * BN if CLUSTER_M
+                > 1 else UInt(Int(b_start_row))
+                + UInt(block_idx_swizzle[0]) * BN
+            )
 
             producer_main_loop[
                 block_tile_shape=block_tile_shape,

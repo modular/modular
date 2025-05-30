@@ -73,8 +73,8 @@ def matmul_qint4_pack_b[
                 var b_data_i4 = src_ptr.load[width = group_size // 2]()
                 src_ptr += group_size // 2
 
-                var b_data_i8_lo = (b_data_i4 & 15)
-                var b_data_i8_hi = (b_data_i4 >> 4)
+                var b_data_i8_lo = b_data_i4 & 15
+                var b_data_i8_hi = b_data_i4 >> 4
                 var b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
 
                 @parameter
@@ -204,9 +204,11 @@ fn _unpack_weights[
 
         @parameter
         for col in range(tile_n):
-            var b_scale = b_packed_ptr.bitcast[Float16]().load[
-                width=simd_width
-            ](col * simd_width).cast[DType.float32]()
+            var b_scale = (
+                b_packed_ptr.bitcast[Float16]()
+                .load[width=simd_width](col * simd_width)
+                .cast[DType.float32]()
+            )
             b_scale_ptr.store(col * simd_width, b_scale)
 
         b_scale_ptr += tile_n * simd_width

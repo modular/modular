@@ -286,17 +286,12 @@ fn apple_gemv[
             @parameter
             fn compute_fn[width: Int](k: Int):
                 var a_val = a.load[width=width](0, k).cast[c.type]()
-                var b_val = b.load[width=width](n, k).cast[
-                    c.type
-                ]() if b_packed or (
-                    not b_packed and transpose_b
-                ) else transposed_b.load[
-                    width=width
-                ](
-                    n, k
-                ).cast[
-                    c.type
-                ]()
+                var b_val = (
+                    b.load[width=width](n, k).cast[c.type]() if b_packed
+                    or (not b_packed and transpose_b) else transposed_b.load[
+                        width=width
+                    ](n, k).cast[c.type]()
+                )
 
                 @parameter
                 if width == 1:

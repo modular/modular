@@ -94,9 +94,9 @@ def execute_ragged_flash_attention[
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     var num_continuous_blocks = batch_size + 2
-    var num_paged_blocks = ceildiv(
-        max_full_context_length, page_size
-    ) * batch_size
+    var num_paged_blocks = (
+        ceildiv(max_full_context_length, page_size) * batch_size
+    )
 
     # initialize our KVCache
     kv_block_continuous_host = HostNDBuffer[type, 6](

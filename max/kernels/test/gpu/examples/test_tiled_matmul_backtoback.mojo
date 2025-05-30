@@ -309,13 +309,20 @@ fn b2b_gemm[
     # alias c_frag_size = b_frag_size
     alias d_frag_size = frag_size[2]
     # (WM*WN // WARP_SIZE)
-    var d_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, d_frag_size
-    ]().local().alloc().fill(0)
+    var d_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
-    var ab_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, d_frag_size
-    ]().local().alloc()
+    var ab_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, d_frag_size]()
+        .local()
+        .alloc()
+    )
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
         var b_tile_coords = (Int(l), 0) if transpose_b else (0, Int(l))
@@ -456,10 +463,11 @@ fn b2b_gemm[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[accum_type]().row_major[
-            WM, WN
-        ]().shared().view(
-            a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN
+        var accum_smem_warp_tile = (
+            tb[accum_type]()
+            .row_major[WM, WN]()
+            .shared()
+            .view(a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
         )
 
         copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
@@ -501,9 +509,9 @@ fn b2b_gemm[
                 alias src_idx = __type_of(d_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle(
-                    d_smem_frag_offset + src_idx_base
-                ) + src_idx_diff
+                var swizzled_idx = (
+                    swizzle(d_smem_frag_offset + src_idx_base) + src_idx_diff
+                )
 
                 alias dst_static_idx = __type_of(d_gmem_frag).layout(i)
                 var dst_idx = 0

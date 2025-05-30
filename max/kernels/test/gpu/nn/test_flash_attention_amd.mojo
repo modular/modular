@@ -95,8 +95,8 @@ fn test[
     var v_size = k_size
     var o_size = q_size
     var mask_size = (
-        num_heads if mask_rank == 4 else 1
-    ) * seq_len * num_keys * batch_size
+        (num_heads if mask_rank == 4 else 1) * seq_len * num_keys * batch_size
+    )
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)

@@ -99,7 +99,11 @@ fn cumsum[
                 else:
                     depth_index_adj = depth_index
 
-                var index = outer_index_adj + inner_index_adj * depth * outer + depth_index_adj * outer
+                var index = (
+                    outer_index_adj
+                    + inner_index_adj * depth * outer
+                    + depth_index_adj * outer
+                )
 
                 @parameter
                 if exclusive:

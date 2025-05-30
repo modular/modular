@@ -87,9 +87,9 @@ fn test[
     # Pre-packed filter for dynamic shapes.
     alias micro_kernel_width_default = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size_default = micro_kernel_width_default * simd_size
-    var rounded_F_dynamic = ceildiv(
-        F, micro_kernel_f_size_default
-    ) * micro_kernel_f_size_default
+    var rounded_F_dynamic = (
+        ceildiv(F, micro_kernel_f_size_default) * micro_kernel_f_size_default
+    )
     var packed_filter_ptr_dynamic = UnsafePointer[Scalar[type]].alloc(
         R * S * C * rounded_F_dynamic
     )

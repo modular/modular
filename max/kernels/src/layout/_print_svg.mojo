@@ -254,9 +254,11 @@ fn _print_svg_impl[
                                 tensor.layout([i, j]) + offset + element_offset
                             )
                             var orig_pos = map[idx]
-                            var x = margin + text_margin + orig_pos[
-                                1
-                            ].value() * cell_size
+                            var x = (
+                                margin
+                                + text_margin
+                                + orig_pos[1].value() * cell_size
+                            )
                             var y = start_y + orig_pos[0].value() * cell_size
                             var color = color_map.value()(
                                 t, element_idx
@@ -274,9 +276,9 @@ fn _print_svg_impl[
                     ) // sizeof[Scalar[tensor.dtype]]()
                     var idx = tensor.layout([i, j]) + offset
                     var orig_pos = map[idx]
-                    var x = margin + text_margin + orig_pos[
-                        1
-                    ].value() * cell_size
+                    var x = (
+                        margin + text_margin + orig_pos[1].value() * cell_size
+                    )
                     var y = start_y + orig_pos[0].value() * cell_size
                     var color = color_map.value()(
                         t, element_idx

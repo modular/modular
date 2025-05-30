@@ -275,9 +275,11 @@ struct PythonObject(
         #   PyTypeObject that represents a given Mojo type.
         var type_obj = lookup_py_type_object[T]()
 
-        var type_obj_ptr = type_obj.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
-            PyTypeObject
-        ]()
+        var type_obj_ptr = (
+            type_obj.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
+                PyTypeObject
+            ]()
+        )
 
         return PythonObject._unsafe_alloc(type_obj_ptr, alloc^)
 

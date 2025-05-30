@@ -112,10 +112,16 @@ fn warp_split_k_reduction[
 
     while i_red > 0:
         barrier()
-        var red_tb_smem = tb[c_type]().row_major[1, BM * BN]().shared().view(
-            smem.bitcast[Scalar[c_type]]()
-            + ((warp_k_part_id % i_red) * BM * BN)
-        ).vectorize[1, c_frag_size]()
+        var red_tb_smem = (
+            tb[c_type]()
+            .row_major[1, BM * BN]()
+            .shared()
+            .view(
+                smem.bitcast[Scalar[c_type]]()
+                + ((warp_k_part_id % i_red) * BM * BN)
+            )
+            .vectorize[1, c_frag_size]()
+        )
         if i_red <= warp_k_part_id < 2 * i_red:
             copy[thread_layout=red_layout](
                 red_tb_smem,
@@ -300,8 +306,10 @@ fn multistage_mma[
                 var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
 
                 if num_b_rows:
-                    var num_rows_bound = num_b_rows.value() if transpose_b else max(
-                        0, num_b_rows.value() - stage * BK
+                    var num_rows_bound = (
+                        num_b_rows.value() if transpose_b else max(
+                            0, num_b_rows.value() - stage * BK
+                        )
                     )
                     var b_tensor = _mask_tensor_row(b_iter[], num_rows_bound)
                     _copy_tensor_to_sram[async_copy_b_layout, swizzle_b](
@@ -341,13 +349,22 @@ fn multistage_mma[
 
     alias num_reg_tiles = 2 * k_group_size
     # Register tiles.
-    var a_reg_tiles = tb[a_type]().row_major[
-        2 * k_group_size * num_m_mmas, a_frag_size
-    ]().local().alloc().split[2 * k_group_size]()
+    var a_reg_tiles = (
+        tb[a_type]()
+        .row_major[2 * k_group_size * num_m_mmas, a_frag_size]()
+        .local()
+        .alloc()
+        .split[2 * k_group_size]()
+    )
 
-    var b_reg_tiles = tb[b_type]().row_major[
-        2 * k_group_size * num_n_mmas, b_frag_size
-    ]().local().alloc().vectorize[1, b_frag_size]().split[2 * k_group_size]()
+    var b_reg_tiles = (
+        tb[b_type]()
+        .row_major[2 * k_group_size * num_n_mmas, b_frag_size]()
+        .local()
+        .alloc()
+        .vectorize[1, b_frag_size]()
+        .split[2 * k_group_size]()
+    )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
@@ -422,9 +439,11 @@ fn multistage_mma[
 
                             @parameter
                             if prefetch_tile_id < static_num_iters.get():
-                                var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                                    num_pipeline_stages - 1
-                                )[]
+                                var b_smem_prefetch_tile = (
+                                    b_smem_iter.next_unsafe(
+                                        num_pipeline_stages - 1
+                                    )[]
+                                )
 
                                 if num_b_rows:
                                     var num_rows_bound = num_b_rows.value() if transpose_b else max(
@@ -539,9 +558,12 @@ fn multistage_mma[
                             )[]
 
                             if num_b_rows:
-                                var num_rows_bound = num_b_rows.value() if transpose_b else max(
-                                    0,
-                                    num_b_rows.value() - prefetch_tile_id * BK,
+                                var num_rows_bound = (
+                                    num_b_rows.value() if transpose_b else max(
+                                        0,
+                                        num_b_rows.value()
+                                        - prefetch_tile_id * BK,
+                                    )
                                 )
                                 var b_tensor = _mask_tensor_row(
                                     b_iter[], num_rows_bound
@@ -708,7 +730,9 @@ fn multistage_gemm_kernel[
 
     var tid = thread_idx.x
     var ln_id = lane_id()
-    var warp_k_part_id = tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    var warp_k_part_id = (
+        tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    )
     var warp_id = warp.broadcast(
         (tid % num_threads_per_warp_k_part) // WARP_SIZE
     )
@@ -801,9 +825,13 @@ fn multistage_gemm_kernel[
     alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
-    var c_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, c_frag_size
-    ]().local().alloc().fill(0)
+    var c_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     multistage_mma[
         BM,
@@ -912,9 +940,12 @@ fn multistage_gemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[c_type]().row_major[
-            WM, WN
-        ]().shared().view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+        var accum_smem_warp_tile = (
+            tb[c_type]()
+            .row_major[WM, WN]()
+            .shared()
+            .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+        )
 
         copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
             accum_smem_warp_tile.vectorize[1, 2](),
@@ -951,9 +982,9 @@ fn multistage_gemm_kernel[
                 alias src_idx = __type_of(c_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle(
-                    c_smem_frag_offset + src_idx_base
-                ) + src_idx_diff
+                var swizzled_idx = (
+                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
+                )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
                 var dst_idx = 0
@@ -977,9 +1008,9 @@ fn multistage_gemm_kernel[
         else:
             var num_parts = grid_dim.z
             if serial_reduction and num_parts > 1:
-                var bid = block_idx_swizzle[
-                    1
-                ] + block_dim.x * block_idx_swizzle[0]
+                var bid = (
+                    block_idx_swizzle[1] + block_dim.x * block_idx_swizzle[0]
+                )
                 var semaphore = Semaphore(locks.offset(bid), thread_idx.x)
                 semaphore.fetch()
                 semaphore.wait(block_idx.z)

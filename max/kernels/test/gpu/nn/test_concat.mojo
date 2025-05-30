@@ -170,18 +170,22 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 for k in range(d2):
                     for l in range(d3):
                         alias tail_val = 1 if test_epilogue else 0
-                        var not_match_0 = output_host[
-                            i, j, k, l, 0
-                        ] != input_0_host[i, j, k, l, 0] + tail_val
-                        var not_match_1 = output_host[
-                            i, j, k, l, 1
-                        ] != input_1_host[i, j, k, l, 0] + tail_val
-                        var not_match_2 = output_host[
-                            i, j, k, l, 2
-                        ] != input_2_host[i, j, k, l, 0] + tail_val
-                        var not_match_3 = output_host[
-                            i, j, k, l, 3
-                        ] != input_3_host[i, j, k, l, 0] + tail_val
+                        var not_match_0 = (
+                            output_host[i, j, k, l, 0]
+                            != input_0_host[i, j, k, l, 0] + tail_val
+                        )
+                        var not_match_1 = (
+                            output_host[i, j, k, l, 1]
+                            != input_1_host[i, j, k, l, 0] + tail_val
+                        )
+                        var not_match_2 = (
+                            output_host[i, j, k, l, 2]
+                            != input_2_host[i, j, k, l, 0] + tail_val
+                        )
+                        var not_match_3 = (
+                            output_host[i, j, k, l, 3]
+                            != input_3_host[i, j, k, l, 0] + tail_val
+                        )
                         if (
                             not_match_0
                             or not_match_1

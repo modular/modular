@@ -133,9 +133,9 @@ fn run_elementwise[
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     var stride = align_up(N, pack_size)
-    var N_cache = align_up(
-        128 * 1024 * 1024, stride * sizeof[type]()
-    ) // sizeof[type]()
+    var N_cache = (
+        align_up(128 * 1024 * 1024, stride * sizeof[type]()) // sizeof[type]()
+    )
 
     var in_host_ptr = UnsafePointer[Scalar[type], alignment=align].alloc(
         N_cache

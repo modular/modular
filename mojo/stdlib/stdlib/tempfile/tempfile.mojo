@@ -324,7 +324,9 @@ struct NamedTemporaryFile:
             self.name = name.value()
         else:
             for _ in range(TMP_MAX):
-                var potential_name = final_dir + os.sep + prefix + _get_random_name() + suffix
+                var potential_name = (
+                    final_dir + os.sep + prefix + _get_random_name() + suffix
+                )
                 if not os.path.exists(potential_name):
                     self.name = potential_name
                     break

@@ -30,9 +30,13 @@ fn test_no_alloca_fill():
         i: Int,
         j: Int,
     ):
-        var reg_tile = LayoutTensor[
-            DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-        ].stack_allocation().fill(0)
+        var reg_tile = (
+            LayoutTensor[
+                DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
+            ]
+            .stack_allocation()
+            .fill(0)
+        )
 
         outout.tile[4, 4](i, j).copy_from(reg_tile)
 

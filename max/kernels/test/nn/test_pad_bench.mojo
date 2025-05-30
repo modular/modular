@@ -448,9 +448,9 @@ fn bench[
     var ms_iter = benchmark.run[runner_iter](1, 10)
     var ms_recursive = benchmark.run[runner_recursive](1, 10)
 
-    var ratio = Int(
-        100.0 * ms_recursive.mean(Unit.ns) / ms_iter.mean(Unit.ns)
-    ) / 100.0
+    var ratio = (
+        Int(100.0 * ms_recursive.mean(Unit.ns) / ms_iter.mean(Unit.ns)) / 100.0
+    )
     var msg: String
     if ratio < 1.0:
         msg = "slowdown"

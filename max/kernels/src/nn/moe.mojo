@@ -184,9 +184,9 @@ fn moe_create_indices_kernel[
 
         # this is the token length for the last expert
         expert_start_indices[num_experts_used] = num_tokens
-        var last_expert_token_length = num_tokens - expert_start_indices[
-            num_experts_used - 1
-        ]
+        var last_expert_token_length = (
+            num_tokens - expert_start_indices[num_experts_used - 1]
+        )
         max_M = max(
             max_M, rebind[Scalar[indices_type]](last_expert_token_length)
         )

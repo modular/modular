@@ -96,8 +96,8 @@ fn test[
     # var v_size = k_size
     var o_size = q_size
     var mask_size = (
-        num_heads if mask_rank == 4 else 1
-    ) * seq_len * num_keys * batch_size
+        (num_heads if mask_rank == 4 else 1) * seq_len * num_keys * batch_size
+    )
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -542,9 +542,15 @@ fn test_prefill[
         var nstime = ctx.execution_time[kernel_launch](nrun) / nrun
         var sectime = nstime / 1000000
 
-        var tflops = 2 * batch_size * num_heads * (
-            (-seq_len * seq_len + 2 * seq_len * num_keys)
-        ) * (depth + kv_depth) / sectime / 1e9
+        var tflops = (
+            2
+            * batch_size
+            * num_heads
+            * ((-seq_len * seq_len + 2 * seq_len * num_keys))
+            * (depth + kv_depth)
+            / sectime
+            / 1e9
+        )
         print(nrun, "runs avg: ", sectime, " ms   ", tflops, " TFLOPs")
 
     else:

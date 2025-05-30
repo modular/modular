@@ -278,12 +278,12 @@ def test_matmul[
             True,
         ](b)
 
-    var padded_n = padded_n_k[1] if b_packed or (
-        not b_packed and transpose_b
-    ) else n
-    var padded_k = padded_n_k[0] if b_packed or (
-        not b_packed and transpose_b
-    ) else k
+    var padded_n = (
+        padded_n_k[1] if b_packed or (not b_packed and transpose_b) else n
+    )
+    var padded_k = (
+        padded_n_k[0] if b_packed or (not b_packed and transpose_b) else k
+    )
 
     var c0_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
 

@@ -213,9 +213,9 @@ fn test[
 
     _ = max_diff_idx  # silence warning
 
-    var match_percentage = Float64(matching_elements) / Float64(
-        total_elements
-    ) * 100.0
+    var match_percentage = (
+        Float64(matching_elements) / Float64(total_elements) * 100.0
+    )
 
     if matching_elements == total_elements:
         print("RESULT: PASS - All elements match within tolerance")

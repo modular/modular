@@ -1056,8 +1056,8 @@ struct Bench(Writable, Stringable):
         else:
             sep = ","
 
-        var first_sep = "| " if self.config.format == Format.table else StaticString(
-            ""
+        var first_sep = (
+            "| " if self.config.format == Format.table else StaticString("")
         )
         var line_sep = "-" * total_width
 

@@ -527,12 +527,16 @@ fn avg_pool[
     # Implicit padding equals SAME_UPPER calculations as shown at:
     # https://github.com/onnx/onnx/blob/main/docs/Operators.md#averagepool
     if ceil_mode and not count_boundary:
-        var implicit_pad0 = (output.dim(1) - 1) * Int(strides[0]) + (
-            (Int(filter[0]) - 1) * Int(dilations[0]) + 1
-        ) - input.dim(1)
-        var implicit_pad1 = (output.dim(2) - 1) * Int(strides[1]) + (
-            (Int(filter[1]) - 1) * Int(dilations[1]) + 1
-        ) - input.dim(2)
+        var implicit_pad0 = (
+            (output.dim(1) - 1) * Int(strides[0])
+            + ((Int(filter[0]) - 1) * Int(dilations[0]) + 1)
+            - input.dim(1)
+        )
+        var implicit_pad1 = (
+            (output.dim(2) - 1) * Int(strides[1])
+            + ((Int(filter[1]) - 1) * Int(dilations[1]) + 1)
+            - input.dim(2)
+        )
         # Add implicit padding to any specified explicit padding.
         padding_h_high = padding_h_high + implicit_pad0
         padding_w_high = padding_w_high + implicit_pad1
@@ -771,12 +775,16 @@ fn avg_pool_gpu[
     # Implicit padding equals SAME_UPPER calculations as shown at:
     # https://github.com/onnx/onnx/blob/main/docs/Operators.md#averagepool
     if ceil_mode and not count_boundary:
-        var implicit_pad0 = (output.dim(1) - 1) * Int(strides[0]) + (
-            (Int(filter[0]) - 1) * Int(dilations[0]) + 1
-        ) - input.dim(1)
-        var implicit_pad1 = (output.dim(2) - 1) * Int(strides[1]) + (
-            (Int(filter[1]) - 1) * Int(dilations[1]) + 1
-        ) - input.dim(2)
+        var implicit_pad0 = (
+            (output.dim(1) - 1) * Int(strides[0])
+            + ((Int(filter[0]) - 1) * Int(dilations[0]) + 1)
+            - input.dim(1)
+        )
+        var implicit_pad1 = (
+            (output.dim(2) - 1) * Int(strides[1])
+            + ((Int(filter[1]) - 1) * Int(dilations[1]) + 1)
+            - input.dim(2)
+        )
         # Add implicit padding to any specified explicit padding.
         padding_h_high = padding_h_high + implicit_pad0
         padding_w_high = padding_w_high + implicit_pad1

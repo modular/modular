@@ -4582,9 +4582,10 @@ struct LayoutTensor[
 
                 @parameter
                 if is_masked:
-                    var src_copy_size = Int32(
-                        element_size_bytes
-                    ) if src_idx < src_idx_bound else 0
+                    var src_copy_size = (
+                        Int32(element_size_bytes) if src_idx
+                        < src_idx_bound else 0
+                    )
                     async_copy[element_size_bytes, fill = Scalar[dtype](0.0)](
                         src_ptr.bitcast[Scalar[dtype]]() + src_idx,
                         dst_ptr + Int(swizzled_idx),
@@ -5308,7 +5309,9 @@ fn copy_dram_to_sram[
     _copy_dram_to_sram_validate_args(dst, src)
     alias num_busy_threads = src_thread_layout.size()
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
 
     @parameter
     if num_threads > num_busy_threads:
@@ -5433,7 +5436,9 @@ fn copy_dram_to_sram[
     _copy_dram_to_sram_validate_args(dst, src_tensor)
     alias num_busy_threads = src_thread_layout.size()
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
 
     @parameter
     if num_threads > num_busy_threads:
@@ -6243,9 +6248,13 @@ fn copy_sram_to_dram[
                     )
 
                 if dst_idx < dst_idx_bound:
-                    var src_vec = (src.ptr).load[
-                        width=simd_size, alignment=src_align
-                    ](swizzled_idx).cast[dst.dtype]()
+                    var src_vec = (
+                        (src.ptr)
+                        .load[width=simd_size, alignment=src_align](
+                            swizzled_idx
+                        )
+                        .cast[dst.dtype]()
+                    )
 
                     @parameter
                     if binary_op:
@@ -6367,7 +6376,9 @@ fn copy_local_to_dram[
     """
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     @parameter
@@ -6468,7 +6479,9 @@ fn copy_local_to_dram[
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
@@ -6568,7 +6581,9 @@ fn copy_dram_to_local[
     alias simd_width = src.element_layout.size()
     _copy_local_to_dram_validate_args(src, dst)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
     var descriptor = get_amd_buffer_descriptor(src_base)
 
@@ -6658,7 +6673,9 @@ fn copy_dram_to_local[
     alias simd_width = src_tensor.element_layout.size()
     _copy_local_to_dram_validate_args(src_tensor, dst)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
 
     var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
@@ -6722,7 +6739,9 @@ fn copy_dram_to_local[
         dst: The destination tensor in register memory (LOCAL address space).
         src:  The source tensor in global memory (DRAM).
     """
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
     @parameter
@@ -6849,7 +6868,9 @@ fn copy[
         "src address space must be LOCAL.",
     ]()
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
 
     constrained[
         src.dtype == dst.dtype
@@ -6879,9 +6900,9 @@ fn copy[
                 alias dst_idx = dst_frag.layout(i)
                 alias dst_idx_base = dst_idx % swizzle_fn.size()
                 alias dst_idx_diff = dst_idx - dst_idx_base
-                var swizzled_idx = swizzle_fn(
-                    dst_frag_offset + dst_idx_base
-                ) + dst_idx_diff
+                var swizzled_idx = (
+                    swizzle_fn(dst_frag_offset + dst_idx_base) + dst_idx_diff
+                )
                 var src_vec = src.ptr.load[
                     width = src.element_size, alignment=align_src
                 ](src_idx).cast[dst.dtype]()

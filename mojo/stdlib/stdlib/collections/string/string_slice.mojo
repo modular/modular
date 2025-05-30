@@ -2025,9 +2025,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 )
                 var char_end = Int(isnewline) * (eol_start + char_len)
                 var next_idx = char_end * Int(char_end < length)
-                var is_r_n = b0 == `\r` and next_idx != 0 and ptr[
-                    next_idx
-                ] == `\n`
+                var is_r_n = (
+                    b0 == `\r` and next_idx != 0 and ptr[next_idx] == `\n`
+                )
                 eol_length = Int(isnewline) * char_len + Int(is_r_n)
                 if isnewline:
                     break

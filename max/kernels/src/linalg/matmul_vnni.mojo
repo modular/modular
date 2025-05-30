@@ -131,15 +131,17 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
             @parameter
             for idx1 in range(kernel_cols // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
-                var a_val = bitcast[c_type, 1](
-                    partial_simd_load[4](
-                        a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
+                var a_val = (
+                    bitcast[c_type, 1](
+                        partial_simd_load[4](
+                            a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
+                        )
+                    ) if (is_tail and has_avx512f()) else a_ptr.offset(
+                        idx0 * a_ptr_stride
                     )
-                ) if (is_tail and has_avx512f()) else a_ptr.offset(
-                    idx0 * a_ptr_stride
-                ).bitcast[
-                    Scalar[c_type]
-                ]().load()
+                    .bitcast[Scalar[c_type]]()
+                    .load()
+                )
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 # var c_idx = Index(idx0, idx1 * simd_size)

@@ -100,10 +100,10 @@ struct _FILETIME:
         # Taken from https://github.com/microsoft/STL/blob/c8d1efb6d504f6392acf8f6d01fd703f7c8826c0/stl/src/xtime.cpp#L50
         alias windows_to_unix_epoch_offset_ns: Int = 0x19DB1DED53E8000
         var interval_count: UInt64 = (
-            self.dw_high_date_time.cast[DType.uint64]() << 32
-        ) + self.dw_low_date_time.cast[
-            DType.uint64
-        ]() - windows_to_unix_epoch_offset_ns
+            (self.dw_high_date_time.cast[DType.uint64]() << 32)
+            + self.dw_low_date_time.cast[DType.uint64]()
+            - windows_to_unix_epoch_offset_ns
+        )
         return Int(interval_count * 100)
 
 

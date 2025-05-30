@@ -175,7 +175,7 @@ fn first_wave_kernel[
     )
 
     while start_iter < last_iter:
-        var remainder = (iters_per_tile - (start_iter % iters_per_tile))
+        var remainder = iters_per_tile - (start_iter % iters_per_tile)
         var boundary = start_iter + remainder
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(

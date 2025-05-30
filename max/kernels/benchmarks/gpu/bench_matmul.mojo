@@ -117,9 +117,10 @@ fn bench_matmul[
     alias k128 = 512 * 1024 * 1024
     var cache_a = align_up(k128, stride_a * sizeof[dtype]()) // sizeof[dtype]()
     var cache_b = align_up(k128, stride_b * sizeof[dtype]()) // sizeof[dtype]()
-    var cache_c = align_up(k128, stride_c * sizeof[DType.bfloat16]()) // sizeof[
-        DType.bfloat16
-    ]()
+    var cache_c = (
+        align_up(k128, stride_c * sizeof[DType.bfloat16]())
+        // sizeof[DType.bfloat16]()
+    )
 
     var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)

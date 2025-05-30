@@ -238,19 +238,27 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
 
     alias a_simd_width = mma.a_reg_type.size
     alias b_simd_width = mma.b_reg_type.size
-    var a_reg_tile = LayoutTensor[
-        dtype,
-        Layout.row_major(1, a_simd_width),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().vectorize[1, a_simd_width]()
+    var a_reg_tile = (
+        LayoutTensor[
+            dtype,
+            Layout.row_major(1, a_simd_width),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .vectorize[1, a_simd_width]()
+    )
 
-    var b_reg_tile = LayoutTensor[
-        dtype,
-        Layout.row_major(1, b_simd_width),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().vectorize[1, b_simd_width]()
+    var b_reg_tile = (
+        LayoutTensor[
+            dtype,
+            Layout.row_major(1, b_simd_width),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .vectorize[1, b_simd_width]()
+    )
 
     mma.load_a(a_smem, a_reg_tile)
     mma.load_b(b_smem, b_reg_tile)

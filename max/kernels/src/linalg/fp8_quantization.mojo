@@ -229,9 +229,10 @@ fn quantize_fp8_kernel[
         else:
             group_max = warp.lane_group_max_and_broadcast[WARP_SIZE](thread_max)
 
-        var scale_factor = max(
-            group_max.cast[scales_type](), scale_ub
-        ) / fp8_max.cast[scales_type]()
+        var scale_factor = (
+            max(group_max.cast[scales_type](), scale_ub)
+            / fp8_max.cast[scales_type]()
+        )
 
         if tid == 0:
             scales.store[width=1](IndexList[2](row, group_idx), scale_factor)

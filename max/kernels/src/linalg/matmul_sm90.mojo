@@ -1048,7 +1048,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             warp_group_thread_idx,
         )
 
-        var output_reg_tile = final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
+        var output_reg_tile = (
+            final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
+        )
 
         warp_specialized_gemm_output[
             c_tile_shape = Index(BM, BN),
@@ -1360,7 +1362,10 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
             var block_y = UInt(ceildiv(work_info.m, BM))
             var block_x = UInt(ceildiv(work_info.n, BN))
-            var output_reg_tile = final_c_reg_tile if a_type is DType.float8_e4m3fn else c_reg_tile
+            var output_reg_tile = (
+                final_c_reg_tile if a_type
+                is DType.float8_e4m3fn else c_reg_tile
+            )
 
             warp_specialized_gemm_output[
                 c_tile_shape = Index(BM, BN),

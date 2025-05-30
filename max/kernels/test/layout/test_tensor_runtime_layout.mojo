@@ -578,7 +578,7 @@ fn test_random_fill():
 
     var variance: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
-        var diff = (rebind[Float32](src_tensor[i]) - mean)
+        var diff = rebind[Float32](src_tensor[i]) - mean
         variance += diff * diff
     variance = sqrt(variance / src_tensor.runtime_layout.size())
 

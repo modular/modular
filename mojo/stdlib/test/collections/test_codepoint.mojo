@@ -221,9 +221,9 @@ def test_char_utf8_byte_length():
         var codepoint = entry[][0]
         var expected_utf8 = entry[][1]
 
-        var computed_len = Codepoint.from_u32(
-            codepoint
-        ).value().utf8_byte_length()
+        var computed_len = (
+            Codepoint.from_u32(codepoint).value().utf8_byte_length()
+        )
 
         assert_equal(computed_len, len(expected_utf8))
 

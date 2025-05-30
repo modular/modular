@@ -146,8 +146,8 @@ fn broadcast_impl[
         )
         return
 
-    var output_axis_stride = output_prev_axis_stride // output.runtime_layout.dim(
-        axis
+    var output_axis_stride = (
+        output_prev_axis_stride // output.runtime_layout.dim(axis)
     )
 
     var next_input_offset = input_offset

@@ -473,9 +473,13 @@ struct ConvTransposedPacked[
         """Zero the output buffer."""
         alias simd_size = simdwidthof[output_type]()
 
-        var f_offset = g * self.conv_shape.f_per_group() + self.partition.f_offset
+        var f_offset = (
+            g * self.conv_shape.f_per_group() + self.partition.f_offset
+        )
         var num_rows = self.conv_shape.output_image_flat_size()
-        var output_ptr = self.output.data + n * num_rows * self.conv_shape.f + f_offset
+        var output_ptr = (
+            self.output.data + n * num_rows * self.conv_shape.f + f_offset
+        )
 
         for _ in range(num_rows):
 
@@ -528,7 +532,9 @@ struct ConvTransposedPacked[
             self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
 
         # Update the last c tile with fusion
-        var c_round_by_tile_residual = self.conv_shape.c_per_group() - c_round_by_tile
+        var c_round_by_tile_residual = (
+            self.conv_shape.c_per_group() - c_round_by_tile
+        )
         self._f_tile_loop[True](
             n,
             g,
@@ -814,8 +820,11 @@ struct ConvTransposedPacked[
                 var ho = h * self.conv_shape.stride[1] - self.conv_shape.pad_h[0]
                 # fmt: on
 
-                var input_base = input + self.conv_shape.c * self.conv_shape.w() * (
-                    h + d * self.conv_shape.h()
+                var input_base = (
+                    input
+                    + self.conv_shape.c
+                    * self.conv_shape.w()
+                    * (h + d * self.conv_shape.h())
                 )
 
                 var output_base = output + self.conv_shape.f * (
@@ -867,9 +876,13 @@ struct ConvTransposedPacked[
     fn apply_epilogue(self, n: Int, g: Int):
         alias simd_size = simdwidthof[output_type]()
 
-        var f_offset = g * self.conv_shape.f_per_group() + self.partition.f_offset
+        var f_offset = (
+            g * self.conv_shape.f_per_group() + self.partition.f_offset
+        )
         var num_rows = self.conv_shape.output_image_flat_size()
-        var output_base = self.output.data + n * num_rows * self.conv_shape.f + f_offset
+        var output_base = (
+            self.output.data + n * num_rows * self.conv_shape.f + f_offset
+        )
 
         @parameter
         if elementwise_epilogue:
@@ -957,8 +970,12 @@ fn update_w_tile_2d[
             continue
 
         for s in range(conv_shape.s()):
-            var output_ptr = output + r * output_stride_by_r + s * output_stride_by_s
-            var filter_ptr = filter + r * filter_stride_by_r + s * filter_stride_by_s
+            var output_ptr = (
+                output + r * output_stride_by_r + s * output_stride_by_s
+            )
+            var filter_ptr = (
+                filter + r * filter_stride_by_r + s * filter_stride_by_s
+            )
 
             @parameter
             if effected_by_padding:
@@ -1225,13 +1242,17 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
         @__copy_capture(group_start, C, F_per_group, F)
         @parameter
         fn pack[f_tile_size: Int](f_tile_start: Int):
-            var packed_filter_ptr = group_start + f_tile_start * window_dims_prod * C
+            var packed_filter_ptr = (
+                group_start + f_tile_start * window_dims_prod * C
+            )
 
             # Consider a point in filter window as a neighbor to input point.
             for nbr in range(window_dims_prod):
-                var filter_ptr = filter.data + nbr * F * C + (
-                    g * F_per_group + f_tile_start
-                ) * C
+                var filter_ptr = (
+                    filter.data
+                    + nbr * F * C
+                    + (g * F_per_group + f_tile_start) * C
+                )
 
                 for _ in range(C):
                     for f in range(f_tile_size):
@@ -1262,12 +1283,16 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
             var group_start = _get_group_filter_base(
                 packed_filter, g, F_per_group
             )
-            var packed_filter_ptr = group_start + F_round_by_simd * window_dims_prod * C
+            var packed_filter_ptr = (
+                group_start + F_round_by_simd * window_dims_prod * C
+            )
 
             for nbr in range(window_dims_prod):
-                var filter_ptr = filter.data + nbr * F * C + (
-                    g * F_per_group + F_round_by_simd
-                ) * C
+                var filter_ptr = (
+                    filter.data
+                    + nbr * F * C
+                    + (g * F_per_group + F_round_by_simd) * C
+                )
 
                 for _ in range(C):
                     for f in range(residual):

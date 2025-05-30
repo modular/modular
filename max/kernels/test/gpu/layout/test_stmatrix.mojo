@@ -86,8 +86,8 @@ fn test_stmatrix(
         c_shared.offset(thread_idx.x * 4), rebind[SIMD[DType.float32, 4]](d_reg)
     )
 
-    var grp = (lane_id() // 16)
-    var local = (lane_id() % 16)
+    var grp = lane_id() // 16
+    var local = lane_id() % 16
 
     var base = tid * 4
     for i in range(4):
@@ -152,8 +152,8 @@ fn test_stmatrix_gen[
         c_shared.offset(thread_idx.x * 4),
         rebind[SIMD[DType.float32, c_frag_size]](d_reg),
     )
-    var grp = (lane_id() // 16)
-    var local = (lane_id() % 16)
+    var grp = lane_id() // 16
+    var local = lane_id() % 16
 
     var base = thread_idx.x * 4
     for i in range(4):

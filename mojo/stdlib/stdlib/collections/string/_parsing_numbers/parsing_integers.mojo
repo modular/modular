@@ -85,9 +85,9 @@ fn to_integer(
 
     # We use memcmp to check that the number is not too large.
     alias max_standardized_x = String(UInt64.MAX).rjust(CONTAINER_SIZE, "0")
-    var too_large = memcmp(
-        std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE
-    ) == 1
+    var too_large = (
+        memcmp(std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE) == 1
+    )
     if too_large:
         var num_str = StringSlice(
             ptr=std_x_ptr, length=len(standardized_x)

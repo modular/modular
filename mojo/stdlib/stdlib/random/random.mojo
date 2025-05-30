@@ -146,7 +146,7 @@ fn rand[
     @parameter
     if dtype.is_floating_point():
         if scale_val >= 0:
-            var scale_double: Float64 = (1 << scale_val)
+            var scale_double: Float64 = 1 << scale_val
             for i in range(size):
                 var rnd = random_float64(min, max)
                 ptr[i] = (floor(rnd * scale_double) / scale_double).cast[

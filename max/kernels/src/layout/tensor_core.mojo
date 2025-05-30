@@ -1127,8 +1127,10 @@ struct TensorCore[
 
             var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
 
-            var v = bitcast[DType.bfloat16, 2](t).fma(BF16_ONE, BF16_BIAS).fma(
-                BF16_SCALE, BF16_ZERO
+            var v = (
+                bitcast[DType.bfloat16, 2](t)
+                .fma(BF16_ONE, BF16_BIAS)
+                .fma(BF16_SCALE, BF16_ZERO)
             )
             return v
 
@@ -1277,9 +1279,9 @@ fn _load_matrix_frag[
         swizzle.value() if swizzle else Swizzle(0, 0, 1),
     )
 
-    var lane_offset = eval_composed[ldmatrix_layout](
-        Int(lane), offset
-    ) * simd_size
+    var lane_offset = (
+        eval_composed[ldmatrix_layout](Int(lane), offset) * simd_size
+    )
 
     return ld_matrix[res.size, transpose=transposed](
         mma_tile.ptr.offset(lane_offset)

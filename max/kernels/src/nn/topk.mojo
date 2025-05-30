@@ -928,15 +928,16 @@ fn _topk_gpu[
         attributes=pdl_launch_attributes(),
     )
 
-    var num_elem_reduced = ceildiv(
-        num_blocks_per_input_ * K, WARP_SIZE
-    ) * WARP_SIZE
+    var num_elem_reduced = (
+        ceildiv(num_blocks_per_input_ * K, WARP_SIZE) * WARP_SIZE
+    )
     var num_bytes_sample_cache = K * (
         sizeof[Scalar[type]]() + 2 * sizeof[DType.index]()
     )
-    var shared_mem_bytes_2 = num_elem_reduced * (
-        sizeof[Scalar[type]]() + sizeof[DType.index]()
-    ) + num_bytes_sample_cache
+    var shared_mem_bytes_2 = (
+        num_elem_reduced * (sizeof[Scalar[type]]() + sizeof[DType.index]())
+        + num_bytes_sample_cache
+    )
     shared_mem_bytes_2 = Int(
         ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
     )  # align to warp size

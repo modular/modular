@@ -437,9 +437,9 @@ fn _multi_gpu_barrier[
         # Each thread increments its own counter
         # Technically we only need one counter, but we use
         # multiple per block to eliminate the need to share the counter via smem.
-        var internal_counter_ptr = self_sg.bitcast[
-            Scalar[_flag_t]
-        ]() + bid * MAX_GPUS + my_gpu
+        var internal_counter_ptr = (
+            self_sg.bitcast[Scalar[_flag_t]]() + bid * MAX_GPUS + my_gpu
+        )
         var val = internal_counter_ptr[] + 1
         internal_counter_ptr[] = val
 
@@ -600,9 +600,13 @@ fn _allreduce_2stage_kernel[
     for idx in range(start + global_tid, end, stride):
         # float32 accumulator for numerical stability.
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[
-            width=simd_width, alignment=alignment, invariant=True
-        ](elem_idx).cast[accum_type]()
+        var accum = (
+            ptrs[0]
+            .load[width=simd_width, alignment=alignment, invariant=True](
+                elem_idx
+            )
+            .cast[accum_type]()
+        )
 
         @parameter
         for gpu_idx in range(1, ngpus):
@@ -721,9 +725,13 @@ fn _allreduce_1stage_kernel[
     # Vectorized grid-strided loop with SIMD loads.
     for idx in range(global_tid, num_simd_vectors, stride):
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[
-            width=simd_width, alignment=alignment, invariant=True
-        ](elem_idx).cast[accum_type]()
+        var accum = (
+            ptrs[0]
+            .load[width=simd_width, alignment=alignment, invariant=True](
+                elem_idx
+            )
+            .cast[accum_type]()
+        )
 
         @parameter
         for _id in range(1, ngpus):

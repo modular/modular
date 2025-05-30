@@ -258,7 +258,10 @@ fn _concat_parallel[
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.offset(overlap_full_rel_start)
                     var end_in_ptr = input_data.offset(overlap_full_rel_end)
-                    var out_ptr_offset = output_wc_offset + overlap_full_rel_start // input_wc * output_wc
+                    var out_ptr_offset = (
+                        output_wc_offset
+                        + overlap_full_rel_start // input_wc * output_wc
+                    )
 
                     while in_ptr < end_in_ptr:
                         memcpy_or_fuse[rank, type, epilogue_fn](

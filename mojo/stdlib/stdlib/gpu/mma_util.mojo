@@ -283,9 +283,9 @@ fn load_matrix_a_amd[
 
         @parameter
         for i in range(4):
-            var a_idx = ldm * (
-                tile_row + thread_x
-            ) + tile_col + i + 4 * thread_y
+            var a_idx = (
+                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -303,9 +303,11 @@ fn load_matrix_a_amd[
             # consecutive threads cover 16 consecutive rows
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
-            var a_idx = ldm * (tile_row + thread_x) + (
-                tile_col + i
-            ) + thread_y * batchStrideA
+            var a_idx = (
+                ldm * (tile_row + thread_x)
+                + (tile_col + i)
+                + thread_y * batchStrideA
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -350,9 +352,9 @@ fn load_matrix_a_amd[
 
         @parameter
         for i in range(4):
-            var a_idx = ldm * (
-                tile_row + thread_x
-            ) + tile_col + i + 4 * thread_y
+            var a_idx = (
+                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -370,9 +372,11 @@ fn load_matrix_a_amd[
             # consecutive threads cover 16 consecutive rows
             # consecutive registers take consecutive columns
             # groups of 16 lanes cover each matrix in batch
-            var a_idx = ldm * (tile_row + thread_x) + (
-                tile_col + i
-            ) + thread_y * batchStrideA
+            var a_idx = (
+                ldm * (tile_row + thread_x)
+                + (tile_col + i)
+                + thread_y * batchStrideA
+            )
             a[i] = a_ptr[a_idx]
 
         return a
@@ -606,9 +610,9 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = ldm * (
-                tile_row + 4 * thread_y + i
-            ) + tile_col + thread_x
+            var b_idx = (
+                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -623,9 +627,12 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = tile_col + thread_x + (
-                tile_row + i
-            ) * ldm + thread_y * batchStrideB
+            var b_idx = (
+                tile_col
+                + thread_x
+                + (tile_row + i) * ldm
+                + thread_y * batchStrideB
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -680,9 +687,9 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = ldm * (
-                tile_row + 4 * thread_y + i
-            ) + tile_col + thread_x
+            var b_idx = (
+                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -697,9 +704,12 @@ fn load_matrix_b_amd[
 
         @parameter
         for i in range(4):
-            var b_idx = tile_col + thread_x + (
-                tile_row + i
-            ) * ldm + thread_y * batchStrideB
+            var b_idx = (
+                tile_col
+                + thread_x
+                + (tile_row + i) * ldm
+                + thread_y * batchStrideB
+            )
             b[i] = b_ptr[b_idx]
 
         return b
@@ -804,9 +814,12 @@ fn _store_matrix_d_amd[
             # consecutive threads cover 4 consecutive columns
             # consecutive registers take consecutive rows
             # groups of 4 lanes cover each matrix in batch
-            var d_idx = tile_col + thread_x + (
-                tile_row + i
-            ) * ldm + thread_y * batchStrideD
+            var d_idx = (
+                tile_col
+                + thread_x
+                + (tile_row + i) * ldm
+                + thread_y * batchStrideD
+            )
             d_ptr[d_idx] = d[i]
 
     else:
@@ -817,9 +830,9 @@ fn _store_matrix_d_amd[
 
         @parameter
         for i in range(4):
-            var d_idx = ldm * (
-                tile_row + 4 * thread_y + i
-            ) + tile_col + thread_x
+            var d_idx = (
+                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+            )
             d_ptr[d_idx] = d[i]
 
 

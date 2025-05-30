@@ -88,7 +88,9 @@ fn copy_local_to_dram2[
 ](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
     # TODO: use copy_local_to_dram instead. This is a hack for hackathon :|.
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
@@ -265,9 +267,13 @@ fn mma[
     alias b_frag_size = num_matrix_reg[MMA_N, MMA_K]()
     alias c_frag_size = num_matrix_reg[MMA_M, MMA_N]()
 
-    var b_load_tile = tb[mma_input_type]().row_major[
-        2 * num_n_mmas * num_k_mmas2, b_frag_size * k_group_size
-    ]().local().alloc().split[2]()
+    var b_load_tile = (
+        tb[mma_input_type]()
+        .row_major[2 * num_n_mmas * num_k_mmas2, b_frag_size * k_group_size]()
+        .local()
+        .alloc()
+        .split[2]()
+    )
 
     @parameter
     @always_inline
@@ -304,12 +310,18 @@ fn mma[
 
         barrier()
 
-        var a_reg_tile = tb[mma_input_type]().row_major[
-            num_m_mmas, a_frag_size * k_group_size
-        ]().local().alloc()
-        var b_reg_tile = tb[mma_input_type]().row_major[
-            num_n_mmas, b_frag_size * k_group_size
-        ]().local().alloc()
+        var a_reg_tile = (
+            tb[mma_input_type]()
+            .row_major[num_m_mmas, a_frag_size * k_group_size]()
+            .local()
+            .alloc()
+        )
+        var b_reg_tile = (
+            tb[mma_input_type]()
+            .row_major[num_n_mmas, b_frag_size * k_group_size]()
+            .local()
+            .alloc()
+        )
 
         alias b_wtile_dim0 = WN if transpose_b else BK
         alias b_wtile_dim1 = BK if transpose_b else WN
@@ -461,7 +473,10 @@ fn _apply_mask[
                 )
 
             if (not not_last_iter or token_gen) and mask_t.mask_out_of_bound:
-                var bound_y = kv_tile_start_row + kv_tile_num_rows if token_gen else num_keys
+                var bound_y = (
+                    kv_tile_start_row
+                    + kv_tile_num_rows if token_gen else num_keys
+                )
 
                 @parameter
                 for j in range(output_frag_size):
@@ -784,9 +799,13 @@ fn mha_single_batch[
     alias num_k_mmas2 = ceildiv(BK, MMA_K * 2)
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
-    var out_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, output_frag_size
-    ]().local().alloc().fill(0)
+    var out_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     var warp_id = get_warp_id()
 
@@ -805,12 +824,20 @@ fn mha_single_batch[
 
     var output_tile = gmem_manager.get_output_tensor(output)
 
-    var rowmax = tb[accum_type]().row_major[
-        num_m_mmas, fragment_layout.shape[0].value()
-    ]().local().alloc().fill(min_or_neg_inf[accum_type]())
-    var rowsum = tb[accum_type]().row_major[
-        num_m_mmas, fragment_layout.shape[0].value()
-    ]().local().alloc().fill(0)
+    var rowmax = (
+        tb[accum_type]()
+        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
+        .local()
+        .alloc()
+        .fill(min_or_neg_inf[accum_type]())
+    )
+    var rowsum = (
+        tb[accum_type]()
+        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     var smem_manager = SharedMemoryManager[
         q_type, BM, BN, BK, depth, num_warps_n, token_gen
@@ -897,9 +924,13 @@ fn mha_single_batch[
 
         var v_gmem_iter = v_tile.tiled_iterator[BK, BN, axis=0](0, 0)
 
-        var p_reg_tile = tb[accum_type]().row_major[
-            num_m_mmas * num_n_mmas, output_frag_size
-        ]().local().alloc().fill(0)
+        var p_reg_tile = (
+            tb[accum_type]()
+            .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
+            .local()
+            .alloc()
+            .fill(0)
+        )
 
         alias swizzle = None  #  Swizzle(2, 0, 2)
 
@@ -922,9 +953,15 @@ fn mha_single_batch[
         # loading 32 (BK) x 128 (depth) tile at a time
         # factor of 2 comes from pipeline
         alias num_threads = config.num_threads()
-        var v_reg_tile = tb[q_type]().row_major[
-            2 * (BK * depth) // (simd_width * num_threads), simd_width
-        ]().local().alloc().split[2]()
+        var v_reg_tile = (
+            tb[q_type]()
+            .row_major[
+                2 * (BK * depth) // (simd_width * num_threads), simd_width
+            ]()
+            .local()
+            .alloc()
+            .split[2]()
+        )
 
         @parameter
         @always_inline
@@ -933,9 +970,11 @@ fn mha_single_batch[
 
             @parameter
             for i in range(2):
-                var v_warp_tile = v_gmem_tile.tile[16, depth](
-                    warp_id // 2, 0
-                ).tile[8, depth](i, 0).tile[4, depth](warp_id % 2, 0)
+                var v_warp_tile = (
+                    v_gmem_tile.tile[16, depth](warp_id // 2, 0)
+                    .tile[8, depth](i, 0)
+                    .tile[4, depth](warp_id % 2, 0)
+                )
 
                 copy_dram_to_local[
                     src_thread_layout = Layout.row_major(4, 16),
@@ -1103,9 +1142,11 @@ fn mha_single_batch[
                 0, warp_id % 2
             )  # .vectorize[1, simd_width * 2]()
 
-            var v_lane_tile = v_smem_warp_tile.tile[simd_width + 1, 2](
-                lane_row, lane_col
-            ).slice[:simd_width, :]().vectorize[1, 2]()
+            var v_lane_tile = (
+                v_smem_warp_tile.tile[simd_width + 1, 2](lane_row, lane_col)
+                .slice[:simd_width, :]()
+                .vectorize[1, 2]()
+            )
 
             @parameter
             for j in range(simd_width):
@@ -1126,9 +1167,12 @@ fn mha_single_batch[
             var col_idx = lane_id() // 32
 
             alias num_k_mmas_v = 2
-            var v_reg_tile_mma = tb[q_type]().row_major[
-                depth // MMA_M * num_k_mmas_v, simd_width
-            ]().local().alloc()
+            var v_reg_tile_mma = (
+                tb[q_type]()
+                .row_major[depth // MMA_M * num_k_mmas_v, simd_width]()
+                .local()
+                .alloc()
+            )
 
             var lane = lane_id() % 32
 
@@ -1137,22 +1181,15 @@ fn mha_single_batch[
 
                 @parameter
                 for ii in range(4):
-                    var v_smem_fragment = v_smem_iter_tensor.tile[
-                        depth + 16, 8
-                    ](0, col_idx + kk * 2).vectorize[1, simd_width]().tile[
-                        32 + (32 // 8), 1
-                    ](
-                        ii, 0
-                    ).tile[
-                        8 + 1, 1
-                    ](
-                        lane // 8, 0
-                    ).slice[
-                        :8, :
-                    ]().tile[
-                        1, 1
-                    ](
-                        lane % 8, 0
+                    var v_smem_fragment = (
+                        v_smem_iter_tensor.tile[depth + 16, 8](
+                            0, col_idx + kk * 2
+                        )
+                        .vectorize[1, simd_width]()
+                        .tile[32 + (32 // 8), 1](ii, 0)
+                        .tile[8 + 1, 1](lane // 8, 0)
+                        .slice[:8, :]()
+                        .tile[1, 1](lane % 8, 0)
                     )
                     v_reg_tile_mma.split[num_k_mmas_v]()[kk].vectorize[
                         1, simd_width
@@ -1167,9 +1204,12 @@ fn mha_single_batch[
 
             barrier()
 
-            var p_mma_tile_interleaved = tb[q_type]().row_major[
-                num_m_mmas, output_frag_size
-            ]().local().alloc()
+            var p_mma_tile_interleaved = (
+                tb[q_type]()
+                .row_major[num_m_mmas, output_frag_size]()
+                .local()
+                .alloc()
+            )
 
             @parameter
             for j in range(4):
@@ -1278,9 +1318,13 @@ fn mha_decoding_single_batch[
     alias num_n_mmas = ceildiv(WN, MMA_N)
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
-    var out_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, output_frag_size
-    ]().local().alloc().fill(0)
+    var out_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     var warp_id = get_warp_id()
 
@@ -1299,12 +1343,20 @@ fn mha_decoding_single_batch[
 
     var output_tile = gmem_manager.get_output_tensor(output)
 
-    var rowmax = tb[accum_type]().row_major[
-        num_m_mmas, fragment_layout.shape[0].value()
-    ]().local().alloc().fill(min_or_neg_inf[accum_type]())
-    var rowsum = tb[accum_type]().row_major[
-        num_m_mmas, fragment_layout.shape[0].value()
-    ]().local().alloc().fill(0)
+    var rowmax = (
+        tb[accum_type]()
+        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
+        .local()
+        .alloc()
+        .fill(min_or_neg_inf[accum_type]())
+    )
+    var rowsum = (
+        tb[accum_type]()
+        .row_major[num_m_mmas, fragment_layout.shape[0].value()]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     var smem_manager = SharedMemoryManager[
         q_type, BM, BN, BK, depth, num_warps_n, token_gen
@@ -1387,9 +1439,13 @@ fn mha_decoding_single_batch[
 
         var v_gmem_iter = v_tile.tiled_iterator[BK, BN, axis=0](0, 0)
 
-        var p_reg_tile = tb[accum_type]().row_major[
-            num_m_mmas * num_n_mmas, output_frag_size
-        ]().local().alloc().fill(0)
+        var p_reg_tile = (
+            tb[accum_type]()
+            .row_major[num_m_mmas * num_n_mmas, output_frag_size]()
+            .local()
+            .alloc()
+            .fill(0)
+        )
 
         alias swizzle = Swizzle(2, 0, 2)
 
