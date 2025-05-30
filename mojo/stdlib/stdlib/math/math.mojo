@@ -2453,9 +2453,8 @@ fn ulp[
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: implement for IntLiteral
 @always_inline
-fn factorial(n: Int) -> Int:
+fn factorial(n: Int) raises -> Int:
     """Computes the factorial of the integer.
 
     Args:
@@ -2487,7 +2486,8 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(0 <= n <= 20, "input value causes an overflow")
+    if n > 20:
+        raise Error("ValueError: Input must be less than or equal to 20 to prevent overflow")
     return table[n]
 
 
