@@ -533,6 +533,28 @@ fn induction_var_scope():
         # CHECK: lit.ref.load %item
         var g = item
 
+# CHECK-LABEL: @"induction_var_scope_def()"
+def induction_var_scope_def():
+    # CHECK-NEXT: %item = lit.var.decl "item"
+    # CHECK: lit.loop
+    # CHECK: } body {
+    for item in IterRange(0):
+        # CHECK-NEXT: __next__
+        # CHECK: lit.ref.load %item
+        # CHECK: lit.ref.store %{{.*}}, %g
+        var g = item
+
+    # CHECK: lit.loop
+    # CHECK: } body {
+    for item in IterRange(0):
+        # CHECK-NEXT: __next__
+        # CHECK: lit.ref.load %item
+        var g = item
+
+    # CHECK: [[ELTVAL:%.*]] = lit.ref.load %item
+    # CHECK: lit.call {{.*}}use{{.*}}([[ELTVAL]])
+    use(item)
+
 struct MyType:
     pass
 

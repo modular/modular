@@ -52,7 +52,7 @@ var w = SIMD[DType.int8, 2](-50, 31)
 # CHECK:     (si8) [1] = 31
 # CHECK:   }
 # CHECK:   (Bool) x = True
-# CHECK:   (StringSlice[StaticConstantOrigin]) y = 
+# CHECK:   (StringSlice[StaticConstantOrigin]) y =
 # CHECK:   (SIMD[float32, 4]) z = {
 # CHECK:     (f32) [0] = 1
 # CHECK:     (f32) [1] = 2
@@ -121,7 +121,7 @@ a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
 var s1 = String("var_string")
 var s2 = String()
 var s4 = String()
-for i in range(0, 100):
+for var i in range(0, 100):
     s2 += String(i)
     if i < 11:
         s4 += String(i)

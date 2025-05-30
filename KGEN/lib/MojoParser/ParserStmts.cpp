@@ -1192,8 +1192,13 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // into.  This will synthesize the VarDeclOp from the inferred result type,
   // which will be in scope for the body that we will parse.
   ValueDest indvarDest(targetExpr, EC_ForIterator);
-  // TODO: Should we use function-scoped vardecls in Defs?
-  indvarDest.patternDeclKind = PatternDeclKind::kVar;
+
+  // If we're in an 'fn' then we use lexically scoped vardecls. If we're in a
+  // 'def' then we use function-scoped vardecls.
+  if (auto funcDecl = curDeclScope->getNearestDeclOfType<FnOp>())
+    if (!cast<FnOp>(*funcDecl).isDef())
+      indvarDest.patternDeclKind = PatternDeclKind::kVar;
+
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
           CallSyntax::kMethodCall, seqExpr))
