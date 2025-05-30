@@ -2983,12 +2983,20 @@ UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
 }
 
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
-
+  // var/ref patterns are special unary operators that affect their enclosing
+  // lvalue.  They are not valid on the right side of an assignment.
   if (kind == kVarPat || kind == kRefPat) {
     auto patKind =
         kind == kVarPat ? PatternDeclKind::kVar : PatternDeclKind::kRef;
-    llvm::SaveAndRestore builderSaver(dest.patternDeclKind, patKind);
-    return subExpr->emitIR(dest, emitter);
+    llvm::SaveAndRestore patKindSaver(dest.patternDeclKind, patKind);
+    auto result = subExpr->emitIR(dest, emitter);
+    if (result && !result.getIfLValue()) {
+      emitter.emitError(getLoc())
+          << (kind == kVarPat ? "'var'" : "'ref'")
+          << " patterns are only valid on the left side of an assignment";
+      return {};
+    }
+    return result;
   }
 
   auto exprRep = emitter.emitExpr(subExpr, EC_OperatorOperandValue);

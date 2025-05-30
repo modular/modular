@@ -125,6 +125,8 @@ fn test_var_decl_patterns(cond: Bool):
   if cond:
     (var x) = 42
 
+  y = (var 42) # expected-error {{'var' patterns are only valid on the left side of an assignment}}
+
 
 ##===----------------------------------------------------------------------===##
 # Conversions
