@@ -21,6 +21,8 @@
 #include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/ScopeExit.h"
 
+#include <regex>
+
 using namespace M;
 using namespace KGEN;
 
@@ -633,7 +635,10 @@ IREvaluator::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
   ParamNode *genNode = elaborator->lookupImplNode(instanceRef)->parent;
   StructGeneratorOp gen = cast<StructGeneratorOp>(genNode->gen);
 
-  return {StringAttr::get(gen.getSymName(), getTypeNameAttr.getType())};
+  std::string name = gen.getSymName().str();
+  name = std::regex_replace(name, std::regex("::"), ".");
+
+  return {StringAttr::get(name, getTypeNameAttr.getType())};
 }
 
 //===----------------------------------------------------------------------===//
