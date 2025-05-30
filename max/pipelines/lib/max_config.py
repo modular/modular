@@ -126,7 +126,7 @@ class SamplingConfig(MAXConfig):
 
     repetition_penalty: float = 1.0
     """The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens
-    that have already appeared in the generated text at least once by dividing the logits by the
+    that have already appeared in prompt and generated text at least once by dividing the logits by the
     repetition penalty."""
 
     enable_structured_output: bool = False
@@ -148,7 +148,7 @@ class SamplingConfig(MAXConfig):
             "temperature": "Controls the randomness of the model's output; higher values produce more diverse responses.",
             "frequency_penalty": "The frequency penalty to apply to the model's output. A positive value will penalize new tokens based on their frequency in the generated text: tokens will receive a penalty proportional to the count of appearances.",
             "presence_penalty": "The presence penalty to apply to the model's output. A positive value will penalize new tokens that have already appeared in the generated text at least once by applying a constant penalty.",
-            "repetition_penalty": "The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens that have already appeared in the generated text at least once by dividing the logits by the repetition penalty.",
+            "repetition_penalty": "The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens that have already appeared in prompt and generated text at least once by dividing the logits by the repetition penalty.",
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
         }
 

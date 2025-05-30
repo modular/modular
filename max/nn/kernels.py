@@ -22,6 +22,7 @@ from typing import Optional
 import numpy as np
 from max.dtype import DType
 from max.graph import (
+    BufferValue,
     DeviceRef,
     Dim,
     TensorType,
@@ -2091,3 +2092,108 @@ def merge_ragged_tensors(
     )
 
     return results[0].tensor, results[1].tensor
+
+
+def apply_penalties_to_logits(
+    logits_buffer: BufferValue,
+    frequency_data: TensorValue,
+    frequency_offsets: TensorValue,
+    *,
+    frequency_penalty: float = 0.0,
+    presence_penalty: float = 0.0,
+    repetition_penalty: float = 1.0,
+) -> None:
+    """
+    Applies penalties to the logits.
+
+    Args:
+        logits_buffer: The buffer to apply penalties to.
+        frequency_data: 2d tensor of shape [unique_tokens, 2], where
+            the first column indicates the token id and the second column
+            indicates the frequency of the token.
+        frequency_offsets: 1d tensor of shape [batch_size + 1], indicating
+            start of each sequence's data.
+
+        frequency_penalty: The frequency penalty to apply to the model's output.
+            A positive value will penalize new tokens based on their frequency
+            in the generated text: tokens will receive a penalty proportional
+            to the count of appearances.
+        presence_penalty: The presence penalty to apply to the model's output
+            A positive value will penalize new tokens that have already appeared
+            in the generated text at least once by applying a constant penalty.
+        repetition_penalty: The repetition penalty to apply to the model's
+            output. Values > 1 will penalize new tokens that have already
+            appeared in prompt and generated text at least once by dividing the
+            logits by the repetition penalty.
+    """
+
+    if logits_buffer.rank != 2:
+        raise ValueError("logits_buffer must be a 2d buffer")
+
+    if frequency_data.rank != 2:
+        raise ValueError("frequency_data must be a 2d tensor")
+
+    if frequency_offsets.rank != 1:
+        raise ValueError("frequency_offsets must be a 1d tensor")
+
+    ops.inplace_custom(
+        "sampler.apply_penalties",
+        values=[
+            logits_buffer,
+            frequency_data,
+            frequency_offsets,
+            ops.constant(
+                frequency_penalty,
+                DType.float32,
+                device=DeviceRef.CPU(),
+            ),
+            ops.constant(
+                presence_penalty,
+                DType.float32,
+                device=DeviceRef.CPU(),
+            ),
+            ops.constant(
+                repetition_penalty,
+                DType.float32,
+                device=DeviceRef.CPU(),
+            ),
+        ],
+        device=logits_buffer.device,
+    )
+
+
+def update_frequency_data(
+    frequency_data: BufferValue,
+    frequency_offsets: TensorValue,
+    tokens: TensorValue,
+) -> None:
+    """
+    Updates the frequency data.
+
+    Args:
+        frequency_data: 2d tensor of shape [unique_tokens, 2], where
+            the first column indicates the token id and the second column
+            indicates the frequency of the token.
+        frequency_offsets: 1d tensor of shape [batch_size + 1], indicating
+            start of each sequence's data.
+        tokens: The tokens to update the frequency data with.
+    """
+
+    if frequency_data.rank != 2:
+        raise ValueError("frequency_data must be a 2d buffer")
+
+    if frequency_offsets.rank != 1:
+        raise ValueError("frequency_offsets must be a 1d tensor")
+
+    if tokens.rank != 1:
+        raise ValueError("tokens must be a 1d tensor")
+
+    ops.inplace_custom(
+        "sampler.update_frequency_data",
+        values=[
+            frequency_data,
+            frequency_offsets,
+            tokens,
+        ],
+        device=tokens.device,
+    )

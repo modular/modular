@@ -135,6 +135,21 @@ class ModelInputs:
 
 
 @dataclass(frozen=True)
+class FrequencyData:
+    """Container for token frequency data in CSR format."""
+
+    data: Tensor
+    """data[:, 0]: 1D array of the column indices of the
+        non-zero elements in the matrix.
+    data[:, 1]: 1D array of the non-zero elements in the
+        matrix."""
+
+    offsets: Tensor
+    """Row offsets: shape [batch_size + 1] indicating start of each 
+    sequence's data."""
+
+
+@dataclass(frozen=True)
 class ModelOutputs:
     logits: Tensor
     """Logits for a variable number of tokens per sequence."""
@@ -679,19 +694,16 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
     @traced
     def _build_token_frequency_csr(
-        self, batch: list[T], padding_size: int
-    ) -> tuple[Tensor, Tensor]:
+        self, batch: list[T], padding_size: int, include_prompt: bool = False
+    ) -> FrequencyData:
         """Build a CSR matrix of token frequency in the batch.
         The original matrix is (batch_size, vocab_size), where each element is
         the number of times a token appears in the batch.
 
-        The CSR representation consists of three arrays:
-        - frequency_row_offsets: 1D array of the starting index of each row in
-        the data array.
-        - token_frequency_pairs[:, 0]: 1D array of the column indices of the
-        non-zero elements in the data array.
-        - token_frequency_pairs[:, 1]: 1D array of the non-zero elements in the
-         matrix (data array).
+        Returns:
+            FrequencyData containing the CSR representation with:
+            - data: 2D array where each row is [token_id, count]
+            - row_offsets: 1D array of the starting index of each sequence's data
         """
         tracer: Tracer = Tracer("build_token_frequency_csr")
 
@@ -699,9 +711,15 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         frequency_row_offsets = np.zeros(len(batch) + 1, dtype=np.uint32)
         # Calculate max size needed for token frequency pairs
-        total_tokens = sum(
-            len(context.generated_tokens) + padding_size for context in batch
-        )
+        if include_prompt:
+            total_tokens = sum(
+                len(context.tokens) + padding_size for context in batch
+            )
+        else:
+            total_tokens = sum(
+                len(context.generated_tokens) + padding_size
+                for context in batch
+            )
         token_frequency_pairs = np.zeros((total_tokens, 2), dtype=np.int32)
 
         tracer.next("build_token_frequency_csr_loop")
@@ -733,34 +751,34 @@ class TextGenerationPipeline(TokenGenerator[T]):
             : frequency_row_offsets[-1], :
         ]
 
-        return Tensor.from_dlpack(token_frequency_pairs).to(
-            self._devices[0]
-        ), Tensor.from_dlpack(frequency_row_offsets).to(self._devices[0])
+        return FrequencyData(
+            data=Tensor.from_dlpack(token_frequency_pairs).to(self._devices[0]),
+            offsets=Tensor.from_dlpack(frequency_row_offsets).to(
+                self._devices[0]
+            ),
+        )
 
     @traced
     def sample_logits(
         self,
         logits: Tensor,
         prev_tokens: Tensor,
-        logit_offsets: Optional[Tensor],
-        bitmask: Optional[Tensor],
         *,
-        token_frequency_data: Optional[Tensor] = None,
-        token_frequency_row_offsets: Optional[Tensor] = None,
+        logit_offsets: Optional[Tensor] = None,
+        bitmask: Optional[Tensor] = None,
+        frequency_data: Optional[Sequence[FrequencyData]] = None,
     ) -> tuple[Tensor, Tensor]:
-        graph_inputs = [logits, prev_tokens]
+        base_inputs = [logits, prev_tokens]
+        opt_inputs = [logit_offsets, bitmask]
 
-        if logit_offsets:
-            graph_inputs.append(logit_offsets)
+        # Add frequency data if provided
+        if frequency_data:
+            for freq_data in frequency_data:
+                opt_inputs.extend([freq_data.data, freq_data.offsets])
 
-        if bitmask:
-            graph_inputs.append(bitmask)
-
-        if token_frequency_data:
-            graph_inputs.append(token_frequency_data)
-
-        if token_frequency_row_offsets:
-            graph_inputs.append(token_frequency_row_offsets)
+        graph_inputs = base_inputs + [
+            tensor for tensor in opt_inputs if tensor is not None
+        ]
 
         a, b = self._sampler(*graph_inputs)[:2]
         assert isinstance(a, Tensor)
@@ -802,12 +820,26 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )
 
         if self._pipeline_config.sampling_config.do_penalties:
-            token_frequency_data, token_frequency_row_offsets = (
-                self._build_token_frequency_csr(context_batch, num_steps)
-            )
+            frequency_data = []
+
+            # Only build penalty frequency data if frequency or presence penalties are actually used
+            if (
+                self._pipeline_config.sampling_config.frequency_penalty != 0
+                or self._pipeline_config.sampling_config.presence_penalty != 0
+            ):
+                frequency_data.append(
+                    self._build_token_frequency_csr(context_batch, num_steps)
+                )
+
+            # Only build repetition frequency data if repetition penalty is actually used
+            if self._pipeline_config.sampling_config.repetition_penalty != 1:
+                frequency_data.append(
+                    self._build_token_frequency_csr(
+                        context_batch, num_steps, include_prompt=True
+                    )
+                )
         else:
-            token_frequency_data = None
-            token_frequency_row_offsets = None
+            frequency_data = None
 
         curr_step_inputs = model_inputs
         batch_log_probabilities = []
@@ -837,10 +869,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             new_tokens, new_generated_tokens = self.sample_logits(
                 model_outputs.logits,
                 generated_tokens,
-                model_outputs.logit_offsets,
-                bitmask,
-                token_frequency_data=token_frequency_data,
-                token_frequency_row_offsets=token_frequency_row_offsets,
+                logit_offsets=model_outputs.logit_offsets,
+                bitmask=bitmask,
+                frequency_data=frequency_data,
             )
 
             assert isinstance(new_tokens, Tensor)
