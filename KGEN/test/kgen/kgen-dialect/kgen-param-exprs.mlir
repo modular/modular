@@ -840,6 +840,30 @@ kgen.generator @bindParams<c, d: type>() {
   // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, d)>
   kgen.param.declare bind_all: (!pop.array<c, d>) -> () =
     <#kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c, d>>
+  // CHECK: declare bind0_then_bind1: (!pop.array<c, d>) -> () =
+  // CHECK-SAME: <bind_params(:<type>(!pop.array<c, *(0,0)>) -> () bind0, d)>
+  kgen.param.declare bind0_then_bind1: (!pop.array<c, d>) -> () =
+    <#kgen.bind_params<:!kgen.generator<<type>(!pop.array<c, *(0,0)>) -> ()> bind0, d>>
+  // CHECK: declare bind1_then_bind0: (!pop.array<c, d>) -> () =
+  // CHECK-SAME: <bind_params(:<index>(!pop.array<*(0,0), d>) -> () bind1, c)>
+  kgen.param.declare bind1_then_bind0: (!pop.array<c, d>) -> () =
+    <#kgen.bind_params<:!kgen.generator<<index>(!pop.array<*(0,0), d>) -> ()> bind1, c>>
+
+  // NESTED BINDING
+  // CHECK: declare nested_bind0_then_bind1: (!pop.array<c, d>) -> () =
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, d)>
+  kgen.param.declare nested_bind0_then_bind1: (!pop.array<c, d>) -> () =
+    <#kgen.bind_params<
+      :!kgen.generator<<type>(!pop.array<c, *(0,0)>) -> ()>
+        #kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, c>,
+      d>>
+  // CHECK: declare nested_bind1_then_bind0: (!pop.array<c, d>) -> () =
+  // CHECK-SAME: <bind_params(:<index, type>(!pop.array<*(0,0), *(0,1)>) -> () fn, c, d)>
+  kgen.param.declare nested_bind1_then_bind0: (!pop.array<c, d>) -> () =
+    <#kgen.bind_params<
+      :!kgen.generator<<index>(!pop.array<*(0,0), d>) -> ()>
+        #kgen.bind_params<:!kgen.generator<<index, type>(!pop.array<*(0,0), *(0,1)>) -> ()> fn, ?, d>,
+      c>>
   kgen.return
 }
 
