@@ -723,6 +723,26 @@ kgen.func @bitcast_size_change() -> (!pop.simd<4, si16>) {
   kgen.return %1 : !pop.simd<4, si16>
 }
 
+// CHECK-LABEL: @bitcast_index
+kgen.func @bitcast_index() -> (!pop.simd<2, ui64>, !pop.simd<2, index>,
+                               !pop.simd<2, index>, !pop.simd<2, f64>) {
+  %ui64_const = kgen.param.constant: simd<2, ui64> = <<1, 2>>
+  %f64_const = kgen.param.constant: simd<2, f64> = <<"1.5", "2.5">>
+  %index_const = kgen.param.constant: simd<2, index> = <<3, 4>>
+
+  %2 = pop.bitcast %index_const : !pop.simd<2, index> to !pop.simd<2, ui64>
+  %3 = pop.bitcast %ui64_const : !pop.simd<2, ui64> to !pop.simd<2, index>
+  %4 = pop.bitcast %f64_const : !pop.simd<2, f64> to !pop.simd<2, index>
+  %5 = pop.bitcast %index_const : !pop.simd<2, index> to !pop.simd<2, f64>
+  // CHECK: [[SIMD_UI64:%.*]] = kgen.param.constant: simd<2, ui64> = <<3, 4>>
+  // CHECK-NEXT: [[SIMD_INDEX:%.*]] = kgen.param.constant: simd<2, index> = <<1, 2>>
+  // CHECK-NEXT: [[SIMD_INDEX_F64:%.*]] = kgen.param.constant: simd<2, index> = <<4609434218613702656, 4612811918334230528>>
+  // CHECK-NEXT: [[SIMD_F64:%.*]] = kgen.param.constant: simd<2, f64> = <<"1.4821969375237396E-323", "1.9762625833649862E-323">>
+  // CHECK: kgen.return [[SIMD_UI64]], [[SIMD_INDEX]], [[SIMD_INDEX_F64]], [[SIMD_F64]]
+  kgen.return %2, %3, %4, %5 : !pop.simd<2, ui64>, !pop.simd<2, index>,
+                               !pop.simd<2, index>, !pop.simd<2, f64>
+}
+
 // CHECK-LABEL: @pointer_bitcast
 kgen.func @pointer_bitcast() -> !kgen.pointer<si32> {
   // CHECK-NEXT: pointer<si32> = <0>
@@ -1643,6 +1663,26 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %2 = pop.cast %1 : !pop.scalar<ui32> to !pop.scalar<f64>
 
     kgen.return %2 : !pop.scalar<f64>
+  }
+
+  // CHECK-LABEL: @bitcast_index
+  kgen.func @bitcast_index() -> (!pop.simd<2, ui32>, !pop.simd<2, index>,
+                                 !pop.simd<2, index>, !pop.simd<2, f32>) {
+    %ui32_const = kgen.param.constant: simd<2, ui32> = <<1, 2>>
+    %f32_const = kgen.param.constant: simd<2, f32> = <<"1.5", "2.5">>
+    %index_const = kgen.param.constant: simd<2, index> = <<3, 4>>
+
+    %2 = pop.bitcast %index_const : !pop.simd<2, index> to !pop.simd<2, ui32>
+    %3 = pop.bitcast %ui32_const : !pop.simd<2, ui32> to !pop.simd<2, index>
+    %4 = pop.bitcast %f32_const : !pop.simd<2, f32> to !pop.simd<2, index>
+    %5 = pop.bitcast %index_const : !pop.simd<2, index> to !pop.simd<2, f32>
+    // CHECK: [[SIMD_UI32:%.*]] = kgen.param.constant: simd<2, ui32> = <<3, 4>>
+    // CHECK-NEXT: [[SIMD_INDEX:%.*]] = kgen.param.constant: simd<2, index> = <<1, 2>>
+    // CHECK-NEXT: [[SIMD_INDEX_F32:%.*]] = kgen.param.constant: simd<2, index> = <<1069547520, 1075838976>>
+    // CHECK-NEXT: [[SIMD_F32:%.*]] = kgen.param.constant: simd<2, f32> = <<"4.20389539E-45", "5.60519386E-45">>
+    // CHECK: kgen.return [[SIMD_UI32]], [[SIMD_INDEX]], [[SIMD_INDEX_F32]], [[SIMD_F32]]
+    kgen.return %2, %3, %4, %5 : !pop.simd<2, ui32>, !pop.simd<2, index>,
+                                 !pop.simd<2, index>, !pop.simd<2, f32>
   }
 }
 
