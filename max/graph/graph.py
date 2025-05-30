@@ -19,10 +19,12 @@ from typing import Any, Callable, Optional
 
 from max import mlir
 from max._core import Attribute as _Attribute
-from max._core import Operation as _Operation
+from max._core import Block, OpBuilder, Operation
 from max._core import Type as _Type
 from max._core import Value as _Value
 from max._core import graph as _graph
+from max._core.dialects import builtin, kgen
+from max._core.dialects import mo as _mo
 
 # TODO(GEX-1846): Get rid of this include.
 from max.engine import InferenceSession  # type: ignore
@@ -244,7 +246,6 @@ class Graph:
             [_graph.dim_param_decl_attr(context, p) for p in self._params],
         )
         self._mlir_op.attributes["inputParams"] = param_decl
-
         self._weights = {}
 
         initial_chain = self._add_op(mo.chain_create, [])[0]
@@ -401,10 +402,74 @@ class Graph:
     def _body(self) -> mlir.Block:
         return self._current_block
 
+    def _add_op_generated(
+        self, op_type: type[Operation], *args, **kwargs
+    ) -> list[Value]:
+        """Wrapper for clients that only require the op results."""
+        with self._context, self._location() as location:
+            builder = OpBuilder(Block._from_cmlir(self._current_block).end)
+            op = builder.create(op_type, location)(
+                *self._to_mlir(args), **self._to_mlir(kwargs)
+            )
+            assert op.verify()
+        self._set_output_param_decls(op)
+        return [Value.from_mlir(result) for result in op.results]
+
     def _add_op(self, op, *args, **kwargs) -> list[Value]:
         """Wrapper for clients that only require the op results."""
         results, _ = self._add_op_get_op_with_results(op, *args, **kwargs)
         return results
+
+    @classmethod
+    def _to_mlir(cls, o):
+        # Convert args from instances of Python graph-api Value() to mlir.Value
+        if hasattr(o, "to_mlir"):
+            return o.to_mlir()
+        elif isinstance(o, (list, tuple)):
+            return type(o)(cls._to_mlir(ov) for ov in o)
+        elif isinstance(o, dict):
+            return {k: cls._to_mlir(v) for k, v in o.items()}
+        return o
+
+    def _set_output_param_decls(self, op: Operation):
+        # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
+        # - nanobind doesn't allow custom metaclasses, but __instancecheck__
+        #   must be defined on a metaclass
+        # - Interfaces are protocols even though we know when they are explicitly
+        #   implemented so that attrs/types/ops may implement them without declaring
+        #   it in the stub files
+        # - it's not trivial to define our own `isa`-like check. Such a check needs
+        #   to name the template parameter for `mlir::isa<T>` explicitly in C++, but
+        #   if `isa` is defined as a staticmethod it interferes with protocol type
+        #   checking.
+        if not hasattr(op, "output_param_decls"):
+            return
+        op: Operation & _mo.ParamDeclarationInterface  # type: ignore
+        # Add symbolic dims of tensor results to the list of graph params and
+        # declared output params of the op
+        # Use a dict as an ordered set for new param decls. Maps keys to None.
+        result_shapes = (
+            value.shape
+            for result in op.results
+            if isinstance(
+                value := Value.from_mlir(result), (TensorValue, BufferValue)
+            )
+        )
+        result_params = {
+            str(dim)
+            for shape in result_shapes
+            for dim in shape
+            if isinstance(dim, SymbolicDim)
+        }
+        # Track any newly declared parameters.
+        if new_params := dict.fromkeys(result_params - self._params.keys()):
+            self._params.update(new_params)
+            si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+            # We can't overload the setter yet, so the interface annotation is wrong
+            # See https://github.com/wjakob/nanobind/discussions/1063
+            op.output_param_decls = kgen.ParamDeclArrayAttr(
+                [kgen.ParamDeclAttr(name, si64) for name in new_params]
+            )
 
     def _add_op_get_op_with_results(
         self, op, *args, _ip: Optional[mlir.InsertionPoint] = None, **kwargs
@@ -483,6 +548,7 @@ class Graph:
                     # Intentionally suppress extra stack traces from max._mlir.
                 ) from None
 
+        self._set_output_param_decls(Operation._from_cmlir(staged_op))
         if isinstance(results, (mlir.Operation, mlir.OpView)):
             return [], staged_op
 
@@ -494,31 +560,6 @@ class Graph:
                 Value.from_mlir(_Value._from_cmlir(result))
                 for result in results
             ]
-
-        # Add symbolic dims of tensor results to the list of graph params and
-        # declared output params of the op
-        # Use a dict as an ordered set for new param decls. Maps keys to None.
-        new_params = {
-            dim.name: None
-            for result in results
-            if isinstance(result, (BufferValue, TensorValue))
-            for dim in result.shape
-            if isinstance(dim, SymbolicDim)
-        }
-
-        # Track any newly declared parameters.
-        new_params = dict.fromkeys(new_params - self._params.keys())
-        self._params.update(new_params)
-        if new_params:
-            # Add the output params to the op we just created.
-            param_decl = _graph.dim_param_decl_array_attr(
-                self._context,
-                [
-                    _graph.dim_param_decl_attr(self._context, p)
-                    for p in new_params
-                ],
-            )
-            staged_op.attributes["outputParamDecls"] = param_decl
 
         return results, staged_op
 
@@ -573,7 +614,10 @@ class Graph:
     def output(self, *outputs: Value) -> None:
         """Sets the output nodes of the :obj:`Graph`."""
         # mo.output doesn't support infer_type
-        mlir_values = [o._mlir_value for o in outputs]
+        mlir_values = [
+            mlir.Value._CAPICreate(o._mlir_value._CAPIPtr)  # type: ignore
+            for o in outputs
+        ]
 
         # We have a type mismatch now, these are MLIR types
         output_types = [value.type for value in mlir_values]
@@ -625,9 +669,6 @@ class Graph:
     def _load_mlir(self, path: Path):
         self._context_state = []
         with open(path) as f:
-            registry = mlir.DialectRegistry()
-            _graph.load_modular_dialects(registry)
-
             with mlir.Context() as ctx, self._location() as loc:
                 # Create the top level module op.
                 self._module = mlir.Module.create()
@@ -677,10 +718,10 @@ class Graph:
                     transferred_value = graph_weight.value.to(weight.device)
                     if transferred_value is not graph_weight.value:
                         assert isinstance(
-                            transferred_value._mlir_value.owner, _Operation
+                            transferred_value._mlir_value.owner, Operation
                         )
                         assert isinstance(
-                            graph_weight.value._mlir_value.owner, _Operation
+                            graph_weight.value._mlir_value.owner, Operation
                         )
                         transferred_value._mlir_value.owner.move_after(
                             graph_weight.value._mlir_value.owner
@@ -717,6 +758,8 @@ class Graph:
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
         if initial_device != weight.device:
             weight_tensor = weight_tensor.to(weight.device)
+            assert isinstance(const_external_op, Operation)
+            assert isinstance(weight_tensor._mlir_value.owner, Operation)
             weight_tensor._mlir_value.owner.move_after(const_external_op)
         return weight_tensor
 

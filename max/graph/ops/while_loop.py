@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Callable
 
 from max import mlir
@@ -148,7 +148,7 @@ def while_loop(
 
         def chain_aware_wrapper():
             # Separate loop variables from the execution chain
-            loop_vars: list[Value]
+            loop_vars: Sequence[Value]
             execution_chain: Value
             *loop_vars, execution_chain = (
                 Value.from_mlir(_Value._from_cmlir(arg)) for arg in block_args
