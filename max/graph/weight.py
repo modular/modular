@@ -212,6 +212,7 @@ class Weight(TensorValue):
         quantization_encoding: Optional[QuantizationEncoding] = None,
         align: Optional[int] = None,
         sharding_strategy: Optional[ShardingStrategy] = None,
+        _placeholder: bool = False,
     ):
         self.name = name
         self._dtype = dtype
@@ -225,6 +226,7 @@ class Weight(TensorValue):
             else None
         )
         self.shard_idx = None
+        self._placeholder = _placeholder
 
     @property
     def dtype(self) -> DType:

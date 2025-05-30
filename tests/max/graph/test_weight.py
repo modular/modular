@@ -116,3 +116,20 @@ def test_weight_outside_graph_error() -> None:
 
     with pytest.raises(ValueError, match="no parent graph"):
         _ = ops.cast(w, DType.float64)
+
+
+def test_weight_is_placeholder() -> None:
+    with Graph("graph_with_weights", input_types=()) as graph:
+        w = Weight(
+            "w",
+            dtype=DType.float32,
+            shape=[],
+            device=DeviceRef.CPU(),
+            _placeholder=True,
+        )
+        graph.output(w)
+        gen_mlir = str(graph._mlir_op)
+        assert re.search(
+            r"mo.constant.external.*isPlaceholder = true.*!mo.tensor<\[\], f32",
+            gen_mlir,
+        )

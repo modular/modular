@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """ops.call tests."""
 
+import re
+
 import pytest
 from conftest import tensor_types
 from hypothesis import given
@@ -15,6 +17,7 @@ from max.graph import (
     DeviceRef,
     Graph,
     TensorType,
+    Weight,
     _ChainType,
     _ChainValue,
     ops,
@@ -253,3 +256,34 @@ def test_call_tuple_operands_with_add_op():
         assert len(call_results) == 1
         assert call_results[0].type == input_type
         main_graph.output(call_results[0])
+
+
+def test_call_with_prefix():
+    """Test calling a graph with a prefix of a subgraph that has a placeholder weight."""
+    input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+    with Graph(
+        "main_graph_prefix_test", input_types=[input_type]
+    ) as main_graph:
+        with main_graph.add_subgraph(
+            "subgraph", input_types=[input_type]
+        ) as subgraph:
+            w = Weight(
+                "placeholder",
+                dtype=DType.float32,
+                shape=[10],
+                device=DeviceRef.CPU(),
+                _placeholder=True,
+            )
+            subgraph.output(subgraph.inputs[0] + w)
+        assert re.search(
+            r"mo.constant.external.*isPlaceholder = true.*!mo.tensor<\[10\], f32",
+            str(subgraph),
+        )
+        call_results = ops.call(subgraph, main_graph.inputs[0], prefix="prefix")
+        assert len(call_results) == 1
+        assert call_results[0].type == input_type
+        main_graph.output(call_results[0])
+    assert re.search(
+        r"mo.call @subgraph.*\{prefix = \"prefix\"\}.*!mo.tensor<\[10\], f32",
+        str(main_graph),
+    )

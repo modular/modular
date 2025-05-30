@@ -14,7 +14,7 @@ from ..type import _ChainType
 from ..value import Value, _ChainValue
 
 
-def call(graph: Graph, *args: Value) -> list[Value]:
+def call(graph: Graph, *args: Value, prefix: str = "") -> list[Value]:
     """Call a graph with the provided arguments and return its results.
 
     This function invokes a previously defined graph, passing in the provided
@@ -32,6 +32,7 @@ def call(graph: Graph, *args: Value) -> list[Value]:
     Args:
         graph: The graph to call
         *args: Arguments to pass to the called graph
+        prefix: Prefix to add to the names of any weights in the subgraph
 
     Returns:
         Either a single Value or a list of Values representing the graph outputs
@@ -59,7 +60,11 @@ def call(graph: Graph, *args: Value) -> list[Value]:
 
     # Add a call operation to the current graph
     call_results = current_graph._add_op(
-        mo.call_, symbol=graph.name, results=output_types, operands=call_args
+        mo.call_,
+        symbol=graph.name,
+        results=output_types,
+        operands=call_args,
+        prefix=prefix,
     )
 
     # Update the chain if necessary, and return non-chain results

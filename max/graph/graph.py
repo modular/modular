@@ -742,6 +742,7 @@ class Graph:
                 weight.align if weight.align is not None else weight.dtype.align
             ),
             device=initial_device.to_mlir(),
+            is_placeholder=weight._placeholder,
             _ip=mlir.InsertionPoint.at_block_begin(self._graph_body),
         )[0]
 
