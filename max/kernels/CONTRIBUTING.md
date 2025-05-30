@@ -86,14 +86,14 @@ Go to the [modular repo](https://github.com/modular/modular) and click the for
 
 Clone your forked repo locally with the command:
 
-```
+```bash
 git clone git@github.com:[your-username]/modular.git
 cd modular
 ```
 
 Add the upstream remote and fetch it:
 
-```
+```bash
 git remote add upstream git@github.com:modular/modular.git
 git fetch upstream
 ```
@@ -102,14 +102,14 @@ git fetch upstream
 
 Make sure to branch off `main` to work on your PR:
 
-```
+```bash
 git checkout main
 git checkout -b my-fix-pr
 ```
 
 You should periodically make sure you've synced the latest changes, especially before raising a PR:
 
-```
+```bash
 git fetch upstream
 git rebase upstream/main
 ```
@@ -150,13 +150,13 @@ If your change is one of the improvements described above or has been discussed 
 
 First, push your changes:
 
-```
+```bash
 git push -u origin my-fix-pr
 ```
 
 You'll see a link to create a PR:
 
-```
+```bash
 remote: Create a pull request for 'my-fix-pr' on GitHub by visiting:
 remote:      https://github.com/[your-username]/max/pull/new/my-fix-pr
 
@@ -181,11 +181,11 @@ For each pull request, we require that you certify that you wrote the change or 
 
 ### **Pull Request (PR) Review Timeline**
 
-**Initial Review**
+#### **Initial Review**
 
 Maintainers will provide an initial review or feedback within 3 weeks of the PR submission. At times, it may be significantly quicker, but it depends on a variety of factors.
 
-**Subsequent Reviews**
+#### **Subsequent Reviews**
 
 Once a contributor addresses feedback, maintainers will review updates as soon as they can, typically within 5 business days.
 
