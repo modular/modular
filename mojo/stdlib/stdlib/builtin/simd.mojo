@@ -60,6 +60,7 @@ from sys import (
     has_neon,
     is_amd_gpu,
     is_big_endian,
+    is_compile_time,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -2312,18 +2313,24 @@ struct SIMD[dtype: DType, size: Int](
             "output width must be a positive integer less than simd size",
         ]()
 
+        @always_inline
         @parameter
-        if output_width == 1:
-            return self[offset]
-
-        @parameter
-        if offset % simdwidthof[dtype]():
+        fn slice_body() -> SIMD[dtype, output_width]:
             var tmp = SIMD[dtype, output_width]()
 
             @parameter
             for i in range(output_width):
                 tmp[i] = self[i + offset]
             return tmp
+
+        @parameter
+        if output_width == 1:
+            return self[offset]
+        elif offset % simdwidthof[dtype]():
+            return slice_body()
+
+        if is_compile_time():
+            return slice_body()
 
         return llvm_intrinsic[
             "llvm.vector.extract",
