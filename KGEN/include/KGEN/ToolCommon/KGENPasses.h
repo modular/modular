@@ -186,6 +186,14 @@ std::unique_ptr<mlir::Pass> createAutomaticInline(
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
 
 //===----------------------------------------------------------------------===//
+// ReorderParamDeclarations
+//===----------------------------------------------------------------------===//
+
+/// Create ReorderParamDeclarations pass with verifier disabled or not.
+std::unique_ptr<mlir::Pass>
+createReorderParamDeclarations(bool disableVerifier);
+
+//===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline
 //===----------------------------------------------------------------------===//
 /// Options for the KGEN to LLVM pipeline.

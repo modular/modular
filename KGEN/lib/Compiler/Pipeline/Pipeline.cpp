@@ -139,6 +139,8 @@ void KGEN::buildElaborateModulePipeline(
 #endif
   pm.addPass(createLiftAndFoldApply());
 
+  pm.addPass(createReorderParamDeclarations(true));
+
   // After elaboration, we have no use for the parameter verifier anymore.
   ElaborateGeneratorsOptions elaboratorOptions;
   elaboratorOptions.elaborateDebugInfo =

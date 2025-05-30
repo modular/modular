@@ -1124,8 +1124,17 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   // cleaning up dead IR because it runs last.
   Block *elseBlock = &op.getElseRegion().front();
   auto yield = cast<ParamYieldOp>(elseBlock->getTerminator());
-  auto onElseComplete = [debug = config.elaborateDebugInfo,
-                         begin = &*elseBlock->begin(), yield, op,
+
+  // Getting beginning op iterator for onElseComplete function.
+  // The beginning op should not be the one that will be erased
+  // before onElseComplete is called, e.g. ParamApplyOp will be erased by
+  // processParamApplyOp here, so we need to find the one after those.
+  auto elseBegin = elseBlock->begin();
+  while (isa<ParamApplyOp>(*elseBegin))
+    elseBegin++;
+
+  auto onElseComplete = [debug = config.elaborateDebugInfo, begin = &*elseBegin,
+                         yield, op,
                          parent](ImplNode *node) mutable -> LogicalResult {
     if (debug && failed(concretizeLocsInScope(
                      {begin->getIterator(), yield->getIterator()}, node)))
