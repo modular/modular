@@ -168,7 +168,6 @@ Now fill out the details:
 
 - A short commit title describing the change.
 - A detailed commit description that includes rationalization for the change and/or explanation of the problem that it solves, with a link to any relevant GitHub issues.
-- A `Signed-off-by` line, as per the [Developer Certificate of Origin](https://github.com/modular/modular/blob/main/mojo/CONTRIBUTING.md#signing-your-work).
 
 **Note:** Accepted changes will generally show up in the release build (or on the website) for the next *major* release.
 
