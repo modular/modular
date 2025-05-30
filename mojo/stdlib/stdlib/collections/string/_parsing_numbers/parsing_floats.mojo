@@ -56,6 +56,7 @@ struct UInt128Decomposed:
         return self.high >> 63
 
 
+@no_inline
 fn _get_w_and_q_from_float_string(
     input_string: StringSlice[mut=False],
 ) raises -> Tuple[UInt64, Int64]:
@@ -154,10 +155,12 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
+@always_inline
 fn strip_unused_characters(x: StringSlice[mut=False]) -> __type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
+@always_inline
 fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[1:])
@@ -166,10 +169,12 @@ fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, __type_of(x)]:
 
 # Powers of 10 and integers below 2**53 are exactly representable as Float64.
 # Thus any operation done on them must be exact.
+@no_inline
 fn can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
     return w <= 2**53 and (Int64(-22) <= q <= Int64(22))
 
 
+@no_inline
 fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
     if q >= 0:
         return Float64(w) * POWERS_OF_10[q]
@@ -177,6 +182,7 @@ fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
         return Float64(w) / POWERS_OF_10[-q]
 
 
+@no_inline
 fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     # Note that there are assembly instructions to
     # do all that on some architectures.
@@ -185,6 +191,7 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     return UInt128Decomposed(result)
 
 
+@no_inline
 fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     alias bit_precision = MANTISSA_EXPLICIT_BITS + 3
     index = 2 * (q - SMALLEST_POWER_OF_5)
@@ -204,6 +211,7 @@ fn create_subnormal_float64(m: UInt64) -> Float64:
     return create_float64(m, -1023)
 
 
+@no_inline
 fn create_float64(m: UInt64, p: Int64) -> Float64:
     m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
     p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
@@ -211,6 +219,7 @@ fn create_float64(m: UInt64, p: Int64) -> Float64:
     return memory.bitcast[DType.float64](representation_as_int)
 
 
+@no_inline
 fn lemire_algorithm(owned w: UInt64, owned q: Int64) -> Float64:
     # This algorithm has 22 steps described
     # in https://arxiv.org/pdf/2101.11408 (algorithm 1)
@@ -286,6 +295,7 @@ fn lemire_algorithm(owned w: UInt64, owned q: Int64) -> Float64:
     return create_float64(m, p)
 
 
+@no_inline
 fn _atof(x: StringSlice) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
@@ -303,11 +313,17 @@ fn _atof(x: StringSlice) raises -> Float64:
     """
     if x == "" or x == ".":
         raise Error("String is not convertible to float: " + repr(x))
+    if not x.is_ascii():
+        raise Error(
+            "String is not convertible to float because it's not acii: "
+            + repr(x)
+        )
     stripped = strip_unused_characters(x)
+    # stripped = StringSlice(x)
     sign_and_stripped = get_sign(stripped)
     sign = sign_and_stripped[0]
     stripped = sign_and_stripped[1]
-    lowercase = stripped.lower()
+    lowercase = stripped._lower_ascii()
     if lowercase == "nan":
         return FloatLiteral.nan
     if lowercase == "infinity" or lowercase == "in":  # f was removed previously
