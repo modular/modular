@@ -124,6 +124,32 @@ fn bench_string_split[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string join
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_string_join[short: Bool](mut b: Bencher) raises:
+    @parameter
+    if short:
+        count = 100
+    else:
+        count = 1000
+
+    word_list = List[String](capacity=count)
+    for i in range(count):
+        word_list.append(String(i))
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        for _ in range(1_000):
+            res = String(",").join(word_list)
+            keep(Bool(res))
+
+    b.iter[call_fn]()
+    keep(Bool(word_list))
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark string splitlines
 # ===-----------------------------------------------------------------------===#
 @parameter
@@ -299,6 +325,13 @@ def main():
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
                 BenchId(String("bench_string_is_valid_utf8" + suffix))
             )
+
+    m.bench_function[bench_string_join[True]](
+        BenchId(String("bench_string_join_short"))
+    )
+    m.bench_function[bench_string_join[False]](
+        BenchId(String("bench_string_join_long"))
+    )
 
     results = Dict[String, (Float64, Int)]()
     for info in m.info_vec:
