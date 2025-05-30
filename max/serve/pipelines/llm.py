@@ -483,9 +483,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         self, request: AudioGenerationRequest
     ) -> AudioGeneratorOutput:
         """Generates complete audio for the provided request."""
-        audio_chunks = []
+        audio_chunks: list[AudioGeneratorOutput] = []
         async for chunk in self.next_chunk(request):
-            audio_chunks.append(chunk.audio_data)
+            audio_chunks.append(chunk)
 
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
@@ -494,15 +494,19 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
                 is_done=True,
             )
 
-        # Combine audio chunks and metadata
-        combined_audio = torch.concat(audio_chunks, dim=-1)
+        # Combine audio chunks and metadata.
+        combined_audio = torch.concat(
+            [chunk.audio_data for chunk in audio_chunks], dim=-1
+        )
 
-        # We should only return from the next_chunk loop when the last chunk is done.
-        chunk = audio_chunks[-1]
-        assert chunk.is_done
+        # We should only return from the next_chunk loop when the last chunk
+        # is done.
+        last_chunk = audio_chunks[-1]
+        assert last_chunk.is_done
+
         return AudioGeneratorOutput(
             audio_data=combined_audio,
-            metadata=chunk.metadata,  # Use metadata from last chunk
+            metadata=last_chunk.metadata,
             is_done=True,
         )
 
