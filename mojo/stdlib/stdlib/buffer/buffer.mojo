@@ -252,7 +252,11 @@ struct NDBuffer[
     """
 
     var data: UnsafePointer[
-        Scalar[type], address_space=address_space, mut=mut, origin=origin
+        Scalar[type],
+        address_space=address_space,
+        mut=mut,
+        origin=origin,
+        alignment=alignment,
     ]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
@@ -271,9 +275,27 @@ struct NDBuffer[
         initialized to 0.
         """
 
-        self.data = UnsafePointer[Scalar[type], address_space=address_space]()
+        self.data = __type_of(self.data)()
         self.dynamic_shape = __type_of(self.dynamic_shape)()
         self.dynamic_stride = __type_of(self.dynamic_stride)()
+
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(
+        other: NDBuffer[type, *_, **_],
+        out self: NDBuffer[
+            type,
+            rank = other.rank,
+            origin = ImmutableOrigin.cast_from[other.origin].result,
+        ],
+    ):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The NDBuffer to cast.
+        """
+        self = rebind[__type_of(self)](other)
 
     @always_inline
     @implicit
@@ -1404,7 +1426,7 @@ fn partial_simd_load[
 fn partial_simd_store[
     type: DType, //, width: Int
 ](
-    storage: UnsafePointer[Scalar[type], **_],
+    storage: UnsafePointer[Scalar[type], mut=True, **_],
     lbound: Int,
     rbound: Int,
     data: SIMD[type, width],
