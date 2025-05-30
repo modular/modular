@@ -385,8 +385,10 @@ struct ParenNode final : public ExprNode {
   SourceRange getRange() const override { return {lparenLoc, rparenLoc}; }
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
 
-  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter) const override {
-    return subExpr->emitLValueIfImplicitlyTyped(emitter);
+  ELVIITResult
+  emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                              PatternDeclKind kind) const override {
+    return subExpr->emitLValueIfImplicitlyTyped(emitter, kind);
   }
 
   void print(mlir::raw_indented_ostream &os) const override;
@@ -595,6 +597,8 @@ struct UnaryOpNode final : public ExprNode {
     return {opLoc, subExpr->getRangeEnd()};
   }
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                           PatternDeclKind kind) const override;
   void print(mlir::raw_indented_ostream &os) const override;
   AnyValue emitTransfer(AnyValue argValue, ValueDest &dest,
                         IREmitter &emitter) const;

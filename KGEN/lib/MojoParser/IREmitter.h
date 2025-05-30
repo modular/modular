@@ -183,11 +183,7 @@ public:
 
   /// This enum value keeps track of whether a "target" is being emitted in a
   /// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
-  enum {
-    kNoDeclKind, // Reuse or synthesize or function-scope variable like Python.
-    kVar,        // Make a scoped vardecl in this context. "var x = ..."
-    kRef,        // Bind a scoped reference in this context. "ref x = ..."
-  } patternDeclKind = kNoDeclKind;
+  PatternDeclKind patternDeclKind = PatternDeclKind::kNone;
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.

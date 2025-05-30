@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+fn marker(): pass
+
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
 struct Unmovable:
     fn __init__(out self):
@@ -40,6 +42,37 @@ fn test_rhs_inference():
     lf[] = [] # SubscriptNode
 
     a, lf.field = [], [] # TupleNode
+
+# CHECK-LABEL: lit.fn @"test_var_decl_patterns
+def test_var_decl_patterns(c: Bool):
+  # CHECK-NEXT: lit.call {{.*}}marker
+  marker()
+
+  # Var patterns in a def are emitted inline, not at top of function.
+
+  # CHECK-NEXT: %x = lit.var.decl "x"
+  # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
+  # CHECK-NEXT: lit.ref.store [[VAL]], %x
+  (var x) = 42
+
+  # This var inside the cond is scoped correctly even though we're in a def.
+
+  # CHECK: hlcf.elif {
+  # CHECK: } then {
+  # CHECK-NEXT: [[X2:%.*]] = lit.var.decl "x"
+  # CHECK-NEXT: [[VAL:%.*]] = kgen.param.constant: !Int = <{42}>
+  # CHECK-NEXT: lit.ref.store [[VAL]], [[X2]]
+  if c:
+    (var x) = 42
+
+  # CHECK: lit.ref.load %x
+  (var _) = x
+  # CHECK: lit.ref.load %x
+  (var _) = x
+
+  var lf : RHSInferenceStruct
+  # expected-warning @+1 {{'var' pattern didn't declare a new variable, it can be removed}}
+  (var lf.field) = []
 
 
 ##===----------------------------------------------------------------------===##

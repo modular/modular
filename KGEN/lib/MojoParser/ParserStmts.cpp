@@ -1065,10 +1065,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // the [starred_list] needs to be a sequence with a __iter__ method that
   // returns a type that defines __len__ and __next__
   ExprNode *targetExpr = nullptr;
-  if (parseTargetListExpr(targetExpr, curIndent))
-    return failure();
-
-  if (parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
+  if (parseTargetListExpr(targetExpr, curIndent) ||
+      parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
                                "that target lists are not yet supported."))
     return failure();
 
@@ -1195,7 +1193,7 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // which will be in scope for the body that we will parse.
   ValueDest indvarDest(targetExpr, EC_ForIterator);
   // TODO: Should we use function-scoped vardecls in Defs?
-  indvarDest.patternDeclKind = ValueDest::kVar;
+  indvarDest.patternDeclKind = PatternDeclKind::kVar;
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
           CallSyntax::kMethodCall, seqExpr))
@@ -1713,7 +1711,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     // ensures that we reuse and/or implicitly declare variables at the top
     // level of the function, just like "x = foo()" does for "x".
     if (useLexicalScope)
-      enterDest.patternDeclKind = ValueDest::kVar;
+      enterDest.patternDeclKind = PatternDeclKind::kVar;
   }
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to

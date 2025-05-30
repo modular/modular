@@ -237,6 +237,10 @@ struct InfixInfo {
     case Token::kw_if:
       return get(Precedence::kIfElse, ExprNode::kIfElse,
                  /*isRightAssociative=*/true);
+    case Token::kw_var:
+      return get(Precedence::kVarRefPat, ExprNode::kVarPat);
+    case Token::kw_ref:
+      return get(Precedence::kVarRefPat, ExprNode::kRefPat);
     case Token::star_star:
       return get(Precedence::kPower, ExprNode::kPow,
                  /*isRightAssociative=*/true);
@@ -271,7 +275,7 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
       // trueExpr 'if' condition 'else' falseExpr.
       // If/else operator needs special handling because it has an expression in
       // the middle of what can otherwise be parsed like a binary operator.
-      if (parseExpression(ifElseCond, Precedence::kBoolOr))
+      if (parseExpression(ifElseCond, Precedence(int(Precedence::kIfElse) + 1)))
         return failure();
       elseLoc = getToken().getLoc();
       if (parseToken(Token::Kind::kw_else,
@@ -363,6 +367,8 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::star:
   case Token::kw_await:
   case Token::kw_not:
+  case Token::kw_var:
+  case Token::kw_ref:
   case Token::identifier:
   case Token::escaped_identifier:
   case Token::integer:
@@ -404,6 +410,10 @@ getUnaryOpInfo(Token::Kind tokKind) {
     return {ExprNode::kAwait, Precedence::kPrimary};
   case Token::kw_not:
     return {ExprNode::kBoolNot, Precedence::kBoolNot};
+  case Token::kw_var:
+    return {ExprNode::kVarPat, Precedence::kVarRefPat};
+  case Token::kw_ref:
+    return {ExprNode::kRefPat, Precedence::kVarRefPat};
   case Token::plus:
     return {ExprNode::kPos, Precedence::kFactor};
   case Token::minus:
@@ -439,6 +449,8 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::minus:
   case Token::tilde:
   case Token::kw_await:
+  case Token::kw_var:
+  case Token::kw_ref:
   case Token::kw_not: { // u_expr
     consumeToken();
     // Get the kind enum and the precedence of the subexpression.
@@ -643,8 +655,8 @@ ParseResult ExprParser::parseComprehension(ExprNode *&result,
         return failure();
       kind = ComprehensionClause::kFor;
     }
-    // kBoolOr avoids 'if' exprs.
-    if (parseExpression(expr, Precedence::kBoolOr))
+    // Avoid 'if' exprs.
+    if (parseExpression(expr, Precedence(int(Precedence::kIfElse) + 1)))
       return failure();
     clauses.push_back({kwLoc, kind, forPattern, expr});
   }
@@ -1254,7 +1266,7 @@ ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
 /// "in" expressions.
 ParseResult ParserBase::parseTargetListExpr(ExprNode *&result,
                                             std::optional<size_t> stmtIndent) {
-  return parseExpression(result, stmtIndent, Precedence::kOr);
+  return parseExpression(result, stmtIndent, Precedence::kVarRefPat);
 }
 
 ParseResult ParserBase::parseVarInitExpression(ExprNode *&result,
