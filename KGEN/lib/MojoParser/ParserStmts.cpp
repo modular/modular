@@ -1105,22 +1105,6 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   return success();
 }
 
-// FIXME: This needs to parse this as a target expression and then handle it
-// like a destructuring pattern.
-static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
-  StringRef name;
-  if (targetExpr->kind == ExprNode::kDiscardLiteral)
-    name = "_";
-  else if (auto dre = dyn_cast<DeclRefNode>(targetExpr))
-    name = dre->spelling;
-  else {
-    shared.emitError(targetExpr->getLoc(),
-                     "expected identifier for target in 'for'");
-    return {};
-  }
-  return StringAttr::get(shared.getContext(), name);
-}
-
 // This emits the pattern for a 'for' loop, calling the specified 'bodyFn'
 // closure on success when in the scope of the loop, and the specified
 // 'errorFn' if there is a semantic error with the sequence expression or
@@ -1140,7 +1124,7 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // loop VarDecl to the lookup path.  Otherwise, we will get spurious “use of
   // unknown declaration” errors on it besides whatever error is raised while
   // processing the loop header.
-  auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
+  auto skipBodyOnFailure = llvm::make_scope_exit([&]() {
     if (errorFn)
       errorFn();
   });
@@ -1206,32 +1190,21 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
   pushChildScope(scopeGuard, keepDecl);
 
-  StringAttr target = decodeTarget(targetExpr, shared);
-  if (!target)
-    return {};
-
-  // Create a VarDeclOp for the induction variable.  We infer its type from the
-  // call to __next__ down below.
-  VarDeclOp indvarDeclOp = getEmitter().emitVarDecl(
-      target, UnresolvedType::get(getContext()), forLocation,
-      target.getValue() == "_" ? VarDeclKind::Synthesized
-                               : VarDeclKind::Implicit);
-
-  ValueDest indvarDest(indvarDeclOp, EC_ForIterator);
+  // Emit the call to __next__ with the target as the destination to assign
+  // into.  This will synthesize the VarDeclOp from the inferred result type,
+  // which will be in scope for the body that we will parse.
+  ValueDest indvarDest(targetExpr, EC_ForIterator);
+  // TODO: Should we use function-scoped vardecls in Defs?
+  indvarDest.patternDeclKind = ValueDest::kVar;
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
           CallSyntax::kMethodCall, seqExpr))
     return {};
 
-  avoidDroppingDeclOnFail.release();
-
-  // Add an ASTDecl for the induction variable.
-  // TODO: Generalize to an arbitrary pattern.
-  auto &vd = getDeclResolver().addFullyResolvedDecl(
-      &*indvarDeclOp, target, targetExpr->getLoc(), curDeclScope);
-  shared.notifyListenerOnVariableDecl(vd, targetExpr->getLoc());
-
   builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
+
+  // We're parsing the body at this point, no need to worry about that.
+  skipBodyOnFailure.release();
 
   // Parse the body of the for loop, using the callback.
   if (failed(bodyFn()))
@@ -1269,6 +1242,22 @@ static std::optional<Type> getIndexType(SharedState &shared, Type structType,
                                         paramBindings, loc, shared);
   ASTType type(result);
   return type;
+}
+
+// FIXME: This needs to parse this as a target expression and then handle it
+// like a destructuring pattern.
+static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
+  StringRef name;
+  if (targetExpr->kind == ExprNode::kDiscardLiteral)
+    name = "_";
+  else if (auto dre = dyn_cast<DeclRefNode>(targetExpr))
+    name = dre->spelling;
+  else {
+    shared.emitError(targetExpr->getLoc(),
+                     "expected identifier for target in 'for'");
+    return {};
+  }
+  return StringAttr::get(shared.getContext(), name);
 }
 
 ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
@@ -1475,6 +1464,7 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
 
     // Parse an optional identifier to bind the error.
     StringAttr errName;
+    // FIXME: Switch to target parsing.
     if (getToken().isIdentifier())
       (void)parseIdentifier(errName, "<this can't fail>", &errValLoc);
 
@@ -1629,7 +1619,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   //        print(f.read())
   //
   // and:
-  //    let f = open("foo.txt", "r")
+  //    f = open("foo.txt", "r")
   //    print(f.read())
   //
   // The later works because of Mojo's strong early-destruction guarantees and
@@ -1648,9 +1638,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
 
   // If this has a 'as TARGET' specifier, parse the name into targetName,
   // otherwise targetName will be null.
-  ExprNode *targetNode = nullptr;
+  ExprNode *targetExpr = nullptr;
   if (consumeIf(Token::kw_as)) {
-    if (parseTargetListExpr(targetNode, curIndent))
+    if (parseTargetListExpr(targetExpr, curIndent))
       return failure();
   }
 
@@ -1709,25 +1699,21 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   if (auto funcDecl = curDeclScope->getNearestDeclOfType<FnOp>())
     useLexicalScope = !cast<FnOp>(*funcDecl).isDef();
 
+  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
+  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
+  if (useLexicalScope)
+    pushChildScope(scopeGuard, keepDecl);
+
   // If there is an explicit target specified, use it.
   ValueDest enterDest(EC_WithContextMgr);
-  VarDeclOp targetDecl;
-  if (targetNode) {
-    if (useLexicalScope) {
-      // FIXME: This needs to parse this as a target expression and then handle
-      // it like a destructuring pattern.
-      StringAttr name = decodeTarget(targetNode, shared);
-      auto emitter = getEmitter();
-      targetDecl = emitter.emitVarDecl(name, UnresolvedType::get(getContext()),
-                                       targetNode->getLocation(emitter),
-                                       VarDeclKind::Implicit);
-      enterDest = ValueDest(targetDecl, EC_WithContextMgr);
-    } else {
-      // If we're in a 'def' just use the DeclRefNode as the destination. This
-      // ensures that we reuse and/or implicitly declare variables at the top
-      // level of the function, just like "x = foo()" does for "x".
-      enterDest = ValueDest(&*targetNode, EC_WithContextMgr);
-    }
+  if (targetExpr) {
+    // Initialize the target expression with the result of the __enter__ call.
+    enterDest = ValueDest(targetExpr, EC_WithContextMgr);
+    // If we're in a 'def' just use the DeclRefNode as the destination. This
+    // ensures that we reuse and/or implicitly declare variables at the top
+    // level of the function, just like "x = foo()" does for "x".
+    if (useLexicalScope)
+      enterDest.patternDeclKind = ValueDest::kVar;
   }
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
@@ -1735,23 +1721,6 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   CValue enterResult = getEmitter().emitNamedMethodCall(
       "__enter__", std::move(enterOperands), enterDest, CallSyntax::kMethodCall,
       contextExp);
-
-  DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-  if (useLexicalScope)
-    pushChildScope(scopeGuard, keepDecl);
-
-  // Inject the target into our scope if asked for.
-  if (targetDecl) {
-    // FIXME: This won't be right for real destructuring patterns.
-    auto &targetDeclResolved = getDeclResolver().addFullyResolvedDecl(
-        targetDecl.getOperation(), targetDecl.getNameAttr(),
-        targetNode->getLoc(), curDeclScope);
-    if (!enterResult)
-      targetDeclResolved.setErroneous();
-    shared.notifyListenerOnVariableDecl(targetDeclResolved,
-                                        targetNode->getLoc());
-  }
 
   // Lookup the error type and emit a vardecl for the error.
   ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);

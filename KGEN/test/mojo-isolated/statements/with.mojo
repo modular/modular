@@ -67,9 +67,9 @@ fn noop(a: Int):
 fn testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%a, %$CONTEXTMGR)
-    # CHECK-NEXT: %val = lit.var.decl {{.*}} imp
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
+    # CHECK-NEXT: %val = lit.var.decl "val"
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
     # CHECK-NEXT: %__with_error__
     # CHECK-NEXT: lit.try %__with_error__
@@ -98,8 +98,8 @@ fn testWithNonRaising(a: ExampleCM):
 
     # CHECK: [[MGR:%.*]] = lit.var.decl "$CONTEXTMGR"{{.*}}!MutatingCM
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[MGR]])
-    # CHECK-NEXT: %val{{.*}} = lit.var.decl "val"
     # CHECK-NEXT: lit.call {{.*}}__enter__{{.*}}([[MGR]])
+    # CHECK-NEXT: %val{{.*}} = lit.var.decl "val"
     with MutatingCM() as val:
         # CHECK: lit.call {{.*}}noop
         noop(val)
@@ -121,9 +121,10 @@ fn testWithNonRaising(a: ExampleCM):
 # CHECK-LABEL: lit.fn @"testWithRaising
 fn testWithRaising(a: ExampleCM) raises:
     # CHECK: %$CONTEXTMGR = lit.var.decl
-    # CHECK: %val = lit.var.decl {{.*}} imp
+    # CHECK-NEXT: ExampleCM::@"__copyinit__
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
+    # CHECK: %val = lit.var.decl "val"
     # CHECK-NEXT: lit.ref.store [[TARGET]], %val
     # CHECK: lit.ref.store %true, %__with_exc__
     # CHECK: lit.try %__with_error__
@@ -170,9 +171,10 @@ fn testWithInTry(a: ExampleCM):
     # CHECK-NEXT: lit.try %e
     try:
         # CHECK: %$CONTEXTMGR = lit.var.decl
-        # CHECK: %cm = lit.var.decl "cm"
+        # CHECK-NEXT: ExampleCM::@"__copyinit__
         # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
         # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
+        # CHECK: %cm = lit.var.decl "cm"
         # CHECK-NEXT: lit.ref.store [[TARGET]], %cm
         # CHECK: lit.ref.store %true, %__with_exc__
         # CHECK-NEXT: lit.try %__with_error__
@@ -191,10 +193,10 @@ fn testWithScoping(a: ExampleCM):
     # statement inside a `fn` does not respect lexical scope and binds
     # its variable in its parent scope.
     with a as withDecl:
-        # CHECK: %withDecl = lit.var.decl "withDecl" imp
+        # CHECK: %withDecl = lit.var.decl "withDecl"
         noop(withDecl)
     with a as withDecl:
-        # CHECK: = lit.var.decl "withDecl" imp
+        # CHECK: = lit.var.decl "withDecl"
         noop(withDecl)
 
 
@@ -246,8 +248,8 @@ struct CMWithoutExit:
 # CHECK-LABEL: lit.fn @"testCMWithoutExit
 fn testCMWithoutExit():
     # CHECK: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
-    # CHECK: %a = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR, %a)
+    # CHECK: %a = lit.var.decl "a"
+    # CHECK: lit.call {{.*}}@CMWithoutExit::@"__enter__{{.*}}(%$CONTEXTMGR, %a)
     # CHECK-NEXT: %__with_error__ = lit.var.decl "__with_error__" synth
     # CHECK-NEXT: lit.try %__with_error__
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %a
@@ -383,3 +385,28 @@ fn unconditional_exit() raises:
     # CHECK: finally
     # CHECK:   lit.try %__finally_error__
     # CHECK:     call {{.*}}__exit__{{.*}}(%$CONTEXTMGR)
+
+
+struct ExampleCMTuple:
+    fn __copyinit__(out self, existing: Self):
+        pass
+
+    fn __enter__(self) -> (Int, Int):
+        return (42, 43)
+
+    fn __exit__(self):
+        pass  # normal
+
+    fn __exit__(self, err: Error) -> Bool:
+        return True  # Raise
+
+# CHECK-LABEL: lit.fn @"testExampleCMTuple
+fn testExampleCMTuple(cm: ExampleCMTuple):
+    # CHECK: %a = lit.var.decl "a"
+    # CHECK: %b = lit.var.decl "b"
+    # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__
+    with cm as (a,b):
+        # CHECK: [[A:%.*]] = lit.ref.load %a
+        # CHECK: [[B:%.*]] = lit.ref.load %b
+        # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A]], [[B]])
+        _ = a+b

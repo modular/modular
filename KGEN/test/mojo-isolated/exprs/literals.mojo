@@ -109,8 +109,8 @@ fn test_list_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
-    # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i1
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
     # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
@@ -122,10 +122,10 @@ fn test_list_comprehension():
 
     # CHECK: %b_collection = lit.var.decl{{.*}}@List<:!AnyType #Int1>
     # CHECK: } body {
-    # CHECK-NEXT: %i2 = lit.var.decl "i2"
+    # CHECK: %i2 = lit.var.decl "i2"
     # CHECK:   } body {
-    # CHECK-NEXT: %i3 = lit.var.decl "i3"
     # CHECK-NEXT:  [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: %i3 = lit.var.decl "i3"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i3
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %i3
@@ -138,8 +138,8 @@ fn test_list_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
-    # CHECK-NEXT: %i4 = lit.var.decl "i4"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: %i4 = lit.var.decl "i4"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i4
     # CHECK-NEXT: hlcf.elif {
     # CHECK-NEXT:    [[TMP:%.*]] = lit.ref.load %i4
@@ -189,8 +189,8 @@ fn test_dict_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
-    # CHECK-NEXT: %i = lit.var.decl "i"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: %i = lit.var.decl "i"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i
     # CHECK:       lit.call {{.*}}String::@"__init__()
     # CHECK:      [[TMP:%.*]] = lit.ref.immut %i
@@ -235,8 +235,8 @@ fn test_set_comprehension():
     # CHECK: lit.loop cond {
     # CHECK:   SimpleIntRange::@"__has_next__
     # CHECK: } body {
-    # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}SimpleIntRange::@"__next__
+    # CHECK-NEXT: %i1 = lit.var.decl "i1"
     # CHECK-NEXT: lit.ref.store [[TMP]], %i1
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
     # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
@@ -298,3 +298,23 @@ fn test_any_collection():
     var c : AnyCollection = {1, 2}
     # CHECK: lit.call {{.*}}@AnyCollection::@"__init__{{.*}}({{.*}}, %d){{.*}}__dict_literal__
     var d : AnyCollection = {1: 2}
+
+# ===----------------------------------------------------------------------=== #
+# Interesting unpack operations
+# ===----------------------------------------------------------------------=== #
+
+@register_passable("trivial")
+struct IntPairRange:
+    fn __init__(out self): pass
+    fn __has_next__(self) -> Bool:
+        pass
+    fn __len__(self) -> Int:
+        pass
+    fn __next__(mut self) -> (Int, Int):
+        pass
+    fn __iter__(self) -> Self:
+        pass
+
+# CHECK-LABEL: lit.fn @"test_unpack
+fn test_unpack():
+    var elts = [a*b for (a,b) in IntPairRange()]
