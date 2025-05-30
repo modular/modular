@@ -340,7 +340,7 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn zero(buffer: NDBuffer):
+fn zero(buffer: NDBuffer[mut=True, *_, **_]):
     buffer.zero()
 
 

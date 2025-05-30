@@ -271,7 +271,7 @@ struct NDBuffer[
         initialized to 0.
         """
 
-        self.data = UnsafePointer[Scalar[type], address_space=address_space]()
+        self.data = __type_of(self.data)()
         self.dynamic_shape = __type_of(self.dynamic_shape)()
         self.dynamic_stride = __type_of(self.dynamic_stride)()
 
@@ -1209,7 +1209,7 @@ struct NDBuffer[
         return self.size() * sizeof[type]()
 
     @always_inline
-    fn zero(self):
+    fn zero(self: NDBuffer[mut=True, *_, **_]):
         """Sets all bytes of the NDBuffer to 0.
 
         Constraints:
