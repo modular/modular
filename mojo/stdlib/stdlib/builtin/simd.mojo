@@ -431,7 +431,13 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The input value.
         """
-        self = Self(value.value)
+
+        @parameter
+        if bitwidthof[dtype]() > bitwidthof[DType.index]():
+            alias dt = _unsigned_integral_type_of[DType.index]()
+            self = Self(bitcast[dt](Scalar[DType.index](value)))
+        else:
+            self = Self(value.value)
 
     @always_inline("nodebug")
     @implicit
