@@ -39,8 +39,28 @@ what we publish.
 
 ### Language changes
 
-- The type [`Dict`](/mojo/stdlib/collections/dict/Dict/) is now part of the
-  prelude, so there is no need to import them anymore.
+- Mojo now supports 'ref' patterns that bind a stored LValue into a named
+  declaration, extending the argument convention into local function scope.
+
+  This can be useful when you want to do something with a reference,
+  but don't want the conceptual overhead of a Pointer. These are
+  equivalent:
+
+  ```mojo
+  fn use_pointer(your_list: List[Int]):
+      var p = Pointer(to=your_list[i])  # Form a safe pointer
+      ...
+      use(p[])     # dereference it
+
+  fn use_ref(your_list: List[Int]):
+      ref r = your_list[i]  # Bind element reference to 'r'
+      ...
+      use(r)     # use it
+  ```
+
+  References are bound in their initializer and cannot be mutated afterward:
+  uses and mutations of the reference are interpreted as uses and mutations
+  of the value referenced by the value.
 
 - The Mojo compiler will now synthesize `__moveinit__` and `__copyinit__` and
   `copy()` methods for structs that conform to `Movable`, `Copyable`, and
@@ -115,6 +135,9 @@ what we publish.
   ```
 
 ### Standard library changes
+
+- The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
+  prelude, so there is no need to import them anymore.
 
 - The `CollectionElement` trait has been removed.
 
