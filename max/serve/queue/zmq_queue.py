@@ -46,6 +46,36 @@ def generate_zmq_inproc_endpoint() -> str:
     return f"inproc://{uuid.uuid4()}"
 
 
+def is_valid_zmq_address(address: str) -> bool:
+    """
+    Check if a ZMQ address is valid.
+    """
+    # Check for supported protocols
+    if not address.startswith(("tcp://", "ipc://", "inproc://")):
+        return False
+
+    # Protocol-specific validation
+    if address.startswith("tcp://"):
+        # TCP requires host:port format
+        parts = address[6:].split(":")
+        if len(parts) != 2:
+            return False
+        # Check if port is numeric
+        try:
+            port = int(parts[1])
+            return 1 <= port <= 65535
+        except ValueError:
+            return False
+    elif address.startswith("ipc://"):
+        # IPC requires a path after the protocol
+        return len(address) > 6
+    elif address.startswith("inproc://"):
+        # inproc requires a name after the protocol
+        return len(address) > 9
+
+    return True
+
+
 # Adapted from:
 #  - vllm: https://github.com/vllm-project/vllm/blob/46c759c165a5a985ce62f019bf684e4a6109e41c/vllm/utils.py#L2093
 #  - sglang: https://github.com/sgl-project/sglang/blob/efc52f85e2d5c9b31545d4092f2b361b6ff04d67/python/sglang/srt/utils.py#L783

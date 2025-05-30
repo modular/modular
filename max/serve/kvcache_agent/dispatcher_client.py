@@ -22,7 +22,11 @@ from typing import Any, Callable, Optional, TypeVar, cast
 import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_service import DispatcherMessage
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.queue.zmq_queue import (
+    ZmqPullSocket,
+    ZmqPushSocket,
+    is_valid_zmq_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +175,12 @@ class DispatcherClient:
         destination_address: Optional[str] = None,
     ) -> None:
         """Send a new message to the specified destination address."""
+        if destination_address is not None and not is_valid_zmq_address(
+            destination_address
+        ):
+            logger.error(f"Invalid ZMQ address format: {destination_address}")
+            return
+
         try:
             dispatcher_message = DispatcherMessage(
                 message_type, payload, destination_address=destination_address

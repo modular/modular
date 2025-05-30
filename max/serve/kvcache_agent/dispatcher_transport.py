@@ -26,9 +26,8 @@ import zmq
 from max.serve.kvcache_agent.dispatcher_base import ReplyContext
 from max.serve.queue.zmq_queue import (
     ZmqDealerSocket,
-    ZmqPullSocket,
-    ZmqPushSocket,
     ZmqRouterSocket,
+    is_valid_zmq_address,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,7 +107,7 @@ class DispatcherTransport(ABC):
     async def send_reply(
         self,
         message: TransportMessage,
-        reply_context: Optional[ReplyContext] = None,
+        reply_context: ReplyContext,
     ) -> None:
         """
         Send a reply message using the provided reply context.
@@ -137,130 +136,6 @@ class DispatcherTransport(ABC):
         pass
 
 
-class StaticZmqTransport(DispatcherTransport):
-    """
-    Static ZMQ transport for 1:1 point-to-point communication using PUSH/PULL sockets.
-
-    Simple transport implementation with no routing or identities. Both send_message
-    and send_reply use PUSH socket, receive_message uses PULL socket. Suitable for
-    direct peer-to-peer communication patterns.
-    """
-
-    def __init__(
-        self,
-        zmq_ctx: zmq.Context,
-        send_endpoint: str,
-        recv_endpoint: str,
-    ):
-        """
-        Initialize static ZMQ transport with PUSH/PULL sockets.
-        """
-        self._pull_socket = ZmqPullSocket[Any](zmq_ctx, recv_endpoint)
-        self._push_socket = ZmqPushSocket[Any](zmq_ctx, send_endpoint)
-        self._running = False
-        self._lock = threading.RLock()
-
-        logger.debug(
-            f"StaticZmqTransport initialized: send={send_endpoint}, recv={recv_endpoint}"
-        )
-
-    async def start(self) -> None:
-        """Start the transport by marking it as running."""
-        self._running = True
-        logger.debug("StaticZmqTransport started")
-
-    async def send_message(
-        self,
-        message: TransportMessage,
-        _: Optional[str] = None,
-    ) -> None:
-        """
-        Send a message via PUSH socket.
-        """
-        if not self._running:
-            raise RuntimeError("Transport not started")
-
-        try:
-            with self._lock:
-                self._push_socket.put_nowait(message)
-                logger.debug(
-                    f"Sent message {message.message_id} type={message.message_type}"
-                )
-        except Exception as e:
-            logger.exception(
-                f"Failed to send message {message.message_id}: {e}"
-            )
-
-    async def send_reply(
-        self,
-        message: TransportMessage,
-        _: Optional[ReplyContext] = None,
-    ) -> None:
-        """
-        Send a reply message via PUSH socket.
-        """
-        if not self._running:
-            raise RuntimeError("Transport not started")
-
-        try:
-            with self._lock:
-                self._push_socket.put_nowait(message)
-                logger.debug(
-                    f"Sent reply message {message.message_id} type={message.message_type}"
-                )
-        except Exception as e:
-            logger.exception(
-                f"Failed to send reply message {message.message_id}: {e}"
-            )
-
-    async def receive_message(self) -> Optional[TransportMessageEnvelope]:
-        """
-        Receive a message via PULL socket.
-        """
-        if not self._running:
-            raise RuntimeError("Transport not started")
-
-        try:
-            msg = self._pull_socket.get_nowait()
-            logger.debug(
-                f"Received message {msg.message_id} type={msg.message_type}"
-            )
-            return TransportMessageEnvelope(message=msg, reply_context=None)
-        except queue.Empty:
-            return None
-        except Exception as e:
-            logger.exception(f"Failed to receive message: {e}")
-        return None
-
-    def get_address(self) -> str:
-        """
-        Get the address of the transport.
-        """
-        return self._pull_socket.zmq_endpoint
-
-    async def close(self) -> None:
-        """Close the transport and clean up ZMQ sockets."""
-        self._running = False
-
-        # Close push socket
-        try:
-            self._push_socket.close()
-            logger.debug("Closed PUSH socket")
-        except Exception as e:
-            logger.exception(f"Error closing PUSH socket: {e}")
-            raise
-
-        # Close pull socket
-        try:
-            self._pull_socket.close()
-            logger.debug("Closed PULL socket")
-        except Exception as e:
-            logger.exception(f"Error closing PULL socket: {e}")
-            raise
-
-        logger.debug("StaticZmqTransport closed")
-
-
 class DynamicZmqTransport(DispatcherTransport):
     """
     Dynamic ZMQ transport designed for N:M communication patterns with explicit addressing.
@@ -271,6 +146,7 @@ class DynamicZmqTransport(DispatcherTransport):
         zmq_ctx: zmq.Context,
         bind_address: str,
         instance_id: str,
+        default_destination_address: Optional[str] = None,
     ):
         """
         Initialize dynamic ZMQ transport with ROUTER/DEALER sockets.
@@ -278,6 +154,7 @@ class DynamicZmqTransport(DispatcherTransport):
         self._zmq_ctx = zmq_ctx
         self._bind_address = bind_address
         self._instance_id = instance_id
+        self._default_destination_address = default_destination_address
 
         # Receiving socket (ROUTER for handling multiple connections)
         self._router_socket: Optional[ZmqRouterSocket[Any]] = None
@@ -322,8 +199,13 @@ class DynamicZmqTransport(DispatcherTransport):
         if not self._running:
             raise RuntimeError("Transport not started")
 
+        destination_address = (
+            destination_address or self._default_destination_address
+        )
         if destination_address is None:
-            logger.error("destination_address is required")
+            logger.error(
+                "destination_address is required, or default_destination_address must be set"
+            )
             return
 
         # Generate correlation ID for request-response tracking
@@ -486,12 +368,8 @@ class DynamicZmqTransport(DispatcherTransport):
         Create a DEALER connection to the destination address.
         """
         try:
-            if not destination_address or not self._is_valid_zmq_address(
-                destination_address
-            ):
-                logger.error(
-                    f"Invalid ZMQ address format: {destination_address}"
-                )
+            if not is_valid_zmq_address(destination_address):
+                logger.error(f"Invalid ZMQ address: {destination_address}")
                 return False
 
             dealer_socket = ZmqDealerSocket[Any](
@@ -511,12 +389,6 @@ class DynamicZmqTransport(DispatcherTransport):
         Get the address of the transport.
         """
         return self._bind_address
-
-    def _is_valid_zmq_address(self, address: str) -> bool:
-        """
-        Validate ZMQ address format.
-        """
-        return address.startswith(("tcp://", "ipc://", "inproc://"))
 
     async def close(self) -> None:
         """

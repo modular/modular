@@ -97,11 +97,16 @@ class DispatcherService:
         """Stop the dispatcher service and clean up resources."""
         self._running = False
 
-        # Cancel and wait for tasks to complete
+        # Give tasks a chance to finish gracefully before cancelling
         try:
-            for task in self._tasks:
-                task.cancel()
-            await asyncio.gather(*self._tasks, return_exceptions=True)
+            done, pending = await asyncio.wait(self._tasks, timeout=1.0)
+
+            # If any tasks are still pending after timeout, cancel them
+            if pending:
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+
             self._tasks.clear()
         except Exception as e:
             logger.exception(f"Failed to stop dispatcher service: {e}")
