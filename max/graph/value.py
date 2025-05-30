@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterable
-from typing import Any, Protocol, TypeVar, Union, overload
+from typing import Any, Generic, TypeVar, Union, cast
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -37,15 +37,9 @@ from .type import (
 )
 
 MlirType = TypeVar("MlirType", bound=_Type)
-T = TypeVar("T", bound=Type)
 
 
-class Typed(Protocol[MlirType]):
-    @property
-    def type(self) -> Type[MlirType]: ...
-
-
-class Value(Typed[MlirType]):
+class Value(Generic[MlirType]):
     """Represents a symbolic value within a `Graph`.
 
     A `Value` can represent the output of a node, the arguments of a
@@ -89,40 +83,16 @@ class Value(Typed[MlirType]):
         """Value is abstract, it shouldn't be constructed directly."""
         raise NotImplementedError
 
-    @overload
     @classmethod
-    def from_mlir(cls, value: _Value[mo.TensorType]) -> TensorValue: ...
-
-    @overload
-    @classmethod
-    def from_mlir(cls, value: _Value[mo.BufferType]) -> BufferValue: ...
-
-    @overload
-    @classmethod
-    def from_mlir(cls, value: _Value[mo.OpaqueType]) -> _OpaqueValue: ...
-
-    @overload
-    @classmethod
-    def from_mlir(cls, value: _Value[mo.ChainType]) -> _ChainValue: ...
-
-    @classmethod
-    def from_mlir(cls, value: _Value) -> Value:
-        if cls in [TensorValue, Value] and isinstance(
-            value.type, mo.TensorType
-        ):
-            return TensorValue(value)
-        elif cls in [_ChainValue, Value] and isinstance(
-            value.type, mo.ChainType
-        ):
-            return _ChainValue(value)
-        elif cls in [_OpaqueValue, Value] and isinstance(
-            value.type, mo.OpaqueType
-        ):
-            return _OpaqueValue(value)
-        elif cls in [BufferValue, Value] and isinstance(
-            value.type, mo.BufferType
-        ):
-            return BufferValue(value)
+    def from_mlir(cls, value: _Value[MlirType]) -> Value:
+        if isinstance(value.type, mo.TensorType):
+            return TensorValue.from_mlir(cast(_Value[mo.TensorType], value))
+        elif isinstance(value.type, mo.ChainType):
+            return _ChainValue.from_mlir(cast(_Value[mo.ChainType], value))
+        elif isinstance(value.type, mo.OpaqueType):
+            return _OpaqueValue.from_mlir(cast(_Value[mo.OpaqueType], value))
+        elif isinstance(value.type, mo.BufferType):
+            return BufferValue.from_mlir(cast(_Value[mo.BufferType], value))
         raise TypeError(f"Invalid mlir value {value=}")
 
     def __repr__(self):
@@ -165,7 +135,7 @@ class Value(Typed[MlirType]):
         raise TypeError(msg)
 
     @property
-    def type(self) -> Type:
+    def type(self) -> Type[MlirType]:
         """Returns the type of the :obj:`Value` as a :obj:`Type`."""
         raise NotImplementedError
 
@@ -181,6 +151,10 @@ class _ChainValue(Value[mo.ChainType]):
                 "_ChainValue() argument must be an mlir.Value of chain type "
                 f"or a graph._ChainValue, not {type(value).__name__!r}"
             )
+
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.ChainType]) -> _ChainValue:
+        return cls(value)
 
     @property
     def type(self) -> _ChainType:
@@ -203,6 +177,10 @@ class _OpaqueValue(Value[mo.OpaqueType]):
                 f"or a graph._OpaqueValue, not {type(value).__name__!r}"
             )
 
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.OpaqueType]) -> _OpaqueValue:
+        return cls(value)
+
     @property
     def type(self) -> _OpaqueType:
         """Returns the type of the :obj:`_OpaqueValue` as a :obj:`_OpaqueType`."""
@@ -223,6 +201,10 @@ class BufferValue(Value[mo.BufferType]):
                 "BufferValue() argument must be an mlir.Value of buffer type "
                 f"or a graph.BufferValue, not '{type(value).__name__}'"
             )
+
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.BufferType]) -> BufferValue:
+        return cls(value)
 
     @property
     def type(self) -> BufferType:
@@ -341,6 +323,10 @@ class TensorValue(Value[mo.TensorType]):
                 " a graph.TensorValue, or a graph.Weight, not"
                 f" '{type(value).__name__}'"
             )
+
+    @classmethod
+    def from_mlir(cls, value: _Value[mo.TensorType]) -> TensorValue:
+        return cls(value)
 
     @staticmethod
     def _from_dim(dim: DimLike) -> TensorValue:
