@@ -428,3 +428,97 @@ def test_update_frequency_data(session: InferenceSession):
     )
 
     assert np.all(ref_result == np.from_dlpack(compressed_frequency_data_out))
+
+
+def test_sampling_with_seed(session: InferenceSession):
+    """Test that sampling with the same seed produces deterministic results."""
+    device = session.devices[0]
+    device_ref = DeviceRef.from_device(device)
+
+    # Test parameters
+    batch_size = 1
+    vocab_size = 128256  # Large enough vocab size for testing
+    top_k = 100
+    temperature = 1.0
+    seed_1 = 42
+    seed_2 = 41
+    num_trials = 10  # Run multiple times to ensure determinism
+
+    # Create sampling configuration
+    sampling_config = SamplingConfig(
+        top_k=top_k,
+        temperature=temperature,
+        seed=seed_1,
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
+
+    # Create sampling graph
+    graph = token_sampler(sampling_config, device=device_ref)
+
+    sampler = session.load(graph)
+
+    # Create a random logits vector [1, vocab_size]
+    np.random.seed(123)  # Fix seed for generating the same logits across runs
+    logits_np = np.random.randn(batch_size, vocab_size).astype(np.float32)
+
+    # Update sampling config with same seed
+    sampling_config_42 = SamplingConfig(
+        top_k=top_k,
+        temperature=temperature,
+        seed=seed_1,
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
+
+    graph_42 = token_sampler(sampling_config_42, device=device_ref)
+    sampler_42 = session.load(graph_42)
+
+    # Create dummy previous tokens
+    prev_tokens = Tensor(
+        shape=(batch_size, 0),
+        dtype=DType.int64,
+        device=device,
+    )
+    logits_tensor = Tensor.from_dlpack(logits_np).to(device)
+
+    # Test 1: Sample multiple times with seed=42, results should be identical
+    for _ in range(num_trials):
+        # Sample with the same logits and seed
+        tokens, new_prev_tokens = sampler_42(logits_tensor, prev_tokens)[:2]
+
+        assert isinstance(new_prev_tokens, Tensor)
+        prev_tokens = new_prev_tokens
+
+    prev_tokens_np = prev_tokens.to_numpy()
+    # Verify all results with seed=42 are identical
+    for i in range(1, num_trials):
+        np.testing.assert_array_equal(
+            prev_tokens_np[:, 0],
+            prev_tokens_np[:, i],
+            err_msg=f"Sampling with seed={seed_1} should be deterministic across runs",
+        )
+
+    # Test 2: Sample with seed=41, result should be different from seed=42
+    sampling_config_41 = SamplingConfig(
+        top_k=top_k,
+        temperature=temperature,
+        seed=seed_2,  # Different seed
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
+
+    graph_41 = token_sampler(sampling_config_41, device=device_ref)
+    sampler_41 = session.load(graph_41)
+
+    tokens_41, _ = sampler_41(logits_tensor, prev_tokens)[:2]
+
+    assert isinstance(tokens_41, Tensor)
+    result_seed_41 = tokens_41.to_numpy()
+
+    # Verify result with seed=41 is different from seed=42
+    # Note: There's a very small chance they could be the same by coincidence,
+    # but with a large vocab_size and top_k=100, this is extremely unlikely
+    assert not np.array_equal(prev_tokens_np[:, 0], result_seed_41), (
+        f"Sampling with different seeds ({seed_1} vs {seed_2}) should produce different results"
+    )
