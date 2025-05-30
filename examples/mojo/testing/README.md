@@ -24,16 +24,14 @@ This directory contains the following files:
 
 ## Run the code
 
-This example project uses the [Magic](https://docs.modular.com/magic/) package
-and virtual environment manager. To run the code in this project, you should
-follow the instructions in [Install
-Magic](https://docs.modular.com/nightly/magic/#install-magic) first.
+This example project uses the [Pixi](https://pixi.sh/latest/) package
+and virtual environment manager.
 
-Once you have installed Magic, activate the project's virtual environment by
+Once you have installed `pixi`, activate the project's virtual environment by
 navigating to the project's root directory and executing:
 
 ```bash
-magic shell
+pixi shell
 ```
 
 Run the unit tests contained in the `test` directory by executing:

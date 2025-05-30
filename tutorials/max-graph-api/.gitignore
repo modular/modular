@@ -1,7 +1,0 @@
-# pixi environments
-.pixi
-*.egg-info
-# magic environments
-.magic
-# MNIST data
-data

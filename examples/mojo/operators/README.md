@@ -13,15 +13,15 @@ type](https://docs.modular.com/mojo/manual/operators#an-example-of-implementing-
 in the [Mojo manual](https://docs.modular.com/mojo/manual/) for a complete
 explanation of the implementation of the `Complex` type.
 
-If you have [`magic`](https://docs.modular.com/magic) installed, you can
+If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute the example by running the following command:
 
 ```bash
-magic run mojo main.mojo
+pixi run mojo main.mojo
 ```
 
 You can run the unit tests by running the following command:
 
 ```bash
-magic run tests
+pixi run tests
 ```

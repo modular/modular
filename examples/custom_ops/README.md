@@ -37,7 +37,7 @@ graph construction occurs in the Python files in the base directory. These
 examples are designed to stand on their own, so that they can be used as
 templates for experimentation.
 
-A single [Pixi](https://pixi.sh) command runs each of the examples:
+A single [Pixi](https://pixi.sh/latest/) command runs each of the examples:
 
 ```sh
 pixi run addition
