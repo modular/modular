@@ -235,7 +235,7 @@ fn multistage_mma[
         b_smem_layout.shape[1].value() // simd_size,
     )
 
-    # TODO (KERN-1337): Enable swizzle for matrix B for FP8 data type and tranpose_b==False
+    # TODO (KERN-1337): Enable swizzle for matrix B for FP8 data type and transpose_b==False
     alias swizzle_b = (
         transpose_b or b_type.is_half_float()
     ) and is_nvidia_gpu()
