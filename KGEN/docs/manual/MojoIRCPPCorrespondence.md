@@ -17,20 +17,97 @@ The goal of this section is to give you an intuition for how the same “thing�
 modeled in each of those domains. As a very basic example, consider the question
 of how a named function call is represented.
 
-## Adding a Flag
+## Function Calls
 
-<!--
-# adding a flag
---enable_game
--->
+```mojo
+fn zork(i: Int):
+  pass
 
-## Adding a Statement
-
-<!--
-# adding a statement
 fn main():
-  game
--->
+  zork(42)
+```
+
+<wolfram-cell ctext="Input17.wl" />
+
+`$ kgen-translate --import-mojo example.mojo`
+
+```mlir
+    lit.fn @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind = 0 : i8} {
+      %0 = kgen.param.constant: !Int = <{42}>
+      %1 = lit.call @main::@"zork(::Int)"(%0) : !lit.generator<("i": !Int) -> !kgen.none>
+      %none = kgen.param.constant: none = <#kgen.none>
+      lit.return %none : !kgen.none
+      lit.end_fn
+    }
+```
+
+Let's see the C++ to generate that `zork(42)` call!
+
+There's two ways to do this: the canonical way, and the easy way.
+
+The canonical way:
+
+- Lookup "zork" from the current scope.
+- Assemble an OverloadSet containing the lookup results.
+- Ask the OverloadSet to emit a call.
+
+For example, here's how we would turn a `sprongle` statement into a `zork(42)`:
+
+```C++
+SyntheticNode synthNode(smLoc);
+
+ValueDest dest(EC_Sprongle);
+std::string spelling = "zork";
+LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+    spelling, smLoc, emitter.declScope, /*searchParentScopes=*/true);
+if (lookup.isFailure()) {
+  emitter.emitError(smLoc, "couldn't find function '") << spelling << "'";
+  return failure();
+}
+ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
+auto firstDecl = dyn_cast<FnOp>(decls[0]);
+if (!firstDecl) {
+  emitter.emitError(smLoc, "found a '")
+      << spelling << "' but it wasn't a function";
+  return failure();
+}
+auto result = OverloadSetUValue::create(
+    spelling, decls, ParamBindings(emitter.getDeclScope()), &synthNode,
+    CallSyntax::kDirectCall);
+IntLiteralNode int42("42");
+auto operands =
+    CallOperands(std::vector<ASTExprAnd<AnyValue>>{ASTExprAnd<AnyValue>{
+        emitter.emitExprRValue(&int42, EC_Sprongle),
+        &int42,
+    }});
+result->emitCall(std::move(operands), dest, emitter);
+```
+
+(You cant use OverloadSet::lookup because there is no ASTType around.)
+
+<!-- TODO: automatically extract this from the basics PR -->
+
+See this code in context
+[here](https://github.com/modularml/modular/pull/62701).
+
+The easier way to do all that is to conjure up some expression nodes, pretend
+they came from the user, and emit them:
+
+```c++
+ValueDest dest(EC_Sprongle);
+IntLiteralNode int42("42");
+DeclRefNode zorkDeclRef("zork");
+std::vector<Operand> operands = {
+    Operand(&int42, smLoc, Operand::kPositional)
+};
+CallNode callNode(&zorkDeclRef, smLoc, ArrayRef<Operand>(operands), smLoc);
+callNode.emitIR(dest, emitter);
+```
+
+<!-- TODO: automatically extract this from the basics PR -->
+
+See this code in context
+[here](https://github.com/modularml/modular/pull/62701).
 
 ## Declaring a Variable
 
@@ -74,47 +151,6 @@ fn main():
   var b = (x < 73)
   b = x > 73
 -->
-
-## Function Calls
-
-<!--
-- calling a function
-fn main():
-  var b = True
-  print(x)
--->
-
-```python
-fn foo(c: String) -> Int:
-  return ord(c)
-```
-
-<wolfram-cell ctext="Input17.wl" />
-
-`$ kgen-translate --import-mojo example.mojo`
-
-```mlir
-module {
-  lit.file_module @example {
-    lit.func @"foo(stdlib::collections::string::String)"[imm *"c`"](%c: !lit.ref<!String, imm *"c`"> borrow_in_mem) -> !Int attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %0 = lit.call @stdlib::@collections::@string::@"ord(stdlib::collections::string::String)"[imm *"c`"](%c) : !lit.signature<[1]("s": !lit.ref<!String, imm *[0,0]> borrow_in_mem) -> !Int>
-      lit.return %0 : !Int
-      lit.end_func
-    }
-  }
-  lit.package @stdlib { }
-}
-```
-
-When we see a “lit” instruction like `lit.call`, that’s not something built into
-MLIR, that’s something we define (in
-[KGEN/include/KGEN/LITDialect/LITOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/LITDialect/LITOps.td#L159)
-actually). Same with kgen instructions, which are defined in
-[KGEN/include/KGEN/KGENDialect/KGENOps.td](https://github.com/modularml/modular/blob/main/KGEN/include/KGEN/KGENDialect/KGENOps.td#L39).
-
-<wolfram-cell ctext="Input18.wl" />
-
-<wolfram-cell ctext="Input19.wl" />
 
 ## Overloads
 
