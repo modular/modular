@@ -824,7 +824,12 @@ fn _topk_stage2[
         @parameter
         if sampling:
             if tid == 0:
-                var rng_state = Random(seed=seed)
+                # Use the largest logit's id as the offset for the random number
+                # generator, so that we don't use the same random number for every
+                # token in the sequence.
+                var rng_state = Random(
+                    seed=seed, offset=_local_topk_idxs[0].cast[DType.uint64]()
+                )
                 var rng = rng_state.step_uniform()
                 var softmax_norm = s_sum[0]
                 var r = softmax_norm * rng[0].cast[T]()
