@@ -124,6 +124,24 @@ fn spurious_for_loop_variable_unknown_decl():
     # this test is that no further error is raised.
     _ = i
 
+
+struct ListValueInt:
+    fn __init__(out self): pass
+    fn __iter__(self) -> ListValueInt: return ListValueInt()
+    fn __next__(mut self) -> Int: return 0
+    fn __has_next__(self) -> Bool: return False
+
+struct ListValueString:
+    fn __init__(out self): pass
+    fn __iter__(self) -> ListValueString: return ListValueString()
+    fn __next__(mut self) -> String: return ""
+    fn __has_next__(self) -> Bool: return False
+
+
+def contradictory_for_loop_variable_types():
+  for i in ListValueInt(): pass
+  for i in ListValueString(): pass # expected-error {{cannot implicitly convert 'String' value to 'Int'}}
+
 ##===----------------------------------------------------------------------===##
 # With
 ##===----------------------------------------------------------------------===##
