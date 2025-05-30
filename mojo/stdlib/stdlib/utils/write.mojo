@@ -158,13 +158,16 @@ trait Writable:
 
 
 fn write_args[
-    W: Writer, *Ts: Writable
+    W: Writer,
+    *Ts: Writable,
+    O1: ImmutableOrigin = StaticConstantOrigin,
+    O2: ImmutableOrigin = StaticConstantOrigin,
 ](
     mut writer: W,
     args: VariadicPack[_, _, Writable, *Ts],
     *,
-    sep: StaticString = StaticString(),
-    end: StaticString = StaticString(),
+    sep: StringSlice[O1] = rebind[StringSlice[O1]](StaticString()),
+    end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString()),
 ):
     """
     Add separators and end characters when writing variadics into a `Writer`.
@@ -172,6 +175,8 @@ fn write_args[
     Parameters:
         W: The type of the `Writer` to write to.
         Ts: The types of each arg to write. Each type must satisfy `Writable`.
+        O1: The immutable origin of the separator.
+        O2: The immutable origin of the end string.
 
     Args:
         writer: The `Writer` to write to.
@@ -220,8 +225,14 @@ struct _WriteBufferHeap(Writer):
         self.pos = 0
 
     fn write_list[
-        T: Copyable & Movable & Writable, //
-    ](mut self, values: List[T, *_], *, sep: StaticString = StaticString()):
+        T: Copyable & Movable & Writable, //,
+        O: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        mut self,
+        values: List[T, *_],
+        *,
+        sep: StringSlice[O] = rebind[StringSlice[O]](StaticString()),
+    ):
         var length = len(values)
         if length == 0:
             return
@@ -292,8 +303,14 @@ struct _WriteBufferStack[
         self.writer = Pointer(to=writer)
 
     fn write_list[
-        T: Copyable & Movable & Writable, //
-    ](mut self, values: List[T, *_], *, sep: String = String()):
+        T: Copyable & Movable & Writable, //,
+        O: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        mut self,
+        values: List[T, *_],
+        *,
+        sep: StringSlice[O] = rebind[StringSlice[O]](StaticString()),
+    ):
         var length = len(values)
         if length == 0:
             return
@@ -335,12 +352,14 @@ fn write_buffered[
     *Ts: Writable,
     buffer_size: Int = 4096,
     use_heap: Bool = False,
+    O1: ImmutableOrigin = StaticConstantOrigin,
+    O2: ImmutableOrigin = StaticConstantOrigin,
 ](
     mut writer: W,
     args: VariadicPack[_, _, Writable, *Ts],
     *,
-    sep: StaticString = StaticString(),
-    end: StaticString = StaticString(),
+    sep: StringSlice[O1] = rebind[StringSlice[O1]](StaticString()),
+    end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString()),
 ):
     """
     Use a buffer on the stack to minimize expensive calls to the writer. When
@@ -358,6 +377,8 @@ fn write_buffered[
         use_heap: Buffer to the heap, first calculating the total byte size
             of all the args and then allocating only once. `buffer_size` is not
             used in this case as it's dynamically calculated. (default `False`).
+        O1: The immutable origin of the separator.
+        O2: The immutable origin of the end string.
 
     Args:
         writer: The `Writer` to write to.
@@ -414,7 +435,13 @@ fn write_buffered[
     W: Writer,
     T: Copyable & Movable & Writable, //,
     buffer_size: Int = 4096,
-](mut writer: W, values: List[T, *_], *, sep: StaticString = StaticString()):
+    O: ImmutableOrigin = StaticConstantOrigin,
+](
+    mut writer: W,
+    values: List[T, *_],
+    *,
+    sep: StringSlice[O] = rebind[StringSlice[O]](StaticString()),
+):
     """
     Use a buffer on the stack to minimize expensive calls to the writer. You
     can also add separators between the values. The default stack space used for
@@ -428,6 +455,7 @@ fn write_buffered[
             `Copyable` and `Movable` traits.
         buffer_size: How many bytes to write to a buffer before writing out to
             the `writer` (default `4096`).
+        O: The immutable origin of the separator.
 
     Args:
         writer: The `Writer` to write to.
