@@ -24,7 +24,7 @@ Contributors are encouraged to react with a 👍 to proposal PRs if they support
 We welcome contributions across all hardware platforms and are particularly interested in Blackwell, Hopper, MI3xx, and other data center GPUS.
 
 In particular, we welcome contributions of the following kernels:
-- Batched matrix multiplication (BNM)
+- Batched matrix multiplication (BMM)
 - Multi-head latent attention (MLA)
 - Mixture of experts (MOE)
 - Non-maximum suppression (NMS)
