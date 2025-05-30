@@ -44,6 +44,7 @@ var s = String(c)  # "A"
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
+from bit._mask import is_true
 from memory import UnsafePointer
 
 
@@ -536,7 +537,7 @@ struct Codepoint(
             var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
             var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
             ptr[0] = ((c >> shift) & mask) | (
-                num_bytes_marker & -Int(num_bytes != 1)
+                num_bytes_marker & is_true(num_bytes != 1)
             )
             for i in range(1, num_bytes):
                 shift -= 6

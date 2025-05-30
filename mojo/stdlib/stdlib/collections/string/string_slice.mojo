@@ -70,6 +70,7 @@ from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
 
 from bit import count_leading_zeros, count_trailing_zeros
+from bit._mask import is_true
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from python import Python, PythonConvertible, PythonObject
@@ -2007,36 +2008,57 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         var output = List[StringSlice[O]](capacity=128)  # guessing
         var ptr = self.unsafe_ptr()
         var length = self.byte_length()
-        var offset = 0
+        var line_start = UInt(0)
+        var prev_b0 = Byte(0)
 
-        while offset < length:
-            var eol_start = offset
-            var eol_length = 0
+        @always_inline
+        @parameter
+        fn _splitlines[keep: Bool]():
+            while line_start < length:
+                var line_end = line_start
+                var is_new_line = False
+                var b0 = Byte(0)
+                var char_len = UInt(0)
 
-            while eol_start < length:
-                var b0 = ptr[eol_start]
-                var char_len = _utf8_first_byte_sequence_length(b0)
-                debug_assert(
-                    eol_start + char_len <= length,
-                    "corrupted sequence causing unsafe memory access",
-                )
-                var isnewline = unlikely(
-                    _is_newline_char_utf8(ptr, eol_start, b0, char_len)
-                )
-                var char_end = Int(isnewline) * (eol_start + char_len)
-                var next_idx = char_end * Int(char_end < length)
-                var is_r_n = b0 == `\r` and next_idx != 0 and ptr[
-                    next_idx
-                ] == `\n`
-                eol_length = Int(isnewline) * char_len + Int(is_r_n)
-                if isnewline:
-                    break
-                eol_start += char_len
+                while not is_new_line and line_end < length:
+                    b0 = ptr[line_end]
+                    char_len = _utf8_first_byte_sequence_length(b0)
+                    debug_assert(
+                        line_end + char_len <= length,
+                        "corrupted sequence causing unsafe memory access",
+                    )
+                    # percentage-wise a newline is uncommon compared to a normal byte
+                    is_new_line = unlikely(
+                        _is_newline_char_utf8(ptr, line_end, b0, char_len)
+                    )
+                    line_end += char_len
 
-            var str_len = eol_start - offset + Int(keepends) * eol_length
-            var s = StringSlice[O](ptr=ptr + offset, length=str_len)
-            output.append(s)
-            offset = eol_start + eol_length
+                var str_len = line_end - line_start
+
+                @parameter
+                if keep:
+                    var is_r = unlikely(b0 == `\r`)
+                    var may_be_r_n = is_r and likely(line_end < length)
+                    var is_r_n = UInt(
+                        unlikely(may_be_r_n and ptr[line_end] == `\n`)
+                    )
+                    line_end += is_r_n
+                    str_len += is_r_n
+                else:
+                    str_len -= is_true(likely(is_new_line)) & Int(char_len)
+                    var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
+                    prev_b0 = b0
+                    if is_r_n:
+                        line_start = line_end
+                        continue
+                var s = StringSlice[O](ptr=ptr + line_start, length=str_len)
+                output.append(s)
+                line_start = line_end
+
+        if keepends:
+            _splitlines[keep=True]()
+        else:
+            _splitlines[keep=False]()
 
         return output^
 
