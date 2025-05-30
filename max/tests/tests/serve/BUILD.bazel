@@ -32,6 +32,7 @@ modular_py_test(
         requirement("pytest-grpc"),
         requirement("sse-starlette"),
         requirement("sseclient-py"),
+        requirement("torch"),
         requirement("transformers"),
         requirement("pyzmq"),
     ],
