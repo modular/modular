@@ -416,7 +416,7 @@ struct String(
         """
         var length = len(bytes)
         self = Self(unsafe_uninit_length=length)
-        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
+        memcpy(self.unsafe_ptr_mut[is_owned=True](), bytes.unsafe_ptr(), length)
 
     @no_inline
     fn __init__[T: Stringable](out self, value: T):
@@ -835,7 +835,7 @@ struct String(
         var rhs_len = len(rhs)
 
         var result = String(unsafe_uninit_length=lhs_len + rhs_len)
-        var result_ptr = result.unsafe_ptr_mut()
+        var result_ptr = result.unsafe_ptr_mut[is_owned=True]()
         memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
         memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
         return result^
@@ -1166,18 +1166,26 @@ struct String(
         else:
             return self._ptr_or_data
 
-    fn unsafe_ptr_mut(
-        mut self,
-    ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
+    fn unsafe_ptr_mut[
+        is_owned: Bool = False
+    ](mut self) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
         """Retrieves a mutable pointer to the underlying memory, copying to a
         new buffer if this was previously pointing to a static constant.
+
+        Parameters:
+            is_owned: Whether the string is always uniquely owned.
 
         Returns:
             The pointer to the underlying memory.
         """
-        # If out of line, make sure it is uniquely owned and mutable.
-        if not self._capacity_or_data.is_inline():
-            self._make_unique_mutable()
+
+        @parameter
+        if is_owned:
+            debug_assert(
+                self._is_owned(), "The string must be unique and mutable"
+            )
+        else:
+            self._make_owned()  # Make sure it is uniquely owned and mutable.
         return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
@@ -1789,24 +1797,27 @@ struct String(
             return
         self._realloc_mutable(new_capacity)
 
-    # This is called whne the string is known to be indirect.  This checks to
-    # make sure the indirect representation is uniquely owned and mutable,
-    # copying if necessary.
-    fn _make_unique_mutable(mut self):
-        # If already mutable and uniquely owned, we're done.
-        if (
+    @always_inline
+    fn _is_owned(self) -> Bool:
+        return self._capacity_or_data.is_inline() or (
             not self._capacity_or_data.is_static_constant()
             and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
-        ):
-            return
+        )
 
-        # Otherwise, copy to a new buffer to ensure mutability.
-        self._realloc_mutable(self.byte_length())
+    @always_inline
+    fn _make_owned(mut self):
+        """This checks to make sure the representation is uniquely owned and
+        mutable, copying if necessary.
+        """
+        if not self._is_owned():
+            # Copy to a new buffer to ensure mutability.
+            self._realloc_mutable(self.byte_length())
 
-    # This is the out-of-line implementation of reserve called when we need
-    # to grow the capacity of the string.
     @no_inline
     fn _realloc_mutable(mut self, owned new_capacity: UInt):
+        """This is the out-of-line implementation of reserve called when we need
+        to grow the capacity of the string.
+        """
         # Get these fields before we change _capacity_or_data, which can modify
         # where they are stored.
         var len = self.byte_length()
