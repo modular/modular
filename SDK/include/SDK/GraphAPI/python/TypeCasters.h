@@ -26,6 +26,7 @@
 #include "nanobind/stl/unique_ptr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -714,9 +715,9 @@ struct type_caster<::mlir::ResultRange> {
 
   static handle from_cpp(::mlir::ResultRange t, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
-    std::vector<mlir::OpResult> vec(t.begin(), t.end());
-    return make_caster<std::vector<mlir::OpResult>>::from_cpp(std::move(vec),
-                                                              policy, cleanup);
+    std::vector<mlir::Value> vec(t.begin(), t.end());
+    return make_caster<std::vector<mlir::Value>>::from_cpp(std::move(vec),
+                                                           policy, cleanup);
   }
 };
 
@@ -757,6 +758,17 @@ struct type_caster<::M::ErrorOrSuccess>
     : delegate_caster<::M::ErrorOrSuccess, bool> {
   static bool convert_from(M::ErrorOrSuccess &result) {
     return !result.isError();
+  }
+};
+
+template <typename T>
+struct type_caster<::M::ErrorOr<T>>
+    : delegate_caster<::M::ErrorOr<T>, std::optional<T>> {
+  static std::optional<T> convert_from(::M::ErrorOr<T> &result) {
+    // TODO: raise instead
+    if (result.isError())
+      return std::nullopt;
+    return result.takeValue();
   }
 };
 
