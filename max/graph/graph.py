@@ -35,7 +35,13 @@ from max.support.paths import (
     is_mojo_source_package_path,
 )
 
-from .type import BufferType, DeviceRef, SymbolicDim, TensorType, Type
+from .type import (
+    BufferType,
+    DeviceRef,
+    SymbolicDim,
+    TensorType,
+    Type,
+)
 from .value import BufferValue, TensorValue, Value, _ChainValue
 from .weight import Weight
 
@@ -191,11 +197,6 @@ class Graph:
 
     _subgraphs: dict[str, Graph] = {}
 
-    # This allows us to remap mlir.Value instances to other mlir.Value instances, similar to how
-    # IRMapping works in the C++ MLIR API. It's particularly useful for implementing subgraphs
-    # that need to remap the values of the parent graph to arguments of the subgraph.
-    _mlir_value_map: dict[mlir.Value, mlir.Value] = {}
-
     def __init__(
         self,
         name: str,
@@ -257,7 +258,6 @@ class Graph:
         self._import_kernels(custom_extensions)
 
         self._subgraphs = {}
-        self._mlir_value_map = {}
 
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
@@ -491,16 +491,8 @@ class Graph:
             else:
                 return arg
 
-        # Remap mlir.Value instances to other mlir.Value instances, useful for executing logic
-        # that needs to remap the values of the parent graph to arguments of the subgraph.
-        def remap(arg):
-            if isinstance(arg, mlir.Value):
-                return self._mlir_value_map.get(arg, arg)
-            else:
-                return arg
-
-        unwrapped_args = tuple(remap(unwrap(arg)) for arg in args)
-        unwrapped_kwargs = {k: remap(unwrap(arg)) for k, arg in kwargs.items()}
+        unwrapped_args = tuple(unwrap(arg) for arg in args)
+        unwrapped_kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
 
         # Construct and insert an op in the body of the graph
         # Insertion point is where the op is to be created in the IR structure
@@ -642,7 +634,6 @@ class Graph:
             f"[{', '.join(output_names)}]"
         )
 
-        self._mlir_value_map = {}
         self._subgraphs = {}
         # Outputting means the graph is complete. Verify the entire graph.
         try:
