@@ -26,6 +26,7 @@ from typing import Optional
 import tqdm
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
@@ -131,6 +132,7 @@ async def _async_worker(
     )
     batch_config = batch_config_from_pipeline_config(pipeline_config)
     model_name = pipeline_config.model_config.model_path
+    dispatcher_factory = DispatcherFactory(settings.dispatcher_config)
 
     async with start_telemetry_consumer(settings) as metric_client:
         async with start_model_worker(
@@ -138,6 +140,7 @@ async def _async_worker(
             batch_config=batch_config,
             settings=settings,
             metric_client=metric_client,
+            dispatcher_factory=dispatcher_factory,
         ) as engine_queue:
             # Start the model worker process.
             # Create dynamic and continuous batching workers and associated queues

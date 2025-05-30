@@ -21,7 +21,12 @@ from contextlib import asynccontextmanager
 
 import zmq
 from max.serve.config import Settings
-from max.serve.kvcache_agent.kvcache_agent import start_kvcache_agent_service
+from max.serve.kvcache_agent.dispatcher_factory import (
+    DispatcherFactory,
+)
+from max.serve.kvcache_agent.kvcache_agent import (
+    start_kvcache_agent_service,
+)
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.telemetry.common import configure_logging
 
@@ -30,9 +35,10 @@ logger = logging.getLogger(__name__)
 logger.propagate = False
 
 
-def _kvcache_agent_process_fn(
+async def run_kvcache_agent_process(
     pc: ProcessControl,
     settings: Settings,
+    dispatcher_factory: DispatcherFactory,
 ) -> None:
     configure_logging(settings)
     pid = os.getpid()
@@ -42,18 +48,32 @@ def _kvcache_agent_process_fn(
     # This should only be done once per process.
     zmq_ctx = zmq.Context(io_threads=2)
 
+    # Create and start services
+    kvcache_agent_service = start_kvcache_agent_service(
+        kv_cache_events_zmq_endpoint=settings.kv_cache_events_zmq_endpoint,
+        zmq_ctx=zmq_ctx,
+    )
+    dispatcher_service = dispatcher_factory.create_service(zmq_ctx)
+    await dispatcher_service.start()
+
+    pc.set_started()
+    logger.debug("Started KV Cache Agent!")
+
+    # Run the blocking call in a thread so the event loop stays alive
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, kvcache_agent_service.wait_for_termination)
+
+    pc.set_completed()
+    logger.info("Stopped KV Cache Agent!")
+
+
+def _kvcache_agent_process_fn(
+    pc: ProcessControl,
+    settings: Settings,
+    dispatcher_factory: DispatcherFactory,
+) -> None:
     try:
-        server = start_kvcache_agent_service(
-            kv_cache_events_zmq_endpoint=settings.kv_cache_events_zmq_endpoint,
-            zmq_ctx=zmq_ctx,
-        )
-        pc.set_started()
-        logger.debug("Started KV Cache Agent!")
-
-        server.wait_for_termination()
-        pc.set_completed()
-        logger.info("Stopped KV Cache Agent!")
-
+        asyncio.run(run_kvcache_agent_process(pc, settings, dispatcher_factory))
     except KeyboardInterrupt:
         pass
     except Exception as e:
@@ -67,6 +87,7 @@ def _kvcache_agent_process_fn(
 @asynccontextmanager
 async def start_kvcache_agent(
     settings: Settings,
+    dispatcher_factory: DispatcherFactory,
 ) -> AsyncGenerator[None, None]:
     """Starts a kvcache agent and associated process."""
     process_name = "KVCACHE_AGENT_" + str(uuid.uuid4())
@@ -83,7 +104,7 @@ async def start_kvcache_agent(
         name=process_name,
         target=_kvcache_agent_process_fn,
         daemon=True,
-        args=(pc, settings),
+        args=(pc, settings, dispatcher_factory),
     )
     process.start()
     monitor = ProcessMonitor(pc, process)

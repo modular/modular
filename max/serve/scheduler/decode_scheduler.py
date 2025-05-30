@@ -29,10 +29,13 @@ from max.pipelines.core import (
 )
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
+from max.serve.kvcache_agent.dispatcher_base import MessageType
+from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
-from .base import DecodeRequest, PrefillRequest, Scheduler
+from .base import Scheduler
 from .queues import STOP_STREAM
 
 logger = logging.getLogger("max.serve")
@@ -60,9 +63,8 @@ class DecodeScheduler(Scheduler):
         request_zmq_endpoint: str,
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
-        prefill_zmq_endpoint: str,
-        decode_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
+        dispatcher_client: DispatcherClient,
         transfer_engine_zmq_endpoint: str = f"ipc://{tempfile.gettempdir()}/transfer_engine",
     ):
         # Initialize Pipeline and Config
@@ -70,6 +72,7 @@ class DecodeScheduler(Scheduler):
         self.pipeline = pipeline
         self.paged_manager = paged_manager
         self.zmq_ctx = zmq_ctx
+        self.dispatcher_client = dispatcher_client
 
         # Multiprocessing resources.
         self.pc = process_control
@@ -85,16 +88,15 @@ class DecodeScheduler(Scheduler):
             zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
         )
 
-        self.decode_pull_socket = ZmqPullSocket[DecodeRequest](
-            zmq_ctx, decode_zmq_endpoint
-        )
-        self.prefill_push_socket = ZmqPushSocket[PrefillRequest](
-            zmq_ctx=zmq_ctx, zmq_endpoint=prefill_zmq_endpoint
+        self.dispatcher_client = dispatcher_client
+        self.dispatcher_client.register_reply_handler(
+            MessageType.PREFILL_RESPONSE, self.handle_prefill_response
         )
 
         self.preempted_request: queue.Queue[tuple[str, InputContext]] = (
             queue.Queue()
         )
+        self.prefill_complete: queue.Queue[PrefillResponse] = queue.Queue()
 
         # Initialize Scheduler state.
         self.active_batch: OrderedDict[str, InputContext] = OrderedDict()
@@ -159,17 +161,17 @@ class DecodeScheduler(Scheduler):
 
         return self.request_pull_socket.get_nowait()
 
-    def pull_from_decode_socket(self) -> DecodeRequest:
-        """Pulls a request from the decode socket, checking preempted requests first.
+    def handle_prefill_response(self, message: PrefillResponse) -> None:
+        """Handles a prefill response from the dispatcher."""
+        self.prefill_complete.put(message)
+
+    def get_decode_request(self) -> PrefillResponse:
+        """Gets a request from the prefill complete queue.
 
         Returns:
-            tuple[str, InputContext]: A tuple containing the request ID and input context.
-
-        Raises:
-            queue.Empty: If no requests are available.
-            zmq.ZMQError: If there is an error receiving from the socket.
+            PrefillResponse: A prefill response.
         """
-        return self.decode_pull_socket.get_nowait()
+        return self.prefill_complete.get_nowait()
 
     def push_to_response_socket(
         self, responses: list[dict[str, TextResponse]] = [{}]
@@ -184,7 +186,7 @@ class DecodeScheduler(Scheduler):
         """
         self.response_push_socket.put_nowait(responses)
 
-    def push_to_prefill_socket(
+    def send_prefill_request(
         self,
         request_id: str,
         data: InputContext,
@@ -199,8 +201,14 @@ class DecodeScheduler(Scheduler):
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
         """
-        self.prefill_push_socket.put_nowait(
-            PrefillRequest(request_id, data, self.transfer_engine.name, dst_idx)
+        self.dispatcher_client.send(
+            MessageType.PREFILL_REQUEST,
+            PrefillRequest(
+                id=request_id,
+                context=data,
+                transfer_engine_name=self.transfer_engine.name,
+                block_ids=dst_idx,
+            ),
         )
 
     def reserve_memory_and_send_to_prefill(self) -> None:
@@ -248,9 +256,7 @@ class DecodeScheduler(Scheduler):
                 dst_idx = [0]
 
                 # Send to the Prefill Node
-                self.push_to_prefill_socket(
-                    request_id, request_context, dst_idx
-                )
+                self.send_prefill_request(request_id, request_context, dst_idx)
 
             except queue.Empty:
                 # Break loop when no items in queue
@@ -270,18 +276,20 @@ class DecodeScheduler(Scheduler):
             try:
                 # Retrieve new item from the decode queue.
                 # We can assume that everything in the decode queue, already has cache space.
-                decode_request = self.pull_from_decode_socket()
+                prefill_response = self.get_decode_request()
 
                 # Assume that we've already claimed this memory in our cache.
                 # However, this seq id, may have been updated by the prefill worker.
                 # So assign it to the correct seq_id in the Decode Paged Cache.
-                decode_request.context.unassign_from_cache()
-                decode_request.context.assign_to_cache(
-                    self.reserved_cache_indices[decode_request.id],
+                prefill_response.context.unassign_from_cache()
+                prefill_response.context.assign_to_cache(
+                    self.reserved_cache_indices[prefill_response.id],
                 )
 
                 # Add to active batch.
-                self.active_batch[decode_request.id] = decode_request.context
+                self.active_batch[prefill_response.id] = (
+                    prefill_response.context
+                )
 
             except queue.Empty:
                 # Break this loop when the decode queue is empty.
@@ -418,6 +426,9 @@ class DecodeScheduler(Scheduler):
             # Schedule Batch
             self.schedule_batch(num_steps)
 
+    def needs_dispatcher_client(self) -> bool:
+        return True
+
 
 def load_decode_scheduler(
     zmq_ctx: zmq.Context,
@@ -426,6 +437,7 @@ def load_decode_scheduler(
     pc: ProcessControl,
     max_batch_size_tg: int,
     max_forward_steps_tg: int,
+    dispatcher_client: DispatcherClient,
 ) -> DecodeScheduler:
     # Create Scheduler Config
     scheduler_config = DecodeSchedulerConfig(
@@ -441,14 +453,6 @@ def load_decode_scheduler(
             "A paged KV cache manager must be present to use the DecodeScheduler"
         )
 
-    if (
-        settings.prefill_zmq_endpoint is None
-        or settings.decode_zmq_endpoint is None
-    ):
-        raise ValueError(
-            "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
-        )
-
     return DecodeScheduler(
         process_control=pc,
         pipeline=pipeline,
@@ -457,7 +461,6 @@ def load_decode_scheduler(
         request_zmq_endpoint=settings.request_zmq_endpoint,
         response_zmq_endpoint=settings.response_zmq_endpoint,
         cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
-        prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
-        decode_zmq_endpoint=settings.decode_zmq_endpoint,
         zmq_ctx=zmq_ctx,
+        dispatcher_client=dispatcher_client,
     )

@@ -20,6 +20,7 @@ from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
 
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -242,7 +243,7 @@ class Settings(BaseSettings):
 
     cancel_zmq_endpoint: str = Field(
         default_factory=generate_zmq_ipc_path,
-        description="Expose Cancel ZMQ Socket for communication betwee the API and Model Worker(s)",
+        description="Expose Cancel ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_CANCEL_ZMQ_ENDPOINT",
     )
 
@@ -252,16 +253,10 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_KV_CACHE_EVENTS_ZMQ_ENDPOINT",
     )
 
-    prefill_zmq_endpoint: Optional[str] = Field(
-        default=None,
-        description="Experimental: Expose Prefill Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
-        alias="MAX_SERVE_PREFILL_ZMQ_ENDPOINT",
-    )
-
-    decode_zmq_endpoint: Optional[str] = Field(
-        default=None,
-        description="Experimental: Expose Decode Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
-        alias="MAX_SERVE_DECODE_ZMQ_ENDPOINT",
+    dispatcher_config: DispatcherConfig = Field(
+        default_factory=DispatcherConfig,
+        description="Expose Dispatcher Config for use in inter-node communication.",
+        alias="MAX_SERVE_DISPATCHER_CONFIG",
     )
 
 

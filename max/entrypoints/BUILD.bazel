@@ -16,6 +16,7 @@ modular_py_library(
     deps = [
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/pipelines",
         requirement("click"),
         requirement("gguf"),

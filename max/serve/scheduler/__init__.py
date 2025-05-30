@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+from typing import Optional
+
 import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
@@ -21,6 +23,7 @@ from max.pipelines.core import (
 )
 from max.pipelines.lib import PipelineRole
 from max.serve.config import Settings
+from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -55,6 +58,7 @@ def load_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     config: TokenGeneratorSchedulerConfig,
+    dispatcher_client: DispatcherClient,
 ) -> Scheduler:
     if isinstance(pipeline, EmbeddingsGenerator):
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
@@ -126,6 +130,7 @@ def load_scheduler(
             pc,
             max_batch_size_tg=config.max_batch_size_tg,
             max_forward_steps_tg=config.max_forward_steps_tg,
+            dispatcher_client=dispatcher_client,
         )
     elif config.pipeline_role == PipelineRole.PrefillOnly:
         assert isinstance(pipeline, TokenGenerator)
@@ -138,6 +143,7 @@ def load_scheduler(
             target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
             batch_timeout=config.batch_timeout,
             enable_chunked_prefill=config.enable_chunked_prefill,
+            dispatcher_client=dispatcher_client,
         )
     else:
         raise ValueError(

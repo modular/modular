@@ -30,6 +30,29 @@ class Scheduler(ABC):
         """
         pass
 
+    def needs_dispatcher_client(self) -> bool:
+        """Whether the scheduler needs a dispatcher client to be started.
+
+        The dispatcher is a message routing system that enables communication between
+        components across instances. It handles:
+        - Request forwarding between schedulers on different instances
+        - Reply routing for request-response patterns
+
+        Schedulers that operate in isolation don't need the dispatcher client.
+        However, schedulers that are part of a distributed pipeline require the
+        dispatcher client to communicate with their counterparts.
+
+        When this method returns True, the ModelWorker will start the dispatcher client
+        before running the scheduler, enabling distributed message passing.
+
+        Returns False by default. Schedulers that use dispatcher client
+        should override this method to return True.
+
+        Returns:
+            bool: True if the scheduler requires dispatcher client startup, False otherwise.
+        """
+        return False
+
 
 @dataclass
 class PrefillRequest:
@@ -52,11 +75,11 @@ class PrefillRequest:
 
 
 @dataclass
-class DecodeRequest:
-    """A request for token generation (decode) processing.
+class PrefillResponse:
+    """A response for prefill (context encoding) processing.
 
-    Contains the request ID and input context needed to process a decode request
-    through the pipeline and generate tokens.
+    Contains the request ID and input context needed to run decode
+    and generate tokens based on the prefill finished.
 
     Attributes:
         id: Unique identifier for this request

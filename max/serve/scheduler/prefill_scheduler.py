@@ -26,10 +26,12 @@ from max.nn.kv_cache import (
 from max.pipelines.core import InputContext, TokenGenerator
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
+from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
+from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.process_control import ProcessControl
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
-from .base import DecodeRequest, PrefillRequest, Scheduler
+from .base import Scheduler
 
 logger = logging.getLogger("max.serve")
 
@@ -61,24 +63,13 @@ class PrefillScheduler(Scheduler):
         paged_manager: PagedKVCacheManager,
         *,
         zmq_ctx: zmq.Context,
-        prefill_zmq_endpoint: str,
-        decode_zmq_endpoint: str,
+        dispatcher_client: DispatcherClient,
         transfer_engine_zmq_endpoint: str = f"ipc://{tempfile.gettempdir()}/transfer_engine",
     ):
         self.pc = process_control
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.paged_manager = paged_manager
-
-        # Initialize Queues for Disaggregation
-        logger.info(f"starting prefill queue on: {prefill_zmq_endpoint}")
-        logger.info(f"starting decode queue on: {decode_zmq_endpoint}")
-        self.prefill_pull_socket = ZmqPullSocket[PrefillRequest](
-            zmq_ctx, prefill_zmq_endpoint
-        )
-        self.decode_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-            zmq_ctx, decode_zmq_endpoint
-        )
 
         # Initialize Scheduler state.
         self.pending_transfers: dict[str, tuple[str, list[int]]] = {}
@@ -87,6 +78,14 @@ class PrefillScheduler(Scheduler):
             range(self.scheduler_config.max_batch_size_ce)
         )
         self.preempted_prefill: queue.Queue[PrefillRequest] = queue.Queue()
+
+        self.dispatcher_client = dispatcher_client
+        self.dispatcher_client.register_request_handler(
+            MessageType.PREFILL_REQUEST, self.handle_prefill_request
+        )
+
+        self.request_id_to_reply_context: dict[str, ReplyContext] = {}
+        self.prefill_requests: queue.Queue[PrefillRequest] = queue.Queue()
 
         # Create Transfer Engine
         self.transfer_engine = KVTransferEngine(
@@ -127,18 +126,34 @@ class PrefillScheduler(Scheduler):
         remote_engine_message = socket.recv_pyobj()
         self.transfer_engine.connect(remote_engine_message)
 
-    def push_to_decode_socket(
+    def handle_prefill_request(
+        self, message: PrefillRequest, reply_context: ReplyContext
+    ) -> None:
+        """Handles a prefill request from the dispatcher."""
+        self.prefill_requests.put(message)
+        self.request_id_to_reply_context[message.id] = reply_context
+
+    def send_prefill_complete_response(
         self, request_id: str, data: InputContext
     ) -> None:
-        self.decode_push_socket.put_nowait(DecodeRequest(request_id, data))
+        if request_id not in self.request_id_to_reply_context:
+            logger.error(
+                f"Request ID {request_id} not found in request_id_to_reply_context"
+            )
+            return
+        reply_context = self.request_id_to_reply_context.pop(request_id)
 
-    def pull_from_prefill_socket(
-        self,
-    ) -> PrefillRequest:
-        """Pulls a request from the prefill socket, checking preempted requests first.
+        self.dispatcher_client.send_reply(
+            MessageType.PREFILL_RESPONSE,
+            PrefillResponse(id=request_id, context=data),
+            reply_context,
+        )
+
+    def get_prefill_request(self) -> PrefillRequest:
+        """Gets a request from the prefill request queue, checking preempted requests first.
 
         Returns:
-            tuple[str, InputContext]: A tuple containing the request ID and input context.
+            PrefillRequest: A prefill request.
 
         Raises:
             queue.Empty: If no requests are available.
@@ -148,7 +163,7 @@ class PrefillScheduler(Scheduler):
         if not self.preempted_prefill.empty():
             return self.preempted_prefill.get()
 
-        return self.prefill_pull_socket.get_nowait()
+        return self.prefill_requests.get_nowait()
 
     def return_to_prefill_queue(
         self,
@@ -178,7 +193,7 @@ class PrefillScheduler(Scheduler):
         batch_token_length = 0
         while self.available_cache_indices:
             try:
-                prefill_request = self.pull_from_prefill_socket()
+                prefill_request = self.get_prefill_request()
                 logger.info("received from decode node!")
 
                 if prefill_request.context.start_idx == 0:
@@ -252,9 +267,7 @@ class PrefillScheduler(Scheduler):
         else:
             # Send to decode if not chunked
             last_request.bump_token_indices(start_idx=-last_request.start_idx)
-            self.decode_push_socket.put_nowait(
-                DecodeRequest(last_request_id, last_request)
-            )
+            self.send_prefill_complete_response(last_request_id, last_request)
 
     def schedule(self) -> None:
         """Executes the current batch of requests and sends completed requests to decode.
@@ -278,9 +291,7 @@ class PrefillScheduler(Scheduler):
             input_context.bump_token_indices(start_idx=-input_context.start_idx)
             # TODO: E2EOPT-231
             input_context._completion_start_idx -= 1  # type: ignore
-            self.decode_push_socket.put_nowait(
-                DecodeRequest(req_id, input_context)
-            )
+            self.send_prefill_complete_response(req_id, input_context)
 
     def run(self) -> None:
         """Main scheduling loop that processes prefill requests.
@@ -315,6 +326,10 @@ class PrefillScheduler(Scheduler):
                 logger.exception("An error occurred during scheduling.")
                 raise e
 
+    def needs_dispatcher_client(self) -> bool:
+        """Whether the scheduler needs a dispatcher client."""
+        return True
+
 
 def load_prefill_scheduler(
     zmq_ctx: zmq.Context,
@@ -325,6 +340,7 @@ def load_prefill_scheduler(
     target_tokens_per_batch_ce: Optional[int],
     batch_timeout: Optional[float],
     enable_chunked_prefill: bool,
+    dispatcher_client: DispatcherClient,
 ) -> PrefillScheduler:
     if enable_chunked_prefill == True and target_tokens_per_batch_ce is None:
         raise RuntimeError(
@@ -347,15 +363,7 @@ def load_prefill_scheduler(
 
     if paged_manager is None:
         raise RuntimeError(
-            "A paged KV cache manager must be present to use the DecodeScheduler"
-        )
-
-    if (
-        settings.prefill_zmq_endpoint is None
-        or settings.decode_zmq_endpoint is None
-    ):
-        raise ValueError(
-            "both prefil_zmq_endpoint and decode_zmq_endpoint must be provided in Server settings to run the DecodeScheduler."
+            "A paged KV cache manager must be present to use the PrefillScheduler"
         )
 
     return PrefillScheduler(
@@ -364,6 +372,5 @@ def load_prefill_scheduler(
         scheduler_config=scheduler_config,
         paged_manager=paged_manager,
         zmq_ctx=zmq_ctx,
-        prefill_zmq_endpoint=settings.prefill_zmq_endpoint,
-        decode_zmq_endpoint=settings.decode_zmq_endpoint,
+        dispatcher_client=dispatcher_client,
     )
