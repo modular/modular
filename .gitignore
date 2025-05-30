@@ -157,3 +157,4 @@ examples/models/*
 
 # Magic cache
 .magic
+MODULE.bazel.lock
