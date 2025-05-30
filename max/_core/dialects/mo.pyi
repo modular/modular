@@ -384,7 +384,7 @@ class DeviceInputs(Protocol):
     """Trait to indicate the inputs to consider for device assignment"""
 
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class Distributed(Protocol):
     """
@@ -992,7 +992,7 @@ class IfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         cond: max._core.Value,
     ) -> None: ...
     @property
@@ -1239,11 +1239,11 @@ class DistributedAllgatherOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Value],
-        inputs: Sequence[max._core.Value],
+        outputs: Sequence[max._core.Value[max._core.Type]],
+        inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class DistributedAllreduceSumOp(max._core.Operation):
     """
@@ -1256,16 +1256,16 @@ class DistributedAllreduceSumOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Value],
+        outputs: Sequence[max._core.Value[max._core.Type]],
         out_chain: ChainType,
-        inputs: Sequence[max._core.Value],
-        signal_buffers: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
-    def signal_buffers(self) -> Sequence[max._core.Value]: ...
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
@@ -2058,14 +2058,14 @@ class CallOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
-        operands: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
+        operands: Sequence[max._core.Value[max._core.Type]],
         symbol: max._core.dialects.builtin.SymbolRefAttr,
         prefix: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
     @symbol.setter
@@ -2158,10 +2158,10 @@ class ChainCreateOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: ChainType,
-        inputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class ConcatFromListOp(max._core.Operation):
     """
@@ -2246,13 +2246,13 @@ class ConcatOp(max._core.Operation):
         location: Location,
         result: TensorType,
         axis: max._core.Value[TensorType],
-        inputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
     def axis(self) -> max._core.Value[TensorType]: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def output_param_decls(
         self,
@@ -2839,14 +2839,14 @@ class CustomOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
-        operands: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
+        operands: Sequence[max._core.Value[max._core.Type]],
         symbol: max._core.dialects.builtin.StringAttr,
         function: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def symbol(self) -> str: ...
     @symbol.setter
@@ -3402,14 +3402,14 @@ class GuardOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         chain: max._core.Value[ChainType],
-        inputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
     def chain(self) -> max._core.Value[ChainType]: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class IndexToTensorOp(max._core.Operation):
     """
@@ -3462,14 +3462,14 @@ class InvokeShapeFuncOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        inputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
         shape_func_name: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
         kgen_params: max._core.dialects.builtin.DictionaryAttr,
         data_dept_tensors: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def shape_func_name(self) -> str: ...
     @shape_func_name.setter
@@ -3724,10 +3724,10 @@ class ListCreateOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: ListType,
-        inputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class ListGetOp(max._core.Operation):
     """
@@ -4604,11 +4604,11 @@ class OutputOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
         parameters: max._core.dialects.kgen.ParameterExprArrayAttr,
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def parameters(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
     @parameters.setter
@@ -6439,7 +6439,7 @@ class SplitOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         input: max._core.Value[TensorType],
         split_sizes: max._core.Value[TensorType],
         axis: max._core.Value[TensorType],
@@ -6843,12 +6843,12 @@ class WhileConditionOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         condition: max._core.Value[TensorType],
-        args: Sequence[max._core.Value],
+        args: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
     def condition(self) -> max._core.Value[TensorType]: ...
     @property
-    def args(self) -> Sequence[max._core.Value]: ...
+    def args(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class XorOp(max._core.Operation):
     """
@@ -6899,14 +6899,14 @@ class YieldOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @overload
     def __init__(
         self, builder: max._core.OpBuilder, location: Location
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class WhileOp(max._core.Operation):
     """
@@ -6950,11 +6950,11 @@ class WhileOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
-        inputs: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
+        inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class ParamExprBuilder:
     pass

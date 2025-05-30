@@ -87,7 +87,7 @@ class ConcatOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: ShapeType,
-        inputs: Sequence[max._core.Value],
+        inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @overload
     def __init__(
@@ -98,7 +98,7 @@ class ConcatOp(max._core.Operation):
         input2: max._core.Value[ShapeType],
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class EqOp(max._core.Operation):
     """
@@ -202,10 +202,10 @@ class NewOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: ShapeType,
-        dims: Sequence[max._core.Value],
+        dims: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def dims(self) -> Sequence[max._core.Value]: ...
+    def dims(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class NumElementsOp(max._core.Operation):
     """

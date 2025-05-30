@@ -1600,15 +1600,15 @@ class CallIndirectOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         callee: max._core.Value[FuncTypeGeneratorType],
-        arguments: Sequence[max._core.Value],
+        arguments: Sequence[max._core.Value[max._core.Type]],
         tail_kind: TailKindAttr,
     ) -> None: ...
     @property
     def callee(self) -> max._core.Value[FuncTypeGeneratorType]: ...
     @property
-    def arguments(self) -> Sequence[max._core.Value]: ...
+    def arguments(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def tail_kind(self) -> TailKind: ...
     @tail_kind.setter
@@ -1636,16 +1636,16 @@ class CallParamOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         callee: max._core.dialects.builtin.TypedAttr,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
     def callee(self) -> max._core.dialects.builtin.TypedAttr: ...
     @callee.setter
     def callee(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class CaptureListCopyOp(max._core.Operation):
     """
@@ -1692,14 +1692,14 @@ class CaptureListCreateOp(max._core.Operation):
         location: Location,
         result: PointerType,
         callee: max._core.dialects.builtin.TypedAttr,
-        args: Sequence[max._core.Value],
+        args: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
     def callee(self) -> max._core.dialects.builtin.TypedAttr: ...
     @callee.setter
     def callee(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
     @property
-    def args(self) -> Sequence[max._core.Value]: ...
+    def args(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class CaptureListExpandOp(max._core.Operation):
     """
@@ -1760,7 +1760,7 @@ class ClosureInitOp(max._core.Operation):
         result: max._core.Type,
         func_type_generator: max._core.dialects.builtin.TypeAttr,
         function_type: max._core.dialects.builtin.TypeAttr,
-        captures: Sequence[max._core.Value],
+        captures: Sequence[max._core.Value[max._core.Type]],
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
@@ -1778,7 +1778,7 @@ class ClosureInitOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.TypeAttr, /
     ) -> None: ...
     @property
-    def captures(self) -> Sequence[max._core.Value]: ...
+    def captures(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def move_or_copy_capture_symbols(
         self,
@@ -1982,7 +1982,7 @@ class CreateClosureOp(max._core.Operation):
         location: Location,
         result: FuncTypeGeneratorType,
         callee: max._core.dialects.builtin.TypedAttr,
-        captures: Sequence[max._core.Value],
+        captures: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @overload
     def __init__(
@@ -1996,7 +1996,7 @@ class CreateClosureOp(max._core.Operation):
     @callee.setter
     def callee(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
     @property
-    def captures(self) -> Sequence[max._core.Value]: ...
+    def captures(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class CreateRegStubOp(max._core.Operation):
     """
@@ -2092,13 +2092,13 @@ class DeferredOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
-        operands: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
+        operands: Sequence[max._core.Value[max._core.Type]],
         op_name: max._core.dialects.builtin.StringAttr,
         op_attrs: max._core.dialects.builtin.DictionaryAttr,
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def op_name(self) -> str: ...
     @op_name.setter
@@ -2542,10 +2542,10 @@ class PackCreateOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: PackType,
-        elements: Sequence[max._core.Value],
+        elements: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def elements(self) -> Sequence[max._core.Value]: ...
+    def elements(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class PackExtractOp(max._core.Operation):
     """
@@ -2852,14 +2852,14 @@ class ParamForBreakOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @overload
     def __init__(
         self, builder: max._core.OpBuilder, location: Location
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class ParamForContinueOp(max._core.Operation):
     """
@@ -2872,14 +2872,14 @@ class ParamForContinueOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @overload
     def __init__(
         self, builder: max._core.OpBuilder, location: Location
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class ParamForOp(max._core.Operation):
     """
@@ -2893,11 +2893,11 @@ class ParamForOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         initial: max._core.dialects.builtin.TypedAttr,
         iterate: max._core.dialects.builtin.TypedAttr,
         param_decl: ParamDeclAttr,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
         body_isolated: max._core.dialects.builtin.UnitAttr,
         else_isolated: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
@@ -2923,7 +2923,7 @@ class ParamForOp(max._core.Operation):
     @param_decl.setter
     def param_decl(self, arg: ParamDeclAttr, /) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def body_isolated(self) -> bool: ...
     @body_isolated.setter
@@ -2971,7 +2971,7 @@ class ParamIfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Value],
+        results: Sequence[max._core.Value[max._core.Type]],
         cond: max._core.dialects.builtin.TypedAttr,
         then_isolated: max._core.dialects.builtin.UnitAttr,
         else_isolated: max._core.dialects.builtin.UnitAttr,
@@ -3029,14 +3029,14 @@ class ParamYieldOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @overload
     def __init__(
         self, builder: max._core.OpBuilder, location: Location
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class RebindOp(max._core.Operation):
     """
@@ -3096,14 +3096,14 @@ class ReturnOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        operands: Sequence[max._core.Value],
+        operands: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @overload
     def __init__(
         self, builder: max._core.OpBuilder, location: Location
     ) -> None: ...
     @property
-    def operands(self) -> Sequence[max._core.Value]: ...
+    def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class SourceLocOp(max._core.Operation):
     """
@@ -3182,10 +3182,10 @@ class StructCreateOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: StructType,
-        elements: Sequence[max._core.Value],
+        elements: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def elements(self) -> Sequence[max._core.Value]: ...
+    def elements(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class StructExtractOp(max._core.Operation):
     """

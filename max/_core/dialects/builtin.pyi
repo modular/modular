@@ -939,11 +939,11 @@ class UnrealizedConversionCastOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Value],
-        inputs: Sequence[max._core.Value],
+        outputs: Sequence[max._core.Value[max._core.Type]],
+        inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
-    def inputs(self) -> Sequence[max._core.Value]: ...
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
 class FloatType(Protocol):
     """
