@@ -2061,6 +2061,7 @@ class CallOp(max._core.Operation):
         results: Sequence[max._core.Value],
         operands: Sequence[max._core.Value],
         symbol: max._core.dialects.builtin.SymbolRefAttr,
+        prefix: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
@@ -2071,6 +2072,10 @@ class CallOp(max._core.Operation):
     def symbol(
         self, arg: max._core.dialects.builtin.SymbolRefAttr, /
     ) -> None: ...
+    @property
+    def prefix(self) -> str: ...
+    @prefix.setter
+    def prefix(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
     @property
     def output_param_decls(
         self,
@@ -2299,6 +2304,7 @@ class ConstantExternalOp(max._core.Operation):
         align: max._core.dialects.builtin.IntegerAttr,
         device: max._core.dialects.m.DeviceRefAttr,
         has_alias: max._core.dialects.builtin.BoolAttr,
+        is_placeholder: max._core.dialects.builtin.BoolAttr,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -2316,6 +2322,12 @@ class ConstantExternalOp(max._core.Operation):
     def has_alias(self) -> bool: ...
     @has_alias.setter
     def has_alias(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def is_placeholder(self) -> bool: ...
+    @is_placeholder.setter
+    def is_placeholder(
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
