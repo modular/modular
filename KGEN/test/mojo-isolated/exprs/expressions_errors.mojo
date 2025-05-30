@@ -366,6 +366,11 @@ def tuple_return() -> Int:
   # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, Int]' value to 'Int'}}
   return 32, 17
 
+def tuple_pattern(a: Int):
+  # expected-error @+1 {{cannot unpack value of type 'Int' into 2 values}}
+  (b, c) = a
+
+
 
 # Issue https://github.com/modular/mojo/issues/1917
 # Do not crash in tuple creation if element has syntax error.
