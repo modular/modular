@@ -1,41 +1,21 @@
-# MAX Pipelines
+# MAX framework
 
-These are end-to-end pipelines that demonstrate the power of
-[MAX](https://docs.modular.com/max/) for accelerating common AI workloads, and
-more. Each of the supported pipelines can be served via an OpenAI-compatible
-endpoint.
+MAX is a high-performance inference server that provides
+an [OpenAI-compatible endpoint](https://docs.modular.com/max/api/serve) for
+large language models (LLMs) and it's a fundamental component of the
+[Modular Platform](https://docs.modular.com/max/intro).
 
-MAX can also serve most PyTorch-based large language models that are
-present on Hugging Face, although not at the same performance as native MAX
-Graph versions.
+This directory includes the source for our Python-based inference server,
+Python-based model pipelines (graphs), Python-based neural-net operators
+(high-level graph ops), Mojo-based kernel functions (low-level graph
+ops for GPUs and CPUs), and more.
 
 ## Usage
 
-The easiest way to try out any of the pipelines is with our Magic command-line
-tool.
-
-1. Install Magic on macOS and Linux with this command:
-
-   ```shell
-   curl -ssL https://magic.modular.com | bash
-   ```
-
-   Then run the source command that's printed in your terminal.
-
-   To see the available commands, you can run `magic --help`.
-   [Learn more about Magic here](https://docs.modular.com/magic).
-
-2. Install max-pipelines command to run the pipelines.
-
-   ```shell
-   magic global install max-pipelines
-   ```
-
-3. Serve a model.
-
-   ```shell
-   max-pipelines serve --model-path deepseek-ai/DeepSeek-R1-Distill-Llama-8B
-   ```
+With just a few commands, you can use MAX to create a local endpoint serving a
+large language model (LLM) of your choice, using our CLI tool or Docker
+container. Try it now with our [quickstart
+guide](https://docs.modular.com/max/get-started).
 
 See [https://builds.modular.com/](https://builds.modular.com/) to discover many
 of the models supported by MAX.

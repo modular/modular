@@ -1068,7 +1068,8 @@ fn _apply_mask[
     accum_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    reg_tile_layout: Layout, //,
+    reg_tile_layout: Layout,
+    element_layout: Layout, //,
     # last_iter: Bool,
     MMA_M: Int,
     MMA_N: Int,
@@ -1092,6 +1093,7 @@ fn _apply_mask[
         reg_tile_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
+        element_layout=element_layout,
     ],
 ):
     alias num_groups_per_thread = min(2, ceildiv(group, 8)) if decoding else 2
@@ -1108,7 +1110,6 @@ fn _apply_mask[
         batch_cache_valid_length = 0
 
     # Vectorize by 2.
-    p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
     var fragment_row: UInt32 = lane // 4
     var fragment_col: UInt32 = (lane * p_frag_simdwidth % MMA_N) % 8
     # Offset to current thread's fragment
@@ -1123,7 +1124,6 @@ fn _apply_mask[
 
             @parameter
             for n_mma in range(Int(num_n_mmas)):
-                alias mma_id = n_mma * num_m_mmas + m_mma
                 # Coordinates in mask for current mma tile.
                 mask_frag_row = mask_warp_row + m_mma * MMA_M
                 mask_frag_col = mask_warp_col + n_mma * MMA_N
@@ -1158,27 +1158,28 @@ fn _apply_mask[
                     @parameter
                     for j in range(MMA_N // 8):
                         score_col = mask_frag_col + j * 8
-                        alias p_reg_col = i + j * 2
+                        alias idx = IntTuple(
+                            IntTuple(i, m_mma), IntTuple(j, n_mma)
+                        )
+                        p = p_reg_tile._get[idx=idx]()
 
                         @parameter
                         if masked:
-                            p_reg_vec2[mma_id, p_reg_col] = mask.mask(
+                            p = mask.mask(
                                 IndexList[4, element_type = DType.uint32](
                                     Int(position.prompt_idx),
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
-                                p_reg_vec2[mma_id, p_reg_col] * scale_log2e,
+                                p * scale_log2e,
                             )
                         else:
-                            p_reg_vec2[mma_id, p_reg_col] = (
-                                p_reg_vec2[mma_id, p_reg_col] * scale_log2e
-                            )
+                            p *= scale_log2e
 
                         @parameter
                         if use_score_mod:
-                            p_reg_vec2[mma_id, p_reg_col] = (
+                            p = (
                                 score_mod.score_mod(
                                     IndexList[4, element_type = DType.uint32](
                                         Int(position.prompt_idx),
@@ -1186,15 +1187,13 @@ fn _apply_mask[
                                         Int(score_row_with_start_pos),
                                         Int(score_col),
                                     ),
-                                    p_reg_vec2[mma_id, p_reg_col],
+                                    p,
                                     Int(max_seq_len),
                                 )
                                 * log2e
                             )
                         elif mask_t.apply_log2e_after_mask:
-                            p_reg_vec2[mma_id, p_reg_col] = (
-                                p_reg_vec2[mma_id, p_reg_col] * log2e
-                            )
+                            p *= log2e
 
                         @parameter
                         if masked:
@@ -1220,13 +1219,14 @@ fn _apply_mask[
                                     Int(position.seq_len),
                                     Int(position.num_keys),
                                 )
-                            p_reg_vec2[mma_id, p_reg_col] = _kernel_mask(
+                            p = _kernel_mask(
                                 IndexList[2, element_type = DType.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
-                                p_reg_vec2[mma_id, p_reg_col],
+                                p,
                             )
+                        p_reg_tile._set[idx=idx](p)
 
     @parameter
     if decoding:
@@ -1962,7 +1962,7 @@ fn _mha_sm90[
                 mask,
                 mask_status,
                 score_mod,
-                p_reg_tile,
+                vectorize_output(p_reg_tile),
             )
 
         @parameter

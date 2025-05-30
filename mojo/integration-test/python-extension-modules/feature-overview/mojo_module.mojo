@@ -13,14 +13,13 @@
 
 from os import abort
 
-from builtin.identifiable import TypeIdentifiable
 from builtin._pybind import (
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
 )
 from memory import UnsafePointer
-from python import Python, PythonObject, TypedPythonObject
+from python import Python, PythonObject
 from python.bindings import (
     PyMojoObject,
     PythonModuleBuilder,
@@ -71,8 +70,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 fn case_return_arg_tuple(
-    py_self: PythonObject,
-    args: TypedPythonObject["Tuple"],
+    py_self: PythonObject, args: PythonObject
 ) -> PythonObject:
     return args
 
@@ -116,8 +114,8 @@ fn case_mojo_mutate(list: PythonObject) raises -> PythonObject:
     return PythonObject(None)
 
 
-struct NonBoundType(TypeIdentifiable):
-    alias TYPE_ID = "mojo_module.NonBoundType"
+struct NonBoundType:
+    pass
 
 
 fn case_downcast_unbound_type(value: PythonObject) raises:
@@ -130,11 +128,9 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
+struct Person(Defaultable, Representable, Copyable, Movable):
     var name: String
     var age: Int
-
-    alias TYPE_ID = "mojo_module.Person"
 
     fn __init__(out self):
         self.name = "John Smith"
@@ -176,9 +172,7 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Movable, Defaultable, Representable, TypeIdentifiable):
-    alias TYPE_ID = "mojo_module.FailToInitialize"
-
+struct FailToInitialize(Movable, Defaultable, Representable):
     fn __init__(out self):
         pass
 
@@ -212,8 +206,7 @@ fn add_to_int(mut arg: Int, owned value: Int):
 
 
 fn incr_int__wrapper(
-    py_self: PythonObject,
-    py_args: TypedPythonObject["Tuple"],
+    py_self: PythonObject, py_args: PythonObject
 ) raises -> PythonObject:
     check_arguments_arity(1, py_args, "incr_int".value)
 
@@ -228,8 +221,7 @@ fn incr_int__wrapper(
 
 
 fn add_to_int__wrapper(
-    py_self: PythonObject,
-    py_args: TypedPythonObject["Tuple"],
+    py_self: PythonObject, py_args: PythonObject
 ) raises -> PythonObject:
     check_arguments_arity(2, py_args, "add_to_int".value)
 

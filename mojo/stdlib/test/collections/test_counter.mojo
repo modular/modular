@@ -103,7 +103,7 @@ def test_counter_getitem():
 
 
 def test_fromkeys():
-    var keys = List[String]("a", "b", "c")
+    var keys = [String("a"), "b", "c"]
     var c = Counter[String].fromkeys(keys, 3)
 
     assert_equal(c["a"], 3)

@@ -5,7 +5,7 @@ This directory includes most of the documentation at
 
 The only things not here are the `mojo` CLI pages and the Mojo Standard Library
 reference. The reference docs are generated from source files, which are located
-in the [/stdlib/src](../stdlib/src) directory.
+in the [/stdlib/stdlib](../stdlib/stdlib) directory.
 
 ## Contributing
 

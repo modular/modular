@@ -33,6 +33,8 @@ from utils import IndexList, StaticTuple
 
 from linalg.distributed_matmul import matmul_allreduce
 
+alias overlap_with_dpl = True
+
 
 fn overlap_matmul_allreduce_test[
     type: DType,
@@ -203,6 +205,7 @@ fn overlap_matmul_allreduce_test[
             partition_dim=partition_dim,
             num_partitions=num_partitions,
             outputs_lambda=outputs_lambda,
+            overlap_with_dpl=overlap_with_dpl,
         ](As, Bs, Cs, out_bufs, rank_sigs, list_of_ctx)
 
     @parameter

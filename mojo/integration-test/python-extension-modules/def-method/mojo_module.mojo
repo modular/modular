@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from builtin.identifiable import TypeIdentifiable
 
 from memory import UnsafePointer
 from python import Python, PythonObject
@@ -51,7 +50,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
+struct Person(Defaultable, Representable, Copyable, Movable):
     var name: String
     var age: Int
 
@@ -67,8 +66,6 @@ struct Person(Defaultable, Representable, Copyable, Movable, TypeIdentifiable):
             repr(self.age),
             ")",
         )
-
-    alias TYPE_ID = "mojo_module.Person"
 
     @staticmethod
     fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:

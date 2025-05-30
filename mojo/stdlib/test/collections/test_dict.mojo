@@ -37,7 +37,7 @@ def test_dict_literals():
 
 
 def test_dict_fromkeys():
-    alias keys = List[String]("a", "b")
+    alias keys = [String("a"), "b"]
     var expected_dict = Dict[String, Int]()
     expected_dict["a"] = 1
     expected_dict["b"] = 1
@@ -53,7 +53,7 @@ def test_dict_fromkeys():
 
 
 def test_dict_fromkeys_optional():
-    alias keys = List[String]("a", "b", "c")
+    alias keys = [String("a"), "b", "c"]
     var expected_dict: Dict[String, Optional[Int]] = {
         "a": None,
         "b": None,
@@ -628,6 +628,34 @@ def test_compile_time_dict():
         assert_equal(val, i)
 
 
+# FIXME: Dictionaries should be equatable when their keys/values are.
+def is_equal[
+    K: KeyElement, V: EqualityComparable & Copyable & Movable
+](a: Dict[K, V], b: Dict[K, V]) -> Bool:
+    if len(a) != len(b):
+        return False
+    for k in a.keys():
+        if a[k[]] != b[k[]]:
+            return False
+    return True
+
+
+def test_dict_comprehension():
+    var d1 = {x: x * x for x in range(10) if x & 1}
+    assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
+
+    var s2 = {
+        a[] * b[]: b[] for a in [String("foo"), String("bar")] for b in [1, 2]
+    }
+    var d1reference = {
+        String("foo"): 1,
+        String("bar"): 1,
+        String("foofoo"): 2,
+        String("barbar"): 2,
+    }
+    assert_true(is_equal(s2, d1reference))
+
+
 def main():
     test_dict()
     test_dict_literals()
@@ -643,3 +671,4 @@ def main():
     test_init_initial_capacity()
     test_dict_setdefault()
     test_compile_time_dict()
+    test_dict_comprehension()

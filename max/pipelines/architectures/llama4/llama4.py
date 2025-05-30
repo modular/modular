@@ -205,11 +205,6 @@ class Llama4TextModel(Module):
         ]
 
         input_row_offsets = kwargs["input_row_offsets"]
-        root_cache_lengths = kv_cache_inputs_per_dev[0][1]
-        valid_lengths: TensorValue = ops.rebind(
-            input_row_offsets[1:] - input_row_offsets[:-1],
-            root_cache_lengths.shape,
-        )
         distributed_cache_positions = distribute_value(
             cache_positions, self.devices
         )

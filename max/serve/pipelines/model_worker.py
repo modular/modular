@@ -21,7 +21,7 @@ import sys
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Callable, Optional
+from typing import Callable
 
 import uvloop
 import zmq
@@ -195,7 +195,6 @@ async def start_model_worker(
     batch_config: TokenGeneratorSchedulerConfig,
     settings: Settings,
     metric_client: MetricClient,
-    kvcache_agent_queue: Optional[multiprocessing.Queue] = None,
     zmq_io_threads: int = 1,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
@@ -227,9 +226,6 @@ async def start_model_worker(
         cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
         zmq_ctx=zmq_ctx,
     )
-    queue_args = {
-        "KV_CACHE_AGENT": kvcache_agent_queue,
-    }
 
     logger.info("Starting worker: %s", worker_name)
     worker = mp_context.Process(

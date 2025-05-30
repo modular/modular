@@ -31,8 +31,9 @@ struct TestTensor[rank: Int, type: DType](Movable):
 
     @implicit
     fn __init__(out self, shape: IndexList[rank]):
-        self.storage = List[Scalar[type]](capacity=shape.flattened_length())
-        self.storage.resize(shape.flattened_length(), 0)
+        self.storage = List[Scalar[type]](
+            length=shape.flattened_length(), fill=0
+        )
         self.shape = shape
 
     fn to_ndbuffer(

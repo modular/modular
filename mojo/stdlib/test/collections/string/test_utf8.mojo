@@ -25,7 +25,7 @@ from testing import assert_equal, assert_false, assert_raises, assert_true
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
 
-alias GOOD_SEQUENCES = List[List[Byte]](
+alias GOOD_SEQUENCES = [
     List("a".as_bytes()),
     List("\xc3\xb1".as_bytes()),
     List("\xe2\x82\xa1".as_bytes()),
@@ -35,10 +35,10 @@ alias GOOD_SEQUENCES = List[List[Byte]](
     List("\xf0\x90\x80\x80".as_bytes()),
     List("\xee\x80\x80".as_bytes()),
     List("very very very long string 🔥🔥🔥".as_bytes()),
-)
+]
 
 
-alias BAD_SEQUENCES = List[List[Byte]](
+alias BAD_SEQUENCES = [
     List[Byte](0xC3, 0x28),  # continuation bytes does not start with 10xx
     List[Byte](0xA0, 0xA1),  # first byte is continuation byte
     List[Byte](0xE2, 0x28, 0xA1),  # second byte should be continuation byte
@@ -77,7 +77,7 @@ alias BAD_SEQUENCES = List[List[Byte]](
     ),  # missing continuation byte
     List[Byte](0xDF),  # missing continuation byte
     List[Byte](0xEF, 0xBF),  # missing continuation byte
-)
+]
 
 # ===----------------------------------------------------------------------=== #
 # Tests

@@ -39,10 +39,9 @@ def _sdk_default_env() -> dict[str, str]:
         logging.debug("Located MAX SDK assets assuming MAX Conda package layout")
         root = conda_root
     elif "BAZEL_WORKSPACE" in os.environ:
-        # We're running in a Modular internal Bazel test, where there is no
-        # virtual env package root and these env vars will get overridden
-        # anyway, so just pretend we're in a PyPi package.
-        root = pypi_root
+        # We're running in a Modular internal Bazel test, so let Bazel handle
+        # the environment variables.
+        return {}
     else:
         raise RuntimeError("Unable to locate MAX SDK library assets root directory.")
 

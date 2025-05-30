@@ -128,7 +128,7 @@ fn test_function_checked(ctx: DeviceContext) raises:
             out_host[i] = length + i
     var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
-    var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
+    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
     ctx.enqueue_function_checked(
         compiled_vec_func,
         in0,

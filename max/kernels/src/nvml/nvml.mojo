@@ -449,8 +449,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32]()
-        clocks.resize(Int(num_clocks), value=0)
+        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -458,7 +457,7 @@ struct Device(Writable):
                 fn (
                     _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
                 ) -> Result,
-            ]()(self.device, UnsafePointer(to=num_clocks), clocks.data)
+            ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
@@ -493,8 +492,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32]()
-        clocks.resize(Int(num_clocks), value=0)
+        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -509,7 +507,7 @@ struct Device(Writable):
                 self.device,
                 UInt32(memory_clock_mhz),
                 UnsafePointer(to=num_clocks),
-                clocks.data,
+                clocks.unsafe_ptr(),
             )
         )
 

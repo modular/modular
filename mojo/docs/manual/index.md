@@ -74,8 +74,8 @@ feedback](https://www.modular.com/community).
 - **Python**
 
   - [Python integration](/mojo/manual/python/)
-  - [Mojo calling Python](/mojo/manual/python/mojo-calling-python)
-  - [Python calling Mojo](/mojo/manual/python/python-calling-mojo)
+  - [Calling Python from Mojo](/mojo/manual/python/python-from-mojo)
+  - [Calling Mojo from Python](/mojo/manual/python/mojo-from-python)
   - [Python types](/mojo/manual/python/types)
 
 - **Tools**

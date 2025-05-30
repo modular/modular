@@ -77,19 +77,25 @@ cd max/mojo/docs/manual/gpu
 
 And open `basics.mdx` to run the code cells interactively.
 
-If you prefer the traditional approach using a CLI, first install magic if you
-don't have it:
+If you prefer the traditional approach using a CLI, first install
+[`pixi`](https://pixi.sh/latest/) if you don't have it:
 
 ```bash
-curl -ssL https://magic.modular.com | bash
+curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
-Then restart your terminal, create a project, and enter the virtual environment:
+Then restart your terminal, create a project, install the Modular Platform
+(which includes Mojo), and enter the virtual environment:
 
 ```sh
-magic init gpu-basics --mojoproject
+pixi init gpu-basics \
+  -c https://conda.modular.com/max-nightly/ -c conda-forge
+
 cd gpu-basics
-magic shell # enter virtual environment
+
+pixi add modular
+
+pixi shell # enter virtual environment
 ```
 
 You can now create file such as `main.mojo` and put everything except the

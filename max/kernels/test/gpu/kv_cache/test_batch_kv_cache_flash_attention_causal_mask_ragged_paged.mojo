@@ -306,15 +306,15 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     # edge cases
     print("CE", 1, DType.bfloat16)
-    var short_ce_seq_len = List[Int](2)
-    var short_ce_cache_size = List[Int](0)
+    var short_ce_seq_len = [2]
+    var short_ce_cache_size = [0]
     execute_ragged_flash_attention[
         llama_num_q_heads, DType.bfloat16, kv_params_llama3
     ](short_ce_seq_len, short_ce_cache_size, 2, 1, ctx)
 
     print("TG", 2, DType.bfloat16)
-    tg_seq_lens = List[Int](1, 1)
-    tg_variable_cache_lens = List[Int](1024, 11)
+    tg_seq_lens = [1, 1]
+    tg_variable_cache_lens = [1024, 11]
     execute_ragged_flash_attention[
         llama_num_q_heads, DType.bfloat16, kv_params_llama3
     ](tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx)

@@ -23,6 +23,11 @@ what we publish.
   case is to speed up hot spots/slow Python code by rewriting certain portions
   of your code in Mojo to achieve performance.
 
+- List, Set and Dict literals have been reimplemented to provide
+  Python-equivalent features and syntax, including simple literals like
+  `[1, 2, 3]` and `{k1: v1, k2: v2}` as well as fancy "comprehensions" like
+  `[a*b for a in range(10) if isprime(a) for b in range(20)]`.
+
 - Parts of the Kernel library continue to be progressively open sourced!
   Packages that are open sourced now include:
   - `kv_cache`
@@ -31,12 +36,6 @@ what we publish.
   - Benchmarks
   - `Mogg` directory which contains registration of kernels with the Graph
     Compiler
-
-- Implicit trait conformance is deprecated. Each instance of implicit
-  conformance results in a warning, but compilation still goes through. Soon it
-  will be upgraded into an error. Any code currently relying on implicit
-  conformance should either declare conformances explicitly or, if appropriate,
-  replace empty, non-load-bearing traits with trait compositions.
 
 ### Language changes
 
@@ -77,6 +76,12 @@ what we publish.
 
 - Dictionary and set literals now work and default to creating instances of the
   `Dict` and `Set` types in the collections library.
+
+- Implicit trait conformance is deprecated. Each instance of implicit
+  conformance results in a warning, but compilation still goes through. Soon it
+  will be upgraded into an error. Any code currently relying on implicit
+  conformance should either declare conformances explicitly or, if appropriate,
+  replace empty, non-load-bearing traits with trait compositions.
 
 ### Standard library changes
 
@@ -179,6 +184,8 @@ Changes to Python-Mojo interoperability:
     Also added equivalent `UnsafePointer` initializer for downcasting from a
     `PythonObject`.
 
+- The `TypedPythonObject` type has been removed. Use `PythonObject` instead.
+
 - The `Python.is_type(x, y)` static method has been removed. Use the
   expression `x is y` instead.
 
@@ -225,6 +232,9 @@ Changes to Python-Mojo interoperability:
 - [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes
   False Positive "Uninitialized Value".
 - [#4677](https://github.com/modular/modular/issues/4677),
-  [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
+- [#4684](https://github.com/modular/modular/issues/4684) - Failure inferring
+  type of initializer list from field of struct.
+- [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
   unsigned `gt` and `le` comparisions.
-- Compiler error handling `x or y` expressions with PythonObject.
+- [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
+  handling `x or y` expressions with PythonObject.

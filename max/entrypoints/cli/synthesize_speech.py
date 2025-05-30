@@ -31,10 +31,13 @@ logger = logging.getLogger(__name__)
 def synthesize_speech(
     config: AudioGenerationConfig,
     text_to_synthesize: str,
-    voice: str,
+    voice: str | None,
     output: str,
 ):
     """Synthesize speech from text, and save the result to a file.
+
+    This will also ask the user whether they would like to rerun the synthesis
+    with a different voice or prompt.
 
     Args:
         text_to_synthesize: The text to synthesize.
@@ -61,13 +64,17 @@ def synthesize_speech(
             context = await tokenizer.new_context(request)
             logger.info("Generating speech tokens for '%s'", text_to_synthesize)
             batch = {request.id: context}
-            pipeline.next_chunk(batch, config.max_length or 1024)
-            logger.info(
-                "Decoding audio for %s tokens", context.speech_tokens.shape
+            decode_response = pipeline.next_chunk(
+                batch, config.max_length or 1024
             )
-            decode_response = pipeline.decode(batch, config.max_length or 1024)
+            logger.info(
+                "Decoded audio for %s tokens", context.speech_tokens.shape
+            )
             if request.id in decode_response:
-                wav = decode_response[request.id].to_numpy().reshape(-1)
+                if decode_response[request.id].has_audio_data:
+                    wav = decode_response[request.id].audio_data.reshape(-1)
+                else:
+                    wav = None
             else:
                 wav = None
         except Exception as e:

@@ -464,7 +464,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
                     )
 
                     output = AudioGeneratorOutput(
-                        audio_data=response.audio_data, metadata=audio_metadata
+                        audio_data=response.audio_data,
+                        metadata=audio_metadata,
+                        is_done=response.is_done,
                     )
 
                     yield output
@@ -489,13 +491,19 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
             return AudioGeneratorOutput(
                 audio_data=torch.tensor([]),
                 metadata={},
+                is_done=True,
             )
 
         # Combine audio chunks and metadata
         combined_audio = torch.concat(audio_chunks, dim=-1)
+
+        # We should only return from the next_chunk loop when the last chunk is done.
+        chunk = audio_chunks[-1]
+        assert chunk.is_done
         return AudioGeneratorOutput(
             audio_data=combined_audio,
             metadata=chunk.metadata,  # Use metadata from last chunk
+            is_done=True,
         )
 
     async def __aenter__(self):

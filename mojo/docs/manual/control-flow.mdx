@@ -263,7 +263,7 @@ The following shows an example of iterating over a Mojo
 ```mojo
 from collections import List
 
-states = List[String]("California", "Hawaii", "Oregon")
+states = [String("California"), "Hawaii", "Oregon"]
 for state in states:
     print(state[])
 ```
@@ -280,7 +280,7 @@ The same technique works for iterating over a Mojo
 ```mojo
 from collections import Set
 
-values = Set[Int](42, 0)
+values = {42, 0}
 for item in values:
     print(item[])
 ```
@@ -417,7 +417,7 @@ terminates the `for` loop.
 ```mojo
 from collections import List
 
-animals = List[String]("cat", "aardvark", "hippopotamus", "dog")
+animals = [String("cat"), "aardvark", "hippopotamus", "dog"]
 for animal in animals:
     if animal[] == "dog":
         print("Found a dog")

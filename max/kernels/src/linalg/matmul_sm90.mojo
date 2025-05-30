@@ -1934,7 +1934,7 @@ fn warp_specialize_gemm_with_multicasting[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(config.pdl_level()),
         )
     else:
         alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
@@ -1976,5 +1976,5 @@ fn warp_specialize_gemm_with_multicasting[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(config.pdl_level()),
         )

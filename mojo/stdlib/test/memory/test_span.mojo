@@ -19,7 +19,7 @@ from testing import assert_equal, assert_raises, assert_true
 
 
 def test_span_list_int():
-    var l = List[Int](1, 2, 3, 4, 5, 6, 7)
+    var l = [1, 2, 3, 4, 5, 6, 7]
     var s = Span(list=l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -43,7 +43,7 @@ def test_span_list_int():
 
 
 def test_span_list_str():
-    var l = List[String]("a", "b", "c", "d", "e", "f", "g")
+    var l = [String("a"), "b", "c", "d", "e", "f", "g"]
     var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -167,7 +167,7 @@ def test_contains():
 
 def test_equality():
     var l = InlineArray[String, 7]("a", "b", "c", "d", "e", "f", "g")
-    var l2 = List[String]("a", "b", "c", "d", "e", "f", "g")
+    var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
     var sp = Span[String](l)
     var sp2 = Span[String](l)
     var sp3 = Span(l2)
@@ -182,7 +182,7 @@ def test_equality():
 
 
 def test_fill():
-    var a = List[Int](0, 1, 2, 3, 4, 5, 6, 7, 8)
+    var a = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     var s = Span(a)
 
     s.fill(2)
@@ -211,7 +211,7 @@ def test_reversed():
 # We don't actually need to call this test
 # but we want to make sure it compiles
 def test_span_coerce():
-    var l = List[Int](1, 2, 3)
+    var l = [1, 2, 3]
     var a = InlineArray[Int, 3](1, 2, 3)
 
     fn takes_span(s: Span[Int]):
@@ -224,20 +224,20 @@ def test_span_coerce():
 # We don't actually need to call this test
 # but we want to make sure it compiles
 def test_conditional_conformance():
-    var l = List[Int](1, 2, 3)
+    var l = [1, 2, 3]
     var s = Span[Int, alignment=2](l)
     s.fill(0)
     _ = s == s
 
 
 def test_swap_elements():
-    var l = List[Int](1, 2, 3, 4, 5)
+    var l = [1, 2, 3, 4, 5]
     var s = Span(l)
     s.swap_elements(1, 4)
     assert_equal(l[1], 5)
     assert_equal(l[4], 2)
 
-    var l2 = List[String]("hi", "hello", "hey")
+    var l2 = [String("hi"), "hello", "hey"]
     var s2 = Span(l2)
     s2.swap_elements(0, 2)
     assert_equal(l2[0], "hey")
@@ -248,8 +248,8 @@ def test_swap_elements():
 
 
 def test_merge():
-    var a = List[Int](1, 2, 3)
-    var b = List[Int](4, 5, 6)
+    var a = [1, 2, 3]
+    var b = [4, 5, 6]
 
     fn inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
         var either = Span(a) if cond else Span(b)
@@ -259,8 +259,8 @@ def test_merge():
     inner(True, a, b)
     inner(False, a, b)
 
-    assert_equal(a, List[Int](0, 2, 10))
-    assert_equal(b, List[Int](0, 5, 10))
+    assert_equal(a, [0, 2, 10])
+    assert_equal(b, [0, 5, 10])
 
 
 def main():

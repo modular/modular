@@ -553,7 +553,7 @@ For example, you can create a list of integer values like this:
 ```mojo
 from collections import List
 
-var list = List[Int](1, 2, 3)
+var list = List[Int](1, 2, 3)  # or: var list = [1, 2, 3]
 for i in range(len(list)):
     print(list[i], sep=" ", end="")
 ```

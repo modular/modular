@@ -1,3 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
 You are an expert in developer in the current file's language, specializing in high-performance computing and AI model development.
 
 ## 📜 Core Philosophy

@@ -5,7 +5,6 @@ github_url: https://github.com/modular/modular/tree/main/examples/mojo/life
 image: /images/artwork/mojo-get-started.jpg
 ---
 
-import GetMagic from '@site/src/includes/get_magic.mdx';
 import Requirements from '@site/src/components/Requirements';
 import { requirementsNoGPU } from '@site/docs/max/requirements';
 
@@ -42,27 +41,38 @@ System requirements:
 
 <Requirements requirementsData={requirementsNoGPU} />
 
-## 1. Create a Mojo project with `magic`
+## 1. Create a Mojo project
 
-We'll start by using the `magic` CLI to create a virtual environment
-and generate our initial project directory.
+To install the Modular Platform, which includes Mojo, you can use `pip` as
+described in the [install guide](/max/packages), but for Mojo developers, we
+currently recommend using [`pixi`](https://pixi.sh/latest/).
 
-1. <GetMagic />
+1. If you don't have `pixi`, you can install it with this command:
+
+    ```sh
+    curl -fsSL https://pixi.sh/install.sh | sh
+    ```
 
 2. Navigate to the directory in which you want to create the project
     and execute:
 
     ```bash
-    magic init life --format mojoproject
+    pixi init life \
+      -c https://conda.modular.com/max-nightly/ -c conda-forge \
+      && cd life
     ```
 
-    This creates a project directory named `life`.
+    This creates a project directory named `life`, adds the Modular conda
+    package channel, and enters the directory.
 
-3. Let's go into the directory and list its contents:
+3. Install the Modular Platform from the `modular` package (which
+includes Mojo):
 
     ```bash
-    cd life
+    pixi add modular
     ```
+
+3. Now let's list the project contents:
 
     ```bash
     ls -A
@@ -71,43 +81,44 @@ and generate our initial project directory.
     ```output
     .gitattributes
     .gitignore
-    .magic
-    magic.lock
-    mojoproject.toml
+    .pixi
+    pixi.lock
+    pixi.toml
     ```
 
 You should see that the project directory contains:
 
-- An initial `mojoproject.toml` manifest file, which defines the project
+- An initial `pixi.toml` manifest file, which defines the project
   dependencies and other features
-- A [lock file](/magic#the-magiclock-file) named `magic.lock`, which specifies
-  the transitive dependencies and actual package versions installed in the
-  project's virtual environment
+
+- A [lock file](https://pixi.sh/latest/workspace/lockfile/) named `pixi.lock`,
+which specifies the transitive dependencies and actual package versions
+installed in the project's virtual environment
 
   :::note
 
-  Never edit the lock file directly. The `magic` command automatically updates the lock file if you edit the manifest file.
+  Never edit the lock file directly. The `pixi` command automatically updates
+  the lock file if you edit the manifest file.
 
   :::
 
-- A `.magic` subdirectory containing the conda virtual environment for the
+- A `.pixi` subdirectory containing the conda virtual environment for the
   project
 - Initial `.gitignore` and `.gitattributes` files that you can optionally use if
   you plan to use `git` version control with the project
 
-Because we used the `--format mojoproject` option when creating the project,
-`magic` automatically added the `max` package as a dependency, which includes
-Mojo. Let's verify that our project is configured correctly by checking the
+Let's verify that our project is configured correctly by checking the
 version of Mojo that's installed within our project's virtual environment.
-`magic run` executes a command in the project's virtual environment, so let's
+`pixi run` executes a command in the project's virtual environment, so let's
 use it to execute `mojo --version`:
 
 ```bash
-magic run mojo --version
+pixi run mojo --version
 ```
 
 You should see a version string indicating the version of Mojo installed, which
-by default should be the latest released version.
+by default should be the latest version. You can view and edit the version for
+your project in the list of dependencies in the `pixi.toml` file.
 
 Great! Now let's write our first Mojo program.
 
@@ -146,7 +157,7 @@ To run the program, we first need to start a shell session in our project's
 virtual environment:
 
 ```bash
-magic shell
+pixi shell
 ```
 
 Later on, when you want to exit the virtual environment, just type `exit`.
@@ -286,7 +297,7 @@ We can also create a `List` with an initial set of values and let the compiler
 infer the type.
 
 ```mojo
-nums = List(12, -7, 64)  # A List[Int] containing 3 Int values
+nums = [12, -7, 64]  # A List[Int] containing 3 Int values
 ```
 
 The Mojo `List` type includes the ability to append to the list, pop values out
@@ -294,7 +305,7 @@ of the list, and access list items using subscript notation. Here's a taste of
 those operations:
 
 ```mojo
-nums = List(12, -7, 64)
+nums = [12, -7, 64]
 nums.append(-937)
 print("Number of elements in the list:", len(nums))
 print("Popping last element off the list:", nums.pop())
@@ -314,10 +325,10 @@ Last element of the list: 64
 We can also nest `List`s:
 
 ```mojo
-grid = List(
-    List(11, 22),
-    List(33, 44)
-)
+grid = [
+    [11, 22],
+    [33, 44]
+]
 print("Row 0, Column 0:", grid[0][0])
 print("Row 0, Column 1:", grid[0][1])
 print("Row 1, Column 0:", grid[1][0])
@@ -341,16 +352,16 @@ pattern.
 def main():
     num_rows = 8
     num_cols = 8
-    glider = List(
-        List(0, 1, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 1, 0, 0, 0, 0, 0),
-        List(1, 1, 1, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-    )
+    glider = [
+        [0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+    ]
 ```
 
 ## 5. Create and use a function to print the grid
@@ -424,7 +435,7 @@ dereference operator, `[]`, to access the actual element value. The code looks
 like this:
 
 ```mojo
-nums = List(12, -7, 64)
+nums = [12, -7, 64]
 for value in nums:
     print("Value:", value[])
 ```
@@ -525,7 +536,7 @@ arguments are the same names and types as the struct's fields and appear in the
 same order. So this means that we can create an instance of `Grid` like this:
 
 ```mojo
-my_grid = Grid(2, 2, List(List(0, 1), List(1, 1)))
+my_grid = Grid(2, 2, [[0, 1], [1, 1]])
 ```
 
 We can then access the field values with "dot" syntax like this:
@@ -563,16 +574,16 @@ def grid_str(grid: Grid) -> String:
     return str
 
 def main():
-    glider = List(
-        List(0, 1, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 1, 0, 0, 0, 0, 0),
-        List(1, 1, 1, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-        List(0, 0, 0, 0, 0, 0, 0, 0),
-    )
+    glider = [
+        [0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+    ]
     start = Grid(8, 8, glider)
     result = grid_str(start)
     print(result)
@@ -1045,12 +1056,12 @@ Python objects from Mojo code. To demonstrate this capability, we're going to
 use a Python package called [pygame](https://www.pygame.org) to create and
 manage a graphical user interface for our Game of Life program.
 
-First, we need to update our `mojoproject.toml` file to add a dependency on
+First, we need to update our `pixi.toml` file to add a dependency on
 Python and the `pygame` package. So in the project directory, execute the
 following command from the terminal:
 
 ```bash
-magic add "python>=3.11,<3.13" "pygame>=2.6.1,<3"
+pixi add "python>=3.11,<3.13" "pygame>=2.6.1,<3"
 ```
 
 :::note
@@ -1062,7 +1073,7 @@ Python runtime or Python packages into the resulting executable file. These
 run-time Python dependencies must be provided by the environment where you run
 the executable. The easiest way to ensure this requirement is to deploy and run
 your Mojo executable in a virtual environment, such as one managed by
-[Magic](/magic/) or [conda](https://docs.conda.io/).
+[Pixi](https://pixi.sh/latest/) or [conda](https://docs.conda.io/).
 
 :::
 
@@ -1139,9 +1150,7 @@ def run_display(
             running = False
         elif event.type == pygame.KEYDOWN:
             # Also quit if the user presses <Escape> or 'q'
-            if Bool(event.key == pygame.K_ESCAPE) or Bool(
-                event.key == pygame.K_q
-            ):
+            if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
                 running = False
 
         # Clear the window by painting with the background color
@@ -1229,7 +1238,7 @@ exit
 Congratulations on writing a complete Mojo application from scratch! Along the
 way, you got a taste of:
 
-- Using Magic to create, build, and run a Mojo program
+- Using Pixi to create, build, and run a Mojo program
 - Using Mojo built-in types like `Int`, `String`, and `List`
 - Creating and using variables and functions
 - Using control structures like `if`, `while`, and `for`
@@ -1256,13 +1265,9 @@ steps:
 
 import TutorialStack from '@site/src/components/TutorialStack';
 
-export const maxTutorials = [
-  'magic',
-];
-
 export const mojoTutorials = [
   'gpu/intro-tutorial',
 ];
 
-<TutorialStack maxTutorials={maxTutorials} mojoTutorials={mojoTutorials}
+<TutorialStack mojoTutorials={mojoTutorials}
   analyticsName="Get started with Mojo: Next steps" />

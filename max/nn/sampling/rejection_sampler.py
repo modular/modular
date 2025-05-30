@@ -21,11 +21,16 @@ class RejectionSampler(nn.Module):
     """A simple rejection sampler."""
 
     def __init__(
-        self, device: DeviceRef, top_k: int = 1, temperature: float = 1
+        self,
+        device: DeviceRef,
+        top_k: int = 1,
+        temperature: float = 1,
+        eps: float = 1e-5,
     ):
         self.device = device
         self.top_k = top_k
         self.temperature = temperature
+        self.eps = eps
 
     def __call__(
         self,
@@ -81,7 +86,7 @@ class RejectionSampler(nn.Module):
             ops.concat(
                 [
                     draft_logits_for_sampled_tokens
-                    > target_logits_for_sampled_tokens,
+                    > target_logits_for_sampled_tokens + self.eps,
                     ops.broadcast_to(
                         ops.constant(
                             True, dtype=DType.bool, device=self.device

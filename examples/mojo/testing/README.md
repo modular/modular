@@ -19,7 +19,7 @@ This directory contains the following files:
 - `test/my_math/test_*.mojo`: Mojo test files containing unit tests for
   functions defined in the `my_math` package
 
-- `mojoproject.toml`: a [Magic](https://docs.modular.com/magic/) project file
+- `pixi.toml`: a [Pixi](https://pixi.sh) project file
   containing the project dependencies and task definitions.
 
 ## Run the code

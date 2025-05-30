@@ -252,7 +252,6 @@ class DistributedTransformer(Module):
         ]
 
         input_row_offsets = kwargs["input_row_offsets"]
-        root_cache_lengths = kv_cache_inputs_per_dev[0][1]
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),

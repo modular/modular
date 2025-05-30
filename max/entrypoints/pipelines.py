@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import functools
 import logging
 import os
+from typing import Any
 
 import click
 
@@ -99,11 +101,11 @@ class ModelGroup(click.Group):
     is_eager=True,  # Eager ensures this runs before other options/commands
     help="Show the MAX version and exit.",
 )
-def main():
+def main() -> None:
     pass
 
 
-def configure_telemetry():
+def configure_telemetry() -> None:
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
@@ -177,17 +179,17 @@ def common_server_options(func):
 )
 @click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
 def cli_serve(
-    profile_serve,
-    performance_fake,
-    batch_timeout,
-    model_name,
-    sim_failure,
-    experimental_enable_kvcache_agent,
-    port,
-    task,
-    task_flags,
-    **config_kwargs,
-):
+    profile_serve: bool,
+    performance_fake: str,
+    batch_timeout: float,
+    model_name: str | None,
+    sim_failure: int,
+    experimental_enable_kvcache_agent: bool,
+    port: int,
+    task: str,
+    task_flags: list[str],
+    **config_kwargs: Any,
+) -> None:
     """Start a model serving endpoint for inference.
 
     This command launches a server that can handle inference requests for the
@@ -224,7 +226,7 @@ def cli_serve(
         failure_percentage=failure_percentage,
         experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
         port=port,
-        pipeline_task=task,
+        pipeline_task=PipelineTask(task),
     )
 
 
@@ -256,7 +258,12 @@ def cli_serve(
     show_default=True,
     help="# of warmup iterations to run before the final timed run.",
 )
-def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
+def cli_pipeline(
+    prompt: str,
+    image_url: list[str],
+    num_warmups: int,
+    **config_kwargs: Any,
+) -> None:
     """Generate text using the specified model.
 
     This command runs text generation using the loaded model, optionally
@@ -296,7 +303,7 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     show_default=True,
     help="# of warmup iterations to run before the final timed run.",
 )
-def encode(prompt, num_warmups, **config_kwargs):
+def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     """Encode text input into model embeddings.
 
     This command processes the input text through the model's encoder, producing
@@ -337,7 +344,13 @@ def encode(prompt, num_warmups, **config_kwargs):
     help="Name of the speaker to use for the synthesis. If set, `--audio-prompt-speakers` must also be provided.",
 )
 @click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
-def text_to_speech(prompt, output, voice, task_flags, **config_kwargs):
+def text_to_speech(
+    prompt: str,
+    output: str | None,
+    voice: str | None,
+    task_flags: list[str],
+    **config_kwargs: Any,
+) -> None:
     """Generate speech from text."""
     from max.entrypoints.cli.config import parse_task_flags
     from max.entrypoints.cli.synthesize_speech import synthesize_speech
@@ -346,7 +359,7 @@ def text_to_speech(prompt, output, voice, task_flags, **config_kwargs):
     config = AudioGenerationConfig(
         parse_task_flags(task_flags), **config_kwargs
     )
-    synthesize_speech(config, prompt, voice, output)
+    synthesize_speech(config, prompt, voice, output or "output.wav")
 
 
 @main.command(
@@ -369,7 +382,7 @@ def cli_warm_cache(**config_kwargs) -> None:
     default=False,
     help="Print the list of pipelines options in JSON format.",
 )
-def cli_list(json):
+def cli_list(json: bool) -> None:
     """List available pipeline configurations and models.
 
     This command displays information about all registered pipelines and their
@@ -386,7 +399,9 @@ def cli_list(json):
         list_pipelines_to_console()
 
 
-def print_version(ctx, param, value):
+def print_version(
+    ctx: click.Context, param: click.Parameter, value: bool
+) -> None:
     if not value or ctx.resilient_parsing:
         return
     from max import _core

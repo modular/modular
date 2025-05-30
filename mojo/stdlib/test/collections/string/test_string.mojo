@@ -886,7 +886,7 @@ def test_isspace():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape sequences are accepted
-    var univ_sep_var = List[String](
+    var univ_sep_var = [
         String(" "),
         String("\t"),
         String("\n"),
@@ -899,7 +899,7 @@ def test_isspace():
         String(bytes=next_line),
         String(bytes=unicode_line_sep),
         String(bytes=unicode_paragraph_sep),
-    )
+    ]
 
     for i in univ_sep_var:
         assert_true(i[].isspace())

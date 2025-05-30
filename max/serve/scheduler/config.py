@@ -15,9 +15,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from max.pipelines.lib import PipelineRole
+
+if TYPE_CHECKING:
+    from max.serve.scheduler.audio_generation_scheduler import (
+        AudioGenerationSchedulerConfig,
+    )
 from max.serve.scheduler.queues import BatchingStrategy, BatchQueueConfig
 
 
@@ -45,6 +50,9 @@ class TokenGeneratorSchedulerConfig:
     token_generation: BatchQueueConfig
     context_encoding: Optional[BatchQueueConfig] = None
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
+    audio_generator_scheduler_config: Optional[
+        AudioGenerationSchedulerConfig
+    ] = None
 
     @property
     def max_batch_size_tg(self) -> int:
