@@ -52,7 +52,7 @@ private:
 /// signature type.
 class AttrTypeMangler {
 public:
-  using Cache = DenseSet<const void *>;
+  using Cache = llvm::DenseSet<const void *>;
 
   explicit AttrTypeMangler(Cache &manglerCache) : manglerCache(manglerCache) {}
 
@@ -74,7 +74,7 @@ public:
 
   /// Populate the mangler using the decls in two potentially conflicting
   /// scopes. Returns false if there is nothing to mangle.
-  bool populate(Builder &b, const ParameterUseDefGraph &curScope,
+  bool populate(Builder &b, NameUniquer &uniquer,
                 const llvm::SetVector<StringAttr> &calleeDecls,
                 const ParameterUseDefGraph &topLevelGraph);
 
