@@ -97,6 +97,7 @@ from nn.mha_sm90 import (
     mha_sm90_dispatch,
 )
 from nn.mha_utils import (
+    FlashAttentionAlgorithm,
     MHAConfig,
     _copy_frag_to_smem,
     _kernel_mask,
@@ -424,6 +425,7 @@ fn flash_attention_dispatch[
                 ctx.device_info is H100
                 and q_half_float
                 and (ragged or not _use_valid_length)
+                and config.algorithm == FlashAttentionAlgorithm(3)
             ):
                 mha_sm90_dispatch[
                     config=config,
