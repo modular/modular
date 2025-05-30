@@ -235,6 +235,7 @@ public:
     kBoolAnd,    // infix: and
     kBoolNot,    // prefix: not
     kComparison, // infix: in, not in, is, is not, <, <=, >, >=, !=, ==
+    kVarRefPat,  // prefix: var, ref
     kOr,         // infix: |
     kXor,        // infix: ^
     kAnd,        // infix: &

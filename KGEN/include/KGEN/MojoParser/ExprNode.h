@@ -31,6 +31,14 @@ class ASTType;
 class IREmitter;
 class ValueDest;
 
+/// This enum value keeps track of whether a "target" is being emitted in a
+/// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
+enum class PatternDeclKind {
+  kNone, // Reuse or synthesize or function-scope variable like Python.
+  kVar,  // Make a scoped vardecl in this context. "var x = ..."
+  kRef,  // Bind a scoped reference in this context. "ref x = ..."
+};
+
 //===----------------------------------------------------------------------===//
 // ExprNode
 //===----------------------------------------------------------------------===//
@@ -86,8 +94,10 @@ public:
     kBoolNot,  // not x
     kAwait,    // await x
     kTransfer, // x^
+    kVarPat,   // var x
+    kRefPat,   // ref x
     kFirstUnaryOp = kNeg,
-    kLastUnaryOp = kTransfer,
+    kLastUnaryOp = kRefPat,
 
     // Binary expressions.
     kAdd,
@@ -230,7 +240,11 @@ public:
   /// If this expression is an LValue with an inherent type, emit it and return
   /// it. Otherwise return an ExprNode* to further resolve (with emitIR) or
   /// emit an error and return failure.
-  virtual ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter) const {
+  ///
+  /// 'kind' indicates whether this pattern is implicitly scoped to the function
+  /// or whether it is explicitly a 'var' or 'ref' pattern.
+  virtual ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                                   PatternDeclKind kind) const {
     return ELVIITResult(this);
   }
 };
@@ -244,7 +258,8 @@ public:
   LValueCapableExprNode(Kind kind) : ExprNode(kind) {}
 
   // A default implementation is provided for these that forward to emitIR.
-  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter) const override;
+  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                           PatternDeclKind kind) const override;
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
 
   virtual ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,

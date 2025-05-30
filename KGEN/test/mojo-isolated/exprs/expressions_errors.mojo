@@ -113,6 +113,20 @@ fn SomethingWithInferredParamCaller(v: SomethingWithInferredParam):
   SomethingWithInferredParamCallee(v)
 
 ##===----------------------------------------------------------------------===##
+# Variable declarations
+##===----------------------------------------------------------------------===##
+
+fn test_var_decl_patterns(cond: Bool):
+  # expected-note @+1 {{previous definition here}}
+  var x = 42 # ok of course.
+
+  (var x) = 42 # expected-error {{invalid redefinition of 'x'}}
+
+  if cond:
+    (var x) = 42
+
+
+##===----------------------------------------------------------------------===##
 # Conversions
 ##===----------------------------------------------------------------------===##
 

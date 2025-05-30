@@ -101,6 +101,10 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "Await";
   case ExprNode::kTransfer:
     return "Transfer";
+  case ExprNode::kVarPat:
+    return "VarPat";
+  case ExprNode::kRefPat:
+    return "RefPat";
   case ExprNode::kAdd:
     return "Add";
   case ExprNode::kSub:

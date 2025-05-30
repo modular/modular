@@ -527,7 +527,7 @@ fn induction_var_scope():
 
     # CHECK: lit.loop
     # CHECK: } body {
-    for item in IterRange(0):
+    for (var item) in IterRange(0):
         # CHECK-NEXT: __next__
         # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item

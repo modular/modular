@@ -42,14 +42,17 @@
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 ExprNode::ELVIITResult
-LValueCapableExprNode::emitLValueIfImplicitlyTyped(IREmitter &emitter) const {
+LValueCapableExprNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                                   PatternDeclKind kind) const {
   ValueDest dest(EC_Assignment);
+  dest.patternDeclKind = kind;
   return emitLCVIR(dest, emitter, true);
 }
 
@@ -679,7 +682,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // If this decl is part of a pattern that is wrapped in a var or ref, then
   // we need to emit a VarDeclOp for it in this scope.
-  if (dest.patternDeclKind != ValueDest::kNoDeclKind) {
+  if (dest.patternDeclKind != PatternDeclKind::kNone) {
     // Always return this node back on a speculative lookup, because we don't
     // have the contextual type available yet.
     if (isSpeculative)
@@ -700,7 +703,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
 
     // TODO: Introduce VarDeclKind::Ref and use it in emitVarDecl.
-    assert(dest.patternDeclKind != ValueDest::kRef &&
+    assert(dest.patternDeclKind != PatternDeclKind::kRef &&
            "TODO: ref pattern not supported yet");
 
     VarDeclOp varDecl =
@@ -2571,7 +2574,8 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, IREmitter &emitter) const {
   // If we care, we will have to change this in a 'def'.
 
   // Check out the LHS speculatively.
-  ELVIITResult lhsResult = lhs->emitLValueIfImplicitlyTyped(emitter);
+  ELVIITResult lhsResult =
+      lhs->emitLValueIfImplicitlyTyped(emitter, PatternDeclKind::kNone);
   if (lhsResult.isFailure())
     return {};
 
@@ -2944,7 +2948,49 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   return emitter.emitResult(MRValue(value), this, dest);
 }
 
+ExprNode::ELVIITResult
+UnaryOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                         PatternDeclKind parentKind) const {
+  // Most unary operators are never LValues, so don't speculatively resolve
+  // them.
+  if (kind != kVarPat && kind != kRefPat)
+    return this;
+
+  // This should never be possible to resolve because the 'var' or 'ref' should
+  // only influence the type of implicitly declared variables which cannot be
+  // speculatively resolved.  If we did speculatively resolve it, then this is
+  // an unneeded marker, e.g. "(var _) = x"
+  auto patKind =
+      kind == kVarPat ? PatternDeclKind::kVar : PatternDeclKind::kRef;
+  auto result = subExpr->emitLValueIfImplicitlyTyped(emitter, patKind);
+  if (result.isFailure())
+    return result;
+
+  // If we did resolve it, then we need to emit a warning.
+  if (result.getIfValue()) {
+    emitter.emitWarning(getLoc())
+        << (kind == kVarPat ? "'var'" : "'ref'")
+        << " pattern didn't declare a new variable, it can be removed";
+    return result;
+  }
+
+  auto *newSubExpr = result.getIfExprNode();
+  if (newSubExpr == subExpr)
+    return this;
+
+  return emitter.shared.allocPersistent<UnaryOpNode>(
+      kind, opLoc, const_cast<ExprNode *>(newSubExpr));
+}
+
 AnyValue UnaryOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+
+  if (kind == kVarPat || kind == kRefPat) {
+    auto patKind =
+        kind == kVarPat ? PatternDeclKind::kVar : PatternDeclKind::kRef;
+    llvm::SaveAndRestore builderSaver(dest.patternDeclKind, patKind);
+    return subExpr->emitIR(dest, emitter);
+  }
+
   auto exprRep = emitter.emitExpr(subExpr, EC_OperatorOperandValue);
   if (!exprRep)
     return {};
@@ -3601,7 +3647,8 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     bool allEltsKnownLValue = true;
     bool anyExprChanged = false;
     for (const ExprNode *expr : exprs) {
-      auto result = expr->emitLValueIfImplicitlyTyped(emitter);
+      auto result =
+          expr->emitLValueIfImplicitlyTyped(emitter, dest.patternDeclKind);
       if (result.isFailure())
         return {};
       if (auto *newExpr = result.getIfExprNode()) {
