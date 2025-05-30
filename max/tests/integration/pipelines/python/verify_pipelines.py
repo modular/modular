@@ -78,6 +78,37 @@ def resolve_rlocation(rloc: str) -> Path:
     return Path(resolved)
 
 
+def verdict_sorting_key(
+    pipeline_verdict_tuple: tuple[str, VerificationVerdict],
+) -> tuple[str, int, str]:
+    """Returns a sorting tuple, ordered by modality, dtype, then alphabetically."""
+    pipeline_name, verdict = pipeline_verdict_tuple
+
+    # Extract modality, defaulting to "N/A" if not available
+    modality = "N/A"
+    if verdict.discrepancy_report is not None:
+        modality = verdict.discrepancy_report.model_modality
+
+    # Prioritize logit first, N/A last, others alphabetically in between
+    if modality == "logit":
+        modality_key = "0_logit"
+    elif modality == "N/A":
+        modality_key = "2_N/A"
+    else:
+        modality_key = f"1_{modality}"
+    # Determine dtype priority
+    sort_order_by_dtype = ["float32", "bfloat16", "float8", "q4_k", "gptq"]
+    name_lower = pipeline_name.lower()
+
+    dtype_priority = len(sort_order_by_dtype)  # Default for unknown dtypes
+    for i, dtype in enumerate(sort_order_by_dtype):
+        if name_lower.endswith(dtype):
+            dtype_priority = i
+            break
+
+    return (modality_key, dtype_priority, name_lower)
+
+
 def dump_results(
     verdicts: Mapping[str, VerificationVerdict], *, to: TextIO = sys.stdout
 ) -> None:
@@ -92,9 +123,7 @@ def dump_results(
     to.write("| Status | Pipeline | Modality | KL Div | MAE |\n")
     to.write("|:------:|:---------|:--------:|:------:|:----:|\n")
 
-    for pipeline, verdict in sorted(
-        verdicts.items(), key=lambda x: x[0].lower()
-    ):
+    for pipeline, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
         kl_div = "N/A"
         mae = "N/A"
         modality = "N/A"
