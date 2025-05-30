@@ -74,7 +74,7 @@ Attribute AttrTypeMangler::mangleRefsIn(Attribute attr, bool &hasRefs) {
   return mangleRefsInImpl(attr, hasRefs);
 }
 
-bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
+bool AttrTypeMangler::populate(Builder &b, NameUniquer &uniquer,
                                const llvm::SetVector<StringAttr> &calleeDecls,
                                const ParameterUseDefGraph &topLevelGraph) {
   VerboseCompilerTimeTraceScope traceScope("AttrTypeMangler::populate");
@@ -84,22 +84,26 @@ bool AttrTypeMangler::populate(Builder &b, const ParameterUseDefGraph &curScope,
   // these are the declarations that will project into the inlined body. We need
   // to mangle parameters in the inlined body such that they do not collide with
   // any declarations visible in the call scope, or in any nested scopes.
+  // Populate `mangleIdx` with the indices of the declarations that need
+  // mangling. This ensures we rename as few declarations as possible.
 
-  NameUniquer uniquer(curScope, topLevelGraph);
-  bool needsMangling = false;
-  for (StringAttr decl : calleeDecls) {
-    if (!uniquer.needsMangling(decl))
-      continue;
-    if (!needsMangling) {
-      // Lazily populate with the callee decls
-      for (StringAttr name : calleeDecls)
-        uniquer.updateWith(name);
-    }
+  SmallVector<size_t> mangleIdx;
+  for (auto [i, decl] : llvm::enumerate(calleeDecls)) {
+    if (uniquer.needsMangling(decl))
+      mangleIdx.push_back(i);
+    uniquer.updateWith(decl);
+  }
+
+  if (mangleIdx.empty())
+    return false;
+
+  for (size_t i : mangleIdx) {
+    StringAttr decl = calleeDecls[i];
     auto mangled = uniquer.mangle(decl);
     mangledDecls.try_emplace(decl, mangled);
-    needsMangling = true;
   }
-  return needsMangling;
+
+  return true;
 }
 
 ParamDeclAttr AttrTypeMangler::mangleDecl(ParamDeclAttr decl,

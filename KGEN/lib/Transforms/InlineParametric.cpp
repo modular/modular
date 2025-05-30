@@ -124,7 +124,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
                                 const ParameterUseDefGraph &calleeParams,
                                 const llvm::SetVector<StringAttr> &calleeDecls,
                                 AttrTypeMangler::Cache &manglerCache,
-                                bool updateDebugInfo, bool debugCallsite) {
+                                NameUniquer &nameUniquer, bool updateDebugInfo,
+                                bool debugCallsite) {
   VerboseCompilerTimeTraceScope traceScope(
       "inlineGeneratorCall", [&] { return callee.getSymName().str(); });
 
@@ -140,7 +141,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   IRRewriter b{OpBuilder(call)};
   AttrTypeMangler mangler(manglerCache);
   bool needsMangling =
-      mangler.populate(b, *callScope, calleeDecls, topLevelGraph);
+      mangler.populate(b, nameUniquer, calleeDecls, topLevelGraph);
 
   // Make sure to rebind the call operands based on the mangled types of the
   // callee's argument types.
@@ -554,11 +555,12 @@ void ParametricInliningGraph::performInlining(
     ParametricInliningGraphNode *caller) {
   ParameterUseDefGraph callerParams(caller->func.getBodyRegion());
   callerParams.calculate(paramCaches.getThreadLocalCache());
+  NameUniquer uniquer(callerParams, callerParams);
   for (auto [call, callee] : caller->callsites) {
     inlineGeneratorCall(caller->func, call, callee->func, callee->level,
                         callerParams, callee->calleeParamGraph,
                         callee->allDecls, manglerCaches.getThreadLocalCache(),
-                        updateDebugInfo, !optimizationLevel);
+                        uniquer, updateDebugInfo, !optimizationLevel);
   }
 }
 
@@ -605,6 +607,7 @@ void InlineParametricPass::runOnOperation() {
       return;
     ParameterUseDefGraph callerParams(caller.func.getBodyRegion());
     callerParams.calculate(graph.paramCaches.getThreadLocalCache());
+    NameUniquer uniquer(callerParams, callerParams);
     for (auto [call, callee] : caller.callsites) {
       // Skip nodes that are not complete.
       if (callee->numProcessedCalls != callee->callsites.size())
@@ -612,7 +615,7 @@ void InlineParametricPass::runOnOperation() {
       inlineGeneratorCall(caller.func, call, callee->func, callee->level,
                           callerParams, callee->calleeParamGraph,
                           callee->allDecls,
-                          graph.manglerCaches.getThreadLocalCache(),
+                          graph.manglerCaches.getThreadLocalCache(), uniquer,
                           updateDebugInfo, !optimizationLevel);
     }
   };
