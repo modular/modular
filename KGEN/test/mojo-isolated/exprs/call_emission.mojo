@@ -218,7 +218,7 @@ fn test_variadic_and_kw_only_params[x: Index]():
 fn test_variadic_and_kw_only_params_indirect[x: Index,
     callee: fn [a: Index, b: Index, *args: Index, c: Index, d: Index = `0`]()->None]():
 
-    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, ?, x, 0), [])]()
+    # CHECK: lit.call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [], x, 0)]()
     callee[x, x, c=x]()
 
     # CHECK: call{{.*}}bind_params(:!lit.generator<{{.*}}> callee, x, x, [x, x], x, 0)]()

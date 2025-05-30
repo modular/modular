@@ -393,6 +393,27 @@ bool GetTypeNameAttr::isConstant() const { return false; }
 // BindParamsAttr
 //===----------------------------------------------------------------------===//
 
+/// Merge two lists of parameter bindings into a single binding list.
+/// Holes in a binding list are represented by UnboundAttrs.
+static SmallVector<TypedAttr>
+mergeParamBindings(ArrayRef<TypedAttr> prevBindings,
+                   ArrayRef<TypedAttr> newBindings) {
+  SmallVector<TypedAttr> mergedBindings;
+  auto newIt = newBindings.begin();
+  for (TypedAttr prevParam : prevBindings) {
+    // If there was a hole here, and we still have new bindings left, fill it
+    // with the next new binding. Otherwise, keep whatever was in the previous
+    // binding.
+    if (::isa<UnboundAttr>(prevParam) && newIt != newBindings.end())
+      mergedBindings.push_back(*newIt++);
+    else
+      mergedBindings.push_back(prevParam);
+  }
+  // If we still have new bindings left, add them to the end.
+  mergedBindings.append(newIt, newBindings.end());
+  return mergedBindings;
+}
+
 TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                               ArrayRef<TypedAttr> paramValues, Type type) {
   if (paramValues.empty())
@@ -417,24 +438,24 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
                                      paramValues);
 
     // We have to interleave the new values wherever there's an unbound thing
-    // so we preserve the order. Drop the first operand because it's the
-    // signature itself.
-    SmallVector<TypedAttr> mergedParamValues;
-    auto operandIt = paramValues.begin();
-    for (TypedAttr param : symbolConstant.getParamValues()) {
-      // If we have this parameter already, we're good. otherwise, bind it to
-      // the operand provided.
-      if (!::isa<UnboundAttr>(param))
-        mergedParamValues.push_back(param);
-      else
-        mergedParamValues.push_back(*operandIt++);
-    }
-    assert(operandIt == paramValues.end() && "Didn't use all the operands?");
+    // so we preserve the order.
+    SmallVector<TypedAttr> mergedParamValues =
+        mergeParamBindings(symbolConstant.getParamValues(), paramValues);
 
     return SymbolConstantAttr::get(symbolConstant.getSymbol(),
                                    ::cast<FuncTypeGeneratorType>(type),
                                    mergedParamValues);
   }
+
+  // If the actual generator is a BindParamsAttr, then we can flatten the new
+  // bindings into the existing ones.
+  if (auto bindParams = ::dyn_cast<BindParamsAttr>(generator)) {
+    SmallVector<TypedAttr> mergedParamValues =
+        mergeParamBindings(bindParams.getParamValues(), paramValues);
+    return Base::get(bindParams.getContext(), bindParams.getGenerator(),
+                     mergedParamValues, type);
+  }
+
   // Don't substitute any parameter values into a GeneratorAttr here. Those
   // should be handled by ParameterEvaluator explicitly so that any contextually
   // evaluated attributes that got updated can attempt a re-evaluation using
