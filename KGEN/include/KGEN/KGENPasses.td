@@ -379,6 +379,29 @@ def LowerControlFlow : Pass<"lower-control-flow"> {
 }
 
 //===----------------------------------------------------------------------===//
+// FunctionStats
+//===----------------------------------------------------------------------===//
+
+def ReorderParamDeclarations: Pass<"reorder-param-decls", "ModuleOp"> {
+  let summary = "Reorder Param Declarations.";
+  let description = [{
+    The `reorder-param-decl` pass reorders the declaration of parameters to
+    make sure they are declared before uses.
+    This reordering is need because:
+      - Parameters are attributes instead of SSAs, so the ordering between
+        the decl and use are not guaranteed.
+      - This is useful when parameter decl before use is required, e.g.
+        interpreting parametric functions.
+  }];
+
+  let dependentDialects = [
+    "MDialect",
+    "KGENDialect",
+  ];
+}
+
+
+//===----------------------------------------------------------------------===//
 // ElaborateGenerators
 //===----------------------------------------------------------------------===//
 
