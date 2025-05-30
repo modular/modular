@@ -53,7 +53,7 @@ def test_get_linkage_name_on_itself():
 
 def test_get_type_name():
     var name = get_type_name[Int]()
-    assert_equal(name, "stdlib::builtin::int::Int")
+    assert_equal(name, "stdlib.builtin.int.Int")
 
 
 def test_get_type_name_nested():
@@ -61,7 +61,7 @@ def test_get_type_name_nested():
         return get_type_name[T]()
 
     var name = nested_func[String]()
-    assert_equal(name, "stdlib::collections::string::string::String")
+    assert_equal(name, "stdlib.collections.string.string.String")
 
 
 def main():
