@@ -154,7 +154,7 @@ If you're [using conda](https://docs.modular.com/magic/conda), add
 the `https://conda.modular.com/max-nightly/` channel to
 your `environment.yaml` file. For example:
 
-```
+```yaml
 [project]
 name = "Mojo nightly example"
 channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
