@@ -3627,24 +3627,29 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // definition.
   SmallVector<ASTType> eltTypes;
   bool isLValueType = false;
-  if (auto destLVType = dest.getExpectedTypeIfSpecified()) {
+  if (auto expectedType = dest.getExpectedTypeIfSpecified()) {
     // Inferring an LValue type or an RValue type?
     isLValueType = !dest.getIfLValueInitializerType().isNull();
 
     // Special case the element type of Tuple.  We could be more general than
-    // this if there was a reason to, e.g. looking up a __getitem__
+    // this when there was a reason to, e.g. looking up a __getitem__
     // implementation.
     if (tupleType.isEqualCanon(
-            destLVType.getWithoutParameters(emitter.shared))) {
-      assert(destLVType.getParamBindings().size() == 1 &&
+            expectedType.getWithoutParameters(emitter.shared))) {
+      assert(expectedType.getParamBindings().size() == 1 &&
              "Tuple has one variadic parameter");
       if (auto variadicAttr =
-              dyn_cast<VariadicAttr>(destLVType.getParamBindings()[0])) {
+              dyn_cast<VariadicAttr>(expectedType.getParamBindings()[0])) {
         if (variadicAttr.getValues().size() == exprs.size()) {
           for (auto typeElt : variadicAttr.getValues())
             eltTypes.push_back(ASTType(typeElt));
         }
       }
+    } else if (isLValueType) {
+      emitter.emitError(getLoc(), "cannot unpack value of type ")
+          << expectedType << " into " << exprs.size() << " value"
+          << plural(exprs.size()) << getRange();
+      return {};
     }
   }
 
