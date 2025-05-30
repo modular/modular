@@ -131,7 +131,9 @@ enum IndexFold {
   kNoIndex,     // no index folding allowed
   kIndexResult, // index operation creates an index
   kOtherResult, // index operation does not create an index
-  k64BitResult, // index operation does not create an index and produces64-bit
+  k64BitResult, // index operation does not create an index and produces 64-bit
+                // result
+  k32BitResult, // index operation does not create an index and produces 32-bit
                 // result
 };
 
@@ -178,6 +180,8 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
       if constexpr (isOptional)
         if (!result32.has_value())
           return {};
+      if constexpr (foldType == k32BitResult)
+        return unwrap(result32);
       // Compare the results. Return the index value if the fold results match.
       // If the result type isn't an index represented as an APSInt, just
       // compare the results directly.
@@ -873,21 +877,67 @@ OpFoldResult SIMDXOrOp::fold(FoldAdaptor adaptor) {
 // BitcastOp
 //===----------------------------------------------------------------------===//
 
+// Unlike other places, invoking foldSIMDOpResult with kOtherResult will
+// require that 32 and 64 bit representation are the same, which is not needed
+// to bitcast index to some other type.
+// The helper function simply uses appropriate IndexFold type depending on a
+// index's size within AS or calls foldSIMDOpResult if input type is not an
+// index.
+template <typename... OpsFns>
+static OpFoldResult bitcastSIMDIndex(ArrayRef<Attribute> operands,
+                                     KGENDType inputDType,
+                                     KGENDType outputDType,
+                                     TargetInfoAttr target, OpsFns &&...ops) {
+  if (inputDType.isIndex()) {
+    ssize_t indexWidth = target ? target.resolveIndexBitWidth() : 64;
+    if (indexWidth == 64) {
+      return foldSIMDOpResult<::Detail::k64BitResult>(
+          operands, outputDType,
+          [&](const APSInt &in) { return APSInt(in, outputDType.isUInt()); },
+          [&](const APFloat &in) {
+            return APSInt(in.bitcastToAPInt(), outputDType.isUInt());
+          });
+    }
+    if (indexWidth == 32) {
+      return foldSIMDOpResult<::Detail::k32BitResult>(
+          operands, outputDType,
+          [&](const APSInt &in) { return APSInt(in, outputDType.isUInt()); },
+          [&](const APFloat &in) {
+            return APSInt(in.bitcastToAPInt(), outputDType.isUInt());
+          });
+    }
+    return {};
+  }
+  return foldSIMDOpResult<::Detail::kNoIndex>(operands, outputDType,
+                                              std::forward<OpsFns>(ops)...);
+}
+
 OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   // Don't fold if the size changes. This requires knowing the endianness of the
   // target.
   std::optional<KGENDType> dtype = getType().getResolvedDType();
-  if (!dtype || !getType().getResolvedSize() ||
+  std::optional<KGENDType> inputDType = getInput().getType().getResolvedDType();
+  if (!dtype || !inputDType || !getType().getResolvedSize() ||
       getInput().getType().getResolvedSize() != getType().getResolvedSize())
     return {};
   if (dtype->isBool()) // Modeling bool bitcast requires packing.
     return {};
+
+  TargetInfoAttr target = lookupTargetInfo(*this);
   if (dtype->isInt()) {
-    return foldSIMDOpResult<::Detail::kNoIndex>(
-        adaptor.getOperands(), *dtype,
+    return bitcastSIMDIndex(
+        adaptor.getOperands(), *inputDType, *dtype, target,
         [&](const APSInt &in) { return APSInt(in, dtype->isUInt()); },
         [&](const APFloat &in) {
           return APSInt(in.bitcastToAPInt(), dtype->isUInt());
+        });
+  }
+  if (dtype->isIndex()) {
+    return foldSIMDOpResult<::Detail::kOtherResult>(
+        adaptor.getOperands(), *dtype,
+        [&](const APSInt &in) { return APSInt(in, /*isUnsigned=*/true); },
+        [&](const APFloat &in) {
+          return APSInt(in.bitcastToAPInt(), /*isUnsigned=*/true);
         });
   }
   assert(dtype->isFloat());
@@ -895,8 +945,8 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   const llvm::fltSemantics *sem = dtype->getFloatSemantics();
   if (!sem)
     return {};
-  return foldSIMDOpResult<::Detail::kNoIndex>(
-      adaptor.getOperands(), *dtype,
+  return bitcastSIMDIndex(
+      adaptor.getOperands(), *inputDType, *dtype, target,
       [&](const APSInt &in) { return APFloat(*sem, in); },
       [&](const APFloat &in) { return APFloat(*sem, in.bitcastToAPInt()); });
 }
