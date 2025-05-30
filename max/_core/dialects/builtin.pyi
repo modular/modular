@@ -7,8 +7,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import enum
-from collections.abc import Sequence
-from typing import Callable, Protocol, overload
+from collections.abc import Callable, Sequence
+from typing import Protocol, overload
 
 import max._core
 from max.mlir import Location

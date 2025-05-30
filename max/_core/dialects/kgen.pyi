@@ -7,8 +7,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import enum
-from collections.abc import Sequence
-from typing import Callable, Protocol, overload
+from collections.abc import Callable, Sequence
+from typing import Protocol, overload
 
 import max._core
 import max._core.dialects.builtin
@@ -4115,4 +4115,7 @@ class FuncTypeGeneratorType(GeneratorType):
     pass
 
 class _KGENDType:
+    pass
+
+class ParamDefValue:
     pass

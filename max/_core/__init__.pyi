@@ -13,7 +13,6 @@ from typing import Callable, Generic, TypeVar
 from max.mlir import Attribute as MlirAttribute
 from max.mlir import Block as MlirBlock
 from max.mlir import Location
-from max.mlir import Operation as MlirOperation
 from max.mlir import Type as MlirType
 from max.mlir import Value as MlirValue
 
@@ -83,6 +82,12 @@ class Value(Generic[T]):
     @property
     def _CAPIPtr(self) -> object: ...
 
+class OpOperand:
+    @property
+    def value(self) -> Value: ...
+    @value.setter
+    def value(self, arg: Value, /) -> None: ...
+
 class InsertPoint:
     pass
 
@@ -94,10 +99,11 @@ class Block:
 
 class Operation:
     @staticmethod
-    def _from_cmlir(arg: MlirOperation, /) -> object: ...
+    def _from_cmlir(arg: object, /) -> Operation: ...
     def __eq__(self, arg: object, /) -> bool: ...
     @property
     def results(self) -> Sequence[Value]: ...
+    def verify(self, verify_recursively: bool = True) -> bool: ...
     def move_after(self, arg: Operation, /) -> None: ...
     @property
     def asm(self) -> str: ...
@@ -108,10 +114,10 @@ class Operation:
 class OpBuilder:
     def __init__(self, arg: InsertPoint, /) -> None: ...
 
-    OpType = TypeVar("OpType", bound=type[Operation])
+    Op = TypeVar("Op", bound=Operation)
     def create(
-        self, type: OpType, location: Location
-    ) -> Callable[..., OpType]: ...
+        self, type: type[Op], location: Location
+    ) -> Callable[..., Op]: ...
 
 class _LockedSymbolTableCollection:
     pass
@@ -123,6 +129,9 @@ class _TargetTriple:
     pass
 
 class _RelocationModel(enum.Enum):
+    pass
+
+class _MemoryEffect:
     pass
 
 __version__: str
