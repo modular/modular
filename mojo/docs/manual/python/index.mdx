@@ -3,6 +3,7 @@ title: Python interoperability
 sidebar_label: Introduction
 sidebar_position: 1
 description: Using Python and Mojo together.
+show_languages: true
 ---
 
 Because Mojo uses a Pythonic syntax, its easy to start reading and writing Mojo
@@ -26,7 +27,7 @@ Python functions and methods directly. Mojo will first load the CPython
 interpreter as a dynamic library (called `libpython.dylib` on macOS), and use
 that interpreter to execute Python code. For example:
 
-```mojo title="🔥 Mojo"
+```mojo
 from python import Python
 
 fn main():
@@ -39,7 +40,7 @@ language, we can't directly "evaluate" Mojo code. Instead, Mojo code must
 declare up front which functions and types are available to be called from
 Python. For example:
 
-```mojo title="🔥 mojo_module.mojo"
+```mojo title="mojo_module.mojo"
 @export
 fn PyInit_mojo_module() -> PythonObject:
     try:
@@ -56,7 +57,7 @@ fn mojo_greet(name: PythonObject):
 By defining a suitable `PyInit_*()` function, Mojo performs the necessary
 low-level binding calls to inform Python how to call Mojo code:
 
-```python title="🐍 main.py"
+```python title="main.py"
 import max._mojo.mojo_importer
 import mojo_module
 

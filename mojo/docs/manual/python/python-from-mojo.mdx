@@ -2,6 +2,7 @@
 title: Calling Python from Mojo
 sidebar_position: 2
 description: How to import and use Python modules in Mojo code.
+show_languages: true
 ---
 
 The Python ecosystem is full of useful libraries, so you shouldn't have to
@@ -16,7 +17,7 @@ To import a Python module in Mojo, just call
 with the module name. The following shows an example of importing the standard
 Python [NumPy](https://numpy.org/) package:
 
-```mojo title="🔥 Mojo"
+```mojo
 from python import Python
 
 def main():
@@ -83,7 +84,7 @@ the directory to the Python path and then import the module.
 
 For example, suppose you have a Python file named `mypython.py`:
 
-```python title="🐍 mypython.py"
+```python title="mypython.py"
 import numpy as np
 
 def gen_random_values(size, base):
@@ -94,7 +95,7 @@ def gen_random_values(size, base):
 
 Here's how you can import it and use it in a Mojo file:
 
-```mojo title="🔥 main.mojo"
+```mojo title="main.mojo"
 from python import Python
 
 def main():
@@ -109,6 +110,6 @@ Both absolute and relative paths work with
 [`add_to_path()`](/mojo/stdlib/python/python/Python#add_to_path). For example,
 you can import from the local directory like this:
 
-```mojo title="🔥 Mojo"
+```mojo
 Python.add_to_path(".")
 ```
