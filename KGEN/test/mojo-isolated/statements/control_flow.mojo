@@ -478,8 +478,8 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
         # CHECK:   lit.loop.condition [[COND]]
         # CHECK: } body {
-        # CHECK:   [[ITEM:%.*]] = lit.var.decl "item"
         # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next__{{.*}}(%$RANGE)
+        # CHECK:   [[ITEM:%.*]] = lit.var.decl "item"
 
         # The Index value from this element is captured into item, not the reference.
         # CHECK: [[ELTVAL:%.*]] = lit.ref.load [[ELTREF]]
@@ -519,6 +519,7 @@ fn induction_var_scope():
     # CHECK: lit.loop
     # CHECK: } body {
     for item in IterRange(0):
+        # CHECK-NEXT: __next__
         # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         # CHECK: lit.ref.store %{{.*}}, %g
@@ -527,6 +528,7 @@ fn induction_var_scope():
     # CHECK: lit.loop
     # CHECK: } body {
     for item in IterRange(0):
+        # CHECK-NEXT: __next__
         # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item

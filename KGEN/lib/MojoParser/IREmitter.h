@@ -116,7 +116,10 @@ struct LValueBufferTaken {};
 ///          1) a discard pattern, e.g. `_ = 42`
 ///          2) an implicitly declared var decl, e.g. `x = 42` in a def.
 ///          3) tuples and lists thereof, e.g. `(a, _) = foo()`
-///       In this case, the ExprNode type often conforms to the expression.
+///       In this case, the ExprNode type often conforms to the expression. This
+///       is used in "x = ..." and "for x in ..." etc. For target emission,
+///       the ValueDest tracks contextual information about whether the dest is
+///       wrapped by a `var` or `ref` context.
 ///   - an RValue type:
 ///       This indicates that the result may be treated in any way (e.g. dumping
 ///       into a temporary memory location as an MRValue or returned in an SSA
@@ -177,6 +180,14 @@ public:
   /// This returns the context the expression is getting emitted into (for
   /// diagnostic QoI purposes).
   ExprContext getContext() const { return context; }
+
+  /// This enum value keeps track of whether a "target" is being emitted in a
+  /// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
+  enum {
+    kNoDeclKind, // Reuse or synthesize or function-scope variable like Python.
+    kVar,        // Make a scoped vardecl in this context. "var x = ..."
+    kRef,        // Bind a scoped reference in this context. "ref x = ..."
+  } patternDeclKind = kNoDeclKind;
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.

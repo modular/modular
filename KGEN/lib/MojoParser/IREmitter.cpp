@@ -257,6 +257,9 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
       dest = ValueDest(LValueInitializerType{existingValueType}, context);
     }
 
+    // Propagate var/ref context (if any) into the generated declarations.
+    dest.patternDeclKind = patternDeclKind;
+
     /// Emit the target as an LValue to understand what we're assigning into. If
     /// this fails, it will produce an error.
     LValue exprLValue = emitter.emitExprLValue(expr, dest);
@@ -282,6 +285,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
   // If we have an uncollapsed expression, emit it to learn more about it.
   if (const ExprNode *target = dyn_cast<const ExprNode *>(representation)) {
     ValueDest dest(LValueInitializerType{resultType}, getContext());
+    dest.patternDeclKind = patternDeclKind;
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
     } else {

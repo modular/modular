@@ -677,6 +677,42 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
                             bool isSpeculative) const -> ELVIITResult {
   ASTDecl &container = emitter.declScope;
 
+  // If this decl is part of a pattern that is wrapped in a var or ref, then
+  // we need to emit a VarDeclOp for it in this scope.
+  if (dest.patternDeclKind != ValueDest::kNoDeclKind) {
+    // Always return this node back on a speculative lookup, because we don't
+    // have the contextual type available yet.
+    if (isSpeculative)
+      return this;
+    // Fail in cases like "var x = []" which is ambiguous.
+    ASTType varType = dest.getIfLValueInitializerType();
+    if (!varType) {
+      emitter.emitError(getLoc(), "cannot declare '")
+          << spelling << "' without a contextual type from its initializer"
+          << getRange();
+      return {};
+    }
+    // We need to be in a function body to declare a variable.
+    if (!emitter.builder || !container.getNearestDeclOfType<FnOp>()) {
+      emitter.emitError(getLoc(), "cannot declare '")
+          << spelling << "' in this context" << getRange();
+      return {};
+    }
+
+    // TODO: Introduce VarDeclKind::Ref and use it in emitVarDecl.
+    assert(dest.patternDeclKind != ValueDest::kRef &&
+           "TODO: ref pattern not supported yet");
+
+    VarDeclOp varDecl =
+        emitter.emitVarDecl(spelling, varType, getLocation(emitter),
+                            // Marked Implicit to disable warnings.
+                            VarDeclKind::Var);
+    ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
+        DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
+    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, getLoc());
+    return emitter.emitCResult(MLValue(varDecl), this, dest);
+  }
+
   // Notify the listener of a normal decl reference lookup.
   emitter.shared.notifyListenerOnMemberLookup(container, getLoc(),
                                               /*searchParentScopes=*/true);
@@ -722,11 +758,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // Add implicitly declared variable to the name table OF THE FUNCTION, so
     // subsequent uses find this one.  We don't want implicit declarations in
     // different subscopes to get different implicit declarations.
-    ASTDecl *scopeToInsert = &container;
-    while (!isa<FnOp>(*scopeToInsert)) {
-      scopeToInsert = scopeToInsert->getParentDecl();
-      assert(scopeToInsert && "not in a def?");
-    }
+    ASTDecl *scopeToInsert = container.getNearestDeclOfType<FnOp>();
 
     // Get the raw FileLineColLoc, and fuse with the debug scope of the
     // container if it exists.
@@ -3667,6 +3699,8 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         eltDest = ValueDest(eltTypes[i], EC_TupleElement);
     }
 
+    // Propagate var/ref context.
+    eltDest.patternDeclKind = dest.patternDeclKind;
     auto exprVal = emitter.emitExpr(expr, eltDest);
     if (!exprVal)
       return {};
