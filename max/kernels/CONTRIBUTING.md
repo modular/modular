@@ -67,18 +67,18 @@ You can use a pull request to propose a change or bug fix. This page gives an ov
 
 ### **Pull request process**
 
-**First-time checklist**
+#### **First-time checklist**
 
 Before you start your first pull request, please complete this checklist:
 
 - Read this entire contributor guide.
 - Read the [Code of Conduct](https://github.com/modular/modular/blob/main/CODE_OF_CONDUCT.md).
 
-**Evaluate and get buy-in on the change**
+#### **Evaluate and get buy-in on the change**
 
 We want to be sure that you spend your time efficiently and prepare changes that aren’t controversial and get stuck in long rounds of reviews. See [the section on changes we accept](#changes-we-accept) for more details.
 
-**Fork and clone the repo**
+#### **Fork and clone the repo**
 
 Go to the [modular repo](https://github.com/modular/modular) and click the fork button:
 
@@ -98,7 +98,7 @@ git remote add upstream git@github.com:modular/modular.git
 git fetch upstream
 ```
 
-**Branching off main**
+#### **Branching off main**
 
 Make sure to branch off `main` to work on your PR:
 
@@ -114,7 +114,7 @@ git fetch upstream
 git rebase upstream/main
 ```
 
-**Getting the nightly Mojo compiler**
+#### **Getting the nightly Mojo compiler**
 
 Now that you're on the main branch, you need to install the latest nightly build.
 
@@ -136,7 +136,7 @@ platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 max = "*"
 ```
 
-**Mojo nightly vscode extension**
+#### **Mojo nightly vscode extension**
 
 Install the [Mojo nightly VS Code extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo-nightly):
 
@@ -144,7 +144,7 @@ Install the [Mojo nightly VS Code extension](https://marketplace.visualstudio.c
 
 You can only have one Mojo extension enabled at a time, remember to switch back when using the stable release!
 
-**Create a pull request**
+#### **Create a pull request**
 
 If your change is one of the improvements described above or has been discussed and agreed upon by the project maintainers, please create a pull request into the `main` branch.
 
@@ -173,7 +173,7 @@ Now fill out the details:
 
 Thank you for your contributions! ❤️
 
-**Signing the CLA**
+#### **Signing the CLA**
 
 For each pull request, we require that you certify that you wrote the change or otherwise have the right to pass it on as an open-source patch by signing [our contributor license agreement](https://github.com/modular/cla/blob/main/CLA.md). You can sign the CLA by posting a comment on your pull request that says, "I have read the CLA Document and I hereby sign the CLA." The `github-actions` bot will leave a comment on your pull request reminding you to complete this step.
 
@@ -191,7 +191,7 @@ Once a contributor addresses feedback, maintainers will review updates as soon a
 
 ### **Issue Triage Timeline**
 
-**New Issues**
+#### **New Issues**
 
 Maintainers will label and acknowledge new issues within 10 days of the issue submission.
 
@@ -211,7 +211,7 @@ Note that just because a pull request has been reviewed does not necessarily mea
 
 If delays occur, we'll provide status updates in the relevant thread (pull request or GitHub issue). 
 
-**How You Can Help**
+#### **How You Can Help**
 
 To ensure quicker reviews:
 - **Ensure your PR is small and focused.** See the [pull request size section](https://github.com/modular/modular/blob/main/mojo/CONTRIBUTING.md#about-pull-request-sizes) for more info.
