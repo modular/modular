@@ -99,6 +99,29 @@ def test_from_str():
         assert_equal(DType._from_str(String(dtypes[i])), dtypes[i])
 
 
+def test_get_dtype():
+    def _test[D: DType]():
+        assert_equal(DType.get_dtype[Scalar[D]](), D)
+
+        @parameter
+        for i in range(6):
+            assert_equal(DType.get_dtype[SIMD[D, 2**i], 2**i](), D)
+
+    _test[DType.int8]()
+    _test[DType.int16]()
+    _test[DType.int32]()
+    _test[DType.int64]()
+    _test[DType.uint8]()
+    _test[DType.uint16]()
+    _test[DType.uint32]()
+    _test[DType.uint64]()
+    _test[DType.float16]()
+    _test[DType.float32]()
+    _test[DType.float64]()
+    _test[DType.index]()
+    _test[DType.bool]()
+
+
 def main():
     test_equality()
     test_stringable()
@@ -106,3 +129,4 @@ def main():
     test_key_element()
     test_sizeof()
     test_from_str()
+    test_get_dtype()
