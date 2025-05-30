@@ -2566,6 +2566,7 @@ class ConvOp(max._core.Operation):
         dilations: max._core.Value[TensorType],
         paddings: max._core.Value[TensorType],
         num_groups: max._core.Value[TensorType],
+        filter_layout: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
@@ -2580,6 +2581,12 @@ class ConvOp(max._core.Operation):
     def paddings(self) -> max._core.Value[TensorType]: ...
     @property
     def num_groups(self) -> max._core.Value[TensorType]: ...
+    @property
+    def filter_layout(self) -> str: ...
+    @filter_layout.setter
+    def filter_layout(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def output_param_decls(
         self,
