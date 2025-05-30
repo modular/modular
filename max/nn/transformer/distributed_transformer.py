@@ -13,9 +13,10 @@
 
 from __future__ import annotations
 
-from collections.abc import MutableSequence
+from collections.abc import Iterable, MutableSequence
 from hashlib import md5
-from typing import cast
+from itertools import islice
+from typing import Union, cast
 
 from max.dtype import DType
 from max.graph import (
@@ -42,6 +43,11 @@ from ..layer import LayerList, Module
 from ..linear import ColumnParallelLinear
 from ..norm import DistributedRMSNorm
 from .transformer import ReturnLogits
+
+
+def take(it: Iterable[Value], n: int) -> list[Value]:
+    """Return the next *n* items from *it* as a list."""
+    return list(islice(it, n))
 
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
@@ -115,31 +121,34 @@ class DistributedTransformerBlock(Module):
                 if subgraph is None:
                     with Graph.current.add_subgraph(
                         f"{name}_{name_suffix}",
-                        input_types=[_ChainType(), *subgraph_input_types],
+                        input_types=[*subgraph_input_types, _ChainType()],
                     ) as subgraph:
-                        subgraph._current_chain._mlir_value = subgraph.inputs[
-                            0
-                        ]._mlir_value
-                        arg_layer_idx = subgraph.inputs[1]
-                        arg_xs = subgraph.inputs[2 : 2 + num_devices]
-                        arg_signal_buffers = subgraph.inputs[
-                            2 + num_devices : 2 + 2 * num_devices
+                        inputs = iter(subgraph.inputs)
+                        arg_layer_idx = next(inputs)
+                        arg_xs = [x.tensor for x in take(inputs, num_devices)]
+                        arg_signal_buffers = [
+                            x.buffer for x in take(inputs, num_devices)
                         ]
-                        arg_kv_collections = subgraph.inputs[
-                            2 + 2 * num_devices : 2 + 3 * num_devices
-                        ]
-                        arg_input_row_offsets = subgraph.inputs[
-                            2 + 3 * num_devices
-                        ]
-                        subgraph._mlir_value_map.update(
-                            {
-                                w: subgraph_input._mlir_value
-                                for w, subgraph_input in zip(
-                                    weight_mlir_values,
-                                    subgraph.inputs[2 + 3 * num_devices + 1 :],
-                                )
-                            }
+                        arg_kv_collections = cast(
+                            list[
+                                Union[
+                                    ContinuousBatchingKVCacheCollection,
+                                    PagedKVCacheCollection,
+                                ]
+                            ],
+                            take(inputs, num_devices),
                         )
+
+                        arg_input_row_offsets = next(inputs)
+                        for weight, subgraph_input in zip(
+                            weights,
+                            take(inputs, len(weights)),
+                        ):
+                            weight._mlir_value = subgraph_input._mlir_value
+
+                        subgraph._current_chain._mlir_value = next(
+                            inputs
+                        )._mlir_value
 
                         # prevent re-entry
                         try:
@@ -153,10 +162,11 @@ class DistributedTransformerBlock(Module):
                             )
                         finally:
                             outer_self.use_subgraph = True
-                        subgraph.output(
-                            subgraph._current_chain,
-                            *results,
-                        )
+                            for weight, original_weight_mlir_value in zip(
+                                weights, weight_mlir_values
+                            ):
+                                weight._mlir_value = original_weight_mlir_value
+                        subgraph.output(*results, subgraph._current_chain)
 
                 call_args: MutableSequence[Value] = [
                     layer_idx,
