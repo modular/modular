@@ -685,8 +685,12 @@ struct type_caster<::mlir::TypeRange> {
 /// This makes a copy of the value pointers passing either direction.
 template <>
 struct type_caster<::mlir::ValueRange> {
-  using Caster = make_caster<llvm::ArrayRef<mlir::Value>>;
-  NB_TYPE_CASTER(::mlir::ValueRange, Caster::Name)
+  using TypeCaster = make_caster<mlir::Type>;
+  using ValueCaster = make_caster<mlir::Value>;
+  using Caster = make_caster<llvm::ArrayRef<mlir::TypedValue<mlir::Type>>>;
+  NB_TYPE_CASTER(::mlir::ValueRange, const_name("Sequence[") +
+                                         ValueCaster::Name + const_name("[") +
+                                         TypeCaster::Name + const_name("]]"))
   Caster caster;
 
   bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
