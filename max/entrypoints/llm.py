@@ -51,7 +51,7 @@ class LLM:
     _request_queue: RequestQueue
     _response_queue: ResponseQueue
 
-    def __init__(self, pipeline_config: PipelineConfig):
+    def __init__(self, pipeline_config: PipelineConfig) -> None:
         settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
         self._pc = ProcessControl(threading, "LLM")
         self._request_queue = Queue()
@@ -70,7 +70,7 @@ class LLM:
         # TODO: set a timeout on wait
         self._pc.started_event.wait()
 
-    def __del__(self):
+    def __del__(self) -> None:
         self._pc.set_canceled()
         self._async_runner.join()
 
@@ -108,14 +108,10 @@ def _run_async_worker(
     request_queue: RequestQueue,
     response_queue: ResponseQueue,
     settings: Settings,
-):
+) -> None:
     asyncio.run(
         _async_worker(
-            pc,
-            pipeline_config,
-            request_queue,
-            response_queue,
-            settings,
+            pc, pipeline_config, request_queue, response_queue, settings
         )
     )
 
@@ -126,7 +122,7 @@ async def _async_worker(
     request_queue: RequestQueue,
     response_queue: ResponseQueue,
     settings: Settings,
-):
+) -> None:
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config
     )
@@ -134,70 +130,66 @@ async def _async_worker(
     model_name = pipeline_config.model_config.model_path
     dispatcher_factory = DispatcherFactory(settings.dispatcher_config)
 
-    async with start_telemetry_consumer(settings) as metric_client:
-        async with start_model_worker(
+    # Start the model worker process.
+    # Create dynamic and continuous batching workers and associated queues
+    # to feed the model worker process.
+    async with (
+        start_telemetry_consumer(settings) as metric_client,
+        start_model_worker(
             model_factory=model_factory,
             batch_config=batch_config,
             settings=settings,
             metric_client=metric_client,
             dispatcher_factory=dispatcher_factory,
-        ) as engine_queue:
-            # Start the model worker process.
-            # Create dynamic and continuous batching workers and associated queues
-            # to feed the model worker process.
-            async with TokenGeneratorPipeline(
-                model_name=model_name,
-                tokenizer=tokenizer,
-                engine_queue=engine_queue,
-            ) as pipeline:
-                pc.set_started()
-                while True:
-                    pc.beat()
-                    if pc.is_canceled():
-                        break
+        ) as engine_queue,
+        TokenGeneratorPipeline(
+            model_name=model_name,
+            tokenizer=tokenizer,
+            engine_queue=engine_queue,
+        ) as pipeline,
+    ):
+        pc.set_started()
+        while True:
+            pc.beat()
+            if pc.is_canceled():
+                break
 
-                    try:
-                        (prompts, max_new_tokens, use_tqdm) = request_queue.get(
-                            timeout=0.3
-                        )
+            try:
+                (prompts, max_new_tokens, use_tqdm) = request_queue.get(
+                    timeout=0.3
+                )
+            except queue.Empty:
+                continue
 
-                        if use_tqdm:
-                            pbar = tqdm.tqdm(total=len(prompts))
+            if use_tqdm:
+                pbar = tqdm.tqdm(total=len(prompts))
 
-                        # Lambda to do a full text generation for a request.
-                        async def all_tokens(
-                            i: int,
-                            prompt: str,
-                        ) -> tuple[int, str]:
-                            request = TokenGeneratorRequest(
-                                id=str(i),
-                                index=0,
-                                model_name=model_name,
-                                prompt=prompt,
-                                max_new_tokens=max_new_tokens,
-                            )
+            # Lambda to do a full text generation for a request.
+            async def all_tokens(i: int, prompt: str) -> tuple[int, str]:
+                request = TokenGeneratorRequest(
+                    id=str(i),
+                    index=0,
+                    model_name=model_name,
+                    prompt=prompt,
+                    max_new_tokens=max_new_tokens,
+                )
 
-                            # Generate this request until complete
-                            tokens = await pipeline.all_tokens(request)
-                            if use_tqdm:
-                                pbar.update(1)
-                            return (i, "".join(t.decoded_token for t in tokens))
+                # Generate this request until complete
+                tokens = await pipeline.all_tokens(request)
+                if use_tqdm:
+                    pbar.update(1)
+                return (i, "".join(t.decoded_token for t in tokens))
 
-                        all_tokens_tasks = [
-                            all_tokens(i, prompt)
-                            for i, prompt in enumerate(prompts)
-                        ]
-                        responses = [""] * len(prompts)
-                        for i, response in await asyncio.gather(
-                            *all_tokens_tasks
-                        ):
-                            responses[i] = response
+            all_tokens_tasks = [
+                all_tokens(i, prompt) for i, prompt in enumerate(prompts)
+            ]
+            responses = [""] * len(prompts)
+            for i, response in await asyncio.gather(*all_tokens_tasks):
+                responses[i] = response
 
-                        if use_tqdm:
-                            pbar.close()
+            if use_tqdm:
+                pbar.close()
 
-                        response_queue.put(responses)
+            response_queue.put(responses)
 
-                    except queue.Empty:
-                        continue
-                pc.set_completed()
+        pc.set_completed()
