@@ -29,7 +29,7 @@ eval_input: testlist NEWLINE* ENDMARKER
 
 decorator: '@' namedexpr_test NEWLINE
 decorators: decorator+
-decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt)
+decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt | alias_stmt)
 async_funcdef: ASYNC funcdef
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] ['->' result_type] ['as' NAME] ':' suite
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
@@ -90,7 +90,7 @@ vfplist: vfpdef (',' vfpdef)* [',']
 stmt: simple_stmt | compound_stmt
 simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | disable_del_stmt | flow_stmt |
-             import_stmt | global_stmt | exec_stmt | assert_stmt | var_stmt)
+             import_stmt | global_stmt | exec_stmt | assert_stmt | alias_stmt)
 expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
 top_expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -124,7 +124,9 @@ dotted_name: NAME ('.' NAME)*
 global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
-var_stmt: (ALIAS | VAR) top_expr_stmt
+var_stmt: VAR top_expr_stmt
+alias_stmt: ALIAS top_expr_stmt
+
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
@@ -168,7 +170,8 @@ not_test: 'not' not_test | comparison
 comparison: expr (comp_op expr)*
 comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr
-expr: xor_expr ('|' xor_expr)*
+expr: (VAR or_expr) | ('ref' or_expr) | or_expr
+or_expr: xor_expr ('|' xor_expr)*
 xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor]])*
 and_expr: shift_expr ('&' shift_expr)*
 shift_expr: arith_expr (('<<'|'>>') arith_expr)*
