@@ -17,6 +17,7 @@
 
 from collections.string import String
 from collections.string._utf8 import _is_valid_utf8
+from memory import stack_allocation
 from os import abort
 from pathlib import _dir_of_current_file
 from random import random_si64, seed
@@ -222,6 +223,35 @@ fn bench_string_is_valid_utf8[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark write_utf8
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_write_utf8[
+    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+    var codepoints_iter = items.codepoints()
+    # appending to a list to avoid paying the overhead of codepoint parsing
+    var codepoints = List[Codepoint](capacity=len(codepoints_iter))
+    for c in codepoints_iter:
+        codepoints.append(c)
+
+    @always_inline
+    @parameter
+    fn call_fn() raises:
+        var data = stack_allocation[4, Byte]()
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            for i in range(len(codepoints)):
+                var res = codepoints.unsafe_get(i).unsafe_write_utf8(data)
+                keep(Bool(res))
+
+    b.iter[call_fn]()
+    keep(Bool(items))
+    keep(Bool(codepoints))
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
 def main():
@@ -298,6 +328,9 @@ def main():
             )
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
                 BenchId(String("bench_string_is_valid_utf8" + suffix))
+            )
+            m.bench_function[bench_write_utf8[length, fname]](
+                BenchId(String("bench_write_utf8" + suffix))
             )
 
     results = Dict[String, (Float64, Int)]()
