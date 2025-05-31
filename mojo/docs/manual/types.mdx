@@ -598,14 +598,20 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
 * Mojo supports list and dictionary literals for collection initialization:
 
   ```mojo
-  # List literal
-  var nums: List[Int] = [2, 3, 5]
+  # List literal, element type infers to Int.
+  var nums = [2, 3, 5]
   ```
 
-  You can also use variadic arguments for lists:
+  You can also use an explicit type if you want a specific element type:
 
   ```mojo
-  var list = [2, 3, 5]
+  var list : List[UInt8] = [2, 3, 5]
+  ```
+
+  You can also use list "comprehensions" for compact conditional initialization:
+
+  ```mojo
+  var list2 = [x*Int(y) for x in nums for y in list if x != 3]
   ```
 
 * You can't `print()` a list, or convert it directly into a string.
@@ -626,7 +632,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
 var list = [2, 3, 4]
 for item in list:     # Copies the integer into "item"
       print(item, end=", ")
-      i = 0 # warning: assignment to 'i' was never used
+      item = 0 # warning: assignment to 'item' was never used
   print(list[0], list[1], list[2])
 ```
 
@@ -644,23 +650,7 @@ the element with `ref` instead of making a copy:
 var list = [2, 3, 4]
 for item in list:     # Copies the integer into "item"
       print(item, end=", ")
-      item = 0 # warning: assignment to 'item' was never used
-print("\nAfter loop:", list[0], list[1], list[2])
-```
-
-```output
-2, 3, 4,
-After loop: 0 0 0
-```
-
-You can also subscript the list with an integer:
-
-```mojo
-#: from collections import List
-var list = [2, 3, 4]
-for ref item in list:     # Captures reference into list.
-      print(item, end=", ")
-      item = 0 # mutates the entry in the list itself
+      item = 0
 print("\nAfter loop:", list[0], list[1], list[2])
 ```
 
