@@ -662,22 +662,44 @@ PValue OverloadSet::filterOverloadSetForValueType(
   if (!emitError)
     return {};
 
-  auto &diag = emitError(expr->getLoc());
+  InflightDiag &diag = emitError(expr->getLoc());
+  std::string functionTypeAsString =
+      "'" + functionType.getAsString(&getShared()) + "'";
+
   ArrayRef<ASTDecl *> declsToReport;
   if (validCandidates.empty()) {
-    diag << "no '" << baseName << "' candidates have type " << functionType
-         << expr->getRange();
+    diag << "no '" << baseName << "' candidates have type "
+         << functionTypeAsString << expr->getRange();
     declsToReport = fnDecls;
   } else {
-    diag << "ambiguous use of '" << baseName << "' as type " << functionType
-         << expr->getRange();
+    diag << "ambiguous use of '" << baseName << "' as type "
+         << functionTypeAsString << expr->getRange();
     declsToReport = validCandidates;
   }
 
   for (ASTDecl *candidate : declsToReport) {
+    auto candidateType = ASTType(cast<FnOp>(*candidate).getFullSignature());
+    std::string candidateTypeAsString =
+        "'" + candidateType.getAsString(&getShared()) + "'";
     diag.attachNote(candidate->getLoc())
-        << "candidate declared here with type "
-        << ASTType(cast<FnOp>(*candidate).getFullSignature());
+        << "candidate declared here with type " << candidateTypeAsString;
+    if (functionTypeAsString == candidateTypeAsString) {
+      std::string candidateRaw;
+      llvm::raw_string_ostream(candidateRaw) << candidateType.mlirType;
+      std::string expectedRaw;
+      llvm::raw_string_ostream(expectedRaw) << functionType.mlirType;
+
+      // This is a weird case where the expected function and the candidate
+      // function serialize to the same string, leading to confusing error
+      // messages for uses. Print out the kgen type as well.
+      diag.attachNote(candidate->getLoc())
+          << "More detailed comparison of candidate and expected function:"
+          << "\nCandidate full internal type: " << candidateRaw
+          << "\nExpected full internal type:  " // Extra space to line it up
+          << expectedRaw
+          << "\n(If you see this, please file an issue to improve this error "
+          << "message!)";
+    }
   }
   return {};
 }
