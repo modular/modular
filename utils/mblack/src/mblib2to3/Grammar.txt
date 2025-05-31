@@ -34,7 +34,7 @@ async_funcdef: ASYNC funcdef
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] ['->' result_type] ['as' NAME] ':' suite
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
 parameters: '(' [typedargslist] ')'
-result_type: [REF '[' test [',' test [',']] ']'] test
+result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
 
 # The following definition for typedarglist is equivalent to this set of rules:
 #
@@ -124,7 +124,7 @@ dotted_name: NAME ('.' NAME)*
 global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
-var_stmt: VAR top_expr_stmt
+var_stmt: (VAR|REF) top_expr_stmt
 alias_stmt: ALIAS top_expr_stmt
 
 
@@ -162,15 +162,15 @@ namedexpr_test: asexpr_test [':=' asexpr_test]
 # more stuff to be parser (which would fail on the ast).
 asexpr_test: test ['as' test]
 
-top_test: or_test ['if' or_test 'else' test] | lambdef
 test: functype | top_test
+top_test: or_test ['if' or_test 'else' test] | lambdef
 or_test: and_test ('or' and_test)*
 and_test: not_test ('and' not_test)*
 not_test: 'not' not_test | comparison
 comparison: expr (comp_op expr)*
 comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr
-expr: (VAR or_expr) | ('ref' or_expr) | or_expr
+expr: (VAR or_expr) | (REF or_expr) | or_expr
 or_expr: xor_expr ('|' xor_expr)*
 xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor]])*
 and_expr: shift_expr ('&' shift_expr)*
