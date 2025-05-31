@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import os
 import sys
 import unittest
 
@@ -14,7 +13,6 @@ import max._mojo.mojo_importer  # noqa
 # lookup path.
 sys.path.insert(0, "")
 
-os.environ["MOJO_PYTHON_LIBRARY"] = ""
 
 # Imports from 'mojo_module.mojo'
 import mojo_module  # type: ignore
