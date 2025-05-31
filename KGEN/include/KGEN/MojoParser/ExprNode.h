@@ -125,10 +125,11 @@ public:
     kLShift,
     kRShift,
     kPow,
-    kWalrus, // x := y aka walrus
-    kAssign, // x = y aka assignment_expression
+    kWalrus,      // x := y aka walrus
+    kTypePattern, // x: Int   (Used in assignment statements).
 
-    // Inplace operators.
+    // Assignment and Inplace operators.
+    kAssign, // x = y aka assignment_expression
     kIAdd,
     kISub,
     kIMul,

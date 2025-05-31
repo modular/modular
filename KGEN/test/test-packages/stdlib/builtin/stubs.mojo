@@ -353,6 +353,10 @@ struct UInt8:
     fn __init__(out self):
         pass
 
+    @implicit
+    fn __init__(out self, value: IntLiteral):
+        pass
+
 
 alias Byte = UInt8
 

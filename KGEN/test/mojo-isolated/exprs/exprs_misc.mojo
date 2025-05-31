@@ -126,6 +126,33 @@ fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R4REF]], [[ONE]])
     r4 += 1
 
+# CHECK-LABEL: lit.fn @"test_type_patterns
+fn test_type_patterns():
+    # Implicitly declared variables go at the top.
+    # CHECK-NEXT: %c = lit.var.decl "c" imp : !lit.ref<{{.*}}@List<:!AnyType #Int1>
+    # CHECK-NEXT: %b = lit.var.decl "b" imp : !lit.ref<!UInt8,
+
+    # CHECK-NEXT: lit.call {{.*}}marker
+    marker()
+
+    # CHECK: %a = lit.var.decl "a" var : !lit.ref<!Int,
+    (var a) : Int
+
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}int_literal 4>
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}UInt8::@"__init__{{.*}}([[TMP]])
+    # CHECK-NEXT: lit.ref.store [[TMP2]], %b
+    b: UInt8 = 4
+
+    # Show that the type annotation allows us to use the type in the pattern to
+    # infer the RHS type of the collection.
+    # CHECK: lit.call {{.*}}List::@"__init__
+    c: List[Int] = []
+
+    # declare multiple variables at once.
+    # CHECK: %d = lit.var.decl "d" var : !lit.ref<!Int,
+    # CHECK: %e = lit.var.decl "e" var : !lit.ref<!Int,
+    (var d, e) : (Int, Int)
+
 
 ##===----------------------------------------------------------------------===##
 # Test return slot optimization

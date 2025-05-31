@@ -157,6 +157,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "Pow";
   case ExprNode::kWalrus:
     return "Walrus";
+  case ExprNode::kTypePattern:
+    return "TypePattern";
   case ExprNode::kAssign:
     return "Assign";
   case ExprNode::kIAdd:

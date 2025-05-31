@@ -2652,6 +2652,26 @@ AnyValue BinOpNode::emitInplace(ValueDest &dest, IREmitter &emitter) const {
   return emitBinOpCall({lhsLV, lhs}, {rhsV, rhs}, kind, dest, this, emitter);
 }
 
+ExprNode::ELVIITResult
+BinOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                       PatternDeclKind patKind) const {
+  if (kind != kTypePattern)
+    return this;
+
+  // Emit the RHS as a type expression.
+  ASTType type = emitter.emitExprType(rhs, /*allowUnbound=*/true);
+  if (!type)
+    return {};
+
+  // Handle type patterns like "(xyz) : Type": "xyz" must be an lvalue that has
+  // the specified type, so we can direct emit it now.
+  ValueDest dest(LValueInitializerType{type}, EC_TypePattern);
+  dest.patternDeclKind = patKind;
+  if (auto lv = emitter.emitExprLValue(lhs, dest))
+    return AnyValue(lv);
+  return {}; // Failure emitting the LValue.
+}
+
 AnyValue BinOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // Handle weird binary operators specially if we have them.
   if (kind == kBoolAnd || kind == kBoolOr) // `x and y`, `x or y`
@@ -2661,7 +2681,15 @@ AnyValue BinOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   if (isAssignmentStmt()) // `x += y`
     return emitInplace(dest, emitter);
 
-  // Othewise we emit the LHS followed by the RHS.
+  if (kind == kTypePattern) { // "x: Type" not in an LValue position?
+    auto result = emitLValueIfImplicitlyTyped(emitter, dest.patternDeclKind);
+    if (result.isFailure())
+      return {};
+    assert(result.getIfValue() && "Failed to resolve value?");
+    return emitter.emitResult(result.getIfValue(), this, dest);
+  }
+
+  // Otherwise we emit the LHS followed by the RHS.
   AnyValue lhsRV = emitter.emitExpr(lhs, EC_OperatorOperandValue);
   AnyValue rhsRV = emitter.emitExpr(rhs, EC_OperatorOperandValue);
   if (!lhsRV || !rhsRV)

@@ -48,6 +48,7 @@ enum ExprContext {
   EC_CallParamValue,       // f[x]()
   EC_OperatorOperandValue, // x + y
   EC_InplaceBinOpDest,     // x += 42
+  EC_TypePattern,          // (x) : Type
   EC_FieldInitValue,       // SomeType{value: x}
   EC_DefaultArgument,      // def f(arg = x):
   EC_OwnedRegArgShadow,    // def f(x: Int):    -> var shadow slot.

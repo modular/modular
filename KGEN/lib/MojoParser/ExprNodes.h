@@ -572,7 +572,8 @@ struct BinOpNode final : public ExprNode {
   SourceRange getRange() const override {
     return {lhs->getRangeStart(), rhs->getRangeEnd()};
   }
-
+  ELVIITResult emitLValueIfImplicitlyTyped(IREmitter &emitter,
+                                           PatternDeclKind kind) const override;
   AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
   void print(mlir::raw_indented_ostream &os) const override;
 
