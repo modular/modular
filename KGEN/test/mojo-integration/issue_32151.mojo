@@ -44,16 +44,16 @@ struct MTuple[T: Copyable & Movable](
     fn cons(self, owned other: Self) -> Self:
         var new = self
         for e in other.elts:
-            new.elts.append(e[])
+            new.elts.append(e)
         return new
 
     @always_inline
     fn __add__(self, owned other: Self) -> Self:
         var new = Self()
         for e in self.elts:
-            new.elts.append(e[])
+            new.elts.append(e)
         for e in other.elts:
-            new.elts.append(e[])
+            new.elts.append(e)
         return new
 
     fn __str__(self) -> String:
