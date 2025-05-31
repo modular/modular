@@ -85,9 +85,9 @@ struct _DictEntryIter[
     @always_inline
     fn __next__(
         mut self,
-    ) -> Pointer[DictEntry[K, V], __origin_of(self.src[]._entries[0].value())]:
+    ) -> ref [self.src[]._entries[0].value()] DictEntry[K, V]:
         while True:
-            var opt_entry_ref = Pointer(to=self.src[]._entries[self.index])
+            ref opt_entry_ref = self.src[]._entries[self.index]
 
             @parameter
             if forward:
@@ -95,9 +95,9 @@ struct _DictEntryIter[
             else:
                 self.index -= 1
 
-            if opt_entry_ref[]:
+            if opt_entry_ref:
                 self.seen += 1
-                return Pointer(to=opt_entry_ref[].value())
+                return opt_entry_ref.value()
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -132,10 +132,8 @@ struct _DictKeyIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(
-        mut self,
-    ) -> Pointer[K, __origin_of(self.iter.__next__()[].key)]:
-        return Pointer(to=self.iter.__next__()[].key)
+    fn __next__(mut self) -> ref [self.iter.__next__().key] K:
+        return self.iter.__next__().key
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -164,8 +162,6 @@ struct _DictValueIter[
         forward: The iteration direction. `False` is backwards.
     """
 
-    alias ref_type = Pointer[V, dict_origin]
-
     var iter: _DictEntryIter[K, V, dict_origin, forward]
 
     fn __iter__(self) -> Self:
@@ -179,15 +175,13 @@ struct _DictValueIter[
             )
         )
 
-    fn __next__(mut self) -> Self.ref_type:
-        var entry_ref = self.iter.__next__()
+    fn __next__(mut self) -> ref [dict_origin] V:
+        ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.
-        return Self.ref_type(
-            to=UnsafePointer(to=entry_ref[].value).origin_cast[
-                origin=dict_origin
-            ]()[]
-        )
+        return UnsafePointer(to=entry_ref.value).origin_cast[
+            origin=dict_origin
+        ]()[]
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -729,8 +723,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         result += "{"
 
         var i = 0
-        for key_value in self.items():
-            result += repr(key_value[].key) + ": " + repr(key_value[].value)
+        for ref key_value in self.items():
+            result += repr(key_value.key) + ": " + repr(key_value.value)
             if i < len(self) - 1:
                 result += ", "
             i += 1
@@ -785,10 +779,10 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         found, _, index = self._find_index(hash, key)
 
         if found:
-            var entry = Pointer(to=self._entries[index])
-            debug_assert(entry[].__bool__(), "entry in index must be full")
+            ref entry = self._entries[index]
+            debug_assert(entry.__bool__(), "entry in index must be full")
             # SAFETY: We just checked that `entry` is present.
-            return entry[].unsafe_value().value
+            return entry.unsafe_value().value
 
         raise "KeyError"
 
@@ -853,10 +847,10 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         found, slot, index = self._find_index(hash, key)
         if found:
             self._set_index(slot, Self.REMOVED)
-            var entry = Pointer(to=self._entries[index])
-            debug_assert(entry[].__bool__(), "entry in index must be full")
-            var entry_value = entry[].unsafe_take()
-            entry[] = None
+            ref entry = self._entries[index]
+            debug_assert(entry.__bool__(), "entry in index must be full")
+            var entry_value = entry.unsafe_take()
+            entry = None
             self._len -= 1
             return entry_value^.reap_value()
         raise "KeyError"
@@ -880,9 +874,9 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         var key = Optional[K](None)
         var val = Optional[V](None)
 
-        for item in reversed(self.items()):
-            key = Optional(item[].key)
-            val = Optional(item[].value)
+        for ref item in reversed(self.items()):
+            key = Optional(item.key)
+            val = Optional(item.value)
             break
 
         if key:
@@ -921,7 +915,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         my_dict["b"] = 2
 
         for e in my_dict.items():
-            print(e[].key, e[].value)
+            print(e.key, e.value)
         ```
 
         Notes:
@@ -940,8 +934,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         Notes:
             The argument must be positional only.
         """
-        for entry in other.items():
-            self[entry[].key] = entry[].value
+        for ref entry in other.items():
+            self[entry.key] = entry.value
 
     fn clear(mut self):
         """Remove all elements from the dictionary."""
@@ -1030,9 +1024,9 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             elif index == Self.REMOVED:
                 pass
             else:
-                var entry = Pointer(to=self._entries[index])
-                debug_assert(entry[].__bool__(), "entry in index must be full")
-                if hash == entry[].value().hash and key == entry[].value().key:
+                ref entry = self._entries[index]
+                debug_assert(entry.__bool__(), "entry in index must be full")
+                if hash == entry.value().hash and key == entry.value().key:
                     return (True, slot, index)
             self._next_index_slot(slot, perturb)
 

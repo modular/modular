@@ -601,8 +601,8 @@ fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
     Returns:
         `True` if **any** element in the set is truthy, `False` otherwise.
     """
-    for item in set:
-        if item[]:
+    for ref item in set:
+        if item:
             return True
     return False
 
@@ -658,8 +658,8 @@ fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
     Returns:
         `True` if **all** elements in the set are truthy, `False` otherwise.
     """
-    for item in set:
-        if not item[]:
+    for ref item in set:
+        if not item:
             return False
     return True
 

@@ -211,13 +211,13 @@ def test_difference_update():
 def test_iter():
     var sum = 0
     for e in Set[Int]():
-        sum += e[]
+        sum += e
 
     assert_equal(sum, 0)
 
     sum = 0
     for var e in {1, 2, 3}:
-        sum += e[]
+        sum += e
 
     assert_equal(sum, 6)
 
@@ -517,7 +517,7 @@ def test_set_comprehension():
     var s1 = {x * x for x in range(10) if x & 1}
     assert_equal(s1, {1, 9, 25, 49, 81})
 
-    var s2 = {x * y[] for x in range(3) for y in s1}
+    var s2 = {x * y for x in range(3) for y in s1}
     assert_equal(s2, {0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162})
 
 

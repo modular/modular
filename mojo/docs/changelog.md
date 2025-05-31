@@ -139,6 +139,19 @@ what we publish.
 - The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
   prelude, so there is no need to import them anymore.
 
+- The `Dict` and `Set` iterators now return references to elements directly,
+  instead of returning `Pointer`. This eliminates the need for `[]` in the loop
+  body.  Make sure to use `ref` to avoid a copy if desired.
+
+  ```mojo
+      # Old:
+      for k_v in expected_dict.items():
+        use(k_v[].key, k_v[].value)
+      # New:
+      for ref k_v in expected_dict.items():
+        use(k_v.key, k_v.value)
+  ```
+
 - The `CollectionElement` trait has been removed.
 
 - Added support for a wider range of consumer-grade hardware, including:

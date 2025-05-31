@@ -1039,7 +1039,7 @@ struct Bench(Writable, Stringable):
         if self.config.format == Format.table and len(self.info_vec) > 0:
             for metric in metrics:
                 try:
-                    total_width += metrics[metric[]].max_width + 3
+                    total_width += metrics[metric].max_width + 3
                 except e:
                     abort(String(e))
             if self.config.verbose_timing:
@@ -1076,8 +1076,7 @@ struct Bench(Writable, Stringable):
             return
 
         # Write the metrics labels
-        for metric in metrics:
-            name = metric[]
+        for name in metrics:
             writer.write(sep, name)
             try:
                 writer.write(self.pad(metrics[name].max_width, name))
@@ -1119,8 +1118,7 @@ struct Bench(Writable, Stringable):
             var iters_pad = self.pad(iters_width, String(run.result.iters()))
             writer.write(sep, run.result.iters(), iters_pad)
 
-            for metric in metrics:
-                var name = metric[]
+            for var name in metrics:
                 try:
                     var rates = metrics[name].rates
                     var max_width = metrics[name].max_width

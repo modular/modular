@@ -30,7 +30,7 @@ struct Set[T: KeyElement](
     set.add(4)
 
     for element in set:
-        print(element[])
+        print(element)
 
     set -= Set[Int](3, 4, 5)
     print(set == Set[Int](1, 2))  # True
@@ -109,8 +109,8 @@ struct Set[T: KeyElement](
         """
         if len(self) != len(other):
             return False
-        for e in self:
-            if e[] not in other:
+        for ref e in self:
+            if e not in other:
                 return False
         return True
 
@@ -289,8 +289,8 @@ struct Set[T: KeyElement](
         var hash_value = 0
         # Hash combination needs to be commutative so iteration order
         # doesn't impact the hash value.
-        for e in self:
-            hash_value ^= hash(e[])
+        for ref e in self:
+            hash_value ^= hash(e)
         return hash_value
 
     @no_inline
@@ -336,8 +336,8 @@ struct Set[T: KeyElement](
         """
         writer.write("{")
         var written = 0
-        for item in self:
-            writer.write(repr(item[]))
+        for ref item in self:
+            writer.write(repr(item))
             if written < len(self) - 1:
                 writer.write(", ")
             written += 1
@@ -391,7 +391,7 @@ struct Set[T: KeyElement](
         if not self:
             raise "Pop on empty set"
         var iter = self.__iter__()
-        var first = iter.__next__()[]
+        var first = iter.__next__()
         self.remove(first)
         return first
 
@@ -406,8 +406,8 @@ struct Set[T: KeyElement](
             this set or the `other` set.
         """
         var result = self
-        for o in other:
-            result.add(o[])
+        for ref o in other:
+            result.add(o)
 
         return result^
 
@@ -422,9 +422,9 @@ struct Set[T: KeyElement](
             this set and the `other` set.
         """
         var result = Set[T]()
-        for v in self:
-            if v[] in other:
-                result.add(v[])
+        for ref v in self:
+            if v in other:
+                result.add(v)
 
         return result^
 
@@ -439,9 +439,9 @@ struct Set[T: KeyElement](
             the `other` set.
         """
         var result = Set[T]()
-        for e in self:
-            if e[] not in other:
-                result.add(e[])
+        for ref e in self:
+            if e not in other:
+                result.add(e)
         return result^
 
     fn update(mut self, other: Self):
@@ -453,8 +453,8 @@ struct Set[T: KeyElement](
         Args:
             other: Another Set instance to union with this one.
         """
-        for e in other:
-            self.add(e[])
+        for ref e in other:
+            self.add(e)
 
     fn intersection_update(mut self, other: Self):
         """In-place set intersection update.
@@ -478,9 +478,9 @@ struct Set[T: KeyElement](
         Args:
             other: Another Set instance to subtract from this one.
         """
-        for o in other:
+        for ref o in other:
             try:
-                self.remove(o[])
+                self.remove(o)
             except:
                 pass
 
@@ -496,8 +496,8 @@ struct Set[T: KeyElement](
         if len(self) > len(other):
             return False
 
-        for element in self:
-            if element[] not in other:
+        for ref element in self:
+            if element not in other:
                 return False
 
         return True
@@ -511,8 +511,8 @@ struct Set[T: KeyElement](
         Returns:
             True if this set is disjoint with the `other` set, False otherwise.
         """
-        for element in self:
-            if element[] in other:
+        for ref element in self:
+            if element in other:
                 return False
 
         return True
@@ -529,8 +529,8 @@ struct Set[T: KeyElement](
         if len(self) < len(other):
             return False
 
-        for element in other:
-            if element[] not in self:
+        for ref element in other:
+            if element not in self:
                 return False
 
         return True
@@ -546,13 +546,13 @@ struct Set[T: KeyElement](
         """
         var result = Set[T]()
 
-        for element in self:
-            if element[] not in other:
-                result.add(element[])
+        for ref element in self:
+            if element not in other:
+                result.add(element)
 
-        for element in other:
-            if element[] not in self:
-                result.add(element[])
+        for ref element in other:
+            if element not in self:
+                result.add(element)
 
         return result^
 

@@ -63,16 +63,16 @@ struct TempEnvWithCleanup:
         self.clean_up_function = clean_up_function
 
     def __enter__(mut self):
-        for key_value in self.vars_to_set.items():
-            var key = key_value[].key
-            var value = key_value[].value
+        for ref key_value in self.vars_to_set.items():
+            var key = key_value.key
+            var value = key_value.value
             self._vars_back[key] = os.getenv(key)
             _ = os.setenv(key, value, overwrite=True)
 
     fn __exit__(mut self):
-        for key_value in self.vars_to_set.items():
-            var key = key_value[].key
-            var value = key_value[].value
+        for ref key_value in self.vars_to_set.items():
+            var key = key_value.key
+            var value = key_value.value
             _ = os.setenv(key, value, overwrite=True)
 
     def __exit__(mut self, error: Error) -> Bool:

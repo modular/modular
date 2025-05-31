@@ -373,14 +373,14 @@ struct Python:
         if dict_obj_ptr.is_null():
             raise Error("internal error: PyDict_New failed")
 
-        for entry in kwargs.items():
+        for ref entry in kwargs.items():
             var key_ptr = cpython.PyUnicode_DecodeUTF8(
-                entry[].key.as_string_slice()
+                entry.key.as_string_slice()
             )
             if key_ptr.is_null():
                 raise Error("internal error: PyUnicode_DecodeUTF8 failed")
 
-            var val_obj = entry[].value.to_python_object()
+            var val_obj = entry.value.to_python_object()
             var result = cpython.PyDict_SetItem(
                 dict_obj_ptr, key_ptr, val_obj.py_object
             )
