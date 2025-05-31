@@ -1361,6 +1361,17 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
                                     /*allowAssign=*/true))
     return failure();
 
+  // Check for type pattern. In Python this is the:
+  //   annotated_assignment_stmt ::= augtarget ":" expression
+  // Part of the grammar.
+  SMLoc colonLoc;
+  if (p.consumeIf(Token::colon, &colonLoc)) {
+    ExprNode *type = nullptr;
+    if (p.parseExpression(type))
+      return failure();
+    expr = p.alloc<BinOpNode>(ExprNode::kTypePattern, expr, colonLoc, type);
+  }
+
   // If that was it, just return the expression.
   std::optional<ExprNode::Kind> assignKind =
       getAssignmentKind(p.getToken().getKind());

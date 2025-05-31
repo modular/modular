@@ -67,6 +67,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in operator argument";
   case EC_InplaceBinOpDest:
     return " for in-place operator destination";
+  case EC_TypePattern:
+    return " in type pattern";
   case EC_FieldInitValue:
     return " in field initializer";
   case EC_DefaultArgument:

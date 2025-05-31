@@ -413,8 +413,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
   if (isImplicitlyIgnorableType(valueType) ||
       // The `x = y` operation returns a borrowed version of its operand but its
-      // result can be ignored.
-      expr->kind == ExprNode::kAssign)
+      // result can be ignored.  "var x: T" patterns can also be ignored.
+      expr->kind == ExprNode::kAssign || expr->kind == ExprNode::kTypePattern)
     return;
 
   // If this type is a function with no formal arguments and an ignorable type,
