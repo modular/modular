@@ -104,6 +104,43 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     return failure();
   }
 
+  // In the below loops, we'll be checking that each trait method ("needle") is
+  // present in the struct too.
+  // For example:
+  //
+  //     trait MyTrait:
+  //         fn zork(self) -> Int:
+  //             ...
+  //     struct MyStruct:
+  //         fn zork(self) -> Int:
+  //             ...
+  //
+  // We simply look to see if the trait's `fn zork(self) -> Int` (the needle)
+  // exists in the struct too, which it does.
+  //
+  // Things get trickier when aliases are involved though, like:
+  //
+  //     trait MyTrait:
+  //         alias X: AnyType
+  //         fn zork(self) -> X:
+  //             ...
+  //     struct MyStruct:
+  //         alias X: AnyType = Int
+  //         fn zork(self) -> Int
+  //
+  // We can't just check if `fn zork(self) -> X` exists in the struct, because
+  // it doesn't.
+  // Instead, we need to substitute all the struct alias values (like `Int`)
+  // into the needle.
+  // Substituting the struct's `Int` in for `X`, the
+  // `fn zork(self) -> X` needle becomes the correct
+  // `fn zork(self) -> Int` needle.
+  // We then check if that exists in the struct and it does, excellent.
+  //
+  // These traitAliasReplacer and aliasValues maps help us do the needle
+  // substitutions later.
+  //
+  // TODO(MOCO-1993): Consolidate docs on this.
   ParserParameterEvaluator traitAliasReplacer(shared);
   DenseMap<StringAttr, TypedAttr> aliasValues;
 
@@ -184,13 +221,13 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
       return success();
     }
     Type structAliasType = structAliasDeclOp.getType();
+
     TypedAttr initializerExpr = structAliasDeclOp.getValueAttr();
     assert(initializerExpr && "Struct's alias should have initializer");
 
-    traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(),
-                                         initializerExpr);
-    aliasValues[name] = initializerExpr;
-
+    // We don't yet put initializerExpr into the traitAliasReplacer or
+    // aliasValues because they need to be converted first to the trait's
+    // alias's type (see SAVMBCTATBS).
     SyntheticNode synthNode(structAliasDecl->getLoc());
     if (!IREmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
                                                traitAliasType,
@@ -206,6 +243,46 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     CValue convertedValue = emitter.emitImplicitConversionToType(
         {initializerExpr, synthNode}, traitAliasType, dest);
     witnessTable.emplace_back(name, convertedValue.getIfPValue().get());
+
+    // Struct Alias Values Must Be Converted To Trait Alias's Type Before
+    // Substitution (SAVMBCTATBS):
+    //
+    // Things get a little trickier when we're using an alias as an input
+    // parameter to something else, like here:
+    //
+    //     struct Container[T: AnyType]:
+    //         ...
+    //     trait MyTrait:
+    //         alias X: AnyType
+    //         fn zork(self) -> Container[X]:
+    //             ...
+    //     struct MyStruct:
+    //         alias X: Copyable = Int       <-- "Int as Copyable" TypeParamAttr
+    //         fn zork(self) -> Container[Int]
+    //
+    // Notice the X: Copyable.
+    // That means that the struct's `X` has a value that's a TypeParamAttr,
+    // basically an `Int` that's masquerading as a `Copyable`.
+    // Unfortunately, when we do our substitution into our
+    // `fn zork(self) -> Container[X]` needle, it becomes a
+    // `fn zork(self) -> Container[Int as Copyable] needle, which is both wrong
+    // and also doesn't exist in the struct, because the struct contains:
+    // `fn zork(self) -> Container[Int as AnyType].
+    // I say it's wrong because an "Int as Copyable" parameter-value cannot be
+    // given to a parameter-decl that expects an AnyType. The vtables don't line
+    // up.
+    //
+    // So, to fix that, when we substitute into the needle, we first convert the
+    // struct alias's value (Int as Copyable) to the trait alias's type
+    // (AnyType).
+    // Here, we do it ahead of time, just before putting it into the replacer.
+    //
+    // TODO(MOCO-1993): Make sure this is consistently followed other places we
+    // do trait substitution, and maybe centralize this arcana to somewhere.
+    traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(),
+                                         convertedValue.getIfPValue());
+    aliasValues[name] = convertedValue.getIfPValue();
+
     return success();
   };
 

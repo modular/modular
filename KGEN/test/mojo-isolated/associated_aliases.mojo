@@ -144,7 +144,6 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @value
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
-    # TODO(MOCO-1993): Make it so we don't have to say `: ATrait` here.
     alias T: ATrait = ZInt
 
     fn bork(self) -> SIMD[ZInt]:
@@ -479,6 +478,50 @@ fn callTraitMethodWithAliasArg[
     # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasArgMethod X, "T")>
     # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasArgMethod X, "lork")
     t.lork(thing)
+
+
+# // -----
+
+# Tests that we correctly handle substituting struct alias into the "needle"
+# signature when confirming that a trait's method exists in the struct (see
+# SAVMBCTATBS).
+
+
+trait ATrait:
+    pass
+
+
+trait ASubTrait(ATrait):
+    pass
+
+
+@register_passable("trivial")
+struct ZInt(ATrait, ASubTrait):
+    pass
+
+
+struct SIMD[T: ATrait]:
+    pass
+
+
+trait TraitWithAliasReturnMethod:
+    alias T: ATrait
+
+    fn bork(self) -> SIMD[T]:
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
+@value
+struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
+    alias T: ASubTrait = ZInt
+
+    # If we didn't follow SAVMBCTATBS, then verifyConformance would be
+    # incorrectly checking for the existence of
+    # `fn bork(self) -> SIMD[:ASubTrait ZInt]:` which is actually malformed
+    # because SIMD takes an ATrait, not a ASubTrait.
+    fn bork(self) -> SIMD[ZInt]:
+        ...
 
 
 # TODO(MOCO-1259): Support static methods with associated aliases
