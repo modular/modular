@@ -1357,8 +1357,9 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
   // this by parsing the most general thing and sorting out what is valid later.
   ExprNode *expr = nullptr;
   // TODO: Handle yield_expression.
-  if (p.parseStarredExprListAsTuple(expr, /*terminators=*/{},
-                                    /*allowAssign=*/true))
+  if (p.parseStarredExprListAsTuple(
+          expr, /*terminators=*/{Token::colon, Token::equal},
+          /*allowAssign=*/true))
     return failure();
 
   // Check for type pattern. In Python this is the:

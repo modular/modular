@@ -84,6 +84,10 @@ def test_var_decl_patterns(c: Bool):
   # CHECK-NEXT: lit.var.decl "tup2" var
   (var tup1, tup2) = 1, 2
 
+  # Check that trailing commas work.
+  # https://github.com/modular/modular/issues/1649
+  x, x = 1, 2 # worked
+  x, x, = 1, 2 # failed
 
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
 fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
