@@ -474,7 +474,32 @@ struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
         ...
 
 
-# TODO(MOCO-1259): Support static methods with associated aliases
+# // -----
+
+# Tests that we can call a static method that has an associated alias in it.
+
+
+struct ZInt:
+    pass
+
+
+@fieldwise_init
+struct Zcalar[X: ZInt]:
+    pass
+
+
+trait FooTrait:
+    alias dtype: ZInt
+
+    @staticmethod
+    fn foo(x: Zcalar[dtype]):
+        ...
+
+
+fn bar[foo: FooTrait]():
+    p0 = Zcalar[foo.dtype]()
+    foo.foo(p0)
+
 
 # TODO(MOCO-1143): Make this work:
 # struct StructWithParam[X: ZInt]:
