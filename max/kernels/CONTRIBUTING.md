@@ -1,12 +1,12 @@
-# Contributing to the MAX AI Kernels
+# Contributing to the MAX AI kernels
 
-Thank you for your interest in contributing to the MAX AI Kernels! We’re excited
+Thank you for your interest in contributing to the MAX AI kernels! We’re excited
 to welcome external contributors to help build high-performance CPU and GPU
 kernels in Mojo.
 
 ## **✅ We are accepting contributions!**
 
-The MAX AI Kernels power key components of MAX and Mojo, and contributions here
+The MAX AI kernels power key components of MAX and Mojo, and contributions here
 can have a meaningful impact across the AI ecosystem. Before jumping in, please
 take a moment to review our contribution guidelines and processes.
 
@@ -32,7 +32,7 @@ architecture
 directory.**
 
 Contributors are encouraged to react with a 👍 to proposal PRs if they support
-the high-level direction. Proposals are reviewed and assigned to MAX AI Kernels
+the high-level direction. Proposals are reviewed and assigned to MAX AI kernels
 leads. A proposal can be merged once the lead approves, all blocking issues are
 resolved, and relevant decisions are incorporated. If a lead chooses to defer or
 reject the proposal, they will explain the reasoning and close the PR. This
@@ -250,7 +250,7 @@ submission.
 ### **Proposal Review Timeline**
 
 Proposals require more time for the team to review, discuss, and ensure they
-align with the overall strategy and vision for the MAX AI Kernels. These will be
+align with the overall strategy and vision for the MAX AI kernels. These will be
 discussed in the team's weekly design meetings internally, and feedback will be
 communicated back on the relevant proposal. As a team, we'll ensure they are
 reviewed and discussed within 6 weeks of submission.
