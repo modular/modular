@@ -134,6 +134,10 @@ what we publish.
     for var i in ["foo", "bar"]: ... # This i is scoped to this loop
   ```
 
+- Mojo now supports Python-style type patterns within function bodies without
+  needing the use of the `var` keyword, e.g.: `x = 4; y: UInt8 = 5` implicitly
+  declares `x` as type `Int`, but implicitly declares `y` with type `UInt8`.
+
 ### Standard library changes
 
 - The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
@@ -290,11 +294,13 @@ Changes to Python-Mojo interoperability:
 
 ### ❌ Removed
 
-- `VariadPack.each` and `VariadPack.each_idx` methods have been removed.
+- `VariadicPack.each` and `VariadicPack.each_idx` methods have been removed.
   Use the `@parameter for` language construct to achieve this now.
 
 ### 🛠️ Fixed
 
+- [#3415](https://github.com/modular/modular/issues/3415) - Type annotation
+  fails on implicit variable declarations
 - [#4352](https://github.com/modular/modular/issues/4352) - `math.sqrt`
   products incorrect results for large inputs.
 - [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes
