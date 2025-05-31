@@ -1547,7 +1547,7 @@ bool VarDeclOp::shouldWarnAboutUnused() {
   auto kind = getKind();
   // Don't warn about synthesized VarDecls, they aren't user-declared.
   return kind != VarDeclKind::Synthesized && kind != VarDeclKind::Arg &&
-         kind != VarDeclKind::InitOutArg &&
+         kind != VarDeclKind::InitOutArg && kind != VarDeclKind::Ref &&
          // Don't warn about things like _x, because this silences the warning.
          !getName().starts_with("_");
 }
