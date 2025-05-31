@@ -30,6 +30,7 @@ from .response import (
 from .tasks import PipelineTask
 from .text_generation import (
     PipelineTokenizer,
+    SamplingParams,
     TokenGenerator,
     TokenGeneratorContext,
     TokenGeneratorRequest,
@@ -51,6 +52,7 @@ __all__ = [
     "PipelineAudioTokenizer",
     "PipelineTask",
     "PipelineTokenizer",
+    "SamplingParams",
     "TextGenerationResponse",
     "TextGenerationStatus",
     "TextResponse",
