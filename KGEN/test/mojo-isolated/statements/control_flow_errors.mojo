@@ -111,7 +111,7 @@ fn test():
     for item in my_list_invalid_int:
         pass
 
-    # expected-error @+1 {{expected 'in' after target identifier. Note that target lists are not yet supported.}}
+    # expected-error @+1 {{'my_iter_no_next' does not implement the '__next__' method}}
     for key, item in my_list_no_next:
         pass
 

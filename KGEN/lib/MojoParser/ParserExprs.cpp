@@ -328,7 +328,7 @@ ParseResult ExprParser::parseStarredItem(ExprNode *&result, bool allowAssign) {
   // If allowAssign is true then we use a much more permissive subexpression
   // precedence, matching things like "in". If false, we allow limited things
   // that is more like a pattern to avoid interfering with "for x in y".
-  auto subPrec = allowAssign ? Precedence::kAssignExpr : Precedence::kOr;
+  auto subPrec = allowAssign ? Precedence::kAssignExpr : Precedence::kVarRefPat;
 
   SMLoc starLoc;
   if (consumeIf(Token::star, &starLoc))
@@ -1287,7 +1287,9 @@ ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
 /// "in" expressions.
 ParseResult ParserBase::parseTargetListExpr(ExprNode *&result,
                                             std::optional<size_t> stmtIndent) {
-  return parseExpression(result, stmtIndent, Precedence::kVarRefPat);
+  return ExprParser(shared, getLexer(), stmtIndent)
+      .parseStarredExprListAsTuple(result, /*terminators=*/{},
+                                   /*allowAssign=*/false);
 }
 
 ParseResult ParserBase::parseVarInitExpression(ExprNode *&result,

@@ -1066,8 +1066,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // returns a type that defines __len__ and __next__
   ExprNode *targetExpr = nullptr;
   if (parseTargetListExpr(targetExpr, curIndent) ||
-      parseToken(Token::kw_in, "expected 'in' after target identifier. Note "
-                               "that target lists are not yet supported."))
+      parseToken(Token::kw_in, "expected 'in' after target identifier"))
     return failure();
 
   ExprNode *seqExpr = nullptr;
@@ -1647,7 +1646,7 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   // otherwise targetName will be null.
   ExprNode *targetExpr = nullptr;
   if (consumeIf(Token::kw_as)) {
-    if (parseTargetListExpr(targetExpr, curIndent))
+    if (parseExpression(targetExpr, curIndent, Precedence::kVarRefPat))
       return failure();
   }
 
