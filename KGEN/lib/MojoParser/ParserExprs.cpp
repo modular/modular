@@ -50,15 +50,17 @@ public:
   ~ExprParser() = default;
 
   // Expressions.
-  ParseResult parseStarredList(SmallVectorImpl<ExprNode *> &results,
-                               ArrayRef<Token::Kind> terminators,
-                               SMLoc *firstCommaLoc = nullptr);
-  ParseResult parseStarredListAsTuple(ExprNode *&result,
-                                      ArrayRef<Token::Kind> terminators);
+  ParseResult parseStarredItemList(SmallVectorImpl<ExprNode *> &results,
+                                   ArrayRef<Token::Kind> terminators,
+                                   bool allowAssign,
+                                   SMLoc *firstCommaLoc = nullptr);
+  ParseResult parseStarredExprListAsTuple(ExprNode *&result,
+                                          ArrayRef<Token::Kind> terminators,
+                                          bool allowAssign);
 
   ParseResult parseExpression(ExprNode *&result,
                               Precedence minPrec = Precedence::kExpression);
-  ParseResult parseStarredItem(ExprNode *&result);
+  ParseResult parseStarredItem(ExprNode *&result, bool allowAssign);
 
   template <typename T, typename... Args>
   T *alloc(Args &&...args) {
@@ -119,13 +121,13 @@ private:
 // Parsing rules
 //===----------------------------------------------------------------------===//
 
-/// starred_list       ::=  starred_item ("," starred_item)* [","]
-/// starred_item       ::=  assignment_expression | "*" or_expr
-ParseResult ExprParser::parseStarredList(SmallVectorImpl<ExprNode *> &results,
-                                         ArrayRef<Token::Kind> terminators,
-                                         SMLoc *firstCommaLoc) {
+/// starred_item_list  ::=  starred_item ("," starred_item)* [","]
+ParseResult
+ExprParser::parseStarredItemList(SmallVectorImpl<ExprNode *> &results,
+                                 ArrayRef<Token::Kind> terminators,
+                                 bool allowAssign, SMLoc *firstCommaLoc) {
   auto parseItem = [&]() -> ParseResult {
-    return parseStarredItem(results.emplace_back(nullptr));
+    return parseStarredItem(results.emplace_back(nullptr), allowAssign);
   };
 
   return parseCommaSeparatedList(parseItem, terminators, stmtIndent,
@@ -133,12 +135,13 @@ ParseResult ExprParser::parseStarredList(SmallVectorImpl<ExprNode *> &results,
 }
 
 /// Parse a starred_list, forming a single TupleExpr if a comma is present.
-ParseResult
-ExprParser::parseStarredListAsTuple(ExprNode *&result,
-                                    ArrayRef<Token::Kind> terminators) {
+/// Note that starred_item includes assignments, starred_expressions do not.
+///     starred_expression  ::=  ["*"] or_expr
+ParseResult ExprParser::parseStarredExprListAsTuple(
+    ExprNode *&result, ArrayRef<Token::Kind> terminators, bool allowAssign) {
   SmallVector<ExprNode *> exprs;
   SMLoc firstCommaLoc;
-  if (parseStarredList(exprs, terminators, &firstCommaLoc))
+  if (parseStarredItemList(exprs, terminators, allowAssign, &firstCommaLoc))
     return failure();
 
   // If there was a tuple inside the parens, form it.
@@ -317,17 +320,25 @@ ParseResult ExprParser::parseExpression(ExprNode *&result, Precedence minPrec) {
   return success();
 }
 
-/// starred_item ::= assignment_expression | '*' bitwise_or
-ParseResult ExprParser::parseStarredItem(ExprNode *&result) {
-  SMLoc starLoc;
-  if (consumeIf(Token::star, &starLoc)) {
-    if (parseExpression(result, Precedence::kOr))
-      return failure();
-    result = alloc<UnaryOpNode>(ExprNode::kUnpack, starLoc, result);
-    return success();
-  }
+/// If allowAssign is true then we use:
+///    starred_item       ::= assignment_expression | "*" or_expr
+/// otherwise:
+///    starred_item       ::= ["*"] or_expr
+ParseResult ExprParser::parseStarredItem(ExprNode *&result, bool allowAssign) {
+  // If allowAssign is true then we use a much more permissive subexpression
+  // precedence, matching things like "in". If false, we allow limited things
+  // that is more like a pattern to avoid interfering with "for x in y".
+  auto subPrec = allowAssign ? Precedence::kAssignExpr : Precedence::kOr;
 
-  return parseExpression(result, Precedence::kAssignExpr);
+  SMLoc starLoc;
+  if (consumeIf(Token::star, &starLoc))
+    subPrec = Precedence::kOr; // Star always forces 'or' precedence.
+
+  if (parseExpression(result, subPrec))
+    return failure();
+  if (starLoc.isValid())
+    result = alloc<UnaryOpNode>(ExprNode::kUnpack, starLoc, result);
+  return success();
 }
 
 /// Parse a chained comparison expression (ex. a < b < c) starting from the
@@ -456,8 +467,16 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     // Get the kind enum and the precedence of the subexpression.
     auto [unaryKind, subExprPrec] = getUnaryOpInfo(startTok.getKind());
     ExprNode *expr = nullptr;
-    if (parseExpression(expr, subExprPrec))
-      return failure();
+    // "var" and "ref" take a star list after them to handle "var x, y" as
+    // "var (x, y)".
+    if (unaryKind == ExprNode::kVarPat || unaryKind == ExprNode::kRefPat) {
+      if (parseStarredExprListAsTuple(expr, /*terminators*/ {},
+                                      /*allowAssign=*/false))
+        return failure();
+    } else {
+      if (parseExpression(expr, subExprPrec))
+        return failure();
+    }
     result = alloc<UnaryOpNode>(unaryKind, startTok.getLoc(), expr);
     break;
   }
@@ -622,7 +641,8 @@ ParseResult ExprParser::parsePrefixLParen(ExprNode *&result, SMLoc lparenLoc) {
     // Empty tuples are represented as ParenNode(TupleNode()) where the tuple
     // has no subexpressions.
     element = alloc<TupleNode>(lparenLoc, ArrayRef<ExprNode *>());
-  } else if (parseStarredListAsTuple(element, Token::r_paren) ||
+  } else if (parseStarredExprListAsTuple(element, Token::r_paren,
+                                         /*allowAssign=*/true) ||
              parseToken(Token::r_paren,
                         "expected ')' in parenthesized expression", &rparenLoc))
     return failure();
@@ -702,7 +722,7 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
     return success();
   }
   // Parse the items in the list.
-  if (parseStarredList(exprs, Token::r_square))
+  if (parseStarredItemList(exprs, Token::r_square, /*allowAssign=*/true))
     return failure();
 
   // Handle a normal list.
@@ -855,7 +875,7 @@ FailureOr<Operand> ExprParser::parseOperand(
   ExprNode *value;
   SMLoc startLoc = getToken().getLoc();
   if (getToken().is(Token::star)) {
-    if (failed(parseStarredItem(value)))
+    if (failed(parseStarredItem(value, /*allowAssign=*/false)))
       return failure();
     return Operand(value, startLoc, Operand::kStar);
   }
@@ -1258,7 +1278,8 @@ ParseResult ParserBase::parseExpression(ExprNode *&result,
 }
 
 ParseResult ParserBase::parseStarredItem(ExprNode *&result) {
-  return ExprParser(shared, getLexer(), std::nullopt).parseStarredItem(result);
+  return ExprParser(shared, getLexer(), std::nullopt)
+      .parseStarredItem(result, /*allowAssign*/ true);
 }
 
 /// This parses a superset of the "target_list" production, which is used as the
@@ -1272,7 +1293,8 @@ ParseResult ParserBase::parseTargetListExpr(ExprNode *&result,
 ParseResult ParserBase::parseVarInitExpression(ExprNode *&result,
                                                size_t stmtIndent) {
   return ExprParser(shared, getLexer(), stmtIndent)
-      .parseStarredListAsTuple(result, /*terminators=*/{});
+      .parseStarredExprListAsTuple(result, /*terminators=*/{},
+                                   /*allowAssign=*/true);
 }
 
 /// If the specified token is an '=' or '+=' sort of token, return the
@@ -1335,7 +1357,8 @@ ParseResult ParserBase::parseSimpleStmtExprs(ExprNode *&result,
   // this by parsing the most general thing and sorting out what is valid later.
   ExprNode *expr = nullptr;
   // TODO: Handle yield_expression.
-  if (p.parseStarredListAsTuple(expr, /*terminators=*/{}))
+  if (p.parseStarredExprListAsTuple(expr, /*terminators=*/{},
+                                    /*allowAssign=*/true))
     return failure();
 
   // If that was it, just return the expression.

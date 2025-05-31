@@ -170,7 +170,7 @@ not_test: 'not' not_test | comparison
 comparison: expr (comp_op expr)*
 comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr
-expr: (VAR or_expr) | (REF or_expr) | or_expr
+expr: (VAR exprlist) | (REF exprlist) | or_expr
 or_expr: xor_expr ('|' xor_expr)*
 xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor]])*
 and_expr: shift_expr ('&' shift_expr)*
