@@ -648,9 +648,9 @@ the element with `ref` instead of making a copy:
 ```mojo
 #: from collections import List
 var list = [2, 3, 4]
-for item in list:     # Copies the integer into "item"
+for ref item in list:     # Capture a ref to the list element
       print(item, end=", ")
-      item = 0
+      item = 0  # Mutates the element inside the list
 print("\nAfter loop:", list[0], list[1], list[2])
 ```
 
