@@ -50,10 +50,10 @@ fn SM80_m16n8k4_F32TF32TF32F32_TN(
 def test_SM80_m16n8k4_F32TF32TF32F32_TN():
     var asm = _compile_code_asm[SM80_m16n8k4_F32TF32TF32F32_TN]()
     assert_true("mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32" in asm)
-    assert_true("{%r10, %r11, %r12, %r13}," in asm)
-    assert_true("{%r15, %r14}," in asm)
-    assert_true("{%r9}," in asm)
-    assert_true("{%r5, %r6, %r7, %r8};" in asm)
+    assert_true("{%r8, %r9, %r10, %r11}," in asm)
+    assert_true("{%r1, %r2}," in asm)
+    assert_true("{%r7}," in asm)
+    assert_true("{%r3, %r4, %r5, %r6};" in asm)
 
 
 fn SM80_m16n8k8_F32TF32TF32F32_TN(
@@ -90,9 +90,9 @@ def test_SM80_m16n8k8_F8E4M3F8E4M3_TN():
         SM80_m16n8k32_F8E4M3F8E4M_TN, target = _get_gpu_target["sm_90"]()
     ]()
     assert_true("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32" in asm)
-    assert_true("{%r30, %r29, %r28, %r27}" in asm)
+    assert_true("{%r1, %r2, %r3, %r4}" in asm)
     assert_true("{%r5, %r6, %r7, %r8}" in asm)
-    assert_true("{%r9, %r10}, {%r23, %r24, %r25, %r26}" in asm)
+    assert_true("{%r9, %r10}, {%r11, %r12, %r13, %r14}" in asm)
 
 
 def main():
