@@ -299,6 +299,8 @@ Changes to Python-Mojo interoperability:
 
 ### 🛠️ Fixed
 
+- [#1649](https://github.com/modular/modular/issues/1649) - Trailing comma is
+  not supported in assignments.
 - [#3415](https://github.com/modular/modular/issues/3415) - Type annotation
   fails on implicit variable declarations
 - [#4352](https://github.com/modular/modular/issues/4352) - `math.sqrt`
