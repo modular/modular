@@ -163,8 +163,8 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
     os << "var lines = idFile.read().splitlines()\n";
     os << "for line in lines:\n";
     os.indent();
-    os << "print(line[])\n";
-    os << "ids.add(String(line[].strip()))\n";
+    os << "print(line)\n";
+    os << "ids.add(String(line.strip()))\n";
     os.unindent();
     os.unindent();
     os.unindent();
