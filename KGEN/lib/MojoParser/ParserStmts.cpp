@@ -1422,8 +1422,8 @@ ParseResult StmtParser::handleRaisingFinallyRegion(
   return success();
 }
 
-/// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
-///              ["else" suite]
+/// try_stmt ::= "try" ":" suite "except" [expression ["as" identifier]] ":"
+///              suite ["else" suite]
 ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   SMLoc smLoc = consumeToken(Token::kw_try).getLoc();
   Location loc = translateLocation(smLoc);
@@ -1461,31 +1461,23 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     return failure();
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
-  SMLoc errValLoc = getToken().getLoc();
   bool hasFinally = false;
-  if (getToken().is(Token::kw_except)) {
-    errValLoc = consumeToken().getLoc();
-
-    // Parse an optional identifier to bind the error.
-    StringAttr errName;
-    // FIXME: Switch to target parsing.
-    if (getToken().isIdentifier())
-      (void)parseIdentifier(errName, "<this can't fail>", &errValLoc);
+  if (consumeIf(Token::kw_except)) {
+    // Parse an optional target to bind the error.
+    // FIXME: Our behavior is completely wrong here. "except Kind" is supposed
+    // to be a type pattern, and we should be parsing it as such. You need to
+    // use "except Kind as name" to bind the error to a name.
+    ExprNode *errExpr = nullptr;
+    if (getToken().isNot(Token::colon)) {
+      if (parseTargetListExpr(errExpr, curIndent))
+        return failure();
+      errDecl->setLoc(translateLocation(errExpr->getLoc()));
+    }
 
     if (parseToken(Token::colon, "expected ':' after 'except'"))
       return failure();
 
     builder.createBlock(&tryOp.getExceptRegion());
-
-    // If an identifier was declared for the error value, add a declaration that
-    // references it.
-    if (errName) {
-      // If the user bound the error to a name, adjust the vardecl and add the
-      // declaration.
-      errDecl.setName(errName);
-      errDecl.setKind(VarDeclKind::Var);
-      errDecl->setLoc(translateLocation(errValLoc));
-    }
 
     // Parse the except suite into its own scope.
     {
@@ -1494,12 +1486,23 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
       // Push a new local variable scope for the subsequent suite.
       pushChildScope(scopeGuard, keepDecl);
 
-      // Add an ASTDecl for the error name. TODO: Generalize to an
-      // arbitrary pattern.
-      if (errName) {
-        auto &vd = getDeclResolver().addFullyResolvedDecl(
-            DeclIRValue(errDecl), errName, errValLoc, curDeclScope);
-        getEmitter().shared.notifyListenerOnVariableDecl(vd, errValLoc);
+      // If an identifier was declared for the error value, add a declaration
+      // that references it.
+      if (errExpr) {
+        if (StringAttr errName = decodeTarget(errExpr, shared)) {
+          // If the user bound the error to a name, adjust the vardecl and add
+          // the declaration.
+          errDecl.setName(errName);
+          errDecl.setKind(VarDeclKind::Var);
+
+          // Add an ASTDecl for the error name. TODO: Generalize to an
+          // arbitrary pattern.
+          auto &vd = getDeclResolver().addFullyResolvedDecl(
+              DeclIRValue(errDecl), errDecl.getNameAttr(), errExpr->getLoc(),
+              curDeclScope);
+          getEmitter().shared.notifyListenerOnVariableDecl(vd,
+                                                           errExpr->getLoc());
+        }
       }
 
       // Forward to the normal suite parse method.
