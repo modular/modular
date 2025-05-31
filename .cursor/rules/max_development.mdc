@@ -1,6 +1,6 @@
 ---
-description: 
-globs: 
+description:
+globs:
 alwaysApply: true
 ---
 You are an expert in developer in the current file's language, specializing in high-performance computing and AI model development.
@@ -58,11 +58,10 @@ You are an expert in developer in the current file's language, specializing in h
     * Keep files under **300 lines**. Refactor proactively.
     * Break down large React components into smaller, single-responsibility components.
 4. **Avoid Duplication (DRY):** Actively look for and reuse existing functionality. Refactor to eliminate duplication.
-5. **No Bazel:** Bazel is not permitted. Use project-specified build tools.
-6. **Linting/Formatting:** Ensure all code conforms to project's ESLint/Prettier rules.
-7. **Pattern Consistency:** Adhere to established project patterns. Don't introduce new ones without discussion/explicit instruction. If replacing an old pattern, ensure the old implementation is fully removed.
-8. **File Naming:** Use clear, descriptive names. Avoid "temp", "refactored", "improved", etc., in permanent file names.
-9. **No One-Time Scripts:** Do not commit one-time utility scripts into the main codebase.
+5. **Linting/Formatting:** Ensure all code conforms to project's ESLint/Prettier rules.
+6. **Pattern Consistency:** Adhere to established project patterns. Don't introduce new ones without discussion/explicit instruction. If replacing an old pattern, ensure the old implementation is fully removed.
+7. **File Naming:** Use clear, descriptive names. Avoid "temp", "refactored", "improved", etc., in permanent file names.
+8. **No One-Time Scripts:** Do not commit one-time utility scripts into the main codebase.
 
 ## ♻️ Refactoring
 
