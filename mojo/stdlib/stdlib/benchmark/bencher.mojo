@@ -679,8 +679,8 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m[])
+        for ref m in measures:
+            measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     fn bench_with_input[
@@ -737,8 +737,8 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m[])
+        for ref m in measures:
+            measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     @always_inline
@@ -840,8 +840,8 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m[])
+        for ref m in measures:
+            measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
     # TODO (#31795): overload should not be needed
@@ -892,8 +892,8 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for m in measures:
-            measures_list.append(m[])
+        for ref m in measures:
+            measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
     fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:

@@ -378,9 +378,9 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
             The total storage size required for all elements.
         """
         var size = 0
-        for v in elements:
+        for ref v in elements:
             # the size of the sub tuple plus the element
-            size += v[].size() + 1
+            size += v.size() + 1
         return size
 
     @staticmethod

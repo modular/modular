@@ -61,8 +61,8 @@ struct Set[T: KeyElement](
         # TODO: Reserve space in this set. Also, take the elements as 'owned'
         # and transfer them into the set to eliminate copyability.
         self._data = Dict[T, NoneType]()
-        for t in ts:
-            self.add(t[])
+        for ref t in ts:
+            self.add(t)
 
     @implicit
     fn __init__(out self, elements: List[T, *_]):

@@ -71,8 +71,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
         ```
         """
         self._data = Dict[V, Int]()
-        for item_ref in values:
-            var item = item_ref[]
+        for item in values:
             self._data[item] = self._data.get(item, 0) + 1
 
     @implicit

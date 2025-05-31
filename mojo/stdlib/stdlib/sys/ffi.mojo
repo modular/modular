@@ -524,8 +524,8 @@ fn _try_find_dylib[
     """
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
-    for path in paths:
-        paths_list.append(path[])
+    for ref path in paths:
+        paths_list.append(path)
     return _try_find_dylib[name](paths_list)
 
 
@@ -555,8 +555,8 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
     """
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
-    for path in paths:
-        paths_list.append(path[])
+    for ref path in paths:
+        paths_list.append(path)
     return _find_dylib[name](paths_list)
 
 
