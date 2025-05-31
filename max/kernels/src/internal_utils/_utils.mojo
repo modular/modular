@@ -634,11 +634,11 @@ struct Mode(Stringable):
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
-            if String(Self.RUN.handle) == h[]:
+            if String(Self.RUN.handle) == h:
                 self.append(Self.RUN)
-            elif String(Self.BENCHMARK.handle) == h[]:
+            elif String(Self.BENCHMARK.handle) == h:
                 self.append(Self.BENCHMARK)
-            elif String(Self.VERIFY.handle) == h[]:
+            elif String(Self.VERIFY.handle) == h:
                 self.append(Self.VERIFY)
 
     fn append(mut self, other: Self):

@@ -122,9 +122,9 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
         Returns:
             The selected metric.
         """
-        for m in metric_list:
-            if m[].check_name(name):
-                return m[]
+        for ref m in metric_list:
+            if m.check_name(name):
+                return m
 
         alias sep = StaticString("-") * 80 + "\n"
         var err = String(
@@ -134,8 +134,8 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             "Couldn't match metric [" + name + "]\n",
             "Available throughput metrics (case-insensitive) in the list:\n",
         )
-        for m in metric_list:
-            err += String("    metric: [" + m[].name.lower(), "]\n")
+        for ref m in metric_list:
+            err += String("    metric: [" + m.name.lower(), "]\n")
         err += String(
             sep, sep, "[ERROR]: metric [", name, "] is NOT supported!\n"
         )
@@ -1044,7 +1044,7 @@ struct Bench(Writable, Stringable):
                     abort(String(e))
             if self.config.verbose_timing:
                 for timing_width in timing_widths:
-                    total_width += timing_width[] + 3
+                    total_width += timing_width + 3
             else:
                 total_width += timing_widths[0] + 3
 

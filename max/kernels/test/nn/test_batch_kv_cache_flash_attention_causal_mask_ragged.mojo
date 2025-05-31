@@ -218,8 +218,7 @@ alias type = DType.float32
 
 
 def execute_flash_attention_suite():
-    for bs_ref in [1, 16]:
-        bs = bs_ref[]
+    for bs in [1, 16]:
         ce_cache_sizes = List[Int]()
         ce_seq_lens = List[Int]()
         tg_cache_sizes = List[Int]()

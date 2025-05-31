@@ -64,6 +64,7 @@ struct Set[T: KeyElement](
         for ref t in ts:
             self.add(t)
 
+    # TODO: Should take the list owned so we can transfer the elements out.
     @implicit
     fn __init__(out self, elements: List[T, *_]):
         """Construct a set from a List of elements.
@@ -72,8 +73,8 @@ struct Set[T: KeyElement](
             elements: A vector of elements to add to the set.
         """
         self = Self()
-        for e in elements:
-            self.add(e[])
+        for ref e in elements:
+            self.add(e)
 
     fn __copyinit__(out self, other: Self):
         """Copy constructor.

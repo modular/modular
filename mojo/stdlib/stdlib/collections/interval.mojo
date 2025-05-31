@@ -972,8 +972,8 @@ struct IntervalTree[
                 work_list.append((node[].right, level + 1, mid, right))
 
         # Output the completed grid row by row
-        for row in grid:
-            var row_str = String(StaticString("").join(row[]).rstrip())
+        for ref row in grid:
+            var row_str = String(StaticString("").join(row).rstrip())
             if row_str:
                 writer.write(row_str, "\n")
 

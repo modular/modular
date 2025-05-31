@@ -91,8 +91,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
         ```
         """
         self._data = Dict[V, Int]()
-        for item_ref in items:
-            var item = item_ref[]
+        for item in items:
             self._data[item] = self._data.get(item, 0) + 1
 
     @always_inline
@@ -120,8 +119,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
             "value must be non-negative",
         )
         var result = Counter[V]()
-        for key_ref in keys:
-            var key = key_ref[]
+        for key in keys:
             result[key] = value
         return result
 

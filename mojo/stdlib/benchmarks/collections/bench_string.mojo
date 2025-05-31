@@ -301,9 +301,9 @@ def main():
             )
 
     results = Dict[String, (Float64, Int)]()
-    for info in m.info_vec:
-        n = info[].name
-        time = info[].result.mean("ms")
+    for ref info in m.info_vec:
+        n = info.name
+        time = info.result.mean("ms")
         avg, amnt = results.get(n, (Float64(0), 0))
         results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
     print("")

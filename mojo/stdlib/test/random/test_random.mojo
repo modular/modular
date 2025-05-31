@@ -79,13 +79,13 @@ def test_seed_normal():
 
     var sum: Float64 = 0.0
     for sample in samples:
-        sum += sample[]
+        sum += sample
 
     var mean: Float64 = sum / num_samples
 
     var sum_sq: Float64 = 0.0
     for sample in samples:
-        sum_sq += (sample[] - mean) ** 2
+        sum_sq += (sample - mean) ** 2
 
     var variance = sum_sq / num_samples
 

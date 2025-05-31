@@ -112,8 +112,8 @@ struct _LinkedListIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self, out p: Pointer[ElementType, origin]):
-        p = Pointer[ElementType, origin](to=self.curr[].value)
+    fn __next__(mut self) -> ref [origin] ElementType:
+        var old = self.curr
 
         @parameter
         if forward:
@@ -121,6 +121,8 @@ struct _LinkedListIter[
         else:
             self.curr = self.curr[].prev
         self.seen += 1
+
+        return old[].value
 
     fn __has_next__(self) -> Bool:
         return Bool(self.curr)

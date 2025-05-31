@@ -557,8 +557,8 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             The new dictionary.
         """
         var my_dict = Dict[K, V]()
-        for key in keys:
-            my_dict[key[]] = value
+        for ref key in keys:
+            my_dict[key] = value
         return my_dict
 
     @staticmethod
@@ -1270,8 +1270,8 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         my_dict["a"] = 1
         my_dict["b"] = 2
 
-        for e in my_dict.items():
-            print(e[].key, e[].value)
+        for ref e in my_dict.items():
+            print(e.key, e.value)
         ```
 
         Notes:

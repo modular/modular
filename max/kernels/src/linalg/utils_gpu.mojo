@@ -443,11 +443,10 @@ fn select_config[
     alias opt_list = [_128x128_4, _256x64_4, _256x128_3]
 
     for bmnk_stage in opt_list:
-        var bm = bmnk_stage[][0]
-        var bn = bmnk_stage[][1]
-        var bk = bmnk_stage[][2]
-        var num_stages = bmnk_stage[][3]
-
+        var bm = bmnk_stage[0]
+        var bn = bmnk_stage[1]
+        var bk = bmnk_stage[2]
+        var num_stages = bmnk_stage[3]
         var num_blocks = ceildiv(M, bm) * ceildiv(N, bn)
         var num_waves_base = ceildiv(num_blocks, A100.sm_count)
 

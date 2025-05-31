@@ -2271,7 +2271,7 @@ fn gcd(s: Span[Int], /) -> Int:
         return 0
     var result = s[0]
     for item in s[1:]:
-        result = gcd(item[], result)
+        result = gcd(item, result)
         if result == 1:
             return result
     return result
@@ -2345,7 +2345,7 @@ fn lcm(s: Span[Int], /) -> Int:
 
     var result = s[0]
     for item in s[1:]:
-        result = lcm(result, item[])
+        result = lcm(result, item)
     return result
 
 

@@ -138,17 +138,16 @@ alias numbers_to_test = [
 
 
 def test_atof_generate_cases():
-    for test_case in numbers_to_test:
-        number = test_case[][0]
-        number_as_str = test_case[][1]
-        for suffix in List[String]("", "f", "F"):
-            for exponent in List[String]("e", "E"):
-                for multiplier in List[String]("", "-"):
+    for elements in numbers_to_test:
+        number, number_as_str = elements
+        for suffix in [String(""), "f", "F"]:
+            for exponent in [String("e"), "E"]:
+                for multiplier in [String(""), "-"]:
                     var sign: Float64 = 1
-                    if multiplier[] == "-":
+                    if multiplier == "-":
                         sign = -1
-                    final_string = number_as_str.replace("e", exponent[])
-                    final_string = multiplier[] + final_string + suffix[]
+                    final_string = number_as_str.replace("e", exponent)
+                    final_string = multiplier + final_string + suffix
                     final_value = sign * number
 
                     assert_equal(atof(final_string), final_value)

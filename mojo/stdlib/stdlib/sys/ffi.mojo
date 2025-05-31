@@ -498,13 +498,13 @@ fn _try_find_dylib[
         Error: If the library could not be loaded from any of the provided paths.
     """
     alias dylib_name = name if name != "" else "dynamic library"
-    for path in paths:
+    for ref path in paths:
         # If we are given a library name like libfoo.so, pass it directly to
         # dlopen(), which will invoke the system linker to find the library.
         # We can't check the existence of the path ahead of time, we have to
         # call the function and check for an error.
         try:
-            return _OwnedDLHandle(String(path[]))
+            return _OwnedDLHandle(String(path))
         except:
             # If the call to DLOpen fails, we should just try the next path
             # in the list. It's only a fatal error if the library cannot be

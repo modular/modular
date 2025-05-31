@@ -644,9 +644,7 @@ def test_dict_comprehension():
     var d1 = {x: x * x for x in range(10) if x & 1}
     assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
 
-    var s2 = {
-        a[] * b[]: b[] for a in [String("foo"), String("bar")] for b in [1, 2]
-    }
+    var s2 = {a * b: b for a in [String("foo"), String("bar")] for b in [1, 2]}
     var d1reference = {
         String("foo"): 1,
         String("bar"): 1,

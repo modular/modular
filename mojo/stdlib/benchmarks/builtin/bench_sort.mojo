@@ -334,16 +334,16 @@ def main():
     for i in range(len(dtypes)):
         alias dtype = dtypes[i]
         for count1 in small_counts:
-            bench_small_list_sort[dtype](m, count1[])
+            bench_small_list_sort[dtype](m, count1)
 
     @parameter
     for i in range(len(dtypes)):
         alias dtype = dtypes[i]
         for count2 in large_counts:
-            bench_large_list_sort[dtype](m, count2[])
+            bench_large_list_sort[dtype](m, count2)
 
     for count3 in large_counts:
         for delta2 in deltas:
-            bench_low_cardinality_list_sort(m, count3[], delta2[])
+            bench_low_cardinality_list_sort(m, count3, delta2)
 
     m.dump_report()

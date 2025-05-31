@@ -864,8 +864,8 @@ def test_splitlines():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
 
-    for elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = String(bytes=elt[])
+    for ref elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+        u = String(bytes=elt)
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -899,11 +899,11 @@ def test_isspace():
         String(bytes=unicode_paragraph_sep),
     ]
 
-    for i in univ_sep_var:
-        assert_true(i[].isspace())
+    for ref i in univ_sep_var:
+        assert_true(i.isspace())
 
     for var i in List[String]("not", "space", "", "s", "a", "c"):
-        assert_false(i[].isspace())
+        assert_false(i.isspace())
 
     for var i in range(len(univ_sep_var)):
         var sep = String()

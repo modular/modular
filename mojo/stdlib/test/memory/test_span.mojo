@@ -162,7 +162,7 @@ def test_contains():
     assert_true(0 not in span)
     assert_true(16 not in span)
     for item in items:
-        assert_true(item[] in span)
+        assert_true(item in span)
 
 
 def test_equality():
@@ -204,7 +204,7 @@ def test_reversed():
     var s = Span[Int](forward)
     var i = 0
     for num in reversed(s):
-        assert_equal(num[], backward[i])
+        assert_equal(num, backward[i])
         i += 1
 
 

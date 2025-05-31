@@ -22,7 +22,7 @@ def test_reversed_list():
     var check: Int = 6
 
     for item in reversed(list):
-        assert_equal(item[], check, "item[], check")
+        assert_equal(item, check, "item[], check")
         check -= 1
 
 

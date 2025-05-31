@@ -28,7 +28,7 @@ def main():
 
     var dev = Device(0)
     for clock in dev.mem_clocks():
-        print("Clock =", clock[])
+        print("Clock =", clock)
     var driver_version = dev.get_driver_version()
     print("Driver version =", String(driver_version))
     print("Driver major version =", driver_version.major())

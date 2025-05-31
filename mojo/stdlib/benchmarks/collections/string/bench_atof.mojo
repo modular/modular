@@ -39,7 +39,7 @@ fn bench_parsing_all_floats_in_file(
     @parameter
     fn call_fn() raises:
         for item in items_to_parse:
-            var res = atof(item[])
+            var res = atof(item)
             keep(res)
 
     b.iter[call_fn]()
@@ -63,7 +63,7 @@ fn main() raises:
         var items_to_parse = file_path.read_text().splitlines()
         var nb_of_bytes = 0
         for item2 in items_to_parse:
-            nb_of_bytes += len(item2[])
+            nb_of_bytes += len(item2)
 
         bench.bench_with_input[List[String], bench_parsing_all_floats_in_file](
             BenchId("atof", filename),

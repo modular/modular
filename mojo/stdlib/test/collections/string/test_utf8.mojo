@@ -133,8 +133,8 @@ fn test_utf8_validation() raises:
         List[UInt8](0xF4, 0x8F, 0x88, 0xAA),
     )
     for item in positive:
-        assert_true(_is_valid_utf8(Span(item[])))
-        assert_true(_is_valid_utf8(Span(item[])))
+        assert_true(_is_valid_utf8(Span(item)))
+        assert_true(_is_valid_utf8(Span(item)))
     var negative = List[List[UInt8]](
         List[UInt8](0x80),
         List[UInt8](0xBF),
@@ -163,8 +163,8 @@ fn test_utf8_validation() raises:
         List[UInt8](0x00, 0x00, 0xF0, 0x80, 0x80, 0x80),
     )
     for item in negative:
-        assert_false(_is_valid_utf8(Span(item[])))
-        assert_false(_is_valid_utf8(Span(item[])))
+        assert_false(_is_valid_utf8(Span(item)))
+        assert_false(_is_valid_utf8(Span(item)))
 
 
 fn validate_utf8(span: Span[Byte]) -> Bool:
@@ -173,21 +173,21 @@ fn validate_utf8(span: Span[Byte]) -> Bool:
 
 def test_good_utf8_sequences():
     for sequence in GOOD_SEQUENCES:
-        assert_true(validate_utf8(sequence[]))
+        assert_true(validate_utf8(sequence))
 
 
 def test_bad_utf8_sequences():
     for sequence in BAD_SEQUENCES:
-        assert_false(validate_utf8(Span(sequence[])))
+        assert_false(validate_utf8(Span(sequence)))
 
 
 def test_stringslice_from_utf8():
     for sequence in GOOD_SEQUENCES:
-        _ = StringSlice.from_utf8(Span(sequence[]))
+        _ = StringSlice.from_utf8(Span(sequence))
 
     for var sequence in BAD_SEQUENCES:
         with assert_raises(contains="buffer is not valid UTF-8"):
-            _ = StringSlice.from_utf8(Span(sequence[]))
+            _ = StringSlice.from_utf8(Span(sequence))
 
 
 def test_combination_good_utf8_sequences():

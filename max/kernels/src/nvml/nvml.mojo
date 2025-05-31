@@ -41,8 +41,8 @@ fn _get_nvml_library_paths() raises -> List[Path]:
     )
     paths.append(common_path)
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
-        var path = CUDA_NVML_LIBRARY_DIR / fd[]
-        if CUDA_NVML_LIBRARY_BASE_NAME in String(fd[]):
+        var path = CUDA_NVML_LIBRARY_DIR / fd
+        if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
             paths.append(path)
     return paths
 
@@ -462,7 +462,7 @@ struct Device(Writable):
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(Int(clock[]))
+            res.append(Int(clock))
 
         return res
 
@@ -513,7 +513,7 @@ struct Device(Writable):
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(Int(clock[]))
+            res.append(Int(clock))
 
         return res
 

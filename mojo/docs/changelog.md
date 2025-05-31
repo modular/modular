@@ -139,10 +139,10 @@ what we publish.
 - The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
   prelude, so there is no need to import them anymore.
 
-- The `Dict`, `Set`, `VariadicPack` and `Deque` iterators now return references
-  to elements directly, instead of returning `Pointer`. This eliminates the need
-  for `[]` in the loop  body.  Make sure to use `ref` to avoid a copy if
-  desired.
+- The `List`, `Span`, `Dict`, `Set`, `VariadicPack` and `Deque` iterators now
+  return references to elements directly, instead of returning `Pointer`. This
+  eliminates the need for `[]` in the loop  body.  Make sure to use `ref` to
+  avoid a copy if desired.
 
   ```mojo
       # Old:

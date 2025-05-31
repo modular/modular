@@ -56,14 +56,14 @@ struct _ListIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self, out p: Pointer[T, list_origin]):
+    fn __next__(mut self) -> ref [list_origin] T:
         @parameter
         if forward:
-            p = Pointer(to=self.src[][self.index])
             self.index += 1
+            return self.src[][self.index - 1]
         else:
             self.index -= 1
-            p = Pointer(to=self.src[][self.index])
+            return self.src[][self.index]
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -121,8 +121,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             A copy of the value.
         """
         var copy = Self(capacity=self.capacity)
-        for e in self:
-            copy.append(e[])
+        for ref e in self:
+            copy.append(e)
         return copy^
 
     fn __init__(out self, *, capacity: Int):
@@ -186,8 +186,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             span: The span of values to populate the list with.
         """
         self = Self(capacity=len(span))
-        for value in span:
-            self.append(value[])
+        for ref value in span:
+            self.append(value)
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):
@@ -252,8 +252,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if len(self) != len(other):
             return False
         var index = 0
-        for element in self:
-            if element[] != other[index]:
+        for ref element in self:
+            if element != other[index]:
                 return False
             index += 1
         return True
@@ -306,8 +306,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
-        for i in self:
-            if i[] == value:
+        for ref i in self:
+            if i == value:
                 return True
         return False
 
@@ -551,8 +551,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if hint_trivial_type:
             memcpy(self.data + i, elements.unsafe_ptr(), elements_len)
         else:
-            for elt in elements:
-                UnsafePointer(to=self[i]).init_pointee_copy(elt[])
+            for ref elt in elements:
+                UnsafePointer(to=self[i]).init_pointee_copy(elt)
                 i += 1
 
     fn insert(mut self, i: Int, owned value: T):
@@ -1024,8 +1024,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             The number of occurrences of the value in the list.
         """
         var count = 0
-        for elem in self:
-            if elem[] == value:
+        for ref elem in self:
+            if elem == value:
                 count += 1
         return count
 

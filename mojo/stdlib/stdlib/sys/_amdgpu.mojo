@@ -162,7 +162,7 @@ fn append_bytes(
         else:
             var ii = 0
             for byte in data:
-                arg |= byte[].cast[DType.uint64]() << (ii * 8)
+                arg |= byte.cast[DType.uint64]() << (ii * 8)
                 ii += 1
             data = data[0:0]
         return arg

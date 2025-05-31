@@ -1876,8 +1876,7 @@ def test_from_bytes_as_bytes():
         Int32.from_bytes[big_endian=True](FourBytes(255, 0, 0, 0)),
         -16777216,
     )
-    for x_ref in List[Int16](10, 100, -12, 0, 1, -1, 1000, -1000):
-        x = x_ref[]
+    for x in List[Int16](10, 100, -12, 0, 1, -1, 1000, -1000):
 
         @parameter
         for b in range(2):
