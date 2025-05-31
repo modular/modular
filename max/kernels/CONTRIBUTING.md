@@ -44,6 +44,7 @@ We welcome contributions across all hardware platforms and are particularly
 interested in Blackwell, Hopper, MI3xx, and other data center GPUs.
 
 In particular, we welcome contributions of the following kernels:
+
 - Batched matrix multiplication (BMM)
 - Multi-head latent attention (MLA)
 - Mixture of experts (MOE)
@@ -259,6 +260,7 @@ reviewed and discussed within 6 weeks of submission.
 
 While we strive our best to adhere to these timelines, there may be occasional
 delays due to any of the following:
+
 - High volume of contributions.
 - Maintainers' availability (e.g., holidays, team events).
 - Complex issues or PRs requiring extended discussion (these may get deferred to
@@ -267,6 +269,7 @@ the team's weekly design discussion meetings).
 Note that just because a pull request has been reviewed does not necessarily
 mean it will be able to be merged internally immediately. This could be due to a
 variety of reasons, such as:
+
 - Mojo compiler bugs. These take time to find a minimal reproducer, file an
 issue with the compiler team, and then get prioritized and fixed.
 - Internal bugs that get exposed due to a changeset.
@@ -279,6 +282,7 @@ request or GitHub issue).
 #### **How You Can Help**
 
 To ensure quicker reviews:
+
 - **Ensure your PR is small and focused.** See the [pull request size section]
 (https://modul.ar/pr-size) for more info.
 - Write a good commit message/PR summary outlining the motivation and describing
