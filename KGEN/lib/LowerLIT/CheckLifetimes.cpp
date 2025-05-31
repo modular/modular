@@ -3395,12 +3395,20 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
       // Don't warn about assignments into synthesized temporaries or arguments.
       auto varDecl = valueEntry.value.getDefiningOp<VarDeclOp>();
       if (varDecl && varDecl.shouldWarnAboutUnused()) {
-        auto diag = mlir::emitWarning(op.getLoc()) << "assignment to ";
-        BitVector allMissing(consumedValues.size(), true);
-        direct.markBits(allMissing, false);
-        addBadValueNameToDiag(direct, allMissing, valueSet, diag);
-        diag << " was never used; assign to '_' instead?";
-        diagsToEmit.push_back(std::move(diag));
+        if (varDecl.getKind() == VarDeclKind::Ref) {
+          // Ref's can only have a single store - their initalizer. If unused,
+          // then the ref is never used.
+          mlir::emitWarning(varDecl.getLoc())
+              << "ref '" << varDecl.getName().str()
+              << "' was never used, remove it?";
+        } else {
+          auto diag = mlir::emitWarning(op.getLoc()) << "assignment to ";
+          BitVector allMissing(consumedValues.size(), true);
+          direct.markBits(allMissing, false);
+          addBadValueNameToDiag(direct, allMissing, valueSet, diag);
+          diag << " was never used; assign to '_' instead?";
+          diagsToEmit.push_back(std::move(diag));
+        }
       }
     }
 
@@ -3797,8 +3805,8 @@ CheckLifetimes::processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
 
     if (!info.isEverUsed && varDecl.shouldWarnAboutUnused()) {
       mlir::emitWarning(varDecl.getLoc())
-          << "variable '" << varDecl.getName().str()
-          << "' was never used, remove it?";
+          << (varDecl.getKind() != VarDeclKind::Ref ? "variable '" : "ref '")
+          << varDecl.getName().str() << "' was never used, remove it?";
     }
 
     // Check to see if there are any uses other than lifetime markers.

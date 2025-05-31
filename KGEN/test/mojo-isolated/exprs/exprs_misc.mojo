@@ -79,29 +79,40 @@ fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK-NEXT: [[ASUB:%.*]] = lit.call {{.*}}List::@"__getitem__{{.*}}(%a, [[ZERO]])
     # CHECK-NEXT: %r = lit.var.decl "r" ref
+    # CHECK-NEXT: lit.ref.store [[ASUB]], %r
     ref r = a[0]
 
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK-NEXT: [[BSUB:%.*]] = lit.call {{.*}}List::@"__getitem__{{.*}}(%b, [[ZERO]])
     # CHECK-NEXT: %r2 = lit.var.decl "r2" ref
+    # CHECK-NEXT: lit.ref.store [[BSUB]], %r2
     ref r2 = b[0]
 
+    # CHECK-NEXT: [[RREF:%.*]] = lit.ref.load %r
     # CHECK-NEXT: %r3 = lit.var.decl "r3" ref
+    # CHECK-NEXT: lit.ref.store [[RREF]], %r3
     ref r3 = r
 
-    # CHECK-NEXT: [[AVAL:%.*]] = lit.ref.load [[ASUB]]
-    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[BSUB]], [[AVAL]])
+    # CHECK-NEXT: [[R2REF:%.*]] = lit.ref.load %r2
+    # CHECK-NEXT: [[RREF:%.*]] = lit.ref.load %r
+    # CHECK-NEXT: [[RVAL:%.*]] = lit.ref.load [[RREF]]
+    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R2REF]], [[RVAL]])
     r2 += r
 
-    # CHECK-NEXT: [[AVAL:%.*]] = lit.ref.load [[ASUB]]
-    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[BSUB]], [[AVAL]])
+    # CHECK-NEXT: [[R2REF:%.*]] = lit.ref.load %r2
+    # CHECK-NEXT: [[R3REF:%.*]] = lit.ref.load %r3
+    # CHECK-NEXT: [[R3VAL:%.*]] = lit.ref.load [[R3REF]]
+    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R2REF]], [[R3VAL]])
     r2 += r3
 
+    # CHECK-NEXT: [[R2VAL:%.*]] = lit.ref.load %r2
     # CHECK-NEXT: %r4 = lit.var.decl "r4" ref
+    # CHECK-NEXT: lit.ref.store [[R2VAL]], %r4
     ref r4 = r2
 
+    # CHECK-NEXT: [[R4REF:%.*]] = lit.ref.load %r4
     # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[BSUB]], [[ONE]])
+    # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R4REF]], [[ONE]])
     r4 += 1
 
 

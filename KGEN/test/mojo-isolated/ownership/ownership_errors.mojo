@@ -567,9 +567,12 @@ fn test_trivial_consume():
     # expected-error @+1 {{use of uninitialized value 'outshape'}}
     _ = outshape
 
-fn test_unused_var():
+fn test_unused_var(mut mut_arg: Int):
     # expected-warning @+1 {{assignment to 'x' was never used; assign to '_' instead?}}
     var x: Int = 0
 
     # expected-warning @+1 {{variable 'y' was never used, remove it?}}
     var y: Int
+
+    # expected-warning @+1 {{ref 'z' was never used, remove it?}}
+    ref z = mut_arg
