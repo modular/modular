@@ -1089,6 +1089,9 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType,  # Type of the destination memory
     mbr_type: AnyType,  # Type of the memory barrier
     rank: Int,  # Dimensionality of the tensor (1, 2, or 3)
+    /,
+    *,
+    cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
     tma_descriptor: UnsafePointer[NoneType],
@@ -1105,6 +1108,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
         dst_type: The data type of the destination memory.
         mbr_type: The data type of the memory barrier.
         rank: The dimensionality of the tensor (1, 2, or 3).
+        cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
         dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
@@ -1127,42 +1131,102 @@ fn cp_async_bulk_tensor_shared_cluster_global[
     """
     constrained[rank <= 3, "Expecting rank-1 or rank-2 tensors"]()
 
+    constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
+    alias tma_asm = String(
+        "cp.async.bulk.tensor.",
+        rank,
+        "d",
+        ".cta_group::",
+        cta_group,
+        ".shared::cluster.global.mbarrier::complete_tx::bytes",
+    )
+
     @parameter
     if rank == 3:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_i32(coords[1]),
-            to_i32(coords[2]),
-            to_llvm_shared_mem_ptr(mem_bar),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,3,1,0,0,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_i32(coords[1]),
+                to_i32(coords[2]),
+                to_llvm_shared_mem_ptr(mem_bar),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4, $5}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+            )
     elif rank == 2:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_i32(coords[1]),
-            to_llvm_shared_mem_ptr(mem_bar),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,0,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_i32(coords[1]),
+                to_llvm_shared_mem_ptr(mem_bar),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3, $4}], [$2];",
+                NoneType,
+                constraints="r,l,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+                Int32(coords[1]),
+            )
     else:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_llvm_shared_mem_ptr(mem_bar),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_llvm_shared_mem_ptr(mem_bar),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$3}], [$2];",
+                NoneType,
+                constraints="r,l,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                Int32(coords[0]),
+            )
 
 
 @always_inline
 fn cp_async_bulk_tensor_shared_cluster_global_multicast[
-    dst_type: AnyType, mbr_type: AnyType, rank: Int
+    dst_type: AnyType,
+    mbr_type: AnyType,
+    rank: Int,
+    /,
+    *,
+    cta_group: Int = 1,
 ](
     dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
     tma_descriptor: UnsafePointer[NoneType],
@@ -1181,6 +1245,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
         dst_type: The data type of the destination tensor elements.
         mbr_type: The data type of the memory barrier.
         rank: The dimensionality of the tensor (must be 1 or 2).
+        cta_group: The CTA group to use for the copy operation. Must be 1 or 2.
 
     Args:
         dst_mem: Pointer to the destination in shared memory where the tensor data will be copied.
@@ -1206,28 +1271,69 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
     """
     constrained[rank == 1 or rank == 2, "Expecting rank-1 or rank-2 tensors"]()
 
+    constrained[cta_group in (1, 2), "cta_group must be 1 or 2"]()
+    alias tma_asm = String(
+        "cp.async.bulk.tensor.",
+        rank,
+        "d",
+        ".cta_group::",
+        cta_group,
+        ".shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster",
+    )
+
     @parameter
     if rank == 2:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_i32(coords[1]),
-            to_llvm_shared_mem_ptr(mem_bar),
-            to_i16(multicast_mask),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,2,1,0,1,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_i32(coords[1]),
+                to_llvm_shared_mem_ptr(mem_bar),
+                to_i16(multicast_mask),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$4, $5}], [$2], $3, $6;",
+                NoneType,
+                constraints="r,l,r,h,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                multicast_mask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+            )
     else:
-        __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
-            _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
-        ](
-            to_llvm_shared_mem_ptr(dst_mem),
-            to_llvm_ptr(tma_descriptor),
-            to_i32(coords[0]),
-            to_llvm_shared_mem_ptr(mem_bar),
-            to_i16(multicast_mask),
-        )
+
+        @parameter
+        if cta_group == 1:
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1,0,0>}`
+            ](
+                to_llvm_shared_mem_ptr(dst_mem),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(coords[0]),
+                to_llvm_shared_mem_ptr(mem_bar),
+                to_i16(multicast_mask),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$4}], [$2], $3, $5;",
+                NoneType,
+                constraints="r,l,r,h,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)),
+                multicast_mask,
+                Int32(coords[0]),
+            )
 
 
 @always_inline
