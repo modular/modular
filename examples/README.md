@@ -5,32 +5,41 @@ These examples demonstrate the power and flexibility of
 
 ## [Mojo code examples](mojo/)
 
-A collection of sample programs written in the
-[Mojo](https://docs.modular.com/mojo/manual/) programming language.
+A wide variety of [Mojo](https://docs.modular.com/mojo/manual/) programs
+to help you learn the language.
 
-## [Custom GPU and CPU operations in Mojo](custom_ops/)
+## [Basic MAX graph](max-graph/)
 
-The [MAX Graph API](https://docs.modular.com/max/graph/) provides a powerful
-framework for staging computational graphs to be run on GPUs, CPUs, and more.
-Each operation in one of these graphs is defined in
-[Mojo](https://docs.modular.com/mojo/), an easy-to-use language for writing
-high-performance code.
+The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
+PyTorch-like interface for building neural network components that compile to
+highly optimized graphs. This is a simple example of how to build a graph in
+Python, before moving on to more complex custom ops using Mojo.
 
-The examples here illustrate how to construct custom graph operations in Mojo
-that run on GPUs and CPUs, as well as how to build computational graphs that
-contain and run them on different hardware architectures.
+## [Custom MAX graph module](custom-graph-module/)
+
+This example shows how to create a reusable, modular component for a MAX graph,
+using the `nn.Module` class. It include custom layers, blocks, and
+architectural patterns that showcase the flexibility of MAX's Python API for
+deep learning development, from simple MLP blocks to more complex neural
+network architectures.
+
+## [Custom GPU and CPU graph ops in Mojo](custom_ops/)
+
+Building upon the basic MAX graph concepts from the above examples, this is a
+collection of examples that how to construct custom graph operations in Mojo
+that run on both GPUs and CPUs that run on different hardware architectures. It
+includes GPU kernels written in Mojo for algorithms such as top-k, matrix
+multiplication, fused attention, and more.
 
 ## [Compiling and running Mojo functions on a GPU](gpu_functions/)
 
-In addition to placing custom Mojo functions within a computational graph, the
-MAX Driver API can handle direct compilation of GPU functions written in Mojo
-and can dispatch them onto the GPU. This is a programming model that may be
-familiar to those who have worked with CUDA or similar GPGPU frameworks.
+In addition to placing custom Mojo functions within a computational graph, Mojo
+can handle direct compilation and dispatch of GPU functions. This is a
+programming model that may be familiar to those who have worked with CUDA or
+similar GPGPU frameworks.
 
 These examples show how to compile and run Mojo functions, from simple to
-complex, on an available GPU. Note that
-[a MAX-compatible GPU](https://docs.modular.com/max/faq/#gpu-requirements) will
-be necessary to build and run these.
+complex, on an available GPU, without using a MAX graph.
 
 ## [Using Mojo from Python](python_mojo_interop/)
 
@@ -48,24 +57,7 @@ PyTorch custom operations can be defined in Mojo to try out new algorithms on
 GPUs. These examples show how to extend PyTorch layers using custom operations
 written in Mojo.
 
-## [PyTorch inference on MAX](inference/)
+## [Offline inference](offline-inference/)
 
-MAX has the power to accelerate existing PyTorch models directly, and
-provides Python, Mojo, and C APIs for this. These examples showcase common
-models and how to run them even faster via MAX.
-
-## [Jupyter notebooks](notebooks/)
-
-Jupyter notebooks that showcase PyTorch models being accelerated
-through MAX.
-
-## [Build custom neural network modules with MAX Python API](python_modules/)
-
-The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
-PyTorch-like interface for building neural network components that compile to
-highly optimized graphs. These examples demonstrate how to create reusable,
-modular components using MAX's `nn.Module` class.
-
-The examples include custom layers, blocks, and architectural patterns that
-showcase the flexibility of MAX's Python API for deep learning development, from
-simple MLP blocks to more complex neural network architectures.
+A simple example showing how to directly send inference to an LLMs using the
+MAX Python API, without starting a webserver (without an endpoint).

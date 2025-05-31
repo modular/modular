@@ -1,7 +1,12 @@
 # Basic example for MAX Graph API in Python
 
-This is an example of building a model with the MAX Graph API in Python and
-execute it with MAX Engine.
+The [MAX graph API](https://docs.modular.com/max/graph/) provides a powerful
+framework for staging computational graphs to be run on GPUs, CPUs, and more.
+This is a basic example of building a model with the MAX Graph API purely in
+Python and then executing it with MAX.
+
+For more complex examples that use Mojo to write graph ops for GPUs and CPUs,
+see the [custom CPU or GPU graph op examples](../custom_ops/).
 
 For more explanation about this code, see the tutorial to [Get started with MAX
 Graph in
