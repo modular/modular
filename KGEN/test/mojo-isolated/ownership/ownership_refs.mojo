@@ -361,12 +361,11 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   ## Since the iterator can refer to the mems struct.
   # CHECK-NEXT: lifetime.end %mems_0
 
-  # __next__ returns a Pointer which needs to turn in to !lit.ref
-  # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[ELTREF]])
-  # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTDEREF]]
+  # Copy the reuslt of __next__ into !lit.ref
+  # CHECK-NEXT: [[ELTREFIMM:%.*]] = lit.ref.immut [[ELTREF]]
   # CHECK-NEXT: lifetime.start %x
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ELTDEREFIMM]], %x)
-  var x : MemExample = iter.__next__()[]
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ELTREFIMM]], %x)
+  var x : MemExample = iter.__next__()
 
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
   x.mutate()

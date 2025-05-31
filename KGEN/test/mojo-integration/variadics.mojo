@@ -177,8 +177,8 @@ fn test_owned_reg_varargs():
 
     fn handle_owned_reg(owned *strs: TalkativeReg):
         # owned arguments are mutable and live as long as they are used.
-        for s in strs:
-            s[].state *= 2
+        for ref s in strs:
+            s.state *= 2
 
         # So they should die here, after the loop, before the print.
         # CHECK-NEXT: destroying 6
