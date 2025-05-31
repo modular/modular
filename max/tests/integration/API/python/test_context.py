@@ -6,7 +6,7 @@
 
 import numpy as np
 import pytest
-from max.pipelines.core import TextContext
+from max.pipelines.core import SamplingParams, TextContext
 
 
 def test_context__current_length():
@@ -116,3 +116,34 @@ def test_context__reset():
     context.update(5)
     assert context.active_length == 1
     assert context.next_tokens.tolist() == [5]
+
+
+def test_context_sampling_params_integration():
+    """Tests that TextContext properly stores and maintains SamplingParams."""
+    custom_params = SamplingParams(
+        top_k=25,
+        temperature=0.7,
+        frequency_penalty=0.4,
+        presence_penalty=0.2,
+        repetition_penalty=1.15,
+        enable_structured_output=True,
+        enable_variable_logits=False,
+        do_penalties=True,
+    )
+
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="sampling params test prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        sampling_params=custom_params,
+    )
+
+    # Verify the sampling params persist through context operations
+    context.update(5)
+    assert context.sampling_params is custom_params
+    assert context.sampling_params.top_k == 25
+
+    context.reset()
+    assert context.sampling_params is custom_params
+    assert context.sampling_params.temperature == 0.7
