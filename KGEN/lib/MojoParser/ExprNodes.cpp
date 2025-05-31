@@ -381,7 +381,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// 'decl' is the alias declaration to resolve.
 PValue M::KGEN::LIT::resolveAliasReference(AliasDeclOp decl, StringRef declName,
                                            ArrayRef<TypedAttr> paramValues,
-                                           SMLoc errLoc, SharedState &shared) {
+                                           SMLoc refLoc, IREmitter &emitter) {
 
   // If the param is declared in a function, then just directly use it.
   Operation *parent = decl->getParentOp();
@@ -392,8 +392,12 @@ PValue M::KGEN::LIT::resolveAliasReference(AliasDeclOp decl, StringRef declName,
     // TODO: What does it mean to write "SomeTrait.alias"?  This handles a
     // reference from within the body of the trait, but wouldn't a reference
     // from outside of it be an error?
-    if (isa<TraitDeclOp>(parent))
-      return ParamDeclRefAttr::get(decl.getName(), decl.getType());
+    if (isa<TraitDeclOp>(parent)) {
+      SyntheticNode synthNode(refLoc);
+      SimpleLiteralNode selfNode(ExprNode::kSelfLiteral, refLoc);
+      AttributeRefNode refNode(&selfNode, refLoc, declName);
+      return emitter.emitExprPValue(&refNode, EC_AttributeRefBase);
+    }
 
     // If this is in a struct, then the value may refer to parameters declared
     // on the struct, whose values come through 'bindings'.  Remap.
@@ -418,7 +422,8 @@ PValue M::KGEN::LIT::resolveAliasReference(AliasDeclOp decl, StringRef declName,
       //        use(X.a2) # Error: 'a' needs to be bound
       //
       // TODO: Should this return a parametric alias instead?
-      ParserParameterEvaluator evaluator(shared, paramDecls, paramValues);
+      ParserParameterEvaluator evaluator(emitter.shared, paramDecls,
+                                         paramValues);
       TypedAttr result = evaluator.getReboundAttribute(decl.getValueAttr());
       // Check to make sure that no unbound parameters were used.
       if (!result
@@ -465,13 +470,13 @@ PValue M::KGEN::LIT::resolveAliasReference(AliasDeclOp decl, StringRef declName,
               ParamDeclRefAttr::get(paramDecl.getName(), paramValue.getType()));
         }
       }
-      ParserParameterEvaluator evaluatorForError(shared, paramDecls,
+      ParserParameterEvaluator evaluatorForError(emitter.shared, paramDecls,
                                                  paramsToBind);
       result = evaluatorForError.getReboundAttribute(decl.getValueAttr());
 
       // Check to make sure that no unbound parameters were used.
       result.walk([&](ParamDeclRefAttr attr) -> WalkResult {
-        shared.emitError(errLoc, "cannot access alias '")
+        emitter.shared.emitError(refLoc, "cannot access alias '")
             << declName << "' with unbound parameter '" << structDecl.getName()
             << "." << attr.getName().str() << "'";
         result = TypedAttr();
@@ -862,7 +867,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Aliases form a PValue.
   if (auto param = dyn_cast<AliasDeclOp>(decl)) {
     PValue result = resolveAliasReference(param, spelling, /*bindings=*/{},
-                                          getLoc(), emitter.shared);
+                                          getLoc(), emitter);
     return emitter.emitCResult(result.get(), this, dest);
   }
 
@@ -1724,7 +1729,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     if (isa<StructDeclOp>(*typeDecl)) {
       PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
                                             baseRVType.getParamBindings(),
-                                            getLoc(), shared);
+                                            getLoc(), emitter);
       return emitter.emitResult(result.get(), this, dest);
     }
 

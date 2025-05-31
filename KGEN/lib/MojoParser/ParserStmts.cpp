@@ -1221,12 +1221,12 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
 }
 
 // Given a struct type T, return T._IndexType if it exists.
-static std::optional<Type> getIndexType(SharedState &shared, Type structType,
+static std::optional<Type> getIndexType(IREmitter &emitter, Type structType,
                                         SMLoc loc) {
   StringRef spelling("_IndexType");
   LookupResult lookup =
-      shared.lookupAndResolveDecl(spelling, loc, structType,
-                                  /*searchParentScopes=*/false);
+      emitter.shared.lookupAndResolveDecl(spelling, loc, structType,
+                                          /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
   if (memberDecls.empty()) {
     // Just in case if the input happens to be not a range but something else,
@@ -1242,7 +1242,7 @@ static std::optional<Type> getIndexType(SharedState &shared, Type structType,
   }
   ArrayRef<TypedAttr> paramBindings{};
   PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
-                                        paramBindings, loc, shared);
+                                        paramBindings, loc, emitter);
   ASTType type(result);
   return type;
 }
@@ -1293,8 +1293,9 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // Sniff the type of the induction variable and create its declaration.
   // We expect that the struct returned by the range() call has an _IndexType
   // alias.
+  IREmitter emitter = getEmitter();
   std::optional<Type> indexType =
-      getIndexType(shared, seqPValue.getType(), forLoc);
+      getIndexType(emitter, seqPValue.getType(), forLoc);
   if (!indexType)
     indexType = shared.lookupNamedType("Int", scope, forLoc);
   if (!indexType)
