@@ -130,6 +130,10 @@ fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}([[R4REF]], [[ONE]])
     r4 += 1
 
+    # Not useful, but this should work.
+    # CHECK-NEXT: %r5 = lit.var.decl "r5" ref
+    ref r5: Int
+
 # CHECK-LABEL: lit.fn @"test_type_patterns
 fn test_type_patterns():
     # Implicitly declared variables go at the top.
