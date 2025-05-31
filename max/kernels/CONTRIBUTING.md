@@ -1,9 +1,11 @@
 # Contributing to the MAX AI Kernels
+
 Thank you for your interest in contributing to the MAX AI Kernels! We’re excited
 to welcome external contributors to help build high-performance CPU and GPU
 kernels in Mojo.
 
 ## **✅ We are accepting contributions!**
+
 The MAX AI Kernels power key components of MAX and Mojo, and contributions here
 can have a meaningful impact across the AI ecosystem. Before jumping in, please
 take a moment to review our contribution guidelines and processes.
@@ -15,6 +17,7 @@ proposing a change that could affect the performance of the core kernel
 library**, we ask that you first go through our **proposal process**.
 
 ### Proposals
+
 If you’re interested in making a significant change (one that doesn’t fall into
 the [list of changes we accept](#Changes-we-accept) below), your first step is a
 written proposal. The proposal process:
@@ -36,6 +39,7 @@ reject the proposal, they will explain the reasoning and close the PR. This
 process is inspired by successful practices in other open source communities.
 
 ### Changes we accept
+
 We welcome contributions across all hardware platforms and are particularly
 interested in Blackwell, Hopper, MI3xx, and other data center GPUs.
 
@@ -49,6 +53,7 @@ In particular, we welcome contributions of the following kernels:
 - General matrix-vector multiply (GEMV) on Hopper
 
 ## Submitting bugs
+
 Reporting issues is a great way to contribute to the project.
 
 Keep in mind that bugs with clear reproducible steps and/or test cases, and
@@ -59,11 +64,13 @@ submitted issues to avoid creating duplicate issues for the maintainers to
 address.
 
 ### Writing high-quality bug descriptions
+
 We encourage you to provide as much information about the issue as practical.
 The more details you provide, the faster we can resolve the issue. The following
 is a template of the information that should accompany every submitted issue.
 
 ### Issue template
+
 - **Summary:** a descriptive summary of the issue.
 - **Description:** a detailed account of the bug, including what was expected
 and what occurred.
@@ -241,6 +248,7 @@ Maintainers will label and acknowledge new issues within 10 days of the issue
 submission.
 
 ### **Proposal Review Timeline**
+
 Proposals require more time for the team to review, discuss, and ensure they
 align with the overall strategy and vision for the MAX AI Kernels. These will be
 discussed in the team's weekly design meetings internally, and feedback will be
@@ -248,6 +256,7 @@ communicated back on the relevant proposal. As a team, we'll ensure they are
 reviewed and discussed within 6 weeks of submission.
 
 ### **Exceptions**
+
 While we strive our best to adhere to these timelines, there may be occasional
 delays due to any of the following:
 - High volume of contributions.
