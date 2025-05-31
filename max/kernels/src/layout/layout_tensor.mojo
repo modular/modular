@@ -35,6 +35,7 @@ from gpu.intrinsics import buffer_load, buffer_store
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
+from layout._fillers import BATCH_SIZE
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -4948,7 +4949,12 @@ struct LayoutTensor[
                 )
 
     @always_inline
-    fn fill(
+    fn fill[
+        *,
+        use_runtime_layout: Bool = (
+            not layout.all_dims_known() or layout.size() > BATCH_SIZE
+        ),
+    ](
         self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]
     ) -> __type_of(self):
         """Fill the entire tensor with a single value.
@@ -4967,6 +4973,12 @@ struct LayoutTensor[
         elements regardless of how they are arranged in memory. For
         tensors with `element_layout`, all elements within each logical element
         are filled with the same value.
+
+        Parameters:
+            use_runtime_layout: Whether to use the runtime layout for filling.
+                This parameter is defaulted to `True` if the layout is not
+                statically known. If loop bounds are too large, it's better to
+                use the runtime layout to avoid long compilation time.
 
         Args:
             val: The value to fill the tensor with. Must be of the same data
@@ -5001,7 +5013,7 @@ struct LayoutTensor[
         """
 
         @parameter
-        if layout.all_dims_known():
+        if not use_runtime_layout:
             alias num_elements = layout.size()
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
