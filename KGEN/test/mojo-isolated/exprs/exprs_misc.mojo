@@ -89,6 +89,13 @@ def test_var_decl_patterns(c: Bool):
   x, x = 1, 2 # worked
   x, x, = 1, 2 # failed
 
+  # Verify that we stop parsing at the end of the statement - we shouldn't parse
+  # the "fn" as part of the list (a function expression).
+  _ = 1,
+  fn test():
+    pass
+
+
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
 fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>

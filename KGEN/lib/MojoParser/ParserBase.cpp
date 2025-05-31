@@ -93,12 +93,14 @@ ParseResult ParserBase::parseCommaSeparatedList(
 
     // Mojo/Python supports trailing commas in lists, e.g. for tuples without
     // parens.
-    if (!terminators.empty()) {
-      if (getToken().isAny(terminators))
-        break;
-    } else if (!isTokenInCurrentStatement(stmtIndent)) {
+    if (!terminators.empty() && getToken().isAny(terminators))
       break;
-    }
+    // Treat this as a terminating comma when the next token is at the same or
+    // higher indentation, e.g.:
+    //    _ = 1,          # terminating comma.
+    //    fn thing(): ... # not part of a tuple.
+    if (!isTokenInCurrentStatement(stmtIndent))
+      break;
   }
   return success();
 }
