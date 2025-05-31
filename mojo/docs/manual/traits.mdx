@@ -648,7 +648,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
 
     fn dump[WritableEltType: Writable & Copyable & Movable](self: MyStack[WritableEltType]):
         for item in self.list:
-            print(item[])
+            print(item)
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.

@@ -248,13 +248,6 @@ module support `for` loop iteration. See the
 [Collection types](/mojo/manual/types#collection-types) documentation for more
 information on Mojo collection types.
 
-:::caution TODO
-
-Iterating over Mojo native collections currently assigns the loop index variable
-a [`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to each item, not the
-item itself. You can access the item using the dereference operator, `[]`, as
-shown in the examples below. This may change in a future version of Mojo.
-
 :::
 
 The following shows an example of iterating over a Mojo
@@ -265,7 +258,7 @@ from collections import List
 
 states = [String("California"), "Hawaii", "Oregon"]
 for state in states:
-    print(state[])
+    print(state)
 ```
 
 ```output
@@ -282,7 +275,7 @@ from collections import Set
 
 values = {42, 0}
 for item in values:
-    print(item[])
+    print(item)
 ```
 
 ```output
@@ -302,7 +295,7 @@ capitals: Dict[String, String] = {
 }
 
 for state in capitals:
-    print(capitals[state[]] + ", " + state[])
+    print(capitals[state] + ", " + state)
 ```
 
 ```output
@@ -319,7 +312,7 @@ entry.
 
 ```mojo
 for item in capitals.items():
-    print(item[].value + ", " + item[].key)
+    print(item.value + ", " + item.key)
 ```
 
 ```output
@@ -398,7 +391,7 @@ from collections import List
 
 empty = List[Int]()
 for i in empty:
-    print(i[])
+    print(i)
 else:
     print("Finished executing 'for' loop")
 ```
@@ -419,7 +412,7 @@ from collections import List
 
 animals = [String("cat"), "aardvark", "hippopotamus", "dog"]
 for animal in animals:
-    if animal[] == "dog":
+    if animal == "dog":
         print("Found a dog")
         break
 else:

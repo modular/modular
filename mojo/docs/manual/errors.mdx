@@ -163,14 +163,13 @@ def incr(n: Int) -> Int:
         return n + 1
 
 def main():
-    values = [0, 1, Int.MAX]
-    for value in values:
+    for value in [0, 1, Int.MAX]:
         try:
             print()
-            print("try     =>", value[])
-            if value[] == 1:
+            print("try     =>", value)
+            if value == 1:
                 continue
-            result = StaticString("{} incremented is {}").format(value[], incr(value[]))
+            result = StaticString("{} incremented is {}").format(value, incr(value))
         except e:
             print("except  =>", e)
         else:

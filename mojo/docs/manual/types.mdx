@@ -618,34 +618,58 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   As shown above, you can print the individual elements in a list as long as
   they're a [`Stringable`](/mojo/stdlib/builtin/str/Stringable) type.
 
-* Iterating a `List` currently returns a
-  [`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to each item, not the
-  item itself. You can access the item using the dereference operator, `[]`:
+* Iterating a `List` returns a reference to each item, which is copied into
+  name you provide by default:
 
 ```mojo
 #: from collections import List
 var list = [2, 3, 4]
-for item in list:
-      print(item[], end=", ")
+for item in list:     # Copies the integer into "item"
+      print(item, end=", ")
+      i = 0 # warning: assignment to 'i' was never used
+  print(list[0], list[1], list[2])
 ```
 
 ```output
 2, 3, 4,
+2 3 4
 ```
 
-Subscripting in to a list, however, returns the item directly—no need to
-dereference:
+Mojo warns you that the assignment to `i` isn't doing anything useful.
+If you would like to mutate the elements of the list, capture the reference to
+the element with `ref` instead of making a copy:
 
 ```mojo
 #: from collections import List
-#: var list = [2, 3, 4]
-for i in range(len(list)):
-    print(list[i], end=", ")
+var list = [2, 3, 4]
+for item in list:     # Copies the integer into "item"
+      print(item, end=", ")
+      item = 0 # warning: assignment to 'item' was never used
+print("\nAfter loop:", list[0], list[1], list[2])
 ```
 
 ```output
 2, 3, 4,
+After loop: 0 0 0
 ```
+
+You can also subscript the list with an integer:
+
+```mojo
+#: from collections import List
+var list = [2, 3, 4]
+for ref item in list:     # Captures reference into list.
+      print(item, end=", ")
+      item = 0 # mutates the entry in the list itself
+print("\nAfter loop:", list[0], list[1], list[2])
+```
+
+```output
+2, 3, 4,
+After loop: 0 0 0
+```
+
+You can see that the original loop entries were modified.
 
 ### Dict
 
@@ -675,8 +699,8 @@ and [`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
 
-The `Dict` iterators all yield references, so you need to use the dereference
-operator `[]` as shown in the following example:
+The `Dict` iterators all yield references, which are copied into the declared
+name by default, but you can use the `ref` marker to avoid the copy:
 
 ```mojo
 var d: Dict[String, Float64] = {
@@ -684,8 +708,8 @@ var d: Dict[String, Float64] = {
     "elasticity": 1.3,
     "electricity": 9.7
 }
-for item in d.items():
-    print(item[].key, item[].value)
+for ref item in d.items():
+    print(item.key, item.value)
 ```
 
 ```output
@@ -693,6 +717,9 @@ plasticity 3.1000000000000001
 elasticity 1.3
 electricity 9.6999999999999993
 ```
+
+This is an unmeasurable micro-optimization in this case, but is useful when
+working with types that aren't `Copyable`.
 
 ### Set
 
@@ -702,9 +729,9 @@ exists in the set, and perform set algebra operations, like unions and
 intersections between two sets.
 
 Sets are generic and the element type must conform to the
-[`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait.
-
-Unlike lists and dictionaries, sets do not yet support literal syntax.
+[`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait. Like lists and
+dictionaries, sets support standard literal syntax, as well as generator
+comprehensions:
 
 ```mojo
 from collections import Set
@@ -715,7 +742,7 @@ we_like = i_like.intersection(you_like)
 
 print("We both like:")
 for item in we_like:
-    print("-", item[])
+    print("-", item)
 ```
 
 ```output
