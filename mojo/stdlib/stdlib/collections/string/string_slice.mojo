@@ -48,7 +48,6 @@ print(format_string.format("bats", 6)) # bats: 6
 ```
 """
 
-from collections import List, Optional
 from collections.string._unicode import (
     is_lowercase,
     is_uppercase,

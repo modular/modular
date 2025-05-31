@@ -514,12 +514,12 @@ debugger in the same way that a `breakpoint()` call will.
 
 ### Set parameters from the Mojo command line
 
-You can use the [`param_env`](/mojo/stdlib/sys/param_env/) module to retrieve
+You can use the [`sys`](/mojo/stdlib/sys/) module to retrieve
 parameter values specified on the Mojo command line. Among other things, this
 is an easy way to switch debugging logic on and off. For example:
 
 ```mojo
-from param_env import is_defined
+from sys import is_defined
 
 def some_function_with_issues():
     # ...

@@ -19,7 +19,6 @@ from math import floor
 ```
 """
 
-from collections import List
 from sys import (
     bitwidthof,
     has_avx512f,
@@ -994,13 +993,32 @@ fn tanh[
         alias instruction = "tanh.approx.f32"
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
+        if dtype is DType.float16:
             return _call_ptx_intrinsic[
-                instruction=instruction, constraints="=f,f"
-            ](x.cast[DType.float32]()).cast[dtype]()
+                scalar_instruction="tanh.approx.f16",
+                vector2_instruction="tanh.approx.f16x2",
+                scalar_constraints="=h,h",
+                vector_constraints="=r,r",
+            ](x)
+
+        elif dtype is DType.bfloat16:
+
+            @parameter
+            if _is_sm_9x_or_newer():
+                return _call_ptx_intrinsic[
+                    scalar_instruction="tanh.approx.bf16",
+                    vector2_instruction="tanh.approx.bf16x2",
+                    scalar_constraints="=h,h",
+                    vector_constraints="=r,r",
+                ](x)
+            else:
+                return _call_ptx_intrinsic[
+                    instruction="tanh.approx.f32", constraints="=f,f"
+                ](x.cast[DType.float32]()).cast[dtype]()
+
         elif dtype is DType.float32:
             return _call_ptx_intrinsic[
-                instruction=instruction, constraints="=f,f"
+                instruction="tanh.approx.f32", constraints="=f,f"
             ](x)
 
     var xc = x.clamp(-9, 9)
@@ -1477,6 +1495,11 @@ fn cos[
 
     @parameter
     if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+
+        @parameter
+        if sizeof[dtype]() < sizeof[DType.float32]():
+            return cos(x.cast[DType.float32]()).cast[dtype]()
+
         return _call_ptx_intrinsic[
             instruction="cos.approx.ftz.f32", constraints="=f,f"
         ](x)
@@ -1514,6 +1537,11 @@ fn sin[
 
     @parameter
     if is_nvidia_gpu() and sizeof[dtype]() <= sizeof[DType.float32]():
+
+        @parameter
+        if sizeof[dtype]() < sizeof[DType.float32]():
+            return sin(x.cast[DType.float32]()).cast[dtype]()
+
         return _call_ptx_intrinsic[
             instruction="sin.approx.ftz.f32", constraints="=f,f"
         ](x)

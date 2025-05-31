@@ -48,7 +48,6 @@ In essence, this data structure provides a fast and efficient way to manage and
 query interval data, particularly for finding overlaps.
 """
 
-from collections import Optional
 
 from builtin.string_literal import StaticString
 from memory import UnsafePointer

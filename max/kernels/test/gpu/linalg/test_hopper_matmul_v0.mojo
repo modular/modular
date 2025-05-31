@@ -45,8 +45,6 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
     tile_layout_k_major,
 )
 from linalg.matmul_sm90 import hopper_matmul_tma_wgmma
@@ -174,7 +172,7 @@ def main():
             64, DType.bfloat16, DType.bfloat16, DType.bfloat16
         ](ctx, static[128](), static[64](), static[64]())
 
-        alias wgmma_n = List[Int](8, 32, 64, 128, 256)
+        alias wgmma_n = [8, 32, 64, 128, 256]
         alias num_ins = 5
 
         @parameter

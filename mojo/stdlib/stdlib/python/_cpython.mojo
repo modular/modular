@@ -36,7 +36,10 @@ from sys.ffi import (
 )
 
 from memory import UnsafePointer
-from python._bindings import PyMojoObject, Typed_initproc, Typed_newfunc
+from python.bindings import (
+    Typed_initproc,
+    Typed_newfunc,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings
@@ -192,43 +195,6 @@ struct PyObjectPtr(Copyable, Movable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    fn try_cast_to_mojo_value[
-        T: AnyType,
-    ](
-        owned self,
-        # TODO: Make this part of the trait bound
-        expected_type_name: StringSlice,
-    ) -> Optional[UnsafePointer[T]]:
-        var cpython = Python().cpython()
-        var type = cpython.Py_TYPE(self)
-        var type_name = PythonObject(
-            from_owned_ptr=cpython.PyType_GetName(type)
-        )
-
-        # FIXME(MSTDL-978):
-        #   Improve this check. We should do something conceptually equivalent
-        #   to:
-        #       type == T.python_type_object
-        #   where:
-        #       trait Pythonable:
-        #           var python_type_object: PyTypeObject
-        if type_name == PythonObject(expected_type_name):
-            return self.unchecked_cast_to_mojo_value[T]()
-        else:
-            return None
-
-    fn unchecked_cast_to_mojo_object[
-        T: AnyType
-    ](owned self) -> UnsafePointer[PyMojoObject[T]]:
-        """Assume that this Python object contains a wrapped Mojo value."""
-        return self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-
-    fn unchecked_cast_to_mojo_value[T: AnyType](owned self) -> UnsafePointer[T]:
-        var mojo_obj_ptr = self.unchecked_cast_to_mojo_object[T]()
-
-        # TODO(MSTDL-950): Should use something like `addr_of!`
-        return UnsafePointer[T](to=mojo_obj_ptr[].mojo_value)
 
     fn is_null(self) -> Bool:
         """Check if the pointer is null.
@@ -975,10 +941,8 @@ struct CPython(Copyable, Movable):
         #   Once Mojo argument splatting is supported, this should just
         #   be: `print(*args)`
         @parameter
-        fn print_arg[T: Writable](arg: T):
-            print(arg, sep="", end="", flush=False)
-
-        args.each[print_arg]()
+        for i in range(args.__len__()):
+            print(args[i], sep="", end="", flush=False)
 
         print(flush=True)
 
@@ -1891,6 +1855,12 @@ struct CPython(Copyable, Movable):
     # ===-------------------------------------------------------------------===#
     # Floating-Point Objects
     # ===-------------------------------------------------------------------===#
+
+    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/number.html#c.PyNumber_Float).
+        """
+        return self.lib.call["PyNumber_Float", PyObjectPtr](obj)
 
     fn PyFloat_FromDouble(self, value: Float64) -> PyObjectPtr:
         """[Reference](

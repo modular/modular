@@ -38,6 +38,7 @@ from gpu import (
     lane_id,
     thread_idx,
 )
+from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import A100, DEFAULT_GPU, H100
@@ -302,6 +303,13 @@ fn matmul_kernel_naive[
         c[Index(x, y)] = accum.cast[c_type]()
 
 
+@value
+@register_passable("trivial")
+struct AMDSchedulerTuning:
+    var block_shape: IndexList[2]
+    var tuning_values: IndexList[3]
+
+
 @always_inline
 fn _matmul_gpu[
     c_type: DType,
@@ -317,6 +325,7 @@ fn _matmul_gpu[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
     _trace_description: StaticString = "",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
     a: NDBuffer[a_type, 2, _, _],
@@ -434,6 +443,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=NUM_PIPELINE_STAGES,
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=False,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -477,6 +487,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=8,
                     num_consumer=1,
                     partitioned_multicast=True,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -506,6 +517,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=6,
                     num_consumer=2,
                     partitioned_multicast=True,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -535,6 +547,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=6,
                     num_consumer=2,
                     partitioned_multicast=True,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -569,6 +582,7 @@ fn _matmul_gpu[
                     num_pipeline_stages=6,
                     num_consumer=2,
                     partitioned_multicast=False,
+                    pdl_level=pdl_level,
                 )
                 warp_specialize_gemm_with_multicasting[
                     transpose_b=transpose_b,
@@ -604,7 +618,78 @@ fn _matmul_gpu[
 
                 @always_inline
                 @parameter
-                fn scheduler_hint_helper[m: Int, n: Int]() -> IndexList[3]:
+                fn scheduler_hint_helper[
+                    block_m: Int, block_n: Int
+                ]() -> IndexList[3]:
+                    alias table = List[AMDSchedulerTuning](
+                        # Entered by hand
+                        AMDSchedulerTuning(Index(32, 32), Index(3, 7, 1)),
+                        AMDSchedulerTuning(Index(32, 64), Index(1, 4, 2)),
+                        AMDSchedulerTuning(Index(32, 96), Index(5, 7, 1)),
+                        AMDSchedulerTuning(Index(32, 128), Index(1, 1, 2)),
+                        AMDSchedulerTuning(Index(32, 160), Index(3, 5, 5)),
+                        AMDSchedulerTuning(Index(32, 192), Index(5, 6, 5)),
+                        AMDSchedulerTuning(Index(32, 224), Index(2, 3, 5)),
+                        AMDSchedulerTuning(Index(32, 256), Index(2, 1, 1)),
+                        AMDSchedulerTuning(Index(64, 32), Index(1, 9, 1)),
+                        AMDSchedulerTuning(Index(64, 64), Index(3, 1, 1)),
+                        AMDSchedulerTuning(Index(64, 96), Index(4, 1, 1)),
+                        AMDSchedulerTuning(Index(64, 128), Index(3, 1, 2)),
+                        AMDSchedulerTuning(Index(64, 160), Index(1, 7, 1)),
+                        AMDSchedulerTuning(Index(64, 192), Index(1, 1, 2)),
+                        AMDSchedulerTuning(Index(64, 224), Index(2, 1, 3)),
+                        AMDSchedulerTuning(Index(64, 256), Index(2, 5, 2)),
+                        AMDSchedulerTuning(Index(96, 32), Index(3, 8, 1)),
+                        AMDSchedulerTuning(Index(96, 64), Index(1, 3, 2)),
+                        AMDSchedulerTuning(Index(96, 96), Index(2, 4, 1)),
+                        AMDSchedulerTuning(Index(96, 128), Index(1, 2, 2)),
+                        AMDSchedulerTuning(Index(96, 160), Index(4, 2, 1)),
+                        AMDSchedulerTuning(Index(96, 192), Index(1, 4, 1)),
+                        AMDSchedulerTuning(Index(96, 224), Index(4, 2, 2)),
+                        AMDSchedulerTuning(Index(96, 256), Index(4, 1, 2)),
+                        AMDSchedulerTuning(Index(128, 32), Index(1, 5, 1)),
+                        AMDSchedulerTuning(Index(128, 64), Index(1, 2, 1)),
+                        AMDSchedulerTuning(Index(128, 96), Index(1, 4, 1)),
+                        AMDSchedulerTuning(Index(128, 128), Index(3, 1, 2)),
+                        AMDSchedulerTuning(Index(128, 160), Index(3, 3, 2)),
+                        AMDSchedulerTuning(Index(128, 192), Index(2, 4, 2)),
+                        AMDSchedulerTuning(Index(128, 224), Index(5, 1, 2)),
+                        AMDSchedulerTuning(Index(128, 256), Index(2, 5, 2)),
+                        # Auto generated with kprofile
+                        AMDSchedulerTuning(Index(160, 32), Index(2, 2, 1)),
+                        AMDSchedulerTuning(Index(160, 64), Index(3, 1, 1)),
+                        AMDSchedulerTuning(Index(160, 96), Index(3, 1, 2)),
+                        AMDSchedulerTuning(Index(160, 128), Index(4, 2, 1)),
+                        AMDSchedulerTuning(Index(160, 160), Index(4, 4, 1)),
+                        AMDSchedulerTuning(Index(160, 192), Index(6, 1, 2)),
+                        AMDSchedulerTuning(Index(160, 224), Index(7, 1, 2)),
+                        AMDSchedulerTuning(Index(160, 256), Index(8, 1, 2)),
+                        AMDSchedulerTuning(Index(192, 32), Index(2, 2, 1)),
+                        AMDSchedulerTuning(Index(192, 64), Index(1, 2, 2)),
+                        AMDSchedulerTuning(Index(192, 96), Index(2, 3, 2)),
+                        AMDSchedulerTuning(Index(192, 128), Index(3, 3, 2)),
+                        AMDSchedulerTuning(Index(192, 160), Index(8, 1, 1)),
+                        AMDSchedulerTuning(Index(192, 192), Index(2, 5, 2)),
+                        AMDSchedulerTuning(Index(192, 224), Index(5, 4, 2)),
+                        AMDSchedulerTuning(Index(192, 256), Index(7, 3, 2)),
+                        AMDSchedulerTuning(Index(224, 32), Index(3, 1, 1)),
+                        AMDSchedulerTuning(Index(224, 64), Index(1, 1, 2)),
+                        AMDSchedulerTuning(Index(224, 96), Index(3, 1, 2)),
+                        AMDSchedulerTuning(Index(224, 128), Index(6, 1, 2)),
+                        AMDSchedulerTuning(Index(224, 160), Index(3, 5, 2)),
+                        AMDSchedulerTuning(Index(224, 192), Index(6, 2, 2)),
+                        AMDSchedulerTuning(Index(224, 224), Index(6, 4, 2)),
+                        AMDSchedulerTuning(Index(224, 256), Index(4, 7, 2)),
+                        AMDSchedulerTuning(Index(256, 32), Index(1, 2, 2)),
+                        AMDSchedulerTuning(Index(256, 64), Index(2, 1, 2)),
+                        AMDSchedulerTuning(Index(256, 96), Index(4, 1, 2)),
+                        AMDSchedulerTuning(Index(256, 128), Index(6, 2, 1)),
+                        AMDSchedulerTuning(Index(256, 160), Index(3, 6, 2)),
+                        AMDSchedulerTuning(Index(256, 192), Index(6, 3, 2)),
+                        AMDSchedulerTuning(Index(256, 224), Index(4, 6, 2)),
+                        AMDSchedulerTuning(Index(256, 256), Index(6, 6, 2)),
+                    )
+
                     @parameter
                     if (
                         env_get_bool["AUTOTUNING_MODE", False]()
@@ -615,18 +700,12 @@ fn _matmul_gpu[
                             env_get_int["TUNE_SCHED_Y", 2](),
                             env_get_int["TUNE_SCHED_Z", 2](),
                         )
-                    elif m == n == 256:
-                        return Index(4, 8, 2)
-                    elif m == 224 and n == 256:
-                        return Index(4, 7, 2)
-                    elif m == 192 and n == 256:
-                        return Index(4, 6, 2)
-                    elif m == 128 and n == 256:
-                        return Index(2, 4, 2)
-                    elif m == 128 and n == 128:
-                        return Index(2, 2, 2)
-                    else:
-                        return Index(2, 2, 2)
+
+                    @parameter
+                    for i in range(len(table)):
+                        if table[i].block_shape == Index(block_m, block_n):
+                            return table[i].tuning_values
+                    return Index(2, 2, 2)
 
                 @always_inline
                 @parameter
@@ -651,6 +730,7 @@ fn _matmul_gpu[
                             block_m, block_n
                         ](),
                         num_k_partitions=num_k_partitions,
+                        pdl_level=pdl_level,
                     )
                     multistage_gemm[
                         transpose_b=transpose_b,
@@ -666,44 +746,107 @@ fn _matmul_gpu[
 
                 @parameter
                 if not transpose_b:
-                    kernel_helper[128, 128, num_pipeline_stages=2]()
+                    return kernel_helper[128, 128, num_pipeline_stages=2]()
                 elif env_get_bool["AUTOTUNING_MODE", False]():
                     alias block_m = env_get_int["TUNE_BM", 128]()
                     alias block_n = env_get_int["TUNE_BN", 128]()
                     alias num_k_partitions = env_get_int[
                         "TUNE_NUM_K_PARTITIONS", 1
                     ]()
-                    kernel_helper[
+                    return kernel_helper[
                         block_m, block_n, num_k_partitions=num_k_partitions
                     ]()
-                elif static_N >= 28672 and static_K >= 4096:
+
+                # mistral-small-24b auto-tuned shapes
+                @parameter
+                if static_N == 5120 and static_K == 4096:
+                    if m >= 8192:
+                        return kernel_helper[192, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+                elif static_N == 6144 and static_K == 5120:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[192, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[192, 192]()
+                elif static_N == 65536 and static_K == 5120:
+                    if m >= 8192:
+                        return kernel_helper[256, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+                elif static_N == 5120 and static_K == 32768:
+                    if m >= 8192:
+                        return kernel_helper[192, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+
+                # gemma-3-12b auto-tuned shapes
+                @parameter
+                if static_N == 3840 and static_K == 4096:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[192, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 192]()
+                elif static_N == 3840 and static_K == 15360:
+                    if m >= 8192:
+                        return kernel_helper[256, 224]()
+                    elif m >= 7000:
+                        return kernel_helper[224, 224]()
+                    elif m >= 3500:
+                        return kernel_helper[224, 224]()
+                elif static_N == 8192 and static_K == 3840:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[192, 256]()
+                elif static_N == 30720 and static_K == 3840:
+                    if m >= 8192:
+                        return kernel_helper[256, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[256, 256]()
+
+                # Default tune based on llama3
+                @parameter
+                if static_N >= 28672 and static_K >= 2048:
                     if m >= 1024:
-                        kernel_helper[224, 256]()
+                        return kernel_helper[224, 256]()
                     elif m >= 128:
-                        kernel_helper[128, 128]()
+                        return kernel_helper[128, 128]()
                     else:
-                        kernel_helper[64, 64]()
-                elif static_N >= 4096 and static_K >= 4096:
+                        return kernel_helper[64, 64]()
+                elif static_N >= 2048 and static_K >= 2048:
                     if m >= 4096:
-                        kernel_helper[224, 256]()
+                        return kernel_helper[224, 256]()
                     elif m >= 1024:
-                        kernel_helper[128, 128]()
+                        return kernel_helper[128, 128]()
                     elif m >= 512:
-                        kernel_helper[128, 128, num_k_partitions=2]()
+                        return kernel_helper[128, 128, num_k_partitions=2]()
                     elif static_K == 14336:
                         if m >= 128:
-                            kernel_helper[64, 64, num_k_partitions=4]()
+                            return kernel_helper[64, 64, num_k_partitions=4]()
                         elif m >= 64:
-                            kernel_helper[64, 64, num_k_partitions=8]()
+                            return kernel_helper[64, 64, num_k_partitions=8]()
                         else:
-                            kernel_helper[32, 64, num_k_partitions=4]()
+                            return kernel_helper[32, 64, num_k_partitions=4]()
                     elif m >= 64:
-                        kernel_helper[64, 64]()
+                        return kernel_helper[64, 64]()
                     else:
-                        kernel_helper[32, 64, num_k_partitions=4]()
-                else:
-                    kernel_helper[128, 128]()
-                return
+                        return kernel_helper[32, 64, num_k_partitions=4]()
+                return kernel_helper[128, 128]()
 
             @parameter
             if env_get_bool["AUTOTUNING_MODE", False]():
@@ -727,6 +870,7 @@ fn _matmul_gpu[
                         num_pipeline_stages=4,
                         num_consumer=2,
                         partitioned_multicast=False,
+                        pdl_level=pdl_level,
                     )
                     warp_specialize_gemm_with_multicasting[
                         transpose_b=transpose_b,
@@ -811,6 +955,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=8,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -843,6 +988,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -875,6 +1021,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -912,6 +1059,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -944,6 +1092,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -981,6 +1130,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1013,6 +1163,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1050,6 +1201,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1082,6 +1234,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1118,6 +1271,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=1,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,
@@ -1148,6 +1302,7 @@ fn _matmul_gpu[
                             num_pipeline_stages=4,
                             num_consumer=2,
                             partitioned_multicast=False,
+                            pdl_level=pdl_level,
                         )
                         warp_specialize_gemm_with_multicasting[
                             transpose_b=transpose_b,

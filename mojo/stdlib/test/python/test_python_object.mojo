@@ -13,9 +13,9 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
-from collections import Dict
 
 from python import Python, PythonObject
+from python.bindings import PythonTypeBuilder, PythonModuleBuilder
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -270,14 +270,16 @@ def test_inplace_dunder_methods(mut python: Python):
     assert_equal(a, 1)
 
 
-def test_num_conversion() -> None:
+def test_num_conversion():
     alias n = UInt64(0xFEDC_BA09_8765_4321)
     alias n_str = String(n)
     assert_equal(n_str, String(PythonObject(n)))
 
 
-def test_bool_conversion() -> None:
+def test_bool_conversion():
     var x: PythonObject = 1
+    assert_true(x == 1)
+    assert_false(x == 0)
     assert_true(x == 0 or x == 1)
 
 
@@ -409,7 +411,7 @@ fn test_dict() raises:
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
     # Test Python.dict from a Span of tuples.
-    var tuples = List((123, PythonObject("food")), (42, PythonObject("42")))
+    var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
     dd = Python.dict(tuples)
     assert_equal(String(dd), "{123: 'food', 42: '42'}")
 
@@ -627,6 +629,34 @@ def test_contains_dunder():
     assert_true("B" in y)
 
 
+@fieldwise_init
+struct Person(Movable, Defaultable, Representable):
+    var name: String
+    var age: Int
+
+    fn __init__(out self):
+        self.name = ""
+        self.age = 0
+
+    fn __repr__(self) -> String:
+        return String("Person(", self.name, ", ", self.age, ")")
+
+
+def test_python_mojo_object_operations():
+    # Type registration
+    var b = PythonModuleBuilder("fake_module")
+    _ = b.add_type[Person]("Person")
+    _ = b.finalize()
+
+    # Alloc
+    var person_obj = PythonObject(alloc=Person("John Smith", 42))
+
+    # Downcast
+    var person_ptr = person_obj.downcast_value_ptr[Person]()
+
+    assert_equal(person_ptr[].name, "John Smith")
+
+
 def main():
     # initializing Python instance calls init_python
     var python = Python()
@@ -648,3 +678,4 @@ def main():
     test_setitem_raises()
     test_py_slice()
     test_contains_dunder()
+    test_python_mojo_object_operations()

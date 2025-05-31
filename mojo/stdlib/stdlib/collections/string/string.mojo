@@ -638,10 +638,8 @@ struct String(
         """
 
         @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
-
-        args.each[write_arg]()
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
     @staticmethod
     @no_inline
@@ -680,7 +678,6 @@ struct String(
         ```mojo
         var msg = String("my message", 42, 42.2, True)
         ```
-        .
         """
         var string = String()
         write_buffered(string, args, sep=sep, end=end)

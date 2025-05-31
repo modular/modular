@@ -7,9 +7,7 @@ toc_max_heading_level: 2
 
 This is a list of changes to the Mojo language, standard library, and tools.
 
-To check your current version, run `mojo --version`. To update the version of
-Mojo for your project with the `magic` package manager, follow the instructions
-in [Update a package](/magic#update-a-package) to update the `max` package.
+To check your current version, run `mojo --version`.
 
 ## v25.4 nightly
 
@@ -1932,6 +1930,9 @@ detailed information in the following sections:
   Point(1, 2)
   Point(3, 4)
   ```
+
+- The `TypeIdentifiable` trait has been removed in favor of the new
+  `get_type_name` utility in the `compile.reflection` module.
 
 - Python interop changes:
 

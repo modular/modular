@@ -16,7 +16,14 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    Weight,
+    ops,
+)
 from max.nn.comm import Allreduce
 from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
 from max.nn.layer import Module
@@ -211,27 +218,31 @@ class DistributedMoE(MoE):
             row_size = int(weight.shape[0]) // self.num_devices
             return weight[i * row_size : (i + 1) * row_size, :]
 
-        self.shared_expert_gate_proj.weight.set_sharding_strategy(
-            row_sharding_strategy
+        self.shared_expert_gate_proj.set_sharding(
+            ShardingStrategy.rowwise(self.num_devices)
         )
-        self.shared_expert_down_proj.weight.set_sharding_strategy(
-            col_sharding_strategy
+        self.shared_expert_down_proj.set_sharding(
+            ShardingStrategy.columnwise(self.num_devices)
         )
-        self.shared_expert_up_proj.weight.set_sharding_strategy(
-            row_sharding_strategy
+        self.shared_expert_up_proj.set_sharding(
+            ShardingStrategy.rowwise(self.num_devices)
         )
 
         # Sharding strategies for the routed experts' weights. The key differences are:
         # 1. All weights are rank-3 tensors
         # 2. Weights are not transposed.
         # 3. gate_proj and up_proj weights are concatenated together
-        def down_sharding_strategy(weight: Weight, i) -> TensorValue:
-            row_size = int(weight.shape[1]) // self.num_devices
+        def down_sharding_strategy(
+            weight: Weight, i: int, num_devices: int
+        ) -> TensorValue:
+            row_size = int(weight.shape[1]) // num_devices
             return weight[:, i * row_size : (i + 1) * row_size, :]
 
-        def gate_up_sharding_strategy(weight: Weight, i) -> TensorValue:
+        def gate_up_sharding_strategy(
+            weight: Weight, i: int, num_devices: int
+        ) -> TensorValue:
             intermediate_size = int(weight.shape[2]) // 2
-            col_size = intermediate_size // self.num_devices
+            col_size = intermediate_size // num_devices
             sharded_gate_proj = weight[:, :, i * col_size : (i + 1) * col_size]
             sharded_up_proj = weight[
                 :,
@@ -241,12 +252,15 @@ class DistributedMoE(MoE):
             ]
             return ops.concat((sharded_gate_proj, sharded_up_proj), axis=2)
 
-        self.down_proj.set_sharding_strategy(down_sharding_strategy)
-        self.gate_up_proj.set_sharding_strategy(gate_up_sharding_strategy)
+        self.down_proj.set_sharding_strategy(
+            ShardingStrategy(self.num_devices, down_sharding_strategy)
+        )
+        self.gate_up_proj.set_sharding_strategy(
+            ShardingStrategy(self.num_devices, gate_up_sharding_strategy)
+        )
 
         # we clone the router weights for each device
-        clone_weight = lambda weight, i: weight
-        self.router.weight.set_sharding_strategy(clone_weight)
+        self.router.set_sharding(ShardingStrategy.replicate(self.num_devices))
 
         # Create a separate MoE layer for each device.
         kwargs = kwargs.copy()

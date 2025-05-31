@@ -406,42 +406,6 @@ struct VariadicPack[
         return __get_litref_as_mvalue(litref_elt)
 
     # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn each[func: fn[T: element_trait] (T) capturing -> None](self):
-        """Apply a function to each element of the pack in order.  This applies
-        the specified function (which must be parametric on the element type) to
-        each element of the pack, from the first element to the last, passing
-        in each element as a read-only argument.
-
-        Parameters:
-            func: The function to apply to each element.
-        """
-
-        @parameter
-        for i in range(Self.__len__()):
-            func(self[i])
-
-    @always_inline
-    fn each_idx[
-        func: fn[idx: Int, T: element_trait] (T) capturing -> None
-    ](self):
-        """Apply a function to each element of the pack in order.  This applies
-        the specified function (which must be parametric on the element type) to
-        each element of the pack, from the first element to the last, passing
-        in each element as a read-only argument.
-
-        Parameters:
-            func: The function to apply to each element.
-        """
-
-        @parameter
-        for i in range(Self.__len__()):
-            func[i](self[i])
-
-    # ===-------------------------------------------------------------------===#
     # C Pack Utilities
     # ===-------------------------------------------------------------------===#
 

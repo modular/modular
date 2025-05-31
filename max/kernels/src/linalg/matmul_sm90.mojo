@@ -73,8 +73,6 @@ from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
     st_matrix_n_layout,
     tile_layout_k_major,
 )
@@ -1936,7 +1934,7 @@ fn warp_specialize_gemm_with_multicasting[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(config.pdl_level()),
         )
     else:
         alias kernel = tma_wgmma_warp_specialized_gemm_kernel[
@@ -1978,5 +1976,5 @@ fn warp_specialize_gemm_with_multicasting[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 smem_size
             ),
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(config.pdl_level()),
         )

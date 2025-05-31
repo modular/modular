@@ -1,0 +1,7 @@
+@LIT_SITE_CFG_IN_HEADER@
+
+lit_config.load_config(
+    config, "@MODULAR_BINARY_DIR@/utils/build/llvm-lit/lit.common.configured"
+)
+
+lit_config.load_config(config, "@MODULAR_SOURCE_DIR@/open-source/max/mojo/integration-test/lit.cfg.py")

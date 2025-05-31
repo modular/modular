@@ -452,20 +452,11 @@ fn _parallelize_impl[
     @always_inline
     @parameter
     fn coarse_grained_func(thread_idx: Int):
-        # Calculate the start for the consecutive range of work items this
-        # invocation is responsible for.
-        var start_idx = thread_idx * (
-            chunk_size + 1
-        ) if thread_idx <= extra_items else extra_items * (chunk_size + 1) + (
-            thread_idx - extra_items
-        ) * chunk_size
-        # Calculate the exclusive end of the range
-        var end_idx = start_idx + chunk_size
-        if thread_idx < extra_items:
-            # Add one work item to threads that get an extra assignment.
-            end_idx += 1
-        for i in range(start_idx, end_idx, 1):
-            func(i)
+        # Calculate the consecutive range of work items this invocation is
+        # responsible for.
+        var start_idx = thread_idx * chunk_size + min(thread_idx, extra_items)
+        for i in range(chunk_size + Int(thread_idx < extra_items)):
+            func(start_idx + i)
 
     sync_parallelize[coarse_grained_func](num_workers)
 

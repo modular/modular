@@ -14,11 +14,12 @@
 import asyncio
 import logging
 import multiprocessing
+import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Optional
 
+import zmq
 from max.serve.config import Settings
 from max.serve.kvcache_agent.kvcache_agent import start_kvcache_agent_service
 from max.serve.process_control import ProcessControl, ProcessMonitor
@@ -31,13 +32,21 @@ logger.propagate = False
 
 def _kvcache_agent_process_fn(
     pc: ProcessControl,
-    queue: multiprocessing.Queue,
     settings: Settings,
 ) -> None:
     configure_logging(settings)
+    pid = os.getpid()
+    logger.info("Starting KV Cache Agent on process %d!", pid)
+
+    # Initialize ZeroMQ Context.
+    # This should only be done once per process.
+    zmq_ctx = zmq.Context(io_threads=2)
 
     try:
-        server = start_kvcache_agent_service(queue)
+        server = start_kvcache_agent_service(
+            kv_cache_events_zmq_endpoint=settings.kv_cache_events_zmq_endpoint,
+            zmq_ctx=zmq_ctx,
+        )
         pc.set_started()
         logger.debug("Started KV Cache Agent!")
 
@@ -58,7 +67,7 @@ def _kvcache_agent_process_fn(
 @asynccontextmanager
 async def start_kvcache_agent(
     settings: Settings,
-) -> AsyncGenerator[Optional[multiprocessing.Queue], None]:
+) -> AsyncGenerator[None, None]:
     """Starts a kvcache agent and associated process."""
     process_name = "KVCACHE_AGENT_" + str(uuid.uuid4())
 
@@ -68,14 +77,13 @@ async def start_kvcache_agent(
         "kvcache-agent",
         health_fail_s=settings.mw_health_fail_s,
     )
-    queue: multiprocessing.Queue = mp_context.Queue()
 
     logger.info("Starting KV Cache Agent: %s", process_name)
     process = mp_context.Process(
         name=process_name,
         target=_kvcache_agent_process_fn,
         daemon=True,
-        args=(pc, queue, settings),
+        args=(pc, settings),
     )
     process.start()
     monitor = ProcessMonitor(pc, process)
@@ -128,7 +136,7 @@ async def start_kvcache_agent(
 
     try:
         process_task = asyncio.create_task(monitor.shutdown_if_dead())
-        yield queue
+        yield
     finally:
         process_task.cancel()
         await monitor.shutdown()

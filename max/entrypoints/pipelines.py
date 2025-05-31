@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import functools
 import logging
 import os
+from typing import Any
 
 import click
 
@@ -80,6 +82,8 @@ class ModelGroup(click.Group):
     def get_command(self, ctx, cmd_name):
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
+            if any(param.name == "task_flags" for param in rv.params):
+                rv.ignore_unknown_options = True
             return rv
         supported = ", ".join(self.list_commands(ctx))
         ctx.fail(
@@ -97,7 +101,11 @@ class ModelGroup(click.Group):
     is_eager=True,  # Eager ensures this runs before other options/commands
     help="Show the MAX version and exit.",
 )
-def main():
+def main() -> None:
+    pass
+
+
+def configure_telemetry() -> None:
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
@@ -146,6 +154,11 @@ def common_server_options(func):
         default=False,
         help="Experimental: Enable KV Cache Agent support.",
     )
+    @click.option(
+        "--port",
+        type=int,
+        help="Port to run the server on.",
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -158,15 +171,25 @@ def common_server_options(func):
     cls=WithLazyPipelineOptions,
 )
 @common_server_options
+@click.option(
+    "--task",
+    type=str,
+    default="text_generation",
+    help="The task to run.",
+)
+@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
 def cli_serve(
-    profile_serve,
-    performance_fake,
-    batch_timeout,
-    model_name,
-    sim_failure,
-    experimental_enable_kvcache_agent,
-    **config_kwargs,
-):
+    profile_serve: bool,
+    performance_fake: str,
+    batch_timeout: float,
+    model_name: str | None,
+    sim_failure: int,
+    experimental_enable_kvcache_agent: bool,
+    port: int,
+    task: str,
+    task_flags: list[str],
+    **config_kwargs: Any,
+) -> None:
     """Start a model serving endpoint for inference.
 
     This command launches a server that can handle inference requests for the
@@ -174,10 +197,23 @@ def cli_serve(
     options and monitoring capabilities.
     """
     from max.entrypoints.cli import serve_pipeline
-    from max.pipelines import PipelineConfig
+    from max.entrypoints.cli.config import parse_task_flags
+    from max.pipelines import (
+        AudioGenerationConfig,
+        PipelineConfig,
+        PipelineTask,
+    )
 
     # Initialize config, and serve.
-    pipeline_config = PipelineConfig(**config_kwargs)
+
+    # Load tokenizer & pipeline.
+    pipeline_config: PipelineConfig
+    if task == PipelineTask.AUDIO_GENERATION:
+        pipeline_config = AudioGenerationConfig(
+            parse_task_flags(task_flags), **config_kwargs
+        )
+    else:
+        pipeline_config = PipelineConfig(**config_kwargs)
     failure_percentage = None
     if sim_failure > 0:
         failure_percentage = sim_failure
@@ -189,6 +225,8 @@ def cli_serve(
         model_name=model_name,
         failure_percentage=failure_percentage,
         experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
+        port=port,
+        pipeline_task=PipelineTask(task),
     )
 
 
@@ -220,7 +258,12 @@ def cli_serve(
     show_default=True,
     help="# of warmup iterations to run before the final timed run.",
 )
-def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
+def cli_pipeline(
+    prompt: str,
+    image_url: list[str],
+    num_warmups: int,
+    **config_kwargs: Any,
+) -> None:
     """Generate text using the specified model.
 
     This command runs text generation using the loaded model, optionally
@@ -260,7 +303,7 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     show_default=True,
     help="# of warmup iterations to run before the final timed run.",
 )
-def encode(prompt, num_warmups, **config_kwargs):
+def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     """Encode text input into model embeddings.
 
     This command processes the input text through the model's encoder, producing
@@ -276,6 +319,47 @@ def encode(prompt, num_warmups, **config_kwargs):
         prompt=prompt,
         num_warmups=num_warmups,
     )
+
+
+@main.command(
+    name="text-to-speech",
+    cls=WithLazyPipelineOptions,
+)
+@click.option(
+    "--prompt",
+    type=str,
+    default="42 is the meaning of life.",
+    help="The text prompt to synthesize to audio.",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    default=None,
+    help="Path to the output WAV audio file.",
+)
+@click.option(
+    "--voice",
+    type=str,
+    default=None,
+    help="Name of the speaker to use for the synthesis. If set, `--audio-prompt-speakers` must also be provided.",
+)
+@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
+def text_to_speech(
+    prompt: str,
+    output: str | None,
+    voice: str | None,
+    task_flags: list[str],
+    **config_kwargs: Any,
+) -> None:
+    """Generate speech from text."""
+    from max.entrypoints.cli.config import parse_task_flags
+    from max.entrypoints.cli.synthesize_speech import synthesize_speech
+    from max.pipelines import AudioGenerationConfig
+
+    config = AudioGenerationConfig(
+        parse_task_flags(task_flags), **config_kwargs
+    )
+    synthesize_speech(config, prompt, voice, output or "output.wav")
 
 
 @main.command(
@@ -298,7 +382,7 @@ def cli_warm_cache(**config_kwargs) -> None:
     default=False,
     help="Print the list of pipelines options in JSON format.",
 )
-def cli_list(json):
+def cli_list(json: bool) -> None:
     """List available pipeline configurations and models.
 
     This command displays information about all registered pipelines and their
@@ -315,12 +399,14 @@ def cli_list(json):
         list_pipelines_to_console()
 
 
-def print_version(ctx, param, value):
+def print_version(
+    ctx: click.Context, param: click.Parameter, value: bool
+) -> None:
     if not value or ctx.resilient_parsing:
         return
     from max import _core
 
-    click.echo(f"\nMAX version {_core.__version__}\n")
+    click.echo(f"MAX {_core.__version__}")
     ctx.exit()
 
 
@@ -328,4 +414,5 @@ if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
+    configure_telemetry()
     main()

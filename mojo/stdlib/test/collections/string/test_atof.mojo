@@ -94,7 +94,7 @@ def test_error_cases():
 
 
 alias T = Tuple[Float64, String]
-alias numbers_to_test = List[T](
+alias numbers_to_test = [
     T(5e-324, "5e-324"),  # smallest value possible with float64
     T(1e-309, "1e-309"),  # subnormal float64
     T(84.5e-309, "84.5e-309"),  # subnormal float64
@@ -134,7 +134,7 @@ alias numbers_to_test = List[T](
     T(47421763.54864864647, "47421763.54864864647"),
     # TODO: Make atof work when many digits are present, e.g.
     # "47421763.548648646474532187448684",
-)
+]
 
 
 def test_atof_generate_cases():

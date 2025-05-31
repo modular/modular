@@ -141,10 +141,10 @@ fn gather[
     corresponding lanes of the `passthrough` operand.
 
     In general, for some vector of pointers `base`, mask `mask`, and passthrough
-    `pass` a call of the form:
+    `passthrough` a call of the form:
 
-    ```python
-    gather(base, mask, pass)
+    ```mojo
+    result = gather(base, mask, passthrough)
     ```
 
     is equivalent to the following sequence of scalar loads in C++:
@@ -237,14 +237,14 @@ fn scatter[
     Scatter with overlapping addresses is guaranteed to be ordered from
     least-significant to most-significant element.
 
-    In general, for some vector %value, vector of pointers %base, and mask
-    %mask instructions of the form:
+    In general, for some vector `value`, vector of pointers `base`, and mask
+    `mask` a call of the form:
 
-    ```mlir
-    %0 = pop.simd.scatter %value, %base[%mask] : !pop.simd<N, type>
+    ```mojo
+    scatter(value, base, mask)
     ```
 
-    is equivalent to the following sequence of scalar loads in C++:
+    is equivalent to the following sequence of scalar stores in C++:
 
     ```cpp
     for (int i = 0; i < N; i++)
@@ -534,7 +534,7 @@ fn prefetch[
 fn masked_load[
     dtype: DType, //, size: Int
 ](
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
     alignment: Int = 1,
@@ -581,7 +581,7 @@ fn masked_store[
     size: Int
 ](
     value: SIMD,
-    addr: UnsafePointer[Scalar[value.dtype], **_],
+    addr: UnsafePointer[Scalar[value.dtype], mut=True, **_],
     mask: SIMD[DType.bool, size],
     alignment: Int = 1,
 ):
@@ -623,7 +623,7 @@ fn compressed_store[
     dtype: DType, size: Int
 ](
     value: SIMD[dtype, size],
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -662,7 +662,7 @@ fn compressed_store[
 fn strided_load[
     dtype: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=False, **_],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = True,
 ) -> SIMD[dtype, simd_width]:
@@ -704,7 +704,7 @@ fn strided_store[
     dtype: DType, //, simd_width: Int
 ](
     value: SIMD[dtype, simd_width],
-    addr: UnsafePointer[Scalar[dtype], **_],
+    addr: UnsafePointer[Scalar[dtype], mut=True, **_],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = True,
 ):

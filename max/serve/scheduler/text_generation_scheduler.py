@@ -16,7 +16,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional, cast
+from typing import Any, Generic, Optional, TypeVar, cast
 
 import zmq
 from max.nn.kv_cache import PagedKVCacheManager
@@ -30,12 +30,12 @@ from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Trace, traced
 from max.serve.config import Settings
 from max.serve.process_control import ProcessControl
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
 from .queues import STOP_STREAM
-from .zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
@@ -99,12 +99,15 @@ class TokenGenerationSchedulerConfig:
             self.max_forward_steps_ce = 1
 
 
-class SchedulerOutput:
+T = TypeVar("T")
+
+
+class GenericSchedulerOutput(Generic[T]):
     def __init__(
         self,
         batch_type: BatchType = BatchType.TokenGeneration,
         num_steps: int = 1,
-        batch_inputs: dict[str, InputContext] = {},
+        batch_inputs: dict[str, T] = {},
         input_tokens: Optional[int] = None,
         cached_tokens: Optional[int] = None,
     ):
@@ -139,6 +142,10 @@ class SchedulerOutput:
             f"input_tokens={self.input_tokens}, "
             f"cache_hit_rate={self.cache_hit_rate:.2%})"
         )
+
+
+class SchedulerOutput(GenericSchedulerOutput[InputContext]):
+    pass
 
 
 class TokenGenerationScheduler(Scheduler):

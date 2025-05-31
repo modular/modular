@@ -15,10 +15,12 @@ from .audio_generation import (
     AudioGenerationRequest,
     AudioGenerator,
     AudioGeneratorContext,
+    AudioGeneratorOutput,
     PipelineAudioTokenizer,
 )
 from .embeddings_generation import EmbeddingsGenerator
 from .response import (
+    AudioGenerationResponse,
     EmbeddingsResponse,
     LogProbabilities,
     TextGenerationResponse,
@@ -39,8 +41,10 @@ from .text_generation import (
 
 __all__ = [
     "AudioGenerationRequest",
+    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
+    "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsResponse",
     "LogProbabilities",

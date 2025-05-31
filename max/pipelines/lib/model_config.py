@@ -188,7 +188,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 raise ValueError(
                     "model_path must be provided and must be a valid Hugging Face repository"
                 )
-            elif (not os.path.exists(self.model_path)) and (
+            elif (not os.path.exists(os.path.expanduser(self.model_path))) and (
                 not repo_exists_with_retry(
                     repo_id=self.model_path,
                     revision=self.huggingface_model_revision,

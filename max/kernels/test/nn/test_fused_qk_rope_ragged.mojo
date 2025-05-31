@@ -72,11 +72,10 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     )
 
     # Construct backing buffer and the KV cache itself.
-    kv_cache_block_buffer = List[Scalar[type]]()
-    kv_cache_block_buffer.resize(
-        new_size=block_shape.flattened_length(), value=0
+    kv_cache_block_buffer = List[Scalar[type]](
+        length=block_shape.flattened_length(), fill=0
     )
-    kv_cache_block = NDBuffer(kv_cache_block_buffer.data, block_shape)
+    kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
 
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[type]()
@@ -162,9 +161,8 @@ def test_fused_qk_rope[rope_dim: Int, type: DType]() -> None:
     )
 
     # Create output buffer.
-    q_out_buffer = List[Scalar[type]]()
-    q_out_buffer.resize(new_size=len(q_buffer), value=0)
-    q_out = NDBuffer[type, rank=3](q_out_buffer.data, q.dynamic_shape)
+    q_out_buffer = List[Scalar[type]](length=len(q_buffer), fill=0)
+    q_out = NDBuffer[type, rank=3](q_out_buffer.unsafe_ptr(), q.dynamic_shape)
     fused_qk_rope_ragged[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](

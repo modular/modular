@@ -36,7 +36,7 @@ from memory.pointer import _GPUAddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_internal import RuntimeTensorSpec, TensorSpec
+from tensor_internal import RuntimeTensorSpec
 
 from utils import IndexList, StaticTuple
 from utils._serialize import _serialize

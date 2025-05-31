@@ -36,17 +36,16 @@ from .host.launch_attribute import (
     LaunchAttributeValue,
 )
 
-alias _ENABLE_PDL_LAUNCH = _enable_pdl_launch()
+alias _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 
 
 @doc_private
 @always_inline("nodebug")
-fn _enable_pdl_launch() -> Bool:
-    """Determines if programmatic dependency launch (PDL) is enabled.
+fn _support_pdl_launch() -> Bool:
+    """Determines if programmatic dependency launch (PDL) is supported.
 
-    Checks if the current GPU supports PDL (Hopper SM90+ architecture) and if
-    the feature is explicitly enabled via environment variable. Returns False
-    for unsupported GPUs or when PDL is disabled.
+    Checks if the current GPU supports PDL (Hopper SM90+ architecture).
+    Returns False for unsupported GPUs
 
     Returns:
         True if PDL is supported and enabled, False otherwise.
@@ -58,15 +57,14 @@ fn _enable_pdl_launch() -> Bool:
     if DEFAULT_GPU < H100:
         return False
 
-    if PDLLevel() == PDLLevel.OFF:
-        return False
-
     return True
 
 
 @doc_private
 @always_inline("nodebug")
-fn pdl_launch_attributes() -> List[LaunchAttribute]:
+fn pdl_launch_attributes(
+    pdl_level: PDLLevel = PDLLevel(),
+) -> List[LaunchAttribute]:
     """Returns launch attributes for programmatic dependency launch (PDL).
 
     This function configures launch attributes to enable programmatic stream
@@ -82,8 +80,7 @@ fn pdl_launch_attributes() -> List[LaunchAttribute]:
         - When disabled, returns an empty list for compatibility with older GPUs.
     """
 
-    @parameter
-    if _ENABLE_PDL_LAUNCH:
+    if _SUPPORT_PDL_LAUNCH and pdl_level != PDLLevel.OFF:
         return List[LaunchAttribute](
             LaunchAttribute(
                 LaunchAttributeID.PROGRAMMATIC_STREAM_SERIALIZATION,
@@ -111,7 +108,7 @@ fn launch_dependent_grids():
     """
 
     @parameter
-    if _ENABLE_PDL_LAUNCH:
+    if _SUPPORT_PDL_LAUNCH:
         __mlir_op.`nvvm.griddepcontrol.launch.dependents`[_type=None]()
 
 
@@ -131,7 +128,7 @@ fn wait_on_dependent_grids():
     """
 
     @parameter
-    if _ENABLE_PDL_LAUNCH:
+    if _SUPPORT_PDL_LAUNCH:
         __mlir_op.`nvvm.griddepcontrol.wait`[_type=None]()
 
 

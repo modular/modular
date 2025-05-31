@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Defines the List type.
 
-You can import these APIs from the `collections` package. For example:
-
-```mojo
-from collections import List
-```
+These APIs are imported automatically, just like builtins.
 """
 
 
@@ -248,8 +244,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var x = List[Int](1, 2, 3)
-        var y = List[Int](1, 2, 3)
+        var x = [1, 2, 3]
+        var y = [1, 2, 3]
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
@@ -281,8 +277,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var x = List[Int](1, 2, 3)
-        var y = List[Int](1, 2, 4)
+        var x = [1, 2, 3]
+        var y = [1, 2, 4]
         print("x and y are not equal" if x != y else "x and y are equal")
         ```
         """
@@ -306,7 +302,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var x = List[Int](1,2,3)
+        var x = [1, 2, 3]
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
@@ -336,7 +332,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         x is <= 0.
 
         ```mojo
-        var a = List[Int](1, 2)
+        var a = [1, 2]
         a *= 2 # a = [1, 2, 1, 2]
         ```
 
@@ -432,7 +428,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             below:
 
             ```mojo
-            var my_list = List[Int](1, 2, 3)
+            var my_list = [1, 2, 3]
             print(my_list.__str__())
             ```
 
@@ -484,7 +480,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             to call this method is a bit special. Here is an example below:
 
             ```mojo
-            var my_list = List[Int](1, 2, 3)
+            var my_list = [1, 2, 3]
             print(my_list.__repr__())
             ```
 
@@ -830,7 +826,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var my_list = List[Int](1, 2, 3)
+        var my_list = [1, 2, 3]
         print(my_list.index(2)) # prints `1`
         ```
         """
@@ -1043,7 +1039,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var my_list = List[Int](1, 2, 3)
+        var my_list = [1, 2, 3]
         my_list.swap_elements(0, 2)
         print(my_list.__str__()) # 3, 2, 1
         ```

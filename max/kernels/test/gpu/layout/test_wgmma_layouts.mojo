@@ -98,9 +98,7 @@ fn wgmma_tf32_tf32_f32_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
         var mat_b_desc = WGMMADescriptor.create[1, 8](b_smem_tile.ptr)
 
         wgmma_fence_aligned()
@@ -405,12 +403,8 @@ fn wgmma_bf16_bf16_f32_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transposed=False](
-            b_smem_tile
-        )
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transposed=False](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -707,12 +701,8 @@ fn wgmma_f16_f16_f32_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transposed=False](
-            b_smem_tile
-        )
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transposed=False](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -1009,9 +999,7 @@ fn wgmma_f16_f16_f16_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
         var mat_b_desc = WGMMADescriptor.create[1, 8](b_smem_tile.ptr)
 
         wgmma_fence_aligned()
@@ -1323,10 +1311,8 @@ fn wgmma_kernel[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transpose_b](b_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         wgmma_fence_aligned()
 

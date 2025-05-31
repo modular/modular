@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import Dict, Optional
 from collections.string import StaticString, StringSlice
 from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
@@ -440,6 +439,17 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = None
 
+    @implicit
+    fn __init__(out self, func_name: StringLiteral):
+        """Constructs a Benchmark Id object from input function name.
+
+        Args:
+            func_name: The target function name.
+        """
+
+        self.func_name = String(func_name)
+        self.input_id = None
+
 
 struct BenchmarkInfo(Copyable, Movable):
     """Defines a Benchmark Info struct to record execution Statistics."""
@@ -680,7 +690,7 @@ struct Bench(Writable, Stringable):
         mut self,
         bench_id: BenchId,
         input: T,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function with input args of type AnyTrivialRegType.
 
@@ -731,12 +741,75 @@ struct Bench(Writable, Stringable):
             measures_list.append(m[])
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
+    @always_inline
+    fn bench_function[
+        bench_fn: fn () raises capturing [_] -> None,
+    ](
+        mut self,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+        """
+
+        @parameter
+        @always_inline
+        fn bench_iter(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn call_func():
+                try:
+                    bench_fn()
+                except e:
+                    abort(String(e))
+
+            b.iter[call_func]()
+
+        self.bench_function[bench_iter](bench_id, measures=measures)
+
+    @always_inline
+    fn bench_function[
+        bench_fn: fn () capturing [_] -> None,
+    ](
+        mut self,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+        """
+
+        @parameter
+        @always_inline
+        fn bench_iter(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn call_func():
+                bench_fn()
+
+            b.iter[call_func]()
+
+        self.bench_function[bench_iter](bench_id, measures=measures)
+
     fn bench_function[
         bench_fn: fn (mut Bencher) capturing [_] -> None
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -777,7 +850,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -838,7 +911,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function.
 

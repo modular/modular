@@ -149,7 +149,5 @@ struct FileDescriptor(Writer):
         """
 
         @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
-
-        args.each[write_arg]()
+        for i in range(args.__len__()):
+            args[i].write_to(self)

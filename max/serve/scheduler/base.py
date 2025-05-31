@@ -11,6 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+from max.pipelines.core import InputContext
 
 
 class Scheduler(ABC):
@@ -26,3 +29,39 @@ class Scheduler(ABC):
         - Error handling
         """
         pass
+
+
+@dataclass
+class PrefillRequest:
+    """A request for prefill (context encoding) processing.
+
+    Contains the request ID, input context, and transfer engine details needed to
+    process a prefill request through the pipeline and transfer KV cache data.
+
+    Attributes:
+        id: Unique identifier for this request
+        context: The input context containing the request data and state
+        transfer_engine_name: Name of the transfer engine to use for KV cache transfers
+        block_ids: List of block IDs allocated for KV cache storage
+    """
+
+    id: str
+    context: InputContext
+    transfer_engine_name: str
+    block_ids: list[int]
+
+
+@dataclass
+class DecodeRequest:
+    """A request for token generation (decode) processing.
+
+    Contains the request ID and input context needed to process a decode request
+    through the pipeline and generate tokens.
+
+    Attributes:
+        id: Unique identifier for this request
+        context: The input context containing the request data and state
+    """
+
+    id: str
+    context: InputContext

@@ -13,7 +13,7 @@
 
 """Types to interface with ML pipelines such as text/token generation."""
 
-from .config import PipelineConfig
+from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import (
     PipelineEngine,
     PipelineRole,
@@ -48,6 +48,7 @@ from .pipeline import (
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import rejection_sampler, token_sampler
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
     PipelineTokenizer,
@@ -57,6 +58,7 @@ from .tokenizer import (
 )
 
 __all__ = [
+    "AudioGenerationConfig",
     "download_weight_files",
     "EmbeddingsPipeline",
     "generate_local_model_path",
@@ -84,6 +86,7 @@ __all__ = [
     "RopeType",
     "SamplingConfig",
     "SpeculativeDecodingTextGenerationPipeline",
+    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionTokenizer",

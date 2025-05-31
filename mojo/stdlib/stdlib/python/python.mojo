@@ -19,7 +19,6 @@ from python import Python
 ```
 """
 
-from collections import Dict
 from collections.dict import OwnedKwargsDict
 from os import abort, getenv
 from sys import external_call, sizeof
@@ -35,7 +34,7 @@ from ._cpython import (
     PyMethodDef,
     PyObjectPtr,
 )
-from .python_object import PythonModule, PythonObject, TypedPythonObject
+from .python_object import PythonObject
 
 alias _PYTHON_GLOBAL = _Global["Python", _PythonGlobal, _init_python_global]
 
@@ -63,11 +62,12 @@ fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
     The returned pointer is immutable to prevent invalid shared mutation of
     this global variable. Once it is initialized, it may not be mutated.
     """
-    var global_ptr: UnsafePointer[
-        _PythonGlobal
-    ] = _PYTHON_GLOBAL.get_or_create_ptr()
 
-    return Pointer[CPython, StaticConstantOrigin](to=global_ptr[].cpython)
+    var ptr = _PYTHON_GLOBAL.get_or_create_indexed_ptr(_Global._python_idx)
+    var ptr2 = UnsafePointer(to=ptr[].cpython).origin_cast[
+        False, StaticConstantOrigin
+    ]()
+    return Pointer(to=ptr2[])
 
 
 struct Python:
@@ -214,7 +214,6 @@ struct Python:
     # PythonObject "Module" Operations
     # ===-------------------------------------------------------------------===#
 
-    # TODO(MSTDL-880): Change this to return `PythonModule`
     @staticmethod
     fn import_module(owned module: String) raises -> PythonObject:
         """Imports a Python module.
@@ -247,7 +246,7 @@ struct Python:
         return PythonObject(from_owned_ptr=module_ptr)
 
     @staticmethod
-    fn create_module(name: StaticString) raises -> PythonModule:
+    fn create_module(name: StaticString) raises -> PythonObject:
         """Creates a Python module using the provided name.
 
         Inspired by https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1227
@@ -272,19 +271,17 @@ struct Python:
         if module_ptr.is_null():
             raise cpython.get_error()
 
-        return PythonModule(
-            unsafe_unchecked_from=PythonObject(from_owned_ptr=module_ptr)
-        )
+        return PythonObject(from_owned_ptr=module_ptr)
 
     @staticmethod
     fn add_functions(
-        module: PythonModule,
+        module: PythonObject,
         owned functions: List[PyMethodDef],
     ) raises:
-        """Adds functions to a PythonModule object.
+        """Adds functions to a Python module object.
 
         Args:
-            module: The PythonModule object.
+            module: The Python module object.
             functions: List of function data.
 
         Raises:
@@ -303,17 +300,17 @@ struct Python:
 
     @staticmethod
     fn _unsafe_add_functions(
-        module: PythonModule,
+        module: PythonObject,
         functions: UnsafePointer[PyMethodDef],
     ) raises:
-        """Adds functions to a PythonModule object.
+        """Adds functions to a Python module object.
 
         Safety:
             The provided `functions` pointer must point to data that lives
             for the duration of the associated Python interpreter session.
 
         Args:
-            module: The PythonModule object.
+            module: The Python module object.
             functions: A null terminated pointer to function data.
 
         Raises:
@@ -333,7 +330,7 @@ struct Python:
 
     @staticmethod
     fn add_object(
-        module: PythonModule,
+        module: PythonObject,
         owned name: String,
         value: PythonObject,
     ) raises:
@@ -577,21 +574,6 @@ struct Python:
         return cpython.PyUnicode_AsUTF8AndSize(str_obj.py_object)
 
     @staticmethod
-    fn is_type(x: PythonObject, y: PythonObject) -> Bool:
-        """Test if the `x` object is the `y` object, the same as `x is y` in
-        Python.
-
-        Args:
-            x: The left-hand-side value in the comparison.
-            y: The right-hand-side type value in the comparison.
-
-        Returns:
-            True if `x` and `y` are the same object and False otherwise.
-        """
-        var cpython = Python().cpython()
-        return cpython.Py_Is(x.py_object, y.py_object)
-
-    @staticmethod
     fn type(obj: PythonObject) -> PythonObject:
         """Return Type of this PythonObject.
 
@@ -635,8 +617,8 @@ struct Python:
 
     @staticmethod
     fn int(obj: PythonObject) raises -> PythonObject:
-        """Try to convert a PythonObject to a Python `int` (i.e. arbitrary
-        precision integer).
+        """Convert a PythonObject to a Python `int` (i.e. arbitrary precision
+        integer).
 
         Args:
             obj: The PythonObject to convert.
@@ -653,6 +635,27 @@ struct Python:
             raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=py_obj_ptr)
+
+    @staticmethod
+    fn float(obj: PythonObject) raises -> PythonObject:
+        """Convert a PythonObject to a Python `float` object.
+
+        Args:
+            obj: The PythonObject to convert.
+
+        Returns:
+            A Python `float` object.
+
+        Raises:
+            If the conversion fails.
+        """
+        var cpython = Python().cpython()
+
+        var float_obj = cpython.PyNumber_Float(obj.py_object)
+        if float_obj.is_null():
+            raise cpython.get_error()
+
+        return PythonObject(from_owned_ptr=float_obj)
 
     # ===-------------------------------------------------------------------===#
     # Checked Conversions
@@ -674,12 +677,10 @@ struct Python:
         """
         var cpython = Python().cpython()
         var long: Py_ssize_t = cpython.PyLong_AsSsize_t(obj.py_object)
-
-        if long == -1:
+        if long == -1 and cpython.PyErr_Occurred():
             # Note that -1 does not guarantee an error, it just means we need to
             # check if there was an exception.
-            if cpython.PyErr_Occurred():
-                raise cpython.unsafe_get_error()
+            raise cpython.unsafe_get_error()
 
         return long
 

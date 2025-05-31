@@ -131,7 +131,7 @@ def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):
 
 
 def main():
-    var specs = List[AttentionSpec](
+    var specs = [
         # bert-base-uncased-seqlen-16-onnx.yaml
         AttentionSpec(
             batch_size=12,
@@ -303,7 +303,7 @@ def main():
             kv_seq_len=1500,
             depth_dim=64,
         ),
-    )
+    ]
 
     var m = Bench()
     for i in range(len(specs)):

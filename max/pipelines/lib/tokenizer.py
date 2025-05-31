@@ -21,7 +21,7 @@ import io
 import json
 import logging
 from collections.abc import Sequence
-from typing import Optional, Union, cast
+from typing import Any, Optional, Union, cast
 
 import numpy as np
 import torch
@@ -50,7 +50,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 class IdentityPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, str],
+    PipelineTokenizer[TokenGeneratorContext, str, TokenGeneratorRequest],
 ):
     @property
     def eos(self) -> int:
@@ -77,7 +77,7 @@ class IdentityPipelineTokenizer(
 
 
 class PreTrainedPipelineTokenizer(
-    PipelineTokenizer[TokenGeneratorContext, np.ndarray]
+    PipelineTokenizer[TokenGeneratorContext, np.ndarray, TokenGeneratorRequest],
 ):
     def __init__(
         self,
@@ -145,7 +145,9 @@ async def run_with_default_executor(fn, *args):
     return await loop.run_in_executor(None, fn, *args)
 
 
-class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
+class TextTokenizer(
+    PipelineTokenizer[TextContext, np.ndarray, TokenGeneratorRequest]
+):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
     def __init__(
@@ -157,6 +159,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
+        **unused_kwargs,
     ) -> None:
         self.model_path = model_path
         self.max_length = max_length
@@ -204,13 +207,17 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         self,
         messages: list[TokenGeneratorRequestMessage],
         tools: Optional[list[TokenGeneratorRequestTool]],
+        chat_template_options: Optional[dict[str, Any]] = None,
     ) -> str:
+        chat_template_options = chat_template_options or {
+            "add_generation_prompt": True
+        }
         try:
             templated_message = self.delegate.apply_chat_template(
                 messages,
                 tokenize=False,
-                add_generation_prompt=True,
                 tools=tools,
+                **chat_template_options,
             )
             return cast(str, templated_message)
         except Exception:
@@ -288,7 +295,9 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
             else:
                 prompt = [int(t) for t in request.prompt]
         elif request.messages is not None:
-            prompt = self.apply_chat_template(request.messages, request.tools)
+            prompt = self.apply_chat_template(
+                request.messages, request.tools, request.chat_template_options
+            )
             # Chat templating already adds special tokens, therefore we step around this here.
             add_special_tokens = False
         else:
@@ -363,7 +372,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
 
 
 class TextAndVisionTokenizer(
-    PipelineTokenizer[TextAndVisionContext, np.ndarray]
+    PipelineTokenizer[TextAndVisionContext, np.ndarray, TokenGeneratorRequest],
 ):
     """Encapsulates creation of TextContext and specific token encode/decode logic."""
 
@@ -375,6 +384,7 @@ class TextAndVisionTokenizer(
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
+        **unused_kwargs,
     ) -> None:
         self.model_path = model_path
         self.max_length = max_length

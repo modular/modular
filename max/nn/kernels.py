@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import MutableSequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
@@ -26,6 +27,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
+    Value,
     ops,
 )
 from max.graph.ops.quantized import repack_gguf_quantized_weights
@@ -1254,7 +1256,7 @@ def flare_mla_prefill_ragged(
     is_init_str = ".init" if prev_output is None else ""
     op_name = f"mo.mla.prefill{is_init_str}.ragged.paged"
 
-    input_values = [
+    input_values: MutableSequence[Value] = [
         input,
         k,
         v,

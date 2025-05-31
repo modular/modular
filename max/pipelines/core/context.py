@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Any, Optional, Protocol, Union, runtime_checkable
 
@@ -201,6 +202,11 @@ class InputContext(Protocol):
     @property
     def is_assigned_to_cache(self) -> bool:
         """Returns True if input is assigned to a cache slot, False otherwise."""
+        ...
+
+    @property
+    def is_ce(self) -> bool:
+        """Returns True if the context is a context encoding context, False otherwise."""
         ...
 
 
@@ -516,6 +522,10 @@ class TextContext:
     def is_assigned_to_cache(self) -> bool:
         return self._cache_seq_id is not None
 
+    @property
+    def is_ce(self) -> bool:
+        return self.active_length > 1
+
     def __repr__(self) -> str:
         return (
             f"TextContext("
@@ -572,3 +582,86 @@ class TextAndVisionContext(TextContext):
         # Update context not to re-encode the same image in next steps. There are no image tokens
         # expected after context encoding.
         self.pixel_values = ()
+
+
+SPEECH_TOKEN_audio_chunk_size = 128
+
+
+class TTSContext(TextContext):
+    """A context for the TTS model."""
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ) -> None:
+        self.audio_prompt_tokens = kwargs.get(
+            "audio_prompt_tokens", np.array([], dtype=np.int32)
+        )
+        kwargs.pop("audio_prompt_tokens", None)
+        super().__init__(*args, **kwargs)
+        self._speech_token_size = SPEECH_TOKEN_audio_chunk_size
+        self._speech_token_end_idx = 0
+        self._speech_tokens = np.zeros(self._speech_token_size, dtype=np.int32)
+        self._decoded_index = 0
+        self._block_counter = 0
+
+    @property
+    def speech_tokens(self) -> np.ndarray:
+        return self._speech_tokens[: self._speech_token_end_idx]
+
+    @property
+    def block_counter(self) -> int:
+        return self._block_counter
+
+    def update_speech_tokens(self, new_tokens: np.ndarray) -> None:
+        """Updates the next_tokens"""
+        self._upsize_speech_tokens(len(new_tokens))
+        self._speech_tokens[
+            self._speech_token_end_idx : self._speech_token_end_idx
+            + len(new_tokens)
+        ] = new_tokens
+        self._speech_token_end_idx += len(new_tokens)
+        self._block_counter += 1
+
+    def _upsize_speech_tokens(self, new_size: int) -> None:
+        if self._speech_token_end_idx + new_size >= self._speech_token_size:
+            self._speech_token_size += (
+                math.ceil(new_size / SPEECH_TOKEN_audio_chunk_size)
+            ) * SPEECH_TOKEN_audio_chunk_size
+            self._speech_tokens = np.resize(
+                self._speech_tokens, self._speech_token_size
+            )
+
+    def next_speech_tokens(
+        self, audio_chunk_size: int | None = None, buffer: int | None = None
+    ) -> np.ndarray:
+        """Returns a chunk of the next unseen speech tokens.
+
+        Calling this function will update the index of the last seen token.
+
+        Args:
+            audio_chunk_size: The number of speech tokens to return.
+            buffer: The number of previous speech tokens to pass to the audio
+                decoder on each generation step.
+
+        Returns:
+            A chunk of speech tokens.
+        """
+        start_idx = self._decoded_index
+        if buffer is not None:
+            start_idx = max(0, start_idx - buffer)
+
+        end_idx = self._speech_token_end_idx
+        if audio_chunk_size is not None:
+            end_idx = min(
+                end_idx,
+                self._decoded_index + audio_chunk_size,
+            )
+
+        chunk = self._speech_tokens[start_idx:end_idx]
+        self._decoded_index = end_idx
+        return chunk
+
+    def has_undecoded_speech_tokens(self) -> bool:
+        return self._decoded_index < self._speech_token_end_idx
