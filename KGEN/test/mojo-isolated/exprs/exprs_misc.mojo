@@ -56,6 +56,8 @@ def test_var_decl_patterns(c: Bool):
   (var x) = 42
 
   # This var inside the cond is scoped correctly even though we're in a def.
+  # CHECK: lit.call {{.*}}marker
+  marker()
 
   # CHECK: hlcf.elif {
   # CHECK: } then {
@@ -73,6 +75,15 @@ def test_var_decl_patterns(c: Bool):
   var lf : RHSInferenceStruct
   # expected-warning @+1 {{'var' pattern didn't declare a new variable, it can be removed}}
   (var lf.field) = []
+
+  # CHECK: lit.call {{.*}}marker
+  marker()
+
+  # CHECK that the var pattern covers both tup1 and tup2
+  # CHECK: lit.var.decl "tup1" var
+  # CHECK-NEXT: lit.var.decl "tup2" var
+  (var tup1, tup2) = 1, 2
+
 
 # CHECK-LABEL: lit.fn @"test_ref_decl_patterns
 fn test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
