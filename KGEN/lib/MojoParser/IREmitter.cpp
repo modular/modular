@@ -1311,9 +1311,12 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       return {};
     }
 
-    // Change the name binding to the correct reference.  We just abandon the
-    // vardecl itself.
-    decls[0]->setIRValue(value.ir);
+    // Now that we have the origin of the input, we can replace the placeholder
+    // with the actual type so that uses of it will have the correct origin.
+    destRef.getResult().setType(
+        destRef.getType().getWithElement(value.ir.getType()));
+    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()),
+                                value.ir.getMValueReference(), destRef);
     return value.ir; // Return the input reference.
   }
 

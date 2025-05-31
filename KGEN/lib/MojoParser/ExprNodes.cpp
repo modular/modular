@@ -890,7 +890,18 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Narrow the decl to a CValue.
   CValue value;
   if (auto var = dyn_cast<VarDeclOp>(decl)) {
-    value = MLValue(var);
+    // Normal 'var' declarations are MLValues, but 'ref' declarations hold the
+    // reference as its value and need to be loaded.
+    if (var.getKind() != VarDeclKind::Ref) {
+      value = MLValue(var);
+    } else {
+      if (!emitter.builder) {
+        emitter.emitErrorForDynamicValueInParameter(this);
+        return {};
+      }
+      auto ref = emitter.builder->create<RefLoadOp>(getLocation(emitter), var);
+      value = CValue::getMValueForRef(ref);
+    }
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     // If this is a parameter context then we cannot return a dynamic field.
     if (!emitter.builder) {
