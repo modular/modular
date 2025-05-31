@@ -38,6 +38,39 @@ fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> ZInt:
 
 # // -----
 
+# Tests that we correctly call get_vtable_entry when looking up a trait's alias,
+# even when we're looking up an alias that originally came from a grandparent.
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct ZInt:
+    pass
+
+
+# CHECK-LABEL: lit.trait.decl @TraitWithAlias
+trait TraitWithAlias:
+    # CHECK-NEXT: lit.alias.decl *"N`1": !ZInt
+    alias N: ZInt
+
+
+trait TraitWithTypeAlias:
+    alias T: TraitWithAlias
+
+
+trait TraitWithSameTypeAlias(TraitWithTypeAlias):
+    # TODO(MOCO-1992): Make it so we can omit this.
+    alias T: TraitWithAlias
+
+
+# CHECK-LABEL: lit.fn @"testTraitWithRefinedTypeAlias
+fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
+    # CHECK-NEXT: !TraitWithAlias = <get_vtable_entry(:!TraitWithSameTypeAlias T, "T")>
+    alias MyT: TraitWithAlias = T.T
+
+
+# // -----
+
 # Tests that we create a #kgen.type for StructWithMatchingAlias for
 # TraitWithAlias, and it contains an entry for `N` of the right type.`
 
@@ -80,8 +113,57 @@ fn testTraitWithAliasAndStructWithMatchingAlias():
 
 # // -----
 
-# Tests that we correctly call get_vtable_entry when looking up a trait's alias,
-# even when we're looking up an alias that originally came from a grandparent.
+# Tests that we can upcast a generic struct to a trait, when the generic struct
+# uses an input-parameter in a method override for a trait method that mentions
+# a trait alias in an argument.
+
+# CHECK-DAG: #[[StructWithAliasArgMethod_VTable:.*]] = #kgen.type<!StructWithAliasArgMethod,{{.*}}"lork" : !lit.generator<{{.*}}"thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait !ZInt>{{.*}}> = @associated_aliases::@StructWithAliasArgMethod::@"lork({{.*}}SIMD[associated_aliases::ZInt])"}> : !TraitWithAliasArgMethod
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct ZInt(ATrait):
+    pass
+
+
+trait ATrait:
+    pass
+
+
+@value
+struct SIMD[T: ATrait]:
+    pass
+
+
+trait TraitWithAliasArgMethod:
+    alias T: ATrait
+
+    fn lork(self, thing: SIMD[T]):
+        ...
+
+
+@value
+struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
+    alias T: ATrait = ZInt
+
+    fn lork(self, thing: SIMD[ZInt]):
+        pass
+
+
+fn receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"testUpcastingStructWithAliasArgMethod
+fn testUpcastingStructWithAliasArgMethod():
+    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod #[[StructWithAliasArgMethod_VTable]]
+    receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
+
+
+# // -----
+
+# Tests that we can call a trait's method, when it mentions a trait alias in
+# an argument type.
 
 
 @fieldwise_init
@@ -90,25 +172,30 @@ struct ZInt:
     pass
 
 
-# CHECK-LABEL: lit.trait.decl @TraitWithAlias
-trait TraitWithAlias:
-    # CHECK-NEXT: lit.alias.decl *"N`1": !ZInt
-    alias N: ZInt
+trait ATrait:
+    pass
 
 
-trait TraitWithTypeAlias:
-    alias T: TraitWithAlias
+@value
+struct SIMD[T: ATrait]:
+    pass
 
 
-trait TraitWithSameTypeAlias(TraitWithTypeAlias):
-    # TODO(MOCO-1992): Make it so we can omit this.
-    alias T: TraitWithAlias
+trait TraitWithAliasArgMethod:
+    alias T: ATrait
+
+    fn lork(self, thing: SIMD[T]):
+        ...
 
 
-# CHECK-LABEL: lit.fn @"testTraitWithRefinedTypeAlias
-fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
-    # CHECK-NEXT: !TraitWithAlias = <get_vtable_entry(:!TraitWithSameTypeAlias T, "T")>
-    alias MyT: TraitWithAlias = T.T
+# CHECK-LABEL: lit.fn @"callTraitMethodWithAliasArg
+fn callTraitMethodWithAliasArg[
+    X: TraitWithAliasArgMethod
+](t: X, thing: SIMD[X.T]):
+    # CHECK:  %0 = lit.call
+    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasArgMethod X, "T")>
+    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasArgMethod X, "lork")
+    t.lork(thing)
 
 
 # // -----
@@ -341,93 +428,6 @@ fn testUpcastingGenericStructWithSelfDotAliasReturnMethod():
     receiveTraitWithSelfDotAliasReturnMethod(
         GenericStructWithSelfDotAliasReturnMethod[ZInt]()
     )
-
-
-# // -----
-
-# Tests that we can upcast a generic struct to a trait, when the generic struct
-# uses an input-parameter in a method override for a trait method that mentions
-# a trait alias in an argument.
-
-# CHECK-DAG: #[[StructWithAliasArgMethod_VTable:.*]] = #kgen.type<!StructWithAliasArgMethod,{{.*}}"lork" : !lit.generator<{{.*}}"thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait !ZInt>{{.*}}> = @associated_aliases::@StructWithAliasArgMethod::@"lork({{.*}}SIMD[associated_aliases::ZInt])"}> : !TraitWithAliasArgMethod
-
-
-@fieldwise_init
-@register_passable("trivial")
-struct ZInt(ATrait):
-    pass
-
-
-trait ATrait:
-    pass
-
-
-@value
-struct SIMD[T: ATrait]:
-    pass
-
-
-trait TraitWithAliasArgMethod:
-    alias T: ATrait
-
-    fn lork(self, thing: SIMD[T]):
-        ...
-
-
-@value
-struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
-    alias T: ATrait = ZInt
-
-    fn lork(self, thing: SIMD[ZInt]):
-        pass
-
-
-fn receiveTraitWithAliasArgMethod[X: TraitWithAliasArgMethod](t: X):
-    pass
-
-
-# CHECK-LABEL: lit.fn @"testUpcastingStructWithAliasArgMethod
-fn testUpcastingStructWithAliasArgMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasArgMethod{{.*}}<:!TraitWithAliasArgMethod #[[StructWithAliasArgMethod_VTable]]
-    receiveTraitWithAliasArgMethod(StructWithAliasArgMethod())
-
-
-# // -----
-
-# Tests that we can call a trait's method, when it mentions a trait alias in
-# an argument type.
-
-
-@fieldwise_init
-@register_passable("trivial")
-struct ZInt:
-    pass
-
-
-trait ATrait:
-    pass
-
-
-@value
-struct SIMD[T: ATrait]:
-    pass
-
-
-trait TraitWithAliasArgMethod:
-    alias T: ATrait
-
-    fn lork(self, thing: SIMD[T]):
-        ...
-
-
-# CHECK-LABEL: lit.fn @"callTraitMethodWithAliasArg
-fn callTraitMethodWithAliasArg[
-    X: TraitWithAliasArgMethod
-](t: X, thing: SIMD[X.T]):
-    # CHECK:  %0 = lit.call
-    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasArgMethod X, "T")>
-    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasArgMethod X, "lork")
-    t.lork(thing)
 
 
 # // -----
