@@ -284,9 +284,11 @@ request or GitHub issue).
 To ensure quicker reviews:
 
 - **Ensure your PR is small and focused.** See the [pull request size section]
-(https://modul.ar/pr-size) for more info.
+ for more info.
 - Write a good commit message/PR summary outlining the motivation and describing
 the changes. In the near future, we'll provide a pull request template to
 clarify this further.
 - Use descriptive titles and comments for clarity.
 - Code-review other contributors' pull requests and help each other.
+
+[pull request size section]: https://github.com/modular/modular/blob/main/mojo/CONTRIBUTING.md#about-pull-request-sizes
