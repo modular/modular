@@ -138,8 +138,7 @@ alias numbers_to_test = [
 
 
 def test_atof_generate_cases():
-    for elements in numbers_to_test:
-        number, number_as_str = elements
+    for number, number_as_str in numbers_to_test:
         for suffix in [String(""), "f", "F"]:
             for exponent in [String("e"), "E"]:
                 for multiplier in [String(""), "-"]:
