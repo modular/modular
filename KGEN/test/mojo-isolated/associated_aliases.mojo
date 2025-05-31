@@ -121,7 +121,7 @@ fn testTraitWithRefinedTypeAlias[T: TraitWithSameTypeAlias]():
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZInt:
+struct ZInt(ATrait):
     pass
 
 
@@ -154,56 +154,6 @@ struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
 fn testUpcastingExplicitStructWithAliasMethod():
     # CHECK:       {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[ExplicitStructWithAliasMethod_VTable]]>
     receiveTraitWithAliasReturnMethod(ExplicitStructWithAliasMethod())
-
-
-fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
-    pass
-
-
-# // -----
-
-# Tests that a trait can have a method that returns a generic struct with an
-# input parameter-value that's a trait alias. Does it with implicit conformance.
-# TODO: Once implicit conformance is gone, we can remove this test.
-
-# CHECK-DAG: #[[ImplicitStructWithAliasMethod_VTable:.*]] = #kgen.type<!ImplicitStructWithAliasMethod, {"T" : !ATrait = !ZInt{{.*}} : !TraitWithAliasReturnMethod
-
-
-@fieldwise_init
-@register_passable("trivial")
-struct ZInt:
-    pass
-
-
-trait ATrait:
-    pass
-
-
-@value
-struct SIMD[T: ATrait]:
-    pass
-
-
-trait TraitWithAliasReturnMethod:
-    alias T: ATrait
-
-    fn bork(self) -> SIMD[T]:
-        ...
-
-
-# CHECK-LABEL: lit.struct.decl @ImplicitStructWithAliasMethod
-@value
-struct ImplicitStructWithAliasMethod:
-    alias T: ATrait = ZInt
-
-    fn bork(self) -> SIMD[ZInt]:
-        return SIMD[ZInt]()
-
-
-# CHECK-LABEL: lit.fn @"testUpcastingImplicitStructWithAliasMethod
-fn testUpcastingImplicitStructWithAliasMethod():
-    # CHECK: {{.*}}lit.call @associated_aliases::@"receiveTraitWithAliasReturnMethod{{.*}}<:!TraitWithAliasReturnMethod #[[ImplicitStructWithAliasMethod_VTable]]>
-    receiveTraitWithAliasReturnMethod(ImplicitStructWithAliasMethod())
 
 
 fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
@@ -250,7 +200,7 @@ fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZInt:
+struct ZInt(ATrait):
     pass
 
 
@@ -297,7 +247,7 @@ fn receiveTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZInt:
+struct ZInt(ATrait):
     pass
 
 
@@ -348,7 +298,7 @@ fn upcastStructWithSelfDotAliasReturnMethod(
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZInt:
+struct ZInt(ATrait):
     pass
 
 
@@ -404,7 +354,7 @@ fn testUpcastingGenericStructWithSelfDotAliasReturnMethod():
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZInt:
+struct ZInt(ATrait):
     pass
 
 
