@@ -525,6 +525,26 @@ class PipelineConfig(MAXConfig):
         return self._profiling_config
 
 
+def _parse_flag_bool(value: str, flag_name: str) -> bool:
+    if value.lower() == "true":
+        return True
+    elif value.lower() == "false":
+        return False
+    else:
+        raise ValueError(
+            f"Invalid boolean value: {value} for flag: {flag_name}"
+        )
+
+
+def _parse_flag_int(value: str, flag_name: str) -> int:
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid integer value: {value} for flag: {flag_name}"
+        ) from exc
+
+
 class PrependPromptSpeechTokens(Enum):
     NEVER = "never"
     ONCE = "once"
@@ -542,12 +562,13 @@ class AudioGenerationConfig(PipelineConfig):
 
     audio_decoder_weights: str = ""
     """The path to the audio decoder weights file."""
+
     block_sizes: list[int] | None = None
     """The block sizes to use for streaming.
     If this is an int, then fixed-size blocks of the given size are used
     If this is a list, then variable block sizes are used."""
 
-    buffer: int | None = None
+    buffer: int = 0
     """The number of previous speech tokens to pass to the audio decoder on
     each generation step."""
 
@@ -572,6 +593,11 @@ class AudioGenerationConfig(PipelineConfig):
     If True, the prompt tokens attend to the current block.
     """
 
+    _run_model_test_mode: bool = False
+    """Test-only flag that indicates that test parameters have been passed to
+    the model, such as leaving the audio decoder weights empty or using a
+    dummy speech language model."""
+
     def __init__(self, audio_config: dict[str, str], **kwargs: Any) -> None:
         PipelineConfig.__init__(self, **kwargs)
 
@@ -594,35 +620,25 @@ class AudioGenerationConfig(PipelineConfig):
         else:
             self.block_sizes = [int(size) for size in block_sizes.split(",")]
 
-        buffer = audio_config.pop("buffer", None)
-        if buffer is None:
-            self.buffer = None
-        else:
-            self.buffer = int(buffer)
+        self.buffer = _parse_flag_int(audio_config.pop("buffer", "0"), "buffer")
 
-        block_causal = audio_config.pop("block_causal", "")
-        if not block_causal or block_causal.lower() == "false":
-            self.block_causal = False
-        else:
-            self.block_causal = True
-
-        prepend_prompt_speech_tokens = audio_config.pop(
-            "prepend_prompt_speech_tokens", "never"
+        self.block_causal = _parse_flag_bool(
+            audio_config.pop("block_causal", "false"), "block_causal"
         )
+
         self.prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
-            prepend_prompt_speech_tokens
+            audio_config.pop("prepend_prompt_speech_tokens", "never")
         )
 
-        prepend_prompt_speech_tokens_causal = audio_config.pop(
-            "prepend_prompt_speech_tokens_causal", ""
+        self.prepend_prompt_speech_tokens_causal = _parse_flag_bool(
+            audio_config.pop("prepend_prompt_speech_tokens_causal", "false"),
+            "prepend_prompt_speech_tokens_causal",
         )
-        if (
-            not prepend_prompt_speech_tokens_causal
-            or prepend_prompt_speech_tokens_causal.lower() == "false"
-        ):
-            self.prepend_prompt_speech_tokens_causal = False
-        else:
-            self.prepend_prompt_speech_tokens_causal = True
+
+        self._run_model_test_mode = _parse_flag_bool(
+            audio_config.pop("run_model_test_mode", "false"),
+            "run_model_test_mode",
+        )
 
         if self.block_causal:
             raise NotImplementedError("Causal generation is not implemented")
