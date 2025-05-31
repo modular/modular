@@ -13,13 +13,9 @@
 
 # The Mojo importer module will handle compilation of the Mojo files.
 import max._mojo.mojo_importer  # noqa
-import os
 import sys
 
 sys.path.insert(0, "")
-
-# This is a temporary workaround to prevent conflicts.
-os.environ["MOJO_PYTHON_LIBRARY"] = ""
 
 # Importing our Mojo module, defined in the `mandelbrot_mojo.mojo` file.
 import mandelbrot_mojo
