@@ -148,9 +148,10 @@ LogicalResult ValueOp::verify() {
   DILocalVariableAttr varAttr = getValueInfo();
   if (DIScopeAttr locationScope = *locationScopeOr) {
     if (!IsSubScope(locationScope, varAttr.getScope())) {
-      return emitOpError(
-                 "location scope must be a child scope of the variable scope: ")
-             << locationScope << " vs. " << varAttr.getScope();
+      return emitOpError("location scope must be a child scope of the variable "
+                         "scope:\n")
+             << locationScope << "\n vs. \n"
+             << varAttr.getScope();
     }
   }
 

@@ -2957,6 +2957,9 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   auto cursor = stmtEmitter.getBuilder().create<LIT::ReturnOp>(
       location, ArrayRef<Value>());
   IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor));
+  DebugInfo::DIBuilder cursorDIBuilder(emitter.getContext());
+  if (shared.diBuilder)
+    cursorDIBuilder = shared.diBuilder->copy();
 
   // Start out the result collection with an inferred type if it isn't known.
   auto inferCollectionType = [&](ASTType eltType, ASTType valType) -> ASTType {
@@ -3021,8 +3024,17 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
     // Now that we know the collection type, we can materialize the temporary
     // with the right type (which might also reuse an existing buffer). Note
     // that this uses cursorEmitter so the temp gets emitted to the right spot.
-    collectionMLValue =
-        dest.getMLValueForResult(loc, collectionType, cursorEmitter);
+    {
+      // Make sure any synthesized declarations have the right debug info scope
+      // from the cursor position.
+      std::unique_ptr<DebugInfo::DIBuilder> newDIBuilder;
+      if (shared.diBuilder)
+        newDIBuilder = std::make_unique<DebugInfo::DIBuilder>(cursorDIBuilder);
+
+      llvm::SaveAndRestore keep(shared.diBuilder, std::move(newDIBuilder));
+      collectionMLValue =
+          dest.getMLValueForResult(loc, collectionType, cursorEmitter);
+    }
 
     // Okay we know the collection has a type, emit the insertion method call.
     ValueDest dest(EC_CollectionCompElt);
