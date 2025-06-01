@@ -157,3 +157,6 @@ examples/models/*
 
 # Magic cache
 .magic
+
+# Pixi cache
+.pixi

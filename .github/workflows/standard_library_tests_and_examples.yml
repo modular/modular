@@ -47,11 +47,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Download Magic CLI
+      - name: Install Pixi
         run: |
-          curl -ssL https://magic.modular.com/cfba4c92-2390-4b86-93de-04b2f47114d5 | bash
-          # Add magic to PATH
-          echo "$HOME/.modular/bin" >> $GITHUB_PATH
+          curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=0.47.0 sh
+          # Add pixi to PATH
+          echo "$HOME/.pixi/bin" >> $GITHUB_PATH
 
       - name: Install build tools (Linux)
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -68,6 +68,6 @@ jobs:
           MOJO_ENABLE_ASSERTIONS_IN_TESTS: ${{ matrix.mojo-enable-assertions }}
         working-directory: mojo
         run: |
-          magic run --frozen tests
-          magic run --frozen examples
-          magic run --frozen benchmarks
+          pixi run --frozen tests
+          pixi run --frozen examples
+          pixi run --frozen benchmarks
