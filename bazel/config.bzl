@@ -12,4 +12,5 @@ SUPPORTED_GPUS = [
     ("b200", "nvidia", "100a"),
     ("rtx5090", "nvidia", "120a"),
     ("mi300x", "amdgpu", "94"),
+    ("radeon", "amdgpu", "110"),
 ]
