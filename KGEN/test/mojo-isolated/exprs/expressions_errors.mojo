@@ -9,6 +9,8 @@
 @register_passable
 struct SomeNonTrivRegPassable: pass
 
+struct MemType: pass
+
 fn takes_pos_or_kw_arg(i: Index, j: Index):
     pass
 
@@ -155,9 +157,12 @@ fn test_overload_set():
   # expected-error @+1 {{invalid call to 'some_fn_take_int': argument #0 cannot be converted from 'fn() -> Int' to 'Int'}}
   some_fn_take_int(some_fn_ret_int)
 
-
-struct MemType: pass
-
+fn overloaded_arg(x: Int): pass # expected-note {{candidate declared here}}
+fn overloaded_arg(x: String): pass # expected-note {{candidate declared here}}
+fn test_overloaded_arg_ambiguity() :
+  # expected-error @below {{cannot form a reference to overloaded declaration of 'overloaded_arg'}}
+  # expected-note @below {{did you mean to call it?}}
+  (var xxx) = overloaded_arg
 
 fn test_func_type():
     # expected-error @below {{fn(Int) -> Int}}

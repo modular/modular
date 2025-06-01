@@ -251,19 +251,17 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   if (auto *expr = dyn_cast<const ExprNode *>(representation)) {
     // If we have a contextual type available, pass that down to the emitter so
     // implicitly declared variables and discard patterns can know their type.
-    ValueDest dest(context);
-    if (existingValueType) {
-      if (ASTType nmTarget = ASTType(existingValueType)
-                                 .getNonmaterializableTarget(emitter.shared))
-        existingValueType = nmTarget;
-      dest = ValueDest(LValueInitializerType{existingValueType}, context);
-    }
+    if (!existingValueType)
+      return {};
+    if (ASTType nmTarget = ASTType(existingValueType)
+                               .getNonmaterializableTarget(emitter.shared))
+      existingValueType = nmTarget;
 
     // Propagate var/ref context (if any) into the generated declarations.
+    ValueDest dest(LValueInitializerType{existingValueType}, context);
     dest.patternDeclKind = patternDeclKind;
 
-    /// Emit the target as an LValue to understand what we're assigning into. If
-    /// this fails, it will produce an error.
+    // Emit the target as an LValue to understand what we're assigning into.
     LValue exprLValue = emitter.emitExprLValue(expr, dest);
     if (!exprLValue) {
       dest.resetForError();
