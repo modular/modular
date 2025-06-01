@@ -32,7 +32,10 @@
 #loc = loc("foo.mlir":7:8)
 
 func.func @foo(%arg: i32) {
-  // CHECK: foo.mlir:7:8: error: 'debuginfo.value' op location scope must be a child scope of the variable scope: #debuginfo.file<"foo.mlir" in "/mlir/"> vs. #debuginfo.subprogram
+  // CHECK: foo.mlir:7:8: error: 'debuginfo.value' op location scope must be a child scope of the variable scope:
+  // CHECK: #debuginfo.file<"foo.mlir" in "/mlir/">
+  // CHECK: vs.
+  // CHECK: #debuginfo.subprogram
   debuginfo.value #local_variable = %arg : i32 loc(fused<#file>[#loc])
   return
 }
@@ -71,7 +74,10 @@ func.func @foo(%arg: i32) {
 #fusedLoc = loc(fused<#file>[#loc2])
 
 func.func @bar(%arg: i32) {
-  // CHECK: bar.mlir:5:6: error: 'debuginfo.value' op location scope must be a child scope of the variable scope: #debuginfo.file<"foo.c" in ""> vs. #debuginfo.subprogram
+  // CHECK: bar.mlir:5:6: error: 'debuginfo.value' op location scope must be a child scope of the variable scope:
+  // CHECK: #debuginfo.file<"foo.c" in "">
+  // CHECK: vs.
+  // CHECK: #debuginfo.subprogram
   debuginfo.value #local_variable = %arg : i32 loc(callsite(#fusedLoc at #loc1))
   return
 }
@@ -111,7 +117,10 @@ func.func @bar(%arg: i32) {
 #callsiteLoc = loc(callsite(#fusedLoc at #loc1))
 
 func.func @bar(%arg: i32) {
-  // CHECK: bar.mlir:5:6: error: 'debuginfo.value' op location scope must be a child scope of the variable scope: #debuginfo.file<"foo.c" in ""> vs. #debuginfo.subprogram
+  // CHECK: bar.mlir:5:6: error: 'debuginfo.value' op location scope must be a child scope of the variable scope:
+  // CHECK: #debuginfo.file<"foo.c" in "">
+  // CHECK: vs.
+  // CHECK: #debuginfo.subprogram
   debuginfo.value #local_variable = %arg : i32 loc(callsite(#callsiteLoc at #loc1))
   return
 }

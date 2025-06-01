@@ -130,6 +130,14 @@ public:
                                           unsigned alignInBits, DIType type,
                                           DIFlags flags = DIFlags::Zero);
 
+  // Explicit copy function.
+  DIBuilder copy() const {
+    DIBuilder result(context);
+    result.compileUnit = compileUnit;
+    result.scopes = scopes;
+    return result;
+  }
+
 private:
   MLIRContext *context;
   DICompileUnitAttr compileUnit;
