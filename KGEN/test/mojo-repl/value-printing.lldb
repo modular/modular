@@ -126,3 +126,10 @@ for var i in range(0, 100):
     if i < 11:
         s4 += String(i)
 var s3 = String()
+
+# CHECK: (List[Int]) even = (size 3) {
+# CHECK:   (Int) [0] = 0
+# CHECK:   (Int) [1] = 2
+# CHECK:   (Int) [2] = 4
+# CHECK: }
+var even = [idx for idx in range(5) if idx % 2 == 0]
