@@ -143,6 +143,7 @@ class Value(Generic[MlirType]):
 class _ChainValue(Value[mo.ChainType]):
     def __init__(self, value: Value | _Value[mo.ChainType]):
         if isinstance(value, _Value):
+            assert isinstance(value.type, mo.ChainType)
             self._mlir_value = value
         elif isinstance(value, _ChainValue):
             self._mlir_value = value._mlir_value
