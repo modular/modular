@@ -174,14 +174,14 @@ def test_call_chain_updates():
         # Subgraph that stores tensor into buffer (mutates state, uses chain)
         with main_graph.add_subgraph(
             "store_subgraph",
-            input_types=[buffer_type, tensor_type, _ChainType()],
+            input_types=[buffer_type, tensor_type],
         ) as subgraph:
             buffer = subgraph.inputs[0]
             tensor = subgraph.inputs[1]
             buf_val = buffer.buffer
             ten_val = tensor.tensor
             ops.buffer_store(buf_val, ten_val)
-            subgraph.output(subgraph._current_chain)
+            subgraph.output()
         buffer = main_graph.inputs[0]
         tensor = main_graph.inputs[1]
         chain_before = main_graph._current_chain
@@ -190,48 +190,6 @@ def test_call_chain_updates():
         assert isinstance(chain_before, _ChainValue)
         assert isinstance(chain_after, _ChainValue)
         assert chain_before != chain_after
-
-
-def test_call_chain_input_output_mismatch():
-    """Test that a subgraph with chain input but no chain output (or vice versa) raises ValueError."""
-    buffer_type = BufferType(DType.float32, [4], DeviceRef.CPU())
-    tensor_type = TensorType(DType.float32, [4], DeviceRef.CPU())
-    with Graph("main", input_types=[buffer_type, tensor_type]) as main_graph:
-        # Manually create a subgraph with chain input but not outputting it
-        with main_graph.add_subgraph(
-            "bad_chain_subgraph",
-            input_types=[buffer_type, tensor_type, _ChainType()],
-        ) as subgraph:
-            buffer = subgraph.inputs[0]
-            tensor = subgraph.inputs[1]
-            buf_val = buffer.buffer
-            ten_val = tensor.tensor
-            # This will use the chain, but we intentionally do NOT output anything (no chain output)
-            ops.buffer_store(buf_val, ten_val)
-            subgraph.output()  # no chain!
-        buffer = main_graph.inputs[0]
-        tensor = main_graph.inputs[1]
-        with pytest.raises(ValueError, match="must have.*chain output"):
-            ops.call(subgraph, buffer, tensor)
-
-
-def test_call_no_chain_no_update():
-    """Test that calling a subgraph with no chain input/output does not update the chain."""
-    tensor_type = TensorType(DType.float32, [4], DeviceRef.CPU())
-    with Graph("main", input_types=[tensor_type]) as main_graph:
-        with main_graph.add_subgraph(
-            "add_one", input_types=[tensor_type]
-        ) as subgraph:
-            x = subgraph.inputs[0].tensor
-            out = ops.elementwise.add(
-                x, ops.constant(1, DType.float32, device=DeviceRef.CPU())
-            )
-            subgraph.output(out)
-        x = main_graph.inputs[0]
-        chain_before = main_graph._current_chain
-        ops.call(subgraph, x)
-        chain_after = main_graph._current_chain
-        assert chain_before == chain_after
 
 
 def test_call_tuple_operands_with_add_op():
@@ -249,12 +207,13 @@ def test_call_tuple_operands_with_add_op():
         call_results = main_graph._add_op(
             mo.call_,
             symbol=subgraph.name,
-            results=(input_type,),
-            operands=(main_graph.inputs[0],),
+            results=(input_type, _ChainType()),
+            operands=(main_graph.inputs[0], main_graph._current_chain),
         )
 
-        assert len(call_results) == 1
+        assert len(call_results) == 2
         assert call_results[0].type == input_type
+        assert call_results[1].type == _ChainType()
         main_graph.output(call_results[0])
 
 

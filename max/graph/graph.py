@@ -15,7 +15,7 @@ from collections.abc import Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from max import mlir
 from max._core import Attribute as _Attribute
@@ -41,6 +41,7 @@ from .type import (
     SymbolicDim,
     TensorType,
     Type,
+    _ChainType,
 )
 from .value import BufferValue, TensorValue, Value, _ChainValue
 from .weight import Weight
@@ -192,6 +193,7 @@ class Graph:
     _current_chain: _ChainValue
     _current_block: mlir.Block
     _should_verify_ops: bool
+    _has_chain_input: bool
 
     _kernel_library: KernelLibrary
 
@@ -248,10 +250,24 @@ class Graph:
         )
         self._mlir_op.attributes["inputParams"] = param_decl
         self._weights = {}
+        self._has_chain_input = False
 
-        initial_chain = self._add_op(mo.chain_create, [])[0]
-        assert isinstance(initial_chain, _ChainValue)
-        self._current_chain = initial_chain
+        if self._graph_body.arguments:
+            mlir_maybe_chain_value = _Value._from_cmlir(
+                self._graph_body.arguments[-1]
+            )
+            if isinstance(mlir_maybe_chain_value.type, _mo.ChainType):
+                self._has_chain_input = True
+                self._current_chain = _ChainValue.from_mlir(
+                    cast(_Value[_mo.ChainType], mlir_maybe_chain_value)
+                )
+
+        if not self._has_chain_input:
+            self._current_chain = cast(
+                _ChainValue, self._add_op(mo.chain_create, [])[0]
+            )
+
+        assert isinstance(self._current_chain, _ChainValue)
 
         # Initialize the kernel library and load custom extensions paths.
         self._kernel_library = kernel_library or KernelLibrary(context)
@@ -278,9 +294,13 @@ class Graph:
     @functools.cached_property
     def inputs(self) -> Sequence[Value]:
         """The input values of the graph."""
+        body_args = self._graph_body.arguments
+        if body_args and self._has_chain_input:
+            body_args = body_args[:-1]
+
         return tuple(
             Value.from_mlir(_Value._from_cmlir(arg))
-            for arg in self._body.arguments  # type: ignore
+            for arg in body_args  # type: ignore
         )
 
     @property
@@ -298,7 +318,7 @@ class Graph:
         subgraph = Graph(
             name=name,
             forward=forward,
-            input_types=input_types,
+            input_types=[*input_types, _ChainType()],
             path=path,
             # *args,
             custom_extensions=custom_extensions,
@@ -502,7 +522,7 @@ class Graph:
                 with self._capturing_mlir_diagnostics():
                     results = op(*unwrapped_args, **unwrapped_kwargs)
 
-                    if _ip is None:
+                    if _ip is None or _ip.ref_operation is None:
                         # Get the op we just staged, which is the last op in the body block.
                         ops = self._body.operations
 
@@ -606,16 +626,17 @@ class Graph:
     def output(self, *outputs: Value) -> None:
         """Sets the output nodes of the :obj:`Graph`."""
         # mo.output doesn't support infer_type
-        mlir_values = [
-            mlir.Value._CAPICreate(o._mlir_value._CAPIPtr)  # type: ignore
-            for o in outputs
-        ]
+        graph_body_args = self._graph_body.arguments
+        mlir_values = [o._mlir_value for o in outputs]
+        if self._has_chain_input:
+            mlir_values.append(self._current_chain._mlir_value)
 
         # We have a type mismatch now, these are MLIR types
         output_types = [value.type for value in mlir_values]
+
         # Need to set some more stuff.
         function_type = mlir.FunctionType.get(
-            [input.type.to_mlir() for input in self.inputs],
+            [_Value._from_cmlir(arg).type for arg in graph_body_args],  # type: ignore
             output_types,
         )
         signature = mlir.Type.parse(f"!kgen.generator<{function_type}>")
@@ -650,11 +671,15 @@ class Graph:
     def output_types(self) -> list[Type]:
         """View of the types of the graph output terminator."""
         terminator = self._body.operations[-1]
+        terminator_operands = terminator.operands
+        if terminator_operands and self._has_chain_input:
+            terminator_operands = terminator_operands[:-1]
+
         if not isinstance(terminator, mo.OutputOp):
             raise TypeError("Graph not yet terminated by a call to output")
         return [
             Value.from_mlir(_Value._from_cmlir(v)).type
-            for v in terminator.operands  # type: ignore
+            for v in terminator_operands  # type: ignore
         ]
 
     def _load_mlir(self, path: Path):

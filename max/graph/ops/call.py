@@ -11,7 +11,7 @@ from max.mlir.dialects import mo
 
 from ..graph import Graph
 from ..type import _ChainType
-from ..value import Value, _ChainValue
+from ..value import Value
 
 
 def call(graph: Graph, *args: Value, prefix: str = "") -> list[Value]:
@@ -43,11 +43,7 @@ def call(graph: Graph, *args: Value, prefix: str = "") -> list[Value]:
     call_args = list(args)  # mutable so we can add a chain
     # Be careful, input_types are type[Value], output_types are Type
     input_types = [type(input) for input in graph.inputs]
-    output_types = graph.output_types
-
-    if _ChainValue in input_types:
-        input_chain_idx = input_types.index(_ChainValue)
-        call_args.insert(input_chain_idx, current_graph._current_chain)
+    output_types = [*graph.output_types, _ChainType()]
 
     # Mostly leave type checking up to the op builder.
     # We can do some basic type checking to improve error messages,
@@ -58,6 +54,8 @@ def call(graph: Graph, *args: Value, prefix: str = "") -> list[Value]:
             f"\n    {graph.name}{tuple(input_types)}"
         )
 
+    call_args.append(current_graph._current_chain)
+
     # Add a call operation to the current graph
     call_results = current_graph._add_op(
         mo.call_,
@@ -67,8 +65,5 @@ def call(graph: Graph, *args: Value, prefix: str = "") -> list[Value]:
         prefix=prefix,
     )
 
-    # Update the chain if necessary, and return non-chain results
-    if _ChainType() in output_types:
-        output_chain_idx = output_types.index(_ChainType())
-        current_graph._current_chain = call_results.pop(output_chain_idx)
-    return call_results
+    *results, current_graph._current_chain = call_results
+    return results
