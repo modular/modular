@@ -1226,6 +1226,17 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
                                                 Operation &op, bool isDef) {
   // Ok, it isn't, gear up to see how to best report the error.
   ValueInfo &valueEntry = valueSet.getValueInfo(valueRef.valueId);
+
+  // As a very unprincipled hack, allow uninitialized values at the end of REPL
+  // cells. The reason we need this is that the REPL "persists" values onto the
+  // heap with an IR rewrite, and does so before lifetime checking.  As such,
+  // it has no idea what values are live out of the end of each cell.  This
+  // needs to be fixed, but allow simple things like integers to "work" for now.
+  // This will not work at all for non-trivial values though because
+  // reassignments over them will assume they are initialized.
+  if (valueEntry.value.getDefiningOp<LIT::RefFromPointerREPLOp>())
+    return;
+
   if (valueEntry.hasErrorDiagnosed)
     return; // Only report one error per symbolic value.
   valueEntry.hasErrorDiagnosed = true;
