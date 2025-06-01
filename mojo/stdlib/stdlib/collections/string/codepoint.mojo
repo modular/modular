@@ -196,6 +196,7 @@ struct Codepoint(
 
         return char
 
+    # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
     fn unsafe_decode_utf8_codepoint(
         s: Span[mut=False, UInt8, *_],
@@ -232,8 +233,8 @@ struct Codepoint(
         if (b1 >> 7) == 0:  # This is 1 byte ASCII char
             return Codepoint(b1), 1
 
-        # TODO: Use _utf8_first_byte_sequence_length() here instead for
-        #   consistency.
+        # NOTE: _utf8_first_byte_sequence_length does the same + an op to check
+        # if it is ascii
         var num_bytes = count_leading_zeros(~b1)
         debug_assert(
             1 < Int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
@@ -482,12 +483,13 @@ struct Codepoint(
 
     @always_inline
     fn unsafe_write_utf8[
-        optimize_ascii: Bool = True
+        optimize_ascii: Bool = True, branchless: Bool = False
     ](self, ptr: UnsafePointer[Byte, mut=True, **_]) -> UInt:
         """Shift unicode to utf8 representation.
 
         Parameters:
             optimize_ascii: Optimize for languages with mostly ASCII characters.
+            branchless: Use a branchless algorithm.
 
         Args:
             ptr: Pointer value to write the encoded UTF-8 bytes. Must validly
@@ -520,37 +522,67 @@ struct Codepoint(
         var num_bytes = self.utf8_byte_length()
 
         @parameter
-        if optimize_ascii:
-            if likely(num_bytes == 1):
-                ptr[0] = UInt8(c)
-                return 1
-            var shift = 6 * (num_bytes - 1)
-            var mask = UInt8(0xFF) >> (num_bytes + 1)
-            var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
-            ptr[0] = ((c >> shift) & mask) | num_bytes_marker
-            for i in range(1, num_bytes):
-                shift -= 6
-                ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+        if not branchless:
+            var is_ascii: Bool
+
+            @parameter
+            if optimize_ascii:
+                is_ascii = likely(num_bytes == 1)
+            else:
+                is_ascii = num_bytes == 1
+
+            alias cont_mask = 0b11_1111  # 6 set bits
+            alias cont_marker = 0b1000_0000  # marker for continuation bytes
+
+            if is_ascii:
+                ptr[0] = c
+            elif num_bytes == 2:
+                ptr[0] = (c >> 6) | 0b1100_0000  # marker for 2 byte sequence
+                ptr[1] = (c & cont_mask) | cont_marker
+            elif num_bytes == 3:
+                ptr[0] = (c >> 12) | 0b1110_0000  # marker for 3 byte sequence
+                ptr[1] = ((c >> 6) & cont_mask) | cont_marker
+                ptr[2] = (c & cont_mask) | cont_marker
+            else:
+                ptr[0] = (c >> 18) | 0b1111_0000  # marker for 4 byte sequence
+                ptr[1] = ((c >> 12) & cont_mask) | cont_marker
+                ptr[2] = ((c >> 6) & cont_mask) | cont_marker
+                ptr[3] = (c & cont_mask) | cont_marker
         else:
-            var shift = 6 * (num_bytes - 1)
-            var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
-            var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
-            ptr[0] = ((c >> shift) & mask) | (
-                num_bytes_marker & -Int(num_bytes != 1)
-            )
-            for i in range(1, num_bytes):
-                shift -= 6
-                ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+
+            @parameter
+            if optimize_ascii:
+                if likely(num_bytes == 1):
+                    ptr[0] = UInt8(c)
+                    return 1
+                var shift = 6 * (num_bytes - 1)
+                var mask = UInt8(0xFF) >> (num_bytes + 1)
+                var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
+                ptr[0] = ((c >> shift) & mask) | num_bytes_marker
+                for i in range(1, num_bytes):
+                    shift -= 6
+                    ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
+            else:
+                var shift = 6 * (num_bytes - 1)
+                var mask = UInt8(0xFF) >> (num_bytes + Int(num_bytes > 1))
+                var num_bytes_marker = UInt8(0xFF) << (8 - num_bytes)
+                ptr[0] = ((c >> shift) & mask) | (
+                    num_bytes_marker & -Int(num_bytes != 1)
+                )
+                for i in range(1, num_bytes):
+                    shift -= 6
+                    ptr[i] = ((c >> shift) & 0b0011_1111) | 0b1000_0000
         return num_bytes
 
     @always_inline
     fn utf8_byte_length(self) -> UInt:
         """Returns the number of UTF-8 bytes required to encode this character.
 
-        The returned value is always between 1 and 4 bytes.
-
         Returns:
             Byte count of UTF-8 bytes required to encode this character.
+
+        Notes:
+            The returned value is always between 1 and 4 bytes.
         """
 
         # Minimum codepoint values (respectively) that can fit in a 1, 2, 3,
