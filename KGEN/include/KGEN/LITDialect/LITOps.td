@@ -1731,7 +1731,7 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
     lit.fn @make_closure[imm A, imm B](%y: !lit.ref<@String, imm A>,
                                        %x:index,
                                        %z: !lit.ref<@String, imm B>) -> !kgen.none {
-      %ptr = lit.closure.init(%y:[ref: imm A], %x,
+      %ptr = lit.closure.init[#type_value](%y:[ref: imm A], %x,
              %z[@String::@__copyinit__[2](!lit.ref<@String, imm *[0,0]>, !lit.ref<@String, imm *[0,1]>)]
              )(%arg1: index) -> index {
           lit.end_fn
@@ -1749,7 +1749,9 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                        TypedAttrInterface:$captureOrigins,
                        KGEN_ParamDeclArrayAttr:$inputParams,
                        KGEN_InlineLevelAttr:$inlineLevel,
-                       KGEN_ParamDeclAttr:$paramDecl);
+                       KGEN_ParamDeclAttr:$paramDecl,
+                       TypedAttrInterface:$vtable
+                       );
   let results = (outs LIT_RefType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
   let assemblyFormat = [{
@@ -1763,7 +1765,8 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                                     $bodyRegion,
                                     type($captures),
                                     type($result),
-                                    $paramDecl)  attr-dict
+                                    $paramDecl,
+                                    $vtable)  attr-dict
   }];
   let extraClassDeclaration = [{
     Region *getCallableRegion() { return &getBodyRegion(); }
