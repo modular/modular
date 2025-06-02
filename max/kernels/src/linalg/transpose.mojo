@@ -19,6 +19,7 @@ from sys.intrinsics import strided_load, strided_store
 from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout
 from memory import UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
@@ -430,6 +431,33 @@ fn _fill_strides[
     @parameter
     for idx in range(rank - 1):
         alias axis = rank - idx - 2
+        var next_axis_stride = strides[axis + 1]
+        var next_axis_dim = buf.dim[axis + 1]()
+        var curr_axis_stride = next_axis_stride * next_axis_dim
+        strides[axis] = curr_axis_stride
+
+
+fn _fill_strides[
+    input_layout: Layout,
+    type: DType,
+](
+    buf: LayoutTensor[type, input_layout, **_],
+    strides: LayoutTensor[
+        mut=True, DType.index, Layout.row_major(buf.rank), **_
+    ],
+):
+    """
+    Fill `strides`, which will be an array of strides indexed by axis, assuming
+    `buf` contains contiguous buf.
+
+    Note that `buf` is only used for querying its dimensions.
+    """
+    constrained[buf.rank > 0]()
+    strides[buf.rank - 1] = 1
+
+    @parameter
+    for idx in range(buf.rank - 1):
+        alias axis = buf.rank - idx - 2
         var next_axis_stride = strides[axis + 1]
         var next_axis_dim = buf.dim[axis + 1]()
         var curr_axis_stride = next_axis_stride * next_axis_dim

@@ -35,6 +35,7 @@ from layout.layout import (
     zipped_divide,
 )
 from testing import assert_equal, assert_not_equal
+from utils import IndexList
 
 
 # CHECK-LABEL: test_layout_basic
@@ -78,6 +79,22 @@ fn test_layout_basic() raises:
     # Check if layout is row_major
     assert_equal(is_row_major[3](Layout.row_major(3, 2, 3)), True)
     assert_equal(is_row_major[2](Layout.col_major(3, 3)), False)
+
+    # test dynamic layout
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
+        Layout.row_major[3](),
+    )
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+        Layout.row_major[2](),
+    )
+
+    # test index list construction
+    assert_equal(
+        Layout.row_major(IndexList[2](2, 3)),
+        Layout.row_major(2, 3),
+    )
 
 
 fn test_unknowns() raises:

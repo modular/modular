@@ -3859,9 +3859,12 @@ struct PadConstant:
 
         @parameter
         if is_cpu[target]():
-            var input_buf = managed_tensor_slice_to_ndbuffer(input)
-            var output_buf = managed_tensor_slice_to_ndbuffer(output)
-            pad_constant(output_buf, input_buf, paddings_ptr, constant)
+            pad_constant(
+                output.to_layout_tensor(),
+                input.to_layout_tensor(),
+                paddings_ptr,
+                constant,
+            )
         elif is_gpu[target]():
             pad_constant_gpu(
                 output._ptr,
@@ -3884,9 +3887,13 @@ struct PadConstant:
         padding: InputTensor[rank=1],
         constant: Scalar[dtype=type],
     ) raises -> IndexList[rank]:
-        return pad_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(padding),
+        # rebind is required because mojo can't figure out that
+        # input.static_spec.to_layout_tensor().rank == input.rank
+        return rebind[IndexList[rank]](
+            pad_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                padding.to_layout_tensor(),
+            )
         )
 
 
@@ -3902,9 +3909,11 @@ struct PadRepeat:
         padding: InputTensor[rank=1],
     ):
         var paddings_ptr = padding._ptr
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        pad_repeat(output_buf, input_buf, paddings_ptr)
+        pad_repeat(
+            output.to_layout_tensor(),
+            input.to_layout_tensor(),
+            paddings_ptr,
+        )
 
     @staticmethod
     fn shape[
@@ -3914,9 +3923,11 @@ struct PadRepeat:
         input: InputTensor[type=type, rank=rank],
         padding: InputTensor[rank=1],
     ) raises -> IndexList[rank]:
-        return pad_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(padding),
+        return rebind[IndexList[rank]](
+            pad_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                padding.to_layout_tensor(),
+            )
         )
 
 
@@ -3932,9 +3943,11 @@ struct PadReflect:
         padding: InputTensor[rank=1],
     ):
         var paddings_ptr = padding._ptr
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        pad_reflect(output_buf, input_buf, paddings_ptr)
+        pad_reflect(
+            output.to_layout_tensor(),
+            input.to_layout_tensor(),
+            paddings_ptr,
+        )
 
     @staticmethod
     fn shape[
@@ -3944,9 +3957,11 @@ struct PadReflect:
         input: InputTensor[type=type, rank=rank],
         padding: InputTensor[rank=1],
     ) raises -> IndexList[rank]:
-        return pad_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(padding),
+        return rebind[IndexList[rank]](
+            pad_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                padding.to_layout_tensor(),
+            )
         )
 
 

@@ -15,29 +15,31 @@ from os import abort
 
 import benchmark
 from benchmark import Unit, keep
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from internal_utils import assert_equal
+from layout import LayoutTensor, Layout, RuntimeLayout
 from memory import UnsafePointer, memcpy
 from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
 from testing import assert_true
 
-from utils import IndexList, StaticTuple
+from utils import IndexList, StaticTuple, product
 
 
 @always_inline
 fn pad_constant_dispatch[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
+    output_layout: Layout,
+    input_layout: Layout,
     type: DType,
     paddings_type: DType,
     constant_type: DType,
     recursive: Int = 0,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[
+        mut=True, type, output_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    input: LayoutTensor[
+        type, input_layout, address_space = AddressSpace.GENERIC, **_
+    ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: SIMD[constant_type, 1],
 ):
@@ -70,14 +72,20 @@ fn pad_constant_dispatch[
         @__copy_capture(constant_cast)
         @parameter
         fn pad_constant_wrapper(
-            output: UnsafePointer[Scalar[type]],
-            input: UnsafePointer[Scalar[type]],
+            output: UnsafePointer[
+                Scalar[type], address_space = AddressSpace.GENERIC, **_
+            ],
+            input: UnsafePointer[
+                Scalar[type], address_space = AddressSpace.GENERIC, **_
+            ],
             paddings: UnsafePointer[Scalar[paddings_type]],
-            output_shape: IndexList[rank],
+            output_shape: IndexList[output_layout.rank()],
             output_strides: UnsafePointer[Scalar[DType.index]],
             input_strides: UnsafePointer[Scalar[DType.index]],
         ):
-            return _pad_constant_impl_rec[rank, type, paddings_type](
+            return _pad_constant_impl_rec[
+                output_layout.rank(), type, paddings_type
+            ](
                 init_axis,
                 output,
                 input,
@@ -92,9 +100,8 @@ fn pad_constant_dispatch[
             )
 
         return _do_pad[
-            rank,
-            output_shape,
-            input_shape,
+            output_layout,
+            input_layout,
             type,
             paddings_type,
             pad_constant_wrapper,
@@ -192,15 +199,18 @@ fn _pad_constant_impl_rec[
 
 @always_inline
 fn pad_reflect_dispatch[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
+    output_layout: Layout,
+    input_layout: Layout,
     type: DType,
     paddings_type: DType,
     recursive: Int = 0,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[
+        mut=True, type, output_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    input: LayoutTensor[
+        type, input_layout, address_space = AddressSpace.GENERIC, **_
+    ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
@@ -232,14 +242,20 @@ fn pad_reflect_dispatch[
 
         @parameter
         fn pad_reflect_wrapper(
-            output: UnsafePointer[Scalar[type]],
-            input: UnsafePointer[Scalar[type]],
+            output: UnsafePointer[
+                Scalar[type], address_space = AddressSpace.GENERIC, **_
+            ],
+            input: UnsafePointer[
+                Scalar[type], address_space = AddressSpace.GENERIC, **_
+            ],
             paddings: UnsafePointer[Scalar[paddings_type]],
-            output_shape: IndexList[rank],
+            output_shape: IndexList[output_layout.rank()],
             output_strides: UnsafePointer[Scalar[DType.index]],
             input_strides: UnsafePointer[Scalar[DType.index]],
         ):
-            return _pad_reflect_impl_rec[rank, type, paddings_type](
+            return _pad_reflect_impl_rec[
+                output_layout.rank(), type, paddings_type
+            ](
                 init_axis,
                 output,
                 input,
@@ -252,9 +268,8 @@ fn pad_reflect_dispatch[
             )
 
         return _do_pad[
-            rank,
-            output_shape,
-            input_shape,
+            output_layout,
+            input_layout,
             type,
             paddings_type,
             pad_reflect_wrapper,
@@ -475,42 +490,47 @@ fn test_pad_constant_nd[
     alias d = d_pre + d_post
 
     @always_inline
-    fn get_in_out_shapes[rank: Int = 1]() -> StaticTuple[DimList, 2]:
-        var in_shape: DimList = DimList()
-        var out_shape: DimList = DimList()
+    fn get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
+        var in_shape = IndexList[rank]()
+        var out_shape = IndexList[rank]()
 
         @parameter
         if rank == 1:
-            in_shape = DimList(n)
-            out_shape = DimList(n + d)
+            in_shape = [n]
+            out_shape = [n + d]
         elif rank == 2:
-            in_shape = DimList(n, n)
-            out_shape = DimList(n + d, n + d)
+            in_shape = [n, n]
+            out_shape = [n + d, n + d]
         elif rank == 3:
-            in_shape = DimList(n, n, n)
-            out_shape = DimList(n + d, n + d, n + d)
+            in_shape = [n, n, n]
+            out_shape = [n + d, n + d, n + d]
         elif rank == 4:
-            in_shape = DimList(n, n, n, n)
-            out_shape = DimList(n + d, n + d, n + d, n + d)
-        return StaticTuple[DimList, 2](in_shape, out_shape)
+            in_shape = [n, n, n, n]
+            out_shape = [n + d, n + d, n + d, n + d]
+        return [in_shape, out_shape]
 
     alias in_out_shape = get_in_out_shapes[rank]()
     alias in_shape = in_out_shape[0]
     alias out_shape = in_out_shape[1]
+    alias out_layout = Layout.row_major(out_shape)
 
-    alias in_size = Int(in_shape.product[rank]())
-    alias out_size = Int(out_shape.product[rank]())
+    alias in_size = product(in_shape)
+    alias out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
     var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
-    var input = NDBuffer[DType.index, rank](input_ptr, in_shape)
-    input.fill(1)
+    var input = LayoutTensor[DType.index, Layout.row_major[rank]()](
+        input_ptr,
+        RuntimeLayout[Layout.row_major[rank]()].row_major(in_shape),
+    ).fill(1)
 
     # Create a padding array
     var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
         uninitialized=True
     )
-    var paddings = NDBuffer[DType.index, 1, _, 2 * rank](paddings_stack)
+    var paddings = LayoutTensor[DType.index, Layout.row_major(2 * rank)](
+        paddings_stack
+    )
 
     @parameter
     for i in range(rank):
@@ -519,29 +539,37 @@ fn test_pad_constant_nd[
 
     # Create an output matrix and fill with 0
     var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-    var output = NDBuffer[DType.index, rank, _, out_shape](
-        output_ptr, out_shape
+    var output = LayoutTensor[
+        DType.index,
+        Layout.row_major(out_shape),
+        address_space = AddressSpace.GENERIC, **_,
+    ](
+        output_ptr,
+        RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
+    ).fill(
+        0
     )
-    output.fill(0)
 
     # constant padding value = 7
     var constant = Scalar[DType.index](7)
 
     # pad
     pad_constant_dispatch[recursive=recursive](
-        output, input, paddings.data, constant
+        output, input, paddings.ptr, constant
     )
 
     if verify:
         var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = NDBuffer[DType.index, rank, _, out_shape](
-            output_rec_ptr, out_shape
-        )
-        output_rec.fill(0)
+        var output_rec = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+            output_rec_ptr,
+            RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
+        ).fill(0)
         pad_constant_dispatch[recursive=1](
-            output_rec, input, paddings.data, constant
+            output_rec, input, paddings.ptr, constant
         )
-        assert_equal(output, output_rec)
+        for i in range(out_size):
+            var idx = out_layout(i)
+            assert_true(output.ptr[idx] == output_rec.ptr[idx])
 
         output_rec_ptr.free()
 
@@ -557,42 +585,47 @@ fn test_pad_reflect_nd[
     alias d = d_pre + d_post
 
     @always_inline
-    fn get_in_out_shapes[rank: Int = 1]() -> StaticTuple[DimList, 2]:
-        var in_shape: DimList = DimList()
-        var out_shape: DimList = DimList()
+    fn get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
+        var in_shape = IndexList[rank]()
+        var out_shape = IndexList[rank]()
 
         @parameter
         if rank == 1:
-            in_shape = DimList(n)
-            out_shape = DimList(n + d)
+            in_shape = [n]
+            out_shape = [n + d]
         elif rank == 2:
-            in_shape = DimList(n, n)
-            out_shape = DimList(n + d, n + d)
+            in_shape = [n, n]
+            out_shape = [n + d, n + d]
         elif rank == 3:
-            in_shape = DimList(n, n, n)
-            out_shape = DimList(n + d, n + d, n + d)
+            in_shape = [n, n, n]
+            out_shape = [n + d, n + d, n + d]
         elif rank == 4:
-            in_shape = DimList(n, n, n, n)
-            out_shape = DimList(n + d, n + d, n + d, n + d)
-        return StaticTuple[DimList, 2](in_shape, out_shape)
+            in_shape = [n, n, n, n]
+            out_shape = [n + d, n + d, n + d, n + d]
+        return [in_shape, out_shape]
 
     alias in_out_shape = get_in_out_shapes[rank]()
     alias in_shape = in_out_shape[0]
     alias out_shape = in_out_shape[1]
+    alias out_layout = Layout.row_major(out_shape)
 
-    alias in_size = Int(in_shape.product[rank]())
-    alias out_size = Int(out_shape.product[rank]())
+    alias in_size = product(in_shape)
+    alias out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
     var input_ptr = UnsafePointer[Scalar[DType.index]].alloc(in_size)
-    var input = NDBuffer[DType.index, rank](input_ptr, in_shape)
-    input.fill(1)
+    var input = LayoutTensor[DType.index, Layout.row_major[rank]()](
+        input_ptr,
+        RuntimeLayout[Layout.row_major[rank]()].row_major(in_shape),
+    ).fill(1)
 
     # Create a padding array
     var paddings_stack = InlineArray[Scalar[DType.index], 2 * rank](
         uninitialized=True
     )
-    var paddings = NDBuffer[DType.index, 1, _, 2 * rank](paddings_stack)
+    var paddings = LayoutTensor[DType.index, Layout.row_major(2 * rank)](
+        paddings_stack
+    )
 
     @parameter
     for i in range(rank):
@@ -601,23 +634,25 @@ fn test_pad_reflect_nd[
 
     # Create an output matrix and fill with 0
     var output_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-    var output = NDBuffer[DType.index, rank, _, out_shape](
-        output_ptr, out_shape
-    )
-    output.fill(0)
+    var output = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+        output_ptr,
+        RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
+    ).fill(0)
 
     # pad
-    pad_reflect_dispatch[recursive=recursive](output, input, paddings.data)
+    pad_reflect_dispatch[recursive=recursive](output, input, paddings.ptr)
 
     if verify:
         var output_rec_ptr = UnsafePointer[Scalar[DType.index]].alloc(out_size)
-        var output_rec = NDBuffer[DType.index, rank, _, out_shape](
-            output_rec_ptr, out_shape
-        )
-        output_rec.fill(0)
-        pad_reflect_dispatch[recursive=1](output_rec, input, paddings.data)
+        var output_rec = LayoutTensor[DType.index, Layout.row_major(out_shape)](
+            output_rec_ptr,
+            RuntimeLayout[Layout.row_major(out_shape)].row_major(out_shape),
+        ).fill(0)
+        pad_reflect_dispatch[recursive=1](output_rec, input, paddings.ptr)
 
-        assert_equal(output, output_rec)
+        for i in range(out_size):
+            var idx = out_layout(i)
+            assert_true(output.ptr[idx] == output_rec.ptr[idx])
 
         output_rec_ptr.free()
 

@@ -13,7 +13,6 @@
 
 from sys import env_get_int
 
-from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import (
@@ -23,8 +22,7 @@ from internal_utils import (
     int_list_to_tuple,
     ndbuffer_to_str,
 )
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import LayoutTensor, RuntimeLayout, Layout
 from memory import UnsafePointer
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
@@ -43,12 +41,16 @@ fn test_pad_constant_gpu[
     verbose: Bool = False,
 ) raises:
     print("== test_pad_constant_gpu")
+    alias layout = Layout.row_major[rank]()
 
     # Create an input matrix
     var input_data = UnsafePointer[Scalar[type]].alloc(
         input_shape.flattened_length()
     )
-    var input = NDBuffer[type, rank](input_data, input_shape)
+    var input = LayoutTensor[type, layout](
+        input_data,
+        RuntimeLayout[layout].row_major(input_shape),
+    )
 
     var output_shape = get_padding_output_shape(input_shape, paddings)
 
@@ -56,14 +58,16 @@ fn test_pad_constant_gpu[
     var output_data = UnsafePointer[Scalar[type]].alloc(
         output_shape.flattened_length()
     )
-    var output = NDBuffer[type, rank](output_data, output_shape)
-    output.fill(0)
+    var output = LayoutTensor[type, layout](
+        output_data, RuntimeLayout[layout].row_major(output_shape)
+    ).fill(0)
 
     for i in range(input_shape.flattened_length()):
-        input_data[i] = i
+        var idx = input.runtime_layout(i)
+        input.ptr[idx] = i
 
     if verbose:
-        print(ndbuffer_to_str(input))
+        print(input)
 
     # create device buffers
     var in_device = ctx.enqueue_create_buffer[type](
@@ -74,8 +78,8 @@ fn test_pad_constant_gpu[
     )
 
     # copy from host to device
-    ctx.enqueue_copy(in_device, input.data)
-    ctx.enqueue_copy(out_device, output.data)
+    ctx.enqueue_copy(in_device, input.ptr)
+    ctx.enqueue_copy(out_device, output.ptr)
 
     # pad with constant = 5
     var constant = Scalar[type](5)
@@ -90,24 +94,28 @@ fn test_pad_constant_gpu[
         ctx,
     )
 
-    ctx.enqueue_copy(output.data, out_device)
+    ctx.enqueue_copy(output.ptr, out_device)
     ctx.synchronize()
 
     if verbose:
-        print(ndbuffer_to_str(output))
+        print(output)
 
     # verification
     var output_data_cpu = UnsafePointer[Scalar[type]].alloc(
         output_shape.flattened_length()
     )
-    var output_cpu = NDBuffer[type, rank](output_data_cpu, output_shape)
-    output_cpu.fill(0)
+    var output_cpu = LayoutTensor[type, layout](
+        output_data_cpu,
+        RuntimeLayout[layout].row_major(output_shape),
+    ).fill(0)
     pad_cpu(output_cpu, input, paddings.ptr, constant)
 
     if verbose:
-        print(ndbuffer_to_str(output_cpu))
+        print(output_cpu)
 
-    array_equal(output, output_cpu)
+    for i in range(output.size()):
+        var idx = output.runtime_layout(i)
+        assert_equal(output.ptr[idx], output_cpu.ptr[idx])
     print("PASS: rank=" + String(rank))
     output_data_cpu.free()
 
