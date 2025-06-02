@@ -80,6 +80,10 @@ def test_memory_registration(device: Device):
         sorted=sorted,
     )
 
+    # Test append()
+    buffer2 = Tensor.from_numpy(np.ones((50, 50))).to(device)
+    registration_descriptor.append(cast(ArrayLike, buffer2))
+
     # Register Memory
     status = agent.register_memory(
         descs=registration_descriptor,
