@@ -182,9 +182,9 @@ from nn.softmax import logsoftmax, softmax
 from nn.split import split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k
-from nn.topk import top_k_fused_sampling_cpu as _topk_fused_sampling_cpu
+from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import top_k_shape_impl
-from nn.topk import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
+from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from quantization import (
@@ -8448,8 +8448,8 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("sampler.topk_fused_sampling")
-struct Struct_topk_fused_sampling:
+@compiler.register("sampler.fused_token_sampling")
+struct Struct_fused_token_sampling:
     @always_inline
     @staticmethod
     fn execute[
@@ -8462,6 +8462,7 @@ struct Struct_topk_fused_sampling:
         out_idxs: OutputTensor[type=out_idx_type, rank=rank],
         K: Scalar,
         temperature: Scalar[type],
+        top_p: Scalar[type],
         seed: UInt64,
         input: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
@@ -8484,17 +8485,18 @@ struct Struct_topk_fused_sampling:
                         out_idxs.to_layout_tensor(),
                     )
                     return
-                _topk_fused_sampling_cpu(
-                    Int(K), input_buf, out_idxs_buf, temperature, seed
+                _fused_token_sampling_cpu(
+                    Int(K), input_buf, out_idxs_buf, temperature, top_p, seed
                 )
             else:
                 var cuda_ctx = ctx.get_device_context()
-                _topk_fused_sampling_gpu(
+                _fused_token_sampling_gpu(
                     cuda_ctx,
                     Int(K),
                     input_buf,
                     out_idxs_buf,
                     temperature=temperature,
+                    top_p=top_p,
                     seed=seed,
                 )
 

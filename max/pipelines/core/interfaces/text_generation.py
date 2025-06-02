@@ -89,6 +89,9 @@ class SamplingParams:
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
+    top_p: float = 1
+    """Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens."""
+
     temperature: float = 1
     """Controls the randomness of the model's output; higher values produce more diverse responses."""
 
