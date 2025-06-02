@@ -762,10 +762,6 @@ public:
     return MBValue();
   }
 
-  /// If this is a def argument shadow, resolve the underlying ref type for the
-  /// def argument.
-  virtual RefType getMBValueTypeFromDefArgument() const;
-
   virtual std::optional<size_t> getDefArgumentIndex() const { return {}; }
 };
 

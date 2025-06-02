@@ -38,10 +38,6 @@ LValue BaseDLValue::prepareForMutAccess(SMLoc loc, IREmitter &emitter) const {
   return DLValue(RCRef<BaseDLValue>::copy(const_cast<BaseDLValue *>(this)));
 }
 
-/// If this is a def argument shadow, resolve the underlying ref type for the
-/// def argument.
-RefType BaseDLValue::getMBValueTypeFromDefArgument() const { return {}; }
-
 //===----------------------------------------------------------------------===//
 // DiscardDLValue
 //===----------------------------------------------------------------------===//
@@ -139,14 +135,6 @@ MBValue StoredAttributeRefDLValue::emitMBValueFromDefArgument(
   auto fieldRef = emitter.builder->create<RefStructGEROp>(
       expr->getLocation(emitter), baseRef, cast<StructFieldOp>(fieldOp));
   return MBValue(fieldRef);
-}
-
-/// If this is a def argument shadow, resolve the underlying ref type for the
-/// def argument.
-RefType StoredAttributeRefDLValue::getMBValueTypeFromDefArgument() const {
-  if (auto baseRef = baseVal.ir->getMBValueTypeFromDefArgument())
-    return RefStructGEROp::getFieldType(baseRef, cast<StructFieldOp>(fieldOp));
-  return {};
 }
 
 //===----------------------------------------------------------------------===//
@@ -333,14 +321,6 @@ DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
 MBValue DefArgumentWrapperDLValue::emitMBValueFromDefArgument(
     IREmitter &emitter) const {
   return argRef.getIfMBValue();
-}
-
-/// If this is a def argument shadow, resolve the underlying ref type for the
-/// def argument.
-RefType DefArgumentWrapperDLValue::getMBValueTypeFromDefArgument() const {
-  if (auto mb = argRef.getIfMBValue())
-    return cast<RefType>(mb.getType());
-  return {}; // SRValue.
 }
 
 void DefArgumentWrapperDLValue::print(raw_ostream &os) const {

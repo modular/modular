@@ -510,14 +510,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // Element type and address have to match and the mutability has to be
     // compatible.
     RefType valueRefType;
-    if (operand.ir.isMValue()) {
+    if (operand.ir.isMValue())
       valueRefType = cast<RefType>(operand.ir.getMValueReference().getType());
-    } else {
-      // If this is a def argument box, infer the reference from the underlying
-      // def argument.
-      if (auto dlv = operand.ir.getIfDLValue())
-        valueRefType = dlv->getMBValueTypeFromDefArgument();
-    }
 
     // If we are binding to something that is already a reference, check for
     // compatibility of the references and we're done.
