@@ -598,7 +598,8 @@ def KGEN_GetTypeNameAttr : KGEN_ExprAttr<"GetTypeName", "get_type_name",
 // BindParams
 //===----------------------------------------------------------------------===//
 
-def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params"> {
+def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params",
+    [ContextuallyEvaluatedAttrInterface]> {
   let summary = "Bind params onto an expression with generator type.";
   let description = [{
     The `#kgen.bind_params` attribute is used to bind parameters onto a
@@ -806,6 +807,26 @@ def KGEN_GeneratorAttr : KGEN_ExprAttr<"Generator", "gen", [
     }]>
   ];
   let assemblyFormat = "`<` custom<GeneratorAttrBody>($body, ref($type)) `>`";
+
+  let extraClassDeclaration = [{
+    /// Get this GeneratorAttr with some parameters bound.
+    GeneratorAttr getSpecializedGenerator(
+      ArrayRef<TypedAttr> paramBindings,
+      function_ref<InFlightDiagnostic()> emitErrorFn = {},
+      ParameterEvaluationContext *evaluationContext = nullptr);
+    GeneratorAttr getSpecializedGenerator(
+      ArrayRef<TypedAttr> paramBindings, Location location,
+      ParameterEvaluationContext *evaluationContext = nullptr);
+
+    /// Returns true if the signature has no input params.
+    bool isFullyBound() { return getInputParamTypes().empty(); };
+
+    /// Returns the body while asserting that the generator is fully bound.
+    TypedAttr getInstantiatedBody() {
+      assert(isFullyBound() && "cannot instantiate parameterized body");
+      return getBody();
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//

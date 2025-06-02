@@ -25,6 +25,7 @@ class FuncInterface;
 class GeneratorMetadataAttrInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
+class PartiallySpecializedInputParams;
 class FuncTypeGeneratorType;
 class StructDefFieldAttr;
 class VariadicType;

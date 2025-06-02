@@ -786,6 +786,46 @@ ArrayRef<Type> GeneratorAttr::getInputParamTypes() const {
   return getType().getInputParamTypes();
 }
 
+GeneratorAttr GeneratorAttr::getSpecializedGenerator(
+    ArrayRef<TypedAttr> paramBindings,
+    function_ref<InFlightDiagnostic()> emitErrorFn,
+    ParameterEvaluationContext *evaluationContext) {
+  VerboseCompilerTimeTraceScope traceScope(
+      "GeneratorAttr::getSpecializedGenerator");
+
+  if (paramBindings.empty())
+    return *this;
+
+  std::optional<PartiallySpecializedInputParams> specializationOpt =
+      PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
+                                            emitErrorFn, evaluationContext);
+  if (!specializationOpt)
+    return {};
+  PartiallySpecializedInputParams &specialization = *specializationOpt;
+
+  // Specialize the type first and check for typing errors.
+  GeneratorType specializedType =
+      getType().getSpecializedGenerator(specialization);
+
+  if (!specializedType)
+    return {};
+
+  // Now specialize the body.
+  TypedAttr newBody =
+      cast<TypedAttr>(specialization.evaluator.getReboundAttribute(getBody()));
+
+  return GeneratorAttr::get(newBody, specializedType);
+}
+
+GeneratorAttr GeneratorAttr::getSpecializedGenerator(
+    ArrayRef<TypedAttr> paramBindings, Location location,
+    ParameterEvaluationContext *evaluationContext) {
+  return getSpecializedGenerator(
+      paramBindings,
+      [&]() -> InFlightDiagnostic { return emitError(location); },
+      evaluationContext);
+}
+
 //===----------------------------------------------------------------------===//
 // TargetParamAttr
 //===----------------------------------------------------------------------===//

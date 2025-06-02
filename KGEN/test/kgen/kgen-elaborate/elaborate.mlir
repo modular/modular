@@ -2276,3 +2276,74 @@ kgen.generator export @entry() {
   kgen.call @use_string_address<:!kgen.pointer<scalar<si8>> from_func>() : () -> ()
   kgen.return
 }
+
+// -----
+
+kgen.generator @bind_one_index<f: !kgen.generator<<index> index>>() -> index {
+  %0 = kgen.param.constant: index = <#kgen.bind_params<:!kgen.generator<<index> index> f, 4>>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL:kgen.func @"bind_two_index,f=#kgen.gen<add(*(0,0), *(0,1))>"
+// CHECK-NEXT:   kgen.param.constant = <20>
+// CHECK-NEXT:   kgen.param.constant = <6>
+
+// CHECK-LABEL: kgen.func @"bind_two_index,f=#kgen.gen<div(*(0,0), *(0,1))>"
+// CHECK-NEXT:   kgen.param.constant = <4>
+// CHECK-NEXT:   kgen.param.constant = <2>
+
+kgen.generator @bind_two_index<f: !kgen.generator<<index, index> index>>() {
+  %0 = kgen.param.constant: index = <apply(
+    :!kgen.generator<() -> index> @bind_one_index<
+        :!kgen.generator<<index> index> #kgen.bind_params<:!kgen.generator<<index, index> index> f, 16>>)>
+
+  %1 = kgen.param.constant: index = <apply(
+    :!kgen.generator<() -> index> @bind_one_index<
+        :!kgen.generator<<index> index> #kgen.bind_params<:!kgen.generator<<index, index> index> f, ?, 2>>)>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @entry
+kgen.generator export @entry() {
+  kgen.param.declare myAdd: !kgen.generator<<index, index> index> = <#kgen.gen<add(*(0,0), *(0,1))>>
+  // CHECK-NEXT: kgen.call @"bind_two_index,f=#kgen.gen<add(*(0,0), *(0,1))>"
+  kgen.call @bind_two_index<:!kgen.generator<<index, index> index> myAdd>() : () -> ()
+  kgen.param.declare myDiv: !kgen.generator<<index, index> index> = <#kgen.gen<div(*(0,0), *(0,1))>>
+  // CHECK-NEXT: kgen.call @"bind_two_index,f=#kgen.gen<div(*(0,0), *(0,1))>"
+  kgen.call @bind_two_index<:!kgen.generator<<index, index> index> myDiv>() : () -> ()
+  kgen.return
+}
+
+// -----
+
+kgen.generator @bind_one_index<f: !kgen.generator<<index> index>>() -> index {
+  %0 = kgen.param.constant: index = <#kgen.bind_params<:!kgen.generator<<index> index> f, 4>>
+  kgen.return %0 : index
+}
+
+kgen.generator @bind_one_index_outer<f: !kgen.generator<<index> !kgen.generator<<index> index>>>() -> index {
+  %0 = kgen.param.constant: index = <apply(
+    :!kgen.generator<() -> index> @bind_one_index<
+        :!kgen.generator<<index> index> #kgen.bind_params<:!kgen.generator<<index> !kgen.generator<<index> index>> f, 8>>)>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func export @entry
+kgen.generator export @entry() {
+  kgen.param.declare myCurriedAdd: !kgen.generator<<index> !kgen.generator<<index> index>> = <#kgen.gen<#kgen.gen<add(*(0,0), *(1,0))>>>
+  // CHECK-NEXT: kgen.param.constant = <12>
+  %0 = kgen.param.constant = <apply(
+    :!kgen.generator<() -> index> @bind_one_index_outer<
+        :!kgen.generator<<index> !kgen.generator<<index> index>> myCurriedAdd>)>
+  kgen.param.declare myCurriedDiv: !kgen.generator<<index> !kgen.generator<<index> index>> = <#kgen.gen<#kgen.gen<div(*(0,0), *(1,0))>>>
+  // CHECK-NEXT: kgen.param.constant = <0>
+  %1 = kgen.param.constant = <apply(
+    :!kgen.generator<() -> index> @bind_one_index_outer<
+        :!kgen.generator<<index> !kgen.generator<<index> index>> myCurriedDiv>)>
+  kgen.param.declare myReversedCurriedDiv: !kgen.generator<<index> !kgen.generator<<index> index>> = <#kgen.gen<#kgen.gen<div(*(1,0), *(0,0))>>>
+  // CHECK-NEXT: kgen.param.constant = <2>
+  %2 = kgen.param.constant = <apply(
+    :!kgen.generator<() -> index> @bind_one_index_outer<
+        :!kgen.generator<<index> !kgen.generator<<index> index>> myReversedCurriedDiv>)>
+  kgen.return
+}
