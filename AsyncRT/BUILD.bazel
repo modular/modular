@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("//bazel:api.bzl", "modular_cc_library", "modular_shared_library")
+load("//bazel:api.bzl", "modular_cc_library", "modular_relink_object", "modular_shared_library")
 
 bool_flag(
     name = "worker_stats",
@@ -229,4 +229,12 @@ modular_shared_library(
         "//AsyncRT:NIXL",
         "@ucx_prebuilt//:ucx",
     ],
+)
+
+modular_relink_object(
+    name = "plugin_ucx.fixed",
+    src = ":plugin_ucx",
+    new_root = "../../lib",
+    use_unique_name = True,
+    visibility = ["//visibility:public"],
 )
