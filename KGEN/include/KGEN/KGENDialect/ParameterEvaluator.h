@@ -183,6 +183,28 @@ private:
   /// attributes.
   ParameterEvaluationContext *evaluationContext = nullptr;
 };
+
+//===----------------------------------------------------------------------===//
+// Helper methods involving parameter evaluation.
+//===----------------------------------------------------------------------===//
+
+/// A partially specialized input parameter specification.
+struct PartiallySpecializedInputParams {
+  ParameterEvaluator evaluator;
+  SmallVector<Type, 16> unboundParamTypes;
+  llvm::BitVector boundParams;
+
+  /// Given an input parameter specification `paramTypes` and the full set of
+  /// bindings `paramBindings`, create a partially specialized input parameter
+  /// specification.
+  ///
+  /// The bindings may be partially specified, with holes represented by
+  /// UnboundAttrs.
+  static std::optional<PartiallySpecializedInputParams>
+  from(ArrayRef<Type> paramTypes, ArrayRef<TypedAttr> paramBindings,
+       function_ref<InFlightDiagnostic()> emitErrorFn,
+       ParameterEvaluationContext *evaluationContext);
+};
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_PARAMETEREVALUATOR_H

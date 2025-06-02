@@ -268,3 +268,78 @@ void ParameterEvaluator::dump() const {
   for (auto [idx, value] : llvm::enumerate(inputParamValues))
     os << "  *(0," << idx << ") = " << value << "\n";
 }
+
+//===----------------------------------------------------------------------===//
+// Helper methods involving parameter evaluation.
+//===----------------------------------------------------------------------===//
+
+std::optional<PartiallySpecializedInputParams>
+PartiallySpecializedInputParams::from(
+    ArrayRef<Type> paramTypes, ArrayRef<TypedAttr> paramBindings,
+    function_ref<InFlightDiagnostic()> emitErrorFn,
+    ParameterEvaluationContext *evaluationContext) {
+  // Verify the number of input parameters.
+  if (paramBindings.size() != paramTypes.size()) {
+    assert(emitErrorFn && "unexpected invalid bindings");
+    emitErrorFn() << "generator type expects " << paramTypes.size()
+                  << " parameters but got bindings for "
+                  << paramBindings.size();
+    return std::nullopt;
+  }
+
+  PartiallySpecializedInputParams result;
+  ParameterEvaluator &evaluator = result.evaluator;
+  SmallVector<Type, 16> &unboundParamTypes = result.unboundParamTypes;
+  llvm::BitVector &boundParams = result.boundParams;
+  boundParams.resize(paramTypes.size());
+
+  evaluator.setEvaluationContext(evaluationContext);
+  evaluator.setInputDepth(1);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
+  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+
+  auto remapType = [&](Type type) -> Type {
+    return evaluator.getReboundType(type);
+  };
+
+  for (auto [paramNo, value, type] :
+       llvm::enumerate(paramBindings, paramTypes)) {
+    // Bound parameters are allowed to refine the type of subsequent
+    // parameters, e.g. in `<ty: type, fn: () -> !kgen.param<ty>>`, the
+    // expected type of the second parameter will be refined when the first
+    // parameter is bound.
+    auto remappedDeclType = remapType(type);
+
+    // Even if we're skipping a binding site, we still need to remap the decl.
+    // TODO: Disallow UnboundAttr for skipping bindings.
+    if (::isa<UnboundAttr>(value)) {
+      // Set the binding to a declref of the thing itself - that will keep it
+      // from becoming #kgen.unbound.  This #param.index.ref will have a level
+      // of -1, and we adjust the level of its type by -1 so it balances out
+      // correctly when referenced.
+      auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
+      auto value = ParamIndexRefAttr::get(
+          /*depth=*/-1, unboundParamTypes.size(), adjustedParamType);
+      unboundParamTypes.push_back(remappedDeclType);
+      evaluator.addInputValue(value);
+    } else {
+      // We must remap the value type being provided as well, because it may
+      // be referring to outer-context indexed parameters, whose depth will be
+      // increased when substituted into this signature.
+      Type reboundType = plusOneAdjuster.replace(value.getType());
+      if (reboundType != remappedDeclType) {
+        if (!emitErrorFn)
+          return {};
+        emitErrorFn() << "caller input parameter #" << paramNo << " has type "
+                      << reboundType << " but callee expected type "
+                      << remappedDeclType;
+        return {};
+      }
+
+      evaluator.addInputValue(value);
+      boundParams.set(paramNo);
+    }
+  }
+
+  return result;
+}

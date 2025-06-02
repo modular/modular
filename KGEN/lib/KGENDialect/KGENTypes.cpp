@@ -320,6 +320,20 @@ ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
+    PartiallySpecializedInputParams &specialization) {
+  GeneratorMetadataAttrInterface genMetadata = getMetadata();
+  if (genMetadata) {
+    genMetadata = ::cast<GeneratorMetadataAttrInterface>(
+        specialization.evaluator.getReboundAttribute(genMetadata));
+    genMetadata = genMetadata.getWithBoundParams(specialization.boundParams);
+  }
+
+  return GeneratorType::get(specialization.unboundParamTypes,
+                            specialization.evaluator.getReboundType(getBody()),
+                            genMetadata);
+}
+
+GeneratorType GeneratorType::getSpecializedGenerator(
     ArrayRef<TypedAttr> paramBindings,
     function_ref<InFlightDiagnostic()> emitErrorFn,
     ParameterEvaluationContext *evaluationContext) {
@@ -328,81 +342,16 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 
   // If the signature isn't parameterized, then there are no substitutions to
   // perform.
-  if (paramBindings.empty()) {
+  if (paramBindings.empty())
     return *this;
-  }
 
-  ArrayRef<Type> inputParamTypes = getInputParamTypes();
-
-  // Verify the number of input parameters.
-  if (paramBindings.size() != inputParamTypes.size()) {
-    assert(emitErrorFn && "unexpected invalid bindings");
-    emitErrorFn() << "generator type expects " << inputParamTypes.size()
-                  << " parameters but got bindings for "
-                  << paramBindings.size();
+  std::optional<PartiallySpecializedInputParams> specializationOpt =
+      PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
+                                            emitErrorFn, evaluationContext);
+  if (!specializationOpt)
     return {};
-  }
 
-  ParameterEvaluator evaluator;
-  evaluator.setEvaluationContext(evaluationContext);
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
-
-  auto remapType = [&](Type type) -> Type {
-    return evaluator.getReboundType(type);
-  };
-
-  SmallVector<Type, 16> unboundParamTypes;
-  llvm::BitVector boundParams(inputParamTypes.size());
-  for (auto [paramNo, value, type] :
-       llvm::enumerate(paramBindings, inputParamTypes)) {
-    // Bound parameters are allowed to refine the type of subsequent
-    // parameters, e.g. in `<ty: type, fn: () -> !kgen.param<ty>>`, the
-    // expected type of the second parameter will be refined when the first
-    // parameter is bound.
-    auto remappedDeclType = remapType(type);
-
-    // Even if we're skipping a binding site, we still need to remap the decl.
-    // TODO: Disallow UnboundAttr for skipping bindings.
-    if (::isa<UnboundAttr>(value)) {
-      // Set the binding to a declref of the thing itself - that will keep it
-      // from becoming #kgen.unbound.  This #param.index.ref will have a level
-      // of -1, and we adjust the level of its type by -1 so it balances out
-      // correctly when referenced.
-      auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
-      auto value = ParamIndexRefAttr::get(
-          /*depth=*/-1, unboundParamTypes.size(), adjustedParamType);
-      unboundParamTypes.push_back(remappedDeclType);
-      evaluator.addInputValue(value);
-    } else {
-      // We must remap the value type being provided as well, because it may
-      // be referring to outer-context indexed parameters, whose depth will be
-      // increased when substituted into this signature.
-      Type reboundType = plusOneAdjuster.replace(value.getType());
-      if (reboundType != remappedDeclType) {
-        if (!emitErrorFn)
-          return {};
-        emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                      << reboundType << " but callee expected type "
-                      << remappedDeclType;
-        return {};
-      }
-
-      evaluator.addInputValue(value);
-      boundParams.set(paramNo);
-    }
-  }
-
-  GeneratorMetadataAttrInterface genMetadata = getMetadata();
-  if (genMetadata) {
-    genMetadata = ::cast<GeneratorMetadataAttrInterface>(
-        evaluator.getReboundAttribute(genMetadata));
-    genMetadata = genMetadata.getWithBoundParams(boundParams);
-  }
-
-  return GeneratorType::get(unboundParamTypes,
-                            evaluator.getReboundType(getBody()), genMetadata);
+  return getSpecializedGenerator(*specializationOpt);
 }
 
 GeneratorType GeneratorType::getSpecializedGenerator(
