@@ -560,7 +560,7 @@ fn mbarrier_try_wait_parity_shared[
         constrained[
             False,
             (
-                "The mbarrier_try_wait_arity_shared function is not supported"
+                "The mbarrier_try_wait_parity_shared function is not supported"
                 " on AMD GPUs."
             ),
         ]()

@@ -211,6 +211,10 @@ class InputContext(Protocol):
     @property
     def is_ce(self) -> bool:
         """Returns True if the context is a context encoding context, False otherwise."""
+
+    @property
+    def is_initial_prompt(self) -> bool:
+        """Returns true if the context has not been updated with tokens."""
         ...
 
 
@@ -267,7 +271,7 @@ class TextContext:
 
         self.matcher = None
         self.json_schema = json_schema
-        self.is_initial_prompt = True
+        self._is_initial_prompt = True
         self.ignore_eos = ignore_eos
         self.active_status = TextGenerationStatus.ACTIVE
         self.sampling_params = sampling_params
@@ -447,7 +451,7 @@ class TextContext:
         if self.matcher:
             assert self.matcher.accept_token(new_token)
 
-        self.is_initial_prompt = False
+        self._is_initial_prompt = False
 
     def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
@@ -471,7 +475,7 @@ class TextContext:
         if self.matcher:
             assert self.matcher.accept_token(new_token)
 
-        self.is_initial_prompt = False
+        self._is_initial_prompt = False
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
@@ -479,7 +483,7 @@ class TextContext:
         self._start_idx = 0
         self._committed_idx = 0
 
-        self.is_initial_prompt = True
+        self._is_initial_prompt = True
 
     def outstanding_completion_tokens(
         self,
@@ -534,6 +538,11 @@ class TextContext:
     @property
     def is_ce(self) -> bool:
         return self.active_length > 1
+
+    @property
+    def is_initial_prompt(self) -> bool:
+        """Returns true if the context has not been updated with tokens."""
+        return self._is_initial_prompt
 
     def __repr__(self) -> str:
         return (

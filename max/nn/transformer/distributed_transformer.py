@@ -27,7 +27,6 @@ from max.graph import (
     TensorValueLike,
     Type,
     Value,
-    _ChainType,
     ops,
 )
 
@@ -121,7 +120,7 @@ class DistributedTransformerBlock(Module):
                 if subgraph is None:
                     with Graph.current.add_subgraph(
                         f"{name}_{name_suffix}",
-                        input_types=[*subgraph_input_types, _ChainType()],
+                        input_types=subgraph_input_types,
                     ) as subgraph:
                         inputs = iter(subgraph.inputs)
                         arg_layer_idx = next(inputs)
@@ -146,10 +145,6 @@ class DistributedTransformerBlock(Module):
                         ):
                             weight._mlir_value = subgraph_input._mlir_value
 
-                        subgraph._current_chain._mlir_value = next(
-                            inputs
-                        )._mlir_value
-
                         # prevent re-entry
                         try:
                             outer_self.use_subgraph = False
@@ -166,7 +161,7 @@ class DistributedTransformerBlock(Module):
                                 weights, weight_mlir_values
                             ):
                                 weight._mlir_value = original_weight_mlir_value
-                        subgraph.output(*results, subgraph._current_chain)
+                        subgraph.output(*results)
 
                 call_args: MutableSequence[Value] = [
                     layer_idx,

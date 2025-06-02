@@ -112,8 +112,11 @@ def test_tuple_contains():
 
 
 def test_tuple_unpack():
-    var list = [a + b for a, b in [(1, 2), (3, 4)]]
+    (var list) = [a + b for a, b in [(1, 2), (3, 4)]]
     assert_equal(list, [3, 7])
+
+    var list2 = [a + b for a, b in [(1, 2), (3, 4)]]
+    assert_equal(list2, [3, 7])
 
 
 def main():
