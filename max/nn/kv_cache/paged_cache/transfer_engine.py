@@ -306,10 +306,7 @@ class KVTransferEngine:
             descs_src.append((src_addr, bytes_per_page, self.memory_type.value))
         xfer_dlist_src = nixl.TransferDescriptorList(
             type=self.memory_type,
-            # This type ignore is needed because the argument expects `list[ArrayLike | tuple[int, int, int]]`.
-            # The correct type should be `Sequence[ArrayLike | tuple[int, int, int]]`.
-            # This needs to be fixed in the .pyi file.
-            descs=descs_src,  # type: ignore
+            descs=descs_src,
         )
 
         # Prepare destination descriptor list
@@ -321,7 +318,7 @@ class KVTransferEngine:
             )
         xfer_dlist_dst = nixl.TransferDescriptorList(
             type=remote.memory_type,
-            descs=descs_dst,  # type: ignore
+            descs=descs_dst,
         )
 
         xfer_name = str(uuid4())
