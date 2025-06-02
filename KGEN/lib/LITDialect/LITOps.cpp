@@ -1931,7 +1931,9 @@ static ParseResult parseClosureInitOpValue(
     ArrayAttr &moveOrCopyCaptureSymbols, TypedAttr &captureOrigins,
     KGEN::ParamDeclArrayAttr &inputParams, KGEN::InlineLevelAttr &inlineLevel,
     Region &bodyRegion, SmallVectorImpl<Type> &captureTypes, Type &resultType,
-    KGEN::ParamDeclAttr &paramDecl) {
+    KGEN::ParamDeclAttr &paramDecl, TypedAttr &vtable) {
+  if (p.parseLSquare() || p.parseAttribute(vtable) || p.parseRSquare())
+    return failure();
   if (p.parseLParen())
     return failure();
 
@@ -2010,7 +2012,7 @@ static void printClosureInitOpValue(
     ArrayAttr moveOrCopyCaptureSymbols, TypedAttr captureOrigins,
     KGEN::ParamDeclArrayAttr inputParams, KGEN::InlineLevelAttr inlineLevel,
     Region &bodyRegion, TypeRange captureTypes, Type resultType,
-    KGEN::ParamDeclAttr paramDecl) {
+    KGEN::ParamDeclAttr paramDecl, TypedAttr vtable) {
   auto paramPrinter = [](AsmPrinter &p, FuncTypeGeneratorType calleeType,
                          ArrayRef<TypedAttr> params) {
     LIT::FnTypeGeneratorType fnTypeGen =
@@ -2019,6 +2021,10 @@ static void printClosureInitOpValue(
     p << " ";
     printSignatureValues(p, fnTypeGen.getValues(), fnTypeGen);
   };
+  p << "[";
+  if (failed(p.printAlias(vtable)))
+    p.printAttribute(vtable);
+  p << "]";
   p << "(";
   int i = 0;
   int j = 0;

@@ -642,7 +642,7 @@ lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<!String, imm Y> owned_in_mem, %x
   // CHECK-NEXT:    kgen.return %arg1 : index
   // CHECK-NEXT: } : (!kgen.pointer<struct<() memoryOnly>>, index, !kgen.pointer<struct<() memoryOnly>>)
   // CHECK-SAME: , !kgen.pointer<!kgen.closure<@make_closure, "foo" nonescaping>>
-  %impl = lit.closure.init(%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
+  %impl = lit.closure.init[#Impl1](%y[ref: imm Y], %x, %z[@String::@__copyinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
                                                   @String::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<!String, imm *[0,1]> read_mem, "self": !lit.ref<!String, mut *[0,0]> byref_result) -> !kgen.none>,
                                                   @String::@__del__ !lit.generator<[1]("self": !lit.ref<!String, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%y2: index) -> index {
    kgen.return %x : index
