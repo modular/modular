@@ -42,10 +42,6 @@ public:
   StructFieldOp getField() const;
   MBValue emitMBValueFromDefArgument(IREmitter &emitter) const override;
 
-  /// If this is a def argument shadow, resolve the underlying ref type for the
-  /// def argument.
-  RefType getMBValueTypeFromDefArgument() const override;
-
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
   CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
@@ -116,10 +112,6 @@ public:
   /// If this is a def argument shadow, resolve it to the incoming immutable
   /// borrowed value without forming a local copy.  Otherwise return null.
   MBValue emitMBValueFromDefArgument(IREmitter &emitter) const override;
-
-  /// If this is a def argument shadow, resolve the underlying ref type for the
-  /// def argument.
-  RefType getMBValueTypeFromDefArgument() const override;
 
   std::optional<size_t> getDefArgumentIndex() const override {
     return argIndex;

@@ -78,16 +78,6 @@ TypedAttr ASTType::extractOriginOf(SMLoc loc, TypedAttr value,
 /// analyze it to determine which origin it represents.  If it doesn't work,
 /// emit an error and return null.
 TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
-  // If this is a DLValue, it may be a def argument with an unresolved box.  We
-  // could materialize the box, but Python doesn't have origin_of, so we aren't
-  // in a compatibility situation: just collapse to immut ref.
-  if (auto dlVal = value.getIfDLValue())
-    if (MBValue resolved = dlVal->emitMBValueFromDefArgument(*this))
-      value = resolved;
-
-  if (value.isMValue()) // We can get the origin of an MValue.
-    return value.getMValueType().getOrigin();
-
   // Check for !lit.origin and Origin struct.
   if (auto pv = value.getIfPValue()) {
     if (TypedAttr result =
@@ -95,9 +85,15 @@ TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
       return result;
   }
 
-  emitError(expr->getLoc())
-      << "value of type " << value.getRValueType()
-      << " doesn't have a memory origin" << expr->getRange();
+  // origin_of doesn't drop rvalues into memory like call arguments do.
+  if (auto rv = value.getIfRValue()) {
+    emitError(expr->getLoc()) << "value of type " << rv.getRValueType()
+                              << " has no memory origin" << expr->getRange();
+    return {};
+  }
+
+  if (Value ref = emitRefValue({value, expr}, EC_Origin))
+    return cast<RefType>(ref.getType()).getOrigin();
   return {};
 }
 

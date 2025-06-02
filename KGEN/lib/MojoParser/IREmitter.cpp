@@ -56,7 +56,7 @@ const char *LIT::getContextMessage(ExprContext context) {
   case EC_CallArgValue:
     return " in call argument";
   case EC_CallRefArgValue:
-    return " in 'ref' call argument";
+    return " in 'ref' argument";
   case EC_CallCalleeValue:
     return " in callee";
   case EC_TypeParamValue:
@@ -923,16 +923,18 @@ Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
     // TODO: Support all the other computed LValues.
   }
 
+  // If this got resolved to an MValue then we're done.
+  if (value.ir.isMValue())
+    return value.ir.getMValueReference();
+
   // Otherwise we can't support other non-MValue's like borrowed registers or
   // other computed LValues.
-  if (!value.ir.isMValue()) {
-    emitError(value.expr->getLoc())
-        << "cannot bind a non-memory value to a 'ref' argument"
-        << getContextMessage(context);
-    return {};
-  }
-
-  return value.ir.getMValueReference();
+  auto diag = emitError(value.expr->getLoc(), "value");
+  if (auto cv = value.ir.getIfCValue())
+    diag << " of type " << cv.getRValueType();
+  diag << " doesn't have a memory origin" << getContextMessage(context)
+       << value.expr->getRange();
+  return {};
 }
 
 //===----------------------------------------------------------------------===//

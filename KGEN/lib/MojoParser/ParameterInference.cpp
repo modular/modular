@@ -950,12 +950,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       if (!argVal.getIfMLValue() && !argVal.getIfMBPValue() &&
           !valueRefType.isMutableKnown(false))
         valueRefType = valueRefType.getWithMutability(false);
-
-    } else {
-      // If this is a def argument box, infer the reference from the underlying
-      // def argument.
-      if (auto dlv = argVal.getIfDLValue())
-        valueRefType = dlv->getMBValueTypeFromDefArgument();
     }
 
     // If we are binding the reference to a value in memory directly, check for
