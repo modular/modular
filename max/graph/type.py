@@ -618,6 +618,14 @@ class DeviceRef:
         else:
             raise ValueError(f"Unsupported device type: {self.device_type}")
 
+    def is_cpu(self) -> bool:
+        """Returns true if the device is a CPU device."""
+        return self.device_type is DeviceKind.CPU
+
+    def is_gpu(self) -> bool:
+        """Returns true if the device is a GPU device."""
+        return self.device_type is DeviceKind.GPU
+
     @staticmethod
     def from_mlir(attr: m.DeviceRefAttr) -> DeviceRef:
         """Returns a device from mlir attribute"""
