@@ -494,10 +494,10 @@ lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
 // CHECK-LABEL: lit.fn @make_closure
   lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<@String, imm Y> owned_in_mem, %x: index, %z: !lit.ref<@String, imm Z> owned_in_mem) -> !kgen.none {
     // CHECK: lit.closure.init()(%arg0[y2]: index) -> index
-    // CHECK: } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, mut C2>
+    // CHECK: } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, imm C2>
     %1 = lit.closure.init()(%arg0[y2]: index) -> index {
       lit.end_fn
-    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, mut C2>
+    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" registerpassable>, imm C2>
     lit.end_fn
   }
 
