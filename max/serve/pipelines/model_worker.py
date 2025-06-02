@@ -123,39 +123,39 @@ class ModelWorker:
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
 
-        # Initialize ZeroMQ Context.
-        # This should only be done once per process.
-        zmq_ctx = zmq.Context(io_threads=2)
+            # Initialize ZeroMQ Context.
+            # This should only be done once per process.
+            zmq_ctx = zmq.Context(io_threads=2)
 
-        # create dispatcher client
-        dispatcher_client = dispatcher_factory.create_client(zmq_ctx)
+            # create dispatcher client
+            dispatcher_client = dispatcher_factory.create_client(zmq_ctx)
 
-        # Retrieve Scheduler.
-        scheduler = load_scheduler(
-            pc,
-            pipeline,
-            zmq_ctx,
-            settings,
-            pipeline_config,
-            dispatcher_client,
-        )
-
-        if scheduler.needs_dispatcher_client():
-            logger.debug(
-                "Scheduler needs dispatcher client, starting dispatcher client"
+            # Retrieve Scheduler.
+            scheduler = load_scheduler(
+                pc,
+                pipeline,
+                zmq_ctx,
+                settings,
+                pipeline_config,
+                dispatcher_client,
             )
-            dispatcher_client.start()
 
-        # Mark the start of the process, and run the scheduler.
-        pc.set_started()
-        logger.debug("Started model worker!")
+            if scheduler.needs_dispatcher_client():
+                logger.debug(
+                    "Scheduler needs dispatcher client, starting dispatcher client"
+                )
+                dispatcher_client.start()
 
-        scheduler.run()
+            # Mark the start of the process, and run the scheduler.
+            pc.set_started()
+            logger.debug("Started model worker!")
 
-        # Close the process.
-        pc.set_completed()
-        if dispatcher_client is not None:
-            dispatcher_client.stop()
+            scheduler.run()
+
+            # Close the process.
+            pc.set_completed()
+            if dispatcher_client is not None:
+                dispatcher_client.stop()
         logger.debug("Stopped model worker!")
 
     @staticmethod
