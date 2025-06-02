@@ -198,6 +198,13 @@ struct DeclRefNode final : public LValueCapableExprNode, Identifier {
   static bool classof(const ExprNode *node) { return node->kind == kDeclRef; }
   SMLoc getLoc() const override { return getIdentifierLoc(); }
   SourceRange getRange() const override { return getIdentifierRange(); }
+
+  /// This performs a lookup of the specified identifier in the specified lookup
+  /// scope, which might be different than the emitters current scope.
+  static ELVIITResult emitUnqualLookup(StringRef spelling, const ExprNode *expr,
+                                       ASTDecl &lookupScope, ValueDest &dest,
+                                       IREmitter &emitter, bool isSpeculative);
+
   ELVIITResult emitLCVIR(ValueDest &dest, IREmitter &emitter,
                          bool isSpeculative) const override;
   void print(mlir::raw_indented_ostream &os) const override;

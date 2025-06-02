@@ -173,11 +173,9 @@ fn test_type_patterns():
 # Test return slot optimization
 ##===----------------------------------------------------------------------===##
 
-
 # NOTE: Don't remove this argument, this was defeating return slot opzn.
 fn getUnmovable(a: Unmovable) -> Unmovable:
     return Unmovable()
-
 
 # This can only be codegen'd directly into x.
 # CHECK-LABEL: lit.fn @"testUnmovable
@@ -245,7 +243,6 @@ fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
 # in / not in
 ##===----------------------------------------------------------------------===##
 
-
 # CHECK-LABEL: lit.fn @"test_in
 fn test_in(a: String, b: String):
     # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
@@ -256,7 +253,6 @@ fn test_in(a: String, b: String):
     # CHECK-NEXT: [[RESB:%.*]] = lit.call {{.*}}__bool__{{.*}}([[RES]])
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])
     _ = a not in b
-
 
 ##===----------------------------------------------------------------------===##
 # String literals
@@ -307,8 +303,6 @@ struct TypeE:
     @implicit
     fn __init__(out self, other: TypeD):
         pass
-
-
 
 
 # CHECK-LABEL: lit.fn @"test_mergewith
