@@ -14,7 +14,6 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "KGEN/TransformUtils/Transforms.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -37,7 +36,7 @@ int main(int argc, char *argv[]) {
   KGENCommonCLOptions parser(clOptions);
 
   KGEN::registerKGENCommandLineOptions();
-  KGEN::registerStackReuseCommandLineOptions();
+  KGENPassCLOptions::registerOptions();
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr = Init::createContext(

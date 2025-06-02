@@ -52,6 +52,12 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
 
+#ifdef KGEN_ENABLE_PASS_OPTIONS
+#include "KGEN/ToolCommon/CLOptions.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Process.h"
+#endif // KGEN_ENABLE_PASS_OPTIONS
+
 using namespace M;
 using namespace KGEN;
 using namespace mlir;
@@ -595,6 +601,13 @@ static int build(const State &subcommandState) {
   if (std::optional<int> exitCode =
           parseArgs(state, args, sourceMgr, options, mlirCtx, target))
     return *exitCode;
+
+#ifdef KGEN_ENABLE_PASS_OPTIONS
+  const char *cKGENOptions = "KGEN_OPTIONS";
+  KGEN::KGENPassCLOptions::registerOptions();
+  llvm::cl::ParseCommandLineOptions(0, &cKGENOptions, "", nullptr,
+                                    cKGENOptions);
+#endif // KGEN_ENABLE_PASS_OPTIONS
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
