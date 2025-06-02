@@ -107,7 +107,7 @@ class TransferDescriptorList:
     def __init__(
         self,
         type: MemoryType,
-        descs: list[ArrayLike | tuple[int, int, int]],
+        descs: Sequence[ArrayLike | tuple[int, int, int]],
         sorted: bool = False,
     ) -> None:
         """
@@ -164,7 +164,7 @@ class RegistrationDescriptorList:
     def __init__(
         self,
         type: MemoryType,
-        descs: list[ArrayLike | tuple[int, int, int, str]],
+        descs: Sequence[ArrayLike | tuple[int, int, int, str]],
         sorted: bool = False,
     ) -> None:
         """
