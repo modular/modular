@@ -192,17 +192,28 @@ def test_speculative_decoding_no_rejection(
     assert context1.start_idx == 0
     assert context2.start_idx == 0
 
-    num_draft_tokens_generated, draft_tokens, draft_logits = (
+    num_steps, draft_tokens, draft_logits, model_inputs = (
         pipeline.generate_draft_tokens(context_batch, num_steps)
     )
 
+    # Merge draft tokens with target tokens
+    merged_tokens, merged_offsets = pipeline._ragged_token_merger(
+        model_inputs.tokens,  # type: ignore
+        model_inputs.input_row_offsets,  # type: ignore
+        draft_tokens,
+    )
+
+    assert isinstance(merged_tokens, Tensor)
+    assert isinstance(merged_offsets, Tensor)
     # Verify draft tokens with target model
     first_rejected_tokens, sampled_target_tokens = (
         pipeline.verify_draft_tokens_with_target_model(
             context_batch,
-            num_draft_tokens_generated,
+            num_steps,
             draft_tokens,
             draft_logits,
+            merged_tokens,
+            merged_offsets,
         )
     )
 
@@ -211,25 +222,89 @@ def test_speculative_decoding_no_rejection(
 
     pipeline.update_contexts(
         context_batch,
-        first_rejected_tokens,
+        first_rejected_tokens.to_numpy(),
         sampled_target_tokens.to_numpy(),
-        num_draft_tokens_generated,
+        draft_tokens.to_numpy(),
+        num_steps,
     )
 
     context1, context2 = context_batch
 
-    assert context1.start_idx == (
-        len(context1.prompt_tokens) + num_draft_tokens_generated
-    )
-    assert context2.start_idx == (
-        len(context2.prompt_tokens) + num_draft_tokens_generated
+    # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
+    assert context1.start_idx == (len(context1.prompt_tokens) + num_steps - 1)
+    assert context2.start_idx == (len(context2.prompt_tokens) + num_steps - 1)
+
+    assert np.all(context1.generated_tokens[:-1] == draft_tokens.to_numpy()[0])
+    assert np.all(context2.generated_tokens[:-1] == draft_tokens.to_numpy()[1])
+
+
+def test_speculative_decoding_partial_rejection(
+    setup_speculative_decoding_pipeline,
+):
+    data: dict[str, Any] = setup_speculative_decoding_pipeline
+    pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
+    context_batch: list[TextContext] = data["context_batch"]
+    context1: TextContext = data["context1"]
+    context2: TextContext = data["context2"]
+    num_steps: int = data["num_steps"]
+
+    assert context1.start_idx == 0
+    assert context2.start_idx == 0
+
+    num_steps, draft_tokens, draft_logits, model_inputs = (
+        pipeline.generate_draft_tokens(context_batch, num_steps)
     )
 
-    assert context1._draft_offset == -1
-    assert context2._draft_offset == -1
+    # Merge draft tokens with target tokens
+    merged_tokens, merged_offsets = pipeline._ragged_token_merger(
+        model_inputs.tokens,  # type: ignore
+        model_inputs.input_row_offsets,  # type: ignore
+        draft_tokens,
+    )
 
-    assert np.all(context1.generated_tokens[:-1] == draft_tokens[0])
-    assert np.all(context2.generated_tokens[:-1] == draft_tokens[1])
+    # For the first sequence we'll manually change the tokens and logits so that only part of that sequence is accepted
+
+    draft_logits_host = np.copy(draft_logits.to_numpy())
+    draft_logits_host[0, num_steps // 2 :] = float("inf")
+    draft_logits = Tensor.from_numpy(draft_logits_host).to(draft_logits.device)
+
+    assert isinstance(merged_tokens, Tensor)
+    assert isinstance(merged_offsets, Tensor)
+    # Verify draft tokens with target model
+    first_rejected_tokens, sampled_target_tokens = (
+        pipeline.verify_draft_tokens_with_target_model(
+            context_batch,
+            num_steps,
+            draft_tokens,
+            draft_logits,
+            merged_tokens,
+            merged_offsets,
+        )
+    )
+    first_rejected_tokens_host = first_rejected_tokens.to_numpy()
+    assert first_rejected_tokens_host[0] == num_steps // 2
+    assert first_rejected_tokens_host[1] == num_steps
+
+    draft_tokens_host = draft_tokens.to_numpy()
+
+    pipeline.update_contexts(
+        context_batch,
+        first_rejected_tokens_host,
+        sampled_target_tokens.to_numpy(),
+        draft_tokens_host,
+        num_steps,
+    )
+
+    context1, context2 = context_batch
+
+    assert context1.start_idx == (len(context1.prompt_tokens) + num_steps // 2)
+    # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
+    assert context2.start_idx == (len(context2.prompt_tokens) + num_steps - 1)
+
+    assert np.all(
+        context1.generated_tokens[:-1] == draft_tokens_host[0, : num_steps // 2]
+    )
+    assert np.all(context2.generated_tokens[:-1] == draft_tokens_host[1])
 
 
 def test_speculative_decoding_multiple_token_without_rejection(
@@ -246,9 +321,6 @@ def test_speculative_decoding_multiple_token_without_rejection(
     context2_len = context2.current_length
     for _ in range(5):
         pipeline.next_token(pipeline_request, num_steps)
-        # Nothing is rejected so the draft is 1 behind the target
-        assert context1._draft_offset == -1
-        assert context2._draft_offset == -1
 
         # num_steps generated from draft and +1 from the target
         assert context1.current_length == context1_len + (num_steps + 1)
@@ -278,23 +350,24 @@ def test_speculative_decoding_context_update(
         ]
     )
     assert draft_tokens.shape == (2, num_steps)
-    for i, ctx in enumerate(context_batch):
-        for j in range(num_steps):
-            ctx.jump_ahead(new_token=int(draft_tokens[i][j]), is_eos=False)
 
     reject_token1 = 4
     reject_token2 = 7
-    first_rejected_tokens = Tensor.from_numpy(
-        np.array([[reject_token1], [reject_token2]], dtype=np.int32)
+    first_rejected_tokens = np.array(
+        [[reject_token1], [reject_token2]], dtype=np.int32
     )
-    sampled_target_tokens_host = np.array([[88], [99]], dtype=np.int32)
-    num_draft_tokens_generated = 10
+    sampled_target_tokens = np.array([[88], [99]], dtype=np.int32)
+
+    # The index bump hack from generate_draft_tokens()
+    for i, context in enumerate(context_batch):
+        context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
 
     pipeline.update_contexts(
         context_batch,
         first_rejected_tokens,
-        sampled_target_tokens_host,
-        num_draft_tokens_generated,
+        sampled_target_tokens,
+        draft_tokens,
+        num_steps,
     )
 
     # length of prompt + length of non rejected draft tokens + 1 for the new token
@@ -319,7 +392,7 @@ def test_speculative_decoding_context_update(
             (
                 context1.prompt_tokens,
                 draft_tokens[0, :reject_token1],
-                sampled_target_tokens_host[0],
+                sampled_target_tokens[0],
             )
         )
     )
@@ -330,7 +403,7 @@ def test_speculative_decoding_context_update(
             (
                 context2.prompt_tokens,
                 draft_tokens[1, :reject_token2],
-                sampled_target_tokens_host[1],
+                sampled_target_tokens[1],
             )
         )
     )
@@ -351,12 +424,12 @@ def test_speculative_decoding_context_update(
     assert np.all(
         response_tokens1
         == np.concatenate(
-            (draft_tokens[0, :reject_token1], sampled_target_tokens_host[0])
+            (draft_tokens[0, :reject_token1], sampled_target_tokens[0])
         )
     )
     assert np.all(
         response_tokens2
         == np.concatenate(
-            (draft_tokens[1, :reject_token2], sampled_target_tokens_host[1])
+            (draft_tokens[1, :reject_token2], sampled_target_tokens[1])
         )
     )
