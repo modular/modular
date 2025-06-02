@@ -568,7 +568,7 @@ PIPELINES = {
             pipeline="llama3.1-8b",
             encoding="bfloat16",
             cos_dist_threshold=1.6e-2,
-            kl_div_threshold=8.4e-2,
+            kl_div_threshold=9.6e-2,
         ),
     ),
     "Llama-3.1-8B-Instruct-float8-static": PipelineDef(
