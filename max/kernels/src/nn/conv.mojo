@@ -17,6 +17,7 @@ from math import align_down, ceildiv
 from sys.info import alignof, simdwidthof
 
 from algorithm import (
+    elementwise,
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
@@ -55,7 +56,8 @@ from gpu._cudnn.infer import (
     cudnnTensorFormat_t,
     cudnnTensorStruct,
 )
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host.device_context import _DeviceBufferPtr
 from gpu.id import block_dim, block_idx, thread_idx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
@@ -3094,16 +3096,13 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 
 fn conv_cudnn[
-    input_dim: DimList,
-    filter_dim: DimList,
-    output_dim: DimList,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
 ](
-    input: UnsafePointer[Scalar[input_type]],
-    filter: UnsafePointer[Scalar[filter_type]],
-    output: UnsafePointer[Scalar[output_type]],
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, *_, **_],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, *_, **_],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, *_, **_],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
@@ -3120,10 +3119,10 @@ fn conv_cudnn[
             input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            input_dim.get[0](),
-            input_dim.get[3](),
-            input_dim.get[1](),
-            input_dim.get[2](),
+            input.dim[0](),
+            input.dim[3](),
+            input.dim[1](),
+            input.dim[2](),
         )
     )
 
@@ -3136,10 +3135,10 @@ fn conv_cudnn[
             filter_desc,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-            filter_dim.get[0](),
-            filter_dim.get[1](),
-            filter_dim.get[2](),
-            filter_dim.get[3](),
+            filter.dim[0](),
+            filter.dim[1](),
+            filter.dim[2](),
+            filter.dim[3](),
         )
     )
 
@@ -3170,10 +3169,10 @@ fn conv_cudnn[
             output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            output_dim.get[0](),
-            output_dim.get[3](),
-            output_dim.get[1](),
-            output_dim.get[2](),
+            output.dim[0](),
+            output.dim[3](),
+            output.dim[1](),
+            output.dim[2](),
         )
     )
 
@@ -3185,16 +3184,16 @@ fn conv_cudnn[
             cudnn_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
             input_desc,
-            input.bitcast[NoneType](),
+            rebind[UnsafePointer[NoneType]](input.data.bitcast[NoneType]()),
             filter_desc,
-            filter.bitcast[NoneType](),
+            rebind[UnsafePointer[NoneType]](filter.data.bitcast[NoneType]()),
             conv_desc,
             cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
             UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
             0,
             UnsafePointer(to=beta).bitcast[NoneType](),
             output_desc,
-            output.bitcast[NoneType](),
+            rebind[UnsafePointer[NoneType]](output.data.bitcast[NoneType]()),
         )
     )
 
@@ -3230,8 +3229,6 @@ fn conv_gpu[
 ) raises:
     alias block_size = 16
 
-    constrained[not filter_is_fcrs, "Filter format FCRS is not supported"]()
-
     alias conv_gpu_n = conv2d_gpu_naive_nhwc_rscf[
         input_dim,
         filter_dim,
@@ -3260,19 +3257,78 @@ fn conv_gpu[
 
     @parameter
     if input_rank == 4:
-        var grid_dim_x = ceildiv(
-            output.dim[2](), block_size
-        )  # w / block size for 2d
-        ctx.enqueue_function[conv_gpu_n](
-            input,
-            filter,
-            output,
-            stride,
-            dilation,
-            padding,
-            grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-            block_dim=(block_size, block_size),
-        )
+
+        @parameter
+        if filter_is_fcrs:
+
+            @parameter
+            if maybe_epilogue_func:
+                alias epilogue = maybe_epilogue_func.value()
+                var output_tmp_data = ctx.enqueue_create_buffer[output_type](
+                    output.num_elements()
+                )
+
+                var output_tmp = output
+                output_tmp.data = output_tmp_data.unsafe_ptr()
+
+                conv_cudnn[input_type, filter_type, output_type,](
+                    rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+                    rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+                    rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](
+                        output_tmp
+                    ),
+                    rebind[IndexList[2]](stride),
+                    rebind[IndexList[2]](dilation),
+                    rebind[IndexList[2]](padding),
+                    num_groups,
+                    ctx,
+                )
+
+                @parameter
+                @__copy_capture(output_tmp)
+                @always_inline
+                fn epilogue_wrapper[
+                    _width: Int, _rank: Int
+                ](coords: IndexList[_rank]):
+                    alias alignment = alignof[SIMD[output_type, _width]]()
+                    vec = output_tmp.load[width=_width, alignment=alignment](
+                        rebind[IndexList[4]](coords)
+                    )
+                    epilogue(coords, vec)
+
+                elementwise[
+                    epilogue_wrapper, simdwidthof[output_type](), target="gpu"
+                ](output.dynamic_shape, ctx)
+
+                _ = output_tmp_data^
+
+            else:
+                conv_cudnn[input_type, filter_type, output_type,](
+                    rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+                    rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+                    rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](output),
+                    rebind[IndexList[2]](stride),
+                    rebind[IndexList[2]](dilation),
+                    rebind[IndexList[2]](padding),
+                    num_groups,
+                    ctx,
+                )
+
+        else:
+            var grid_dim_x = ceildiv(
+                output.dim[2](), block_size
+            )  # w / block size for 2d
+            ctx.enqueue_function[conv_gpu_n](
+                input,
+                filter,
+                output,
+                stride,
+                dilation,
+                padding,
+                grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+                block_dim=(block_size, block_size),
+            )
+
     elif input_rank == 5:
         var grid_dim_x = ceildiv(
             output.dim[2]() * output.dim[3](), block_size

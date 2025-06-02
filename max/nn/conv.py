@@ -14,8 +14,10 @@
 from dataclasses import dataclass
 from typing import Optional, Union
 
+import max.driver as md
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, Weight, ops
+from max.graph.type import FilterLayout
 
 from .layer import Layer, Module
 
@@ -273,17 +275,29 @@ class Conv1D(Module):
             new_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
         """
         weight: TensorValue = self.filter
+
+        is_nvidia_gpu = (
+            isinstance(self.device, DeviceRef)
+            and self.device.is_gpu()
+            and md.accelerator_api() == "cuda"
+        )
+
         if self.permute:
-            weight = ops.permute(
-                self.filter, [2, 1, 0]
-            )  # [out_channels, in_channels / num_groups, kernel_size]
             x = ops.permute(x, [0, 2, 1])  # [batch_size, length, in_channels]
+
+            # GPU supports FCRS but CPU doesn't. On CPU, permute from
+            # FCS to SCF, then add dummy dim to become RSCF.
+            if not is_nvidia_gpu:
+                weight = ops.unsqueeze(ops.permute(weight, [2, 1, 0]), 0)
+            # on GPU, unsqueeze FCS to FCRS
+            else:
+                weight = ops.unsqueeze(weight, 2)
+        # No permute, filer is SCF and unsqueeze to RSCF.
+        else:
+            weight = ops.unsqueeze(weight, 0)
 
         # Reshape for Conv2DV1
         x = ops.unsqueeze(x, 1)  # [batch_size, height=1, length, in_channels]
-        weight = ops.unsqueeze(
-            weight, 0
-        )  # [height=1, kernel_size, in_channels, out_channels]
 
         output = ops.conv2d(
             x,
@@ -293,6 +307,9 @@ class Conv1D(Module):
             (0, 0, self.padding, self.padding),
             self.num_groups,
             self.bias,
+            filter_layout=FilterLayout.FCRS
+            if (self.permute and is_nvidia_gpu)
+            else FilterLayout.RSCF,
         )
 
         # Reshape back from Conv2DV1
