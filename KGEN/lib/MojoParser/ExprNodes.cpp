@@ -679,11 +679,21 @@ static bool isImmutableValuesInOtherScope(const LookupResult &lookup,
   return true;
 }
 
-/// Emit IR for an unqualified declaration reference "x" looked up in current
-/// context.
-auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
-                            bool isSpeculative) const -> ELVIITResult {
-  ASTDecl &container = emitter.declScope;
+ExprNode::ELVIITResult DeclRefNode::emitLCVIR(ValueDest &dest,
+                                              IREmitter &emitter,
+                                              bool isSpeculative) const {
+  return emitUnqualLookup(spelling, this, emitter.declScope, dest, emitter,
+                          isSpeculative);
+}
+
+/// Emit IR for an unqualified declaration reference "x" looked up in specified
+/// lookup scope.  This is refactored out from emitLCVIR because we use it for
+/// qualified lookup "x.y" when "x" is a package.
+ExprNode::ELVIITResult
+DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
+                              ASTDecl &lookupScope, ValueDest &dest,
+                              IREmitter &emitter, bool isSpeculative) {
+  auto loc = expr->getLoc();
 
   // If this decl is part of a pattern that is wrapped in a var or ref, then
   // we need to emit a VarDeclOp for it in this scope.
@@ -691,19 +701,20 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // Always return this node back on a speculative lookup, because we don't
     // have the contextual type available yet.
     if (isSpeculative)
-      return this;
+      return expr;
+
     // Fail in cases like "var x = []" which is ambiguous.
     ASTType varType = dest.getIfLValueInitializerType();
     if (!varType) {
-      emitter.emitError(getLoc(), "cannot declare '")
+      emitter.emitError(loc, "cannot declare '")
           << spelling << "' without a contextual type from its initializer"
-          << getRange();
+          << expr->getRange();
       return {};
     }
     // We need to be in a function body to declare a variable.
-    if (!emitter.builder || !container.getNearestDeclOfType<FnOp>()) {
-      emitter.emitError(getLoc(), "cannot declare '")
-          << spelling << "' in this context" << getRange();
+    if (!emitter.builder || !lookupScope.getNearestDeclOfType<FnOp>()) {
+      emitter.emitError(loc, "cannot declare '")
+          << spelling << "' in this context" << expr->getRange();
       return {};
     }
     // This is either a var or ref pattern binding.
@@ -715,23 +726,23 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     if (isRef)
       varType = RefType::getAnyOrigin(varType, true);
 
-    VarDeclOp varDecl =
-        emitter.emitVarDecl(spelling, varType, getLocation(emitter), declKind);
+    VarDeclOp varDecl = emitter.emitVarDecl(
+        spelling, varType, expr->getLocation(emitter), declKind);
     ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
-        DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
-    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, getLoc());
+        DeclIRValue(varDecl), varDecl.getNameAttr(), loc, &lookupScope);
+    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, loc);
 
     CValue result = isRef ? CValue(RLValue(varDecl)) : MLValue(varDecl);
-    return emitter.emitCResult(result, this, dest);
+    return emitter.emitCResult(result, expr, dest);
   }
 
   // Notify the listener of a normal decl reference lookup.
-  emitter.shared.notifyListenerOnMemberLookup(container, getLoc(),
+  emitter.shared.notifyListenerOnMemberLookup(lookupScope, loc,
                                               /*searchParentScopes=*/true);
 
-  // Perform a lookup of the specified decl in the current container.
+  // Perform a lookup of the specified decl in the current lookupScope.
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-      spelling, getLoc(), container, /*searchParentScopes=*/true);
+      spelling, loc, lookupScope, /*searchParentScopes=*/true);
 
   // If we're in a function and have a contextual type, then this may be an
   // implicit declaration of a variable.  However, name lookup could find
@@ -748,7 +759,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     if (dest.getIfLValueInitializerType())
       lookup = LookupResult::getFailure({});
     else if (isSpeculative)
-      return this;
+      return expr;
   }
 
   // If that lookup failed, but we can synthesize a variable declaration in this
@@ -770,11 +781,11 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // Add implicitly declared variable to the name table OF THE FUNCTION, so
     // subsequent uses find this one.  We don't want implicit declarations in
     // different subscopes to get different implicit declarations.
-    ASTDecl *scopeToInsert = container.getNearestDeclOfType<FnOp>();
+    ASTDecl *scopeToInsert = lookupScope.getNearestDeclOfType<FnOp>();
 
     // Get the raw FileLineColLoc, and fuse with the debug scope of the
     // container if it exists.
-    Location varDeclLoc = emitter.shared.diags.translateLocation(getLoc());
+    Location varDeclLoc = emitter.shared.diags.translateLocation(loc);
     if (DebugInfo::DISubprogramAttr varDeclSubprogram = DebugInfo::extractScope(
             cast<mlir::FunctionOpInterface>(scopeToInsert))) {
       varDeclLoc = mlir::FusedLoc::get(emitter.getContext(), {varDeclLoc},
@@ -786,10 +797,10 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
                                    VarDeclKind::Implicit);
 
     ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
-        DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), scopeToInsert);
-    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, getLoc());
+        DeclIRValue(varDecl), varDecl.getNameAttr(), loc, scopeToInsert);
+    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, loc);
 
-    return emitter.emitCResult(MLValue(varDecl), this, dest);
+    return emitter.emitCResult(MLValue(varDecl), expr, dest);
   }
 
   ArrayRef<ASTDecl *> decls = lookup.getIfSuccess();
@@ -800,15 +811,15 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // If this was a speculative LValue lookup, don't fail, just wait for the
     // caller to try again with a type so we can synthesize a decl.
     if (isSpeculative)
-      return this;
+      return expr;
 
     ArrayRef<ASTDecl *> failureDecls = lookup.getIfFailure();
     if (!failureDecls.empty()) {
       // Reject unqualified struct field references.
       if (auto fieldOp = dyn_cast<StructFieldOp>(failureDecls[0])) {
-        emitter.emitError(getLoc(), "cannot access instance field '")
-            << spelling << "' directly; did you mean 'self.'?" << getRange()
-            << FixIt::insertBeforeToken(getLoc(), "self.");
+        emitter.emitError(loc, "cannot access instance field '")
+            << spelling << "' directly; did you mean 'self.'?"
+            << expr->getRange() << FixIt::insertBeforeToken(loc, "self.");
         return {};
         // Rejected unqualified struct method references.
       } else if (isa<StructDeclOp>(*failureDecls[0]->getParentDecl())) {
@@ -819,34 +830,34 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
             replacement = "Self.";
 
         // References /from/ static methods can only use capital Self.
-        if (auto curFn = dyn_cast<FnOp>(container))
+        if (auto curFn = dyn_cast<FnOp>(lookupScope))
           if (curFn.getIsStatic())
             replacement = "Self.";
 
-        emitter.emitError(getLoc(), "cannot access method '")
+        emitter.emitError(loc, "cannot access method '")
             << spelling << "' directly; did you mean '" << replacement << "'?"
-            << getRange() << FixIt::insertBeforeToken(getLoc(), replacement);
+            << expr->getRange() << FixIt::insertBeforeToken(loc, replacement);
         return {};
       }
     }
 
-    auto diag = emitter.emitError(getLoc()) << getRange();
-    if (auto structDecl = dyn_cast<StructDeclOp>(container))
+    auto diag = emitter.emitError(loc) << expr->getRange();
+    if (auto structDecl = dyn_cast<StructDeclOp>(lookupScope))
       diag << structDecl.getNameAttr() << " has no '" << spelling << "' member";
     else
       diag << "use of unknown declaration '" << spelling << "'";
     return {};
   }
 
-  emitter.shared.notifyListenerOnRef(decls, spelling, this);
+  emitter.shared.notifyListenerOnRef(decls, spelling, expr);
 
   // Functions form an address, and may be overloaded.
   if (auto firstCandidate = dyn_cast<FnOp>(decls[0])) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
-        spelling, decls, ParamBindings(emitter.getDeclScope()), this,
+        spelling, decls, ParamBindings(emitter.getDeclScope()), expr,
         CallSyntax::kDirectCall);
-    return emitter.emitResult(result, this, dest);
+    return emitter.emitResult(result, expr, dest);
   }
 
   assert(decls.size() == 1 && "Only functions may be overloaded");
@@ -857,8 +868,8 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // handled when overload sets are resolved to a deprecated entry.
   if (auto declItf = dyn_cast<ASTDeclInterface>(decl)) {
     if (StringAttr warning = declItf.getDeprecationWarningAttr()) {
-      auto diag = emitter.emitWarning(getLoc(), warning.getValue())
-                  << getRange();
+      auto diag = emitter.emitWarning(loc, warning.getValue())
+                  << expr->getRange();
       diag.attachNote(decl.getLoc())
           << "'" << declItf.getDeclName().getValue() << "' declared here";
     }
@@ -866,26 +877,26 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // Aliases form a PValue.
   if (auto param = dyn_cast<AliasDeclOp>(decl)) {
-    PValue result = resolveAliasReference(param, spelling, /*bindings=*/{},
-                                          getLoc(), emitter);
-    return emitter.emitCResult(result.get(), this, dest);
+    PValue result =
+        resolveAliasReference(param, spelling, /*bindings=*/{}, loc, emitter);
+    return emitter.emitCResult(result.get(), expr, dest);
   }
 
   // If this is a type declaration, return it as a type.
   if (auto structOp = dyn_cast<StructDeclOp>(decl))
-    return emitter.emitCResult(structOp.bindReference(), this, dest);
+    return emitter.emitCResult(structOp.bindReference(), expr, dest);
   if (auto traitOp = dyn_cast<TraitDeclOp>(decl))
-    return emitter.emitCResult(traitOp.bindReference(), this, dest);
+    return emitter.emitCResult(traitOp.bindReference(), expr, dest);
 
   // If this is a module or package declaration, form a module reference.
   if (isa<FileModuleOp, PackageOp>(decl)) {
     PValue result(ModuleAttr::get(StructMetaType::get(LIT::StructType::get(
         decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext())))));
-    return emitter.emitCResult(result, this, dest);
+    return emitter.emitCResult(result, expr, dest);
   }
 
   if (auto pvalue = decl.getIfIRValue().getIfPValue())
-    return emitter.emitCResult(pvalue, this, dest);
+    return emitter.emitCResult(pvalue, expr, dest);
 
   // Narrow the decl to a CValue.
   CValue value;
@@ -896,27 +907,28 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       value = MLValue(var);
     } else {
       if (!emitter.builder) {
-        emitter.emitErrorForDynamicValueInParameter(this);
+        emitter.emitErrorForDynamicValueInParameter(expr);
         return {};
       }
-      auto ref = emitter.builder->create<RefLoadOp>(getLocation(emitter), var);
+      auto ref =
+          emitter.builder->create<RefLoadOp>(expr->getLocation(emitter), var);
       value = CValue::getMValueForRef(ref);
     }
   } else if (auto globalOp = dyn_cast<GlobalVarDeclOp>(decl)) {
     // If this is a parameter context then we cannot return a dynamic field.
     if (!emitter.builder) {
-      emitter.emitErrorForDynamicValueInParameter(this);
+      emitter.emitErrorForDynamicValueInParameter(expr);
       return {};
     }
     // Return a mutable value only if the global variable is mutable.
-    auto ref =
-        emitter.builder->create<GlobalVarRefOp>(getLocation(emitter), globalOp);
+    auto ref = emitter.builder->create<GlobalVarRefOp>(
+        expr->getLocation(emitter), globalOp);
     value = MLValue(ref);
   } else if (auto cv = decl.getIfIRValue()) {
     value = cv;
   } else {
-    emitter.emitError(getLoc(), "use of declaration '")
-        << spelling << "' as a value isn't supported yet" << getRange();
+    emitter.emitError(loc, "use of declaration '")
+        << spelling << "' as a value isn't supported yet" << expr->getRange();
     return {};
   }
 
@@ -930,7 +942,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // Find the nearest escaping closure, if there is one.
   ASTDecl *nearestEscapingFnOrNone =
-      declRef ? container.getNearestDeclOfType<FnOp>() : nullptr;
+      declRef ? lookupScope.getNearestDeclOfType<FnOp>() : nullptr;
   if (nearestEscapingFnOrNone) {
     assert(declRef && "can only reach here if single decl known");
     auto needsCapture = [&]() -> bool {
@@ -950,7 +962,7 @@ auto DeclRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
   }
 
-  return emitter.emitCResult(value, this, dest);
+  return emitter.emitCResult(value, expr, dest);
 }
 
 /// This uses the MLIR parser to turn the specified MLIR type name into an MLIR
@@ -1654,20 +1666,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   // Handle module or package references.
   if (isa<PackageOp, FileModuleOp>(*typeDecl)) {
     // Look up the unqualified identifier in the right scope.
-    //
-    // declRef is allocated persistently because when it refers to a function
-    // it gets captured in the overloadSet returned by declRef->emitIR(), and,
-    // thus, cannot be on the stack.
-    DeclRefNode *declRef = shared.allocPersistent<DeclRefNode>(spelling);
-    if (emitter.builder) {
-      IREmitter moduleEmitter(*typeDecl, *emitter.builder,
-                              emitter.varDeclCursor);
-
-      return declRef->emitIR(dest, moduleEmitter);
-    }
-
-    IREmitter moduleEmitter(*typeDecl, emitter.paramContext);
-    return declRef->emitIR(dest, moduleEmitter);
+    return DeclRefNode::emitUnqualLookup(spelling, this, *typeDecl, dest,
+                                         emitter, false);
   }
 
   if (!isa<StructDeclOp, TraitDeclOp>(*typeDecl) &&
