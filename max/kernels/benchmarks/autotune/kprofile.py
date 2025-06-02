@@ -184,7 +184,7 @@ class KbenchPKL:
         return f
 
 
-def df_round_floats(df, prec=2):
+def df_round_floats(df, prec=3):
     "Round values in dataframe to specified precision"
     for c in df.columns:
         if df.dtypes[c] in (np.float64, np.float32):
@@ -242,7 +242,7 @@ def profile_results(
         print(LINE)
 
     if ratio:
-        tune_df = df_round_floats(tune_df, prec=2)
+        tune_df = df_round_floats(tune_df, prec=3)
         df_to_console_table(
             tune_df,
             col_style={"ratio": "bold green"},
@@ -258,7 +258,7 @@ def profile_results(
     if verbose:
         # TODO: select based on pivots and cleanup the view
         print(LINE)
-        merged_df = df_round_floats(merged_df, prec=2)
+        merged_df = df_round_floats(merged_df, prec=3)
         df_to_console_table(merged_df)
 
     print("[Best Spec]\n")
@@ -320,15 +320,19 @@ def diff_baseline(
             print(LINE)
 
         base_metric = tune_df_base.iloc[0][metric]
-        prec = 2
+        prec = 3
 
         num_rows = min(len(tune_df[:head]), len(tune_df))
         for j in range(num_rows):
             current_metric = tune_df.iloc[j][metric]
+            # TODO: fix the following and check the accuracy issues.
             metric_ratio = round(current_metric / base_metric, prec)
-            metric_speedup = round(1 / metric_ratio, prec)
+            metric_speedup = round(base_metric / current_metric, prec)
             print(
                 f"[{i}][shape:{shape}][metric:{metric}]: {metric_ratio:.{prec}f} (current/baseline = {current_metric:.{prec}f} / {base_metric:.{prec}f})"
+            )
+            print(
+                f"[{i}][shape:{shape}][metric:{metric}]: {metric_speedup:.{prec}f} X (speedup: baseline/current = {base_metric:.{prec}f}) / {current_metric:.{prec}f}"
             )
             d = {
                 "shape": [shape],
