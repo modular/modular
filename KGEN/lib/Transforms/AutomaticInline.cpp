@@ -13,6 +13,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "KGEN/TransformUtils/InliningUtils.h"
@@ -516,6 +517,8 @@ struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
 } // namespace
 
 uint64_t AutomaticInline::getInlineThreshold() {
+  if (auto clOpt = KGENPassCLOptions::automaticInlineThreshold())
+    return *clOpt;
   // TODO: add better heuristics
   switch (optimizationLevel) {
   case 0:

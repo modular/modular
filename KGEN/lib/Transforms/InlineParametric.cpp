@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "KGEN/TransformUtils/InliningUtils.h"
@@ -536,6 +537,8 @@ bool ParametricInliningGraph::prepareForInlining(
 }
 
 uint64_t ParametricInliningGraph::getInlineThreshold() const {
+  if (auto clOpt = KGENPassCLOptions::parametricInlineThreshold())
+    return *clOpt;
   // TODO: add better heuristics
   switch (optimizationLevel) {
   case 0:

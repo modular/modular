@@ -8,35 +8,19 @@
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/TransformUtils/ControlFlowUtils.h"
-#include "KGEN/TransformUtils/Transforms.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/SetVector.h"
-#include "llvm/Support/ManagedStatic.h"
 
 #define KGEN_DEBUG_TYPE "stack-reuse"
 
 using namespace M;
 using namespace KGEN;
 using namespace POP;
-
-struct StackReuseOptions {
-#if !MODULAR_PRODUCTION
-  llvm::cl::opt<size_t> promoteToGlobalThreshold{
-      "kgen-stack-reuse-promote-to-global-threshold",
-      llvm::cl::desc("Threshold in byte above which a read-only stack "
-                     "allocations are promoted to global"),
-      llvm::cl::init(1024)};
-#else
-  size_t promoteToGlobalThreshold = 1024; // in bytes
-#endif // MODULAR_PRODUCTION
-};
-static llvm::ManagedStatic<StackReuseOptions> clOptions;
-
-void M::KGEN::registerStackReuseCommandLineOptions() { *clOptions; }
 
 //===----------------------------------------------------------------------===//
 // Pass Definition
@@ -603,7 +587,8 @@ static void optimizeReadOnlyMemory(Region &funcBody, PassInfo &pass) {
     // Don't try to optimize the memory if constant's size is smaller than
     // expected threshold.
     if (!constantSize ||
-        (size_t)*constantSize < clOptions->promoteToGlobalThreshold) {
+        (size_t)*constantSize <
+            KGENPassCLOptions::stackReusePromoteToGlobalThreshold()) {
       KGEN_DEBUG(0, {
         llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
         constant.print(llvm::dbgs());

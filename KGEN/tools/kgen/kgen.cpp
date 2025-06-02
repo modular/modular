@@ -623,6 +623,7 @@ int main(int argc, char **argv) {
   KGEN::registerDefaultKGENPasses();
   registerPassManagerCLOptions();
   KGEN::initializeDebugOptions();
+  KGEN::KGENPassCLOptions::registerOptions();
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
   // Set up the input file(s).

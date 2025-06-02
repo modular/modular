@@ -162,3 +162,6 @@ bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
   }
   return o.error("unsupported option '" + argName + "'");
 }
+
+llvm::ManagedStatic<KGENPassCLOptions::PassOptions>
+    KGENPassCLOptions::passOptions;

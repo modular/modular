@@ -18,7 +18,6 @@
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "KGEN/TransformUtils/Transforms.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -115,7 +114,7 @@ int main(int argc, char **argv) {
 
   KGEN::registerKGENCommandLineOptions();
   KGEN::initializeDebugOptions();
-  KGEN::registerStackReuseCommandLineOptions();
+  KGEN::KGENPassCLOptions::registerOptions();
 
   // Register and parse command line options.
   std::string inputFilename, outputFilename;
