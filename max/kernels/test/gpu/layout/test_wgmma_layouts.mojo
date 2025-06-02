@@ -120,9 +120,11 @@ fn wgmma_tf32_tf32_f32_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
     th_local_res[0][0] = c_reg[0]
     th_local_res[0][1] = c_reg[1]
     th_local_res[1][0] = c_reg[2]
@@ -426,9 +428,11 @@ fn wgmma_bf16_bf16_f32_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
     th_local_res[0][0] = c_reg[0]
     th_local_res[0][1] = c_reg[1]
     th_local_res[1][0] = c_reg[2]
@@ -724,9 +728,11 @@ fn wgmma_f16_f16_f32_kernel[
     # Each warp updates a 16x8 tile, and within each tile,
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
     th_local_res[0][0] = c_reg[0]
     th_local_res[0][1] = c_reg[1]
     th_local_res[1][0] = c_reg[2]
@@ -1023,9 +1029,11 @@ fn wgmma_f16_f16_f16_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     c0 = bitcast[DType.float16, 4](c_reg)
-    var th_local_res = result_c.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
+    var th_local_res = (
+        result_c.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
     th_local_res[0][0] = c0[0]
     th_local_res[0][1] = c0[1]
     th_local_res[1][0] = c0[2]
@@ -1328,9 +1336,11 @@ fn wgmma_kernel[
 
     var warp_id = thread_idx.x // 32
     var lan_id = thread_idx.x % 32
-    var th_local_res = c_gmem.tile[16, 8](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lan_id)
+    var th_local_res = (
+        c_gmem.tile[16, 8](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lan_id)
+    )
     th_local_res[0][0] = c_reg[0].cast[c_gmem.dtype]()
     th_local_res[0][1] = c_reg[1].cast[c_gmem.dtype]()
     th_local_res[1][0] = c_reg[2].cast[c_gmem.dtype]()

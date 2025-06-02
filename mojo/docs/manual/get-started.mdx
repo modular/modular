@@ -429,21 +429,13 @@ As described in [The `for`
 statement](/mojo/manual/control-flow#the-for-statement) section of the Mojo
 manual, it's possible to iterate over the elements of a `List` directly instead
 of iterating over the values of a `range()` and then accessing the `List`
-elements by their numeric index. However, iterating over a `List` directly
-currently returns a *reference* to the element, which then requires using the
-dereference operator, `[]`, to access the actual element value. The code looks
-like this:
+elements by their numeric index.
 
 ```mojo
 nums = [12, -7, 64]
 for value in nums:
-    print("Value:", value[])
+    print("Value:", value)
 ```
-
-This behavior is likely to change in the future, at which point iterating over a
-`List` won't require using the dereference operator. But for this tutorial,
-we'll stick with iterating over a `range()` and accessing the `List` elements by
-their numeric index.
 
 :::
 

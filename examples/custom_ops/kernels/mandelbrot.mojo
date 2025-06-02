@@ -55,9 +55,11 @@ struct Mandelbrot:
             var col = idx[1]
 
             # Calculate the complex C corresponding to that grid location.
-            var cx = min_x.cast[float_dtype]() + (
-                col + iota[float_dtype, width]()
-            ) * scale_x.cast[float_dtype]()
+            var cx = (
+                min_x.cast[float_dtype]()
+                + (col + iota[float_dtype, width]())
+                * scale_x.cast[float_dtype]()
+            )
             var cy = min_y.cast[float_dtype]() + row * SIMD[float_dtype, width](
                 scale_y.cast[float_dtype]()
             )

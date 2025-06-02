@@ -207,9 +207,9 @@ def test_unsafepointer_alloc_origin():
     var did_del_1 = False
 
     # Allocate pointer with MutableAnyOrgin.
-    var ptr_1 = UnsafePointer[Int].alloc(1).origin_cast[
-        origin=MutableAnyOrigin
-    ]()
+    var ptr_1 = (
+        UnsafePointer[Int].alloc(1).origin_cast[origin=MutableAnyOrigin]()
+    )
 
     var obj_1 = ObservableDel(UnsafePointer(to=did_del_1))
 

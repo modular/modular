@@ -155,8 +155,8 @@ def test_load_and_mma_and_multiply_operands[
     alias B_col = K if transpose_b else N
 
     var b_host = tb[dtype]().row_major[B_row, B_col]().view(b_host_ptr)
-    var b_dev = tb[dtype]().row_major[B_row, B_col]().view(
-        b_device.unsafe_ptr()
+    var b_dev = (
+        tb[dtype]().row_major[B_row, B_col]().view(b_device.unsafe_ptr())
     )
 
     var c_host = tb[dst_dtype]().row_major[M, N]().view(c_host_ptr).fill(0)
@@ -165,24 +165,26 @@ def test_load_and_mma_and_multiply_operands[
     var d_host = tb[dst_dtype]().row_major[M, N]().view(d_host_ptr).fill(0)
 
     var d_dev = tb[dst_dtype]().row_major[M, N]().view(d_device.unsafe_ptr())
-    var d_dev_mma = tb[dst_dtype]().row_major[M, N]().view(
-        d_device_mma.unsafe_ptr()
+    var d_dev_mma = (
+        tb[dst_dtype]().row_major[M, N]().view(d_device_mma.unsafe_ptr())
     )
 
     var a_lane_host = tb[dtype]().layout[WARP_SIZE]().view(a_lane_host_ptr)
-    var a_lane_dev = tb[dtype]().layout[WARP_SIZE]().view(
-        a_lane_device.unsafe_ptr()
+    var a_lane_dev = (
+        tb[dtype]().layout[WARP_SIZE]().view(a_lane_device.unsafe_ptr())
     )
     var b_lane_host = tb[dtype]().layout[WARP_SIZE]().view(b_lane_host_ptr)
-    var b_lane_dev = tb[dtype]().layout[WARP_SIZE]().view(
-        b_lane_device.unsafe_ptr()
+    var b_lane_dev = (
+        tb[dtype]().layout[WARP_SIZE]().view(b_lane_device.unsafe_ptr())
     )
 
-    var c_lane_host = tb[dst_dtype]().row_major[WARP_SIZE, 4]().view(
-        c_lane_host_ptr
+    var c_lane_host = (
+        tb[dst_dtype]().row_major[WARP_SIZE, 4]().view(c_lane_host_ptr)
     )
-    var c_lane_dev = tb[dst_dtype]().row_major[WARP_SIZE, 4]().view(
-        c_lane_device.unsafe_ptr()
+    var c_lane_dev = (
+        tb[dst_dtype]()
+        .row_major[WARP_SIZE, 4]()
+        .view(c_lane_device.unsafe_ptr())
     )
 
     arange(a_host)

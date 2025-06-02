@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     import torch
 
 from .response import AudioGenerationResponse
+from .text_generation import SamplingParams
 
 
 class AudioFormat(enum.Enum):
@@ -41,45 +42,46 @@ class AudioFormat(enum.Enum):
 @dataclass(frozen=True)
 class AudioGenerationRequest:
     id: str
-    """
-    A unique identifier for the request. This ID can be used to trace and log
+    """A unique identifier for the request. This ID can be used to trace and log
     the request throughout its lifecycle, facilitating debugging and tracking.
     """
+
     input: str
+    """The text to generate audio for. The maximum length is 4096 characters.
     """
-    The text to generate audio for. The maximum length is 4096 characters.
-    """
+
     index: int
-    """
-    The sequence order of this request within a batch. This is useful for
+    """The sequence order of this request within a batch. This is useful for
     maintaining the order of requests when processing multiple requests
     simultaneously, ensuring that responses can be matched back to their
     corresponding requests accurately.
     """
+
     model: str
-    """
-    The name of the model to be used for generating audio chunks. This should match
+    """The name of the model to be used for generating audio chunks. This should match
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
+
     voice: str | None = None
+    """The voice to use for audio generation.
     """
-    The voice to use for audio generation.
-    """
+
     instructions: str = ""
-    """
-    Control the voice of your generated audio with additional instructions.
+    """Control the voice of your generated audio with additional instructions.
     Currently unused.
     """
+
     response_format: AudioFormat = AudioFormat.WAV
-    """
-    The format to audio in. Currently only supports wav.
-    """
+    """The format to audio in. Currently only supports wav."""
+
     speed: float = 1.0
-    """
-    The speed of the generated audio. Select a value from 0.25 to 4.0.
+    """The speed of the generated audio. Select a value from 0.25 to 4.0.
     Defaults to 1.0.
     """
+
+    sampling_params: SamplingParams = SamplingParams()
+    """Request sampling configuration options."""
 
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")

@@ -1,7 +1,13 @@
 # Build custom neural network modules with MAX Python API
 
-Examples demonstrating how to build custom neural network modules using the MAX
-Python API.
+The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
+PyTorch-like interface for building neural network components that compile to
+highly optimized graphs. This example shows how to create a reusable,
+modular component using MAX's `nn.Module` class.
+
+This example include custom layers, blocks, and architectural patterns that
+showcase the flexibility of MAX's Python API for deep learning development, from
+simple MLP blocks to more complex neural network architectures.
 
 To run this example, execute the following command:
 

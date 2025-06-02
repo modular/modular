@@ -144,9 +144,12 @@ fn copy_dram_to_local_buffer_load_kernel[
 
     var q_gmem_iter = q_tile.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    var a_reg_tile = tb[dtype]().row_major[
-        (BM * BN) // thread_layout.size() // 2, 2
-    ]().local().alloc()
+    var a_reg_tile = (
+        tb[dtype]()
+        .row_major[(BM * BN) // thread_layout.size() // 2, 2]()
+        .local()
+        .alloc()
+    )
 
     @parameter
     for i in range(BN // BK):

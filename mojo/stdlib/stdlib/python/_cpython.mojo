@@ -803,20 +803,28 @@ struct CPython(Copyable, Movable):
             print("PYTHONEXECUTABLE:", getenv("PYTHONEXECUTABLE"))
             print("libpython selected:", python_lib)
 
+        # Note:
+        #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
+        #   is a dynamic library being loaded as a Python extension module,
+        #   and we need to find CPython symbols that are statically linked
+        #   into the `python` main executable. On those paltforms where
+        #   `python` executable can be statically linked (Linux), it's
+        #   important that we don't load a second copy of CPython symbols
+        #   into the process by loading the `libpython` dynamic library.
         try:
-            # Note:
-            #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
-            #   is a dynamic library being loaded as a Python extension module,
-            #   and we need to find CPython symbols that are statically linked
-            #   into the `python` main executable. On those paltforms where
-            #   `python` executable can be statically linked (Linux), it's
-            #   important that we don't load a second copy of CPython symbols
-            #   into the process by loading the `libpython` dynamic library.
-            self.lib = DLHandle(python_lib) if python_lib != "" else DLHandle()
+            # Try to load the library from the current process.
+            self.lib = DLHandle()
+            if not self.lib.check_symbol("Py_Initialize"):
+                try:
+                    # If the library is not present in the current process, try to load it from the environment variable.
+                    self.lib = DLHandle(python_lib)
+                except e:
+                    raise e
         except e:
             self.lib = abort[DLHandle](
                 String("Failed to load libpython from", python_lib, ":\n", e)
             )
+
         self.total_ref_count = UnsafePointer[Int].alloc(1)
         self.logging_enabled = logging_enabled
         if not self.init_error:

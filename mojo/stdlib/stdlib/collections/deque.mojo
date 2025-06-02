@@ -221,8 +221,8 @@ struct Deque[ElementType: Copyable & Movable](
             The newly created deque with the properties of `self`.
         """
         new = self.copy()
-        for element in other:
-            new.append(element[])
+        for ref element in other:
+            new.append(element)
         return new^
 
     fn __iadd__(mut self, other: Self):
@@ -231,8 +231,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             other: Deque whose elements will be appended to self.
         """
-        for element in other:
-            self.append(element[])
+        for ref element in other:
+            self.append(element)
 
     fn __mul__(self, n: Int) -> Self:
         """Concatenates `n` deques of `self` and returns a new deque.
@@ -252,8 +252,8 @@ struct Deque[ElementType: Copyable & Movable](
             )
         new = self.copy()
         for _ in range(n - 1):
-            for element in self:
-                new.append(element[])
+            for ref element in self:
+                new.append(element)
         return new^
 
     fn __imul__(mut self, n: Int):
@@ -268,8 +268,8 @@ struct Deque[ElementType: Copyable & Movable](
 
         orig = self.copy()
         for _ in range(n - 1):
-            for element in orig:
-                self.append(element[])
+            for ref element in orig:
+                self.append(element)
 
     fn __eq__[
         T: EqualityComparable & Copyable & Movable, //
@@ -1006,14 +1006,15 @@ struct _DequeIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self, out p: Pointer[ElementType, deque_lifetime]):
+    fn __next__(mut self) -> ref [deque_lifetime] ElementType:
         @parameter
         if forward:
-            p = Pointer(to=self.src[][self.index])
+            var idx = self.index
             self.index += 1
+            return self.src[][idx]
         else:
             self.index -= 1
-            p = Pointer(to=self.src[][self.index])
+            return self.src[][self.index]
 
     fn __len__(self) -> Int:
         @parameter

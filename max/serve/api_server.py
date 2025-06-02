@@ -30,6 +30,7 @@ from max.pipelines.core import (
     PipelineTokenizer,
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
@@ -93,10 +94,15 @@ async def lifespan(
     logger.info("Starting server...")
     try:
         async with AsyncExitStack() as exit_stack:
+            # create dispatcher factory
+            dispatcher_factory = DispatcherFactory(settings.dispatcher_config)
+
             if settings.experimental_enable_kvcache_agent:
+                logger.info("Starting KV Cache Agent...")
                 await exit_stack.enter_async_context(
-                    start_kvcache_agent(settings)
+                    start_kvcache_agent(settings, dispatcher_factory)
                 )
+                logger.info("KV Cache Agent started.")
 
             # start telemetry worker and configure Metrics to use it
             metric_client = await exit_stack.enter_async_context(
@@ -111,6 +117,7 @@ async def lifespan(
                     serving_settings.pipeline_config,
                     settings,
                     metric_client,
+                    dispatcher_factory,
                 )
             )
 

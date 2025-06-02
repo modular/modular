@@ -784,9 +784,9 @@ fn rms_norm_gpu_warp_tiling[
 
             @parameter
             if multiply_before_cast:
-                var gamma_accum = gamma_val.cast[
-                    accum_type
-                ]() + weight_offset_accum
+                var gamma_accum = (
+                    gamma_val.cast[accum_type]() + weight_offset_accum
+                )
                 norm_val = (vec_data * norm_factor * gamma_accum).cast[type]()
             else:
                 norm_val = (vec_data * norm_factor).cast[type]() * (
@@ -851,9 +851,9 @@ fn rms_norm_gpu_block[
                 )
 
                 if multiply_before_cast:
-                    var gamma_accum = gamma_val.cast[
-                        accum_type
-                    ]() + weight_offset_accum
+                    var gamma_accum = (
+                        gamma_val.cast[accum_type]() + weight_offset_accum
+                    )
                     norm_val = (vec_data * norm_factor * gamma_accum).cast[
                         type
                     ]()

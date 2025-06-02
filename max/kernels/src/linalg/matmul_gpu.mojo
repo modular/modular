@@ -766,6 +766,12 @@ fn _matmul_gpu[
                         return kernel_helper[256, 256]()
                     elif m >= 3500:
                         return kernel_helper[256, 256]()
+                    elif m >= 512:
+                        return kernel_helper[96, 64]()
+                    elif m >= 500:
+                        return kernel_helper[128, 160, num_k_partitions=2]()
+                    elif m >= 256:
+                        return kernel_helper[128, 160, num_k_partitions=4]()
                 elif static_N == 6144 and static_K == 5120:
                     if m >= 8192:
                         return kernel_helper[224, 256]()
@@ -773,6 +779,12 @@ fn _matmul_gpu[
                         return kernel_helper[192, 256]()
                     elif m >= 3500:
                         return kernel_helper[192, 192]()
+                    elif m >= 512:
+                        return kernel_helper[192, 128, num_k_partitions=2]()
+                    elif m >= 500:
+                        return kernel_helper[96, 128]()
+                    elif m >= 256:
+                        return kernel_helper[128, 192, num_k_partitions=4]()
                 elif static_N == 65536 and static_K == 5120:
                     if m >= 8192:
                         return kernel_helper[256, 256]()
@@ -780,6 +792,12 @@ fn _matmul_gpu[
                         return kernel_helper[256, 256]()
                     elif m >= 3500:
                         return kernel_helper[256, 256]()
+                    elif m >= 512:
+                        return kernel_helper[256, 224]()
+                    elif m >= 500:
+                        return kernel_helper[256, 256]()
+                    elif m >= 256:
+                        return kernel_helper[128, 128]()
                 elif static_N == 5120 and static_K == 32768:
                     if m >= 8192:
                         return kernel_helper[192, 256]()
@@ -787,6 +805,12 @@ fn _matmul_gpu[
                         return kernel_helper[256, 256]()
                     elif m >= 3500:
                         return kernel_helper[256, 256]()
+                    elif m >= 512:
+                        return kernel_helper[256, 160, num_k_partitions=4]()
+                    elif m >= 500:
+                        return kernel_helper[192, 224, num_k_partitions=4]()
+                    elif m >= 256:
+                        return kernel_helper[128, 96, num_k_partitions=8]()
 
                 # gemma-3-12b auto-tuned shapes
                 @parameter
@@ -797,6 +821,12 @@ fn _matmul_gpu[
                         return kernel_helper[192, 256]()
                     elif m >= 3500:
                         return kernel_helper[256, 192]()
+                    elif m >= 512:
+                        return kernel_helper[96, 160, num_k_partitions=2]()
+                    elif m >= 500:
+                        return kernel_helper[96, 160, num_k_partitions=2]()
+                    elif m >= 256:
+                        return kernel_helper[128, 128, num_k_partitions=4]()
                 elif static_N == 3840 and static_K == 15360:
                     if m >= 8192:
                         return kernel_helper[256, 224]()
@@ -804,6 +834,12 @@ fn _matmul_gpu[
                         return kernel_helper[224, 224]()
                     elif m >= 3500:
                         return kernel_helper[224, 224]()
+                    elif m >= 512:
+                        return kernel_helper[96, 160, num_k_partitions=4]()
+                    elif m >= 500:
+                        return kernel_helper[96, 160, num_k_partitions=4]()
+                    elif m >= 256:
+                        return kernel_helper[128, 224, num_k_partitions=8]()
                 elif static_N == 8192 and static_K == 3840:
                     if m >= 8192:
                         return kernel_helper[224, 256]()
@@ -811,6 +847,12 @@ fn _matmul_gpu[
                         return kernel_helper[256, 256]()
                     elif m >= 3500:
                         return kernel_helper[192, 256]()
+                    elif m >= 512:
+                        return kernel_helper[128, 128, num_k_partitions=2]()
+                    elif m >= 500:
+                        return kernel_helper[128, 128, num_k_partitions=2]()
+                    elif m >= 256:
+                        return kernel_helper[64, 64]()
                 elif static_N == 30720 and static_K == 3840:
                     if m >= 8192:
                         return kernel_helper[256, 256]()
@@ -818,6 +860,67 @@ fn _matmul_gpu[
                         return kernel_helper[256, 256]()
                     elif m >= 3500:
                         return kernel_helper[256, 256]()
+                    elif m >= 512:
+                        return kernel_helper[256, 256]()
+                    elif m >= 500:
+                        return kernel_helper[256, 224]()
+                    elif m >= 256:
+                        return kernel_helper[128, 224]()
+
+                # llama3 auto-tuned shapes
+                @parameter
+                if static_N == 4096 and static_K == 4096:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 224]()
+                    elif m >= 3500:
+                        return kernel_helper[192, 256]()
+                    elif m >= 512:
+                        return kernel_helper[64, 64]()
+                    elif m >= 500:
+                        return kernel_helper[64, 64]()
+                    elif m >= 256:
+                        return kernel_helper[128, 128, num_k_partitions=4]()
+                elif static_N == 4096 and static_K == 14336:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[192, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[192, 256]()
+                    elif m >= 512:
+                        return kernel_helper[256, 224, num_k_partitions=8]()
+                    elif m >= 500:
+                        return kernel_helper[256, 224, num_k_partitions=8]()
+                    elif m >= 256:
+                        return kernel_helper[128, 224, num_k_partitions=8]()
+                elif static_N == 6144 and static_K == 4096:
+                    if m >= 8192:
+                        return kernel_helper[224, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[192, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[192, 192]()
+                    elif m >= 512:
+                        return kernel_helper[192, 128, num_k_partitions=2]()
+                    elif m >= 500:
+                        return kernel_helper[96, 128]()
+                    elif m >= 256:
+                        return kernel_helper[128, 192, num_k_partitions=4]()
+                elif static_N == 28672 and static_K == 4096:
+                    if m >= 8192:
+                        return kernel_helper[256, 256]()
+                    elif m >= 7000:
+                        return kernel_helper[256, 256]()
+                    elif m >= 3500:
+                        return kernel_helper[224, 256]()
+                    elif m >= 512:
+                        return kernel_helper[256, 192]()
+                    elif m >= 500:
+                        return kernel_helper[256, 192]()
+                    elif m >= 256:
+                        return kernel_helper[128, 96]()
 
                 # Default tune based on llama3
                 @parameter

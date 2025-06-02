@@ -624,7 +624,7 @@ def test_list_iter():
     fn sum(vs: List[Int]) -> Int:
         var sum = 0
         for v in vs:
-            sum += v[]
+            sum += v
         return sum
 
     assert_equal(6, sum(vs))
@@ -633,12 +633,12 @@ def test_list_iter():
 def test_list_iter_mutable():
     var vs = [1, 2, 3]
 
-    for v in vs:
-        v[] += 1
+    for ref v in vs:
+        v += 1
 
     var sum = 0
     for v in vs:
-        sum += v[]
+        sum += v
 
     assert_equal(9, sum)
 
@@ -985,7 +985,7 @@ def test_list_comprehension():
     var l1 = [x * x for x in range(10) if x & 1]
     assert_equal(l1, [1, 9, 25, 49, 81])
 
-    var l2 = [x * y[] for x in range(3) for y in l1]
+    var l2 = [x * y for x in range(3) for y in l1]
     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
 
 

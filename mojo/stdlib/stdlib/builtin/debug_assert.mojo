@@ -301,7 +301,9 @@ fn _debug_assert_msg_mem(loc: _SourceLocation, message: String):
             str.write("At", loc, ": ", info, " Assert ", kind_str, message)
             print(str)
     else:
-        var str: String = "At " + loc.__str__() + ": Assert " + kind_str + message
+        var str: String = (
+            "At " + loc.__str__() + ": Assert " + kind_str + message
+        )
         print(str)
 
     @parameter

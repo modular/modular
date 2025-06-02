@@ -135,8 +135,8 @@ def test_iter():
     c["b"] = 2
 
     var keys = String()
-    for key in c:
-        keys += key[]
+    for ref key in c:
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -147,8 +147,8 @@ def test_iter_keys():
     c["b"] = 2
 
     var keys = String()
-    for key in c.keys():
-        keys += key[]
+    for ref key in c.keys():
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -160,7 +160,7 @@ def test_iter_values():
 
     var sum = 0
     for value in c.values():
-        sum += value[]
+        sum += value
 
     assert_equal(sum, 3)
 
@@ -170,8 +170,8 @@ def test_iter_values_mut():
     c["a"] = 1
     c["b"] = 2
 
-    for value in c.values():
-        value[] += 1
+    for ref value in c.values():
+        value += 1
 
     assert_equal(2, c["a"])
     assert_equal(3, c["b"])
@@ -185,9 +185,9 @@ def test_iter_items():
 
     var keys = String()
     var sum = 0
-    for entry in c.items():
-        keys += entry[].key
-        sum += entry[].value
+    for ref entry in c.items():
+        keys += entry.key
+        sum += entry.value
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)

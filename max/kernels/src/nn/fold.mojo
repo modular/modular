@@ -74,16 +74,12 @@ fn fold[
             "Input tensor channels must be equal to C * prod(kernel_size)."
         )
     var height_col = (
-        (H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1)
-        // stride[0]
-        + 1
-    )
+        H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
+    ) // stride[0] + 1
 
     var width_col = (
-        (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1)
-        // stride[1]
-        + 1
-    )
+        W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
+    ) // stride[1] + 1
 
     var num_blocks = input.dim[2]()
 

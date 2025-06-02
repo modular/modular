@@ -347,7 +347,7 @@ struct NameList:
     def __init__(out self, *names: String):
         self.names = List[String]()
         for name in names:
-            self.names.append(name[])
+            self.names.append(name)
 
     def __getitem__(ref self, index: Int) ->
         ref [self.names] String:
@@ -409,8 +409,8 @@ used in `for..in` loops:
 
 ```mojo
 nums = [1, 2, 3]
-for item in nums: # List iterator returns a Pointer, which must be dereferenced
-    print(item[])
+for item in nums: # Iterator returns a ref.
+    print(item)
 for i in range(len(nums)):
     print(nums[i]) # List __getitem__() returns a ref
 ```

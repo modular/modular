@@ -362,7 +362,10 @@ struct TiledMatmul[
         @always_inline
         @parameter
         fn k_iteration(k_offset: Int, k_tile_size: Int):
-            var last_k_tile = k_offset + k_tile_size + self.global_tile_offset.K == self.global_tile_shape.K
+            var last_k_tile = (
+                k_offset + k_tile_size + self.global_tile_offset.K
+                == self.global_tile_shape.K
+            )
             self._outer_n_loop(
                 GemmShape(0, 0, k_offset) + self.global_tile_offset,
                 k_tile_size,

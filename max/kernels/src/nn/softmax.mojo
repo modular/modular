@@ -963,12 +963,16 @@ fn _online_softmax_kernel[
         Layout.row_major(num_mma_units, frag_size // mma_fragment_groups)
     ]().vectorize[1, frag_size // mma_fragment_groups]()
 
-    var o = LayoutTensor[
-        type,
-        Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0.0)
+    var o = (
+        LayoutTensor[
+            type,
+            Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0.0)
+    )
     var o_vecs = o.reshape[
         Layout.row_major(num_mma_units, frag_size // mma_fragment_groups)
     ]().vectorize[1, frag_size // mma_fragment_groups]()
@@ -1050,9 +1054,11 @@ fn _online_softmax_kernel[
                         2 * m_mma + 1
                     ]
                 else:
-                    var rowsum_tensor = tb[type]().row_major[
-                        num_m_mmas, frag_num_rows
-                    ]().view(rowsum)
+                    var rowsum_tensor = (
+                        tb[type]()
+                        .row_major[num_m_mmas, frag_num_rows]()
+                        .view(rowsum)
+                    )
                     p[n_mma * num_m_mmas + m_mma, i] /= rowsum_tensor[
                         m_mma, 0 if fragment_transpose else i
                     ]
@@ -1121,22 +1127,22 @@ fn _online_softmax_iter_for_mma_output[
     # The online softmax attributes for each thread's elements (fragments).
     alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
-    var score_frag_rowmax = tb[type]().row_major[
-        num_colwise_tiles, frag_num_rows
-    ]().local().alloc()
-    var score_frag_rowsum = tb[type]().row_major[
-        num_colwise_tiles, frag_num_rows
-    ]().local().alloc()
-    var correction = tb[type]().row_major[
-        num_colwise_tiles, frag_num_rows
-    ]().local().alloc()
+    var score_frag_rowmax = (
+        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().local().alloc()
+    )
+    var score_frag_rowsum = (
+        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().local().alloc()
+    )
+    var correction = (
+        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().local().alloc()
+    )
 
-    var rowmax_tensor = tb[type]().row_major[
-        num_colwise_tiles, frag_num_rows
-    ]().view(rowmax)
-    var rowsum_tensor = tb[type]().row_major[
-        num_colwise_tiles, frag_num_rows
-    ]().view(rowsum)
+    var rowmax_tensor = (
+        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().view(rowmax)
+    )
+    var rowsum_tensor = (
+        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().view(rowsum)
+    )
 
     # Initialize local max with the running max, and local sum with zero.
     @parameter
@@ -1210,7 +1216,11 @@ fn _online_softmax_iter_for_mma_output[
 
                 @parameter
                 for row in range(frag_num_rows):
-                    var score_row_idx = col_tile * num_colwise_lanes * frag_num_rows + lane_row * frag_num_rows + row
+                    var score_row_idx = (
+                        col_tile * num_colwise_lanes * frag_num_rows
+                        + lane_row * frag_num_rows
+                        + row
+                    )
 
                     # warp scratch has layout row_major(num_warps, num_rows). The
                     # "score_row_idx" is the idx-th row in the score matrix.
@@ -1228,7 +1238,11 @@ fn _online_softmax_iter_for_mma_output[
 
                 @parameter
                 for row in range(frag_num_rows):
-                    var score_row_idx = col_tile * num_colwise_lanes * frag_num_rows + lane_row * frag_num_rows + row
+                    var score_row_idx = (
+                        col_tile * num_colwise_lanes * frag_num_rows
+                        + lane_row * frag_num_rows
+                        + row
+                    )
 
                     @parameter
                     for row_warp in range(num_rowwise_warps):
@@ -1328,7 +1342,11 @@ fn _online_softmax_iter_for_mma_output[
                 @parameter
                 for row in range(frag_num_rows):
                     # Each thread handle two rows in the mma output.
-                    var score_row_idx = col_tile * num_colwise_lanes * frag_num_rows + lane_row * frag_num_rows + row
+                    var score_row_idx = (
+                        col_tile * num_colwise_lanes * frag_num_rows
+                        + lane_row * frag_num_rows
+                        + row
+                    )
 
                     warp_scratch[
                         warp_x + num_rowwise_warps, Int(score_row_idx)
@@ -1345,7 +1363,11 @@ fn _online_softmax_iter_for_mma_output[
 
                 @parameter
                 for row in range(frag_num_rows):
-                    var score_row_idx = col_tile * num_colwise_lanes * frag_num_rows + lane_row * frag_num_rows + row
+                    var score_row_idx = (
+                        col_tile * num_colwise_lanes * frag_num_rows
+                        + lane_row * frag_num_rows
+                        + row
+                    )
 
                     score_frag_rowsum[col_tile, row] = 0
 
@@ -1541,9 +1563,11 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     alias warp_tile_size = WM * WN  # ((WM*WN)//frag_size) x frag_size
     alias row_warp_tile_size = (num_warps_n - 1) * warp_tile_size
     # Makes sure arithmetic is optimized away when `num_warps_m == 1`.
-    var o_smem_ptr = o_smem_ptr_base + warp_y * (
-        num_warps_n - 1
-    ) * row_warp_tile_size if num_warps_m > 1 else o_smem_ptr_base
+    var o_smem_ptr = (
+        o_smem_ptr_base
+        + warp_y * (num_warps_n - 1) * row_warp_tile_size if num_warps_m
+        > 1 else o_smem_ptr_base
+    )
 
     # NOTE: we must ensure that `output_reg_tile` is only ever indexed by constants.
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
@@ -1554,20 +1578,20 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
-    var interwarp_frag_rowmax = tb[type]().row_major[
-        num_m_mmas, frag_num_rows
-    ]().local().alloc()
-    var interwarp_frag_rowsum = tb[type]().row_major[
-        num_m_mmas, frag_num_rows
-    ]().local().alloc()
-    var correction = tb[type]().row_major[
-        num_m_mmas, frag_num_rows
-    ]().local().alloc()
-    var rowmax_tensor = tb[type]().row_major[num_m_mmas, frag_num_rows]().view(
-        rowmax
+    var interwarp_frag_rowmax = (
+        tb[type]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
     )
-    var rowsum_tensor = tb[type]().row_major[num_m_mmas, frag_num_rows]().view(
-        rowsum
+    var interwarp_frag_rowsum = (
+        tb[type]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
+    )
+    var correction = (
+        tb[type]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
+    )
+    var rowmax_tensor = (
+        tb[type]().row_major[num_m_mmas, frag_num_rows]().view(rowmax)
+    )
+    var rowsum_tensor = (
+        tb[type]().row_major[num_m_mmas, frag_num_rows]().view(rowsum)
     )
     # corrections across warps
     # Write per warp rowmax to shared memory.
@@ -1578,9 +1602,11 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
             @parameter
             for row in range(frag_num_rows):
-                var score_row_idx = col_tile * num_lanes_m + (
-                    lane // num_lanes_n
-                ) * frag_num_rows + row
+                var score_row_idx = (
+                    col_tile * num_lanes_m
+                    + (lane // num_lanes_n) * frag_num_rows
+                    + row
+                )
                 # warp scratch has layout row_major(num_warps, num_rows). The
                 # "score_row_idx" is the idx-th row in the score matrix.
                 warp_scratch[
@@ -1597,9 +1623,11 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
             @parameter
             for row in range(frag_num_rows):
-                var score_row_idx = col_tile * num_lanes_m + (
-                    lane // num_lanes_n
-                ) * frag_num_rows + row
+                var score_row_idx = (
+                    col_tile * num_lanes_m
+                    + (lane // num_lanes_n) * frag_num_rows
+                    + row
+                )
 
                 interwarp_frag_rowmax[col_tile, row] = rebind[Scalar[type]](
                     warp_scratch[num_warps_n, Int(score_row_idx)]
@@ -1647,9 +1675,11 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
             @parameter
             for row in range(frag_num_rows):
-                var score_row_idx = col_tile * num_lanes_m + (
-                    lane // num_lanes_n
-                ) * frag_num_rows + row
+                var score_row_idx = (
+                    col_tile * num_lanes_m
+                    + (lane // num_lanes_n) * frag_num_rows
+                    + row
+                )
                 var c = rebind[Scalar[type]](correction[col_tile, row])
                 warp_scratch[Int(warp_x), Int(score_row_idx)] = (
                     0.0 if c == 0.0 else rowsum_tensor[col_tile, row][0] * c
@@ -1665,9 +1695,11 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
             @parameter
             for row in range(frag_num_rows):
-                var score_row_idx = col_tile * num_lanes_m + (
-                    lane // num_lanes_n
-                ) * frag_num_rows + row
+                var score_row_idx = (
+                    col_tile * num_lanes_m
+                    + (lane // num_lanes_n) * frag_num_rows
+                    + row
+                )
                 interwarp_frag_rowsum[col_tile, row] = rebind[Scalar[type]](
                     warp_scratch[0, Int(score_row_idx)]
                 )
@@ -1751,17 +1783,17 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             # `N\X` refer to `warp_n`, `warp_x`
             alias row = warp_n
             var col = warp_x - (1 if warp_x > warp_n else 0)
-            var o_smem_ptr_write = o_smem_ptr + (
-                row * (num_warps_n - 1) + col
-            ) * warp_tile_size
-            var o_smem_write = LayoutTensor[
-                type,
-                o_smem_layout,
-                address_space = AddressSpace.SHARED,
-            ](o_smem_ptr_write).vectorize[1, frag_size]().distribute[
-                Layout.row_major(WARP_SIZE, 1)
-            ](
-                lane
+            var o_smem_ptr_write = (
+                o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
+            )
+            var o_smem_write = (
+                LayoutTensor[
+                    type,
+                    o_smem_layout,
+                    address_space = AddressSpace.SHARED,
+                ](o_smem_ptr_write)
+                .vectorize[1, frag_size]()
+                .distribute[Layout.row_major(WARP_SIZE, 1)](lane)
             )
             # after distribute and vectorize, the shape should be
             # WM * WN // (2*frag_size * WARP_SIZE), 1
@@ -1782,17 +1814,17 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     for warp_n in range(num_warps_n - 1):
         var row = warp_x
         alias col = warp_n
-        var o_smem_ptr_reduce = o_smem_ptr + (
-            row * (num_warps_n - 1) + col
-        ) * warp_tile_size
-        var o_smem_reduce = LayoutTensor[
-            type,
-            o_smem_layout,
-            address_space = AddressSpace.SHARED,
-        ](o_smem_ptr_reduce).vectorize[1, frag_size]().distribute[
-            Layout.row_major(WARP_SIZE, 1)
-        ](
-            lane
+        var o_smem_ptr_reduce = (
+            o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
+        )
+        var o_smem_reduce = (
+            LayoutTensor[
+                type,
+                o_smem_layout,
+                address_space = AddressSpace.SHARED,
+            ](o_smem_ptr_reduce)
+            .vectorize[1, frag_size]()
+            .distribute[Layout.row_major(WARP_SIZE, 1)](lane)
         )
 
         @parameter

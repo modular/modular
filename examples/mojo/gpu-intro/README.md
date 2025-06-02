@@ -26,9 +26,9 @@ This directory contains the following files:
 
 ## Run the code
 
-If you have [`magic`](https://docs.modular.com/magic) installed, you can
+If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute the example by running the following command:
 
 ```bash
-magic run mojo vector_addition.mojo
+pixi run mojo vector_addition.mojo
 ```

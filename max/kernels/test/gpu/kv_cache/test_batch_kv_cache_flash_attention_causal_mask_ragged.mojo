@@ -266,13 +266,12 @@ def execute_ragged_flash_attention[
 def execute_flash_attention_suite(ctx: DeviceContext):
     alias types = (DType.float32, DType.bfloat16)
 
-    for bs_ref in [1, 16]:
+    for bs in [1, 16]:
 
         @parameter
         for type_idx in range(len(types)):
             alias type = types[type_idx]
 
-            bs = bs_ref[]
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
             tg_cache_sizes = List[Int]()

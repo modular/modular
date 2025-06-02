@@ -595,9 +595,15 @@ fn test_vectorize_reads():
 # CHECK-LABEL: test_vectorize_writes
 fn test_vectorize_writes():
     print("== test_vectorize_writes")
-    var tensor = LayoutTensor[
-        DType.float32, Layout(IntTuple(4, 4), IntTuple(1, 4)), MutableAnyOrigin
-    ].stack_allocation[alignment=16]().fill(0)
+    var tensor = (
+        LayoutTensor[
+            DType.float32,
+            Layout(IntTuple(4, 4), IntTuple(1, 4)),
+            MutableAnyOrigin,
+        ]
+        .stack_allocation[alignment=16]()
+        .fill(0)
+    )
 
     var tensor_2x2 = tensor.vectorize[2, 2]()
     tensor_2x2[0, 0] = rebind[tensor_2x2.element_type](
@@ -679,14 +685,15 @@ fn test_copy_vectorized():
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
     print(vec_8_1)
-    var tensor_8_8_zeros = LayoutTensor[
-        DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutableAnyOrigin
-    ].stack_allocation[
-        alignment = alignof[SIMD[DType.float32, 4]]()
-    ]().vectorize[
-        1, 4
-    ]().fill(
-        0
+    var tensor_8_8_zeros = (
+        LayoutTensor[
+            DType.float32,
+            Layout(IntTuple(8, 8), IntTuple(8, 1)),
+            MutableAnyOrigin,
+        ]
+        .stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+        .vectorize[1, 4]()
+        .fill(0)
     )
 
     tensor_8_8_zeros.copy_from(vec_8_1)
@@ -700,18 +707,18 @@ fn test_copy_vectorized():
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
     print(tensor_8_8_zeros)
 
-    var tensor_8_8_zeros_4_1 = stack_allocation_like(tensor_8_8).vectorize[
-        4, 1
-    ]().fill(0)
+    var tensor_8_8_zeros_4_1 = (
+        stack_allocation_like(tensor_8_8).vectorize[4, 1]().fill(0)
+    )
 
     tensor_8_8_zeros_4_1.copy_from(vec_8_1)
     # CHECK: [0.0, 1.0, 2.0, 3.0] [16.0, 17.0, 18.0, 19.0] [32.0, 33.0, 34.0, 35.0] [48.0, 49.0, 50.0, 51.0] [4.0, 5.0, 6.0, 7.0] [20.0, 21.0, 22.0, 23.0] [36.0, 37.0, 38.0, 39.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [8.0, 9.0, 10.0, 11.0] [24.0, 25.0, 26.0, 27.0] [40.0, 41.0, 42.0, 43.0] [56.0, 57.0, 58.0, 59.0] [12.0, 13.0, 14.0, 15.0] [28.0, 29.0, 30.0, 31.0] [44.0, 45.0, 46.0, 47.0] [60.0, 61.0, 62.0, 63.0]
     print(tensor_8_8_zeros_4_1)
 
-    var tensor_8_8_zeros_1_4 = stack_allocation_like(tensor_8_8).vectorize[
-        1, 4
-    ]().fill(0)
+    var tensor_8_8_zeros_1_4 = (
+        stack_allocation_like(tensor_8_8).vectorize[1, 4]().fill(0)
+    )
 
     tensor_8_8_zeros_1_4.copy_from(tensor_8_8_zeros_4_1)
     # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
@@ -724,14 +731,15 @@ fn test_copy_vectorized():
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
     print(tensor_8_8_zeros_1_4)
 
-    var tensor_8_8_zeros_4_4 = LayoutTensor[
-        DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutableAnyOrigin
-    ].stack_allocation[
-        alignment = alignof[SIMD[DType.float32, 4]]()
-    ]().vectorize[
-        4, 4
-    ]().fill(
-        0
+    var tensor_8_8_zeros_4_4 = (
+        LayoutTensor[
+            DType.float32,
+            Layout(IntTuple(8, 8), IntTuple(8, 1)),
+            MutableAnyOrigin,
+        ]
+        .stack_allocation[alignment = alignof[SIMD[DType.float32, 4]]()]()
+        .vectorize[4, 4]()
+        .fill(0)
     )
 
     tensor_8_8_zeros_4_4.copy_from(tensor_8_8.vectorize[4, 4]())
@@ -1270,9 +1278,11 @@ fn test_split():
 fn test_copy_subtiles_scalars_back():
     print("== test_copy_subtiles_scalars_back")
 
-    var tensor_13x7 = LayoutTensor[
-        DType.float32, Layout.row_major(13, 7), MutableAnyOrigin
-    ].stack_allocation[alignment=16]().fill(-1)
+    var tensor_13x7 = (
+        LayoutTensor[DType.float32, Layout.row_major(13, 7), MutableAnyOrigin]
+        .stack_allocation[alignment=16]()
+        .fill(-1)
+    )
 
     alias tile_m_size = 4
     alias tile_n_size = 4

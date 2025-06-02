@@ -91,9 +91,9 @@ def test_float64():
     for f in test_floats:
         # Float64
         var mojo_f64_str = String()
-        _write_float(mojo_f64_str, f[])
+        _write_float(mojo_f64_str, f)
 
-        var py_f64_str = String(PythonObject(f[]))
+        var py_f64_str = String(PythonObject(f))
 
         assert_equal(py_f64_str, mojo_f64_str)
 
@@ -186,9 +186,9 @@ def test_float32():
     for f in test_floats:
         var np = Python.import_module("numpy")
         var mojo_f32_str = String()
-        _write_float(mojo_f32_str, f[])
+        _write_float(mojo_f32_str, f)
 
-        var py_f32_str = String(np.float32(f[]))
+        var py_f32_str = String(np.float32(f))
 
         assert_equal(py_f32_str, mojo_f32_str)
 

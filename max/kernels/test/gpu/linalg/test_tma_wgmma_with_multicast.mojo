@@ -164,9 +164,9 @@ fn multicast_tma_wgmma_kernel[
 
                 @parameter
                 if partitioned_multicast:
-                    var a_gmem_slice_coord = block_idx.y * BM + Int(
-                        rank_n
-                    ) * a_tma_rows
+                    var a_gmem_slice_coord = (
+                        block_idx.y * BM + Int(rank_n) * a_tma_rows
+                    )
                     var a_smem_slice = __type_of(a_smem_tile)(
                         a_smem_tile.ptr + rank_n * a_tma_load_size
                     )
@@ -200,9 +200,9 @@ fn multicast_tma_wgmma_kernel[
 
                 @parameter
                 if partitioned_multicast:
-                    var b_gmem_slice_coord = block_idx.x * BN + Int(
-                        rank_m
-                    ) * b_tma_rows
+                    var b_gmem_slice_coord = (
+                        block_idx.x * BN + Int(rank_m) * b_tma_rows
+                    )
                     var b_smem_slice = __type_of(b_smem_tile)(
                         b_smem_tile.ptr + rank_m * b_tma_load_size
                     )

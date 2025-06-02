@@ -499,21 +499,19 @@ def test_split():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape secuences are accepted
-    var univ_sep_var = (
-        String(
-            " ",
-            "\t",
-            "\n",
-            "\r",
-            "\v",
-            "\f",
-            "\x1c",
-            "\x1d",
-            "\x1e",
-            String(bytes=next_line),
-            String(bytes=unicode_line_sep),
-            String(bytes=unicode_paragraph_sep),
-        )
+    var univ_sep_var = String(
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\v",
+        "\f",
+        "\x1c",
+        "\x1d",
+        "\x1e",
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     assert_equal(StringSlice(s).split(), L("hello", "world"))
@@ -627,8 +625,7 @@ def test_splitlines():
     var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
     var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for i in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = i[]
+    for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         s = StringSlice(item)
         assert_equal(s.splitlines(), hello_mojo)

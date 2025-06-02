@@ -108,19 +108,25 @@ fn tile[
         for d in range(num_depth_input):
             for r in range(num_rows_input):
                 # print(dp, d, r)
-                var input_src_index = dp * num_depth_input * num_rows_input * num_cols_input + d * num_rows_input * num_cols_input + r * num_cols_input
-                var output_src_index = dp * num_depth_input * Int(
-                    repeats[repeats_len - 3]
-                ) * num_rows_input * Int(
-                    repeats[repeats_len - 2]
-                ) * num_cols_input * Int(
-                    repeats[repeats_len - 1]
-                ) + d * num_rows_input * Int(
-                    repeats[repeats_len - 2]
-                ) * num_cols_input * Int(
-                    repeats[repeats_len - 1]
-                ) + r * num_cols_input * Int(
-                    repeats[repeats_len - 1]
+                var input_src_index = (
+                    dp * num_depth_input * num_rows_input * num_cols_input
+                    + d * num_rows_input * num_cols_input
+                    + r * num_cols_input
+                )
+                var output_src_index = (
+                    dp
+                    * num_depth_input
+                    * Int(repeats[repeats_len - 3])
+                    * num_rows_input
+                    * Int(repeats[repeats_len - 2])
+                    * num_cols_input
+                    * Int(repeats[repeats_len - 1])
+                    + d
+                    * num_rows_input
+                    * Int(repeats[repeats_len - 2])
+                    * num_cols_input
+                    * Int(repeats[repeats_len - 1])
+                    + r * num_cols_input * Int(repeats[repeats_len - 1])
                 )
                 var output_src_stride = num_cols_input
                 var count = output_src_stride
@@ -143,8 +149,8 @@ fn tile[
     # replicate contiguous memory areas (representing a dimension to be tiled).
     @parameter
     if input.rank >= 2:
-        var src_index_stride = num_rows_input * num_cols_input * Int(
-            repeats[repeats_len - 1]
+        var src_index_stride = (
+            num_rows_input * num_cols_input * Int(repeats[repeats_len - 1])
         )
         var count = src_index_stride
         for dp in range(num_dp_input):
@@ -170,17 +176,23 @@ fn tile[
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
     @parameter
     if input.rank >= 3:
-        var src_index_stride = num_depth_input * Int(
-            repeats[repeats_len - 2]
-        ) * num_rows_input * num_cols_input * Int(repeats[repeats_len - 1])
+        var src_index_stride = (
+            num_depth_input
+            * Int(repeats[repeats_len - 2])
+            * num_rows_input
+            * num_cols_input
+            * Int(repeats[repeats_len - 1])
+        )
         var count = src_index_stride
         for dp in range(num_dp_input):
-            var src_index = dp * num_depth_input * Int(
-                repeats[repeats_len - 3]
-            ) * num_rows_input * Int(
-                repeats[repeats_len - 2]
-            ) * num_cols_input * Int(
-                repeats[repeats_len - 1]
+            var src_index = (
+                dp
+                * num_depth_input
+                * Int(repeats[repeats_len - 3])
+                * num_rows_input
+                * Int(repeats[repeats_len - 2])
+                * num_cols_input
+                * Int(repeats[repeats_len - 1])
             )
             for rep in range(Int(repeats[repeats_len - 3] - 1)):
                 var src_ptr = output.ptr.offset(src_index)
@@ -192,12 +204,14 @@ fn tile[
     # Handles tiling across the fourth dimension from the end(if tensor rank >= 3)
     @parameter
     if input.rank == 4:
-        var src_index_stride = num_dp_input * Int(
-            repeats[Int(repeats.runtime_layout.shape[0]) - 3]
-        ) * num_depth_input * Int(
-            repeats[Int(repeats.runtime_layout.shape[0]) - 2]
-        ) * num_rows_input * num_cols_input * Int(
-            repeats[Int(repeats.runtime_layout.shape[0]) - 1]
+        var src_index_stride = (
+            num_dp_input
+            * Int(repeats[Int(repeats.runtime_layout.shape[0]) - 3])
+            * num_depth_input
+            * Int(repeats[Int(repeats.runtime_layout.shape[0]) - 2])
+            * num_rows_input
+            * num_cols_input
+            * Int(repeats[Int(repeats.runtime_layout.shape[0]) - 1])
         )
         var count = src_index_stride
         var src_index = 0

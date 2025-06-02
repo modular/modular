@@ -20,7 +20,7 @@ from kernels.top_k import TopK
 from math import iota
 from memory import AddressSpace, UnsafePointer
 from random import rand
-from sys import has_nvidia_gpu_accelerator, sizeof
+from sys import argv, has_nvidia_gpu_accelerator, sizeof
 from tensor_internal import (
     Input,
     InputTensor,
@@ -73,6 +73,7 @@ struct Tensor[
 
 
 def top_k():
+    print("Running top-k benchmark...")
     alias batch_size = 30_000
     alias K = 32
     alias els = batch_size * K
@@ -126,6 +127,7 @@ def top_k():
 
 
 def matmul():
+    print("Running matmul benchmark...")
     alias M = 1028
     alias K = 1028
     alias N = 1028
@@ -189,7 +191,14 @@ def matmul():
     print(bench)
 
 
-# TODO: arg parsing to select benchmarks
 def main():
-    top_k()
-    matmul()
+    var args = argv()
+    if len(args) == 1:
+        top_k()
+        matmul()
+    else:
+        for arg in argv():
+            if arg == "--top-k":
+                top_k()
+            if arg == "--matmul":
+                matmul()

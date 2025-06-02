@@ -316,7 +316,7 @@ fn _to_decimal[
     sig = _divide_by_pow10[
         FP[dtype, CarrierDType].kappa + 1, FP[dtype, CarrierDType].n_max_larger
     ](z_result.integer_part)
-    var r = (z_result.integer_part - FP[dtype].big_divisor * sig)
+    var r = z_result.integer_part - FP[dtype].big_divisor * sig
 
     if r < deltai:
         exp = minus_k + FP[dtype].kappa + 1
@@ -475,9 +475,9 @@ fn _umul128[
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[
-        DType.uint32
-    ](bc)
+    var intermediate = (
+        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+    )
 
     return _UInt128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
@@ -624,7 +624,7 @@ fn _check_divisibility_and_divide_by_pow10[
     var prod = (n * magic_number.cast[CarrierDType]()).cast[DType.uint32]()
 
     var mask = UInt32((UInt32(1) << 16) - 1)
-    var result = ((prod & mask) < magic_number)
+    var result = (prod & mask) < magic_number
 
     n = (prod >> 16).cast[CarrierDType]()
     return result
@@ -696,9 +696,9 @@ fn _umul128_upper64[
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[
-        DType.uint32
-    ](bc)
+    var intermediate = (
+        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
+    )
     return (ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32)).cast[
         CarrierDType
     ]()
@@ -743,9 +743,9 @@ fn _compute_round_up_for_shorter_interval_case[
 fn _case_shorter_interval_left_endpoint_upper_threshold[
     CarrierDType: DType, sig_bits: Int
 ]() -> Int:
-    var k = _count_factors(
-        (Scalar[CarrierDType](1) << (sig_bits + 2)) - 1, 5
-    ) + 1
+    var k = (
+        _count_factors((Scalar[CarrierDType](1) << (sig_bits + 2)) - 1, 5) + 1
+    )
     return 2 + _floor_log2(pow(10, k)) // 3
 
 

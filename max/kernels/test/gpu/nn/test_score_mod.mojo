@@ -50,9 +50,10 @@ fn generate_alibi_bias[
                 )
             )
     # print(scale)
-    var bias = -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[
-        type
-    ]() * scale
+    var bias = (
+        -(max_prompt_len - 1 - k_idx - iota[DType.index, width]()).cast[type]()
+        * scale
+    )
     # print(bias)
     return bias
 

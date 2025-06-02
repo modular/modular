@@ -232,8 +232,7 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
 
 
 def test_batched_matmul():
-    for batch_ref in [1, 2, 4, 9, 12]:
-        var batch = batch_ref[]
+    for batch in [1, 2, 4, 9, 12]:
         test_batched_matmul(batch, 256, 1024, 4096)
         test_batched_matmul(batch, 4, 5, 6)
         test_batched_matmul(batch, 15, 16, 17)

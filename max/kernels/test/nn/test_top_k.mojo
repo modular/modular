@@ -13,7 +13,7 @@
 
 from collections import List
 from math import iota
-from random import seed
+from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -88,7 +88,9 @@ fn test_case_sampling[
     fill_fn[rank, type](input)
     # input.fill(4)
 
-    _top_k_sampling(K, input, out_vals, out_idxs, temperature=temperature)
+    _top_k_sampling(
+        K, input, out_vals, out_idxs, temperature=temperature, seed=12
+    )
 
     var _xxx_no_lifetimes = input  # intentionally bad name
     var _xx_no_lifetimes = out_vals
@@ -146,6 +148,10 @@ fn main() raises:
     @parameter
     fn fill_iota[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
         iota(buf.data, buf.get_shape().flattened_length())
+
+    @parameter
+    fn fill_rand[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+        rand(buf.data, buf.get_shape().flattened_length())
 
     fn test_1d_sorted():
         print("== test_1d_sorted")
@@ -277,26 +283,26 @@ fn main() raises:
 
     fn test_2d_sorted_sampling() raises:
         print("== test_2d_sorted_sampling")
-        test_case_sampling[2, DType.float32, fill_iota](
+        test_case_sampling[2, DType.float32, fill_rand](
             5,
             1,
             DimList(5, 10),
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling
-    # CHECK: 9,9,8,7,9,
+    # CHECK: 1,1,0,6,1,
     test_2d_sorted_sampling()
 
     fn test_3d_sorted_sampling() raises:
         print("== test_3d_sorted_sampling")
-        test_case_sampling[3, DType.float32, fill_iota](
+        test_case_sampling[3, DType.float32, fill_rand](
             5,
             2,
             DimList(3, 5, 10),
         )
 
     # CHECK-LABEL: test_3d_sorted_sampling
-    # 9,9,9,9,8,7,9,8,8,8,9,9,8,9,6,
+    # 6,2,8,5,1,1,5,1,2,1,0,3,3,3,8,
     test_3d_sorted_sampling()
 
     @parameter
@@ -307,17 +313,17 @@ fn main() raises:
     fn test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")
         alias rank = 1
-        test_case_sampling[1, DType.float32, ones](
+        test_case_sampling[1, DType.float32, fill_rand](
             5, 0, DimList(10), temperature=0.7
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
-    # CHECK: 3,
+    # CHECK: 6,
     test_1d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp() raises:
         print("== test_2d_sorted_sampling_temp")
-        test_case_sampling[2, DType.float32, ones](
+        test_case_sampling[2, DType.float32, fill_rand](
             5,
             1,
             DimList(50, 10),
@@ -325,12 +331,12 @@ fn main() raises:
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 0,4,2,2,1,0,4,0,2,1,2,0,0,1,4,2,0,3,0,3,3,3,4,1,2,4,4,2,2,0,2,0,2,3,4,4,1,0,1,2,3,1,1,3,3,1,0,4,4,0,
+    # CHECK: 6,6,0,0,6,6,6,7,3,1,0,0,0,0,0,0,0,3,6,2,6,3,3,4,9,3,6,6,5,6,6,9,6,9,6,3,5,5,6,6,4,4,6,7,8,9,3,3,3,0,
     test_2d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp_zero() raises:
         print("== test_2d_sorted_sampling_temp_zero")
-        test_case_sampling[2, DType.float32, ones](
+        test_case_sampling[2, DType.float32, fill_rand](
             5,
             1,
             DimList(50, 10),
@@ -338,5 +344,17 @@ fn main() raises:
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp_zero
-    # CHECK: 2,2,2,4,0,3,3,4,2,1,4,0,2,4,0,1,0,2,2,4,1,4,4,2,4,2,3,4,3,4,1,2,2,4,3,3,3,0,2,0,2,3,4,4,0,4,2,2,2,4,
+    # CHECK: 7,7,2,9,8,4,3,2,4,0,8,0,5,5,4,6,0,3,0,6,2,5,8,3,4,0,7,4,1,3,1,6,7,2,8,8,3,4,1,0,9,8,2,6,2,3,2,8,2,3,
     test_2d_sorted_sampling_temp_zero()
+
+    fn test_deterministic_sampling() raises:
+        print("== test_deterministic_sampling")
+        test_case_sampling[2, DType.float32, ones](
+            5,
+            1,
+            DimList(50, 10),
+        )
+
+    # CHECK-LABEL: test_deterministic_sampling
+    # CHECK: 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    test_deterministic_sampling()

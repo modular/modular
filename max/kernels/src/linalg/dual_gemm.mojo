@@ -266,16 +266,30 @@ fn multistage_dual_mma[
 
     alias num_reg_tiles = 2 * k_group_size
     # Register tiles.
-    var a_reg_tiles = tb[a_type]().row_major[
-        2 * k_group_size * num_m_mmas, a_frag_size
-    ]().local().alloc().split[2 * k_group_size]()
+    var a_reg_tiles = (
+        tb[a_type]()
+        .row_major[2 * k_group_size * num_m_mmas, a_frag_size]()
+        .local()
+        .alloc()
+        .split[2 * k_group_size]()
+    )
 
-    var b0_reg_tiles = tb[b_type]().row_major[
-        2 * k_group_size * num_n_mmas, b_frag_size
-    ]().local().alloc().vectorize[1, b_frag_size]().split[2 * k_group_size]()
-    var b1_reg_tiles = tb[b_type]().row_major[
-        2 * k_group_size * num_n_mmas, b_frag_size
-    ]().local().alloc().vectorize[1, b_frag_size]().split[2 * k_group_size]()
+    var b0_reg_tiles = (
+        tb[b_type]()
+        .row_major[2 * k_group_size * num_n_mmas, b_frag_size]()
+        .local()
+        .alloc()
+        .vectorize[1, b_frag_size]()
+        .split[2 * k_group_size]()
+    )
+    var b1_reg_tiles = (
+        tb[b_type]()
+        .row_major[2 * k_group_size * num_n_mmas, b_frag_size]()
+        .local()
+        .alloc()
+        .vectorize[1, b_frag_size]()
+        .split[2 * k_group_size]()
+    )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
@@ -349,9 +363,11 @@ fn multistage_dual_mma[
                             num_pipeline_stages - 1
                         )[]
                         if num_b_rows:
-                            var num_rows_bound = num_b_rows.value() if transpose_b else max(
-                                0,
-                                num_b_rows.value() - prefetch_tile_id * BK,
+                            var num_rows_bound = (
+                                num_b_rows.value() if transpose_b else max(
+                                    0,
+                                    num_b_rows.value() - prefetch_tile_id * BK,
+                                )
                             )
                             _copy_dual_tensor_to_sram(
                                 b0_smem_prefetch_tile,
@@ -567,12 +583,20 @@ fn multistage_dual_gemm_kernel[
 
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
-    var c0_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, c_frag_size
-    ]().local().alloc().fill(0)
-    var c1_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, c_frag_size
-    ]().local().alloc().fill(0)
+    var c0_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
+    var c1_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     multistage_dual_mma[
         BM,
@@ -622,9 +646,12 @@ fn multistage_dual_gemm_kernel[
             num_rows = MMA_M // 2, row_size=HWN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[c_type]().row_major[
-            WM, HWN
-        ]().shared().view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
+        var accum_smem_warp_tile = (
+            tb[c_type]()
+            .row_major[WM, HWN]()
+            .shared()
+            .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
+        )
 
         copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
             accum_smem_warp_tile.vectorize[1, 2](),
@@ -661,9 +688,9 @@ fn multistage_dual_gemm_kernel[
                 alias src_idx = __type_of(c_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle(
-                    c_smem_frag_offset + src_idx_base
-                ) + src_idx_diff
+                var swizzled_idx = (
+                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
+                )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
                 var dst_idx = 0
@@ -920,7 +947,7 @@ fn dual_gemm[
     var M = shape.M
     var N = 2 * shape.N
     var K = shape.K
-    var multi_gemm_cond = (M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128)
+    var multi_gemm_cond = M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128
     alias multistage_gemm_supported_shape = b_shape.all_known[
         2
     ]() and a_shape.has_value[1]() and c_shape.has_value[1]()

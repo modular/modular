@@ -597,7 +597,9 @@ struct ConvDirectNHWC[
             var c_round_by_tile = align_down(
                 (self.conv_shape.c_per_group() - 1), tile_size
             )
-            var c_round_by_tile_residual = self.conv_shape.c_per_group() - c_round_by_tile
+            var c_round_by_tile_residual = (
+                self.conv_shape.c_per_group() - c_round_by_tile
+            )
             tile[c_tile_iteration](
                 c_start,
                 c_start + c_round_by_tile,
@@ -754,9 +756,11 @@ struct ConvDirectNHWC[
             simd_size,
         ]()
 
-        var output_offset = self.conv_shape.f * (
-            n * self.conv_shape.output_image_flat_size() + output_flat_coord
-        ) + f_tile_offset
+        var output_offset = (
+            self.conv_shape.f
+            * (n * self.conv_shape.output_image_flat_size() + output_flat_coord)
+            + f_tile_offset
+        )
 
         if self.is_new_c_accum(c_tile_offset):
             acc.init(0)
@@ -1383,7 +1387,9 @@ struct ConvDirectNHWC[
             )
 
             # Points output to the start of the row
-            var output_base = output + self.conv_shape.f * self.conv_shape.wo() * ho
+            var output_base = (
+                output + self.conv_shape.f * self.conv_shape.wo() * ho
+            )
 
             @parameter
             @always_inline
@@ -1469,8 +1475,11 @@ struct ConvDirectNHWC[
                 )
 
                 # Points output to the start of the row
-                var output_base = output + self.conv_shape.f * self.conv_shape.wo() * (
-                    ho + self.conv_shape.ho() * do
+                var output_base = (
+                    output
+                    + self.conv_shape.f
+                    * self.conv_shape.wo()
+                    * (ho + self.conv_shape.ho() * do)
                 )
 
                 @parameter
@@ -1893,7 +1902,9 @@ struct ConvDirectNHWC[
             alias epilogue = elementwise_epilogue.value()
             # If has residual, the tile size has been extended to a simd_size.
             # Here needs to use the real bound F.
-            var f_tile_size_bounded = F - f_tile_offset if has_residual else f_tile_size
+            var f_tile_size_bounded = (
+                F - f_tile_offset if has_residual else f_tile_size
+            )
             for wo_idx in range(wo, wo + micro_kernel_height):
                 epilogue(
                     Index(n, ho, wo_idx, f_tile_offset), f_tile_size_bounded
@@ -2185,9 +2196,9 @@ fn conv2d_update_wo_tile[
 
     # Input stride to neighbor point in the filter window (R, S).
     var input_stride_by_s = conv_shape.dilation[1] * conv_shape.c
-    var input_stride_by_r = conv_shape.dilation[
-        0
-    ] * conv_shape.w() * conv_shape.c
+    var input_stride_by_r = (
+        conv_shape.dilation[0] * conv_shape.w() * conv_shape.c
+    )
 
     # Filter stride when s increments by 1.
     var filter_stride_by_s: Int
@@ -2740,7 +2751,9 @@ fn pack_filter[
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
             for row in range(outer_dims_prod):
-                var filter_ptr = filter.data + row * F + g * F_per_group + f_tile_start
+                var filter_ptr = (
+                    filter.data + row * F + g * F_per_group + f_tile_start
+                )
 
                 @parameter
                 for i in range(f_tile_size // simd_size):
@@ -2768,10 +2781,14 @@ fn pack_filter[
             var group_start = _get_group_filter_base(
                 packed_filter, g, F_per_group
             )
-            var packed_filter_ptr = group_start + F_round_by_simd * outer_dims_prod
+            var packed_filter_ptr = (
+                group_start + F_round_by_simd * outer_dims_prod
+            )
 
             for row in range(outer_dims_prod):
-                var filter_ptr = filter.data + row * F + g * F_per_group + F_round_by_simd
+                var filter_ptr = (
+                    filter.data + row * F + g * F_per_group + F_round_by_simd
+                )
 
                 # Load remainder elements and pad with zero to
                 # to fill a simd vector.

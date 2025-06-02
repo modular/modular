@@ -1552,9 +1552,10 @@ fn _gather_nd_impl[
     var slice_rank = data_rank - batch_dims - indices.dim[indices_rank - 1]()
     var slice_last_dim = output.dim[output_rank - 1]() if slice_rank > 0 else 1
 
-    var use_simd = data.stride[data_rank - 1]() == 1 and (
-        slice_last_dim % target_simd_width
-    ) == 0
+    var use_simd = (
+        data.stride[data_rank - 1]() == 1
+        and (slice_last_dim % target_simd_width) == 0
+    )
 
     @parameter
     if is_cpu[target]():

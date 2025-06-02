@@ -69,7 +69,7 @@ fn bench_math[
     @parameter
     fn call_fn() raises:
         for input in inputs:
-            var result = math_f1p(input[])
+            var result = math_f1p(input)
             keep(result)
 
     b.iter[call_fn]()
@@ -88,7 +88,7 @@ fn bench_math3[
     @parameter
     fn call_fn() raises:
         for input in inputs:
-            var result = math_f3p(input[], input[], input[])
+            var result = math_f3p(input, input, input)
             keep(result)
 
     b.iter[call_fn]()

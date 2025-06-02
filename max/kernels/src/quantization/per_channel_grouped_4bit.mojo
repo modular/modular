@@ -86,7 +86,7 @@ fn calculate_symmetric_vector[
 
     # quantize as if we were signed, and convert back to unsigned later
     var positive_steps = (1 << (output_bits - 1)) - 1
-    var negative_steps = (1 << (output_bits - 1))
+    var negative_steps = 1 << (output_bits - 1)
 
     # Handle the case we only have one type of value in `data`, e.g.
     # data = [12., 12., 12., 12.], then the scale is 1/12.0 and the quantized
@@ -194,7 +194,7 @@ struct Q4sym[
         # Extract the lower 4 bits of all bits in the `l_bits` format
         var bits_simd = _to_SIMD[DType.uint8, group_size // 2](self.bits)
         var bits_upper = (bits_simd & 0xF0) >> 4
-        var bits_lower = (bits_simd & 0x0F)
+        var bits_lower = bits_simd & 0x0F
         return rebind[SIMD[DType.uint8, group_size]](
             bits_lower.join(bits_upper)
         )
@@ -260,9 +260,10 @@ struct Q4sym[
         # Obtain the fully dequantized values
         var signed_result = self.decode_signed()
         var scale_decoded = self.decode_scale().cast[float_dtype]()
-        var answer = scale_decoded.cast[float_dtype]() * signed_result.cast[
-            float_dtype
-        ]()
+        var answer = (
+            scale_decoded.cast[float_dtype]()
+            * signed_result.cast[float_dtype]()
+        )
         return answer
 
     # TODO: support other axis of quantization, right now assume inner-most dim.

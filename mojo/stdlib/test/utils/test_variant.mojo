@@ -178,15 +178,15 @@ def test_get_returns_mutable_reference():
 
 
 def test_is_type_supported():
-    var x: Variant[Float64, Int32]
-    assert_equal(x.is_type_supported[Float64](), True)
-    assert_equal(x.is_type_supported[Int32](), True)
-    assert_equal(x.is_type_supported[Float32](), False)
-    assert_equal(x.is_type_supported[UInt32](), False)
-    var y: Variant[SIMD[DType.uint8, 2], SIMD[DType.uint8, 4]]
-    assert_equal(y.is_type_supported[SIMD[DType.uint8, 2]](), True)
-    assert_equal(y.is_type_supported[SIMD[DType.uint8, 4]](), True)
-    assert_equal(y.is_type_supported[SIMD[DType.uint8, 8]](), False)
+    var _x: Variant[Float64, Int32]
+    assert_equal(_x.is_type_supported[Float64](), True)
+    assert_equal(_x.is_type_supported[Int32](), True)
+    assert_equal(_x.is_type_supported[Float32](), False)
+    assert_equal(_x.is_type_supported[UInt32](), False)
+    var _y: Variant[SIMD[DType.uint8, 2], SIMD[DType.uint8, 4]]
+    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 2]](), True)
+    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 4]](), True)
+    assert_equal(_y.is_type_supported[SIMD[DType.uint8, 8]](), False)
 
 
 def main():

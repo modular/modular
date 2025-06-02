@@ -140,7 +140,7 @@ struct TopK:
             @parameter
             fn top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
-                    var offset = (row_idx * K)
+                    var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr() + offset, K)
 
                     @parameter

@@ -326,24 +326,21 @@ fn sum(*values: Int) -> Int:
 Memory-only types, such as `String`, are available as a
 [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
-[`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to each value instead
-of the value itself. You must add an empty subscript operator `[]` to
-dereference the pointer and retrieve the value:
+reference to the element, which can be mutable with a `mut` variadic list. Use
+the `ref` binding pattern to capture the reference (instead of a copy) if you
+want to mutate the elements of the list:
 
 ```mojo
 def make_worldly(mut *strs: String):
-    # Requires extra [] to dereference the pointer for now.
-    for i in strs:
-        i[] += " world"
+    for ref i in strs:
+        i += " world"
 
 ```
 
-Alternately, subscripting into a `VariadicListMem` returns the argument value,
-and doesn't require any dereferencing:
+You can also directly index the list with integers as well:
 
 ```mojo
 fn make_worldly(mut *strs: String):
-    # This "just works" as you'd expect!
     for i in range(len(strs)):
         strs[i] += " world"
 ```
@@ -443,7 +440,7 @@ variadic keyword argument syntax <code>**<var>kw_argument_name</var></code>:
 ```mojo
 fn print_nicely(**kwargs: Int) raises:
   for key in kwargs.keys():
-      print(key[], "=", kwargs[key[]])
+      print(key, "=", kwargs[key])
 
  # prints:
  # `a = 7`

@@ -32,7 +32,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Union
+from typing import Optional
 
 import zmq
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
@@ -40,7 +40,6 @@ from max.serve.kvcache_agent.dispatcher_service import DispatcherService
 from max.serve.kvcache_agent.dispatcher_transport import (
     DispatcherTransport,
     DynamicZmqTransport,
-    StaticZmqTransport,
 )
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
@@ -48,7 +47,6 @@ logger = logging.getLogger(__name__)
 
 
 class TransportType(Enum):
-    STATIC_ZMQ = "static_zmq"
     DYNAMIC_ZMQ = "dynamic_zmq"
 
 
@@ -61,40 +59,12 @@ class TransportFactory:
     """
 
     @dataclass
-    class StaticZmqTransportConfig:
-        """Configuration for StaticZmqTransport."""
-
-        send_address: str
-        receive_address: str
-
-    @dataclass
     class DynamicZmqTransportConfig:
         """Configuration for DynamicZmqTransport."""
 
         bind_address: str = "tcp://127.0.0.1:5555"
         instance_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-
-    @staticmethod
-    def create_static_zmq_transport(
-        zmq_ctx: zmq.Context,
-        config: StaticZmqTransportConfig,
-    ) -> StaticZmqTransport:
-        """
-        Create a static ZMQ transport for point-to-point communication.
-        """
-        if config.send_address == "" or config.receive_address == "":
-            raise ValueError(
-                f"send_address and receive_address must be provided for {TransportType.STATIC_ZMQ} transport"
-            )
-
-        logger.debug(
-            f"Creating StaticZmqTransport: send={config.send_address}, recv={config.receive_address}"
-        )
-        return StaticZmqTransport(
-            zmq_ctx=zmq_ctx,
-            send_endpoint=config.send_address,
-            recv_endpoint=config.receive_address,
-        )
+        default_destination_address: Optional[str] = None
 
     @staticmethod
     def create_dynamic_zmq_transport(
@@ -111,25 +81,20 @@ class TransportFactory:
             zmq_ctx=zmq_ctx,
             bind_address=config.bind_address,
             instance_id=config.instance_id,
+            default_destination_address=config.default_destination_address,
         )
 
     @classmethod
     def create_transport_from_config(
         cls,
         transport_type: TransportType,
-        config: Union[StaticZmqTransportConfig, DynamicZmqTransportConfig],
+        config: DynamicZmqTransportConfig,
         zmq_ctx: zmq.Context,
     ) -> DispatcherTransport:
         """
         Create transport instance from configuration object.
         """
-        if transport_type == TransportType.STATIC_ZMQ:
-            assert isinstance(config, cls.StaticZmqTransportConfig)
-            return cls.create_static_zmq_transport(
-                zmq_ctx=zmq_ctx,
-                config=config,
-            )
-        elif transport_type == TransportType.DYNAMIC_ZMQ:
+        if transport_type == TransportType.DYNAMIC_ZMQ:
             assert isinstance(config, cls.DynamicZmqTransportConfig)
             return cls.create_dynamic_zmq_transport(
                 zmq_ctx=zmq_ctx,
@@ -145,10 +110,7 @@ class DispatcherConfig:
     transport: TransportType = field(default=TransportType.DYNAMIC_ZMQ)
 
     # Transport configuration to use for creating the transport
-    transport_config: Union[
-        TransportFactory.StaticZmqTransportConfig,
-        TransportFactory.DynamicZmqTransportConfig,
-    ] = field(
+    transport_config: TransportFactory.DynamicZmqTransportConfig = field(
         default_factory=lambda: TransportFactory.DynamicZmqTransportConfig()
     )
 

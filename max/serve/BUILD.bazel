@@ -7,6 +7,7 @@ modular_py_library(
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/queue",
     ],
 )
@@ -52,6 +53,7 @@ modular_py_binary(
     deps = [
         ":serve",
         "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/serve/recordreplay",
         "//SDK/lib/API/python/max/serve/telemetry",
         requirement("fastapi"),

@@ -21,7 +21,11 @@ from typing import Any, Optional, Protocol, Union, runtime_checkable
 
 import numpy as np
 
-from .interfaces import LogProbabilities, TextGenerationStatus
+from .interfaces import (
+    LogProbabilities,
+    SamplingParams,
+    TextGenerationStatus,
+)
 
 CHUNK_SIZE = 128
 
@@ -213,6 +217,9 @@ class InputContext(Protocol):
 class TextContext:
     """A base class for model context, specifically for Text model variants."""
 
+    sampling_params: SamplingParams
+    """Per-request sampling configuration."""
+
     def __init__(
         self,
         prompt: Union[str, Sequence[int]],
@@ -223,6 +230,7 @@ class TextContext:
         log_probabilities_echo: bool = False,
         json_schema: str | None = None,
         ignore_eos: bool = False,
+        sampling_params: SamplingParams = SamplingParams(),
     ) -> None:
         self._cache_seq_id = cache_seq_id
         self.prompt = prompt
@@ -262,6 +270,7 @@ class TextContext:
         self.is_initial_prompt = True
         self.ignore_eos = ignore_eos
         self.active_status = TextGenerationStatus.ACTIVE
+        self.sampling_params = sampling_params
 
         self._draft_offset = 0
 
@@ -590,11 +599,7 @@ SPEECH_TOKEN_audio_chunk_size = 128
 class TTSContext(TextContext):
     """A context for the TTS model."""
 
-    def __init__(
-        self,
-        *args,
-        **kwargs,
-    ) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         self.audio_prompt_tokens = kwargs.get(
             "audio_prompt_tokens", np.array([], dtype=np.int32)
         )

@@ -798,9 +798,11 @@ struct TMATensorTile[
         """
         # NOTE: Only one thread should call this
 
-        var src_desc = UnsafePointer(to=self.descriptor).bitcast[
-            UInt8
-        ]().address_space_cast[_GPUAddressSpace.GLOBAL]()
+        var src_desc = (
+            UnsafePointer(to=self.descriptor)
+            .bitcast[UInt8]()
+            .address_space_cast[_GPUAddressSpace.GLOBAL]()
+        )
         var dst_desc = smem_tma_descriptor_ptr.bitcast[UInt8]()
 
         alias simd_width = simdwidthof[DType.uint8]()

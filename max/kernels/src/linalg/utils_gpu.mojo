@@ -63,7 +63,7 @@ fn _block_swizzle_by_scale[
     This helps when N is very large e.g. 1024 x 32768 x 3072 in Replit 3B.
     """
     var scale = scale0
-    var num_partitions = (1 << scale)
+    var num_partitions = 1 << scale
     while (grid_dim.data[0] & (num_partitions - 1)) and scale > 0:
         scale -= 1
         num_partitions = 1 << scale
@@ -443,11 +443,10 @@ fn select_config[
     alias opt_list = [_128x128_4, _256x64_4, _256x128_3]
 
     for bmnk_stage in opt_list:
-        var bm = bmnk_stage[][0]
-        var bn = bmnk_stage[][1]
-        var bk = bmnk_stage[][2]
-        var num_stages = bmnk_stage[][3]
-
+        var bm = bmnk_stage[0]
+        var bn = bmnk_stage[1]
+        var bk = bmnk_stage[2]
+        var num_stages = bmnk_stage[3]
         var num_blocks = ceildiv(M, bm) * ceildiv(N, bn)
         var num_waves_base = ceildiv(num_blocks, A100.sm_count)
 
@@ -460,7 +459,9 @@ fn select_config[
         ):
             continue
 
-        var allowed_num_k_partitions = 1 if num_waves_base > 3 else max_num_k_partitions
+        var allowed_num_k_partitions = (
+            1 if num_waves_base > 3 else max_num_k_partitions
+        )
 
         # Traverse split-k possibilities to find the min work per SM.
         for num_k_partitions in range(1, allowed_num_k_partitions + 1):

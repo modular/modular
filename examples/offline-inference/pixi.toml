@@ -8,6 +8,7 @@ version = "0.1.0"
 
 [tasks]
 basic = "python basic.py"
+test = "python basic.py"
 
 [dependencies]
 python = ">=3.9,<3.14"

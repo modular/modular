@@ -224,9 +224,11 @@ fn repack_Q4_0_for_sm8x[
             var frag_1: SIMD[DType.uint8, 16] = 0
             var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
             alias thd_layout = Layout.row_major(8, 4)
-            var thread_tile = raw_Q_tile.slice[:, 2:]().vectorize[
-                1, 2
-            ]().distribute[thd_layout](lane_id)
+            var thread_tile = (
+                raw_Q_tile.slice[:, 2:]()
+                .vectorize[1, 2]()
+                .distribute[thd_layout](lane_id)
+            )
 
             @parameter
             for i_ele in range(16):
@@ -344,9 +346,13 @@ fn create_ref_b[
         ceildiv(BLOCK_K, group_size), repack_tile[0]
     ](0, warp_x)
     alias smem_reg_scales_layout = Layout.row_major(8, 4)
-    var scales_reg_tiles = tb[scales_type]().row_major[
-        repack_tile[0] // 8, 1
-    ]().local().alloc().vectorize[1, 1]()
+    var scales_reg_tiles = (
+        tb[scales_type]()
+        .row_major[repack_tile[0] // 8, 1]()
+        .local()
+        .alloc()
+        .vectorize[1, 1]()
+    )
     # load scales
     scales_reg_tiles.vectorize[8, 1]().copy_from(
         warp_scales_tile.vectorize[1, 8]().distribute[
@@ -377,8 +383,10 @@ fn create_ref_b[
 
         var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
 
-        var v = bitcast[DType.bfloat16, 2](t).fma(BF16_ONE, BF16_BIAS).fma(
-            BF16_SCALE, BF16_ZERO
+        var v = (
+            bitcast[DType.bfloat16, 2](t)
+            .fma(BF16_ONE, BF16_BIAS)
+            .fma(BF16_SCALE, BF16_ZERO)
         )
         return v
 

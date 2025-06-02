@@ -39,8 +39,28 @@ what we publish.
 
 ### Language changes
 
-- The type [`Dict`](/mojo/stdlib/collections/dict/Dict/) is now part of the
-  prelude, so there is no need to import them anymore.
+- Mojo now supports 'ref' patterns that bind a stored LValue into a named
+  declaration, extending the argument convention into local function scope.
+
+  This can be useful when you want to do something with a reference,
+  but don't want the conceptual overhead of a Pointer. These are
+  equivalent:
+
+  ```mojo
+  fn use_pointer(your_list: List[Int]):
+      var p = Pointer(to=your_list[i])  # Form a safe pointer
+      ...
+      use(p[])     # dereference it
+
+  fn use_ref(your_list: List[Int]):
+      ref r = your_list[i]  # Bind element reference to 'r'
+      ...
+      use(r)     # use it
+  ```
+
+  References are bound in their initializer and cannot be mutated afterward:
+  uses and mutations of the reference are interpreted as uses and mutations
+  of the value referenced by the value.
 
 - The Mojo compiler will now synthesize `__moveinit__` and `__copyinit__` and
   `copy()` methods for structs that conform to `Movable`, `Copyable`, and
@@ -83,7 +103,59 @@ what we publish.
   conformance should either declare conformances explicitly or, if appropriate,
   replace empty, non-load-bearing traits with trait compositions.
 
+- `for` loops in a `def` now use function-scoped variables to provide
+  Python-like behavior, e.g.
+
+  ```mojo
+  def main():
+    i = 0 # needed because Mojo doesn't know range(2) is non-empty.
+    for i in range(2):
+      print(i)
+    print(i)
+  ```
+
+  now prints 0, 1, 1.
+
+  This also means that weird things like this are errors:
+
+  ```mojo
+  def main():
+    for i in range(2): ...
+    for i in ["foo", "bar"]: ...
+  ```
+
+  Because "i" will have contradictory types in the different loops. `fn`'s
+  automatically scope variables like this, but you can tell Mojo to scope the
+  variable in a def by using the `var` keyword:
+
+  ```mojo
+  def main():
+    for var i in range(2): ...       # This i is scoped to this loop
+    for var i in ["foo", "bar"]: ... # This i is scoped to this loop
+  ```
+
+- Mojo now supports Python-style type patterns within function bodies without
+  needing the use of the `var` keyword, e.g.: `x = 4; y: UInt8 = 5` implicitly
+  declares `x` as type `Int`, but implicitly declares `y` with type `UInt8`.
+
 ### Standard library changes
+
+- The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
+  prelude, so there is no need to import them anymore.
+
+- The `List`, `Span`, `Dict`, `Set`, `VariadicPack` and `Deque` iterators now
+  return references to elements directly, instead of returning `Pointer`. This
+  eliminates the need for `[]` in the loop  body.  Make sure to use `ref` to
+  avoid a copy if desired.
+
+  ```mojo
+      # Old:
+      for k_v in expected_dict.items():
+        use(k_v[].key, k_v[].value)
+      # New:
+      for ref k_v in expected_dict.items():
+        use(k_v.key, k_v.value)
+  ```
 
 - The `CollectionElement` trait has been removed.
 
@@ -201,7 +273,7 @@ Changes to Python-Mojo interoperability:
   It now works correctly for strings with less than
   19 digits left of the `e`. For example `1.1385616158185648648648648648616186186e-3`
   won't work, and will raise an error. Anything that does
-  not produce an error is now garanteed to be correct.
+  not produce an error is now guaranteed to be correct.
   While the current implementation is not the fastest, it's based on the paper
   [Number Parsing at a Gigabyte per Second](https://arxiv.org/abs/2101.11408) by
   Daniel Lemire. So with a bit of effort to
@@ -222,11 +294,15 @@ Changes to Python-Mojo interoperability:
 
 ### ❌ Removed
 
-- `VariadPack.each` and `VariadPack.each_idx` methods have been removed.
+- `VariadicPack.each` and `VariadicPack.each_idx` methods have been removed.
   Use the `@parameter for` language construct to achieve this now.
 
 ### 🛠️ Fixed
 
+- [#1649](https://github.com/modular/modular/issues/1649) - Trailing comma is
+  not supported in assignments.
+- [#3415](https://github.com/modular/modular/issues/3415) - Type annotation
+  fails on implicit variable declarations
 - [#4352](https://github.com/modular/modular/issues/4352) - `math.sqrt`
   products incorrect results for large inputs.
 - [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes

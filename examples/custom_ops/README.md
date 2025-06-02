@@ -1,5 +1,15 @@
 # Writing custom CPU or GPU graph operations using Mojo
 
+The [MAX graph API](https://docs.modular.com/max/graph/) provides a powerful
+framework for staging computational graphs to be run on GPUs, CPUs, and more.
+Each operation in one of these graphs is defined in
+[Mojo](https://docs.modular.com/mojo/), an easy-to-use language for writing
+high-performance code.
+
+The examples here illustrate how to construct custom graph operations in Mojo
+that run on GPUs and CPUs, as well as how to build computational graphs that
+contain and run them on different hardware architectures.
+
 Graphs in MAX can be extended to use custom operations written in Mojo. The
 following examples are shown here:
 
@@ -37,7 +47,7 @@ graph construction occurs in the Python files in the base directory. These
 examples are designed to stand on their own, so that they can be used as
 templates for experimentation.
 
-A single [Pixi](https://pixi.sh) command runs each of the examples:
+A single [Pixi](https://pixi.sh/latest/) command runs each of the examples:
 
 ```sh
 pixi run addition

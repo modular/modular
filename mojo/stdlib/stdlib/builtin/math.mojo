@@ -188,9 +188,9 @@ fn max[T: Copyable & GreaterThanComparable](x: T, *ys: T) -> T:
         The maximum value from the input sequence.
     """
     var res = x
-    for y in ys:
-        if y[] > res:
-            res = y[]
+    for ref y in ys:
+        if y > res:
+            res = y
     return res
 
 
@@ -271,9 +271,9 @@ fn min[T: Copyable & LessThanComparable](x: T, *ys: T) -> T:
         The minimum value from the input sequence.
     """
     var res = x
-    for y in ys:
-        if y[] < res:
-            res = y[]
+    for ref y in ys:
+        if y < res:
+            res = y
     return res
 
 

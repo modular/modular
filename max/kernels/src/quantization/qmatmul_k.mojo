@@ -477,7 +477,9 @@ fn _pack_block_Q4_K[
         uninitialized=True
     )
     var q_scales_reorder_buf = q_scales_and_mins_buf.unsafe_ptr()
-    var q_mins_reorder_buf = q_scales_and_mins_buf.unsafe_ptr() + group_count * block_n
+    var q_mins_reorder_buf = (
+        q_scales_and_mins_buf.unsafe_ptr() + group_count * block_n
+    )
 
     # Scales are not currently transformed.
     memcpy(
@@ -514,7 +516,9 @@ fn _pack_block_Q4_K[
                 alias split_width = simdwidthof[DType.int32]()
                 var n_idx_hi = n // split_width
                 var n_idx_lo = n % split_width
-                var reorder_idx = g * block_n + n_idx_hi * split_width * 2 + n_idx_lo
+                var reorder_idx = (
+                    g * block_n + n_idx_hi * split_width * 2 + n_idx_lo
+                )
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + split_width] = q_mins_row_1_val
             else:
@@ -805,9 +809,11 @@ fn _apply_base_scales[
     # Convert to floating point and apply the block scale of matrix B.
     @parameter
     for col in range(tile_n):
-        var b_scale = (b_base_scales_ptr + col * simd_width).load[
-            width=simd_width
-        ]().cast[DType.float32]()
+        var b_scale = (
+            (b_base_scales_ptr + col * simd_width)
+            .load[width=simd_width]()
+            .cast[DType.float32]()
+        )
 
         @parameter
         for row in range(tile_m):
@@ -907,9 +913,11 @@ fn _apply_zero_point_correction[
     # float accumulator.
     @parameter
     for col in range(tile_n):
-        var base_mins = (b_base_mins_ptr + col * simd_width).load[
-            width=simd_width
-        ]().cast[DType.float32]()
+        var base_mins = (
+            (b_base_mins_ptr + col * simd_width)
+            .load[width=simd_width]()
+            .cast[DType.float32]()
+        )
 
         @parameter
         for row in range(tile_m):
@@ -1322,9 +1330,11 @@ fn _matmul_Q6_K_tile[
             # instructions for s8s8.
             @parameter
             for row in range(tile_m):
-                var group_sum = a_tile_ptr[].group_sums[g * tile_m + row].cast[
-                    DType.int32
-                ]()
+                var group_sum = (
+                    a_tile_ptr[]
+                    .group_sums[g * tile_m + row]
+                    .cast[DType.int32]()
+                )
                 var correction_val = SIMD[DType.int32, simd_width](
                     -32 * group_sum
                 )

@@ -210,9 +210,9 @@ def test_issue_20421():
     var a = UnsafePointer[UInt8, alignment=64].alloc(count=16 * 64)
     for i in range(16 * 64):
         a[i] = i & 255
-    var av16 = a.offset(128 + 64 + 4).bitcast[Int32]().load[
-        width=4, alignment=1
-    ]()
+    var av16 = (
+        a.offset(128 + 64 + 4).bitcast[Int32]().load[width=4, alignment=1]()
+    )
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
@@ -1876,8 +1876,7 @@ def test_from_bytes_as_bytes():
         Int32.from_bytes[big_endian=True](FourBytes(255, 0, 0, 0)),
         -16777216,
     )
-    for x_ref in List[Int16](10, 100, -12, 0, 1, -1, 1000, -1000):
-        x = x_ref[]
+    for x in List[Int16](10, 100, -12, 0, 1, -1, 1000, -1000):
 
         @parameter
         for b in range(2):

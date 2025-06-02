@@ -384,9 +384,9 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
             global_addr,
         )
 
-        var block_size = subtensors_m[block_idx.x + 1] - subtensors_m[
-            block_idx.x
-        ]
+        var block_size = (
+            subtensors_m[block_idx.x + 1] - subtensors_m[block_idx.x]
+        )
 
         device_tma_tile[
             block_idx.x

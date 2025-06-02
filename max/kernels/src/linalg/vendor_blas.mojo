@@ -1039,8 +1039,12 @@ fn _hipblasLt_matmul(
     var _bdesc = create_matrix_layout(b)
     var _ddesc = create_matrix_layout(d)
 
-    var transa = hipblasOperation_t.OP_T if transpose_a else hipblasOperation_t.OP_N
-    var transb = hipblasOperation_t.OP_T if transpose_b else hipblasOperation_t.OP_N
+    var transa = (
+        hipblasOperation_t.OP_T if transpose_a else hipblasOperation_t.OP_N
+    )
+    var transb = (
+        hipblasOperation_t.OP_T if transpose_b else hipblasOperation_t.OP_N
+    )
 
     # hipblasLt is by default column-major but we like to have the output in row-major
     # to compare with our results. Use `c_row_major` to determine the output layout.

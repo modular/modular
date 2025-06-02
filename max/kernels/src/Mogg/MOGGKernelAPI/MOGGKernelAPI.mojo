@@ -8448,7 +8448,7 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("topk_fused_sampling")
+@compiler.register("sampler.topk_fused_sampling")
 struct Struct_topk_fused_sampling:
     @always_inline
     @staticmethod
@@ -8462,6 +8462,7 @@ struct Struct_topk_fused_sampling:
         out_idxs: OutputTensor[type=out_idx_type, rank=rank],
         K: Scalar,
         temperature: Scalar[type],
+        seed: UInt64,
         input: InputTensor[type=type, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
@@ -8484,7 +8485,7 @@ struct Struct_topk_fused_sampling:
                     )
                     return
                 _topk_fused_sampling_cpu(
-                    Int(K), input_buf, out_idxs_buf, temperature
+                    Int(K), input_buf, out_idxs_buf, temperature, seed
                 )
             else:
                 var cuda_ctx = ctx.get_device_context()
@@ -8494,6 +8495,7 @@ struct Struct_topk_fused_sampling:
                     input_buf,
                     out_idxs_buf,
                     temperature=temperature,
+                    seed=seed,
                 )
 
 

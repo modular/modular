@@ -504,8 +504,8 @@ struct PythonModuleBuilder:
         Python.add_functions(self.module, self.functions)
         self.functions.clear()
 
-        for builder in self.type_builders:
-            builder[].finalize(self.module)
+        for ref builder in self.type_builders:
+            builder.finalize(self.module)
         self.type_builders.clear()
 
         return self.module

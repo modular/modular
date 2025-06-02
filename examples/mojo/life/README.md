@@ -30,11 +30,11 @@ This directory contains the following files:
 
 ## Run the code
 
-If you have [`magic`](https://docs.modular.com/magic) installed, you can
+If you have [Pixi](https://pixi.sh/latest/) installed, you can
 execute version 1 of the program by running the following command:
 
 ```bash
-magic run lifev1
+pixi run lifev1
 ```
 
 This displays a window that shows an initial random state for the grid and then
@@ -44,7 +44,7 @@ pressing the `q` or `<Escape>` key or by closing the window.
 You can execute version 2 of the program by running the following command:
 
 ```bash
-magic run lifev2
+pixi run lifev2
 ```
 
 Just like for version 1, this displays a window that shows an initial random
@@ -55,13 +55,13 @@ closing the window.
 You can execute the benchmark program by running the following command:
 
 ```bash
-magic run benchmark
+pixi run benchmark
 ```
 
 You can run the unit tests by running the following command:
 
 ```bash
-magic run test
+pixi run test
 ```
 
 ## Dependencies

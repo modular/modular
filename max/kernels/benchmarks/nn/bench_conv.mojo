@@ -86,9 +86,10 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     # Set the total buffer allocation to be 4x L3 cache.
     alias MB = 1024 * 1024
     alias L3_cache = env_get_int["L3SIZE", 24]() * MB
-    var size_per_copy = input_alloc_size * sizeof[
-        input_type
-    ]() + filter_alloc_size * sizeof[filter_type]()
+    var size_per_copy = (
+        input_alloc_size * sizeof[input_type]()
+        + filter_alloc_size * sizeof[filter_type]()
+    )
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.

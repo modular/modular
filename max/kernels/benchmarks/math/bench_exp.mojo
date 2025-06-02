@@ -112,8 +112,8 @@ fn ldexp2kf_opt[
     var x = x_in * u * u * u * u
     #   u = intBitsToFloat(((int32_t)(q + 0x7f)) << 23);
     var xu = (
-        ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]()) << 23
-    )
+        (q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]()
+    ) << 23
     return x * xu.cast[dtype]()
 
 

@@ -28,6 +28,7 @@ import zmq
 from max.pipelines.core import PipelinesFactory
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.scheduler import TokenGeneratorSchedulerConfig, load_scheduler
@@ -94,6 +95,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        dispatcher_factory: DispatcherFactory,
     ) -> None:
         """Runs a model worker process.
 
@@ -106,6 +108,7 @@ class ModelWorker:
             pipeline_config: Configuration for the token generation pipeline
             settings: Global server settings
             metric_client_factory: Factory function to create metric client
+            dispatcher_factory: Factory for creating dispatcher client instances
         """
         # Configure Logging
         configure_logging(settings)
@@ -124,6 +127,9 @@ class ModelWorker:
         # This should only be done once per process.
         zmq_ctx = zmq.Context(io_threads=2)
 
+        # create dispatcher client
+        dispatcher_client = dispatcher_factory.create_client(zmq_ctx)
+
         # Retrieve Scheduler.
         scheduler = load_scheduler(
             pc,
@@ -131,7 +137,14 @@ class ModelWorker:
             zmq_ctx,
             settings,
             pipeline_config,
+            dispatcher_client,
         )
+
+        if scheduler.needs_dispatcher_client():
+            logger.debug(
+                "Scheduler needs dispatcher client, starting dispatcher client"
+            )
+            dispatcher_client.start()
 
         # Mark the start of the process, and run the scheduler.
         pc.set_started()
@@ -141,6 +154,8 @@ class ModelWorker:
 
         # Close the process.
         pc.set_completed()
+        if dispatcher_client is not None:
+            dispatcher_client.stop()
         logger.debug("Stopped model worker!")
 
     @staticmethod
@@ -153,6 +168,7 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
+        dispatcher_factory: DispatcherFactory,
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -166,6 +182,7 @@ class ModelWorker:
             pipeline_config: Configuration for the token generation pipeline
             settings: Global server settings
             metric_client_factory: Factory for creating metric client instances
+            dispatcher_factory: Factory for creating dispatcher client instances
             ctx: Multiprocessing context for worker process
         """
         try:
@@ -177,6 +194,7 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
+                    dispatcher_factory,
                 )
             )
         except KeyboardInterrupt:
@@ -195,6 +213,7 @@ async def start_model_worker(
     batch_config: TokenGeneratorSchedulerConfig,
     settings: Settings,
     metric_client: MetricClient,
+    dispatcher_factory: DispatcherFactory,
     zmq_io_threads: int = 1,
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
@@ -238,6 +257,7 @@ async def start_model_worker(
             batch_config,
             settings,
             metric_client.cross_process_factory(),
+            dispatcher_factory,
         ),
     )
     worker.start()

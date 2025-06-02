@@ -686,7 +686,9 @@ fn _transpose_2d_parallel_tiled[
     var n_tiles = N // n_unit_size
     var m_tiles = M // m_unit_size
 
-    var rows_per_worker = 1  # Row in terms of tiles, i.e. we still take simd_width elements
+    var rows_per_worker = (
+        1  # Row in terms of tiles, i.e. we still take simd_width elements
+    )
     if min_work_per_task > M * simd_width:
         rows_per_worker = min_work_per_task // (M * simd_width)
 
@@ -898,9 +900,10 @@ fn transpose_3d_swap_inner[
         return
     # simplified perms must be 0, 2, 1
     var offset = 0
-    var step = simplified_input_shape[
-        simplified_rank - 2
-    ] * simplified_input_shape[simplified_rank - 1]
+    var step = (
+        simplified_input_shape[simplified_rank - 2]
+        * simplified_input_shape[simplified_rank - 1]
+    )
     # TODO: parallelize this loop
     for i in range(simplified_input_shape[0]):
         _transpose_2d_serial_tiled(

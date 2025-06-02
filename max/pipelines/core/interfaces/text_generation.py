@@ -85,6 +85,41 @@ class TokenGeneratorRequestMessage(TypedDict):
 
 
 @dataclass(frozen=True)
+class SamplingParams:
+    top_k: int = 1
+    """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
+
+    temperature: float = 1
+    """Controls the randomness of the model's output; higher values produce more diverse responses."""
+
+    frequency_penalty: float = 0.0
+    """The frequency penalty to apply to the model's output. A positive value will penalize new tokens
+    based on their frequency in the generated text: tokens will receive a penalty proportional to the
+    count of appearances."""
+
+    presence_penalty: float = 0.0
+    """The presence penalty to apply to the model's output. A positive value will penalize new tokens
+    that have already appeared in the generated text at least once by applying a constant penalty."""
+
+    repetition_penalty: float = 1.0
+    """The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens
+    that have already appeared in the generated text at least once by dividing the logits by the
+    repetition penalty."""
+
+    enable_structured_output: bool = False
+    """Enable structured generation/guided decoding for the server. This allows the user to pass a json
+    schema in the response_format field, which the LLM will adhere to."""
+
+    enable_variable_logits: bool = False
+    """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
+    their associated logit_offsets. This is needed to produce additional logits for echo and speculative
+    decoding purposes."""
+
+    do_penalties: bool = False
+    """Whether to apply frequency and presence penalties to the model's output."""
+
+
+@dataclass(frozen=True)
 class TokenGeneratorRequest:
     id: str
     """
@@ -174,6 +209,11 @@ class TokenGeneratorRequest:
     chat_template_options: Optional[dict[str, Any]] = None
     """
     Optional dictionary of options to pass when applying the chat template.
+    """
+
+    sampling_params: SamplingParams = SamplingParams()
+    """
+    Token sampling configuration parameters for the request.
     """
 
     def __str__(self) -> str:

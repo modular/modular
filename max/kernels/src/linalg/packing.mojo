@@ -442,11 +442,13 @@ struct PackMatrixCols[
                     @parameter
                     for l in range(vnni_cols):
                         var local_idx = Index(i + l, p + nr * j)
-                        var val = 0 if local_idx[0] >= kc or local_idx[
-                            1
-                        ] >= nc else self.original_matrix[
-                            self.global_offset + local_idx
-                        ]
+                        var val = (
+                            0 if local_idx[0] >= kc
+                            or local_idx[1]
+                            >= nc else self.original_matrix[
+                                self.global_offset + local_idx
+                            ]
+                        )
                         self.packed_matrix.store(
                             Index(j, i // vnni_cols, vnni_cols * p + l),
                             val,
@@ -466,11 +468,13 @@ struct PackMatrixCols[
                     for i2 in range(i8mm_cols):
                         for p2 in range(i8mm_rows):
                             var local_idx = Index(i + i2, nr * j + p + p2)
-                            var val = 0 if local_idx[0] >= kc or local_idx[
-                                1
-                            ] >= nc else self.original_matrix[
-                                self.global_offset + local_idx
-                            ]
+                            var val = (
+                                0 if local_idx[0] >= kc
+                                or local_idx[1]
+                                >= nc else self.original_matrix[
+                                    self.global_offset + local_idx
+                                ]
+                            )
                             self.packed_matrix.store[width=1](
                                 Index(
                                     j,

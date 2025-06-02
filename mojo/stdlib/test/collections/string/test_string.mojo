@@ -696,21 +696,19 @@ def test_split():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape sequences are accepted
-    var univ_sep_var = (
-        String(
-            " ",
-            "\t",
-            "\n",
-            "\r",
-            "\v",
-            "\f",
-            "\x1c",
-            "\x1d",
-            "\x1e",
-            String(bytes=next_line),
-            String(bytes=unicode_line_sep),
-            String(bytes=unicode_paragraph_sep),
-        )
+    var univ_sep_var = String(
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\v",
+        "\f",
+        "\x1c",
+        "\x1d",
+        "\x1e",
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     d = s.split()
@@ -866,8 +864,8 @@ def test_splitlines():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
 
-    for elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = String(bytes=elt[])
+    for ref elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+        u = String(bytes=elt)
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -901,13 +899,13 @@ def test_isspace():
         String(bytes=unicode_paragraph_sep),
     ]
 
-    for i in univ_sep_var:
-        assert_true(i[].isspace())
+    for ref i in univ_sep_var:
+        assert_true(i.isspace())
 
-    for i in List[String]("not", "space", "", "s", "a", "c"):
-        assert_false(i[].isspace())
+    for var i in List[String]("not", "space", "", "s", "a", "c"):
+        assert_false(i.isspace())
 
-    for i in range(len(univ_sep_var)):
+    for var i in range(len(univ_sep_var)):
         var sep = String()
         for j in range(len(univ_sep_var)):
             sep += univ_sep_var[i]
@@ -1225,7 +1223,7 @@ def test_string_char_slices_iter():
         var ptr = item.unsafe_ptr()
         var amnt_characters = 0
         var byte_idx = 0
-        for v in item.codepoint_slices():
+        for var v in item.codepoint_slices():
             var byte_len = v.byte_length()
             for i in range(byte_len):
                 assert_equal(ptr[byte_idx + i], v.unsafe_ptr()[i])
@@ -1234,7 +1232,7 @@ def test_string_char_slices_iter():
 
         assert_equal(amnt_characters, items_amount_characters[item_idx])
         var concat = String()
-        for v in item.__reversed__():
+        for var v in item.__reversed__():
             concat += v
         assert_equal(rev[item_idx], concat)
         item_idx += 1

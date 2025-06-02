@@ -209,21 +209,17 @@ fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
 
 
 def test_char_utf8_encoding():
-    for entry in SIGNIFICANT_CODEPOINTS:
-        var codepoint = entry[][0]
-        var expected_utf8 = entry[][1]
-
+    for elements in SIGNIFICANT_CODEPOINTS:
+        codepoint, expected_utf8 = elements
         assert_utf8_bytes(codepoint, expected_utf8)
 
 
 def test_char_utf8_byte_length():
-    for entry in SIGNIFICANT_CODEPOINTS:
-        var codepoint = entry[][0]
-        var expected_utf8 = entry[][1]
-
-        var computed_len = Codepoint.from_u32(
-            codepoint
-        ).value().utf8_byte_length()
+    for elements in SIGNIFICANT_CODEPOINTS:
+        codepoint, expected_utf8 = elements
+        var computed_len = (
+            Codepoint.from_u32(codepoint).value().utf8_byte_length()
+        )
 
         assert_equal(computed_len, len(expected_utf8))
 

@@ -577,10 +577,10 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
     var result = List[String]()
     try:
         var list = words.split(", ")
-        for w in list:
-            var w1 = String(w[].strip())
+        for ref w in list:
+            var w1 = String(w.strip())
             for w in list:
-                var w2 = w[].strip()
+                var w2 = w.strip()
                 result.append(w1 + " " + w2)
     except:
         pass
@@ -694,12 +694,12 @@ def assert_fill_factor[
     # A perfect hash function is when the number of buckets is equal to number of words
     # and the fill factor results in 1.0
     var buckets = List[Int](0) * num_buckets
-    for w in words:
-        var h = hash[HasherType=hasher0](w[])
+    for ref w in words:
+        var h = hash[HasherType=hasher0](w)
         buckets[Int(h) % num_buckets] += 1
     var unfilled = 0
-    for v in buckets:
-        if v[] == 0:
+    for ref v in buckets:
+        if v == 0:
             unfilled += 1
 
     var fill_factor = 1 - unfilled / num_buckets
@@ -719,12 +719,12 @@ def assert_fill_factor_old_hash[
     # A perfect hash function is when the number of buckets is equal to number of words
     # and the fill factor results in 1.0
     var buckets = List[Int](0) * num_buckets
-    for w in words:
-        var h = old_hash(w[].unsafe_ptr(), w[].byte_length())
+    for ref w in words:
+        var h = old_hash(w.unsafe_ptr(), w.byte_length())
         buckets[h % num_buckets] += 1
     var unfilled = 0
     for v in buckets:
-        if v[] == 0:
+        if v == 0:
             unfilled += 1
 
     var fill_factor = 1 - unfilled / num_buckets

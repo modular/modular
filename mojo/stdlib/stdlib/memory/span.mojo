@@ -56,16 +56,14 @@ struct _SpanIter[
         return self
 
     @always_inline
-    fn __next__(
-        mut self, out p: Pointer[T, origin, address_space=address_space]
-    ):
+    fn __next__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
-            p = Pointer(to=self.src[self.index])
             self.index += 1
+            return self.src[self.index - 1]
         else:
             self.index -= 1
-            p = Pointer(to=self.src[self.index])
+            return self.src[self.index]
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -483,8 +481,8 @@ struct Span[
         Args:
             value: The value to assign to each element.
         """
-        for element in self:
-            element[] = value
+        for ref element in self:
+            element = value
 
     fn swap_elements(
         self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt

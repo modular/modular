@@ -87,9 +87,10 @@ struct TileMask[
             if dim_mask[i]:
                 size[i] = element_size[i]
             else:
-                var start_index = self.offset[i] + point[i] * element_size[
-                    i
-                ] * element_stride[i]
+                var start_index = (
+                    self.offset[i]
+                    + point[i] * element_size[i] * element_stride[i]
+                )
                 size[i] = max(0, self.max_dim[i] - start_index)
 
         return size

@@ -512,12 +512,16 @@ fn gemm_kernel[
     ](0, 0)
 
     # Accumulation registers for result
-    var c_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(mmas_per_warp_m * mmas_per_warp_n, 4),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0)
+    var c_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(mmas_per_warp_m * mmas_per_warp_n, 4),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # AMD TensorCore operator for matrix multiplication
     alias mma = AMD_MMA[

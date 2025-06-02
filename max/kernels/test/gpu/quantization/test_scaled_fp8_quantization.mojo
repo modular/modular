@@ -128,9 +128,10 @@ fn test_dynamic_fp8_quant[
                     abs(in_host.tensor[i, j + group_idx * Int(group_size)]),
                 )
 
-            var scale_factor = min(group_max, 1200.0) / Scalar[
-                out_dtype
-            ].MAX_FINITE.cast[in_dtype]()
+            var scale_factor = (
+                min(group_max, 1200.0)
+                / Scalar[out_dtype].MAX_FINITE.cast[in_dtype]()
+            )
 
             assert_equal(
                 scales_host.tensor[i, group_idx].cast[DType.float64](),
