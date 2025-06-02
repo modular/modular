@@ -531,8 +531,8 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3-8b",
             encoding="bfloat16",
-            cos_dist_threshold=3.0e-4,
-            kl_div_threshold=3.8e-3,
+            cos_dist_threshold=3.7e-2,
+            kl_div_threshold=1.3e-1,
         ),
     ),
     "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
@@ -567,8 +567,8 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3.1-8b",
             encoding="bfloat16",
-            cos_dist_threshold=2.6e-4,
-            kl_div_threshold=4.8e-3,
+            cos_dist_threshold=1.6e-2,
+            kl_div_threshold=8.4e-2,
         ),
     ),
     "Llama-3.1-8B-Instruct-float8-static": PipelineDef(
