@@ -1986,9 +1986,16 @@ static ParseResult parseClosureInitOpValue(
     if (p.parseTypeList(captureTypes) || p.parseRParen())
       return failure();
   }
-  if (p.parseComma() || parseVarDeclType(p, resultType, paramDecl))
+  if (p.parseComma() || p.parseType(resultType))
     return failure();
-
+  auto refType = dyn_cast<RefType>(resultType);
+  if (!refType)
+    return p.emitError(p.getNameLoc(), "expected a !lit.ref<> result type");
+  auto origin = dyn_cast<ParamDeclRefAttr>(refType.getOrigin());
+  if (!origin)
+    return p.emitError(p.getNameLoc(),
+                       "expected a !lit.ref<> with named origin");
+  paramDecl = ParamDeclAttr::get(origin);
   if (captureTypes.size() != memSymbolTriples.size())
     return p.emitError(p.getCurrentLocation(),
                        "expected symbols to match number of capture types");
