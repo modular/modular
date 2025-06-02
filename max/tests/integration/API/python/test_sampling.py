@@ -522,3 +522,91 @@ def test_sampling_with_seed(session: InferenceSession):
     assert not np.array_equal(prev_tokens_np[:, 0], result_seed_41), (
         f"Sampling with different seeds ({seed_1} vs {seed_2}) should produce different results"
     )
+
+
+def test_top_p_sampling(session: InferenceSession):
+    """Test that top_p sampling produces the correct results."""
+    device = session.devices[0]
+    device_ref = DeviceRef.from_device(device)
+
+    # Test parameters
+    vocab_size = 8
+    top_k = vocab_size
+    temp = 1.0
+    num_trials = 100
+
+    # After softmax, the first 4 tokens have a probability of 0.501
+    logits_np = np.array(
+        [[1.0, 0.999, 0.998, 0.997, 0.996, 0.995, 0.994, 0.993]],
+        dtype=np.float32,
+    )
+
+    # Create graph with logits and seed as inputs
+    logits_type = TensorType(DType.float32, [1, vocab_size], device=device_ref)
+    seed_type = TensorType(DType.uint64, [1], device=DeviceRef.CPU())
+
+    def create_sampling_graph(top_p):
+        with Graph(
+            f"top_p_sampling_{top_p}",
+            input_types=(logits_type, seed_type),
+        ) as graph:
+            logits_input = graph.inputs[0].tensor
+            seed_input = graph.inputs[1].tensor
+
+            # We need to manually create the custom op since topk_fused_sampling
+            # doesn't accept seed as tensor
+            sampled_tokens = ops.custom(
+                "sampler.fused_token_sampling",
+                values=[
+                    ops.constant(top_k, DType.int64, device=DeviceRef.CPU()),
+                    ops.constant(temp, DType.float32, device=DeviceRef.CPU()),
+                    ops.constant(top_p, DType.float32, device=DeviceRef.CPU()),
+                    seed_input,
+                    logits_input,
+                ],
+                out_types=[
+                    TensorType(
+                        dtype=DType.int64, shape=[1, 1], device=device_ref
+                    )
+                ],
+            )[0].tensor
+
+            graph.output(sampled_tokens)
+        return graph
+
+    # Test 0: top_p = 0.5, should only sample from the first 4 tokens
+    graph_0 = create_sampling_graph(top_p=0.5)
+    sampler_0 = session.load(graph_0)
+
+    logits_tensor = Tensor.from_dlpack(logits_np).to(device)
+    sampled_tokens_0 = []
+
+    for seed in range(num_trials):
+        seed_tensor = Tensor.from_dlpack(np.array([seed], dtype=np.uint64))
+        tokens = sampler_0(logits_tensor, seed_tensor)[0]
+        assert isinstance(tokens, Tensor)
+        token_idx = tokens.to_numpy()[0, 0]
+        sampled_tokens_0.append(token_idx)
+
+    # Verify all sampled indices are in [0, 1, 2, 3]
+    expected_tokens_0 = {0, 1, 2, 3}
+    actual_tokens_0 = set(sampled_tokens_0)
+    assert actual_tokens_0 == expected_tokens_0
+
+    # Test 1: top_p = 0.51, should only sample from indices [0, 1, 2, 3, 4]
+    graph_1 = create_sampling_graph(top_p=0.51)
+    sampler_1 = session.load(graph_1)
+
+    sampled_tokens_1 = []
+
+    for seed in range(num_trials):
+        seed_tensor = Tensor.from_dlpack(np.array([seed], dtype=np.uint64))
+        tokens = sampler_1(logits_tensor, seed_tensor)[0]
+        assert isinstance(tokens, Tensor)
+        token_idx = tokens.to_numpy()[0, 0]
+        sampled_tokens_1.append(token_idx)
+
+    # Verify all sampled indices are in [0, 1, 2, 3, 4]
+    expected_tokens_1 = {0, 1, 2, 3, 4}
+    actual_tokens_1 = set(sampled_tokens_1)
+    assert actual_tokens_1 == expected_tokens_1
