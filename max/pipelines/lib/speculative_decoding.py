@@ -15,7 +15,7 @@
 
 import logging
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, Optional, TypeVar, cast
 
 import numpy as np
 from max.driver import Tensor, load_devices, scan_available_devices
@@ -48,6 +48,7 @@ from .pipeline import (
     PipelineModel,
     upper_bounded_default,
 )
+from .ragged_token_merger import ragged_token_merger
 from .sampling import rejection_sampler, token_sampler
 
 T = TypeVar("T", bound=InputContext)
@@ -148,6 +149,15 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             adapter=weight_adapters.get(_target_weights_format, None),
             return_logits=ReturnLogits.VARIABLE,
         )
+        # TODO: We only support Llama3 for spec decoding since we haven't worked out
+        # a general API for the prepare next token with draft inputs yet.
+        from ..architectures.llama3.model import Llama3Model
+
+        # Now check if the instantiated model is a Llama3Model
+        if not isinstance(self._target_model, Llama3Model):
+            raise ValueError(
+                "Speculative decoding only supported for Llama3 models"
+            )
 
         # Calculate Max Length
         self._max_length = self._target_model.calculate_max_seq_len(
@@ -260,6 +270,12 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             msg = f"draft maximum sequence length ({draft_seq_len}) must match target maximum sequence length."
             raise ValueError(msg)
 
+        self._ragged_token_merger = target_session.load(
+            ragged_token_merger(
+                device=DeviceRef.from_device(self.target_devices[0]),
+            )
+        )
+
     @traced
     def calculate_num_steps(
         self,
@@ -288,6 +304,27 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             else num_available_steps
         )
 
+    def _prepare_llama3_batch(
+        self,
+        model: PipelineModel,
+        num_steps: int,
+        return_n_logits: int,
+        merged_draft_tokens: Tensor,
+        merged_draft_offsets: Tensor,
+        kv_cache_inputs: KVCacheInputsSequence,
+    ) -> "Llama3Inputs":  # type: ignore
+        from ..architectures.llama3.model import Llama3Inputs
+
+        return Llama3Inputs(
+            tokens=merged_draft_tokens,
+            input_row_offsets=merged_draft_offsets,
+            signal_buffers=[],
+            kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ),
+        )
+
     @traced
     def prepare_batch(
         self,
@@ -296,6 +333,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         num_steps: int,
         return_n_logits: int,
         is_draft: bool = False,
+        merged_draft_tokens: Optional[Tensor] = None,
+        merged_draft_offsets: Optional[Tensor] = None,
     ) -> tuple[ModelInputs, int]:
         # Claim cache rows
         for i, context in enumerate(batch):
@@ -310,17 +349,33 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         kv_cache_inputs = model.kv_manager.fetch(
             cast(list[InputContext], batch), num_steps
         )
-
-        return (
-            model.prepare_initial_token_inputs(
-                context_batch=batch,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
+        if is_draft:
+            return (
+                model.prepare_initial_token_inputs(
+                    context_batch=batch,
+                    kv_cache_inputs=KVCacheInputsSequence(
+                        kv_cache_inputs=kv_cache_inputs
+                    ),
+                    return_n_logits=return_n_logits,
                 ),
-                return_n_logits=return_n_logits,
-            ),
-            num_steps,
-        )
+                num_steps,
+            )
+        else:
+            assert merged_draft_tokens is not None
+            assert merged_draft_offsets is not None
+            return (
+                self._prepare_llama3_batch(
+                    model,
+                    num_steps,
+                    return_n_logits,
+                    merged_draft_tokens,
+                    merged_draft_offsets,
+                    kv_cache_inputs=KVCacheInputsSequence(
+                        kv_cache_inputs=kv_cache_inputs
+                    ),
+                ),
+                num_steps,
+            )
 
     @traced
     def sample_draft_logits(
@@ -343,7 +398,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     @traced
     def generate_draft_tokens(
         self, batch: list[T], num_steps: int
-    ) -> tuple[int, np.ndarray, Tensor]:
+    ) -> tuple[int, Tensor, Tensor, ModelInputs]:
         # Prepare the Batch
         model_inputs, num_steps = self.prepare_batch(
             self._draft_model,
@@ -410,42 +465,21 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 new_tokens, curr_step_inputs
             )
 
-        # TODO: E2EOPT-129
-        # Copy to HOST
-        generated_tokens_host = generated_tokens.to_numpy()
-
-        # Ignore EOS, and update the Context objects via Jump Ahead
-        # This will require us to manage the context element pointers
-        # manually, at the end once we've accepted/rejected the
-        # necessary tokens.
+        # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run
         for i, context in enumerate(batch):
-            for step in range(num_steps):
-                new_token = int(generated_tokens_host[i, step])
-                if context.ignore_eos:
-                    is_eos = False
-                elif new_token in self._eos_token_id:
-                    is_eos = True
-                else:
-                    is_eos = False
-
-                context.jump_ahead(
-                    new_token=int(generated_tokens_host[i, step]),
-                    is_eos=is_eos,
-                )
-
-        return num_steps, generated_tokens_host, generated_logits
+            context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
+        return num_steps, generated_tokens, generated_logits, model_inputs
 
     @traced
     def verify_draft_tokens_with_target_model(
         self,
         context_batch: list[T],
         num_draft_tokens_generated: int,
-        draft_tokens: np.ndarray,
+        draft_tokens: Tensor,
         draft_logits: Tensor,
+        merged_draft_tokens: Tensor,
+        merged_draft_offsets: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        for context in context_batch:
-            context.bump_token_indices(start_idx=-context._draft_offset)  # type: ignore
-
         # Prepare next token inputs for target model
         target_inputs, target_num_steps = self.prepare_batch(
             self._target_model,
@@ -454,6 +488,9 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             # generating one token beyond the draft tokens.
             num_steps=1,
             return_n_logits=num_draft_tokens_generated + 1,
+            is_draft=False,
+            merged_draft_tokens=merged_draft_tokens,
+            merged_draft_offsets=merged_draft_offsets,
         )
 
         # Generate target tokens.
@@ -464,7 +501,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, sampled_target_tokens = self._rejection_sampler(
-            Tensor.from_numpy(draft_tokens).to(self.target_devices[0]),
+            draft_tokens,
             draft_logits,
             target_outputs.logits,
             target_outputs.logit_offsets,
@@ -483,19 +520,20 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # Flatten our batch for consistent indexing.
         context_batch = list(batch.values())
 
-        # This is a bit of a hack, we should work out a better API for this.
-        # The draft offset tracks how far behind the draft model should be.
-        # We should bump the start_idx back up by this amount, to get back
-        # to where the target model should start.
-        for context in context_batch:
-            context.bump_token_indices(start_idx=+context._draft_offset)  # type: ignore
-
         # Generate draft tokens.
-        # This updates the context_batch object in place.
-        num_draft_tokens_generated, draft_tokens, draft_logits = (
+        num_draft_tokens_generated, draft_tokens, draft_logits, model_inputs = (
             self.generate_draft_tokens(context_batch, num_steps)
         )
 
+        # Merge draft tokens with target tokens
+        merged_tokens, merged_offsets = self._ragged_token_merger(
+            model_inputs.tokens,  # type: ignore
+            model_inputs.input_row_offsets,  # type: ignore
+            draft_tokens,
+        )
+
+        assert isinstance(merged_tokens, Tensor)
+        assert isinstance(merged_offsets, Tensor)
         # Verify draft tokens with target model
         first_rejected_tokens, sampled_target_tokens = (
             self.verify_draft_tokens_with_target_model(
@@ -503,13 +541,16 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 num_draft_tokens_generated,
                 draft_tokens,
                 draft_logits,
+                merged_tokens,
+                merged_offsets,
             )
         )
 
         self.update_contexts(
             context_batch=context_batch,
-            first_rejected_tokens=first_rejected_tokens,
-            sampled_target_tokens_host=sampled_target_tokens.to_numpy(),
+            first_rejected_tokens=first_rejected_tokens.to_numpy(),
+            sampled_target_tokens=sampled_target_tokens.to_numpy(),
+            draft_tokens=draft_tokens.to_numpy(),
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
 
@@ -528,57 +569,56 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         return res
 
+    def _check_eos(self, token: int, context: T) -> bool:
+        """Helper method to check if token is EOS."""
+        if context.ignore_eos:
+            return False
+        return token in self._eos_token_id
+
     def update_contexts(
         self,
         context_batch: list[T],
-        first_rejected_tokens: Tensor,
-        sampled_target_tokens_host: np.ndarray,
+        first_rejected_tokens: np.ndarray,
+        sampled_target_tokens: np.ndarray,
+        draft_tokens: np.ndarray,
         num_draft_tokens_generated: int,
     ) -> None:
         """Update contexts with the results of token generation.
 
         Args:
             context_batch: The list of context objects
-            first_rejected_tokens: Tensor indicating the indices of first rejected tokens
-            sampled_target_tokens_host: Array of sampled tokens from the target model
+            first_rejected_tokens: Array indicating the indices of first rejected tokens
+            sampled_target_tokens: Array of sampled tokens from the target model
+            draft_tokens: Array of draft tokens
             num_draft_tokens_generated: Number of tokens generated by the draft model
         """
-        for idx, rejected_token_idx in enumerate(
-            first_rejected_tokens.to_numpy()
-        ):
+        for idx, rejected_token_idx in enumerate(first_rejected_tokens):
             context = context_batch[idx]
-            rollback_count = (
-                num_draft_tokens_generated - rejected_token_idx.item()
+            rejected_token_idx = rejected_token_idx.item()
+
+            accepted_draft_tokens = draft_tokens[idx, :rejected_token_idx]
+
+            context.bump_token_indices(
+                active_idx=-num_draft_tokens_generated,
+                end_idx=-num_draft_tokens_generated,
             )
 
-            # Check if the new token is EOS
-            new_token = sampled_target_tokens_host[idx].item()
-            if context.ignore_eos:
-                is_eos = False
-            elif new_token in self._eos_token_id:
-                is_eos = True
-            else:
-                is_eos = False
+            for token_idx in range(rejected_token_idx):
+                token = int(draft_tokens[idx, token_idx])
+                context.update(token, is_eos=self._check_eos(token, context))
 
-            # If we are rolling back
-            if rollback_count > 0:
-                # This should return the start_idx by rollback_count
-                context.rollback(rollback_count)
+            target_token = int(sampled_target_tokens[idx])
+            context.update(
+                target_token, is_eos=self._check_eos(target_token, context)
+            )
 
-                # Update the context with the new target token.
-                context.update(new_token, is_eos=is_eos)
-
-                # Reset Draft Offset to 0
-                context.set_draft_offset(idx=0)
-
-            # If we are not rolling back
-            else:
-                # Update the new token
-                context.update(new_token, is_eos=is_eos)
-
-                # Bump the start_idx back by 1
-                # This ensures the draft model picks up the last item in the sequence.
-                context.set_draft_offset(idx=-1)
+            # Bump the start index back by 1 when all draft tokens are accepted.
+            # The inputs to the draft will take the bonus token from the target
+            # into account. The target model will have to compute one redundant
+            # token. We can probably get rid of this by modifying the offsets
+            # and lengths of the input to the target model
+            if rejected_token_idx == num_draft_tokens_generated:
+                context.bump_token_indices(start_idx=-1)
 
     def build_response(
         self,

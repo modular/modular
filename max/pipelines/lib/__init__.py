@@ -45,6 +45,7 @@ from .pipeline import (
     get_paged_manager,
     upper_bounded_default,
 )
+from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import rejection_sampler, token_sampler
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
@@ -80,6 +81,7 @@ __all__ = [
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
+    "ragged_token_merger",
     "rejection_sampler",
     "repo_exists_with_retry",
     "RepoType",
