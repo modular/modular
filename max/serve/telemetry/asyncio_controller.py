@@ -39,7 +39,7 @@ class NotStarted(Exception):
 
 
 class AsyncioMetricClient(MetricClient):
-    def __init__(self, level: MetricLevel, q):
+    def __init__(self, level: MetricLevel, q: asyncio.Queue[MaxMeasurement]):
         self.q = q
         self.level = level
 
@@ -105,7 +105,7 @@ class AsyncioTelemetryController:
         return AsyncioMetricClient(level, self.q)
 
     @staticmethod
-    async def _consume(q):
+    async def _consume(q: asyncio.Queue[MaxMeasurement]):
         while True:
             try:
                 m: MaxMeasurement = await q.get()
