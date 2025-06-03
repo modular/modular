@@ -1346,6 +1346,7 @@ class MoConvTransposeOp(max._core.Operation):
         dilations: max._core.Value[max._core.dialects.mo.TensorType],
         paddings: max._core.Value[max._core.dialects.mo.TensorType],
         output_paddings: max._core.Value[max._core.dialects.mo.TensorType],
+        filter_layout: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @overload
@@ -1372,6 +1373,12 @@ class MoConvTransposeOp(max._core.Operation):
     def output_paddings(
         self,
     ) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def filter_layout(self) -> str: ...
+    @filter_layout.setter
+    def filter_layout(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def output_param_decls(
         self,
