@@ -50,7 +50,10 @@ def mojo_binary(
         **kwargs
     )
 
-def modular_run_binary_test(name, **kwargs):
+# buildifier: disable=function-docstring
+def modular_run_binary_test(name, external_noop = False, **kwargs):
+    if external_noop:
+        return
     if name.endswith(".example-test"):
         return  # TODO: Fix custom_ops python examples
     binary_test(
