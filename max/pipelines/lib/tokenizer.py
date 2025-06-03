@@ -527,7 +527,7 @@ class TextAndVisionTokenizer(
             else None
         )
         # PixtralProcessor returns a torch tensor or a list of torch tensors.
-        # LlamaVision returns a np Array.
+        # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
             text=prompt,
             images=images,
@@ -537,7 +537,12 @@ class TextAndVisionTokenizer(
         if "input_ids" not in processed_inputs:
             msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             raise ValueError(msg)
-        encoded_prompt = np.array(processed_inputs["input_ids"])
+
+        # TODO: This is a hack to support both LlamaVision, Pixtral and InternVL.
+        if isinstance(processed_inputs["input_ids"][0], int):
+            encoded_prompt = np.array(processed_inputs["input_ids"])
+        else:
+            encoded_prompt = np.array(processed_inputs["input_ids"][0])
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.

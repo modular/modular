@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import PipelineTask
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    SupportedEncoding,
-)
+from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
 
 from .model import InternVLModel
 from .tokenizer import InternVLTokenizer
@@ -31,4 +28,5 @@ internvl_arch = SupportedArchitecture(
     pipeline_model=InternVLModel,
     tokenizer=InternVLTokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    multi_gpu_supported=True,
 )
