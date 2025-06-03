@@ -98,6 +98,16 @@ OriginTrackable::OriginTrackable(Value v) {
     return;
   }
 
+  if (auto closure = v.getDefiningOp<LIT::ClosureInitOp>()) {
+    name = StringAttr::get(v.getContext(), "(closure)");
+    // register passable closures still have pointer semantics until after
+    // elaboration.
+    isIndirect = true;
+    startsUninit = true;
+    endInitState = EndsUninit;
+    return;
+  }
+
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {
@@ -509,6 +519,43 @@ OverallOpValueEffect LIT::getOperationEffects(
   // argument convention effects.
   if (isa<LIT::CallIndirectOp, KGENCallOpInterface>(op)) {
     getCallOpEffects(op, operands, results, origins, originFinder);
+    return {};
+  }
+  // A closure init is analogous to a call to a constructor of a struct.
+  // Use the origin set to determine the operand effect of the captures.
+  if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op)) {
+    int byRefIndex = 0;
+    OriginSetAttr originSet =
+        cast<OriginSetAttr>(closureOp.getCaptureOrigins());
+    for (auto [capture, captureAttribute] :
+         llvm::zip(closureOp->getOperands(),
+                   closureOp.getMoveOrCopyCaptureSymbols())) {
+      // If capture by reference, the operand effect is either memMut or
+      // memLoad.
+      if (isa<BoolAttr>(captureAttribute)) {
+        OriginType origin =
+            cast<OriginType>(originSet.getOperands()[byRefIndex++].getType());
+        operands.push_back({capture, origin.isMutable()
+                                         ? OperandEffect::memMut
+                                         : OperandEffect::memLoad});
+        continue;
+      }
+
+      // If capture by copy, treat this as a call to the copy method of the
+      // captured type, which is by borrow. If capture by move, treat this as a
+      // call to the move method of the captured type, which consumes the
+      // operand.
+      if (auto triple = dyn_cast<KGEN::MemSymbolTripleAttr>(captureAttribute)) {
+        operands.push_back({capture, triple.getCopy()
+                                         ? OperandEffect::memLoad
+                                         : OperandEffect::memConsume});
+        continue;
+      }
+
+      // Otherwise, this is a value capture and there is no consumption.
+      operands.push_back({capture, OperandEffect::regUse});
+    }
+    results.push_back(ResultEffect::memDefineInitToUninit);
     return {};
   }
 

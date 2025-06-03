@@ -284,3 +284,53 @@ lit.fn @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut lo
   %17 = kgen.param.constant: i1 = <0>
   kgen.return %17 : i1
 }
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Closures.
+//===----------------------------------------------------------------------===//
+
+// COM: Verify that local closures are destroyed
+
+#type_value = #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !kgen.type
+
+module {
+  lit.fn @make_closure[imm Y, imm Z](%y: !lit.ref<@S, imm Y> owned_in_mem, %x: index, %z: !lit.ref<@S, imm Z> owned_in_mem) {
+    // CHECK: [[Closure:%.*]] = lit.closure.init
+    %closure = lit.closure.init[#type_value](%y[ref: imm Y], %x, %z[@S::@__copyinit__ !lit.generator<[2]("existing": !lit.ref<@S, imm *[0,1]> read_mem, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none>, @S::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<@S, imm *[0,1]> read_mem, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none>, @S::@__del__ !lit.generator<[1]("self": !lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%arg0[y2]: index) -> index {
+      kgen.return %x : index
+    } : (!lit.ref<@S, imm Y>, index, !lit.ref<@S, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+    // COM: it's expected that z is destroyed here because the closure makes a copy.
+    // CHECK: [[Z:%.*]] = kgen.rebind %z
+    // CHECK-NEXT: lit.call @S::@__del__[mut (mutcast imm Z)]([[Z]])
+    kgen.return
+  }
+  lit.struct.decl @S
+   destructor :!lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none> @S::@__del__ {
+    lit.struct.field a : index
+  }
+}
+
+// -----
+
+// COM: Ensure that if the value is captured by move that the value is consumed by the closure.
+
+!Closure = !lit.trait<@Closure>
+#type_value = #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !Closure
+
+module {
+  lit.fn @make_closure[imm Z](%z: !lit.ref<@S, imm Z> owned_in_mem) {
+    // CHECK: [[Closure:%.*]] = lit.closure.init
+    %closure = lit.closure.init[#type_value](%z[@S::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<@S, imm *[0,1]> read_mem, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none>, @S::@__del__ !lit.generator<[1]("self": !lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%arg0: index) -> index {
+      kgen.return %arg0 : index
+    } : (!lit.ref<@S, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+    // COM: it's expected that z is NOT destroyed here because the closure consumes it.
+    // CHECK-NOT: lit.call @S::@__del__
+    kgen.return
+  }
+  lit.struct.decl @S
+   destructor :!lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none> @S::@__del__ {
+    lit.struct.field a : index
+  }
+}
