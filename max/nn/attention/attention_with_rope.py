@@ -89,7 +89,8 @@ class AttentionWithRopeV1(AttentionImpl):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -100,7 +101,7 @@ class AttentionWithRopeV1(AttentionImpl):
                 self.kv_params,
                 input=x,
                 wqkv=self.wqkv,
-                input_row_offsets=kwargs["input_row_offsets"],
+                input_row_offsets=input_row_offsets,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
@@ -113,7 +114,7 @@ class AttentionWithRopeV1(AttentionImpl):
                 self.kv_params,
                 input=x,
                 wqkv=self.wqkv,
-                input_row_offsets=kwargs["input_row_offsets"],
+                input_row_offsets=input_row_offsets,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
@@ -124,14 +125,14 @@ class AttentionWithRopeV1(AttentionImpl):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -144,7 +145,7 @@ class AttentionWithRopeV1(AttentionImpl):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
@@ -182,7 +183,7 @@ class AttentionWithRope(Module):
         """Initializes the attention layer.
 
         Args:
-            rope: The rope layer to borrow the freq_cis value from.
+            rope: The rope layer to borrow the freqs_cis value from.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
@@ -442,7 +443,8 @@ class AttentionWithRope(Module):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -468,7 +470,7 @@ class AttentionWithRope(Module):
                 input=x,
                 wqkv=self.wqkv,
                 bias=self.wqkv_bias,
-                input_row_offsets=kwargs["input_row_offsets"],
+                input_row_offsets=input_row_offsets,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
@@ -482,7 +484,7 @@ class AttentionWithRope(Module):
                 input=x,
                 wqkv=self.wqkv,
                 bias=self.wqkv_bias,
-                input_row_offsets=kwargs["input_row_offsets"],
+                input_row_offsets=input_row_offsets,
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
@@ -492,14 +494,14 @@ class AttentionWithRope(Module):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -511,7 +513,7 @@ class AttentionWithRope(Module):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
@@ -551,7 +553,7 @@ class LatentAttentionWithRope(AttentionWithRope):
         """Initializes the attention layer.
 
         Args:
-            rope: The rope layer to borrow the freq_cis value from.
+            rope: The rope layer to borrow the freqs_cis value from.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
@@ -863,7 +865,8 @@ class LatentAttentionWithRope(AttentionWithRope):
         kv_collection: Union[
             PagedKVCacheCollection, ContinuousBatchingKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         assert isinstance(kv_collection, PagedKVCacheCollection)
 
@@ -879,7 +882,7 @@ class LatentAttentionWithRope(AttentionWithRope):
             self.kv_params,
             hidden_states=x,
             weight=self.kv_a_proj_with_mqa,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
         )
@@ -891,7 +894,7 @@ class LatentAttentionWithRope(AttentionWithRope):
             epsilon=1e-6,
             layer_idx=layer_idx,
             total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             rms_norm_cols=self.kv_lora_rank,
             weight_offset=0.0,
         )
@@ -904,14 +907,14 @@ class LatentAttentionWithRope(AttentionWithRope):
 
         # Apply rope.
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq_rope = fused_qk_ragged_rope(
             self.kv_params,
             xq_rope,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -923,7 +926,7 @@ class LatentAttentionWithRope(AttentionWithRope):
             xq_rope,
             kv_collection,
             layer_idx,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
         )
 
         return self.o_proj(attn_out)
@@ -956,7 +959,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         """Initializes the attention layer.
 
         Args:
-            rope: The rope layer to borrow the freq_cis value from.
+            rope: The rope layer to borrow the freqs_cis value from.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
@@ -1063,7 +1066,8 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -1076,7 +1080,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         xq = unfused_qkv_ragged_matmul_gguf_quantized(
             self.kv_params,
             input=x,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             n_heads=self.n_heads,
             q_weight=self.q_proj,
             k_weight=self.k_proj,
@@ -1090,12 +1094,12 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -1108,7 +1112,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
@@ -1250,7 +1254,8 @@ class GPTQAttentionWithRope(AttentionWithRope):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -1264,7 +1269,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
             self.kv_params,
             input=x,
             wqkv=wqkv,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
@@ -1276,14 +1281,14 @@ class GPTQAttentionWithRope(AttentionWithRope):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         if xq.device is not None:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
         else:
-            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+            freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -1296,7 +1301,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
@@ -1361,9 +1366,9 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> list[TensorValue]:
-        input_row_offsets = kwargs["input_row_offsets"]
         assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
@@ -1373,7 +1378,8 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
                     layer_idx,
                     x[i],
                     kv_collections[i],
-                    input_row_offsets=input_row_offsets_[i],
+                    freqs_cis,
+                    input_row_offsets_[i],
                 )
                 for i in range(len(self.devices))
             ],
@@ -1395,7 +1401,8 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         kv_collection: Union[
             ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -1407,7 +1414,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
             self.kv_params,
             input=x,
             wqkv=wqkv,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
@@ -1417,12 +1424,12 @@ class AttentionWithRopeQKV(AttentionImplQKV):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Cast freqs_cis to xq's dtype to match the fused_qk_ragged_rope kernel.
-        freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+        freqs_cis = ops.cast(freqs_cis, xq.dtype)
 
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -1435,7 +1442,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )

@@ -19,11 +19,7 @@ from typing import Any, Callable, Literal, Optional
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorValue,
-)
+from max.graph import Graph, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import Module, ReturnLogits, Signals
 from max.pipelines.lib import (
@@ -111,9 +107,6 @@ class Qwen3Model(LlamaModelBase):
     def _build_graph(
         self, weights: Weights, adapter: Optional[WeightsAdapter] = None
     ) -> Graph:
-        device0 = self.devices[0]
-        device_ref = DeviceRef(device0.label, device0.id)
-
         # Retrieve config
         state_dict = self._get_state_dict(weights, adapter)
         model_config = Qwen3Config.generate(
@@ -147,17 +140,14 @@ class Qwen3Model(LlamaModelBase):
         self.state_dict = nn_model.state_dict()
 
         with Graph(
-            "llama3",
+            "qwen3",
             input_types=graph_inputs,
         ) as graph:
             tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                graph.inputs
+                inp.tensor for inp in graph.inputs
             )
             outputs = nn_model(
-                tokens.tensor,
-                [inp.tensor for inp in kv_cache_inputs],
-                input_row_offsets=input_row_offsets,
-                return_n_logits=return_n_logits.tensor,
+                tokens, kv_cache_inputs, return_n_logits, input_row_offsets
             )
             graph.output(*outputs)
             return graph

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import Enum
-from typing import Callable, TypeVar, cast
+from typing import Callable, TypeVar
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
@@ -31,6 +31,7 @@ from ..kv_cache import (
 )
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV1
+from ..rotary_embedding import OptimizedRotaryEmbedding
 
 
 class TransformerBlock(Module):
@@ -57,7 +58,8 @@ class TransformerBlock(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         residual_multiplier = ops.constant(
             self.residual_multiplier, x.dtype, device=x.device
@@ -66,7 +68,8 @@ class TransformerBlock(Module):
             layer_idx,
             self.input_layernorm(x),
             kv_collection,
-            **kwargs,
+            freqs_cis,
+            input_row_offsets,
         )
 
         if self.residual_multiplier != 1.0:
@@ -105,6 +108,7 @@ class Transformer(Module):
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
         ),
+        rope: OptimizedRotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
@@ -121,6 +125,7 @@ class Transformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
+        self.rope = rope
         self.return_logits = return_logits
 
     def _apply_logits_postprocessor(
@@ -135,7 +140,7 @@ class Transformer(Module):
         tokens: TensorValueLike,
         kv_cache_inputs: Sequence[TensorValue],
         return_n_logits: TensorValue,
-        **kwargs,
+        input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens)
 
@@ -145,14 +150,17 @@ class Transformer(Module):
             )
 
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
-        input_row_offsets = kwargs["input_row_offsets"]
+
+        # Create position embeddings shared across the decoder layers.
+        freqs_cis = self.rope.freqs_cis
 
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
-                **kwargs,
+                freqs_cis,
+                input_row_offsets,
             )
 
         # Retrieve a variable number of tokens
@@ -188,7 +196,7 @@ class Transformer(Module):
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h)), DType.float32)
-            offsets = cast(TensorValue, kwargs["input_row_offsets"])
+            offsets = input_row_offsets
 
         if logits:
             last_logits, logits = self._apply_logits_postprocessor(

@@ -90,6 +90,7 @@ class TextModel(Layer):
             *vision_kv_cache_inputs
         )
 
+        freqs_cis = self.rotary_emb.freqs_cis
         for decoder_layer in self.layers:
             # For text-only path we should skip cross attention layers.
             # We expect cross_attention_states to be zeroes if it's a text-only path.
@@ -109,7 +110,8 @@ class TextModel(Layer):
                 hidden_states = decoder_layer(
                     hidden_states,
                     text_kv_collection,
-                    input_row_offsets=hidden_input_row_offsets,
+                    freqs_cis,
+                    hidden_input_row_offsets,
                 )
 
         assert hidden_states.shape == before_attention_blocks_shape

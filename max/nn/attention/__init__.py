@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """The attention mechanism used within the model."""
 
-from .attention import Attention, AttentionQKV
 from .attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeQKV,
@@ -30,8 +29,6 @@ from .interfaces import (
 from .ragged_attention import RaggedAttention
 
 __all__ = [
-    "Attention",
-    "AttentionQKV",
     "AttentionImpl",
     "AttentionImplQKV",
     "AttentionWithRopeV1",

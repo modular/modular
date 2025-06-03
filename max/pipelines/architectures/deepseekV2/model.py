@@ -396,7 +396,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             kv_cache_tensors = [v.tensor for v in kv_cache_inputs]
             outputs = nn_model(
                 tokens=tokens.tensor,
-                input_row_offsets=input_row_offsets,
+                input_row_offsets=input_row_offsets.tensor,
                 kv_cache_inputs=kv_cache_tensors,
                 return_n_logits=return_n_logits.tensor,
             )

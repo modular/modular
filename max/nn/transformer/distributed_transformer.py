@@ -41,6 +41,7 @@ from ..kv_cache import (
 from ..layer import LayerList, Module
 from ..linear import ColumnParallelLinear
 from ..norm import DistributedRMSNorm
+from ..rotary_embedding import OptimizedRotaryEmbedding
 from .transformer import ReturnLogits
 
 
@@ -75,10 +76,7 @@ class DistributedTransformerBlock(Module):
         self.devices = devices
         self.use_subgraph = use_subgraph
 
-    def build_subgraph(
-        self,
-        name: str,
-    ) -> Module:
+    def build_subgraph(self, name: str) -> Module:
         num_devices = len(self.devices)
 
         raw_state_dict = self.raw_state_dict()
@@ -99,6 +97,7 @@ class DistributedTransformerBlock(Module):
                 kv_collections: list[
                     ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
                 ],
+                freqs_cis: TensorValue,
                 input_row_offsets: TensorValue,
             ) -> list[TensorValue]:
                 subgraph_input_types: list[Type] = [
@@ -106,6 +105,7 @@ class DistributedTransformerBlock(Module):
                     *[x.type for x in xs],
                     *[signal_buffer.type for signal_buffer in signal_buffers],
                     *[kv_collection.type for kv_collection in kv_collections],
+                    freqs_cis.type,
                     input_row_offsets.type,
                     *[w.type for w in weights],
                 ]
@@ -137,6 +137,7 @@ class DistributedTransformerBlock(Module):
                             ],
                             take(inputs, num_devices),
                         )
+                        arg_freqs_cis = next(inputs)
 
                         arg_input_row_offsets = next(inputs)
                         for weight, subgraph_input in zip(
@@ -153,7 +154,8 @@ class DistributedTransformerBlock(Module):
                                 arg_xs,
                                 arg_signal_buffers,
                                 arg_kv_collections,
-                                input_row_offsets=arg_input_row_offsets,
+                                arg_freqs_cis,
+                                arg_input_row_offsets,
                             )
                         finally:
                             outer_self.use_subgraph = True
@@ -183,19 +185,28 @@ class DistributedTransformerBlock(Module):
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> list[TensorValue]:
         if self.use_subgraph:
             return self.build_subgraph(
                 "dist_transformer_block",
-            )(layer_idx, xs, signal_buffers, kv_collections, **kwargs)
+            )(
+                layer_idx,
+                xs,
+                signal_buffers,
+                kv_collections,
+                freqs_cis,
+                input_row_offsets,
+            )
 
         attn_outs = self.self_attn(
             layer_idx,
             self.input_layernorm(xs),
             signal_buffers,
             kv_collections,
-            **kwargs,
+            freqs_cis,
+            input_row_offsets,
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
@@ -222,6 +233,7 @@ class DistributedTransformer(Module):
             | FetchPagedKVCacheCollection
         ),
         devices: list[DeviceRef],
+        rope: OptimizedRotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ):
         super().__init__()
@@ -235,6 +247,7 @@ class DistributedTransformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.return_logits = return_logits
         self.devices = devices
+        self.rope = rope
 
         if self.return_logits == ReturnLogits.VARIABLE:
             raise ValueError(
@@ -247,7 +260,7 @@ class DistributedTransformer(Module):
         signal_buffers: list[BufferValue],
         kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
         return_n_logits: TensorValue,
-        **kwargs,
+        input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -256,14 +269,16 @@ class DistributedTransformer(Module):
             for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
-        input_row_offsets = kwargs["input_row_offsets"]
+        # Create position embeddings shared across the decoder layers.
+        freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
                 kv_collections,
-                **kwargs,
+                freqs_cis,
+                input_row_offsets,
             )
 
         h0 = h[0]
@@ -303,7 +318,7 @@ class DistributedTransformer(Module):
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
-            offsets = cast(TensorValue, kwargs["input_row_offsets"])
+            offsets = input_row_offsets
 
         if logits is not None and offsets is not None:
             return (last_logits, logits, offsets)

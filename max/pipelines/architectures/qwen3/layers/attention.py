@@ -179,7 +179,8 @@ class Qwen3Attention(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
-        **kwargs,
+        freqs_cis: TensorValue,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -191,7 +192,7 @@ class Qwen3Attention(Module):
             input=x,
             wqkv=wqkv,
             bias=self.wqkv_bias,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
@@ -210,7 +211,7 @@ class Qwen3Attention(Module):
             epsilon=self.qk_norm_eps,
             layer_idx=layer_idx,
             total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             weight_offset=0.0,
         )
 
@@ -222,7 +223,7 @@ class Qwen3Attention(Module):
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -236,7 +237,7 @@ class Qwen3Attention(Module):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )

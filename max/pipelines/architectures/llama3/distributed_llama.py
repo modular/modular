@@ -194,6 +194,7 @@ class DistributedLlama3(DistributedTransformer):
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
             devices=config.devices,
+            rope=rope,
             return_logits=config.return_logits,
             # TODO: Support the following config options.
             # embedding_multiplier=config.embedding_multiplier,

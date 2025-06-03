@@ -497,8 +497,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     tokens.tensor,
                     signal_buffers,
                     kv_caches_per_dev,
-                    input_row_offsets=input_row_offsets,
-                    return_n_logits=return_n_logits.tensor,
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
                 )
 
                 graph.output(*outputs)
@@ -526,8 +526,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 outputs = nn_model(
                     tokens.tensor,
                     [inp.tensor for inp in kv_cache_inputs],
-                    input_row_offsets=input_row_offsets,
-                    return_n_logits=return_n_logits.tensor,
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
                 )
                 graph.output(*outputs)
                 return graph
