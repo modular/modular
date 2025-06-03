@@ -552,9 +552,9 @@ public:
   ///
   /// This is used for evaluating expressions like __origin_of(x) and
   /// __type_of(x) and `ref [x] T`.
-  void emitExpressionWithOutEvaluatingIt(const ExprNode *expr,
-                                         ExprContext exprContext,
-                                         std::function<void(CValue)> callback);
+  void emitExpressionWithOutEvaluatingIt(
+      const ExprNode *expr, ExprContext exprContext,
+      std::function<void(CValue, IREmitter &emitter)> callback);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for specific value types.

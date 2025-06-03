@@ -1404,7 +1404,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 /// __type_of(x) and `ref [x] T`.
 void IREmitter::emitExpressionWithOutEvaluatingIt(
     const ExprNode *expr, ExprContext exprContext,
-    std::function<void(CValue)> callback) {
+    std::function<void(CValue, IREmitter &emitter)> callback) {
   SMLoc loc = expr->getLoc();
   // The emitter indicates what context to do name lookup against, but cannot
   // be used to emit the IR into.  Find something in the declScope with an
@@ -1447,7 +1447,7 @@ void IREmitter::emitExpressionWithOutEvaluatingIt(
   // Emit the expression and invoke the callback on success.
   CValue subExprValue = tmpEmitter.emitExprCValue(expr, exprContext);
   if (subExprValue)
-    callback(subExprValue);
+    callback(subExprValue, tmpEmitter);
 
   // Finally, remove our temp block
   tmpBlock.erase();
