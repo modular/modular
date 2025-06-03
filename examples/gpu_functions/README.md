@@ -8,7 +8,7 @@ run on the CPU or GPU in Mojo.
 A [MAX-compatible GPU](https://docs.modular.com/max/faq/#gpu-requirements) is
 necessary to run these examples.
 
-The four examples of GPU functions defined in Mojo consist of:
+The five examples of GPU functions defined in Mojo consist of:
 
 - **vector_addition.mojo**: A common "hello world" example for GPU programming,
   this adds two vectors together in the same way as seen in Chapter 2 of
@@ -21,6 +21,8 @@ The four examples of GPU functions defined in Mojo consist of:
 - **mandelbrot.mojo**: A parallel calculation of the number of iterations to
   escape in the Mandelbrot set. An example of the same computation performed as
   a custom graph operation can be found [here](../custom_ops/).
+- **reduction.mojo**: A highly performant reduction kernel.
+For a detailed explanation see [this blogpost](https://veitner.bearblog.dev/very-fast-vector-sum-without-cuda/).
 
 These examples can be run either through a single [Pixi](https://pixi.sh)
 command:
@@ -30,6 +32,7 @@ pixi run vector_addition
 pixi run grayscale
 pixi run naive_matrix_multiplication
 pixi run mandelbrot
+pixi run reduction
 ```
 
 or directly with Mojo if it has been installed in the local environment:
@@ -39,6 +42,7 @@ mojo vector_addition.mojo
 mojo grayscale.mojo
 mojo naive_matrix_multiplication.mojo
 mojo mandelbrot.mojo
+mojo reduction.mojo
 ```
 
 For larger computations, we recommend staging them as part of a
