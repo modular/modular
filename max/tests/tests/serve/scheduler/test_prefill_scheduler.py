@@ -236,7 +236,7 @@ async def test_prefill_scheduler_create_batch(
         decode_client.start()
 
         # Give services time to start up
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Track received responses on decode side
         received_responses: list[PrefillResponse] = []
@@ -273,7 +273,7 @@ async def test_prefill_scheduler_create_batch(
             ),
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Get batch from scheduler, test that the batch includes two requests
         scheduler.update_batch()
@@ -282,7 +282,7 @@ async def test_prefill_scheduler_create_batch(
         # Process the batch
         scheduler.schedule()
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Ensure that the prefill node got the details.
         assert len(received_responses) == 2, (
@@ -321,7 +321,7 @@ async def test_prefill_scheduler_create_batch(
             ),
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Retrieve first request
         prefill_data = scheduler.get_prefill_request()

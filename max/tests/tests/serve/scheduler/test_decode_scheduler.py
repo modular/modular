@@ -274,7 +274,7 @@ async def test_decode_scheduler(
         prefill_client.start()
 
         # Give services time to start up
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Track received prefill requests on prefill side
         received_prefill_requests: list[PrefillRequest] = []
@@ -310,7 +310,7 @@ async def test_decode_scheduler(
         # Trigger the scheduler to reserve memory and send to prefill
         scheduler.reserve_memory_and_send_to_prefill()
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Ensure that the prefill node got the details.
         assert len(received_prefill_requests) == 2, (
