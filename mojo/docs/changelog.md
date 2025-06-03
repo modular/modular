@@ -94,6 +94,9 @@ what we publish.
   standard library `List[Elt]` type.  The `ListLiteral` type has been removed
   from the standard library.
 
+- `VariadicList`, `VariadicListMem`, and `VariadicPack` moved to the new
+  [`variadics`](/mojo/stdlib/builtin/variadics/) module.
+
 - Dictionary and set literals now work and default to creating instances of the
   `Dict` and `Set` types in the collections library.
 

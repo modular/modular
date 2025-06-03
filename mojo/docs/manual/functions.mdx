@@ -311,7 +311,7 @@ We hope to remove these differences in the future.
 :::
 
 Register-passable types, such as `Int`, are available as a
-[`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) type. As
+[`VariadicList`](mojo/stdlib/builtin/variadics/VariadicList) type. As
 shown in the previous example, you can iterate over the values using a `for..in`
 loop.
 
@@ -324,7 +324,7 @@ fn sum(*values: Int) -> Int:
 ```
 
 Memory-only types, such as `String`, are available as a
-[`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem).
+[`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
 reference to the element, which can be mutable with a `mut` variadic list. Use
 the `ref` binding pattern to capture the reference (instead of a copy) if you
@@ -369,7 +369,7 @@ This means that each argument in `args` has a corresponding type in `ArgTypes`,
 so <code>args[<var>n</var>]</code> is of type <code>ArgTypes[<var>n</var>]</code>.
 
 Inside the function, `args` is available as a
-[`VariadicPack`](/mojo/stdlib/builtin/list_literal/VariadicPack). The easiest
+[`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack). The easiest
 way to work with the arguments is to use the `each()` method to iterate through
 the `VariadicPack`:
 
