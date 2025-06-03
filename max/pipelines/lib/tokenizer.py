@@ -537,7 +537,7 @@ class TextAndVisionTokenizer(
         if "input_ids" not in processed_inputs:
             msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             raise ValueError(msg)
-        encoded_prompt = np.array(processed_inputs["input_ids"][0])
+        encoded_prompt = np.array(processed_inputs["input_ids"])
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
