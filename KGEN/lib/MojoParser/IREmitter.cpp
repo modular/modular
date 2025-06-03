@@ -125,8 +125,6 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in capture";
   case EC_Decorator:
     return " in decorator";
-  case EC_AutoDeref:
-    return " in automatic dereference";
   case EC_Trait:
     return " in trait conformance checking";
   case EC_Closure:
@@ -141,6 +139,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in __disable_del operand";
   case EC_MergeWith:
     return " in implicit '__merge_with__' call";
+  case EC_RefBinding:
+    return " in 'ref' binding";
   }
   llvm_unreachable("invalid expr context");
 }
@@ -907,20 +907,13 @@ PValue IREmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 /// and returns the value of RefType for the result.
 /// This emits an error and returns null if emission fails.
 Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
-  // If this is an RValue (including PValue's), put it into a memory box so
-  // we can get its origin.
-  if (auto rv = value.ir.getIfRValue()) {
-    value.ir = emitMRValue(value, context);
-    if (!value.ir)
-      return {};
-  }
-
   // Emit the DefArgumentWrapperDLValue as the underlying MBValue that it may
   // contain.
   if (auto dlValue = value.ir.getIfDLValue()) {
+    // FIXME: Def arguments are busted.
     if (MBValue underlying = dlValue->emitMBValueFromDefArgument(*this))
-      value.ir = underlying;
-    // TODO: Support all the other computed LValues.
+      return underlying;
+    return dlValue->emitAsRefValue(value.expr->getLoc(), *this);
   }
 
   // If this got resolved to an MValue then we're done.
@@ -928,7 +921,7 @@ Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
     return value.ir.getMValueReference();
 
   // Otherwise we can't support other non-MValue's like borrowed registers or
-  // other computed LValues.
+  // RValue's.
   auto diag = emitError(value.expr->getLoc(), "value");
   if (auto cv = value.ir.getIfCValue())
     diag << " of type " << cv.getRValueType();
@@ -1304,11 +1297,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     assert(decls.size() == 1 && cast<VarDeclOp>(decls[0]) == destRef &&
            "lookup failure");
 
-    if (!value.ir.isMValue()) {
-      emitError(value.expr->getLoc(), "value of type ")
-          << value.ir.getRValueType()
-          << " cannot be bound into a 'ref' because it has no address"
-          << value.expr->getRange();
+    Value mValue = emitRefValue(value, EC_RefBinding);
+    if (!mValue) {
       decls[0]->setErroneous();
       return {};
     }
@@ -1316,9 +1306,9 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // Now that we have the origin of the input, we can replace the placeholder
     // with the actual type so that uses of it will have the correct origin.
     destRef.getResult().setType(
-        destRef.getType().getWithElement(value.ir.getType()));
-    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()),
-                                value.ir.getMValueReference(), destRef);
+        destRef.getType().getWithElement(mValue.getType()));
+    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()), mValue,
+                                destRef);
     return value.ir; // Return the input reference.
   }
 

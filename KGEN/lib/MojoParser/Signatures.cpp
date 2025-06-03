@@ -85,13 +85,6 @@ TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
       return result;
   }
 
-  // origin_of doesn't drop rvalues into memory like call arguments do.
-  if (auto rv = value.getIfRValue()) {
-    emitError(expr->getLoc()) << "value of type " << rv.getRValueType()
-                              << " has no memory origin" << expr->getRange();
-    return {};
-  }
-
   if (Value ref = emitRefValue({value, expr}, EC_Origin))
     return cast<RefType>(ref.getType()).getOrigin();
   return {};

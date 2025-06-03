@@ -231,3 +231,31 @@ fn testRefResultInOverloaded(mut rrio: RefResultInOverloaded, owned str: String)
   # CHECK-NOT: __copyinit__
   # CHECK: lit.call {{.*}}__setitem__
   rrio[] = str^
+
+
+# ===----------------------------------------------------------------------=== #
+# DLV Subcript -> Ref binding resolution
+# ===----------------------------------------------------------------------=== #
+
+struct MinimalDict:
+    var state: Int
+    fn __getitem__(
+        self, key: Int
+    ) raises -> ref [self.state] Int:
+        return self.state
+
+    fn __setitem__(mut self, key: Int, value: Int):
+        self.state = value
+
+fn take_ref(ref x: Int): pass
+
+fn test_ref_subscript_binding(mut d: MinimalDict) raises:
+  # TODO.
+  # -> ref [d[0]] Int:
+
+  # FIXME: This is emitting a copy and passing the address of the copy.
+  take_ref(d[0])
+
+  ref some_ref = d[0]
+
+  #return d[0]

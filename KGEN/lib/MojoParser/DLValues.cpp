@@ -38,6 +38,14 @@ LValue BaseDLValue::prepareForMutAccess(SMLoc loc, IREmitter &emitter) const {
   return DLValue(RCRef<BaseDLValue>::copy(const_cast<BaseDLValue *>(this)));
 }
 
+// This hook is called if the DLValue needs to be resolved to a physical ref.
+// This emits an error and returns null on failure.
+Value BaseDLValue::emitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const {
+  emitter.emitError(loc)
+      << "cannot convert computed lvalue to a stored reference";
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // DiscardDLValue
 //===----------------------------------------------------------------------===//
@@ -188,6 +196,23 @@ CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
 
   return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
                                      storeDest, CallSyntax::kMethodCall, expr);
+}
+
+// Some subscripts, notably Dict, are defined with both a getter and a setter
+// but the getter returns a ref (and throws).  If we need to bind the dict entry
+// into a ref, call the getter.
+Value SubscriptDLValue::emitAsRefValue(llvm::SMLoc loc,
+                                       IREmitter &emitter) const {
+  // If there is no getter, then this just fails like other computed lvalues.
+  if (getter) {
+    // Call the getter to get the ref.
+    ValueDest storeDest(EC_RefBinding);
+    auto ref = emitLoad(storeDest, emitter);
+    if (ref && ref.isMValue())
+      return ref.getMValueReference();
+  }
+
+  return BaseDLValue::emitAsRefValue(loc, emitter);
 }
 
 //===----------------------------------------------------------------------===//
