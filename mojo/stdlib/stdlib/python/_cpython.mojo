@@ -503,48 +503,39 @@ struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
 
 
 # Mojo doesn't have macros, so we define it here for ease.
-struct PyModuleDef_Base(Stringable, Representable, Writable):
+struct PyModuleDef_Base(
+    Movable, Defaultable, Stringable, Representable, Writable
+):
     """PyModuleDef_Base.
 
-    Notes:
-        [Reference 1](
-        https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L39
-        ). [Reference 2](
-        https://pyo3.rs/main/doc/pyo3/ffi/struct.pymoduledef_base
-        ). `PyModuleDef_HEAD_INIT` defaults all of its members, [Reference 3](
-        https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L60
-        ).
+    - [Reference 1](https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L39).
+    - [Reference 2](https://pyo3.rs/main/doc/pyo3/ffi/struct.pymoduledef_base).
+    - `PyModuleDef_HEAD_INIT` default inits all of its members, [Reference 3](https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L60).
     """
 
     var object_base: PyObject
     """The initial segment of every `PyObject` in CPython."""
 
     # TODO(MOCO-1138): This is a C ABI function pointer, not Mojo a function.
-    alias _init_fn_type = fn () -> UnsafePointer[PyObject]
-    """The function used to re-initialize the module."""
+    alias _init_fn_type = fn () -> PyObjectPtr
     var init_fn: Self._init_fn_type
+    """The function used to re-initialize the module."""
 
     var index: Py_ssize_t
-    """The module's index into its interpreter's modules_by_index cache."""
+    """The module's index into its interpreter's `modules_by_index` cache."""
 
-    var dict_copy: UnsafePointer[PyObject]
-    """A copy of the module's __dict__ after the first time it was loaded."""
+    var dict_copy: PyObjectPtr
+    """A copy of the module's `__dict__` after the first time it was loaded."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
     fn __init__(out self):
-        self.object_base = PyObject()
+        self.object_base = {}
         self.init_fn = _null_fn_ptr[Self._init_fn_type]()
         self.index = 0
-        self.dict_copy = UnsafePointer[PyObject]()
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.object_base = existing.object_base
-        self.init_fn = existing.init_fn
-        self.index = existing.index
-        self.dict_copy = existing.dict_copy
+        self.dict_copy = {}
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -594,38 +585,38 @@ struct PyModuleDef_Base(Stringable, Representable, Writable):
 
 @fieldwise_init
 struct PyModuleDef_Slot:
-    """[Reference](
-    https://docs.python.org/3/c-api/module.html#c.PyModuleDef_Slot).
+    """[Reference](https://docs.python.org/3/c-api/module.html#c.PyModuleDef_Slot).
     """
 
     var slot: c_int
     var value: OpaquePointer
 
 
-struct PyModuleDef(Stringable, Representable, Writable, Movable):
+struct PyModuleDef(Movable, Stringable, Representable, Writable):
     """The Python module definition structs that holds all of the information
     needed to create a module.
 
-    Notes:
-        [Reference](https://docs.python.org/3/c-api/module.html#c.PyModuleDef).
+    [Reference](https://docs.python.org/3/c-api/module.html#c.PyModuleDef).
     """
 
     var base: PyModuleDef_Base
 
     var name: UnsafePointer[c_char]
-    """[Reference](https://docs.python.org/3/c-api/structures.html#c.PyMethodDef
-    )."""
+    """Name for the new module."""
 
     var docstring: UnsafePointer[c_char]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
+    """Size of per-module data."""
 
     var methods: UnsafePointer[PyMethodDef]
-    """A pointer to a table of module-level functions.  Can be null if there
+    """A pointer to a table of module-level functions. Can be null if there
     are no functions present."""
 
     var slots: UnsafePointer[PyModuleDef_Slot]
+    """An array of slot definitions for multi-phase initialization, terminated
+    by a `{0, NULL}` entry."""
 
     # TODO(MOCO-1138): These are C ABI function pointers, not Mojo functions.
     alias _visitproc_fn_type = fn (PyObjectPtr, OpaquePointer) -> c_int
@@ -633,38 +624,30 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
         PyObjectPtr, Self._visitproc_fn_type, OpaquePointer
     ) -> c_int
     var traverse_fn: Self._traverse_fn_type
+    """A traversal function to call during GC traversal of the module object,
+    or `NULL` if not needed."""
 
     alias _clear_fn_type = fn (PyObjectPtr) -> c_int
     var clear_fn: Self._clear_fn_type
+    """A clear function to call during GC clearing of the module object,
+    or `NULL` if not needed."""
 
     alias _free_fn_type = fn (OpaquePointer) -> OpaquePointer
     var free_fn: Self._free_fn_type
+    """A function to call during deallocation of the module object,
+    or `NULL` if not needed."""
 
-    @implicit
     fn __init__(out self, name: StaticString):
-        self.base = PyModuleDef_Base()
+        self.base = {}
         self.name = name.unsafe_ptr().bitcast[c_char]()
-        self.docstring = UnsafePointer[c_char]()
-        # means that the module does not support sub-interpreters
+        self.docstring = {}
+        # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
-        self.methods = UnsafePointer[PyMethodDef]()
-        self.slots = UnsafePointer[PyModuleDef_Slot]()
-
-        self.slots = UnsafePointer[PyModuleDef_Slot]()
+        self.methods = {}
+        self.slots = {}
         self.traverse_fn = _null_fn_ptr[Self._traverse_fn_type]()
         self.clear_fn = _null_fn_ptr[Self._clear_fn_type]()
         self.free_fn = _null_fn_ptr[Self._free_fn_type]()
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.base = existing.base^
-        self.name = existing.name
-        self.docstring = existing.docstring
-        self.size = existing.size
-        self.methods = existing.methods
-        self.slots = existing.slots
-        self.traverse_fn = existing.traverse_fn
-        self.clear_fn = existing.clear_fn
-        self.free_fn = existing.free_fn
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
