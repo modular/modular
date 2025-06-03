@@ -324,7 +324,7 @@ to build better products for you.
 
 You can opt-out of the crash report and compiler/runtime telemetry, but
 package install/update/uninstall events cannot be
-disabled (see the [MAX SDK terms](https://www.modular.com/legal/max)).
+disabled (see the [MAX SDK terms](https://www.modular.com/legal/terms)).
 
 To disable crash reports, use this command:
 

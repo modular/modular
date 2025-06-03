@@ -35,9 +35,8 @@ Running this program produces the following output:
 [1 2 3]
 ```
 
-Assuming that you have the NumPy package installed in your
-[environment](#create-a-python-environment), this imports NumPy and you can use any
-of its features.
+Assuming that you have the NumPy package installed in your environment, this
+imports NumPy and you can use any of its features.
 
 A few things to note:
 
@@ -66,14 +65,18 @@ A few things to note:
   code than in the Mojo standard library, which
   [limits their use for performance reasons](/mojo/roadmap#the-standard-library-has-limited-exceptions-use).)
 
+* We recommend using a package manager such as pixi, uv, or conda to manage your
+  environment. For instructions on setting up a Mojo project with pixi, see
+  [Create a Mojo project](/mojo/manual/get-started#1-create-a-mojo-project) in
+  the Get started with Mojo tutorial.
+
 :::caution
 
 [`mojo build`](/mojo/cli/build) doesn't include the Python packages used by
 your Mojo project. Instead, Mojo loads the Python interpreter and Python
 packages at runtime, so they must be provided in the environment where you run
-the Mojo program (such as inside the Magic environment where you built the
-executable). For more information, see the section above to [create a Python
-environment](#create-a-python-environment).
+the Mojo program (such as inside the pixi environment where you built the
+executable).
 
 :::
 

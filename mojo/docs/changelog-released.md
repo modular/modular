@@ -194,7 +194,7 @@ String types in Mojo got several significant improvements:
   `ImmutableOrigin`.
 
 - You can now forward a
-  [`VariadicPack`](/mojo/stdlib/builtin/list_literal/VariadicPack/) where all
+  [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack/) where all
   values are `Writable` to a writer using
   [`WritableVariadicPack`](/mojo/stdlib/utils/write/WritableVariadicPack/):
 
@@ -380,6 +380,8 @@ String types in Mojo got several significant improvements:
 
 - The `InlinedString` type has been removed.  Use `String` instead which now
   supports the Small String Optimization (SSO).
+
+- The `AsBytes` trait has been removed.
 
 ### 🛠️ Fixed {#25-3-fixed}
 
@@ -1937,13 +1939,13 @@ detailed information in the following sections:
 - Python interop changes:
 
   - Introduced
-    [`TypedPythonObject`](/mojo/stdlib/python/python_object/TypedPythonObject)
+    `TypedPythonObject`
     as a light-weight way to annotate
     [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) values with
     static type information. This design will likely evolve and change
     significantly.
 
-    - Added `TypedPythonObject["Tuple].__getitem__()` for accessing the elements
+    - Added `TypedPythonObject[Tuple].__getitem__()` for accessing the elements
       of a Python tuple.
 
   - Added
@@ -2106,7 +2108,7 @@ detailed information in the following sections:
   `reversed(my_span)`. Users should currently prefer this method over
   `my_span[::-1]`.
 
-- A new [`AsBytes`](/mojo/stdlib/memory/span/AsBytes) trait has been added to
+- A new `AsBytes` trait has been added to
   enable taking a `Span[Byte]` from any type that implements `as_bytes()`.
   `String.as_bytes()` and `String.as_bytes_slice()` have been consolidated under
   `String.as_bytes()` to return a `Span[Byte]`. If you require a copy, you can
@@ -2131,7 +2133,7 @@ detailed information in the following sections:
     `from utils import StringRef`.
 
 - Restored implicit copyability of [`Tuple`](/mojo/stdlib/builtin/tuple/Tuple)
-  and [`ListLiteral`](/mojo/stdlib/builtin/list_literal/ListLiteral).
+  and `ListLiteral`.
 
 - The
   [aliases for C foreign function interface (FFI)](/mojo/stdlib/sys/ffi/#aliases)
@@ -2966,8 +2968,7 @@ detailed information in the following sections:
     # Insert (2/3 of 1024) entries
     ```
 
-  - `ListLiteral` now supports
-    [`__contains__()`](/mojo/stdlib/builtin/list_literal/ListLiteral#__contains__).
+  - `ListLiteral` now supports `__contains__()`.
     ([PR #3251](https://github.com/modular/modular/pull/3251))
 
 - Filesystem and environment utilities:
@@ -3197,7 +3198,7 @@ detailed information in the following sections:
   the compiler, please switch to using `fn __init__(inout self, ...):` instead.
 
 - The builtin `tensor` module has been removed. Identical functionality is
-  available in [`max.tensor`](/max/api/mojo/tensor/tensor), but it is generally
+  available in `max.tensor`, but it is generally
   recommended to use structs from the [`buffer`](/mojo/stdlib/buffer/buffer)
   module when possible instead.
 
@@ -3582,8 +3583,7 @@ Big themes for this release:
 - [`String`](/mojo/stdlib/collections/string/string) and friends:
 
   - **Breaking.** Implicit conversion to `String` is now removed for builtin
-    classes/types. Use [`str()`](/mojo/stdlib/builtin/str/str) explicitly to
-    convert to `String`.
+    classes/types. Use `str()` explicitly to convert to `String`.
 
   - Added
     [`String.isspace()`](/mojo/stdlib/collections/string/string/String#isspace)
@@ -3680,7 +3680,7 @@ Big themes for this release:
     [`ComparableCollectionElement`](/mojo/stdlib/builtin/value/ComparableCollectionElement)
     trait.([PR #2609](https://github.com/modular/modular/pull/2609))
 
-  - [`int()`](/mojo/stdlib/builtin/int/int-function) can now take a string and a
+  - `int()` can now take a string and a
     specified base to parse an integer from a
     string: `int("ff", 16)` returns `255`. Additionally, if a base of zero is
     specified, the string will be parsed as if it was an integer literal, with
@@ -3730,7 +3730,7 @@ Big themes for this release:
         print("x contains 1")
     ```
 
-  - [`ListLiteral`](/mojo/stdlib/builtin/list_literal/ListLiteral) and `Tuple`
+  - `ListLiteral` and `Tuple`
     now only require that element types be `Movable`. Consequently,
     `ListLiteral` and `Tuple` are themselves no longer `Copyable`.
 
@@ -4132,7 +4132,7 @@ Special thanks to our community contributors:
 
   - Heterogeneous variadic pack arguments now work reliably even with memory
     types, and have a more convenient API to use, as defined by the
-    [`VariadicPack`](/mojo/stdlib/builtin/list_literal/VariadicPack) type. For
+    [`VariadicPack`](/mojo/stdlib/builtin/variadics/VariadicPack) type. For
     example, a simplified version of `print` can be implemented like this:
 
     ```mojo
@@ -5676,7 +5676,7 @@ experience without dedicated sugar.
 - Homogeneous variadic arguments consisting of memory-only types, such as
   `String` are more powerful and easier to use. These arguments are projected
   into a
-  [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem).
+  [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem).
 
   (Previous releases made it easier to use variadic lists of register-passable
   types, like `Int`.)
@@ -5956,7 +5956,7 @@ experience without dedicated sugar.
   `polynomial_evaluate` function has also been extended so that the
   `coefficients` parameter can take either a either a
   [`StaticTuple`](/mojo/stdlib/utils/static_tuple/StaticTuple) or a
-  [`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList).
+  [`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList).
 
 - As a tiny step towards removing `let` declarations, this release removes the
   warning: `'var' was never mutated, consider switching to a 'let'`.
@@ -6185,11 +6185,9 @@ experience without dedicated sugar.
   - [`Sized`](/mojo/stdlib/builtin/len/Sized)
   - [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement)
 
-- We added built-in [`len()`](/mojo/stdlib/builtin/len/len),
-  [`str()`](/mojo/stdlib/builtin/str/str), and
-  [`int()`](/mojo/stdlib/builtin/int/int-function) functions, which work with
-  types that implement the `Sized`, `Stringable`, and `Intable` traits,
-  respectively.
+- We added built-in [`len()`](/mojo/stdlib/builtin/len/len), `str()`, and
+  `int()` functions, which work with types that implement the `Sized`,
+  `Stringable`, and `Intable` traits, respectively.
 
 - [`DynamicVector`](/mojo/stdlib/collections/list/List) is now a
   proper generic collection that can use any type that implements the `Movable`
@@ -6409,8 +6407,8 @@ the previous "read to EOF" behavior when size is negative.
 ### 🦋 Changed
 
 - Variadic list types
-  [`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) and
-  [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem)
+  [`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList) and
+  [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem)
   are now iterable. Variadic arguments are automatically projected into one of
   these types inside the function body, so var args can be iterated:
 
@@ -6692,8 +6690,8 @@ the previous "read to EOF" behavior when size is negative.
 
 ### 🦋 Changed
 
-- [`VariadicList`](/mojo/stdlib/builtin/list_literal/VariadicList) and
-  [`VariadicListMem`](/mojo/stdlib/builtin/list_literal/VariadicListMem)
+- [`VariadicList`](/mojo/stdlib/builtin/variadics/VariadicList) and
+  [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem)
   moved under builtins, and no longer need to be imported.
 
 - Variadic arguments are now automatically projected into a `VariadicList` or
