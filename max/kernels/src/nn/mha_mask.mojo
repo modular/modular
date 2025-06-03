@@ -469,9 +469,22 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask):
 
         # Case 2: If the entire tile is too far to the left
         # (all query positions are more than window_size away from all key positions)
-        var queries_too_far_ahead_of_keys = tile_offset.data[
-            0
-        ] - window_size + 1 >= (tile_offset.data[1] + tile_size.data[1])
+        # Rewrite the inequality to use only addition so that we never subtract
+        # `window_size` from an unsigned value (which can underflow).
+        # Original condition:
+        #     q_start - window_size + 1 >= k_start + k_size
+        # is equivalent to:
+        #     q_start + 1 >= k_start + k_size + window_size
+        # where
+        #     q_start = tile_offset[0]
+        #     k_start = tile_offset[1]
+        #     k_size  = tile_size[1]
+        # Hence we compare two *added* terms, avoiding any risk of wrapping
+        # around zero.
+
+        var lhs = tile_offset.data[0] + 1
+        var rhs = tile_offset.data[1] + tile_size.data[1] + window_size
+        var queries_too_far_ahead_of_keys = lhs >= rhs
 
         if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
             return TileMaskStatus.FULL_MASK

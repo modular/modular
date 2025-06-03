@@ -248,136 +248,123 @@ fn test[
     flash_output_ptr.free()
 
 
+fn test_helper[depth: Int](ctx: DeviceContext) raises:
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=1,
+    ](128, 128, ctx)
+    test[
+        DType.bfloat16,
+        DType.float32,
+        depth=depth,
+        num_heads=1,
+    ](384, 384, ctx)
+    test[
+        DType.bfloat16,
+        DType.float32,
+        depth=depth,
+        num_heads=24,
+        group=3,
+    ](1024, 1024, ctx)
+    # BF16 with sequence length not multiple of 128
+    test[
+        DType.bfloat16,
+        DType.float32,
+        depth=depth,
+        num_heads=3,
+        group=3,
+    ](128, 128, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=3,
+        group=3,
+    ](102, 102, ctx)
+    test[
+        DType.bfloat16,
+        DType.float32,
+        depth=depth,
+        num_heads=1,
+    ](14, 14, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=1,
+    ](528, 528, ctx)
+    # BF16 token gen
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=32,
+    ](1, 512, ctx, is_benchmark())
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=11,
+    ](1, 256, ctx)
+    test[
+        DType.bfloat16,
+        DType.float32,
+        depth=depth,
+        num_heads=1,
+    ](1, 11, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=2,
+    ](1, 523, ctx)
+    test[
+        DType.bfloat16,
+        DType.float32,
+        depth=depth,
+        num_heads=24,
+        group=3,
+    ](1, 29, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=3,
+        group=3,
+    ](1, 156, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=3,
+        group=3,
+    ](1, 208, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=32,
+        group=4,
+    ](1, 1208, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=32,
+        group=4,
+    ](1, 2008, ctx)
+    test[
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=depth,
+        num_heads=32,
+        group=4,
+    ](1, 5000, ctx)
+
+
 def main():
     with DeviceContext() as ctx:
-        # bf16 depth == 128, bf16-fp32 mma
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            depth=128,
-            num_heads=1,
-        ](128, 128, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            depth=128,
-            num_heads=1,
-        ](384, 384, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            24,
-            group=3,
-        ](1024, 1024, ctx)
-
-        # BF16 with sequence length not multiple of 128
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            3,
-            group=3,
-        ](128, 128, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-        ](102, 102, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-        ](14, 14, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            1,
-        ](528, 528, ctx)
-
-        # BF16 token gen
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-        ](1, 512, ctx, is_benchmark())
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            11,
-        ](1, 256, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-        ](1, 11, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            2,
-        ](1, 523, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.float32,
-            128,
-            24,
-            group=3,
-        ](1, 29, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-        ](1, 156, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-        ](1, 208, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-            group=4,
-        ](1, 1208, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-            group=4,
-        ](1, 2008, ctx)
-
-        test[
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            32,
-            group=4,
-        ](1, 5000, ctx)
+        test_helper[128](ctx)
+        test_helper[256](ctx)

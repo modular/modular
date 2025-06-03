@@ -319,7 +319,7 @@ fn flash_attention[
         # H and D are always known for opaque KVCache types, we only check Q.
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
-        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200))
+        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and has_amd_gpu_accelerator())
         alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
@@ -826,7 +826,7 @@ fn flash_attention[
     # H and D are always known.
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
-    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200))
+    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and has_amd_gpu_accelerator())
     alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
 
     alias q_half_float = q.type in (DType.float16, DType.bfloat16)
@@ -875,7 +875,9 @@ fn flash_attention[
 # ===-----------------------------------------------------------------------===#
 
 
-@__llvm_metadata(`rocdl.waves_per_eu`=Int(2))
+# for depth = 128 we want waves_per_eu = 2 and for depth = 256 we want waves_per_eu = 1
+# this heuristic may not be valid for other depths
+@__llvm_metadata(`rocdl.waves_per_eu`=Int(256 // config.depth))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](config.num_threads())
 )
