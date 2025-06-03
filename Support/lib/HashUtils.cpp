@@ -6,17 +6,20 @@
 
 #include "Support/HashUtils.h"
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/xxhash.h"
-
+#include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BlockSupport.h"
+#include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include "xxh3.h"
+#include "xxhash.h"
 
 using namespace mlir;
 
@@ -143,38 +146,55 @@ bool areBlocksSame(mlir::Block &b1, mlir::Block &b2) {
   return areBlocksSameImpl(b1, b2, valueHashes, posInBlock);
 }
 
-FailureOr<std::string> getBytecodeHash(mlir::Operation *op) {
-  mlir::OwningOpRef<mlir::Operation *> opClone{
-      op->clone(mlir::Operation::CloneOptions(/*cloneRegions=*/true,
-                                              /*cloneOperands=*/false))};
-  auto unknownLoc = UnknownLoc::get(opClone->getContext());
+/// A raw_ostream that hash the content using the xxhash algorithm.
+class raw_xxhash_stream : public raw_ostream {
+  XXH3_state_t State;
 
-  // cf mlir/lib/Transforms/StripDebugInfo.cpp, didn't want to run a pass
-  opClone->walk([&](Operation *innerOp) {
-    innerOp->setLoc(unknownLoc);
-    // Strip block arguments debug info.
-    for (Region &region : innerOp->getRegions()) {
-      for (Block &block : region.getBlocks()) {
-        for (BlockArgument &arg : block.getArguments()) {
-          arg.setLoc(unknownLoc);
-        }
-      }
-    }
-  });
-
-  std::string bytecodeBuf;
-  {
-    llvm::raw_string_ostream bytecodeOs(bytecodeBuf);
-    if (failed(mlir::writeBytecodeToFile(opClone.get(), bytecodeOs)))
-      return op->emitError("Failed to write bytecode");
+  /// See raw_ostream::write_impl.
+  void write_impl(const char *Ptr, size_t Size) override {
+    XXH3_128bits_update(&State, (void *)Ptr, Size);
   }
 
-  auto hash = llvm::xxh3_128bits(
-      ArrayRef((const uint8_t *)bytecodeBuf.data(), bytecodeBuf.size()));
+public:
+  raw_xxhash_stream() : raw_ostream() { XXH3_128bits_reset(&State); }
 
-  std::string hashStr = llvm::utohexstr(hash.high64, /*LowerCase=*/true, 16) +
-                        llvm::utohexstr(hash.low64, /*LowerCase=*/true, 16);
-  return hashStr;
+  std::array<uint8_t, 16> hash() {
+    flush();
+
+    XXH128_hash_t digest = XXH3_128bits_digest(&State);
+    std::array<uint8_t, 16> result;
+    memcpy(&result[0], (void *)&digest.low64, 8);
+    memcpy(&result[8], (void *)&digest.high64, 8);
+    return result;
+  }
+
+  uint64_t current_pos() const override { return 0; }
+};
+
+FailureOr<std::string> getBytecodeHash(mlir::Operation *op) {
+  auto unknownLoc = UnknownLoc::get(op->getContext());
+
+  auto *builtin = op->getContext()->getLoadedDialect<mlir::BuiltinDialect>();
+  BytecodeDialectInterface *iface =
+      builtin->getRegisteredInterface<BytecodeDialectInterface>();
+
+  BytecodeWriterConfig config;
+  config.attachAttributeCallback(
+      [&](Attribute entryValue, std::optional<StringRef> &dialectGroupName,
+          DialectBytecodeWriter &writer) -> LogicalResult {
+        // Map all locations attributes to UnknownLoc.
+        if (isa<LocationAttr>(entryValue))
+          entryValue = unknownLoc;
+        return iface->writeAttribute(entryValue, writer);
+      });
+
+  raw_xxhash_stream ostream;
+  if (failed(mlir::writeBytecodeToFile(op, ostream, config)))
+    return op->emitError("Failed to write bytecode");
+
+  SmallString<32> output;
+  llvm::toHex(ostream.hash(), /*LowerCase=*/true, output);
+  return std::string(output);
 }
 
 } // namespace M
