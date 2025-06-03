@@ -16,6 +16,6 @@ def create_text_context(
     return TextContext(
         cache_seq_id=cache_seq_id,
         prompt=tokens.tolist(),
-        max_length=None,
+        max_length=1000,
         tokens=tokens,
     )

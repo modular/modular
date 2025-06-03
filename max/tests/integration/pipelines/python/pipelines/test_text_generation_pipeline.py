@@ -10,6 +10,7 @@ import logging
 from unittest.mock import patch
 
 import hf_repo_lock
+from max.driver import DeviceSpec
 from max.pipelines.core import TokenGeneratorRequest
 from max.pipelines.lib import generate_local_model_path
 from test_common.mocks import (
@@ -75,6 +76,7 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
             eos_token=eos_token,
             eos_prob=0.05,  # On average, one in every 20 tokens will be an eos token.
             max_length=max_length,
+            device_specs=[DeviceSpec(device_type="cpu", id=0)],
         ) as (tokenizer, pipeline)
     ):
         prompts = [

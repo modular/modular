@@ -182,7 +182,7 @@ def test_tokenizer_regression_MODELS_467() -> None:
         return rank1([item])[0]
 
     def decode(tokens: np.ndarray) -> str:
-        context = TextContext("Irrelevant", None, rank1([]))
+        context = TextContext("Irrelevant", 65535, rank1([]))
         return asyncio.run(tokenizer.decode(context, tokens))
 
     # Single token here needs preceding space, including rank-0.

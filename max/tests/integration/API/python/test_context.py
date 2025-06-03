@@ -6,7 +6,36 @@
 
 import numpy as np
 import pytest
-from max.pipelines.core import SamplingParams, TextContext
+from max.pipelines.core import SamplingParams, TextContext, TextGenerationStatus
+
+
+def test_context__eos():
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+        eos_token_ids={4},
+    )
+    assert context.eos_token_ids == {4}
+    assert context.is_initial_prompt == True
+    context.update(4)
+    assert context.is_initial_prompt == False
+    assert context.current_length == 5
+    assert context.status == TextGenerationStatus.END_OF_SEQUENCE
+
+
+def test_context__max_length():
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="this is a test prompt",
+        max_length=6,
+        tokens=np.array([0, 1, 2, 3]),
+    )
+    for i in range(2):
+        assert context.status == TextGenerationStatus.ACTIVE
+        context.update(i)
+    assert context.status == TextGenerationStatus.MAXIMUM_LENGTH
 
 
 def test_context__current_length():
@@ -146,4 +175,5 @@ def test_context_sampling_params_integration():
 
     context.reset()
     assert context.sampling_params is custom_params
+    assert context.sampling_params.temperature == 0.7
     assert context.sampling_params.temperature == 0.7

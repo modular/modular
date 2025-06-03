@@ -39,7 +39,7 @@ class MockTextTokenizer(
         self.i = 0
         self.vocab_size = vocab_size
         self.seed = seed
-        self.max_length = max_length
+        self.max_length = max_length or 512
         self.max_new_tokens = max_new_tokens
 
         random.seed(self.seed)
@@ -99,7 +99,7 @@ class MockTextTokenizer(
         elif self.max_new_tokens:
             max_length = len(encoded) + self.max_new_tokens
         else:
-            max_length = None
+            max_length = self.max_length
 
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))

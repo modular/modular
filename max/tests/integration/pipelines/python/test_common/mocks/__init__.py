@@ -69,6 +69,7 @@ def retrieve_mock_text_generation_pipeline(
         max_new_tokens=max_new_tokens,
         seed=seed,
         vocab_size=vocab_size,
+        max_length=max_length,
     )
 
     try:
