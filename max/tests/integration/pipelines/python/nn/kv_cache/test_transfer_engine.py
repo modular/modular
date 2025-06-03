@@ -19,13 +19,13 @@ from max.nn.kv_cache import (
     XferReqData,
 )
 
-port = 8001
+_PORT = 8001
 
 
 def get_unique_port():
-    global port
-    port += 1
-    return port
+    global _PORT
+    _PORT += 1
+    return _PORT
 
 
 def transfer_routine_sender(
@@ -93,6 +93,9 @@ def test_send_recv_basic(device: Device):
     )
     assert np.array_equal(blocks_1.to_numpy(), expected_blocks_1)
     assert np.array_equal(blocks_2.to_numpy(), expected_blocks_2)
+
+    engine_2.cleanup()
+    engine_1.cleanup()
 
 
 def test_constructor():
@@ -188,3 +191,6 @@ def test_initiate_send_xfer():
         _ = engine_1.initiate_send_xfer(
             engine_2.metadata, src_idxs=[2, 1], dst_idxs=[0, 0]
         )
+
+    engine_1.cleanup()
+    engine_2.cleanup()
