@@ -249,9 +249,16 @@ struct MinimalDict:
 
 fn take_ref(ref x: Int): pass
 
+# CHECK-LABEL: lit.fn @"test_ref_subscript_binding
 fn test_ref_subscript_binding(mut d: MinimalDict) raises -> ref [d[0]] Int:
+  # Check that a ref returned by the getitem is directly passed.
 
-  # FIXME: This is emitting a copy and passing the address of the copy.
+  # CHECK-NEXT: [[DIMM:%.*]] = lit.ref.immut %d
+  # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+  # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
+  # CHECK-NEXT: lit.call {{.*}}@MinimalDict::@"__getitem__{{.*}}([[DIMM]], [[ZERO]], %__error__, %__call_result_tmp__)
+  # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+  # CHECK-NEXT: lit.call {{.*}}take_ref{{.*}}([[REF]])
   take_ref(d[0])
 
   ref some_ref = d[0]

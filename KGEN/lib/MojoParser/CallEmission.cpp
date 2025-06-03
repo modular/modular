@@ -998,7 +998,12 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   auto boundCalleeRV = calleeRV;
   if (!fitness.getParamBindings().empty()) {
     auto calleePVal = calleeRV.getIfPValue();
-    assert(calleePVal && "cannot call a parameterized function indirectly");
+    if (!calleePVal) {
+      emitError(callExpr->getLoc(),
+                "cannot call dynamic function with parameterized type");
+      dest.resetForError();
+      return {};
+    }
     boundCalleeRV = PValue(
         BindParamsAttr::get(calleePVal, fitness.getParamBindings().getValue()));
   }
