@@ -38,8 +38,10 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/Support/EndianStream.h"
-#include "llvm/Support/xxhash.h"
 #include "llvm/Target/TargetMachine.h"
+
+#include "xxh3.h"
+#include "xxhash.h"
 
 #define DEBUG_TYPE "kgen-compiler"
 #define KGEN_DEBUG_TYPE "kgen-compiler"
@@ -205,9 +207,8 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
 }
 
 static StringAttr getXXH3Hash(StringAttr strAttr) {
-  llvm::XXH128_hash_t hash =
-      llvm::xxh3_128bits(arrayRefFromStringRef(strAttr.getValue()));
-  StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
+  XXH128_hash_t hash = XXH3_128bits(strAttr.data(), strAttr.size());
+  StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(XXH128_hash_t));
   return StringAttr::get(llvm::toHex(hashStr, true),
                          StringType::get(strAttr.getContext()));
 }

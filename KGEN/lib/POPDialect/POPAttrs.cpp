@@ -19,7 +19,6 @@
 #include "llvm/Support/Base64.h"
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace KGEN;

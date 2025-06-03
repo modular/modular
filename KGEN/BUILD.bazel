@@ -955,6 +955,7 @@ modular_cc_library(
         "//Support:Profiling",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
+        "@xxhash",
     ],
 )
 
