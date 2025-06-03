@@ -20,7 +20,6 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 
-import uvloop
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from max.pipelines.core import (
@@ -31,10 +30,6 @@ from max.pipelines.core import (
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
-from max.serve.pipelines.echo_gen import (
-    EchoPipelineTokenizer,
-    EchoTokenGenerator,
-)
 from max.serve.pipelines.kvcache_worker import start_kvcache_agent
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -47,13 +42,9 @@ from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
 from max.serve.scheduler import TokenGeneratorSchedulerConfig
-from max.serve.telemetry.common import (
-    configure_logging,
-    configure_metrics,
-    send_telemetry_log,
-)
+from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
-from uvicorn import Config, Server
+from uvicorn import Config
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
@@ -235,28 +226,3 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
     for route in app.routes:
         logger.debug("Route enabled : %s", route)
     return config
-
-
-async def main() -> None:
-    server_settings = Settings()
-    configure_logging(server_settings)
-    configure_metrics(server_settings)
-
-    pipeline_settings = ServingTokenGeneratorSettings(
-        model_name="echo",
-        model_factory=EchoTokenGenerator,
-        pipeline_config=TokenGeneratorSchedulerConfig.continuous_heterogenous(
-            tg_batch_size=1, ce_batch_size=1
-        ),
-        tokenizer=EchoPipelineTokenizer(),
-    )
-
-    app = fastapi_app(server_settings, pipeline_settings)
-
-    config = fastapi_config(app=app, server_settings=server_settings)
-    server = Server(config)
-    await server.serve()
-
-
-if __name__ == "__main__":
-    uvloop.run(main())
