@@ -23,7 +23,26 @@ if TYPE_CHECKING:
     from max.serve.scheduler.audio_generation_scheduler import (
         AudioGenerationSchedulerConfig,
     )
-from max.serve.scheduler.queues import BatchingStrategy, BatchQueueConfig
+
+
+@dataclass(frozen=True)
+class BatchQueueConfig:
+    size: int
+
+    timeout: float = 0.0
+    """How long to wait (in seconds) if a queue is empty."""
+
+    max_forward_steps: int = 1
+    """Maximum number of forwards steps to schedule at a time."""
+
+    enable_chunked_prefill: bool = True
+    """Enable chunked prefill to splits requests into chunks."""
+
+    enable_in_flight_batching: bool = False
+    """Enable chunked prefill to prioritize token generation requests."""
+
+    target_sum_seq_len: Optional[int] = None
+    """Target sum of the sequence lengths in the batch."""
 
 
 @dataclass(frozen=True)
@@ -118,7 +137,6 @@ class TokenGeneratorSchedulerConfig:
         executed until all requests are completed.
         """
         token_generation_config = BatchQueueConfig(
-            strategy=BatchingStrategy.CONTINUOUS,
             size=batch_size,
             enable_chunked_prefill=False,
         )
@@ -145,7 +163,6 @@ class TokenGeneratorSchedulerConfig:
         Token-generation is done via continuous batching.
         """
         token_generation_config = BatchQueueConfig(
-            strategy=BatchingStrategy.CONTINUOUS,
             size=tg_batch_size,
             timeout=0.0,
             max_forward_steps=max_forward_steps,
@@ -153,7 +170,6 @@ class TokenGeneratorSchedulerConfig:
             enable_in_flight_batching=enable_in_flight_batching,
         )
         context_encoding_config = BatchQueueConfig(
-            strategy=BatchingStrategy.DYNAMIC,
             size=ce_batch_size,
             timeout=ce_batch_timeout,
             target_sum_seq_len=target_ce_batch_tokens,
