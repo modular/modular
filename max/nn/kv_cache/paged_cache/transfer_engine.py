@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import torch
+from max import driver
 from max._core import nixl
 from max.driver import CPU
 from max.driver.tensor import Tensor
@@ -151,6 +152,12 @@ class KVTransferEngine:
         self.ucx_backend = self.agent.create_backend(
             type="ucx", init_params=ucx_params[0]
         )
+
+        if not tensor.device.is_host and driver.accelerator_api() != "cuda":
+            # TODO(E2EOPT-228): Support HIP
+            raise ValueError(
+                "Non-NVIDIA GPUs are not yet supported with NIXL Transfer Engine."
+            )
 
         # TODO(E2EOPT-216) Delete CPU staging buffer after GPU->GPU is supported
         # Maybe allocate a CPU staging buffer for GPU->GPU transfers
