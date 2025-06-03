@@ -197,7 +197,8 @@ private:
 
 /// Instances of RLValue model a storable address as an SSA value with
 /// a mutable !lit.ref<!lit.ref<T>> reference type.  This is a reference to a
-/// reference.
+/// reference. This has a very short half-life: it only gets generated during
+/// local `ref` binding, it doesn't live generally in the compiler.
 class RLValue : public Value {
 public:
   using Value::Value;
@@ -748,6 +749,10 @@ public:
 
   virtual ~BaseDLValue();
   virtual void print(raw_ostream &os) const = 0;
+
+  // This hook is called if the DLValue needs to be resolved to a physical ref.
+  // This emits an error and returns null on failure.
+  virtual Value emitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const;
 
   // This hook is called before an argument is passed 'mut'.
   virtual LValue prepareForMutAccess(llvm::SMLoc loc, IREmitter &emitter) const;

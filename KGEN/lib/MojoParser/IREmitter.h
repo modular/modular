@@ -77,7 +77,6 @@ enum ExprContext {
   EC_Destructor,           // Looking up T's destructor for `var x : T`
   EC_Capture,              // def f(): var x = 4; def nested(): use(x)
   EC_Decorator,            // @x
-  EC_AutoDeref,            // dereference Reference x
   EC_Trait,                // trait conformance checking for `T`
   EC_Closure,              // closure formation
   EC_Origin,               // origin specifier
@@ -85,6 +84,7 @@ enum ExprContext {
   EC_PyBindGen,            // within Python binding generation
   EC_DisableDel,           // within Python binding generation
   EC_MergeWith,            // implicit __merge_with__ call
+  EC_RefBinding,           // ref r = x
 };
 const char *getContextMessage(ExprContext context);
 

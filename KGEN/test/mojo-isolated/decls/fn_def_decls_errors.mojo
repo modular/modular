@@ -119,12 +119,12 @@ def defTests() -> None:
   abc = 4
 
 # expected-error @below {{cannot infer origin for a function result}}
-# expected-error @+1 {{value of type 'IntLiteral[4]' has no memory origin}}
+# expected-error @+1 {{value of type 'IntLiteral[4]' doesn't have a memory origin in origin specifier}}
 fn ref_result_invalid1() -> ref [4] MemoryType:
     pass
 
 fn ref_result_invalid2(mut a: MemoryType) -> ref [a] Int:
-    # expected-error @+1 {{cannot return reference with incompatible origin: '*"anonymous*"' vs 'a'}}
+    # expected-error @+1 {{value of type 'Int' doesn't have a memory origin in return value}}
     return 4
 
 fn ref_result_invalid3(mut a: MemoryType, mut b: MemoryType)
@@ -149,7 +149,7 @@ fn ref_result_invalid7() -> ref MemoryType:
     pass
 
 # expected-error @below {{cannot infer origin for a function result}}
-# expected-error @+1 {{value of type 'Int' has no memory origin}}
+# expected-error @+1 {{value of type 'Int' doesn't have a memory origin in origin specifier}}
 fn ref_result_invalid8(a: Int) -> ref [a] MemoryType:
     pass
 
