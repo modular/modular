@@ -569,12 +569,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         return res
 
-    def _check_eos(self, token: int, context: T) -> bool:
-        """Helper method to check if token is EOS."""
-        if context.ignore_eos:
-            return False
-        return token in self._eos_token_id
-
     def update_contexts(
         self,
         context_batch: list[T],
@@ -605,12 +599,10 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
             for token_idx in range(rejected_token_idx):
                 token = int(draft_tokens[idx, token_idx])
-                context.update(token, is_eos=self._check_eos(token, context))
+                context.update(token)
 
             target_token = int(sampled_target_tokens[idx])
-            context.update(
-                target_token, is_eos=self._check_eos(target_token, context)
-            )
+            context.update(target_token)
 
             # Bump the start index back by 1 when all draft tokens are accepted.
             # The inputs to the draft will take the bonus token from the target
@@ -640,7 +632,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         for idx, context in enumerate(context_batch):
             res[request_ids[idx]] = TextGenerationResponse(
                 [],
-                context.active_status,  # type: ignore
+                context.status,
             )
 
             # Identify the Max Length
@@ -658,8 +650,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 current_length = context.start_idx + 1
 
                 if current_length >= context_max_length:
-                    context.active_status = TextGenerationStatus.MAXIMUM_LENGTH  # type: ignore
-                    res[request_ids[idx]].update_status(context.active_status)  # type: ignore
+                    context.update_status(TextGenerationStatus.MAXIMUM_LENGTH)
+                    res[request_ids[idx]].update_status(context.status)
 
                     res[request_ids[idx]].append_token(
                         TextResponse(token, log_probs)

@@ -13,17 +13,28 @@
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from max.pipelines.core import TextGenerationStatus
 
 
 @runtime_checkable
 class KVCacheAwareContext(Protocol):
     """A Protocol identifying the minimum API necessary for interacting with a KV Cache."""
 
+    def update_status(self, status: TextGenerationStatus) -> None: ...
+
     @property
-    def ignore_eos(self) -> bool: ...
+    def status(self) -> TextGenerationStatus: ...
+
+    @property
+    def is_done(self) -> bool: ...
+
+    @property
+    def eos_token_ids(self) -> set[int]: ...
 
     @property
     def active_idx(self) -> int: ...

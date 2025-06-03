@@ -12,6 +12,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/serve/kvcache_agent",
         "//SDK/lib/API/python/max/support",
     ],

@@ -145,7 +145,7 @@ class FrequencyData:
         matrix."""
 
     offsets: Tensor
-    """Row offsets: shape [batch_size + 1] indicating start of each 
+    """Row offsets: shape [batch_size + 1] indicating start of each
     sequence's data."""
 
 
@@ -947,35 +947,12 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 ):
                     log_probs = log_probs_for_step[batch_index]
 
-                # Identify completion criteria.
-                if context.ignore_eos:
-                    is_eos = False
-                else:
-                    is_eos = next_token in self._eos_token_id
-
-                # Write this token into our pre-allocated tokens array.
                 context.update(
                     new_token=next_token,
                     log_probabilities=log_probs,
-                    is_eos=is_eos,
                 )
-
-                max_length = upper_bounded_default(
-                    upper_bound=self._pipeline_model.calculate_max_seq_len(
-                        self._pipeline_config,
-                        huggingface_config=self._pipeline_config.model_config.huggingface_config,
-                    ),
-                    default=context.max_length,
-                )
-
-                if is_eos:
-                    status = TextGenerationStatus.END_OF_SEQUENCE
-                    res[request_id].update_status(status)
-                elif context.current_length == max_length:
-                    status = TextGenerationStatus.MAXIMUM_LENGTH
-                    res[request_id].update_status(status)
-
-                if status.is_done:
+                res[request_id].update_status(context.status)
+                if context.is_done:
                     break
 
             # Walk outstanding completion tokens, and return to user.
