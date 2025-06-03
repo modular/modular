@@ -374,24 +374,6 @@ class DefaultParameterization(Protocol):
         /,
     ) -> None: ...
 
-class DeviceInput(Protocol):
-    """Trait to indicate the only input to consider for device assignment"""
-
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-
-class DeviceInputs(Protocol):
-    """Trait to indicate the inputs to consider for device assignment"""
-
-    @property
-    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-
-class Distributed(Protocol):
-    """
-    Interface for modeling distributed operations which have
-    variadic number of inputs and outputs which can be on different devices.
-    """
-
 class ElementWiseBinary(Protocol):
     """Interface for modeling binary element-wise operations."""
 
