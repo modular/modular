@@ -54,7 +54,10 @@ modular_py_test(
         "MAX_SERVE_TESTDATA": "SDK/lib/API/python/tests/serve/testdata",
         "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
     },
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
     tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max/nn",
