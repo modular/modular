@@ -382,9 +382,10 @@ fn _matmul_gpu[
     var h100_matmul_cond = (
         ctx.device_info is H100 and n % 8 == 0 and a_type is DType.bfloat16
     )
+    var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
     var multi_gemm_cond = (
         (m > 1 or (has_amd_gpu_accelerator() and transpose_b == False))
-        and (n % 128 == 0 or h100_matmul_cond)
+        and (n % 128 == 0 or h100_matmul_cond or amdgpu_matmul_cond)
         and k % 32 == 0
         and k >= 128
     )
@@ -866,6 +867,8 @@ fn _matmul_gpu[
                         return kernel_helper[256, 224]()
                     elif m >= 256:
                         return kernel_helper[128, 224]()
+                elif static_N == 262208 and static_K == 3840:
+                    return kernel_helper[256, 256]()
 
                 # llama3 auto-tuned shapes
                 @parameter

@@ -281,4 +281,10 @@ def main():
             transpose_b=True,
         ](bench, ctx, dynamic(1024), static[1024](), static[1024]())
 
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.bfloat16,
+            transpose_b=True,
+        ](bench, ctx, dynamic(256), static[284](), static[256]())
+
     bench.dump_report()

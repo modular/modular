@@ -36,6 +36,7 @@ from gpu.sync import schedule_barrier as amd_schedule_barrier
 from gpu.sync import schedule_group_barrier
 from layout import IntTuple, Layout, LayoutTensor
 from layout.layout_tensor import (
+    UNKNOWN_VALUE,
     ThreadScope,
     _tile_is_masked,
     copy,
@@ -672,17 +673,15 @@ fn gemm_kernel[
         warp_id // warps_n, warp_id % warps_n
     )
 
+    alias static_N = b_layout.shape[0].value()
+    constrained[
+        static_N != UNKNOWN_VALUE, "N should be known at compile time"
+    ]()
+
     alias output_thread_layout = Layout.col_major(16, 4)
 
     @parameter
-    if elementwise_lambda_fn:
-        # Apply custom elementwise operation to each output element
-        constrained[
-            elementwise_lambda_fn is not None,
-            "elementwise_lambda_fn is not valid",
-        ]()
-        alias epilogue_fn = elementwise_lambda_fn.value()
-
+    if Bool(elementwise_lambda_fn) or (static_N % block_n != 0):
         var c_gmem_fragment = c_warp_tile.vectorize[1, 4]().distribute[
             output_thread_layout
         ](lane_id())
@@ -703,18 +702,48 @@ fn gemm_kernel[
                 dst_idx = Int(c_gmem_fragment.runtime_layout(i))
 
             var global_offset = Int(thread_offset) + dst_idx
-            var m = global_offset // n_dim
-            var n = global_offset % n_dim
+
+            var m = (
+                (i % mmas_per_warp_m) * mma_m
+                + lane_id() % 16
+                + (warp_id // warps_n) * warp_m
+                + block_idx.y * block_m
+            )
+            var n = (
+                (i // mmas_per_warp_m) * mma_n
+                + (lane_id() // 16) * 4
+                + (warp_id % warps_n) * warp_n
+                + block_idx.x * block_n
+            )
 
             if m < m_dim and n < n_dim:
-                var result_vec = c_reg_fragment.ptr.offset(src_idx).load[
-                    width=4,
-                    alignment = alignof[SIMD[c_type, 4]](),
-                ]()
-
-                epilogue_fn[alignment = alignof[SIMD[c_type, 4]]()](
-                    (m, n), result_vec.cast[c_type]()
+                var result_vec = (
+                    c_reg_fragment.ptr.offset(src_idx)
+                    .load[
+                        width=4,
+                        alignment = alignof[SIMD[c_type, 4]](),
+                    ]()
+                    .cast[c_type]()
                 )
+
+                alias alignment = alignof[SIMD[c_type, 4]]()
+
+                @parameter
+                if elementwise_lambda_fn:
+                    # Apply custom elementwise operation to each output element
+                    constrained[
+                        elementwise_lambda_fn is not None,
+                        "elementwise_lambda_fn is not valid",
+                    ]()
+                    alias epilogue_fn = elementwise_lambda_fn.value()
+
+                    epilogue_fn[alignment = alignof[SIMD[c_type, 4]]()](
+                        (m, n), result_vec
+                    )
+                else:
+                    c.ptr.offset(global_offset).store[alignment=alignment](
+                        result_vec
+                    )
     else:
         # Direct copy to global memory
         copy_local_to_dram[
