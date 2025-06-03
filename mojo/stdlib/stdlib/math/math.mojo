@@ -447,7 +447,7 @@ fn exp2[
     xc -= m.cast[dtype]()
 
     var r = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             1.0,
             0.693144857883,
             0.2401793301105,
@@ -566,7 +566,7 @@ trait _Expable:
 fn _exp_taylor[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    alias coefficients = List[SIMD[dtype, width]](
+    alias coefficients = List[Scalar[dtype]](
         1.0,
         1.0,
         0.5,
@@ -773,7 +773,7 @@ fn _log_base[
 
     var y = (
         polynomial_evaluate[
-            List[SIMD[dtype, width]](
+            List[Scalar[dtype]](
                 3.3333331174e-1,
                 -2.4999993993e-1,
                 2.0000714765e-1,
@@ -934,7 +934,7 @@ fn erf[
     var x_abs = abs(x)
 
     var r_large = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             1.28717512e-1,
             6.34846687e-1,
             1.06777847e-1,
@@ -949,7 +949,7 @@ fn erf[
     r_large = copysign(1 - exp(-r_large), x)
 
     var r_small = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             1.28379151e-1,
             -3.76124859e-1,
             1.12818025e-1,
@@ -1025,7 +1025,7 @@ fn tanh[
     var x_squared = xc * xc
 
     var numerator = xc * polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             4.89352455891786e-03,
             6.37261928875436e-04,
             1.48572235717979e-05,
@@ -1037,7 +1037,7 @@ fn tanh[
     ](x_squared)
 
     var denominator = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             4.89352518554385e-03,
             2.26843463243900e-03,
             1.18534705686654e-04,
@@ -1659,7 +1659,7 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     # When x is in the range [0, 0.5], we use a polynomial approximation.
     # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
     var p = polynomial_evaluate[
-        List[__type_of(x)](
+        List[Scalar[x.dtype]](
             0.3333373963832855224609375,
             0.1997792422771453857421875,
             0.14672131836414337158203125,
