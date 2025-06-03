@@ -163,7 +163,9 @@ def generate_max_outputs(
     for weight_name, value in attention_weights.items():
         state_dict[weight_name] = value.cpu()
 
-    kv_cache_config = KVCacheConfig(cache_strategy=KVCacheStrategy.PAGED)
+    kv_cache_config = KVCacheConfig(
+        cache_strategy=KVCacheStrategy.PAGED, kv_cache_page_size=256
+    )
     kv_params = MaxGemma3Config.get_kv_params(
         text_config,
         1,
