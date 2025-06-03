@@ -40,27 +40,19 @@ class TransferOpType(enum.Enum):
     WRITE = 1
 
 class Status(enum.Enum):
+    """
+    Status code for NIXL operations.
+
+    !! NOTE !! This differs from the C++ API. When an operation would
+    return an error in the C++ API, here it would instead throw a similarly
+    named exception. If a function can only one of these two statuses (usually
+    SUCCESS) aside from throwing an error, the return code is omitted and is
+    assumed to be that status code (again, usually SUCCESS).
+    """
+
     IN_PROG = 1
 
     SUCCESS = 0
-
-    ERR_NOT_POSTED = -1
-
-    ERR_INVALID_PARAM = -2
-
-    ERR_BACKEND = -3
-
-    ERR_NOT_FOUND = -4
-
-    ERR_MISMATCH = -5
-
-    ERR_NOT_ALLOWED = -6
-
-    ERR_REPOST_ACTIVE = -7
-
-    ERR_UNKNOWN = -8
-
-    ERR_NOT_SUPPORTED = -9
 
 class NotPostedError(Exception):
     pass
