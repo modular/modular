@@ -18,10 +18,11 @@ from __future__ import annotations
 import asyncio
 import queue
 import threading
-from collections.abc import Sequence
+import uuid
+from collections.abc import Awaitable, Sequence
 from queue import Queue
 from threading import Thread
-from typing import Optional
+from typing import Callable, Optional, TypeVar, cast
 
 import tqdm
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
@@ -36,6 +37,8 @@ from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
 
+T = TypeVar("T")
+U = TypeVar("U")
 RequestQueue = Queue[tuple[Sequence[str], Optional[int], bool]]
 ResponseQueue = Queue[list[str]]
 
@@ -116,6 +119,28 @@ def _run_async_worker(
     )
 
 
+async def _async_map(
+    f: Callable[[T], Awaitable[U]],
+    seq: Sequence[T],
+    /,
+    *,
+    use_tqdm: bool = False,
+) -> list[U]:
+    outputs: list[U | None] = [None] * len(seq)
+
+    async def task_wrapper(i: int) -> None:
+        outputs[i] = await f(seq[i])
+        if use_tqdm:
+            pbar.update(1)
+
+    if use_tqdm:
+        with tqdm.tqdm(total=len(seq)) as pbar:
+            await asyncio.gather(*map(task_wrapper, range(len(seq))))
+    else:
+        await asyncio.gather(*map(task_wrapper, range(len(seq))))
+    return cast("list[U]", outputs)
+
+
 async def _async_worker(
     pc: ProcessControl,
     pipeline_config: PipelineConfig,
@@ -161,13 +186,10 @@ async def _async_worker(
             except queue.Empty:
                 continue
 
-            if use_tqdm:
-                pbar = tqdm.tqdm(total=len(prompts))
-
             # Lambda to do a full text generation for a request.
-            async def all_tokens(i: int, prompt: str) -> tuple[int, str]:
+            async def all_tokens(prompt: str) -> str:
                 request = TokenGeneratorRequest(
-                    id=str(i),
+                    id=str(uuid.uuid4()),
                     index=0,
                     model_name=model_name,
                     prompt=prompt,
@@ -176,19 +198,9 @@ async def _async_worker(
 
                 # Generate this request until complete
                 tokens = await pipeline.all_tokens(request)
-                if use_tqdm:
-                    pbar.update(1)
-                return (i, "".join(t.decoded_token for t in tokens))
+                return "".join(t.decoded_token for t in tokens)
 
-            all_tokens_tasks = [
-                all_tokens(i, prompt) for i, prompt in enumerate(prompts)
-            ]
-            responses = [""] * len(prompts)
-            for i, response in await asyncio.gather(*all_tokens_tasks):
-                responses[i] = response
-
-            if use_tqdm:
-                pbar.close()
+            responses = await _async_map(all_tokens, prompts, use_tqdm=use_tqdm)
 
             response_queue.put(responses)
 

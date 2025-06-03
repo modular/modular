@@ -106,6 +106,9 @@ class SamplingConfig(MAXConfig):
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
+    top_p: float = 1
+    """Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens."""
+
     temperature: float = 1
     """Controls the randomness of the model's output; higher values produce more diverse responses."""
 
@@ -148,6 +151,7 @@ class SamplingConfig(MAXConfig):
     def help() -> dict[str, str]:
         return {
             "top_k": "Limit sampling to the top K most probable tokens during generation. This can help control randomness and improve output quality. This defaults to 1, which defaults to greedy sampling.",
+            "top_p": "Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens.",
             "temperature": "Controls the randomness of the model's output; higher values produce more diverse responses.",
             "frequency_penalty": "The frequency penalty to apply to the model's output. A positive value will penalize new tokens based on their frequency in the generated text: tokens will receive a penalty proportional to the count of appearances.",
             "presence_penalty": "The presence penalty to apply to the model's output. A positive value will penalize new tokens that have already appeared in the generated text at least once by applying a constant penalty.",

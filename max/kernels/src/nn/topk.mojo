@@ -103,6 +103,30 @@ fn bottom_k_shape[
     ](input, k, axis)
 
 
+@always_inline
+fn _adjust_top_p[
+    T: DType
+](
+    top_p: Scalar[T],
+    values: UnsafePointer[Scalar[T], **_],
+    k: Int,
+    total_sum: Scalar[T],
+) -> Scalar[T]:
+    # Align the given top_p to the cumulative probability of the tokens.
+    # For example, if after top_k we have three tokens with probabilities
+    # [0.7, 0.2, 0.1] and top_p = 0.8, then we should sample from the first
+    # two tokens with probabilities [0.7, 0.2], so we set _top_p = 0.9.
+    var _top_p = Scalar[T](1)
+    if top_p < 1:
+        var cum_prob = Scalar[T](0)
+        for ki in range(k):
+            cum_prob += values[ki]
+            if cum_prob >= top_p * total_sum:
+                break
+        _top_p = cum_prob / total_sum
+    return _top_p
+
+
 fn top_k[
     rank: Int,
     type: DType,
@@ -265,7 +289,7 @@ fn _top_k_cpu[
 
 
 @always_inline
-fn top_k_fused_sampling_cpu[
+fn fused_token_sampling_cpu[
     type: DType,
     rank: Int,
     out_idx_type: DType,
@@ -274,6 +298,7 @@ fn top_k_fused_sampling_cpu[
     input: NDBuffer[type, rank],
     out_idxs: NDBuffer[mut=True, out_idx_type, rank],
     temperature: Scalar[type] = 1,
+    top_p: Scalar[type] = 1,
     seed: UInt64 = 0,
 ) raises:
     """
@@ -291,6 +316,7 @@ fn top_k_fused_sampling_cpu[
         input: NDBuffer[type, rank] (Any shape)- The input tensor.
         out_idxs: NDBuffer[out_idx_type, rank] (shape of [input_shape[:-1]] + [1]) - The output indices.
         temperature: The temperature based scaling.
+        top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
     constrained[out_idx_type is DType.int64, "out_idx_type must be int64"]()
@@ -308,6 +334,7 @@ fn top_k_fused_sampling_cpu[
         out_vals,
         rebind[NDBuffer[DType.int64, rank, out_idxs.origin]](out_idxs),
         temperature,
+        top_p,
         seed,
     )
 
@@ -323,6 +350,7 @@ fn _top_k_sampling[
     out_vals: NDBuffer[mut=True, type, rank],
     out_idxs: NDBuffer[mut=True, DType.int64, rank],
     temperature: Scalar[type] = 1,
+    top_p: Scalar[type] = 1,
     seed: UInt64 = 0,
 ) raises:
     """
@@ -340,6 +368,7 @@ fn _top_k_sampling[
         out_vals: NDBuffer[type, rank] (shape of [input[:-1]] + [k]) - The output values.
         out_idxs: NDBuffer[DType.int64, rank] (shape of [input[:-1]] + [1]) - The output indices.
         temperature: The temperature based scaling.
+        top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
     # Now reshape for sampling
@@ -390,12 +419,14 @@ fn _top_k_sampling[
         # Calculate softmax normalization
         var max_val = internal_out_vals[batch, 0]
         var sum_exp = Scalar[type](0)
-        var exp_vals = List[Scalar[type]](capacity=k)
+        var exp_vals = UnsafePointer[Scalar[type]].alloc(k)
         for i in range(k):
             var val = internal_out_vals[batch, i]
             var exp_val = exp((val - max_val) / max(temperature, 1e-6))
-            exp_vals.append(exp_val)
+            exp_vals[i] = exp_val
             sum_exp += exp_val
+
+        var _top_p = _adjust_top_p[type](top_p, exp_vals, k, sum_exp)
 
         # Use the same RNG as the GPU sampling implementation
         var rng_state = Random(
@@ -404,14 +435,14 @@ fn _top_k_sampling[
         var rng = rng_state.step_uniform()
 
         # Sample using the normalized probabilities
-        var r = sum_exp * rng[0].cast[type]()
+        var r = sum_exp * _top_p * rng[0].cast[type]()
         for i in range(k):
             r -= exp_vals[i]
             if r <= 0 or i == k - 1:
                 # Store the sampled index and value
                 internal_out_idxs[batch, 0] = out_idxs_tmp[batch, i]
                 break
-
+        exp_vals.free()
     out_idxs_tmp.data.free()
 
 
@@ -696,6 +727,7 @@ fn _topk_stage2[
         Scalar[out_idx_type]
     ],  # sampling ? sampled token : Output array of size K
     temperature: Scalar[T] = 1,
+    top_p: Scalar[T] = 1,
     seed: UInt64 = 0,
 ):
     """
@@ -718,6 +750,7 @@ fn _topk_stage2[
         global_topk_vals: Pointer to store the final global Top-K values (size: batch_size * K).
         global_topk_idxs: Pointer to store the final global Top-K indices (size: batch_size * (1 if sampling else K)).
         temperature: The temperature based scaling.
+        top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
 
     The function uses shared memory to store and process the local Top-K results,
@@ -824,6 +857,8 @@ fn _topk_stage2[
         @parameter
         if sampling:
             if tid == 0:
+                var _top_p = _adjust_top_p[T](top_p, s_val2, K, s_sum[0])
+
                 # Use the largest logit's id as the offset for the random number
                 # generator, so that we don't use the same random number for every
                 # token in the sequence.
@@ -832,7 +867,7 @@ fn _topk_stage2[
                 )
                 var rng = rng_state.step_uniform()
                 var softmax_norm = s_sum[0]
-                var r = softmax_norm * rng[0].cast[T]()
+                var r = softmax_norm * _top_p * rng[0].cast[T]()
                 for ki in range(K):
                     var exp_logit = s_val2[ki]
 
@@ -862,6 +897,7 @@ fn _topk_gpu[
     block_size: Int = 256,
     num_blocks_per_input: OptionalReg[Int] = None,
     temperature: Scalar[type] = 1,
+    top_p: Scalar[type] = 1,
     seed: UInt64 = 0,
 ) raises:
     """Computes the Top-K elements from the input tensor using a GPU-accelerated two-stage algorithm.
@@ -898,6 +934,7 @@ fn _topk_gpu[
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
         temperature: The temperature based scaling.
+        top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
 
     The implementation uses shared memory and warp-level primitives for efficient GPU execution.
@@ -974,6 +1011,7 @@ fn _topk_gpu[
         out_vals.data,
         out_idxs.data,
         temperature,
+        top_p,
         seed,
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
@@ -998,6 +1036,7 @@ fn topk_gpu[
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     temperature: Scalar[type] = 1,
+    top_p: Scalar[type] = 1,
     seed: UInt64 = 0,
 ) raises:
     """
@@ -1030,6 +1069,7 @@ fn topk_gpu[
             This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
             batch sizes through packing several elements per thread in the first stage.
         temperature: The temperature based scaling.
+        top_p: Only use the tokens whose cumulative probability exceeds this threshold.
         seed: The seed to use for the random number generator.
     """
     constrained[rank > 0, "Input rank must be positive"]()
@@ -1129,6 +1169,7 @@ fn topk_gpu[
         internal_out_vals,
         internal_out_idxs,
         temperature=temperature,
+        top_p=top_p,
         block_size=block_size_,
         num_blocks_per_input=num_blocks_per_input_,
         seed=seed,
@@ -1139,7 +1180,7 @@ fn topk_gpu[
 
 
 @always_inline
-fn topk_fused_sampling_gpu[
+fn fused_token_sampling_gpu[
     type: DType,
     rank: Int,
     out_idx_type: DType, //,
@@ -1151,6 +1192,7 @@ fn topk_fused_sampling_gpu[
     block_size: OptionalReg[Int] = None,
     num_blocks_per_input: OptionalReg[Int] = None,
     temperature: Scalar[type] = 1,
+    top_p: Scalar[type] = 1,
     seed: UInt64 = 0,
 ) raises:
     """
@@ -1175,6 +1217,7 @@ fn topk_fused_sampling_gpu[
         out_vals,
         out_idxs,
         temperature=temperature,
+        top_p=top_p,
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
         seed=seed,

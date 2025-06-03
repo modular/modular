@@ -194,6 +194,7 @@ def token_sampler(
             logits=logits,
             top_k=sampling_config.top_k,
             temperature=sampling_config.temperature,
+            top_p=sampling_config.top_p,
             seed=sampling_config.seed,
         )
 

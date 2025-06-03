@@ -17,13 +17,12 @@ import asyncio
 import logging
 import os
 import signal
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable, Generic, Optional, TypeVar
+from typing import Any, Callable, Generic, Optional, TypeVar
 
 import numpy as np
-import torch
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
@@ -76,7 +75,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         model_name: str,
         tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
         self.logger.propagate = False
@@ -251,7 +250,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 )
         return None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> TokenGeneratorPipeline:
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
@@ -272,14 +271,16 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()
         # await asyncio.sleep(0.1)
         # TODO: also cancel any `queue.get()` tasks
 
-    def create_background_task(self, fn: Callable):
+    def create_background_task(
+        self, fn: Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         task_name = fn.__name__
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))
@@ -292,7 +293,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             len(self._background_tasks),
         )
 
-    def log_task_done(self, task: asyncio.Task, task_name: str):
+    def log_task_done(self, task: asyncio.Task, task_name: str) -> None:
         # TODO - should gracefully shut down here.
         self._background_tasks.remove(task)
         self.logger.info(
@@ -407,16 +408,12 @@ AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     """Base class for LLM audio generation pipelines."""
 
-    # We import torch here so that only folks that use the AudioGeneratorPipeline
-    # will need to have it installed.
-    import torch
-
     def __init__(
         self,
         model_name: str,
         tokenizer: PipelineAudioTokenizer,
         engine_queue: EngineQueue,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
         self.logger.propagate = False
@@ -487,6 +484,10 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         async for chunk in self.next_chunk(request):
             audio_chunks.append(chunk)
 
+        # We import torch here so that only folks that use the
+        # AudioGeneratorPipeline will need to have it installed.
+        import torch
+
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
                 audio_data=torch.tensor([]),
@@ -538,7 +539,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         # await asyncio.sleep(0.1)
         # TODO: also cancel any `queue.get()` tasks
 
-    def create_background_task(self, fn: Callable):
+    def create_background_task(
+        self, fn: Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         task_name = fn.__name__
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))

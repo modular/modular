@@ -258,61 +258,55 @@ class DispatcherClient:
         while self._running:
             try:
                 message = self.pull_socket.get_nowait()
-                if not isinstance(message, DispatcherMessage):
-                    logger.error(
-                        f"Expected DispatcherMessage, got {type(message)}"
-                    )
-                    continue
-
-                # Always call general handler if registered
-                general_handler = self._general_handlers.get(
-                    message.message_type
-                )
-                if general_handler:
-                    try:
-                        general_handler(message.payload)
-                        logger.debug(
-                            f"Called general handler for: {message.message_type}"
-                        )
-                    except Exception as handler_exc:
-                        logger.error(
-                            f"General handler failed for {message.message_type}: {handler_exc}"
-                        )
-
-                # This is a request (has reply_context) - call request handler
-                if message.reply_context is not None:
-                    request_handler = self._request_handlers.get(
-                        message.message_type
-                    )
-                    if request_handler:
-                        try:
-                            request_handler(
-                                message.payload, message.reply_context
-                            )
-                            logger.debug(
-                                f"Called request handler for: {message.message_type}"
-                            )
-                        except Exception as handler_exc:
-                            logger.error(
-                                f"Request handler failed for {message.message_type}: {handler_exc}"
-                            )
-                else:
-                    # This is a reply message (no reply_context) - call reply handler
-                    reply_handler = self._reply_handlers.get(
-                        message.message_type
-                    )
-                    if reply_handler:
-                        try:
-                            reply_handler(message.payload)
-                            logger.debug(
-                                f"Called reply handler for: {message.message_type}"
-                            )
-                        except Exception as handler_exc:
-                            logger.error(
-                                f"Reply handler failed for {message.message_type}: {handler_exc}"
-                            )
             except queue.Empty:
                 time.sleep(0.001)
+                continue
             except Exception as e:
                 logger.exception(f"Failed to receive message: {e}")
                 time.sleep(0.001)
+                continue
+            if not isinstance(message, DispatcherMessage):
+                logger.error(f"Expected DispatcherMessage, got {type(message)}")
+                continue
+
+            # Always call general handler if registered
+            general_handler = self._general_handlers.get(message.message_type)
+            if general_handler:
+                try:
+                    general_handler(message.payload)
+                    logger.debug(
+                        f"Called general handler for: {message.message_type}"
+                    )
+                except Exception as handler_exc:
+                    logger.error(
+                        f"General handler failed for {message.message_type}: {handler_exc}"
+                    )
+
+            # This is a request (has reply_context) - call request handler
+            if message.reply_context is not None:
+                request_handler = self._request_handlers.get(
+                    message.message_type
+                )
+                if request_handler:
+                    try:
+                        request_handler(message.payload, message.reply_context)
+                        logger.debug(
+                            f"Called request handler for: {message.message_type}"
+                        )
+                    except Exception as handler_exc:
+                        logger.error(
+                            f"Request handler failed for {message.message_type}: {handler_exc}"
+                        )
+            else:
+                # This is a reply message (no reply_context) - call reply handler
+                reply_handler = self._reply_handlers.get(message.message_type)
+                if reply_handler:
+                    try:
+                        reply_handler(message.payload)
+                        logger.debug(
+                            f"Called reply handler for: {message.message_type}"
+                        )
+                    except Exception as handler_exc:
+                        logger.error(
+                            f"Reply handler failed for {message.message_type}: {handler_exc}"
+                        )

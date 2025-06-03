@@ -89,7 +89,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
-    ):
+    ) -> None:
         super().__init__()
         self.context = context
 
@@ -110,7 +110,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
 
     def use_process_healthcheck(
         self, proc: multiprocessing.process.BaseProcess
-    ):
+    ) -> None:
         """Register a Process to health check.
 
         Instead of verifying heartbeats, EngineQueue will verify that the
@@ -120,7 +120,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         """
         self._proc = proc
 
-    def is_worker_healthy(self):
+    def is_worker_healthy(self) -> bool:
         """Is the worker healthy?
 
         By default, verify health with ProcessControl.is_alive().  If a Process
@@ -149,7 +149,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
             while (item := await queue.get()) is not STOP_STREAM:
                 yield item
 
-    async def response_worker(self):
+    async def response_worker(self) -> None:
         try:
             while True:
                 try:
