@@ -22,5 +22,6 @@ modular_py_test(
         "//SDK/lib/API/python/max:_core",
         "//SDK/lib/API/python/max/driver",
         requirement("numpy"),
+        requirement("torch"),
     ],
 )
