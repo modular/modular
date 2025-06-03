@@ -76,7 +76,7 @@ class AudioGenerationScheduler(Scheduler):
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
         paged_manager: PagedKVCacheManager | None = None,
-    ):
+    ) -> None:
         self.scheduler_config = scheduler_config
         self.audio_generation_config = audio_generation_config
         self.pipeline = pipeline
@@ -601,7 +601,7 @@ class AudioGenerationScheduler(Scheduler):
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
-    def run(self):
+    def run(self) -> None:
         """The Scheduler loop that creates batches and schedules them on GPU"""
         i = 0
         while i % 10 or not self.pc.is_canceled():
@@ -646,7 +646,7 @@ class AudioGenerationScheduler(Scheduler):
         self,
         batch_executed: dict[str, Any],
         batch_responses: dict[str, AudioGenerationResponse],
-    ):
+    ) -> None:
         """Task that handles responses"""
         if not batch_responses:
             return
@@ -668,7 +668,7 @@ class AudioGenerationScheduler(Scheduler):
         self,
         batch_executed: dict[str, Any],
         batch_responses: dict[str, AudioGenerationResponse],
-    ):
+    ) -> None:
         """Handle chunked requests"""
         # Only the last request in a batch could be chunked. We discard its response
         # and put it back into the request queue if it is chunked.
@@ -680,7 +680,7 @@ class AudioGenerationScheduler(Scheduler):
             batch_responses.pop(req_id)
 
     @traced
-    def _handle_cancelled_requests(self):
+    def _handle_cancelled_requests(self) -> None:
         try:
             while not self.cancel_q.empty():
                 try:
@@ -706,7 +706,7 @@ class AudioGenerationScheduler(Scheduler):
     def _stream_responses_to_frontend(
         self,
         batch_responses: dict[str, AudioGenerationResponse],
-    ):
+    ) -> None:
         if not batch_responses:
             return
 
@@ -735,7 +735,7 @@ class AudioGenerationScheduler(Scheduler):
 
         self.response_q.put_nowait([audio_responses, stop_responses])
 
-    def _schedule_ce(self, sch_output: AudioGenerationSchedulerOutput):
+    def _schedule_ce(self, sch_output: AudioGenerationSchedulerOutput) -> None:
         batch_to_execute = sch_output.batch_inputs
 
         # we about to execute the batch, reset the CE batch timer
@@ -760,7 +760,7 @@ class AudioGenerationScheduler(Scheduler):
         # send the responses to the API process
         self._stream_responses_to_frontend(batch_responses)
 
-    def _schedule_tg(self, sch_output: AudioGenerationSchedulerOutput):
+    def _schedule_tg(self, sch_output: AudioGenerationSchedulerOutput) -> None:
         batch_to_execute = sch_output.batch_inputs
 
         METRICS.batch_size(len(batch_to_execute))
@@ -775,7 +775,7 @@ class AudioGenerationScheduler(Scheduler):
         # send the responses to the API process
         self._stream_responses_to_frontend(batch_responses)
 
-    def _schedule(self, sch_output: AudioGenerationSchedulerOutput):
+    def _schedule(self, sch_output: AudioGenerationSchedulerOutput) -> None:
         assert sch_output.batch_size > 0
 
         with Trace(f"_schedule({sch_output})"):
