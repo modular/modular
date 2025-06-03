@@ -1322,6 +1322,7 @@ fn conv_transposed[
     filter_type: DType,
     output_type: DType,
     filter_packed: Bool,
+    filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
     elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
         IndexList[rank], SIMD[type, width]
@@ -1351,6 +1352,8 @@ fn conv_transposed[
             ";padding_w=", pad_w,
         )
         # fmt: on
+
+    constrained[not filter_is_cfrs, "Filter layout CFRS is not supported"]()
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "conv_transposed",

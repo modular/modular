@@ -5519,7 +5519,7 @@ struct Conv:
 struct ConvTranspose:
     @staticmethod
     fn execute[
-        filter_packed: Bool,
+        filter_layout: StaticString,
         lambdas_have_fusion: Bool,
     ](
         output: FusedOutputTensor,
@@ -5590,6 +5590,9 @@ struct ConvTranspose:
                 rebind[SIMD[output.type, _width]](val),
             )
 
+        alias filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
+        alias filter_is_cfrs = filter_layout == "CFRS"
+
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -5604,6 +5607,7 @@ struct ConvTranspose:
             filter.type,  # Filter type.
             output.type,  # Output type.
             filter_packed,
+            filter_is_cfrs,
             lambdas_have_fusion,
             output_fn,
         ](
