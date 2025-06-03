@@ -270,10 +270,13 @@ class Agent:
     def release_transfer_request(self, request_handle: int) -> Status: ...
     def release_descriptor_list_handle(self, handle: int) -> Status: ...
     def get_notifs(
-        self,
-        notif_map: Mapping[str, Sequence[bytes]],
-        backends: Sequence[int] = [],
-    ) -> dict[str, list[bytes]]: ...
+        self, backends: Sequence[int] = []
+    ) -> dict[str, list[bytes]]:
+        """
+        Returns a map from agent name to a list of notifications received from that agent.
+        Optionally, a list of backends can be mentioned to only get those backends' notifications.
+        """
+
     def gen_notif(
         self, remote_agent: str, msg: str, backends: Sequence[int] = []
     ) -> Status: ...
