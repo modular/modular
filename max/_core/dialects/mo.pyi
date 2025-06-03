@@ -2657,8 +2657,8 @@ class ConvTransposeOp(max._core.Operation):
         dilations: max._core.Value[TensorType],
         paddings: max._core.Value[TensorType],
         output_paddings: max._core.Value[TensorType],
+        filter_layout: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
-        filter_packed: max._core.dialects.builtin.BoolAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
@@ -2673,18 +2673,18 @@ class ConvTransposeOp(max._core.Operation):
     @property
     def output_paddings(self) -> max._core.Value[TensorType]: ...
     @property
+    def filter_layout(self) -> str: ...
+    @filter_layout.setter
+    def filter_layout(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
     def output_param_decls(
         self,
     ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
     @output_param_decls.setter
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
-    ) -> None: ...
-    @property
-    def filter_packed(self) -> bool: ...
-    @filter_packed.setter
-    def filter_packed(
-        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class CosOp(max._core.Operation):
