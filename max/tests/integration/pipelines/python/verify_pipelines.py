@@ -727,13 +727,26 @@ PIPELINES = {
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
             # Note: llama-vision is not yet using llama3 rope.
-            # TODO(bduke): Absolute tolerance here is larger than expected.
-            # TODO(bduke): Relative tolerance is high due to sign flips for
-            # small values near zero.
-            # We should account for this since otherwise relative elementwise
-            # tolerance isn't useful.
             cos_dist_threshold=1.1e-3,
             kl_div_threshold=5.4e-3,
+        ),
+    ),
+    "InternVL3-8B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="internvl",
+            encoding="bfloat16",
+            # TODO(MODELS-565): Implement InternVL.
+            cos_dist_threshold=float("inf"),
+            kl_div_threshold=float("inf"),
         ),
     ),
     "pixtral-bfloat16": PipelineDef(

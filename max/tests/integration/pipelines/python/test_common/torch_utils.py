@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for running torch models for testing."""
 
-from collections.abc import Iterable
-from typing import Optional, Union
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
 
 import requests
 import torch
@@ -27,21 +28,22 @@ def _process_images(images: Iterable[str]) -> list[Image.Image]:
     ]
 
 
-def run_text_generation(
-    model: PreTrainedModel,
-    data_processor: Union[
-        PreTrainedTokenizer,
-        PreTrainedTokenizerFast,
-        MllamaProcessor,
-        PixtralProcessor,
-    ],
-    device: torch.device,
-    prompts: Iterable[str],
-    images: Optional[Iterable[str]] = None,
-    num_steps=10,
-    print_outputs=False,
-    use_cache=None,
-):
+def default_image_text_processor(
+    data_processor, image, prompt: str, device: torch.device
+) -> dict[str, torch.Tensor]:
+    """Default image+text processing for most vision-language models."""
+    return data_processor(images=image, text=prompt, return_tensors="pt").to(
+        device
+    )
+
+
+def _create_logits_store() -> tuple[list[dict], Callable]:
+    """Create a logits storage function and container.
+
+    The `saved_logits` is captured into the `store_logits` closure, which is
+    injected into `model.generate` as a logits processor.
+    This allows saving the logits.
+    """
     saved_logits = []
 
     def store_logits(input_ids: torch.LongTensor, scores: torch.FloatTensor):
@@ -58,6 +60,24 @@ def run_text_generation(
         )
         return scores
 
+    return saved_logits, store_logits
+
+
+def run_text_generation(
+    model: PreTrainedModel,
+    data_processor: PreTrainedTokenizer
+    | PreTrainedTokenizerFast
+    | MllamaProcessor
+    | PixtralProcessor,
+    device: torch.device,
+    prompts: Iterable[str],
+    images: Iterable[str] | None = None,
+    num_steps: int = 10,
+    print_outputs: bool = False,
+    use_cache: bool | None = None,
+):
+    saved_logits, store_logits = _create_logits_store()
+
     results = []
     if images:
         processed_images = _process_images(images)
@@ -72,6 +92,8 @@ def run_text_generation(
                 do_sample=False,
                 logits_processor=LogitsProcessorList([store_logits]),
                 num_return_sequences=1,
+                pad_token_id=getattr(data_processor, "eos_token_id", None),
+                use_cache=use_cache,
             )
 
             # TODO: We likely want to track input image here too.
@@ -111,12 +133,94 @@ def run_text_generation(
     return results
 
 
+def run_text_generation_with_custom_image_processing(
+    model: PreTrainedModel,
+    data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
+    device: torch.device,
+    prompts: Iterable[str],
+    images: Iterable[str],
+    num_steps: int,
+    print_outputs: bool,
+    image_loader_fn: Callable[[str], torch.Tensor],
+    prompt_formatter_fn: Callable[
+        [
+            str,
+            str,
+            torch.Tensor,
+            PreTrainedModel,
+            PreTrainedTokenizer | PreTrainedTokenizerFast,
+        ],
+        tuple[str, torch.Tensor],
+    ],
+    model_setup_fn: Callable[
+        [PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast],
+        None,
+    ],
+):
+    """Run text generation with custom image processing for specialized models like InternVL."""
+    saved_logits, store_logits = _create_logits_store()
+
+    # Call model setup function (e.g., for setting special tokens)
+    model_setup_fn(model, data_processor)
+
+    results = []
+    for image, prompt in zip(images, prompts):
+        # Use custom image loader
+        pixel_values = image_loader_fn(image)
+
+        # Use custom prompt formatter
+        formatted_prompt, pixel_values = prompt_formatter_fn(
+            prompt, image, pixel_values, model, data_processor
+        )
+
+        # Process the formatted prompt
+        inputs = data_processor(formatted_prompt, return_tensors="pt")
+        processed_inputs = {
+            "pixel_values": pixel_values,
+            "input_ids": inputs["input_ids"],
+            "attention_mask": inputs["attention_mask"],
+        }
+
+        # Move to device
+        pixel_values = (
+            processed_inputs["pixel_values"].to(device).to(model.dtype)
+        )
+        input_ids = processed_inputs["input_ids"].to(device)
+        attention_mask = processed_inputs["attention_mask"].to(device)
+
+        # Generate with model
+        outputs = model.generate(
+            input_ids=input_ids,
+            pixel_values=pixel_values,
+            attention_mask=attention_mask,
+            max_new_tokens=num_steps,
+            do_sample=False,
+            logits_processor=LogitsProcessorList([store_logits]),
+            num_return_sequences=1,
+            pad_token_id=getattr(data_processor, "eos_token_id", None),
+        )
+
+        if print_outputs:
+            print(
+                "Prompt:",
+                f"{prompt[:100]}..." if len(prompt) > 100 else prompt,
+            )
+            print(
+                "Output:",
+                data_processor.batch_decode(outputs, skip_special_tokens=True)[
+                    0
+                ],
+            )
+
+        results.append({"prompt": prompt, "values": saved_logits[:]})
+        saved_logits.clear()
+
+    return results
+
+
 def run_embeddings_generation(
     model: PreTrainedModel,
-    data_processor: Union[
-        PreTrainedTokenizer,
-        PreTrainedTokenizerFast,
-    ],
+    data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
     prompts: Iterable[str],
 ):

@@ -29,6 +29,7 @@ import torch
 import transformers
 
 # MAX
+from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.nn.kv_cache import KVCacheStrategy
@@ -149,6 +150,28 @@ class PipelineOracle(ABC):
         """Whether to use the KV cache, for HF transformers models only."""
         return True
 
+    def run_torch_text_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+    ) -> list[dict]:
+        """Run text generation using the standard torch_utils implementation.
+
+        Can be overridden by subclasses that need custom preprocessing logic.
+        """
+        return torch_utils.run_text_generation(
+            model=torch_pipeline_and_tokenizer.model,
+            data_processor=torch_pipeline_and_tokenizer.data_processor,
+            device=device,
+            prompts=self.prompts,
+            images=self.images
+            if isinstance(self, MultiModalPipelineOracle)
+            else None,
+            print_outputs=True,
+            use_cache=self.use_cache,
+        )
+
 
 class MultiModalPipelineOracle(PipelineOracle):
     """Knows about a kind of pipeline.
@@ -166,6 +189,89 @@ class MultiModalPipelineOracle(PipelineOracle):
     def images(self) -> Optional[Sequence[str]]:
         """Images to run a multi-modal model on."""
         return [evaluate.IMAGES_MULTI_MODAL]
+
+
+class InternVLPipelineOracle(MultiModalPipelineOracle):
+    @property
+    def device_encoding_map(self) -> dict[str, list[str]]:
+        return {
+            "gpu": ["bfloat16"],
+        }
+
+    def create_max_pipeline(
+        self, *, encoding: str, device_specs: list[driver.DeviceSpec]
+    ) -> MaxPipelineAndTokenizer:
+        for device_spec in device_specs:
+            assert self.is_supported(encoding=encoding, device_spec=device_spec)
+
+        hf_repo_id = "OpenGVLab/InternVL3-8B-Instruct"
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+
+        # Compute the max sequence length for InternVL
+        hf_config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision, trust_remote_code=True
+        )
+        # InternVL uses dynamic image sizing, so use a reasonable default
+        max_length = 8192
+
+        config = pipelines.PipelineConfig(
+            device_specs=device_specs,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            cache_strategy=KVCacheStrategy.PAGED,
+            model_path=hf_repo_id,
+            huggingface_model_revision=revision,
+            max_length=max_length,
+            trust_remote_code=True,
+            engine=PipelineEngine.MAX,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        hf_repo_id = "OpenGVLab/InternVL3-8B-Instruct"
+        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            hf_repo_id,
+            revision=revision,
+            trust_remote_code=True,
+            use_fast=False,
+        )
+        config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, revision=revision, trust_remote_code=True
+        )
+        model = transformers.AutoModel.from_pretrained(
+            hf_repo_id,
+            revision=revision,
+            config=config,
+            device_map=device,
+            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
+            trust_remote_code=True,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+
+    def run_torch_text_generation(
+        self,
+        *,
+        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
+        device: torch.device,
+    ) -> list[dict]:
+        """Run text generation using InternVL-specific preprocessing logic."""
+        return internvl_torch_utils.run_text_generation(
+            model=torch_pipeline_and_tokenizer.model,
+            data_processor=torch_pipeline_and_tokenizer.data_processor,
+            device=device,
+            prompts=self.prompts,
+            images=self.images,
+            print_outputs=True,
+            # Omit `use_cache` since the InternVL code hardcodes it.
+        )
 
 
 class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
@@ -503,6 +609,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["bfloat16"]},
         auto_model_cls=transformers.AutoModelForImageTextToText,
     ),
+    "internvl": InternVLPipelineOracle(),
     "llama3-vision": LlamaVisionPipelineOracle(),
     "pixtral": PixtralPipelineOracle(),
     "qwen": GenericOracle(
@@ -818,16 +925,9 @@ def generate_llm_logits(
             encoding=encoding_name, device=device
         )
         if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
-            results = torch_utils.run_text_generation(
-                model=torch_pipeline_and_tokenizer.model,
-                data_processor=torch_pipeline_and_tokenizer.data_processor,
+            results = pipeline_oracle.run_torch_text_generation(
+                torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
                 device=torch_device,
-                prompts=pipeline_oracle.prompts,
-                images=pipeline_oracle.images
-                if isinstance(pipeline_oracle, MultiModalPipelineOracle)
-                else None,
-                print_outputs=True,
-                use_cache=pipeline_oracle.use_cache,
             )
         elif (
             pipeline_oracle.task

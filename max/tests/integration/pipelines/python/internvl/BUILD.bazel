@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+modular_py_library(
+    name = "torch_utils",
+    srcs = ["torch_utils.py"],
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("requests"),
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
+    ],
+)

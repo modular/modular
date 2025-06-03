@@ -167,6 +167,7 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":hf_repo_lock",
+        "//SDK/integration-test/pipelines/python/internvl:torch_utils",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/pipelines/architectures",
@@ -174,8 +175,9 @@ modular_py_binary(
         requirement("einops"),  # Req'd by replit
         requirement("pillow"),
         requirement("requests"),
-        requirement("transformers"),
+        requirement("timm"),  # Required by InternVL.
         requirement("torch"),
+        requirement("transformers"),
     ] + select({
         "//:has_gpu": [
             requirement("gptqmodel"),
