@@ -470,8 +470,8 @@ fn layer_norm_gpu[
     )
 
     if cols % simd_width == 0:
-        # When the number of columns are less enough that they can be placed in
-        # registers we do warp tiling which is a single pass to do mean/var
+        # When the number of columns is small enough that they can be placed in
+        # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             ctx.enqueue_function[
@@ -1225,5 +1225,376 @@ fn rms_norm_shape[
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
     weight_offset: Scalar[type],
+) -> IndexList[rank]:
+    return input.get_shape()
+
+
+fn group_norm_reshape[
+    type: DType,
+    rank: Int,
+](
+    shape: IndexList[rank, **_],
+    buf: NDBuffer[type, rank, *_],
+    channels_per_group: Int,
+    spatial: Int,
+    out result: NDBuffer[type, 2, buf.origin],
+):
+    """
+    Reshapes an input buffer for group normalization by flattening all
+    dimensions except the group dimension. Returns a 2D buffer of shape
+    (num_groups * N, group_size), where group_size is the product of
+    channels_per_group and spatial.
+    """
+    var group_size = channels_per_group * spatial
+    var prod_all_but_group_dim = shape.flattened_length() // group_size
+    var new_shape = IndexList[2](prod_all_but_group_dim, group_size)
+    var reshaped = reshape[2](buf, new_shape)
+    return reshaped
+
+
+fn group_norm_gpu_warp_tiling[
+    type: DType,
+    simd_width: UInt,
+    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        type, width
+    ],
+    gamma_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+    beta_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+](
+    output: NDBuffer[type, 2, MutableAnyOrigin],
+    epsilon: Scalar[type],
+    num_groups: Int,
+    channels_per_group: Int,
+    spatial: Int,
+):
+    alias align = alignof[SIMD[type, simd_width]]()
+    alias accum_type = get_accum_type[type]()
+
+    var tid = thread_idx.x
+    var idx = tid * simd_width
+
+    var vec_data = SIMD[accum_type, simd_width]()
+    var group_size = channels_per_group * spatial
+
+    var row = block_idx.x
+    var row_mean = Scalar[accum_type]()
+    var row_m2 = Scalar[accum_type]()
+    var row_count = Scalar[accum_type]()
+
+    var thread_mean = Scalar[accum_type]()
+    var thread_m2 = Scalar[accum_type]()
+    var thread_count = Scalar[accum_type]()
+
+    var num_rows = output.shape.get[0]()
+    var num_cols = output.shape.get[1]()
+
+    with PDL():
+        if idx + simd_width <= group_size:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+
+            @parameter
+            for i in range(Int(simd_width)):
+                welford_update(
+                    vec_data[i], thread_mean, thread_m2, thread_count
+                )
+
+        welford_block_all_reduce(
+            thread_mean, thread_m2, thread_count, row_mean, row_m2, row_count
+        )
+
+        var row_var = row_m2 / row_count
+        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+
+        if idx + simd_width <= group_size:
+            var g = row % num_groups
+            var c_base = g * channels_per_group
+            var offset = idx // spatial
+            var c = c_base + offset
+            var gamma_val = gamma_fn[1](Index(c))
+            var beta_val = beta_fn[1](Index(c))
+            var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
+                accum_type
+            ]() + beta_val.cast[accum_type]()
+
+            output.store[alignment=align](
+                Index(row, idx), norm_val.cast[type]()
+            )
+
+
+fn group_norm_gpu_block[
+    type: DType,
+    simd_width: UInt,
+    input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
+        type, width
+    ],
+    gamma_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+    beta_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+](
+    output: NDBuffer[type, 2, MutableAnyOrigin],
+    epsilon: Scalar[type],
+    num_groups: Int,
+    channels_per_group: Int,
+    spatial: Int,
+):
+    alias align = alignof[SIMD[type, simd_width]]()
+    alias accum_type = get_accum_type[type]()
+
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var group_size = channels_per_group * spatial
+
+    var row_mean = Scalar[accum_type]()
+    var row_m2 = Scalar[accum_type]()
+    var row_count = Scalar[accum_type]()
+
+    with PDL():
+        for x in range(ceildiv(group_size // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
+            if offset < group_size:
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
+
+                var thread_mean = Scalar[accum_type]()
+                var thread_m2 = Scalar[accum_type]()
+                var thread_count = Scalar[accum_type]()
+
+                @parameter
+                for i in range(Int(simd_width)):
+                    welford_update(
+                        vec_data[i], thread_mean, thread_m2, thread_count
+                    )
+
+                welford_block_all_reduce(
+                    thread_mean,
+                    thread_m2,
+                    thread_count,
+                    row_mean,
+                    row_m2,
+                    row_count,
+                )
+
+        var row_var = row_m2 / row_count
+        var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
+
+        for x in range(ceildiv(group_size // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
+            if offset < group_size:
+                var vec_data = input_fn[simd_width](row, offset).cast[
+                    accum_type
+                ]()
+
+                var g = row % num_groups
+                var c_base = g * channels_per_group
+                var offset_c = offset // spatial
+                var c = c_base + offset_c
+
+                var gamma_val = gamma_fn[1](Index(c))
+                var beta_val = beta_fn[1](Index(c))
+
+                var norm_val = (
+                    vec_data - row_mean
+                ) * norm_factor * gamma_val.cast[accum_type]() + beta_val.cast[
+                    accum_type
+                ]()
+
+                output.store[alignment=align](
+                    Index(row, offset), norm_val.cast[type]()
+                )
+
+
+fn group_norm_gpu[
+    type: DType,
+    rank: Int, //,
+    input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
+    gamma_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+    beta_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+](
+    shape: IndexList[rank, **_],
+    epsilon: Scalar[type],
+    output: NDBuffer[mut=True, type, rank, *_],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    alias accum_type = get_accum_type[type]()
+
+    var N = shape[0]
+    var C = shape[1]
+
+    var spatial = shape.flattened_length() // (N * C)
+    var channels_per_group = C // num_groups
+
+    var output_rs = group_norm_reshape[type, rank](
+        shape, output, channels_per_group, spatial
+    )
+
+    var num_rows = output_rs.dim[0]()
+    var num_cols = output_rs.dim[1]()
+
+    @parameter
+    @always_inline
+    @__copy_capture(shape, num_groups, channels_per_group)
+    fn input_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) capturing -> SIMD[type, simd_width]:
+        var inner_volume = shape[2] * shape[3]
+
+        var n = row // num_groups
+        var g = row % num_groups
+        var c = g * channels_per_group + (col // inner_volume)
+        var hw = col % inner_volume
+        var h = hw // shape[3]
+        var w = hw % shape[3]
+
+        var indices = IndexList[4](n, c, h, w)
+        return input_fn[simd_width, 4](indices)
+
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
+    if num_cols < simd_width:
+        raise Error(
+            "group_norm_gpu requires num_cols >= simd_width; got num_cols="
+            + String(num_cols)
+            + " and simd_width="
+            + String(simd_width)
+        )
+
+    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
+
+    var grid_dim = num_rows
+    var block_dim = min(
+        ceildiv(ceildiv(num_cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        WARP_SIZE * max_warps_per_block,
+    )
+
+    if num_cols % simd_width == 0:
+        # When the number of columns is small enough that they can be placed in
+        # registers, we do warp tiling, which is a single pass to do mean/var
+        # computation and normalization.
+        if num_cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+            ctx.enqueue_function[
+                group_norm_gpu_warp_tiling[
+                    type=type,
+                    simd_width=simd_width,
+                    input_fn=input_fn_2d,
+                    gamma_fn=gamma_fn,
+                    beta_fn=beta_fn,
+                ]
+            ](
+                output_rs,
+                epsilon,
+                num_groups,
+                channels_per_group,
+                spatial,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
+        else:
+            ctx.enqueue_function[
+                group_norm_gpu_block[
+                    type=type,
+                    simd_width=simd_width,
+                    input_fn=input_fn_2d,
+                    gamma_fn=gamma_fn,
+                    beta_fn=beta_fn,
+                ]
+            ](
+                output_rs,
+                epsilon,
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
+    else:
+        ctx.enqueue_function[
+            group_norm_gpu_block[
+                type=type,
+                simd_width=1,
+                input_fn=input_fn_2d,
+                gamma_fn=gamma_fn,
+                beta_fn=beta_fn,
+            ]
+        ](
+            output_rs,
+            epsilon,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(),
+        )
+
+
+@always_inline
+fn group_norm[
+    type: DType,
+    rank: Int,
+    input_fn: fn[width: Int, _rank: Int] (IndexList[_rank]) capturing -> SIMD[
+        type, width
+    ],
+    gamma_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+    beta_fn: fn[width: Int] (IndexList[1]) capturing -> SIMD[type, width],
+    /,
+    target: StaticString = "gpu",
+](
+    shape: IndexList[rank],
+    epsilon: Scalar[type],
+    num_groups: Int,
+    output: NDBuffer[mut=True, type, rank, *_],
+    ctx: DeviceContextPtr,
+) raises:
+    constrained[rank >= 2, "group_norm requires input rank >= 2"]()
+    constrained[
+        is_gpu[target](), "group_norm only supports GPU targets at this point"
+    ]()
+
+    if shape.canonicalize() != output.dynamic_shape.canonicalize():
+        raise Error(
+            "Input/output shape mismatch: input = {shape}, output ="
+            " {output.dynamic_shape}"
+        )
+
+    var C = shape[1]
+    if C % num_groups != 0:
+        raise Error(
+            "Invalid num_groups: channels (C = {C}) must be divisible by"
+            " num_groups = {num_groups}"
+        )
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return trace_arg("input", shape, type)
+
+    with Trace[TraceLevel.OP](
+        "group_norm",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        group_norm_gpu[
+            type=type,
+            rank=rank,
+            input_fn=input_fn,
+            gamma_fn=gamma_fn,
+            beta_fn=beta_fn,
+        ](
+            shape,
+            epsilon,
+            output,
+            num_groups,
+            ctx=ctx.get_device_context(),
+        )
+
+
+@always_inline
+fn group_norm_shape[
+    type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[type, rank],
+    gamma: NDBuffer[type, 1],
+    beta: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+    num_groups: Int,
 ) -> IndexList[rank]:
     return input.get_shape()
