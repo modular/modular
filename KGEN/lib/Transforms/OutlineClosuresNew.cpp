@@ -69,8 +69,10 @@ namespace {
 /// (a) lifting a closure init into a top level function + capture struct and
 /// (b) storing metadata necessary to replace references to the closure.
 struct ClosureLifter {
-  ClosureLifter(SymbolTable &symtab, ParameterCollector::Analysis &paramCache)
-      : counter(0), symtab(symtab), paramCache(paramCache) {}
+  ClosureLifter(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
+                bool debugBuild)
+      : counter(0), symtab(symtab), paramCache(paramCache),
+        debugBuild(debugBuild) {}
   /// Given components of the lifted function, generate a closure symbol, which
   /// is an abstraction of a symbol used to reference functions that do not yet
   /// exist.
@@ -115,6 +117,9 @@ struct ClosureLifter {
   /// Pair the closure type with the struct type of the generated capture struct
   /// so that the closure types can be replaced.
   DenseMap<ClosureType, Type> closureTypeToStructTypes;
+
+  /// True if built with debug metadata.
+  bool debugBuild;
   struct ClosureInitData {
     ClosureInitData(llvm::SetVector<ParamDeclAttr> const &&capturedParamDecls,
                     ClosureType closureType, ClosureInitOp closureInit,
@@ -698,6 +703,14 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
     }
   }
 
+  if (debugBuild) {
+    region.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      bool unused = false;
+      collector.collectUsesFromAttr(op->getLoc(), capturedUses, unused);
+      return WalkResult::advance();
+    });
+  }
+
   for (auto use : capturedUses)
     capturedParamDecls.insert(ParamDeclAttr::get(use.getName(), use.getType()));
 
@@ -708,9 +721,6 @@ ClosureLifter::collectCapturedParams(llvm::SetVector<Value> const &captures,
         ParamDeclAttr::get(paramCapture.getName(), paramCapture.getType());
     capturedParamDecls.insert(decl);
   }
-
-  // TODO (MOCO-1660): Scan locations for captured parameters when in a debug
-  // build.
 
   return capturedParamDecls;
 }
@@ -855,7 +865,7 @@ void OutlineClosuresNewPass::runOnOperation() {
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
-  ClosureLifter lifter(symtab, paramCache);
+  ClosureLifter lifter(symtab, paramCache, debugBuild);
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     bool hasFailure = false;
     generator.walk([&](ClosureInitOp closureInit) {
