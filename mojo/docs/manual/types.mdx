@@ -624,8 +624,9 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   As shown above, you can print the individual elements in a list as long as
   they're a [`Stringable`](/mojo/stdlib/builtin/str/Stringable) type.
 
-* Iterating a `List` returns a reference to each item, which is copied into
-  name you provide by default:
+* Iterating a `List` returns a
+  [reference](/mojo/manual/values/lifetimes#working-with-references) to each
+  item, which is copied into name you provide by default:
 
 ```mojo
 #: from collections import List
@@ -641,7 +642,9 @@ for item in list:     # Copies the integer into "item"
 2 3 4
 ```
 
-Mojo warns you that the assignment to `i` isn't doing anything useful.
+Mojo warns you that the assignment to `item` isn't doing anything useful,
+because `item` is a copy of value from the list, and it's overwritten on the
+next loop iteration.
 If you would like to mutate the elements of the list, capture the reference to
 the element with `ref` instead of making a copy:
 
@@ -689,8 +692,10 @@ and [`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 You can insert and remove key-value pairs, update the value assigned to a key,
 and iterate through keys, values, or items in the dictionary.
 
-The `Dict` iterators all yield references, which are copied into the declared
-name by default, but you can use the `ref` marker to avoid the copy:
+The `Dict` iterators all yield
+[references](/mojo/manual/values/lifetimes#working-with-references), which are
+copied into the declared name by default, but you can use the `ref` marker to
+avoid the copy:
 
 ```mojo
 var d: Dict[String, Float64] = {

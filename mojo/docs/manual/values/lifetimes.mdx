@@ -61,6 +61,9 @@ Likewise, because these values are mostly created by the
 compiler, you can't just create your own origin value—you usually need to
 derive an origin from an existing value.
 
+Among other things, Mojo uses origins to extend the lifetimes of referenced
+values, so values aren't destroyed prematurely.
+
 ### Origin types
 
 Mojo supplies a struct and a set of aliases that you can use to specify
@@ -104,8 +107,10 @@ def use_pointer():
     ptr = Pointer(to=a)
 ```
 
-A final type of origin value is an `OriginSet`. As the name suggests, an
-`OriginSet` represents a group of origins.
+### Origin sets
+
+An `OriginSet` is not a type of origin, it represents a group of origins. Origin
+sets are used for tracking the lifetimes of values captured in closures.
 
 ### Origin values
 
@@ -213,6 +218,16 @@ its `origin` value from the list:
         self._data = list.data
         self._len = len(list)
 ```
+
+#### Origin unions
+
+The union of two or more origins creates a new origin that references both of
+the original origins for the purposes of lifetime extension (so a union of the
+origins of `a` and `b` extends both lifetimes).
+
+An origin union is mutable if and only if all of its constituent origins are
+mutable. For an example, see
+[Return values with union origins](#return-values-with-union-origins).
 
 ## Working with references
 
@@ -356,14 +371,12 @@ struct NameList:
         else:
             raise Error("index out of bounds")
 
-def use_name_list():
+def main():
     list = NameList("Thor", "Athena", "Dana", "Vrinda")
+    ref name = list[2]
+    print(name)
+    name += "?"
     print(list[2])
-    list[2] += "?"
-    print(list[2])
-
-use_name_list()
-
 ```
 
 ```output
@@ -371,62 +384,17 @@ Dana
 Dana?
 ```
 
-Note that this update succeeds, even though `NameList` doesn't define a
-`__setitem__()` method:
+Note the use of the `ref name` syntax to create a reference binding.
+
+If you assign a `ref` return value to a variable, the variable receives a
+*copy* of the referenced item. Use a
+[reference binding](/mojo/manual/variables#reference-bindings) if you need to
+capture the reference for future use:
 
 ```mojo
-list[2] += "?"
+var name_copy = list[2]  # owned copy of list[2]
+ref name_ref = list[2]  # reference to list[2]
 ```
-
-Also note that the code uses the return value directly each time, rather than
-assigning the return value to a variable, like this:
-
-```mojo
-name = list[2]
-name += "?"
-```
-
-Since a variable needs to own its value, `name` would end up with an owned
-*copy* of the referenced value. Mojo doesn't currently have
-syntax to express that you want to keep the original reference in `name`. This
-will be added in a future release.
-
-If you're working with an API that returns a reference, and you want to avoid
-copying the referenced value, you can use a
-[`Pointer`](/mojo/stdlib/memory/pointer/Pointer) to hold an indirect reference.
-You can assign a `Pointer` to a variable, but you need to use the dereference
-operator (`[]`) to access the underlying value.
-
-```mojo
-name_ptr = Pointer(to=list[2])
-name_ptr[] += "?"
-```
-
-Similarly, when designing an API you might want to return a `Pointer` instead of
-a `ref` to allow users to assign the return value to a variable. For example,
-iterators for the standard library collections return pointers, so they can be
-used in `for..in` loops:
-
-```mojo
-nums = [1, 2, 3]
-for item in nums: # Iterator returns a ref.
-    print(item)
-for i in range(len(nums)):
-    print(nums[i]) # List __getitem__() returns a ref
-```
-
-```output
-1
-2
-3
-1
-2
-3
-```
-
-(You can find the code for the
-`List` iterator in the [public
-repo](https://github.com/modular/modular/blob/main/mojo/stdlib/src/collections/list.mojo#L63).)
 
 #### Parametric mutability of return values
 
@@ -449,11 +417,9 @@ fn pass_immutable_list(list: NameList) raises:
     print(list[2])
     # list[2] += "?" # Error, this list is immutable
 
-def use_name_list_again():
+def main():
     list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)
-
-use_name_list_again()
 ```
 
 ```output
@@ -475,3 +441,9 @@ that's a union of both origins.
 def pick_one(cond: Bool, ref a: String, ref b: String) -> ref [a, b] String:
     return a if cond else b
 ```
+
+Because the compiler can't statically determine which branch will be picked,
+this function must use the union origin `[a, b]`. This ensures that the compiler
+extends the lifetime of _both_ values as long as the returned reference is live.
+
+The returned reference is mutable if **both** `a` and `b` are mutable.
