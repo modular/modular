@@ -60,10 +60,7 @@ are valid or either representation:
   flags, so it is important that it is fast.  Being the top bit allows hardware
   to just check to see if the 3rd word is negative.
 
-- `FLAG_IS_STATIC_CONSTANT` is the next bit, which indicates whether if indirect
-  string is pointing to static constant data.  If so, the data is not
-  deallocated, and must be copied before any mutation of the string. This is
-  never set for inline strings.
+- `UNUSED_FLAG` is the next bit, which is unused for now.
 
 - `FLAG_HAS_NUL_TERMINATOR` is the next bit, which indicates if the string is
   known to have an accessible "NUL" byte just beyond its declared length.  This
@@ -98,9 +95,7 @@ strings inline, including most Grapheme clusters, most simple integers converted
 to a string, etc.
 
 When in this form, the length of the string is stored in the low 5 bits of `OF`,
-and is accessed with the `INLINE_LENGTH_START` and `INLINE_LENGTH_MASK`
-constants. The `FLAG_IS_STATIC_CONSTANT` flag is never set in this
-representation.
+and is accessed with the `INLINE_LENGTH_START` and `INLINE_LENGTH_MASK` constants.
 
 ### Indirect String Representation
 
@@ -126,7 +121,7 @@ capacity string, the `String` type does a trick: it guarantees the actual
 capacity will be a multiple of 8, which allows it to shift the capacity down by
 three bits, making room for the flags.
 
-In this representation, the `FLAG_IS_STATIC_CONSTANT` bit may be set - this
+In this representation, the capacity may be 0 - this
 indicates that the pointer is to something that can never change and will never
 be deallocated - things like a string literal or a slice from a `StaticString`.
 The `String` type uses this form to avoid having to make a heap allocation or
@@ -159,14 +154,13 @@ non-obvious.
 
 As mentioned in the "indirect" representation section, the pointer of an
 indirect string may refer to static constant data when the
-`FLAG_IS_STATIC_CONSTANT` bit is set.  This optimization is important because
+capacity is 0.  This optimization is important because
 string literals are very common, and we don't want users to have to worry about
 use of `String` vs `StaticString` for optimization purposes: most APIs should
 just take `String` for consistency and generality.
 
-In addition to setting the bit to know whether the pointer is to a constant
-string, it is important to know that the `String` type also sets its notion of
-"capacity" to zero.  This ensures that any attempt to append or access will
+There is another reason we set the capacity to 0.
+This ensures that any attempt to append or access will
 immediately reallocate without extra checks.  This is a minor optimization and
 simplification of code, but it means that static constant strings will have
 `capacity=0` but have `length=n` where `n > 0`.
