@@ -2609,10 +2609,30 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, IREmitter &emitter) const {
     }
   }
 
-  // The RHS will be assigned into either the expression returned (resolving it
-  // from the type of the RHS) or from the LValue returned (allowing the RHS to
-  // infer from it) based on the lhsResult.
-  ValueDest assignDest(lhsResult, EC_Assignment);
+  // Figure out if the LHS is syntactically a var pattern.
+  auto isVarPat = [&](ExprNode *expr) -> bool {
+    while (1) {
+      if (expr->kind == kVarPat)
+        return true;
+      if (auto paren = dyn_cast<ParenNode>(expr)) {
+        expr = paren->subExpr;
+        continue;
+      }
+      if (expr->kind == kTypePattern) {
+        expr = cast<BinOpNode>(expr)->lhs;
+        continue;
+      }
+      return false;
+    }
+  };
+
+  // Generate tailored messages when the LHS is a "var x" pattern.
+  auto assignDestKind = isVarPat(lhs) ? EC_VarInit : EC_Assignment;
+
+  // The RHS will be assigned into either the expression returned (resolving
+  // it from the type of the RHS) or from the LValue returned (allowing the
+  // RHS to infer from it) based on the lhsResult.
+  ValueDest assignDest(lhsResult, assignDestKind);
 
   // Emit the RHS into the context of the LHS.  If we got an LValue, then we can
   // infer the type of the RHS from the LHS LValue.  If we got an unresolved
@@ -2659,7 +2679,7 @@ BinOpNode::emitLValueIfImplicitlyTyped(IREmitter &emitter,
     return this;
 
   // Emit the RHS as a type expression.
-  ASTType type = emitter.emitExprType(rhs, /*allowUnbound=*/true);
+  ASTType type = emitter.emitExprType(rhs, /*allowUnbound=*/false);
   if (!type)
     return {};
 
