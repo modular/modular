@@ -93,6 +93,7 @@ modular_cc_library(
     deps = [
         ":Base",
         "@llvm-project//mlir:BytecodeWriter",
+        "@xxhash",
     ],
 )
 
