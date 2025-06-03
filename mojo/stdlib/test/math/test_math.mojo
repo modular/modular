@@ -87,32 +87,98 @@ def test_copysign():
     # TODO: Add some test cases for SIMD vector with width > 1
 
 
+fn test_isclose_numerics[*, symm: Bool]() raises:
+    alias dtype = DType.float64
+    alias T = SIMD[dtype, 2]
+
+    alias atol = 1e-8
+    alias rtol = 1e-5
+
+    alias inf_ = inf[dtype]()
+    alias nan_ = nan[dtype]()
+    alias v = T(0.1, 0.2)
+
+    fn edge_val[symm: Bool](a: T, atol: T, rtol: T) -> T:
+        """Creates a value at the tolerance boundary that should be considered close to `a`.
+        """
+        debug_assert(all(a >= 0))
+
+        @parameter
+        if symm:
+            # |a - b| ≤ max(atol, rtol * max(|a|, |b|))
+            return a - max(atol, rtol * a)
+        else:
+            # |a - b| ≤ atol + rtol * |b|
+            return a + atol + rtol * a
+
+    var all_close: List[Tuple[T, T]] = [
+        (T(1, 0), T(1, 0)),
+        (T(atol), T(0)),
+        (T(inf_, -inf_), T(inf_, -inf_)),
+        (T(1), edge_val[symm](1, atol, 0)),
+        (edge_val[symm](v, atol, 0), v),
+    ]
+
+    @parameter
+    if not symm:
+        all_close += [
+            (edge_val[symm](v, 0, rtol), v),
+            (edge_val[symm](v, atol, rtol), v),
+        ]
+
+    for i in range(len(all_close)):
+        a, b = all_close[i]
+        var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
+        assert_true(all(res))
+
+    var none_close: List[Tuple[T, T]] = [
+        (T(inf_, 0), T(1, inf_)),
+        (T(inf_, -inf_), T(1, 0)),
+        (T(inf_, inf_), T(1, -inf_)),
+        (T(inf_, inf_), T(1, 0)),
+        (T(nan_, 0), T(nan_, -inf_)),
+    ]
+
+    @parameter
+    if symm:
+        none_close += [(v, v + atol + rtol)]
+    else:
+        none_close += [
+            (T(0), edge_val[symm](0, 2 * atol, 0)),
+            (T(1), edge_val[symm](1, 2 * atol, rtol)),
+            (T(1), edge_val[symm](1, atol, 2 * rtol)),
+            (v, edge_val[symm](v, atol, 2 * rtol)),
+            (v, edge_val[symm](v, 1.1 * atol, 1.1 * rtol)),
+        ]
+
+    for i in range(len(none_close)):
+        a, b = none_close[i]
+        var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
+        assert_false(any(res))
+
+
 def test_isclose():
-    assert_true(isclose(Int64(2), Int64(2), atol=0, rtol=0))
-    assert_false(isclose(Int64(2), Int64(3), atol=0, rtol=0))
+    # floating-point
+    alias dtype = DType.float32
+    alias S = Scalar[dtype]
+    alias T = SIMD[dtype, 4]
+    alias nan_ = nan[dtype]()
 
-    assert_true(isclose(Float32(2), Float32(2)))
-    assert_true(isclose(Float32(2), Float32(2), rtol=1e-9))
-    assert_true(isclose(Float32(2), Float32(2.00001), rtol=1e-3))
-    assert_true(
-        isclose(nan[DType.float32](), nan[DType.float32](), equal_nan=True)
-    )
+    assert_true(isclose(S(2), S(2)))
+    assert_true(isclose(S(2), S(2), rtol=1e-9))
+    assert_true(isclose(S(2), S(2.00001), rtol=1e-3))
+    assert_true(isclose(nan_, nan_, equal_nan=True))
 
     assert_true(
-        isclose(
-            SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
-            SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
-            equal_nan=True,
-        ).reduce_and()
+        all(isclose(T(1, 2, 3, nan_), T(1, 2, 3, nan_), equal_nan=True))
     )
 
     assert_false(
-        isclose(
-            SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 3),
-            SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 4),
-            equal_nan=True,
-        ).reduce_and()
+        all(isclose(T(1, 2, nan_, 3), T(1, 2, nan_, 4), equal_nan=True))
     )
+
+    test_isclose_numerics[symm=False]()
+    test_isclose_numerics[symm=True]()
 
 
 def test_ceil():

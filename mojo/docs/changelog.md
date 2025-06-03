@@ -283,6 +283,14 @@ Changes to Python-Mojo interoperability:
   pinpoints the slow parts, we can easily have state of the
   art performance in the future.
 
+- The `math.isclose` function now supports both symmetric (Python-style) and
+  asymmetric (NumPy-style) comparison modes via a new `symmetrical` parameter.
+  The default value has to the newly added symmetric support.
+  The function now only supports floating-point types, removing previous
+  pseudo-support for integer and boolean types. Support added in [PR
+  4608](https://github.com/modular/modular/pull/4608) by
+  [@soraros](https://github.com/soraros).
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
