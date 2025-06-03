@@ -31,11 +31,7 @@ from max.graph.weights import WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
 
-from .config_enums import (
-    RepoType,
-    RopeType,
-    SupportedEncoding,
-)
+from .config_enums import RepoType, RopeType, SupportedEncoding
 from .hf_utils import HuggingFaceRepo, repo_exists_with_retry
 from .max_config import KVCacheConfig, MAXConfig
 from .registry import PIPELINE_REGISTRY
@@ -149,7 +145,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 path = Path(path)
             elif not isinstance(path, Path):
                 raise ValueError(
-                    "weight_path provided must either be string or Path:"
+                    "weight-path provided must either be string or Path:"
                     f" '{path}'"
                 )
             elif path.is_file():
@@ -173,7 +169,7 @@ class MAXModelConfig(MAXModelConfigBase):
                         path = Path(file_name)
                 elif self.model_path == "":
                     raise ValueError(
-                        "Unable to derive model_path from weight_path, "
+                        "Unable to derive model-path from weight-path, "
                         "please provide a valid Hugging Face repository id."
                     )
 
@@ -186,7 +182,7 @@ class MAXModelConfig(MAXModelConfigBase):
         if len(self.weight_path) == 0:
             if self.model_path == "":
                 raise ValueError(
-                    "model_path must be provided and must be a valid Hugging Face repository"
+                    "model-path must be provided and must be a valid Hugging Face repository"
                 )
             elif (not os.path.exists(os.path.expanduser(self.model_path))) and (
                 not repo_exists_with_retry(
