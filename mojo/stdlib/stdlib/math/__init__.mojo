@@ -68,6 +68,7 @@ from .math import (
     modf,
     recip,
     remainder,
+    next_multiple_of,
     scalb,
     sin,
     sinh,
