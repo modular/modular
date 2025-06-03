@@ -48,6 +48,11 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
+    name = "causal_conv1d",
+    srcs = ["causal_conv1d.py"],
+)
+
+custom_op_example_py_binary(
     name = "matrix_multiplication",
     srcs = ["matrix_multiplication.py"],
 )
