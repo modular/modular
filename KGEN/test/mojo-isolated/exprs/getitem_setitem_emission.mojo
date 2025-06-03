@@ -249,13 +249,11 @@ struct MinimalDict:
 
 fn take_ref(ref x: Int): pass
 
-fn test_ref_subscript_binding(mut d: MinimalDict) raises:
-  # TODO.
-  # -> ref [d[0]] Int:
+fn test_ref_subscript_binding(mut d: MinimalDict) raises -> ref [d[0]] Int:
 
   # FIXME: This is emitting a copy and passing the address of the copy.
   take_ref(d[0])
 
   ref some_ref = d[0]
 
-  #return d[0]
+  return d[0]

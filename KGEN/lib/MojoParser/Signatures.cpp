@@ -154,8 +154,9 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     // evaluating it, because it may involve complex nested expressions and we
     // may be in a PValue expression.
     TypedAttr thisOrigin;
+    bool isError = false;
     emitter.emitExpressionWithOutEvaluatingIt(
-        expr, EC_Origin, [&](CValue result) {
+        expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
             if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
@@ -170,7 +171,11 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
           }
           // Otherwise it must be a !lit.origin and Origin struct.
           thisOrigin = emitter.extractOriginOf(expr, result);
+          isError = !thisOrigin;
         });
+
+    if (isError)
+      return hadError();
 
     // If we found an origin, add it to our set.
     if (!thisOrigin)

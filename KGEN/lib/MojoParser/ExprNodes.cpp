@@ -3645,7 +3645,7 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
   SmallVector<TypedAttr> origins;
   for (ExprNode *subExpr : subExprs) {
     emitter.emitExpressionWithOutEvaluatingIt(
-        subExpr, EC_Origin, [&](CValue result) {
+        subExpr, EC_Origin, [&](CValue result, IREmitter &emitter) {
           if (auto origin = emitter.extractOriginOf(subExpr, result))
             origins.push_back(origin);
         });
@@ -3660,8 +3660,9 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
   // TypeOf can reference dynamic values even when in a parameter context.
   ASTType resultType;
   emitter.emitExpressionWithOutEvaluatingIt(
-      subExprs.front(), EC_Origin,
-      [&](CValue result) { resultType = result.getRValueType(); });
+      subExprs.front(), EC_Origin, [&](CValue result, IREmitter &emitter) {
+        resultType = result.getRValueType();
+      });
 
   if (!resultType)
     return {};
