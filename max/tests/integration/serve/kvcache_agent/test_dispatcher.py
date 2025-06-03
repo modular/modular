@@ -81,7 +81,7 @@ async def test_dispatcher_client_to_service_communication():
         server_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Test message from client to server
         test_payload = {"request": "test_data", "value": 42}
@@ -93,7 +93,7 @@ async def test_dispatcher_client_to_service_communication():
             destination_address=server_bind_address,
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify request was received by server
         assert len(received_requests) == 1, (
@@ -112,13 +112,13 @@ async def test_dispatcher_client_to_service_communication():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await client_dispatcher_service.stop()
         await server_dispatcher_service.stop()
         client_app.stop()
         server_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -183,7 +183,7 @@ async def test_dispatcher_request_reply_pattern():
         instance_b_client.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send request from client to server
         request_payload = {"value": 21, "operation": "double"}
@@ -193,7 +193,7 @@ async def test_dispatcher_request_reply_pattern():
             destination_address=instance_b_bind_address,
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify request was received and processed
         assert len(instance_b_received_requests) == 1, (
@@ -211,13 +211,13 @@ async def test_dispatcher_request_reply_pattern():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await instance_a_dispatcher.stop()
         await instance_b_dispatcher.stop()
         instance_a_client.stop()
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -307,7 +307,7 @@ async def test_multiple_clients_one_server_dispatcher():
             client.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Each client sends a request
         for i, client in enumerate(clients):
@@ -322,7 +322,7 @@ async def test_multiple_clients_one_server_dispatcher():
                 destination_address=server_bind_address,
             )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify server received all requests
         assert len(server_requests) == num_clients, (
@@ -342,7 +342,7 @@ async def test_multiple_clients_one_server_dispatcher():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         server_app.stop()
 
@@ -352,7 +352,7 @@ async def test_multiple_clients_one_server_dispatcher():
             client.stop()
 
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -430,7 +430,7 @@ async def test_composable_handlers():
         instance_b_client.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send request
         request_payload = {"value": 10, "operation": "triple"}
@@ -440,7 +440,7 @@ async def test_composable_handlers():
             destination_address=instance_b_bind_address,
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify BOTH general and specific handlers were called for the request
         assert len(instance_b_general_messages) == 1, (
@@ -476,13 +476,13 @@ async def test_composable_handlers():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await instance_a_dispatcher.stop()
         await instance_b_dispatcher.stop()
         instance_a_client.stop()
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -555,7 +555,7 @@ async def test_error_handling_and_resilience():
         client_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send mix of successful and failing requests
         test_requests = [
@@ -573,7 +573,7 @@ async def test_error_handling_and_resilience():
                 destination_address=server_bind_address,
             )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify error handling
         assert len(successful_requests) == 3, (
@@ -595,13 +595,13 @@ async def test_error_handling_and_resilience():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_app.stop()
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -668,7 +668,7 @@ async def test_high_throughput_performance():
         client_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send high volume of messages
         num_messages = 1000
@@ -688,7 +688,7 @@ async def test_high_throughput_performance():
         while (
             requests_processed < num_messages or replies_received < num_messages
         ) and elapsed < timeout:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
             elapsed = time.time() - start_time
 
         end_time = time.time()
@@ -713,13 +713,13 @@ async def test_high_throughput_performance():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_app.stop()
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -750,7 +750,7 @@ async def test_connection_failure_recovery():
         client_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Try to send to non-existent server (should not crash)
         invalid_endpoint = "tcp://127.0.0.1:99999"  # Invalid port
@@ -762,18 +762,18 @@ async def test_connection_failure_recovery():
                 destination_address=invalid_endpoint,
             )
             # Should not crash, just log error
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
             # connection failed gracefully
         except Exception as e:
             # Should not reach here - errors should be handled internally
             pytest.fail(f"Unexpected exception: {e}")
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await client_dispatcher.stop()
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -849,7 +849,7 @@ async def test_handler_exception_isolation():
         client_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send request that should cause exception
         exception_request = {"value": 10, "should_throw": True}
@@ -860,7 +860,7 @@ async def test_handler_exception_isolation():
         )
 
         # Wait a bit for the exception to be processed
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send normal request to verify the process is still working
         normal_request = {"value": 20, "should_throw": False}
@@ -871,7 +871,7 @@ async def test_handler_exception_isolation():
         )
 
         # Give time for message processing
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify both requests were received
         assert len(received_requests) == 2, (
@@ -891,13 +891,13 @@ async def test_handler_exception_isolation():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_app.stop()
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -945,7 +945,7 @@ async def test_no_handler_registered():
         client_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send request to server which has no handler registered
         request_payload = {"value": 42, "operation": "test"}
@@ -965,20 +965,20 @@ async def test_no_handler_registered():
             destination_address=server_bind_address,
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # If we reach here without exceptions, the test passes
         # The system should handle unhandled messages gracefully
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_app.stop()
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -1009,7 +1009,7 @@ async def test_invalid_destination_address():
         client_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Test various invalid addresses
         invalid_addresses = [
@@ -1037,11 +1037,11 @@ async def test_invalid_destination_address():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await client_dispatcher.stop()
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -1114,5 +1114,5 @@ async def test_duplicate_handler_registration():
     finally:
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()

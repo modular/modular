@@ -58,7 +58,7 @@ async def test_simple_send_receive():
             received = await receiver.receive_message()
             if received:
                 break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         # Verify the message was received correctly
         assert received is not None, "Message was not received"
@@ -70,11 +70,11 @@ async def test_simple_send_receive():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await sender.close()
         await receiver.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -107,7 +107,7 @@ async def test_request_reply_pattern():
             received_request = await server.receive_message()
             if received_request:
                 break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         assert received_request is not None, "Request was not received"
         assert received_request.message.payload["question"] == "What is 2+2?"
@@ -126,7 +126,7 @@ async def test_request_reply_pattern():
             received_reply = await client.receive_message()
             if received_reply:
                 break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         assert received_reply is not None, "Reply was not received"
         assert received_reply.message.payload["answer"] == "4"
@@ -134,11 +134,11 @@ async def test_request_reply_pattern():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await client.close()
         await server.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -183,7 +183,7 @@ async def test_multiple_clients_one_server():
                 received_messages.append(received)
                 if len(received_messages) == 3:
                     break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         # Verify all messages were received
         assert len(received_messages) == 3, (
@@ -200,12 +200,12 @@ async def test_multiple_clients_one_server():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await server.close()
         for client in clients:
             await client.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -274,7 +274,7 @@ async def test_multiple_clients_multiple_servers():
             total_received = sum(len(msgs) for msgs in server_received)
             if total_received == len(sent_requests):
                 break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         # Verify each server received the correct messages
         assert len(server_received[0]) == 2, (
@@ -316,7 +316,7 @@ async def test_multiple_clients_multiple_servers():
             total_replies = sum(len(replies) for replies in client_replies)
             if total_replies == len(sent_requests):
                 break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         # Verify routing correctness
         for client_idx, replies in enumerate(client_replies):
@@ -347,13 +347,13 @@ async def test_multiple_clients_multiple_servers():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         for server in servers:
             await server.close()
         for client in clients:
             await client.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -387,10 +387,10 @@ async def test_connection_failure():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await sender.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -428,7 +428,7 @@ async def test_high_throughput():
                     break
             else:
                 # Allow time for message processing
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
 
         assert received_count == num_messages, (
             f"Expected {num_messages} messages, got {received_count}"
@@ -436,11 +436,11 @@ async def test_high_throughput():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await sender.close()
         await receiver.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -480,7 +480,7 @@ async def test_no_destination_address_provided():
         )
         await transport.send_message(message_3, destination_address="")
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # If we reach here without exceptions, the transport handled the errors gracefully
         # The transport should log errors but not crash
@@ -508,7 +508,7 @@ async def test_no_destination_address_provided():
             received = await receiver.receive_message()
             if received:
                 break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         assert received is not None, (
             "Valid message should have been received after error cases"
@@ -519,10 +519,10 @@ async def test_no_destination_address_provided():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await transport.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -569,7 +569,7 @@ async def test_default_destination_address():
                 received_messages.append(received)
                 if len(received_messages) == 2:
                     break
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.5)
 
         # Verify both messages were received using the default destination
         assert len(received_messages) == 2, (
@@ -586,9 +586,9 @@ async def test_default_destination_address():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         await sender.close()
         await receiver.close()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()

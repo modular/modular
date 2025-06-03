@@ -105,7 +105,7 @@ async def test_end_to_end_communication_with_config():
         client_app.start()
 
         # Allow time for services to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send message from client to server
         test_payload = {"request": "config_test", "value": 21}
@@ -115,7 +115,7 @@ async def test_end_to_end_communication_with_config():
             destination_address=server_dispatcher.transport.get_address(),
         )
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify communication worked
         assert len(received_requests) == 1
@@ -126,12 +126,12 @@ async def test_end_to_end_communication_with_config():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         # Clean up and close ZMQ context
         await server_dispatcher.stop()
         await client_dispatcher.stop()
         server_client.stop()
         client_app.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()

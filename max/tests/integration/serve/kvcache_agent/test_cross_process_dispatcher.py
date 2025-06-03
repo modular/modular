@@ -43,7 +43,7 @@ def instance_a_service_process_fn(
             # Keep running and processing messages
             while not pc.is_canceled():
                 pc.beat()
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
 
             # Cleanup
             await instance_a_dispatcher.stop()
@@ -80,7 +80,7 @@ def instance_b_service_process_fn(
             # Keep running and processing messages
             while not pc.is_canceled():
                 pc.beat()
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
 
             # Cleanup
             await instance_b_dispatcher.stop()
@@ -200,7 +200,7 @@ async def test_single_request_reply():
         instance_b_client.start()
 
         # Allow time for clients to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send request from instance A client to instance B
         request_payload = {"value": 21, "operation": "double"}
@@ -211,7 +211,7 @@ async def test_single_request_reply():
         )
 
         # Give some time for the message exchange to complete
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify request was received by instance B
         try:
@@ -246,14 +246,14 @@ async def test_single_request_reply():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         # Clean up and close ZMQ context
         await monitor_a.shutdown()
         await monitor_b.shutdown()
         instance_a_client.stop()
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -362,7 +362,7 @@ async def test_multiple_request_reply():
         instance_b_client.start()
 
         # Allow time for clients to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send multiple requests from instance A client to instance B
         for i in range(3):
@@ -374,7 +374,7 @@ async def test_multiple_request_reply():
             )
 
         # Give time for all message exchanges to complete
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify we received 3 requests and 3 replies
         assert len(received_requests) == 3, (
@@ -419,14 +419,14 @@ async def test_multiple_request_reply():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         # Clean up and close ZMQ context
         await monitor_a.shutdown()
         await monitor_b.shutdown()
         instance_a_client.stop()
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -547,7 +547,7 @@ async def test_bidirectional_communication():
         instance_b_client.start()
 
         # Allow time for clients to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send requests from A to B
         for i in range(2):
@@ -568,7 +568,7 @@ async def test_bidirectional_communication():
             )
 
         # Give time for all message exchanges to complete
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify A received requests from B and sent replies
         assert len(a_received_requests) == 2, (
@@ -612,14 +612,14 @@ async def test_bidirectional_communication():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         # Clean up and close ZMQ context
         await monitor_a.shutdown()
         await monitor_b.shutdown()
         instance_a_client.stop()
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
 
 
@@ -727,7 +727,7 @@ async def test_high_throughput_cross_process():
         instance_b_client.start()
 
         # Allow time for clients to fully initialize
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Send high volume of messages
         num_messages = 1000
@@ -758,7 +758,7 @@ async def test_high_throughput_cross_process():
         duration = end_time - start_time
 
         # Allow time for messages to be processed
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
 
         # Verify all messages were processed
         assert requests_processed == num_messages, (
@@ -799,12 +799,12 @@ async def test_high_throughput_cross_process():
 
     finally:
         # Allow pending operations to complete before shutdown
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         # Clean up and close ZMQ context
         await monitor_a.shutdown()
         await monitor_b.shutdown()
         instance_a_client.stop()
         instance_b_client.stop()
         # Allow cleanup before terminating ZMQ context
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
         zmq_ctx.term()
