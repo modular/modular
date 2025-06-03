@@ -1,0 +1,22 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+modular_py_binary(
+    name = "factorial",
+    srcs = ["main.py"],
+    data = ["mojo_module.mojo"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    use_sitecustomize = True,
+    uses_mojo_extension = True,
+    deps = [
+        "//SDK/lib/API/python/max/_mojo",
+    ],
+)
+
+modular_run_binary_test(
+    name = "factorial_test",
+    binary = "factorial",
+)
