@@ -292,7 +292,6 @@ def test_cli_commands(command, idx):
     runner = CliRunner()
 
     command_args = command.args + ["--idx", str(idx)]
-    print(f"Testing command: {command_args}")
 
     result = runner.invoke(testing, command_args)
 

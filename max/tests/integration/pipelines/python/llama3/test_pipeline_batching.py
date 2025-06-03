@@ -107,8 +107,6 @@ async def test_pipeline_static_batch_same_prompt_same_output(
         assert context_batch.keys() == response.keys()
         response_tokens = list(response.values())
         assert all(response_tokens[0] == t for t in response_tokens)
-        # for id, next_token in response.items():
-        #     print(id, next_token)
 
     # The last execution must complete all batches
     assert len(context_batch) == batch_size
@@ -136,13 +134,11 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     prompt = "Repeat this sentence forever and forever."
     batch_size = pipeline._pipeline_config.max_batch_size
 
-    print(batch_size)
     context_batch = {}
     for i in range(batch_size):
         max_new_tokens = int(
             (pipeline._pipeline_config.max_length / batch_size) * (i + 1)
         )
-        print(f"Batch: {i}, MaxNewTokens: {max_new_tokens}")
         context = await pipeline_tokenizer.new_context(
             TokenGeneratorRequest(
                 id="",
@@ -152,35 +148,24 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
                 max_new_tokens=max_new_tokens,
             )
         )
-        print(f"Context: {i}, MaxNewTokens: {context.max_new_tokens}")
         batch_id = str(i)
         context_batch[batch_id] = context
 
     max_tokens = max(c.max_length for c in context_batch.values())
-    print(
-        f"CurTokens: {context.current_length}, MaxTokensAcrossAllBatches: {max_tokens}"
-    )
 
     # Execute batches until they are complete
     for i in range(context.current_length, max_tokens):
         batch_ids_with_lengths = {
             batch_id: c.current_length for batch_id, c in context_batch.items()
         }
-        print(f"{i}-Input: {batch_ids_with_lengths}")
         response = pipeline.next_token(context_batch, num_steps=1)[0]
-        print(f"{i}-Output: {response}")
         completed_batch_ids = context_batch.keys() - response.keys()
         for batch_id in completed_batch_ids:
             context = context_batch[batch_id]
-            print(
-                f"Completed {batch_id}, Tokens: {context.current_length}, Max:"
-                f" {context.max_length}"
-            )
             assert context.current_length > context.max_length
             del context_batch[batch_id]
 
     # The last execution must complete all batches
-    # print(f"Remaining: {context_batch.keys()}")
     assert len(context_batch) == 1
     last = pipeline.next_token(context_batch, num_steps=1)[0]
     assert not last
@@ -217,12 +202,10 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     """
     prompt = "Repeat this sentence forever and forever."
     max_batch_size = pipeline._pipeline_config.max_batch_size
-    print(f"MaxBatchSize: {max_batch_size}")
 
     for batch_size in batch_sizes:
         assert batch_size > 0
         assert batch_size <= max_batch_size
-        print(f"Batch: {batch_size} - Started")
 
         context_batch = {}
         for i in range(batch_size):
@@ -236,10 +219,6 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 
         max_tokens = context.max_length
         assert all(c.max_length == max_tokens for c in context_batch.values())
-        print(
-            f"Batch: {batch_size} - CurTokens: {context.current_length}, MaxTokens:"
-            f" {max_tokens}"
-        )
 
         # Execute these batches until they are complete
         for _ in range(context.current_length, max_tokens):
@@ -247,21 +226,11 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
             assert context_batch.keys() == response.keys()
             response_tokens = list(response.values())
             assert all(response_tokens[0] == t for t in response_tokens)
-            # for id, next_token in response.items():
-            #     print(id, next_token)
 
         # The last execution must complete all batches
         assert len(context_batch) == batch_size
         last = pipeline.next_token(context_batch, num_steps=1)[0]
         assert not last
-
-        # for batch_id, batch_context in context_batch.items():
-        #     print(f"{batch_id}: {batch_context.decoded}")
-
-        print(
-            f"Batch: {batch_size} - Completed with"
-            f" {context.current_length} tokens."
-        )
 
         for context in context_batch.values():
             pipeline.release(context)
