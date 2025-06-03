@@ -377,12 +377,11 @@ class KVTransferEngine:
 
     def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
         """Wait for a transfer initiated by remote engine to complete."""
-        _: dict[str, list[bytes]] = {}
         while (
             xfer_req_id.xfer_name
             not in self.completed_xfers[xfer_req_id.src_name]
         ):
-            notifs = self.agent.get_notifs(_)
+            notifs = self.agent.get_notifs()
 
             for remote in notifs:
                 completed_xfer_names = [x.decode() for x in notifs[remote]]
