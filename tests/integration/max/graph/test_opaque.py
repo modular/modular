@@ -104,7 +104,6 @@ class PythonCounter:
     def bump(self):
         self.a += 1
         self.b += self.a
-        print("bumped", self.a, self.b)
 
     def copy(self):
         return PythonCounter(self.a, self.b)

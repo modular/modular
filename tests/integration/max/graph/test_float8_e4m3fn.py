@@ -151,7 +151,6 @@ def test_f8_constant(session):
         )
         out = x @ y
         graph.output(out)
-    print(graph)
 
     model = session.load(graph)
 
