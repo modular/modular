@@ -32,7 +32,13 @@ from .layout import coalesce as coalesce_layout
 from .layout import composition as composition_layout
 from .layout import is_tuple
 from .layout import make_layout as make_layout_static
-from .runtime_tuple import RuntimeTuple, crd2idx, product
+from .runtime_tuple import (
+    RuntimeTuple,
+    crd2idx,
+    product,
+    idx2crd_int_tuple,
+    idx2crd,
+)
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
 # IntTuple.
@@ -142,6 +148,29 @@ struct RuntimeLayout[
             The corresponding flat linear index in the layout.
         """
         return crd2idx[out_type=linear_idx_type](idx, self.shape, self.stride)
+
+    @always_inline("nodebug")
+    fn idx2crd[
+        t: IntTuple
+    ](self, idx: RuntimeTuple[t, **_]) -> RuntimeTuple[
+        idx2crd_int_tuple(t, layout.shape, layout.stride),
+        element_type=element_type,
+    ]:
+        """Converts a linear index to logical coordinates.
+
+        This is the inverse operation of the __call__ method, mapping from
+        a memory index back to the corresponding logical coordinates.
+
+        Parameters:
+            t: The `IntTuple` type for the index.
+
+        Args:
+            idx: The linear index to convert.
+
+        Returns:
+            The logical coordinates corresponding to the given index.
+        """
+        return idx2crd(idx, self.shape, self.stride)
 
     @always_inline
     fn size(self) -> Int:

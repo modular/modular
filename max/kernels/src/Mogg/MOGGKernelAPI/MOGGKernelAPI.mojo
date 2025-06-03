@@ -3260,16 +3260,16 @@ struct ArgNonZero:
         output_buffer: OutputTensor[rank=2],
         input_buffer: InputTensor,
     ):
-        var out_ndbuffer = managed_tensor_slice_to_ndbuffer(output_buffer)
-        var in_ndbuffer = managed_tensor_slice_to_ndbuffer(input_buffer)
-
-        arg_nonzero.arg_nonzero(in_ndbuffer, out_ndbuffer)
+        arg_nonzero.arg_nonzero(
+            input_buffer.to_layout_tensor(),
+            output_buffer.to_layout_tensor(),
+        )
 
     @staticmethod
     fn shape(input_buffer: InputTensor) -> IndexList[2]:
         return arg_nonzero.arg_nonzero_shape[
             single_thread_blocking_override=True
-        ](managed_tensor_slice_to_ndbuffer(input_buffer))
+        ](input_buffer.to_layout_tensor())
 
 
 @compiler.register("mo.mean")
