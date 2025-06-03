@@ -21,7 +21,7 @@ Client Side:                    Server Side:
 └─────────┬───────┘            └─────────┬───────┘
           │                              │
 ┌─────────▼───────┐            ┌─────────▼───────┐
-│ DispatcherService│            │DispatcherService│
+│DispatcherService│            │DispatcherService│
 │   (transport)   │◄──────────►│   (transport)   │
 └─────────────────┘            └─────────────────┘
 """
@@ -97,8 +97,7 @@ class TransportFactory:
         if transport_type == TransportType.DYNAMIC_ZMQ:
             assert isinstance(config, cls.DynamicZmqTransportConfig)
             return cls.create_dynamic_zmq_transport(
-                zmq_ctx=zmq_ctx,
-                config=config,
+                zmq_ctx=zmq_ctx, config=config
             )
 
 
@@ -123,10 +122,7 @@ class DispatcherFactory:
     with the appropriate ZMQ context for each process.
     """
 
-    def __init__(
-        self,
-        config: DispatcherConfig,
-    ):
+    def __init__(self, config: DispatcherConfig) -> None:
         """
         Initialize factory with a transport instance.
         """
