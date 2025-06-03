@@ -169,10 +169,6 @@ def create_paged_scheduler(
     enable_chunked_prefill=True,
     enable_kvcache_swapping_to_host=False,
 ) -> TokenGenerationScheduler:
-    print("creating paged manager:")
-    print(f"    request_zmq_endpoint: {request_zmq_endpoint}")
-    print(f"    response_zmq_endpoint: {response_zmq_endpoint}")
-    print(f"    cancel_zmq_endpoint: {cancel_zmq_endpoint}")
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
         num_blocks=num_blocks,
