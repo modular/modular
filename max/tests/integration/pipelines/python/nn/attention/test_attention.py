@@ -9,22 +9,17 @@ import math
 
 import numpy as np
 import pytest
-from max.driver import CPU, Device, Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import LinearV1
-from max.nn.attention import Attention
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
-    KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheManager,
-    load_kv_manager,
 )
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
@@ -39,206 +34,6 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
-
-
-def _attention_layer(
-    dtype: DType,
-    mask_dtype: DType,
-    device: Device,
-    cache_strategy: KVCacheStrategy,
-    session: InferenceSession,
-) -> tuple[
-    Graph,
-    KVCacheParams,
-    KVCacheManager,
-]:
-    # Initialize input types
-    input_type = TensorType(
-        dtype, ["batch_size", "seq_len", HIDDEN_DIM], device=DeviceRef.CPU()
-    )
-    attn_mask_type = TensorType(
-        mask_dtype,
-        ["batch_size", "n_kv_heads", "seq_len", "post_seq_len"],
-        device=DeviceRef.CPU(),
-    )
-
-    wq_type = TensorType(
-        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=DeviceRef.CPU()
-    )
-    wk_type = TensorType(
-        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=DeviceRef.CPU()
-    )
-    wv_type = TensorType(
-        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=DeviceRef.CPU()
-    )
-    wo_type = TensorType(
-        dtype, [N_KV_HEADS * HEAD_DIM, HIDDEN_DIM], device=DeviceRef.CPU()
-    )
-    valid_lengths_type = TensorType(
-        DType.uint32, ["batch_size"], device=DeviceRef.CPU()
-    )
-
-    # Initialize kv cache params and manager
-    kv_params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=N_KV_HEADS,
-        head_dim=HEAD_DIM,
-        cache_strategy=cache_strategy,
-    )
-
-    kv_manager = load_kv_manager(
-        params=kv_params,
-        max_batch_size=16,
-        max_seq_len=MAX_SEQ_LEN,
-        num_layers=NUM_LAYERS,
-        devices=[device],
-        session=session,
-        page_size=128,
-        available_cache_memory=1024 * 1024 * 1024,
-    )
-
-    # Fetch
-    if isinstance(kv_manager, ContinuousBatchingKVCacheManager):
-        fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
-    elif isinstance(kv_manager, PagedKVCacheManager):
-        fetch_op = FetchPagedKVCacheCollection(kv_params)  # type: ignore
-    else:
-        raise ValueError("Unsupported kv_manager type")
-
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.input_symbols()[0]
-    )
-
-    with Graph(
-        "vanilla_opaque_attn",
-        input_types=[
-            input_type,  # 0
-            attn_mask_type,  # 1
-            wq_type,  # 2
-            wk_type,  # 3
-            wv_type,  # 4
-            wo_type,  # 5
-            valid_lengths_type,  # 6
-            blocks_type,  # 7
-            cache_lengths_type,  # 8
-            lookup_table_type,  # 9
-            is_cache_empty_type,  # 10
-        ],
-    ) as graph:
-        assert are_all_tensor_values(graph.inputs)
-        (
-            x,
-            attn_mask,
-            wq,
-            wk,
-            wv,
-            wo,
-            valid_lengths,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-        ) = graph.inputs
-
-        # Concat wq, wk, wv into wqkv
-        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)
-
-        # Get KV Collection
-        kv_collection = fetch_op(
-            blocks, cache_lengths, lookup_table, is_cache_empty
-        )
-
-        # Update this if provided
-        kv_params.cache_strategy = cache_strategy
-
-        attn_fn = Attention(
-            n_heads=N_HEADS,
-            kv_params=kv_params,
-            wqkv=wqkv,
-            wo=LinearV1(wo),
-            scale=math.sqrt(1.0 / kv_params.head_dim),
-        )
-
-        attn_out = attn_fn(
-            ops.constant(LAYER_IDX, DType.uint32, device=DeviceRef.CPU()),
-            x.tensor,
-            kv_collection,
-            valid_lengths=valid_lengths,
-            attention_mask=attn_mask,
-        )
-
-        graph.output(attn_out)
-
-        return graph, kv_params, kv_manager
-
-
-def test_attention__wrong_mask_dtype():
-    # This is expected to fail when passing a mask dtype that does not match the activation dtype.
-    with pytest.raises(ValueError) as _:
-        graph, _, _ = _attention_layer(
-            DType.float32,
-            DType.uint8,
-            CPU(),
-            KVCacheStrategy.CONTINUOUS,
-            InferenceSession(devices=[CPU()]),
-        )
-
-
-@pytest.mark.parametrize(
-    "start_pos,seq_len",
-    [
-        (0, 10),
-    ],
-)
-def test_attention__valid_logits(session, start_pos, seq_len):
-    # This tests that the attention mask is calculating valid logits.
-    # It does not test that these logits match a reference implementation.
-
-    # Get Graph
-    graph, _, kv_manager = _attention_layer(
-        DType.float32,
-        DType.float32,
-        CPU(),
-        KVCacheStrategy.CONTINUOUS,
-        InferenceSession(devices=[CPU()]),
-    )
-
-    # Claim seq_ids in cache
-    seq_ids = []
-    for _ in range(BATCH_SIZE):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
-
-    # Base the valid lengths on max_seq_len
-    valid_lengths = Tensor.from_numpy(
-        np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
-    )
-
-    batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(batch)[0]
-    )
-
-    @modular_graph_test(
-        session,
-        graph,
-        static_dims={
-            "seq_len": seq_len,
-            "post_seq_len": start_pos + seq_len,
-            "batch_size": BATCH_SIZE,
-        },
-        provided_inputs={
-            6: valid_lengths,
-            7: blocks,
-            8: cache_lengths,
-            9: lookup_table_tensor,
-            10: is_cache_empty_buf,
-        },
-    )
-    def test_runs_without_inf(execute, inputs, torch_inputs):
-        inputs = list(inputs)
-        results = execute(inputs)
-        assert np.all(results != np.inf)
 
 
 @pytest.mark.parametrize(

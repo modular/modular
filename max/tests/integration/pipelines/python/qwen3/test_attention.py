@@ -159,16 +159,17 @@ def generate_max_outputs(
 
     session = InferenceSession(devices=[Accelerator(0)])
 
+    rope = Llama3RotaryEmbedding(
+        text_config.hidden_size,
+        text_config.num_attention_heads,
+        text_config.rope_theta,
+        MAX_SEQ_LEN,
+        interleaved=False,
+        head_dim=text_config.head_dim,
+        device=device_ref,
+    )
     attention = MaxQwen3Attention(
-        rope=Llama3RotaryEmbedding(
-            text_config.hidden_size,
-            text_config.num_attention_heads,
-            text_config.rope_theta,
-            MAX_SEQ_LEN,
-            interleaved=False,
-            head_dim=text_config.head_dim,
-            device=device_ref,
-        ),
+        rope=rope,
         num_attention_heads=text_config.num_attention_heads,
         num_key_value_heads=text_config.num_key_value_heads,
         hidden_size=text_config.hidden_size,
@@ -231,7 +232,8 @@ def generate_max_outputs(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 inputs.tensor,
                 kv_collection,
-                input_row_offsets=input_row_offsets.tensor,
+                rope.freqs_cis,
+                input_row_offsets.tensor,
             )
         )
 

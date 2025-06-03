@@ -144,7 +144,8 @@ def generate_max_outputs(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 hidden_states,
                 kv_collection,
-                input_row_offsets=input_row_offsets,
+                rope.freqs_cis,
+                input_row_offsets,
             )
             graph.output(result)
         return graph

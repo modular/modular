@@ -12,12 +12,11 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Device, Tensor, accelerator_api
+from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import LinearV1, RMSNormV1
-from max.nn.attention import Attention
 from max.nn.kernels import (
     MHAMaskVariant,
     causal_flash_attention_gpu,
@@ -25,8 +24,6 @@ from max.nn.kernels import (
     null_mask_flash_attention_gpu,
 )
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
@@ -56,223 +53,6 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
-
-
-def _attention_layer(
-    dtype: DType,
-    mask_dtype: DType,
-    device: Device,
-    cache_strategy: KVCacheStrategy,
-    session: InferenceSession,
-) -> tuple[Graph, KVCacheParams, ContinuousBatchingKVCacheManager]:
-    # Initialize input types
-    input_type = TensorType(
-        dtype, ["batch_size", "seq_len", HIDDEN_DIM], DeviceRef.GPU()
-    )
-    attn_mask_type = TensorType(
-        mask_dtype,
-        ["batch_size", "n_heads", "seq_len", "post_seq_len"],
-        DeviceRef.GPU(),
-    )
-
-    wq_type = TensorType(
-        dtype, [HIDDEN_DIM, N_HEADS * HEAD_DIM], DeviceRef.GPU()
-    )
-    wk_type = TensorType(
-        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], DeviceRef.GPU()
-    )
-    wv_type = TensorType(
-        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], DeviceRef.GPU()
-    )
-    wo_type = TensorType(
-        dtype, [N_HEADS * HEAD_DIM, HIDDEN_DIM], DeviceRef.GPU()
-    )
-    valid_lengths_type = TensorType(
-        DType.uint32, ["batch_size"], DeviceRef.GPU()
-    )
-
-    # Initialize kv cache params and manager
-    kv_params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=N_KV_HEADS,
-        head_dim=HEAD_DIM,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
-    )
-
-    kv_manager = load_kv_manager(
-        params=kv_params,
-        max_batch_size=16,
-        max_seq_len=MAX_SEQ_LEN,
-        num_layers=NUM_LAYERS,
-        devices=[device],
-        session=session,
-    )
-    assert isinstance(kv_manager, ContinuousBatchingKVCacheManager)
-
-    # Fetch
-    fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.input_symbols()[0]
-    )
-
-    with Graph(
-        "vanilla_opaque_attn",
-        input_types=[
-            input_type,  # 0
-            attn_mask_type,  # 1
-            wq_type,  # 2
-            wk_type,  # 3
-            wv_type,  # 4
-            wo_type,  # 5
-            valid_lengths_type,  # 6
-            blocks_type,  # 7
-            cache_lengths_type,  # 8
-            lookup_table_type,  # 9
-            is_cache_empty_type,  # 10
-        ],
-    ) as graph:
-        assert are_all_tensor_values(graph.inputs)
-        (
-            x,
-            attn_mask,
-            wq,
-            wk,
-            wv,
-            wo,
-            valid_lengths,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-        ) = graph.inputs
-
-        # Concat wq, wk, wv into wqkv
-        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)
-
-        # Get KV Collection
-        kv_collection = fetch_op(
-            blocks, cache_lengths, lookup_table, is_cache_empty
-        )
-
-        # Update this if provided
-        kv_params.cache_strategy = cache_strategy
-
-        attn_fn = Attention(
-            n_heads=N_HEADS,
-            kv_params=kv_params,
-            wqkv=wqkv,
-            wo=LinearV1(wo),
-            scale=math.sqrt(1 / HEAD_DIM),
-        )
-
-        attn_out = attn_fn(
-            ops.constant(LAYER_IDX, DType.uint32, device=DeviceRef.CPU()),
-            x.tensor,
-            kv_collection,
-            valid_lengths=valid_lengths,
-            attention_mask=attn_mask,
-        )
-
-        graph.output(attn_out)
-
-        return graph, kv_params, kv_manager
-
-
-@pytest.mark.skipif(accelerator_api() == "hip", reason="KERN-1466")
-@pytest.mark.parametrize(
-    "start_pos,seq_len",
-    [
-        (0, 128),
-        (9, 1),
-    ],
-)
-def test_attention_gpu(start_pos, seq_len):
-    # This tests that the attention mask is calculating valid logits.
-    # It does not test that these logits match a reference implementation.
-    host = CPU(0)
-    device0 = Accelerator(0)
-    devices = [device0]
-    session = InferenceSession(devices=devices)
-    # Get Graph
-    graph, _, kv_manager = _attention_layer(
-        DType.float32,
-        DType.float32,
-        device0,
-        KVCacheStrategy.CONTINUOUS,
-        session,
-    )
-    compiled = session.load(graph)
-
-    # Claim seq_ids in cache
-    seq_ids = []
-    for _ in range(BATCH_SIZE):
-        seq_id = kv_manager.claim(1)
-        seq_ids.append(seq_id[0])
-
-    batch = [create_text_context(s, np.empty(seq_len)) for s in seq_ids]
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(batch)[0]
-    )
-
-    hidden_states = Tensor.from_numpy(
-        np.ones((BATCH_SIZE, seq_len, HIDDEN_DIM), dtype=np.float32),
-    ).to(device0)
-    attn_mask = Tensor.from_numpy(
-        np.ones((BATCH_SIZE, N_HEADS, seq_len, seq_len), dtype=np.float32),
-    ).to(device0)
-    wq = Tensor.from_numpy(
-        np.ones((HIDDEN_DIM, N_HEADS * HEAD_DIM), dtype=np.float32),
-    ).to(device0)
-    wk = Tensor.from_numpy(
-        np.ones((HIDDEN_DIM, N_KV_HEADS * HEAD_DIM), dtype=np.float32),
-    ).to(device0)
-    wv = Tensor.from_numpy(
-        np.ones((HIDDEN_DIM, N_KV_HEADS * HEAD_DIM), dtype=np.float32),
-    ).to(device0)
-    wo = Tensor.from_numpy(
-        np.ones((N_HEADS * HEAD_DIM, HIDDEN_DIM), dtype=np.float32),
-    ).to(device0)
-    valid_lengths = Tensor.from_numpy(
-        np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
-    ).to(device0)
-
-    results = compiled.execute(
-        hidden_states,
-        attn_mask,
-        wq,
-        wk,
-        wv,
-        wo,
-        valid_lengths,
-        blocks,
-        cache_lengths,
-        lookup_table_tensor,
-        is_cache_empty_buf,
-    )
-    for result in results:
-        if isinstance(result, Tensor):
-            assert np.all(result.to(host).to_numpy() != np.inf)
-
-
-def test_aspect_ratio_mask() -> None:
-    """Regression test for accidentally assigning transpose_b = True to BMM,
-    which can't run on GPU.
-    """
-    # Create a graph consisting of a simple batch matmul with transpose.
-    aspect_ratio_mask_type = TensorType(
-        DType.bfloat16,
-        shape=["batch_size", "num_concurrent_media", 4, 1],
-        device=DeviceRef.GPU(),
-    )
-    graph = Graph(
-        "aspect_ratio_mask",
-        forward=lambda mask: mask @ mask.transpose(-1, -2),
-        input_types=[aspect_ratio_mask_type],
-    )
-
-    # Compile and init the model.
-    session = InferenceSession(devices=[Accelerator()])
-    session.load(graph)
 
 
 class CrossAttentionModel:

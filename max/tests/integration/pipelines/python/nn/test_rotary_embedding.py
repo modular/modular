@@ -116,7 +116,7 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
         graph.output(rope.freqs_cis)
         model = session.load(graph)
     result = model.execute()[0].to_numpy()
-    # freq_cis result is stacked along a new dimension - real goes first, then imaginary.
+    # freqs_cis result is stacked along a new dimension - real goes first, then imaginary.
     # The result is a tensor with shape (..., 2) where the last dimension holds [real, imaginary]
     # We extract and convert into a complex tensor type before comparing them.
     result_cis_complex = result[:, :, 0] + 1j * result[:, :, 1]
@@ -184,7 +184,7 @@ def test_llama3_freqs_cis(
     result = model.execute()[0].to_numpy()
     d0, d1 = result.shape
     result = result.reshape(d0, d1 // 2, 2)
-    # freq_cis result is stacked along a new dimension - real goes first, then imaginary.
+    # freqs_cis result is stacked along a new dimension - real goes first, then imaginary.
     # The result is a tensor with shape (..., 2) where the last dimension holds [real, imaginary]
     # We extract and convert into a complex tensor type before comparing them.
     result_cis_complex = result[:, :, 0] + 1j * result[:, :, 1]

@@ -73,7 +73,7 @@ def generate_torch_outputs(
 
     rotary_emb = model.rotary_emb
     position_ids = cache_position.unsqueeze(0)
-    freq_cis = rotary_emb(input_tensor, position_ids)
+    freqs_cis = rotary_emb(input_tensor, position_ids)
 
     causal_mask, chunk_causal_mask = model._update_causal_mask(
         attention_mask,
@@ -102,7 +102,7 @@ def generate_torch_outputs(
                 output_attentions=False,
                 use_cache=False,
                 cache_position=cache_position,
-                position_embeddings=freq_cis,
+                position_embeddings=freqs_cis,
             )[0]
         )
     return outputs
