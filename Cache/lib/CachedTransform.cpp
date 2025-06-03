@@ -13,7 +13,9 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/Support/EndianStream.h"
-#include "llvm/Support/xxhash.h"
+
+#include "xxh3.h"
+#include "xxhash.h"
 
 using namespace M;
 using namespace Cache;
@@ -29,14 +31,14 @@ std::string TransformCacheKey::hashKey(TransformCacheKey::KeyTy key) {
 
   // Reserve a 16 byte result hash.
   std::string result;
-  result.reserve(sizeof(llvm::XXH128_hash_t));
+  result.reserve(sizeof(XXH128_hash_t));
 
+  auto asRef = llvm::arrayRefFromStringRef(key->getBuffer());
   // Take the 128-bit xxhash of the input.
-  llvm::XXH128_hash_t hash =
-      llvm::xxh3_128bits(arrayRefFromStringRef(key->getBuffer()));
+  XXH128_hash_t hash = XXH3_128bits(asRef.data(), asRef.size());
 
   // Write the hash to the result buffer and return it.
-  result.append(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
+  result.append(llvm::bit_cast<char *>(&hash), sizeof(XXH128_hash_t));
   return result;
 }
 

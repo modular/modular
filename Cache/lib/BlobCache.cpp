@@ -19,9 +19,11 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Process.h"
-#include "llvm/Support/xxhash.h"
 #include <shared_mutex>
 #include <string_view>
+
+#include "xxh3.h"
+#include "xxhash.h"
 
 using namespace M;
 using namespace Cache;
@@ -379,10 +381,11 @@ struct FilesystemBackend : public BlobCacheBackend {
       // Copy the data into the file buffer.
       os.write(obj->getBufferStart(), obj->getBufferSize());
 
+      StringRef buffer = obj->getBuffer();
+
       // Compute and copy the hash as well.
-      llvm::XXH128_hash_t hash =
-          llvm::xxh3_128bits(arrayRefFromStringRef(obj->getBuffer()));
-      os.write(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
+      XXH128_hash_t hash = XXH3_128bits(buffer.data(), buffer.size());
+      os.write(llvm::bit_cast<char *>(&hash), sizeof(XXH128_hash_t));
     };
 
     // Safely process creating the file, taking into account that we may
@@ -436,15 +439,13 @@ struct FilesystemBackend : public BlobCacheBackend {
     StringRef contentsAndHash = buffer->getBuffer();
 
     // Get a StringRef of the contents without the hash.
-    StringRef contents = contentsAndHash.drop_back(sizeof(llvm::XXH128_hash_t));
-    llvm::XXH128_hash_t computedHash =
-        llvm::xxh3_128bits(arrayRefFromStringRef(contents));
-    StringRef storedHash =
-        contentsAndHash.take_back(sizeof(llvm::XXH128_hash_t));
+    StringRef contents = contentsAndHash.drop_back(sizeof(XXH128_hash_t));
+    XXH128_hash_t computedHash = XXH3_128bits(contents.data(), contents.size());
+    StringRef storedHash = contentsAndHash.take_back(sizeof(XXH128_hash_t));
 
     // Check the computed hash against the hash in the file.
     if (memcmp(llvm::bit_cast<char *>(&computedHash), storedHash.data(),
-               sizeof(llvm::XXH128_hash_t)) != 0) {
+               sizeof(XXH128_hash_t)) != 0) {
       return Error("corrupted file: stored hash and computed hash did not "
                    "match for file '" +
                    Twine(filePath->string()) + "'");

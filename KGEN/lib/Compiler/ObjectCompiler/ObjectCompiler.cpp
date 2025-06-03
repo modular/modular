@@ -54,12 +54,14 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/xxhash.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+
+#include "xxh3.h"
+#include "xxhash.h"
 
 using namespace M;
 using namespace KGEN;
@@ -326,8 +328,7 @@ writeBytesToTempWithHash(const std::string &saveTempsPrefix,
 
   // Include unique hash as part of name.
   assert(sizeof(uint8_t) == sizeof(char) && "Assume char is 8 bits");
-  auto hash =
-      llvm::xxh3_128bits(ArrayRef((const uint8_t *)buf.data(), buf.size()));
+  auto hash = XXH3_128bits(buf.data(), buf.size());
   std::string outPath =
       saveTempsPrefix + "." + llvm::utohexstr(hash.high64, /*LowerCase=*/true) +
       llvm::utohexstr(hash.low64, /*LowerCase=*/true) + postfix;
