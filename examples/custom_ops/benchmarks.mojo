@@ -175,7 +175,7 @@ def matmul():
     bench.bench_function[matmul_cpu](BenchId("cpu", "naive"), metrics)
 
     @parameter
-    if has_nvidia_gpu_accelerator():
+    if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[Input, b_spec](gpu_ctx).rand()
