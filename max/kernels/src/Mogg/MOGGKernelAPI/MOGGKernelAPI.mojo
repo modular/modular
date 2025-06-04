@@ -443,6 +443,22 @@ fn reshape_contiguous_buffer[
 # ===-----------------------------------------------------------------------===#
 
 
+@register_internal("get_simd_width_for_dtypes")
+@always_inline
+fn get_simd_width_for_dtypes[
+    dtypes: StaticTuple[DType], target: StaticString
+]() -> Int:
+    constrained[dtypes.size > 0]()
+
+    var width = get_kernel_simd_width[dtypes[0], target]()
+
+    @parameter
+    for i in range(dtypes.size - 1):
+        width = max(get_kernel_simd_width[dtypes[i + 1], target](), width)
+
+    return width
+
+
 @register_internal("get_address_space")
 fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
