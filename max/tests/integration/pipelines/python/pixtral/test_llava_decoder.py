@@ -234,6 +234,7 @@ def mistral_given_pytorch_mistral(
         embedding_layer,
         kv_params,
         kv_collection_constructor,
+        rope,
     )
     return model
 
