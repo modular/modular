@@ -31,43 +31,19 @@ struct __MLIRType[T: AnyTrivialRegType](Movable, Copyable, ExplicitlyCopyable):
 # ===-----------------------------------------------------------------------===#
 
 
-trait _IntNext(Copyable):
+trait _IntIter(Copyable):
+    fn __len__(self) -> Int:
+        ...
+
     fn __next__(mut self) -> Int:
         ...
 
 
-trait _UIntNext(Copyable):
-    fn __next__(mut self) -> UInt:
-        ...
-
-
-trait _IntIter(_IntNext):
-    fn __len__(self) -> Int:
-        ...
-
-
-trait _UIntIter(_UIntNext):
+trait _UIntIter(Copyable):
     fn __len__(self) -> UInt:
         ...
 
-
-trait _IntIterable(_IntIter):
-    fn __iter__(self) -> Self:
-        ...
-
-
-trait _UIntIterable(_UIntIter):
-    fn __iter__(self) -> Self:
-        ...
-
-
-trait _StridedIterable(_IntIter):
-    fn __iter__(self) -> _StridedRangeIterator:
-        ...
-
-
-trait _UIntStridedIterable(_UIntIter):
-    fn __iter__(self) -> _UIntStridedRangeIterator:
+    fn __next__(mut self) -> UInt:
         ...
 
 
@@ -100,30 +76,6 @@ fn declval[T: AnyType]() -> T:
 
 
 fn parameter_for_generator[
-    T: _IntIterable,
-](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
-    return _generator(range.__iter__())
-
-
-fn parameter_for_generator[
-    T: _UIntIterable,
-](range: T) -> _UIntParamForIterator[__type_of(declval[T]().__iter__())]:
-    return _generator(range.__iter__())
-
-
-fn parameter_for_generator[
-    T: _StridedIterable,
-](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
-    return _generator(range.__iter__())
-
-
-fn parameter_for_generator[
-    T: _UIntStridedIterable,
-](range: T) -> _UIntParamForIterator[__type_of(declval[T]().__iter__())]:
-    return _generator(range.__iter__())
-
-
-fn _generator[
     IteratorT: _IntIter
 ](it: IteratorT) -> _ParamForIterator[IteratorT]:
     if it.__len__() != 0:
@@ -135,7 +87,7 @@ fn _generator[
     return _ParamForIterator(value^, 0, True)
 
 
-fn _generator[
+fn parameter_for_generator[
     IteratorT: _UIntIter
 ](it: IteratorT) -> _UIntParamForIterator[IteratorT]:
     if it.__len__() != 0:

@@ -21,11 +21,7 @@ from math import ceildiv
 # FIXME(MOCO-658): Explicit conformance to these traits shouldn't be needed.
 from builtin._stubs import (
     _IntIter,
-    _IntIterable,
-    _StridedIterable,
     _UIntIter,
-    _UIntIterable,
-    _UIntStridedIterable,
 )
 from python import PythonObject
 
@@ -50,7 +46,7 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
+struct _ZeroStartingRange(Sized, ReversibleRange, _IntIter, Movable):
     alias _IndexType = Int
     var curr: Int
     var end: Int
@@ -91,7 +87,7 @@ struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
+struct _SequentialRange(Sized, ReversibleRange, _IntIter):
     alias _IndexType = Int
     var start: Int
     var end: Int
@@ -154,7 +150,7 @@ struct _StridedRangeIterator(Sized, _IntIter):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRange(Sized, ReversibleRange, _StridedIterable):
+struct _StridedRange(Sized, ReversibleRange, _IntIter):
     alias _IndexType = Int
     var start: Int
     var end: Int
@@ -394,7 +390,7 @@ fn range(
 
 
 @register_passable("trivial")
-struct _UIntZeroStartingRange(UIntSized, _UIntIterable):
+struct _UIntZeroStartingRange(UIntSized, _UIntIter):
     alias _IndexType = UInt
     var curr: UInt
     var end: UInt
@@ -453,7 +449,7 @@ struct _UIntStridedRangeIterator(UIntSized, _UIntIter):
 
 
 @register_passable("trivial")
-struct _UIntStridedRange(UIntSized, _UIntStridedIterable):
+struct _UIntStridedRange(UIntSized, _UIntIter):
     alias _IndexType = UInt
     var start: UInt
     var end: UInt
