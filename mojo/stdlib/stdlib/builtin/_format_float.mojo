@@ -760,6 +760,11 @@ fn _is_left_endpoint_integer_shorter_interval[
         ]()
     )
 
+fn _uint128_low(input: UInt128) -> UInt64:
+    return input.cast[DType.uint64]()
+
+fn _uint128_high(input: UInt128) -> UInt64:
+    return (input >> 64).cast[DType.uint64]()
 
 # fmt: off
 alias cache_f32 = StaticTuple[UInt64, 78](
