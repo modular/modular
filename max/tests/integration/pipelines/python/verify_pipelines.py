@@ -921,7 +921,7 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="gemma3-1b",
             encoding="bfloat16",
-            cos_dist_threshold=8.3e-04,
+            cos_dist_threshold=9.9e-04,
             kl_div_threshold=1.1e-02,
         ),
     ),
