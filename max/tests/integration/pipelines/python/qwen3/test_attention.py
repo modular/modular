@@ -232,7 +232,6 @@ def generate_max_outputs(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 inputs.tensor,
                 kv_collection,
-                rope.freqs_cis,
                 input_row_offsets.tensor,
             )
         )
