@@ -593,61 +593,102 @@ class AudioGenerationConfig(PipelineConfig):
     If True, the prompt tokens attend to the current block.
     """
 
+    audio_decoder_config: dict[str, Any] = field(default_factory=dict)
+    """Parameters to pass to the audio decoder model."""
+
     _run_model_test_mode: bool = False
     """Test-only flag that indicates that test parameters have been passed to
     the model, such as leaving the audio decoder weights empty or using a
     dummy speech language model."""
 
-    def __init__(self, audio_config: dict[str, str], **kwargs: Any) -> None:
+    def __init__(
+        self,
+        audio_decoder: str,
+        audio_prompt_speakers: str = "",
+        audio_decoder_weights: str = "",
+        block_sizes: list[int] | None = None,
+        buffer: int = 0,
+        block_causal: bool = False,
+        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
+        prepend_prompt_speech_tokens_causal: bool = False,
+        run_model_test_mode: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        # Must call the superclass's __init__ first, otherwise PipelineConfig's
+        # init will override values defined in the AudioGenerationConfig.
         PipelineConfig.__init__(self, **kwargs)
-
-        self.audio_decoder = audio_config.pop("audio_decoder", "")
-        if not self.audio_decoder:
-            raise ValueError(
-                "When running the audio generation task, --audio-decoder must be specified"
-            )
-        self.audio_prompt_speakers = audio_config.pop(
-            "audio_prompt_speakers", ""
-        )
-        self.audio_decoder_weights = audio_config.pop(
-            "audio_decoder_weights", ""
-        )
-
-        # Configuration for audio generation streaming.
-        block_sizes = audio_config.pop("block_sizes", "")
-        if not block_sizes:
-            self.block_sizes = None
-        else:
-            self.block_sizes = [int(size) for size in block_sizes.split(",")]
-
-        self.buffer = _parse_flag_int(audio_config.pop("buffer", "0"), "buffer")
-
-        self.block_causal = _parse_flag_bool(
-            audio_config.pop("block_causal", "false"), "block_causal"
-        )
-
-        self.prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
-            audio_config.pop("prepend_prompt_speech_tokens", "never")
-        )
-
-        self.prepend_prompt_speech_tokens_causal = _parse_flag_bool(
-            audio_config.pop("prepend_prompt_speech_tokens_causal", "false"),
-            "prepend_prompt_speech_tokens_causal",
-        )
-
-        self._run_model_test_mode = _parse_flag_bool(
-            audio_config.pop("run_model_test_mode", "false"),
-            "run_model_test_mode",
-        )
-
-        if self.block_causal:
+        if block_causal:
             raise NotImplementedError("Causal generation is not implemented")
-        if self.prepend_prompt_speech_tokens_causal:
+        if prepend_prompt_speech_tokens_causal:
             raise NotImplementedError(
                 "Prepend prompt speech tokens causal is not implemented"
             )
 
-        if audio_config:
+        self.audio_decoder = audio_decoder
+        self.audio_prompt_speakers = audio_prompt_speakers
+        self.audio_decoder_weights = audio_decoder_weights
+        self.block_sizes = block_sizes
+        self.buffer = buffer
+        self.block_causal = block_causal
+        self.prepend_prompt_speech_tokens = prepend_prompt_speech_tokens
+        self.prepend_prompt_speech_tokens_causal = (
+            prepend_prompt_speech_tokens_causal
+        )
+        self._run_model_test_mode = run_model_test_mode
+
+    @classmethod
+    def from_flags(
+        cls, audio_flags: dict[str, str], **config_flags: Any
+    ) -> AudioGenerationConfig:
+        audio_decoder = audio_flags.pop("audio_decoder", "")
+        if not audio_decoder:
             raise ValueError(
-                f"Unknown audio generation option(s): {audio_config}"
+                "When running the audio generation task, --audio-decoder must be specified"
             )
+        audio_prompt_speakers = audio_flags.pop("audio_prompt_speakers", "")
+        audio_decoder_weights = audio_flags.pop("audio_decoder_weights", "")
+
+        # Configuration for audio generation streaming.
+        block_sizes_str = audio_flags.pop("block_sizes", "")
+        if not block_sizes_str:
+            block_sizes = None
+        else:
+            block_sizes = [int(size) for size in block_sizes_str.split(",")]
+
+        buffer = _parse_flag_int(audio_flags.pop("buffer", "0"), "buffer")
+
+        block_causal = _parse_flag_bool(
+            audio_flags.pop("block_causal", "false"), "block_causal"
+        )
+
+        prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
+            audio_flags.pop("prepend_prompt_speech_tokens", "never")
+        )
+
+        prepend_prompt_speech_tokens_causal = _parse_flag_bool(
+            audio_flags.pop("prepend_prompt_speech_tokens_causal", "false"),
+            "prepend_prompt_speech_tokens_causal",
+        )
+
+        run_model_test_mode = _parse_flag_bool(
+            audio_flags.pop("run_model_test_mode", "false"),
+            "run_model_test_mode",
+        )
+
+        if audio_flags:
+            raise ValueError(
+                f"Unknown audio generation option(s): {audio_flags}"
+            )
+
+        return cls(
+            audio_decoder=audio_decoder,
+            audio_prompt_speakers=audio_prompt_speakers,
+            audio_decoder_weights=audio_decoder_weights,
+            block_sizes=block_sizes,
+            buffer=buffer,
+            block_causal=block_causal,
+            prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,
+            prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
+            run_model_test_mode=run_model_test_mode,
+            **config_flags,
+        )

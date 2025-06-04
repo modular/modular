@@ -178,7 +178,6 @@ async def _async_worker(
             pc.beat()
             if pc.is_canceled():
                 break
-
             try:
                 (prompts, max_new_tokens, use_tqdm) = request_queue.get(
                     timeout=0.3

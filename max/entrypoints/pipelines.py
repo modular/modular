@@ -209,7 +209,7 @@ def cli_serve(
     # Load tokenizer & pipeline.
     pipeline_config: PipelineConfig
     if task == PipelineTask.AUDIO_GENERATION:
-        pipeline_config = AudioGenerationConfig(
+        pipeline_config = AudioGenerationConfig.from_flags(
             parse_task_flags(task_flags), **config_kwargs
         )
     else:
@@ -356,7 +356,7 @@ def text_to_speech(
     from max.entrypoints.cli.synthesize_speech import synthesize_speech
     from max.pipelines import AudioGenerationConfig
 
-    config = AudioGenerationConfig(
+    config = AudioGenerationConfig.from_flags(
         parse_task_flags(task_flags), **config_kwargs
     )
     synthesize_speech(config, prompt, voice, output or "output.wav")
