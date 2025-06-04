@@ -422,7 +422,7 @@ class PipelineConfig(MAXConfig):
         # TODO(E2EOPT-28): remove this constraint.
         # Gemma has a MHA head size of 256.
         # This requires a kv cache page size of at least 256.
-        if arch.name == "Gemma3ForCausalLM":
+        if "Gemma3" in arch.name:
             model_config._kv_cache_config.kv_cache_page_size = max(
                 model_config._kv_cache_config.kv_cache_page_size, 256
             )
