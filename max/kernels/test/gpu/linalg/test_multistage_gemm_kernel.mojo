@@ -16,16 +16,15 @@ from layout import Layout
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
 
-alias a_type = DType.bfloat16
-alias b_type = DType.bfloat16
-alias c_type = DType.bfloat16
-alias transpose_b = False
-
 
 fn multistage_gemm_simple[
     M: Int,
     N: Int,
     K: Int,
+    a_type: DType = DType.bfloat16,
+    b_type: DType = DType.bfloat16,
+    c_type: DType = DType.bfloat16,
+    transpose_b: Bool = False,
 ](ctx: DeviceContext,) raises:
     alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
     alias config = kernels.ampere_128x128_4
@@ -54,7 +53,7 @@ fn multistage_gemm_simple[
         config=config,
     ]
 
-    var gemm_kernel = ctx.compile_function[gemm_kernel_type, dump_asm=True](
+    var gemm_kernel = ctx.compile_function[gemm_kernel_type](
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             config.shared_mem_usage()
         ),
@@ -63,4 +62,25 @@ fn multistage_gemm_simple[
 
 fn main() raises:
     with DeviceContext() as ctx:
-        multistage_gemm_simple[1024, 1024, 1024](ctx)
+        multistage_gemm_simple[
+            1024,
+            1024,
+            1024,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            False,
+        ](ctx)
+        multistage_gemm_simple[
+            1024,
+            1024,
+            1024,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            False,
+        ](ctx)
+
+        multistage_gemm_simple[
+            550, 2048, 8, DType.float32, DType.float32, DType.float32, False
+        ](ctx)

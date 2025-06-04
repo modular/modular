@@ -25,7 +25,7 @@ from sys import (
     llvm_intrinsic,
     simdwidthof,
 )
-
+from sys import sizeof
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -41,7 +41,7 @@ from gpu import (
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, DEFAULT_GPU, H100
+from gpu.host.info import A100, B200, B100, DEFAULT_GPU, H100
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
 from layout._ndbuffer_stub import (
@@ -311,6 +311,83 @@ struct AMDSchedulerTuning:
 
 
 @always_inline
+fn _matmul_sm100[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    use_tensor_core: Bool = False,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    config: OptionalReg[
+        MatmulConfig[a_type, b_type, c_type, transpose_b]
+    ] = None,
+    _trace_description: StaticString = "",
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: NDBuffer[mut=True, c_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[b_type, 2, _, _],
+    ctx: DeviceContext,
+) raises:
+    alias K = a.shape.get[1]()
+    alias a_shape = a.shape
+    alias b_shape = b.shape
+    alias c_shape = c.shape
+    var shape = GemmShape.get[transpose_b=False](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
+
+    try:
+        return matmul_vendor[
+            use_tensor_core=use_tensor_core,
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            config=config,
+            _trace_description=_trace_description,
+        ](c, a, b, ctx)
+    except:
+        # fallback to multistage/naive gemms if the cublas failed. This is a workaround for now for KERN-1812
+        @parameter
+        if K * sizeof[a_type]() >= 8 * 16:
+            alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
+            alias config = kernels.ampere_256x64_4
+            multistage_gemm[
+                transpose_b=transpose_b,
+                config=config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+                config,
+                ctx,
+            )
+        else:
+            alias BLOCK_DIM = 16
+            ctx.enqueue_function[
+                matmul_kernel_naive[
+                    c_type,
+                    a_type,
+                    b_type,
+                    BLOCK_DIM,
+                    transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ](
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            )
+        return
+
+
+@always_inline
 fn _matmul_gpu[
     c_type: DType,
     a_type: DType,
@@ -397,7 +474,21 @@ fn _matmul_gpu[
     # fmt: on
 
     @parameter
-    if env_get_bool["MODULE_USE_VENDOR_BLAS", False]() or DEFAULT_GPU > H100:
+    if DEFAULT_GPU > H100:
+        return _matmul_sm100[
+            c_type,
+            a_type,
+            b_type,
+            use_tensor_core,
+            transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
+            config=config,
+            _trace_description=_trace_description,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+    @parameter
+    if env_get_bool["MODULE_USE_VENDOR_BLAS", False]():
         return matmul_vendor[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
