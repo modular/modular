@@ -124,8 +124,6 @@ static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
 static constexpr StringLiteral kMOGGUpdateViewFunctionLabel =
     "mogg.update_view";
-static constexpr StringLiteral kMOGGPyTorchFallbackFunctionLabel =
-    "mogg.pytorch_fallback";
 
 // An array of attributes, each of which correspond to an input argument type.
 //
@@ -224,8 +222,7 @@ inline bool isElemwiseForeachFunc(Operation *gen) {
 inline bool isExtensibilityFunc(Operation *gen) {
   return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
                             gen->hasAttr(kMOGGShapeFunctionLabel) ||
-                            gen->hasAttr(kMOGGUpdateViewFunctionLabel) ||
-                            gen->hasAttr(kMOGGPyTorchFallbackFunctionLabel));
+                            gen->hasAttr(kMOGGUpdateViewFunctionLabel));
 }
 
 //===----------------------------------------------------------------------===//

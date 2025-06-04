@@ -34,8 +34,7 @@ inline bool isMojoDeviceContextPtr(LIT::StructType maybeCallContextPtr) {
 }
 
 inline bool fnNeedsConformances(LIT::FnOp fnOp) {
-  return fnOp.getSourceName() == "execute" ||
-         fnOp.getSourceName() == "pytorch_fallback";
+  return fnOp.getSourceName() == "execute";
 }
 
 inline bool isCustomType(LIT::StructType maybeCustom) {
