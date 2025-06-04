@@ -147,6 +147,17 @@ class PipelineOracle(ABC):
         return evaluate.PROMPTS
 
     @property
+    def inputs(self) -> list[TextGenerationRequest]:
+        """Input requests for the model.
+
+        By default, creates text-only requests from prompts. Multimodal pipelines
+        should override this to include images.
+        """
+        return [
+            TextGenerationRequest.text_only(prompt) for prompt in self.prompts
+        ]
+
+    @property
     def use_cache(self) -> bool:
         """Whether to use the KV cache, for HF transformers models only."""
         return True
@@ -161,23 +172,11 @@ class PipelineOracle(ABC):
 
         Can be overridden by subclasses that need custom preprocessing logic.
         """
-        # Create TextGenerationRequest objects
-        if isinstance(self, MultiModalPipelineOracle) and self.images:
-            requests = [
-                TextGenerationRequest.with_images(prompt, [img])
-                for prompt, img in zip(self.prompts, self.images)
-            ]
-        else:
-            requests = [
-                TextGenerationRequest.text_only(prompt)
-                for prompt in self.prompts
-            ]
-
         return torch_utils.run_text_generation(
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            requests=requests,
+            requests=self.inputs,
             print_outputs=True,
             use_cache=self.use_cache,
         )
@@ -199,6 +198,20 @@ class MultiModalPipelineOracle(PipelineOracle):
     def images(self) -> Optional[Sequence[str]]:
         """Images to run a multi-modal model on."""
         return [evaluate.IMAGES_MULTI_MODAL]
+
+    @property
+    def inputs(self) -> list[TextGenerationRequest]:
+        """Input requests for multimodal model."""
+        if self.images:
+            return [
+                TextGenerationRequest.with_images(prompt, [img])
+                for prompt, img in zip(self.prompts, self.images)
+            ]
+        else:
+            return [
+                TextGenerationRequest.text_only(prompt)
+                for prompt in self.prompts
+            ]
 
 
 class InternVLPipelineOracle(MultiModalPipelineOracle):
@@ -892,10 +905,7 @@ def generate_llm_logits(
             results = evaluate.run_model(
                 max_pipeline_and_tokenizer.model,
                 max_pipeline_and_tokenizer.tokenizer,
-                prompts=pipeline_oracle.prompts,
-                images=pipeline_oracle.images
-                if isinstance(pipeline_oracle, MultiModalPipelineOracle)
-                else None,
+                requests=pipeline_oracle.inputs,
                 print_outputs=True,
                 batch_size=max_batch_size,
                 reference=reference,

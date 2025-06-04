@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any, Optional, TypedDict
 
 import numpy as np
@@ -40,6 +41,34 @@ class ModelOutput(TypedDict):
     """Outputs from a text generation model."""
     embeddings: NotRequired[np.ndarray]
     """Outputs from a text embedding model."""
+
+
+@dataclass(frozen=True)
+class TextGenerationRequest:
+    """Request for text generation testing, supporting both text-only and multimodal inputs."""
+
+    prompt: str
+    """The text prompt to be processed by the model."""
+
+    images: list[str]
+    """List of image URLs or file paths. None for text-only requests."""
+
+    @property
+    def is_multimodal(self) -> bool:
+        """Returns True if this request includes images."""
+        return len(self.images) > 0
+
+    @classmethod
+    def text_only(cls, prompt: str) -> TextGenerationRequest:
+        """Creates a text-only generation request."""
+        return cls(prompt=prompt, images=[])
+
+    @classmethod
+    def with_images(
+        cls, prompt: str, images: list[str]
+    ) -> TextGenerationRequest:
+        """Creates a multimodal generation request."""
+        return cls(prompt=prompt, images=images)
 
 
 NUM_STEPS = 10
@@ -78,20 +107,18 @@ def resolve_image_from_url(image_ref: str) -> bytes:
 def run_model(
     model: PipelineModel,
     tokenizer: PipelineTokenizer,
-    prompts: Iterable[str] = PROMPTS,
-    images: Optional[Iterable[str]] = None,
+    requests: Iterable[TextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
     batch_size: int = 1,
     reference: list[ModelOutput] | None = None,
 ) -> list[dict[str, Any]]:
-    """Runs the model for N steps on each prompt provide."""
+    """Runs the model for N steps on each request provided."""
     return asyncio.run(
         run_model_async(
             model,
             tokenizer,
-            prompts=prompts,
-            images=images,
+            requests=requests,
             num_steps=num_steps,
             print_outputs=print_outputs,
             batch_size=batch_size,
@@ -103,22 +130,14 @@ def run_model(
 async def run_model_async(
     model: PipelineModel,
     tokenizer: PipelineTokenizer,
-    prompts: Iterable[str] = PROMPTS,
-    images: Optional[Iterable[str]] = None,
+    requests: Iterable[TextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
     batch_size: int = 1,
     reference: list[ModelOutput] | None = None,
 ) -> list[dict[str, Any]]:
-    """Runs the model for N steps on each prompt provide."""
+    """Runs the model for N steps on each request provided."""
     assert batch_size >= 1
-
-    # Download images.
-    downloaded_images: Optional[list[bytes]] = None
-    if images:
-        downloaded_images = []
-        for url in images:
-            downloaded_images.append(resolve_image_from_url(url))
 
     results = []
 
@@ -154,22 +173,28 @@ async def run_model_async(
                 )
             model.kv_manager.release(context.cache_seq_id)
 
-    # Evaluate prompts.
+    # Evaluate requests.
     batch_contexts: dict[str, Any] = {}
     batch_prompts: dict[str, str] = {}
     batch_reference: dict[str, ModelOutput] = {}
-    for i, prompt in enumerate(prompts):
+
+    for i, request in enumerate(requests):
         curr_req_id = str(uuid.uuid4())
+
         context = await tokenizer.new_context(
             TokenGeneratorRequest(
                 id="",
                 index=len(batch_contexts),
-                prompt=prompt,
+                prompt=request.prompt,
                 model_name="llama3",
-                images=downloaded_images,
+                # Download images for this specific request.
+                images=[
+                    resolve_image_from_url(image_url)
+                    for image_url in request.images
+                ],
             )
         )
-        batch_prompts[curr_req_id] = prompt
+        batch_prompts[curr_req_id] = request.prompt
         batch_contexts[curr_req_id] = context
         if reference:
             batch_reference[curr_req_id] = reference[i]

@@ -152,6 +152,7 @@ modular_py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":evaluate",
         requirement("accelerate"),  # Required to run torch models on GPU.
         requirement("pillow"),
         requirement("torch"),

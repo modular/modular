@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 
 import requests
 import torch
@@ -22,33 +21,7 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
-
-@dataclass(frozen=True)
-class TextGenerationRequest:
-    """Request for text generation testing, supporting both text-only and multimodal inputs."""
-
-    prompt: str
-    """The text prompt to be processed by the model."""
-
-    images: list[str]
-    """List of image URLs or file paths. None for text-only requests."""
-
-    @property
-    def is_multimodal(self) -> bool:
-        """Returns True if this request includes images."""
-        return len(self.images) > 0
-
-    @classmethod
-    def text_only(cls, prompt: str) -> TextGenerationRequest:
-        """Creates a text-only generation request."""
-        return cls(prompt=prompt, images=[])
-
-    @classmethod
-    def with_images(
-        cls, prompt: str, images: list[str]
-    ) -> TextGenerationRequest:
-        """Creates a multimodal generation request."""
-        return cls(prompt=prompt, images=images)
+from test_common.evaluate import TextGenerationRequest
 
 
 def _process_images(images: Iterable[str]) -> list[Image.Image]:
@@ -125,6 +98,7 @@ def run_text_generation(
                 do_sample=False,
                 logits_processor=LogitsProcessorList([store_logits]),
                 num_return_sequences=1,
+                # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
                 pad_token_id=getattr(data_processor, "eos_token_id", None),
                 use_cache=use_cache,
             )
@@ -142,6 +116,7 @@ def run_text_generation(
                 do_sample=False,
                 logits_processor=LogitsProcessorList([store_logits]),
                 num_return_sequences=1,
+                # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
                 pad_token_id=getattr(data_processor, "eos_token_id", None),
                 use_cache=use_cache,
             )
@@ -237,6 +212,7 @@ def run_text_generation_with_custom_image_processing(
             do_sample=False,
             logits_processor=LogitsProcessorList([store_logits]),
             num_return_sequences=1,
+            # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
             pad_token_id=getattr(data_processor, "eos_token_id", None),
         )
 
