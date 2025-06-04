@@ -41,7 +41,7 @@ fn _test_make_indices[num_indices: Int]() -> IndexList[num_indices]:
 struct ReduceBuffers:
     @staticmethod
     fn execute(
-        output: OutputTensor[type = DType.float32, rank=1, *_],
-        inputs: MutableInputVariadicTensors[type = DType.float32, rank=1, *_],
+        output: OutputTensor[dtype = DType.float32, rank=1, *_],
+        inputs: MutableInputVariadicTensors[dtype = DType.float32, rank=1, *_],
     ) -> None:
         print("Success!")

@@ -26,8 +26,8 @@ struct MyAdd:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
-        y: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        y: InputTensor[dtype = out.dtype, rank = out.rank],
     ):
         out[0] = x[0] + y[0]
 
@@ -44,7 +44,7 @@ struct OpWidthDeviceContext:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
         ctx: DeviceContextPtr,
     ):
         out[0] = x[0]
@@ -61,8 +61,8 @@ struct OpWithMultipleOutputs:
     @staticmethod
     fn execute(
         out0: OutputTensor,
-        out1: OutputTensor[type = out0.type, rank = out0.rank],
-        x: InputTensor[type = out0.type, rank = out0.rank],
+        out1: OutputTensor[dtype = out0.dtype, rank = out0.rank],
+        x: InputTensor[dtype = out0.dtype, rank = out0.rank],
     ):
         out0[0] = 2 * x[0]
         out1[0] = 4 * x[0]
@@ -99,7 +99,7 @@ struct MyIntMemory(Movable):
 @compiler.register("make_my_int_memory")
 struct MakeMyIntMemory:
     @staticmethod
-    fn execute(x: InputTensor[type = DType.int32, rank=1]) -> MyIntMemory:
+    fn execute(x: InputTensor[dtype = DType.int32, rank=1]) -> MyIntMemory:
         return MyIntMemory(Int(x[0]))
 
 
@@ -115,7 +115,7 @@ struct MyIntReg(Movable):
 @compiler.register("make_my_int_reg")
 struct MakeMyIntReg:
     @staticmethod
-    fn execute(x: InputTensor[type = DType.int32, rank=1]) -> MyIntReg:
+    fn execute(x: InputTensor[dtype = DType.int32, rank=1]) -> MyIntReg:
         return MyIntReg(Int(x[0]))
 
 
@@ -123,12 +123,12 @@ struct MakeMyIntReg:
 struct VariadicInputToOutput:
     @staticmethod
     fn execute[
-        type: DType,
+        dtype: DType,
         size: Int,
     ](
-        output: OutputVariadicTensors[type, rank=1, size=size],
-        bias: InputTensor[type=type, rank=1],
-        input: InputVariadicTensors[type, rank=1, size=size],
+        output: OutputVariadicTensors[dtype, rank=1, size=size],
+        bias: InputTensor[dtype=dtype, rank=1],
+        input: InputVariadicTensors[dtype, rank=1, size=size],
     ):
         @parameter
         for i in range(size):
@@ -141,12 +141,12 @@ struct VariadicInputToOutput:
 struct VariadicAdd:
     @staticmethod
     fn execute[
-        type: DType,
+        dtype: DType,
         size: Int,
     ](
-        out: OutputTensor[type=type, rank=1],
-        bias: InputTensor[type=type, rank=1],
-        input: InputVariadicTensors[type, rank=1, size=size],
+        out: OutputTensor[dtype=dtype, rank=1],
+        bias: InputTensor[dtype=dtype, rank=1],
+        input: InputVariadicTensors[dtype, rank=1, size=size],
     ):
         for i in range(out.size()):
             out[i] = bias[i]
@@ -161,8 +161,8 @@ struct BinaryKernelWithRaises:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
-        y: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        y: InputTensor[dtype = out.dtype, rank = out.rank],
     ) raises:
         out[0] = x[0] + y[0]
 
@@ -186,7 +186,7 @@ struct OpWithIntParameter[IntParameter: Int]:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
     ):
         out[0] = x[0]
         print(IntParameter)
@@ -197,7 +197,7 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
     ):
         out[0] = x[0]
         print(DTypeParameter)
@@ -208,7 +208,7 @@ struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
     ):
         out[0] = x[0]
         print(StringParameter)
@@ -219,7 +219,7 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
     ):
         out[0] = x[0]
         print(StringParameter)
@@ -230,7 +230,7 @@ struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
     fn execute(
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
     ):
         out[0] = x[0]
         print(StringParameter)

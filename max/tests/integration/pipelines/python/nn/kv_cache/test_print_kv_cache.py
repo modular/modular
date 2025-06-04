@@ -56,7 +56,7 @@ class PrintKVCacheModel:
             parameters={
                 "num_heads": self.kv_params.n_kv_heads_per_device,
                 "head_dim": self.kv_params.head_dim,
-                "type": self.kv_params.dtype,
+                "dtype": self.kv_params.dtype,
             },
         )
 
