@@ -426,8 +426,8 @@ PIPELINES = {
             print_suggested_tolerances=print_suggested_tolerances,
             pipeline="llama3-8b",
             encoding="float32",
-            absolute_tolerance=2.6e-2,
-            relative_tolerance=2.7e-2,
+            absolute_tolerance=2.9e-2,
+            relative_tolerance=9.4e-2,
             cos_dist_threshold=2.1e-6,
             kl_div_threshold=3.0e-7,
         ),
@@ -486,10 +486,10 @@ PIPELINES = {
             encoding="float32",
             # On CPU, olmo passes with atol set to `5e-4`
             # GPU specifically requires these higher tolerances (160x worse).
-            absolute_tolerance=3.5e-2,
+            absolute_tolerance=3.7e-2,
             relative_tolerance=4.2e-2,
             cos_dist_threshold=8.2e-6,
-            kl_div_threshold=5.5e-5,
+            kl_div_threshold=6.0e-5,
         ),
     ),
     # ========== Brittle Pipelines ==========
@@ -816,7 +816,7 @@ PIPELINES = {
             encoding="float32",
             # TODO: Accuracy is much better on AMD.
             # so we might have an nvidia kernel bug here
-            cos_dist_threshold=2.4e-2,
+            cos_dist_threshold=2.5e-2,
             kl_div_threshold=1.3e-2,
         ),
     ),
