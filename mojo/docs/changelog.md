@@ -141,6 +141,9 @@ what we publish.
   needing the use of the `var` keyword, e.g.: `x = 4; y: UInt8 = 5` implicitly
   declares `x` as type `Int`, but implicitly declares `y` with type `UInt8`.
 
+- `def` arguments are no longer implicitly mutable. If you would like to have a
+   locally mutable argument, declare it `owned` explicitly.
+
 ### Standard library changes
 
 - The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
