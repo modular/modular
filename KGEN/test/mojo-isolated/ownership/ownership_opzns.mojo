@@ -168,8 +168,8 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.fn @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: lit.ownership.use %a
+    # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: lifetime.start %x
     # CHECK-NEXT: lit.ref.store [[A]], %x
@@ -221,8 +221,8 @@ fn takeTwo(owned x: MemExample, owned y: MemExample):
 # Check that copies that are immediately destroyed are elided.
 # CHECK-LABEL: lit.fn @"optimizeCopyElision
 fn optimizeCopyElision():
-    # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: lifetime.start %a
     # CHECK-NEXT: lit.ref.store [[TMP]], %a
     var a = RegExample()
@@ -315,8 +315,8 @@ fn optimizeCopyToMove():
 
     # All the copyinit's should be removed.
 
-    # CHECK-NEXT: %r1 = lit.var.decl "r1"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: %r1 = lit.var.decl "r1"
     # CHECK-NEXT: lifetime.start %r1
     # CHECK-NEXT: lit.ref.store [[TMP]], %r1
     var r1 = RegExample()

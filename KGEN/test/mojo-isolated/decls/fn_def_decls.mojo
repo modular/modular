@@ -57,7 +57,9 @@ fn default_args(a: Index, b: Index = `8`, *, c: Index, d: Index = `9`):
 
 # CHECK-LABEL: lit.fn @"variadic_and_kw_only
 # CHECK-SAME: (%a: index, %b: index, %args: !kgen.variadic<index> pos_vararg, *, %c: index, %d: index = 9)
-fn variadic_and_kw_only(a: Index, b: Index, *args: Index, c: Index, d: Index = `9`):
+fn variadic_and_kw_only(
+    a: Index, b: Index, *args: Index, c: Index, d: Index = `9`
+):
     pass
 
 
@@ -65,7 +67,12 @@ fn variadic_and_kw_only(a: Index, b: Index, *args: Index, c: Index, d: Index = `
 # CHECK-SAME: (%a: index, %b: index = 0, %args: !kgen.variadic<index> pos_vararg = *?,
 # CHECK-SAME:  *, %c: index, %d: index = 1, %kwargs: {{.*}}|kw_vararg = *?)
 fn variadic_arg_after_default(
-    a: Index, b: Index = `0`, *args: Index, c: Index, d: Index = `1`, **kwargs: Index
+    a: Index,
+    b: Index = `0`,
+    *args: Index,
+    c: Index,
+    d: Index = `1`,
+    **kwargs: Index,
 ):
     pass
 
@@ -89,7 +96,9 @@ fn inferred_params[x: Index, y: Index, //]():
 # CHECK-SAME: <x, +, y>
 fn inferred_params_regular[x: Index, //, y: Index]():
     # CHECK-NEXT: !lit.generator<<"x": index, +, "y": index>() -> !kgen.none> = <@
-    alias fn_type: fn[x: Index, //, y: Index] () -> None = inferred_params_regular
+    alias fn_type: fn[
+        x: Index, //, y: Index
+    ] () -> None = inferred_params_regular
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_pos_only
@@ -119,6 +128,7 @@ struct MemoryOnly:
 struct NonTrivialReg:
     pass
 
+
 struct TypeWithParametricSelf:
     fn method(ref self):
         pass
@@ -132,14 +142,15 @@ struct ValueWithTypeWithParametricSelf:
 def test_def_arg_box_mbvalue(
     a: TypeWithParametricSelf, b: ValueWithTypeWithParametricSelf
 ):
-    # CHECK-NEXT: %xyz = lit.var.decl "xyz"
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}method{{.*}}(%a)
+    # CHECK-NEXT: %xyz = lit.var.decl "xyz"
     # CHECK-NEXT: lit.ref.store [[TMP]], %xyz
     var xyz = a.method()
 
     # MOCO-715: failed to infer implicit parameter 'mut' of argument 'self' type 'Pointer
     # CHECK-NEXT: [[MEMBERREF:%.*]] = lit.ref.struct.ger %b[member]
     _ = b.member.method()
+
 
 fn returnsMultiple() -> (Int, MemoryOnly):
     pass

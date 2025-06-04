@@ -729,7 +729,7 @@ struct CantSynthesize:
 # expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
-  var x : InMemStruct 
+  var x : InMemStruct
 
 
 @value
@@ -1148,4 +1148,4 @@ struct FieldwiseInitExample[T: Movable]:
 
   # expected-note @below {{initializer declared here}}
   fn __init__(out self, x: Int, y: T):
-    pass 
+    pass

@@ -343,7 +343,6 @@ fn test_mergewith(cond: __mlir_type.i1, a: TypeA, b: TypeB, c: TypeC, d: TypeD):
 
 # CHECK-LABEL: lit.fn @"chained_cmp
 fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
-    # CHECK-NEXT: %res = lit.var.decl "res"
     # CHECK:      [[CMP_A_B:%.*]] = lit.call @{{.*}}__lt__{{.*}}(%a, %b)
     # CHECK-NEXT: %[[CMP_A_B_I1:.*]] = lit.call @{{.*}}__mlir_i1__{{.*}}([[CMP_A_B]])
     # CHECK-NEXT: %[[IF_A_B:.*]] = hlcf.if %[[CMP_A_B_I1]]
@@ -358,6 +357,7 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   hlcf.yield [[CMP_A_B]]
     # CHECK-NEXT: }
+    # CHECK-NEXT: %res = lit.var.decl "res"
     # CHECK-NEXT: lit.ref.store %[[IF_A_B]], %res
     var res = a < b < c < d
 
@@ -388,8 +388,10 @@ alias chainedCmpAlias1 = 1 == 2 == 3 == 4 == 5
 alias chainedCmpAlias2 = 1 <= 2 <= 3 <= 4 <= 5
 # CHECK: lit.alias.decl *"chainedCmpAlias3{{.*}}": !Bool ={{.*}}{:i1 0}
 alias chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
+
+
+# CHECK-LABEL: lit.fn @"chainedCmpSemiDyn
 fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
-  # CHECK: [[XCMP:%.*]] = lit.var.decl "xCmp"
   # CHECK-NEXT: [[IFCOND:%.*]] = kgen.param.constant: i1 = <1>
   # CHECK-NEXT: [[FINALRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
   # CHECK-NEXT:   [[PV:%.*]] = {{.*}}constant{{.*}}77
@@ -414,6 +416,7 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
   # CHECK-NEXT:   hlcf.yield [[TRUEPARAM]]
   # CHECK-NEXT: }
+  # CHECK: [[XCMP:%.*]] = lit.var.decl "xCmp"
   # CHECK-NEXT: lit.ref.store [[FINALRESULT]], [[XCMP]]
   var xCmp = 5 < 77 < x < 105 < 177
   # A fully deep check of this would be a lot of work, but this at least
