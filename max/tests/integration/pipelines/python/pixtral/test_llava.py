@@ -467,7 +467,6 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         embedding_layer,
         kv_params,
         kv_collection_constructor,
-        rope,
     )
     return model, weights_registry
 
