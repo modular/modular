@@ -94,8 +94,8 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
 
-  # CHECK-NEXT: %regX = lit.var.decl {{.*}}
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
+  # CHECK-NEXT: %regX = lit.var.decl {{.*}}
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[AX]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %regX)
   var regX = a.x
@@ -117,9 +117,9 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   a.method(regX)
 
   # Drill into rvalue without cloning intermediate values.
-  # CHECK-NEXT: %v2xx = lit.var.decl "v2xx"
   # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
   # CHECK-NEXT: [[V2XX:%.*]] = lit.ref.struct.ger [[V2X]][x]
+  # CHECK-NEXT: %v2xx = lit.var.decl "v2xx"
   # CHECK-NEXT: [[VAL:%.*]] = lit.ref.load [[V2XX]]
   # CHECK-NEXT: lit.ref.store [[VAL]], %v2xx
   var v2xx = v2.x.x
@@ -1057,14 +1057,14 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
 # CHECK-SAME:   :!Int variadic_get({{.*}}a, 1)
 fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %b_0 = lit.var.decl
-    # CHECK: %v0 = lit.var.decl
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
+    # CHECK: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
+    # CHECK: %v0 = lit.var.decl
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}([[B1REF]], %v0)
     var v0 = b[1]
-    # CHECK: %v1 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B2REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
+    # CHECK: %v1 = lit.var.decl
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}([[B2REF]], %v1)
     var v1 = b[2]
 

@@ -12,7 +12,7 @@
 
 # Test a simple parser error.
 var var = 10
-# CHECK-STDERR: Expression [3]:2:5: expected name for 'var' declaration
+# CHECK-STDERR: Expression [3]:2:9: unexpected token in expression
 
 # Check that we can fix this in a following expression.
 var value = 25

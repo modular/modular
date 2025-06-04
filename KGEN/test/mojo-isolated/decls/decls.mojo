@@ -537,10 +537,10 @@ fn callDefaultArgument(x: Int) -> Int:
     # CHECK: [[ARG1:%.*]] = kgen.param.constant{{.*}}3
     # CHECK-NEXT: [[ARG2:%.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, [[ARG1]], [[ARG2]])
+    # CHECK-NEXT: %a = lit.var.decl "a"
     # CHECK-NEXT: lit.ref.store {{.*}}, %a
     var a = defaultArgument(x)
 
-    # CHECK-NEXT: %b = lit.var.decl
     # CHECK-NEXT: %[[ARG2:.*]] = kgen.param.constant{{.*}}5
     # CHECK-NEXT: lit.call {{.*}}defaultArgument{{.*}}(%x, %x, %[[ARG2]])
     var b = defaultArgument(x, x)
@@ -1274,8 +1274,8 @@ fn async_closure_capture(x: String):
     async fn capture_it():
         _ = x
 
-    # CHECK: Coroutine<{{.*}}{imm *"x`
-    # CHECK-NEXT: lit.async.call[{{.*}}capture_it
+    # CHECK: lit.async.call[{{.*}}capture_it
+    # CHECK:  %coro = lit.var.decl{{.*}}Coroutine<{{.*}}{imm *"x`
     var coro = capture_it()
 
 
@@ -1670,8 +1670,8 @@ struct RegPassableInitSelfInit:
 
 # CHECK-LABEL: testRegPassableInitSelf
 fn testRegPassableInitSelf():
-    # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: lit.ref.store [[TMP]], %x
     var x = RegPassableInitSelfInit()
     # CHECK-NEXT: %x2 = lit.var.decl
@@ -1719,8 +1719,8 @@ struct OverloadedKwArgs:
 
 # CHECK-LABEL: lit.fn @"testOverloadKwArgs
 fn testOverloadKwArgs():
-    # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: %0 = kgen.param.constant: !Int = <{1}>
+    # CHECK-NEXT: %x = lit.var.decl
     # CHECK-NEXT: %1 = lit.call @decls::@OverloadedKwArgs{{.*}}single
     var x = OverloadedKwArgs(1)
 
@@ -1759,11 +1759,11 @@ fn testOverloadKwArgs():
     # CHECK-NEXT: lit.ref.store %19, %y : <!Int, mut *"y`1">
     y = x[idx2=1]
 
-    # CHECK-NEXT: %z = lit.var.decl "z" var : !lit.ref<none, mut *"z`2">
     # CHECK-NEXT: %20 = kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT: %21 = kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT: %22 = kgen.param.constant: !Int = <{3}>
     # CHECK-NEXT: %23 = lit.call @decls::@OverloadedKwArgs{{.*}}"y"
+    # CHECK-NEXT: %z = lit.var.decl "z" var : !lit.ref<none, mut *"z`2">
     # CHECK-NEXT: lit.ref.store %23, %z : <none, mut *"z`2">
     var z = x.overloaded_fn(1, y=2, z=3)
 

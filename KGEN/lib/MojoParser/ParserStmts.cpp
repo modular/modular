@@ -623,6 +623,13 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     consumeToken();
     return success();
   case Token::kw_var:
+    // In function bodies, we parse 'var' as expressions, part of the pattern
+    // grammar.  TODO: extend this to other contexts.
+    if (isa<FnOp>(getParentDecl())) {
+      rejectDecorator();
+      break;
+    }
+
     return parseVarStmt(startCursor, stmtIndent);
   case Token::kw_alias:
     return parseAliasDeclStmt(startCursor, stmtIndent);
@@ -2533,6 +2540,9 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
 ///                 | "var" identifier "=" expression
 ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
                                      size_t stmtIndent) {
+  assert(!isa<FnOp>(getParentDecl()) &&
+         "var decls in functions are processed as expression statements");
+
   // Global var decls are allowed to have decorators, but nothing else.
   bool hasDecorators = startCursor != getLexer().getCursor();
   auto rejectDecorator = [&, declTok = getToken()]() {
@@ -2551,7 +2561,6 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     return failure();
 
   auto unresolvedType = UnresolvedType::get(getContext());
-  bool delayAddingName = false;
   // If we're in a struct, then this is a field declaration.
   Operation *declOp;
   if (isa<StructDeclOp>(getParentDecl())) {
@@ -2566,15 +2575,6 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     emitError(loc, "TODO: fields in traits are not supported yet");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success();
-  } else if (isa<FnOp>(getParentDecl())) {
-    rejectDecorator();
-    // This is a local let/var declaration.
-
-    // Emit the vardecl at the current insertion point.  Unlike implicitly
-    // declared variables, let/var declarations are always correctly scoped.
-    declOp =
-        getEmitter().emitVarDecl(name, unresolvedType, loc, VarDeclKind::Var);
-    delayAddingName = true;
   } else {
     // Otherwise this is a global let/var declaration.
     declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType);
@@ -2589,12 +2589,7 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   ASTDecl &decl = getDeclResolver().createUnlistedDecl(
       declOp, smLoc, curDeclScope, startCursor, getLexer().getCursor(),
       stmtIndent);
-  if (!delayAddingName)
-    getDeclResolver().attachDeclToParentNameTable(&decl, name);
-  auto temporaryNameReplace = llvm::make_scope_exit([&]() {
-    if (delayAddingName)
-      getDeclResolver().attachDeclToParentNameTable(&decl, name);
-  });
+  getDeclResolver().attachDeclToParentNameTable(&decl, name);
 
   auto varOp = dyn_cast<VarDeclOp>(decl);
   if (!varOp) {

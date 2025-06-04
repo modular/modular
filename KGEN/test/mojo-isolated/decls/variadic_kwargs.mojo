@@ -106,9 +106,8 @@ fn takes_kw(**kwargs: MemOnly) -> Index:
 
 # CHECK-LABEL: lit.fn @"test_takes_kw_in_assignment
 fn test_takes_kw_in_assignment(x: MemOnly):
-    # CHECK: %b = lit.var.decl "b" var : !lit.ref<index,
-    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
-    # CHECK-SAME: @OwnedKwargsDict<:!Copyable_Movable #[[MEM_ONLY]]>
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl{{.*}}@OwnedKwargsDict<:!Copyable_Movable #[[MEM_ONLY]]>
     # CHECK: %[[RES:.*]] = lit.call {{.*}}@"takes_kw{{.*}}(%[[DICT_VAR]])
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<index,
     # CHECK: lit.ref.store %[[RES]], %b
     var b = takes_kw(y=x, z=x)

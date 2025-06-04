@@ -13,7 +13,7 @@ struct SomeOtherStruct: pass
 
 
 fn var_decl_without_type():
-    # expected-error @+1 {{declaration must have either a type or an initializer}}
+    # expected-error @+1 {{cannot declare 'x' without a contextual type from its initializer}}
     var x
 
     # expected-error @+1 {{invalid implicit conversion to 'SomeOtherStruct': no constructors found}}
@@ -60,7 +60,7 @@ fn use_before_def():
 
 # Issue #18150: https://github.com/modularml/modular/issues/18150
 fn self_reference():
-    # expected-error @+1 {{use of unknown declaration 'num'}}
+    # expected-error @+1 {{cannot implicitly convert 'None' value to 'Int'}}
     var num: Int = fudge_int(num)
 
 # Doesn't reject empty identifier name

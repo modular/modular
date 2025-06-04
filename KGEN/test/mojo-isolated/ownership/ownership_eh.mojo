@@ -290,7 +290,7 @@ fn testErrorReturn() raises:
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__del__
-        var x = ctx.read()
+        var x = ctx.read() # expected-warning {{assignment to 'x' was never used}}
         input = "hello"
     # CHECK: except
     use(input)

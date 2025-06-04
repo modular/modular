@@ -61,11 +61,11 @@ fn fancy_signature[dt: DType, size: Int](
     x: SIMD[dt, size],
     exp: (SIMD)[dt, size]
 ) -> Int:
-  # CHECK: %local = lit.var.decl "local" var
   # CHECK: %[[TMP1:.*]] = kgen.param.constant: !Int = <size>
   # CHECK: %[[TMP2:.*]] = kgen.param.constant: !Int = <size>
   # CHECK: %[[TMP3:.*]] = kgen.param.constant: !Int = <size>
   # CHECK: %[[RES:.*]] = lit.call @parameters::@"take_3index{{.*}}(%[[TMP1]], %[[TMP2]], %[[TMP3]])
+  # CHECK: %local = lit.var.decl "local" var
   # CHECK: lit.ref.store %[[RES]], %local
   var local = take_3index(size, size, size)
 
@@ -122,8 +122,8 @@ struct TestParamStruct[A: Int]:
 # Test that we support partially bound parameters.
 # CHECK-LABEL: lit.fn @"testTestParamStruct
 fn testTestParamStruct(a: TestParamStruct[4]):
-  # CHECK: %arg11 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}11
   # CHECK: %0 = lit.call {{.*}}@TestParamStruct::@"__init__{{.*}}<:!Int {{.*}}11{{.*}}>()
+  # CHECK: %arg11 = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int {{.*}}11
   var arg11 = TestParamStruct[11]()
 
   # CHECK: %1 = lit.ref.load %arg11
@@ -499,8 +499,8 @@ fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     # CHECK-NEXT: store [[CST]], %inlined_initself_call
     var inlined_initself_call = InitSelfCtor(42)
 
-    # CHECK: %inlined_byrefresult_call = lit.var.decl "inlined_byrefresult_call"
     # CHECK-NEXT: [[CST:%.*]] = kgen.param.constant: !Int = <{24}>
+    # CHECK: %inlined_byrefresult_call = lit.var.decl "inlined_byrefresult_call"
     # CHECK-NEXT: lit.call{{.*}}intbox_memory_result{{.*}}([[CST]], %inlined_byrefresult_call)
     var inlined_byrefresult_call = intbox_memory_result(24)
 
@@ -525,8 +525,8 @@ fn parameter_memoryonly_call():
     # CHECK-NEXT: [[TWO:%.*]] = kgen.param.constant: {{.*}}@IntLiteral<:!pop.int_literal 2>
     # CHECK-NEXT: [[CST:%.*]] = lit.call {{.*}}ConvertFromIntLiteral::@"__init__{{.*}}([[TWO]], %x)
     var x: ConvertFromIntLiteral = 2
-    # CHECK-NEXT: %y = lit.var.decl "y"
     # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: {{.*}}@IntLiteral<:!pop.int_literal 4>
+    # CHECK-NEXT: %y = lit.var.decl "y"
     # CHECK-NEXT: [[CST:%.*]] = lit.call {{.*}}nonmaterializable_arg{{.*}}([[FOUR]], %y)
     var y = nonmaterializable_arg(4)
 

@@ -190,6 +190,7 @@ fn call_test_ref(mut s: String):
 
     # expected-error @+1 {{cannot use parameterized function of type 'fn[MutableOrigin](ref [$0] arg: String) -> None' without binding all its parameters}}
     var f2 = test_ref[True]
+    # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)
 
 

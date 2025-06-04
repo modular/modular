@@ -45,8 +45,8 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
     _ = (a,)
 
-    # CHECK: %c = lit.var.decl "c"
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK: %c = lit.var.decl "c"
     # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %c)
     var c = a,
 

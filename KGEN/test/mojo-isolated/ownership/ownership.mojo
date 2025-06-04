@@ -94,8 +94,8 @@ fn destructors(owned arg0: MemExample):
 
   # expected-warning @+1 {{assignment to 'reg' was never used}}
   var reg = RegExample()
-  # CHECK-NEXT: %reg = lit.var.decl "reg"
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+  # CHECK-NEXT: %reg = lit.var.decl "reg"
   # CHECK-NEXT: lifetime.start %reg
   # CHECK-NEXT: lit.ref.store [[TMP]], %reg
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%reg)
@@ -153,8 +153,8 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ANON]])
   # CHECK-NEXT: lit.var.lifetime.end [[ANON]]
 
-  # CHECK-NEXT: %localReg = lit.var.decl
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@RegExample::@"__init__{{.*}}()
+  # CHECK-NEXT: %localReg = lit.var.decl
   # CHECK-NEXT: lifetime.start %localReg
   # CHECK-NEXT: lit.ref.store [[TMP]], %localReg
   # expected-warning @+1 {{assignment to 'localReg' was never used}}
@@ -215,8 +215,8 @@ fn testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
   consume(__get_address_as_owned_value(ptr))
 
   # i1 doesn't have ownership but should still work for generality.
-  # CHECK-NEXT: %ownedI1 = lit.var.decl
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %i1ptr end_uninit :
+  # CHECK-NEXT: %ownedI1 = lit.var.decl
   # CHECK-NEXT: [[I1VAL:%.*]] = lit.load.consume [[REF]]
   # CHECK-NEXT: lifetime.start %ownedI1
   # CHECK-NEXT: lit.ref.store [[I1VAL]], %ownedI1
@@ -428,8 +428,8 @@ fn impl_mutable_arg(mut a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExa
 
 # CHECK: lit.fn @"test_result_consume_reg
 fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
-  # CHECK-NEXT: %example2 = lit.var.decl
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+  # CHECK-NEXT: %example2 = lit.var.decl
   # CHECK-NEXT: lit.var.lifetime.start %example2
   # CHECK-NEXT: lit.ref.store [[TMP]], %example2
   var example2 = RegExample()
@@ -542,8 +542,8 @@ fn ret_big_reg() -> BigRegExample:
 
 # CHECK-LABEL: lit.fn @"bigreg_test
 fn bigreg_test():
-  # CHECK-NEXT: %varThing = lit.var.decl "varThing"
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+  # CHECK-NEXT: %varThing = lit.var.decl "varThing"
   # CHECK-NEXT: lifetime.start %varThing
   # CHECK-NEXT: lit.ref.store [[TMP]], %varThing
   var varThing = BigRegExample()
@@ -1151,8 +1151,8 @@ fn handleAnyLifetime2():
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime3
 fn handleAnyLifetime3():
-    # CHECK-NEXT: %a_packed_ptr = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}__init__
+    # CHECK-NEXT: %a_packed_ptr = lit.var.decl
     # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
     # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
@@ -1302,7 +1302,6 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
 # CHECK-LABEL: lit.fn @"testConds3
 fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
               owned m: RegExample, owned n: RegExample):
-  # CHECK-NEXT: %t1 = lit.var.decl
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
@@ -1312,6 +1311,7 @@ fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
   # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind %b
   # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
   # CHECK-NEXT: }
+  # CHECK-NEXT: %t1 = lit.var.decl
   # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
   # CHECK-NEXT: lit.var.lifetime.start %t1
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IFI]], %t1)
@@ -1319,7 +1319,6 @@ fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
   var t1 = a^ if cond else b^
 
-  # CHECK-NEXT: %t2 = lit.var.decl
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    lit.ownership.use %m
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %m
@@ -1329,6 +1328,7 @@ fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
   # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind %n
   # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
   # CHECK-NEXT: }
+  # CHECK-NEXT: %t2 = lit.var.decl
   # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
   # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[IFI]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m)

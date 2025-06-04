@@ -188,8 +188,8 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   var aref2 = aref
 
   # Pointer can bind to immutable things as well, no problem.
-  # CHECK-NEXT: %immref = lit.var.decl "immref"
   # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}(%imm)
+  # CHECK-NEXT: %immref = lit.var.decl "immref"
   # CHECK: lit.ref.store [[IMMRV]], %immref
   var immref = Pointer(to=imm)
   immref[].noop()
@@ -299,8 +299,8 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 
 # CHECK-LABEL: lit.fn @"ref_copyability
 fn ref_copyability[*element_types: Copyable](*args: *element_types):
-  # CHECK: %_x = lit.var.decl
   # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
+  # CHECK: %_x = lit.var.decl
   # CHECK: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__copyinit__{{.*}}([[ITEM]], %_x)
   var _x = args[4]
 
@@ -345,8 +345,8 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   # Verify the iterator keeps the VariadicListMem alive.
   # CHECK-NEXT: %mems_0 = lit.var.decl
 
+  # CHECK: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK: %iter = lit.var.decl
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: lifetime.start %iter
   # CHECK-NEXT: lit.call {{.*}}__iter__{{.*}}([[IMMREF]], %iter)
   var iter = mems.__iter__()
@@ -382,10 +382,10 @@ fn test_pvalue_ref_formation[a: SelfRefTest]():
   # materialize into a temporary and use the origin of the temporary, not an
   # immortal origin.
 
-  # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest, mut *"anonymous*`1">
+  # CHECK: [[ANONTMP:%.*]] = lit.var.decl "anonymous*" {{.*}}!lit.ref<!SelfRefTest,
   var r = a.method()
   # The result reference should have inferred the origin of the temp
-  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, {{.*}}origin<0> = (mutcast mut *"anonymous*`1")},
+  # CHECK: lit.ref.store {{.*}}, %r : {{.*}}#SelfRefTest1, {{.*}}origin<0> = (mutcast mut *"anony{{.*}})},
 
   # This use of the temp should keep it alive.
   # CHECK: [[REFERENCE:%.*]] = lit.ref.load %r

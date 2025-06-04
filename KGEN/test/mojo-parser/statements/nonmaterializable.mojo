@@ -74,11 +74,9 @@ fn useNonmaterializable(p: Bool):
     # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
     alias useIfAlias = NmStruct(2) if True else NmStruct(3)
     # CHECK: lit.var.decl "useIfVar" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 0}
     var useIfVar = NmStruct(2) if p else NmStruct(77)
 
     # CHECK: lit.var.decl "useIfVarLopsided" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}
     var useIfVarLopsided = NmTarget(False) if not p else NmStruct(77)
 
     # CHECK: lit.var.decl "useOrVar1" var : !lit.ref<!NmTarget
@@ -97,8 +95,8 @@ fn useNonmaterializable(p: Bool):
     # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType #NmTarget1, :variadic<!AnyType> [#NmTarget1]>
     tail_types(NmStruct(5), NmStruct(6))
 
-    # CHECK: %nmResult = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}nmResult{{.*}}()
+    # CHECK: %nmResult = lit.var.decl
     # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}NmTarget::@"__init__{{.*}}([[TMP]])
     # CHECK-NEXT: lit.ref.store [[TMP2]], %nmResult
     var nmResult = nmResult()
