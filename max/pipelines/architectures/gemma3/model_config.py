@@ -133,23 +133,6 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
     provides methods to derive necessary pipeline components like KV cache parameters.
     """
 
-    def resolve(self) -> None:
-        """Validates and resolves the config.
-
-        This method is called after the model config is initialized, to ensure that all
-        config fields have been initialized to a valid state. It will also set
-        and update other fields which may not be determined / initialized in the
-        default factory.
-        """
-        # TODO(E2EOPT-28): remove this constraint.
-        # Gemma has a MHA head size of 256.
-        # This requires a kv cache page size of at least 256.
-        self._kv_cache_config.kv_cache_page_size = max(
-            self._kv_cache_config.kv_cache_page_size, 256
-        )
-        self.kv_params.page_size = self.kv_cache_config.kv_cache_page_size
-        super().resolve()
-
     @staticmethod
     def get_kv_params(
         huggingface_config: AutoConfig,
@@ -251,13 +234,6 @@ class Gemma3Config(MAXModelConfig, Gemma3ConfigBase):
         Returns:
             An initialized :obj:`Gemma3Config` instance.
         """
-        # TODO(E2EOPT-28): remove this constraint.
-        # Gemma has a MHA head size of 256.
-        # This requires a kv cache page size of at least 256.
-        kv_cache_config.kv_cache_page_size = max(
-            kv_cache_config.kv_cache_page_size, 256
-        )
-
         _weights_format = weights_format(
             pipeline_config.model_config.weight_path
         )
