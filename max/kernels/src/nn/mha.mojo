@@ -404,7 +404,6 @@ fn flash_attention_dispatch[
 
     constrained[depth == q.shape.get[rank - 1]()]()
     constrained[num_heads == q.shape.get[rank - 2]()]()
-
     var batch_size: Int
 
     @parameter
@@ -416,6 +415,7 @@ fn flash_attention_dispatch[
         batch_size = q.dim[0]()
 
     alias q_half_float = type in (DType.float16, DType.bfloat16)
+    alias q_half_float_or_fp32 = type is DType.float32 or q_half_float
 
     @parameter
     if _is_flash_attention_applicable:
@@ -494,8 +494,9 @@ fn flash_attention_dispatch[
                         smem_use
                     ),
                 )
-        # Decoding impl only support half precision.
-        elif q_half_float and is_token_generation:
+        # FA3 decoding impl only support half precision, while fp32 is supported
+        # for fp32 as well.
+        elif q_half_float_or_fp32 and is_token_generation:
             alias BM = 16
             alias BN = depth
             alias BK = 32 if has_amd_gpu_accelerator() else (
