@@ -246,5 +246,4 @@ def _transformer(
             embedding=embedding_layer,
             kv_params=kv_params,
             kv_collection_constructor=kv_collection_cls(kv_params),
-            rope=rope,
         )

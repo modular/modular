@@ -20,7 +20,6 @@ from max.nn import (
     EmbeddingV1,
     LayerNormV1,
     LinearV1,
-    OptimizedRotaryEmbedding,
     RMSNormV1,
     TransformerBlock,
 )
@@ -56,7 +55,6 @@ class Transformer(Layer):
     kv_collection_constructor: Union[
         FetchContinuousBatchingKVCacheCollection, FetchPagedKVCacheCollection
     ]
-    rope: OptimizedRotaryEmbedding
     all_logits: bool = False
 
     def __call__(
@@ -81,14 +79,12 @@ class Transformer(Layer):
         # Construct a kv cache for use downstream.
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
-        freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
-                freqs_cis,
-                kwargs["input_row_offsets"],
+                **kwargs,
             )
 
         if self.all_logits:
