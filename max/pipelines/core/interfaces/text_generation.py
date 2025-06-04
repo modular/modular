@@ -121,6 +121,12 @@ class SamplingParams:
     do_penalties: bool = False
     """Whether to apply frequency and presence penalties to the model's output."""
 
+    max_tokens: int = 1792
+    """The maximum number of tokens to generate in the response."""
+
+    min_tokens: int = 0
+    """The minimum number of tokens to generate in the response."""
+
 
 @dataclass(frozen=True)
 class TokenGeneratorRequest:
