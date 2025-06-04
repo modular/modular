@@ -1646,10 +1646,11 @@ FailureOr<InlineResult> LIT::AsyncCallOp::prepInline(mlir::RewriterBase &b) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult LIT::ReturnOp::verify() {
-  auto func = (*this)->getParentOfType<FnOp>();
-  if (!func)
-    return emitOpError("expected to be nested inside a `lit.fn` operation");
-  return checkOperandTypes(*this, func.getResultTypes());
+  auto functionLike = (*this)->getParentOfType<FunctionLike>();
+  if (!isa<LIT::ClosureInitOp, FnOp>(functionLike))
+    return emitOpError("expected to be nested inside a `lit.fn` or "
+                       "`lit.closure.init` operation");
+  return checkOperandTypes(*this, functionLike.getResultTypes());
 }
 
 //===----------------------------------------------------------------------===//

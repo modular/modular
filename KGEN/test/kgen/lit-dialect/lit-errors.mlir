@@ -144,7 +144,7 @@ lit.fn @default_kw_only_params<a: dtype, b: dtype = f32, *, b: dtype = f16, w: s
 // -----
 
 kgen.generator @not_lit_func() {
-  // expected-error @below {{'lit.return' op expected to be nested inside a `lit.fn` operation}}
+  // expected-error @below {{'lit.return' op expected to be nested inside a `lit.fn` or `lit.closure.init` operation}}
   lit.return
   kgen.return
 }

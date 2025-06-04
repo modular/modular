@@ -1106,3 +1106,29 @@ lit.fn @crashing_try_warning(%cond: i1) -> !kgen.none {
   lit.return %none : !kgen.none
   lit.end_fn
 }
+
+// CHECK-LABEL: lit.fn @make_closure
+lit.fn @make_closure() {
+    %0 = lit.closure.init[#kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !lit.trait<@Closure>]()<D: i1>(%arg0: index) -> index {
+      lit.try {
+        // CHECK: lit.try.raise
+        lit.raise
+        lit.try.yield
+      } except {
+        // CHECK: kgen.return %arg0 : index
+        lit.return %arg0 : index
+        lit.try.yield
+      } else {
+        // CHECK: kgen.unreachable
+        lit.try.yield
+      } finally {
+        // CHECK-NOT: lit.try.yield
+        lit.try.yield
+      }
+      // CHECK: kgen.unreachable
+      lit.end_fn
+    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
+    // CHECK: kgen.return
+    lit.return
+    lit.end_fn
+}
