@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-from builtin.stubs import _IntIter
+from builtin.stubs import _ParamForIterator
 
 # ===----------------------------------------------------------------------=== #
 # elif
@@ -503,7 +503,9 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
 
 
 @value
-struct IterRange(_IntIter):
+struct IterRange(_ParamForIterator):
+    alias _IndexType = Int
+
     var value: Int
 
     fn __iter__(self) -> Self:
@@ -567,7 +569,7 @@ fn use(value: MyType):
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
 fn parameter_for[a: Int](owned value: MyType):
     # CHECK-NEXT: kgen.param.for [[i:.*]]: !Int in :!IterRange apply
-    # CHECK-SAME: iter :{{.*}}parameter_for_generator{{.*}}<:!IntIter #IterRange2>
+    # CHECK-SAME: iter :{{.*}}parameter_for_generator{{.*}}<:!ParamForIterator #IterRange1>
     @parameter
     for i in IterRange(a):
         # CHECK: [[IMM:%.*]] = lit.ref.immut %value
