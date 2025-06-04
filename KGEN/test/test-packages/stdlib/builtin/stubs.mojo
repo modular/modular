@@ -970,23 +970,11 @@ struct _StridedRangeIterator(_IntIter):
 # ===-----------------------------------------------------------------------===#
 
 
-trait _IntNext(Copyable):
-    fn __next__(mut self) -> Int:
-        ...
-
-
-trait _IntIter(_IntNext):
+trait _IntIter(Copyable):
     fn __has_next__(self) -> Bool:
         ...
 
-
-trait _IntIterable(_IntIter):
-    fn __iter__(self) -> Self:
-        ...
-
-
-trait _StridedIterable(_IntIter):
-    fn __iter__(self) -> _StridedRangeIterator:
+    fn __next__(mut self) -> Int:
         ...
 
 
@@ -1007,18 +995,6 @@ fn declval[T: AnyType]() -> T:
 
 
 fn parameter_for_generator[
-    T: _IntIterable,
-](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
-    return _generator(range.__iter__())
-
-
-fn parameter_for_generator[
-    T: _StridedIterable,
-](range: T) -> _ParamForIterator[__type_of(declval[T]().__iter__())]:
-    return _generator(range.__iter__())
-
-
-fn _generator[
     IteratorT: _IntIter
 ](it: IteratorT, out result: _ParamForIterator[IteratorT]):
     if it.__has_next__():
