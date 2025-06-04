@@ -25,9 +25,6 @@ from test_common.torch_utils import (
     TextGenerationRequest,
     run_text_generation_with_custom_image_processing,
 )
-from test_common.torch_utils import (
-    run_text_generation as standard_run_text_generation,
-)
 from torchvision.transforms.functional import InterpolationMode
 from transformers import (
     PreTrainedModel,
@@ -185,38 +182,19 @@ def run_text_generation(
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
-    prompts: Iterable[str],
-    images: Iterable[str] | None = None,
+    requests: Iterable[TextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
 ) -> list[dict]:
     """Run text generation for InternVL with custom image preprocessing."""
-
-    if images:
-        requests = [
-            TextGenerationRequest.with_images(prompt, [img])
-            for prompt, img in zip(prompts, images)
-        ]
-        return run_text_generation_with_custom_image_processing(
-            model=model,
-            data_processor=data_processor,
-            device=device,
-            requests=requests,
-            num_steps=num_steps,
-            print_outputs=print_outputs,
-            image_loader_fn=load_image,
-            prompt_formatter_fn=_format_internvl_prompt,
-            model_setup_fn=_setup_internvl_model,
-        )
-    else:
-        requests = [
-            TextGenerationRequest.text_only(prompt) for prompt in prompts
-        ]
-        return standard_run_text_generation(
-            model=model,
-            data_processor=data_processor,
-            device=device,
-            requests=requests,
-            num_steps=num_steps,
-            print_outputs=print_outputs,
-        )
+    return run_text_generation_with_custom_image_processing(
+        model=model,
+        data_processor=data_processor,
+        device=device,
+        requests=requests,
+        num_steps=num_steps,
+        print_outputs=print_outputs,
+        image_loader_fn=load_image,
+        prompt_formatter_fn=_format_internvl_prompt,
+        model_setup_fn=_setup_internvl_model,
+    )

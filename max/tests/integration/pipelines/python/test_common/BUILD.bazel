@@ -27,6 +27,7 @@ modular_py_library(
         ":pipeline_model_dummy",
         ":process_isolation",
         ":registry",
+        ":test_data",
         ":torch_utils",
     ],
 )
@@ -47,6 +48,15 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "test_data",
+    srcs = ["test_data.py"],
+    imports = [".."],
+    deps = [
+        ":evaluate",
     ],
 )
 

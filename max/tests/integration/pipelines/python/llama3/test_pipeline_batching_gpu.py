@@ -18,7 +18,8 @@ from max.pipelines import (
 )
 from max.pipelines.core import TokenGeneratorRequest
 from max.pipelines.lib import generate_local_model_path
-from test_common.evaluate import PROMPTS, next_token_with_logits
+from test_common.evaluate import next_token_with_logits
+from test_common.test_data import DEFAULT_PROMPTS
 
 REPO_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
 REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
@@ -88,9 +89,9 @@ async def test_pipeline_heterogeneous_batch_logits(
     weights were randomly initialized.
     """
 
-    prompt_a = PROMPTS[0]
-    prompt_b = PROMPTS[1]
-    prompt_c = PROMPTS[2]
+    prompt_a = DEFAULT_PROMPTS[0]
+    prompt_b = DEFAULT_PROMPTS[1]
+    prompt_c = DEFAULT_PROMPTS[2]
 
     stored_logits: dict[str, list[Any]] = {"A": [], "B": [], "C": []}
 

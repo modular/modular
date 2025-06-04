@@ -13,10 +13,10 @@ import traceback
 
 # Standard library
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar, Union
+from typing import Any, Callable, TypeVar, Union
 
 # 3rd-party
 import click
@@ -39,6 +39,7 @@ from test_common import (
     evaluate,
     evaluate_embeddings,
     numpy_encoder,
+    test_data,
     torch_utils,
 )
 from test_common.evaluate import ModelOutput
@@ -138,24 +139,13 @@ class PipelineOracle(ABC):
         raise NotImplementedError
 
     @property
-    def prompts(self) -> Sequence[str]:
-        """Prompts to run the model on.
-
-        Should only be overridden if a pipeline has a particular reason the
-        defaults are inappropriate.
-        """
-        return evaluate.PROMPTS
-
-    @property
     def inputs(self) -> list[TextGenerationRequest]:
         """Input requests for the model.
 
-        By default, creates text-only requests from prompts. Multimodal pipelines
+        By default, creates text-only requests from test data. Multimodal pipelines
         should override this to include images.
         """
-        return [
-            TextGenerationRequest.text_only(prompt) for prompt in self.prompts
-        ]
+        return test_data.DEFAULT_TEXT_ONLY
 
     @property
     def use_cache(self) -> bool:
@@ -190,28 +180,9 @@ class MultiModalPipelineOracle(PipelineOracle):
     """
 
     @property
-    def prompts(self) -> Sequence[str]:
-        """Prompts to run a multi-modal model on."""
-        return [evaluate.PROMPTS_MULTI_MODAL]
-
-    @property
-    def images(self) -> Optional[Sequence[str]]:
-        """Images to run a multi-modal model on."""
-        return [evaluate.IMAGES_MULTI_MODAL]
-
-    @property
     def inputs(self) -> list[TextGenerationRequest]:
         """Input requests for multimodal model."""
-        if self.images:
-            return [
-                TextGenerationRequest.with_images(prompt, [img])
-                for prompt, img in zip(self.prompts, self.images)
-            ]
-        else:
-            return [
-                TextGenerationRequest.text_only(prompt)
-                for prompt in self.prompts
-            ]
+        return test_data.DEFAULT_MULTIMODAL
 
 
 class InternVLPipelineOracle(MultiModalPipelineOracle):
@@ -290,8 +261,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            prompts=self.prompts,
-            images=self.images,
+            requests=self.inputs,
             print_outputs=True,
             # Omit `use_cache` since the InternVL code hardcodes it.
         )
@@ -367,14 +337,9 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
 
 class PixtralPipelineOracle(MultiModalPipelineOracle):
     @property
-    def prompts(self) -> Sequence[str]:
-        """Prompts to run a multi-modal model on."""
-        return [evaluate.PIXTRAL_PROMPT]
-
-    @property
-    def images(self) -> Optional[Sequence[str]]:
-        """Images to run a multi-modal model on."""
-        return [evaluate.PIXTRAL_IMG_URL]
+    def inputs(self) -> list[TextGenerationRequest]:
+        """Input requests for Pixtral model."""
+        return test_data.PIXTRAL_REQUESTS
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -534,8 +499,15 @@ class GenericOracle(PipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     @property
-    def prompts(self) -> Sequence[str]:
-        return self._prompts or evaluate.PROMPTS
+    def inputs(self) -> list[TextGenerationRequest]:
+        return (
+            [
+                TextGenerationRequest.text_only(prompt)
+                for prompt in self._prompts
+            ]
+            if self._prompts
+            else test_data.DEFAULT_TEXT_ONLY
+        )
 
     @property
     def use_cache(self) -> bool:
@@ -656,7 +628,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "max_length": 512,
             "cache_strategy": KVCacheStrategy.CONTINUOUS,
         },
-        prompts=[p[:502] for p in evaluate.PROMPTS],
+        prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         device_encoding_map={
             "cpu": ["float32", "q4_k", "q4_0", "q6_k", "gptq"],
             "gpu": ["float32", "bfloat16"],
@@ -666,7 +638,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="sentence-transformers/all-mpnet-base-v2",
         # Maximum length accepted by MPNet tokenizer is 512.
         config_params={"max_length": 512, "pool_embeddings": False},
-        prompts=[p[:502] for p in evaluate.PROMPTS],
+        prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         auto_model_cls=transformers.AutoModel,
         task=interfaces.PipelineTask.EMBEDDINGS_GENERATION,
         device_encoding_map={
@@ -714,7 +686,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="deepseek-ai/DeepSeek-V2-Lite-Chat",
         config_params={"max_length": 516, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
-        prompts=[prompt[:1500] for prompt in evaluate.PROMPTS],
+        prompts=[prompt[:1500] for prompt in test_data.DEFAULT_PROMPTS],
         # upstream modeling_deepsek.py uses a deprecated transformers function
         use_cache=False,
     ),
@@ -921,7 +893,7 @@ def generate_llm_logits(
             results = evaluate_embeddings.encode(
                 max_pipeline_and_tokenizer.generator,
                 max_pipeline_and_tokenizer.tokenizer,
-                pipeline_oracle.prompts,
+                prompts=(inp.prompt for inp in pipeline_oracle.inputs),
                 batch_size=max_batch_size,
             )
         else:
@@ -957,7 +929,7 @@ def generate_llm_logits(
                 model=torch_pipeline_and_tokenizer.model,
                 data_processor=torch_pipeline_and_tokenizer.data_processor,
                 device=torch_device,
-                prompts=pipeline_oracle.prompts,
+                prompts=(inp.prompt for inp in pipeline_oracle.inputs),
             )
         else:
             raise ValueError(

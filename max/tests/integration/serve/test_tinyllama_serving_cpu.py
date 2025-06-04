@@ -17,7 +17,7 @@ from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionResponse,
     CreateCompletionResponse,
 )
-from test_common.evaluate import PROMPTS
+from test_common.test_data import DEFAULT_PROMPTS
 
 MAX_READ_SIZE = 10 * 1024
 
@@ -124,7 +124,7 @@ async def test_tinyllama_serve_v1_completions_cpu(app):
     tasks = []
     resp = []
     async with TestClient(app, timeout=720.0) as client:
-        for prompt in PROMPTS[1:]:
+        for prompt in DEFAULT_PROMPTS[1:]:
             tasks.append(asyncio.create_task(main_stream(client, prompt)))
 
         for task in tasks:

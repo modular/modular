@@ -72,7 +72,7 @@ def run_text_generation(
     | MllamaProcessor
     | PixtralProcessor,
     device: torch.device,
-    requests: list[TextGenerationRequest],
+    requests: Iterable[TextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
@@ -146,7 +146,7 @@ def run_text_generation_with_custom_image_processing(
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
-    requests: list[TextGenerationRequest],
+    requests: Iterable[TextGenerationRequest],
     num_steps: int,
     print_outputs: bool,
     image_loader_fn: Callable[[str], torch.Tensor],
@@ -173,41 +173,41 @@ def run_text_generation_with_custom_image_processing(
 
     results = []
 
-    # Process each multimodal request.
+    # Process each request (multimodal or text-only).
     for request in requests:
-        # Use custom image loader on first image (assume single image for now).
-        assert len(request.images) == 1
-        pixel_values = image_loader_fn(request.images[0])
+        if request.is_multimodal:
+            # Use custom image loader on first image (assume single image for now).
+            assert len(request.images) == 1
 
-        # Use custom prompt formatter
-        formatted_prompt, pixel_values = prompt_formatter_fn(
-            request.prompt,
-            request.images[0],
-            pixel_values,
-            model,
-            data_processor,
-        )
+            # Prepare multimodal inputs.
+            pixel_values = image_loader_fn(request.images[0])
+            formatted_prompt, pixel_values = prompt_formatter_fn(
+                request.prompt,
+                request.images[0],
+                pixel_values,
+                model,
+                data_processor,
+            )
+            inputs = data_processor(formatted_prompt, return_tensors="pt")
 
-        # Process the formatted prompt
-        inputs = data_processor(formatted_prompt, return_tensors="pt")
-        processed_inputs = {
-            "pixel_values": pixel_values,
-            "input_ids": inputs["input_ids"],
-            "attention_mask": inputs["attention_mask"],
-        }
+            generate_kwargs = {
+                "input_ids": inputs["input_ids"].to(device),
+                "attention_mask": inputs["attention_mask"].to(device),
+                "pixel_values": pixel_values.to(device).to(model.dtype),
+            }
+        else:
+            # Text-only input preparation
+            encoded_prompt = data_processor.encode(
+                request.prompt, return_tensors="pt"
+            ).to(device)
+            generate_kwargs = {
+                "input_ids": encoded_prompt,
+                "attention_mask": torch.ones_like(encoded_prompt),
+            }
 
-        # Move to device
-        pixel_values = (
-            processed_inputs["pixel_values"].to(device).to(model.dtype)
-        )
-        input_ids = processed_inputs["input_ids"].to(device)
-        attention_mask = processed_inputs["attention_mask"].to(device)
-
-        # Generate with model
+        # Common generation call
         outputs = model.generate(
-            input_ids=input_ids,
-            pixel_values=pixel_values,
-            attention_mask=attention_mask,
+            **generate_kwargs,
             max_new_tokens=num_steps,
             do_sample=False,
             logits_processor=LogitsProcessorList([store_logits]),
