@@ -12,8 +12,7 @@ from conftest import static_dims
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max import mlir
-from max._core import graph as _graph
-from max._core.dialects import mo  # type: ignore
+from max._core.dialects import builtin, m, mo, mosh
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -26,17 +25,6 @@ from max.graph import (
     _ChainType,
 )
 from max.graph.type import FilterLayout, Type
-
-
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(dtype=...)
-def test_dtype_type(mlir_context, dtype: DType) -> None:
-    """Tests dtype to MLIR type conversion."""
-    # bool dtype prints as i1 if printing the raw mlir type.
-    # We would need `DType.from_mlir`, like `tensor_type_get_dtype` to get "bool".
-    assume(dtype != DType.bool)
-    new_dtype = _graph.dtype_type(mlir_context, dtype._mlir)
-    assert dtype._mlir == str(new_dtype).lower()
 
 
 @given(dim=...)
@@ -130,20 +118,23 @@ def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType):
     assert tensor_type == TensorType.from_mlir(tensor_type.to_mlir())
 
 
-def test_bool_type(mlir_context) -> None:
-    """Tests bool to MLIR type conversion."""
-    dtype = _graph.dtype_type(mlir_context, "bool")
-    # MO::toMLIRType converts bool to signless integer i1.
-    assert str(dtype) == "i1"
-
-
 def test_tensor_type(mlir_context) -> None:
     """Tests tensor type creation."""
-    dtype = _graph.dtype_type(mlir_context, "f32")
-    dim1 = _graph.static_dim(mlir_context, 3)
-    dim2 = _graph.symbolic_dim(mlir_context, "x")
-    tensor_type = _graph.tensor_type(mlir_context, dtype, [dim1, dim2])
-    assert str(tensor_type) == "!mo.tensor<[3, x], f32>"
+    t = TensorType(DType.float32, [3, "x"], DeviceRef.CPU())
+    assert t == Type.from_mlir(t.to_mlir())
+    assert t.dtype == DType.float32
+    assert t.shape == [Dim(3), Dim("x")]
+    assert t.device == DeviceRef.CPU()
+
+    tt = t.to_mlir()
+    assert tt == mo.TensorType(
+        mosh.ShapeAttr(
+            [Dim(3).to_mlir(), Dim("x").to_mlir()],
+            mosh.ShapeType(),
+        ),
+        DType.float32,
+        m.DeviceRefAttr("cpu", 0),
+    )
 
 
 def test_tensor_type__negative_dim(mlir_context) -> None:
@@ -159,17 +150,6 @@ def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
     assert tensor_type.to_mlir().device_ref == device_type.to_mlir()
 
 
-def test_tensor_type_accessors(mlir_context) -> None:
-    """Tests tensor type property accessors."""
-    dtype = _graph.dtype_type(mlir_context, "f32")
-    dim1 = _graph.static_dim(mlir_context, 3)
-    dim2 = _graph.symbolic_dim(mlir_context, "x")
-    tensor_type = _graph.tensor_type(mlir_context, dtype, [dim1, dim2])
-
-    assert _graph.tensor_type_get_dtype(tensor_type) == DType.float32._mlir
-    assert _graph.tensor_type_get_rank(tensor_type) == 2
-
-
 def test_tensor_type_layout(mlir_context):
     t = TensorType(DType.float32, ["r", "s", "f", "c"], DeviceRef.CPU())
     t_copy = Type.from_mlir(t.to_mlir())
@@ -182,62 +162,54 @@ def test_tensor_type_layout(mlir_context):
     assert t == t_copy
 
 
-def test_tensor_type_with_device_accessors(mlir_context: mlir.Context) -> None:
-    """Tests tensor type with device property accessors."""
-    dtype = _graph.dtype_type(mlir_context, "f32")
-    dim1 = _graph.static_dim(mlir_context, 3)
-    dim2 = _graph.symbolic_dim(mlir_context, "x")
-    cpu_device = _graph.device_attr(mlir_context, "cpu", 0)
-    cpu_tensor_type = _graph.tensor_type_with_device(
-        mlir_context, dtype, [dim1, dim2], cpu_device
-    )
-    cuda_device0 = _graph.device_attr(mlir_context, "cuda", 0)
-    cuda_tensor_type = _graph.tensor_type_with_device(
-        mlir_context, dtype, [dim1, dim2], cuda_device0
-    )
-    default_tensor_type = _graph.tensor_type(mlir_context, dtype, [dim1, dim2])
-
-    assert _graph.tensor_type_get_device(cpu_tensor_type) == cpu_device
-    assert _graph.tensor_type_get_device(cuda_tensor_type) == cuda_device0
-    assert _graph.tensor_type_get_device(default_tensor_type) == cpu_device
-
-
 def test_opaque_type(mlir_context) -> None:
     """Tests opaque type creation and properties."""
-    opaque = _graph.opaque_type(mlir_context, "custom_type")
-    assert _graph.type_is_opaque(opaque)
-    assert not _graph.type_is_tensor(opaque)
-    assert _graph.opaque_type_name(opaque) == "custom_type"
+    opaque = mo.OpaqueType(
+        builtin.StringAttr("custom_type"), builtin.DictionaryAttr()
+    )
+    assert isinstance(opaque, mo.OpaqueType)
+    assert not isinstance(opaque, mo.TensorType)
+    assert opaque.symbol.value == "custom_type"
 
 
 def test_type_checking(mlir_context) -> None:
     """Tests type checking functions."""
-    dtype = _graph.dtype_type(mlir_context, "f32")
-    dim = _graph.static_dim(mlir_context, 3)
-    tensor_type = _graph.tensor_type(mlir_context, dtype, [dim])
-    opaque_type = _graph.opaque_type(mlir_context, "custom_type")
-    buffer_type = _graph.buffer_type(mlir_context, dtype, [dim])
+    dtype = DType.float32
+    dim = Dim(3).to_mlir()
+    tensor_type = mo.TensorType(
+        mosh.ShapeAttr([dim], mosh.ShapeType()),
+        dtype,
+        m.DeviceRefAttr("cpu", 0),
+    )
+    opaque_type = mo.OpaqueType(
+        builtin.StringAttr("custom_type"), builtin.DictionaryAttr()
+    )
+    buffer_type = mo.BufferType(
+        mosh.ShapeAttr([dim], mosh.ShapeType()),
+        dtype,
+        m.DeviceRefAttr("cpu", 0),
+    )
     chain_type = mo.ChainType()
 
-    assert _graph.type_is_tensor(tensor_type)
-    assert not _graph.type_is_opaque(tensor_type)
-    assert not _graph.type_is_buffer(tensor_type)
+    assert isinstance(tensor_type, mo.TensorType)
+    assert not isinstance(tensor_type, mo.OpaqueType)
+    assert not isinstance(tensor_type, mo.BufferType)
     assert not isinstance(tensor_type, mo.ChainType)
 
-    assert _graph.type_is_opaque(opaque_type)
-    assert not _graph.type_is_tensor(opaque_type)
-    assert not _graph.type_is_buffer(opaque_type)
+    assert isinstance(opaque_type, mo.OpaqueType)
+    assert not isinstance(opaque_type, mo.TensorType)
+    assert not isinstance(opaque_type, mo.BufferType)
     assert not isinstance(opaque_type, mo.ChainType)
 
-    assert _graph.type_is_buffer(buffer_type)
-    assert not _graph.type_is_opaque(buffer_type)
-    assert not _graph.type_is_tensor(buffer_type)
+    assert isinstance(buffer_type, mo.BufferType)
+    assert not isinstance(buffer_type, mo.OpaqueType)
+    assert not isinstance(buffer_type, mo.TensorType)
     assert not isinstance(buffer_type, mo.ChainType)
 
     assert isinstance(chain_type, mo.ChainType)
-    assert not _graph.type_is_opaque(chain_type)
-    assert not _graph.type_is_tensor(chain_type)
-    assert not _graph.type_is_buffer(chain_type)
+    assert not isinstance(chain_type, mo.TensorType)
+    assert not isinstance(chain_type, mo.OpaqueType)
+    assert not isinstance(chain_type, mo.BufferType)
 
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -248,44 +220,21 @@ def test_buffer_mlir_roundtrip(mlir_context, buffer_type: BufferType):
 
 def test_buffer_type(mlir_context) -> None:
     """Tests buffer type creation."""
-    dtype = _graph.dtype_type(mlir_context, "f32")
-    dim1 = _graph.static_dim(mlir_context, 3)
-    dim2 = _graph.symbolic_dim(mlir_context, "x")
-    buffer_type = _graph.buffer_type(mlir_context, dtype, [dim1, dim2])
-    assert str(buffer_type) == "!mo.buffer<[3, x], f32>"
+    t = BufferType(DType.float32, [3, "x"], DeviceRef.CPU())
+    assert t == Type.from_mlir(t.to_mlir())
+    assert t.dtype == DType.float32
+    assert t.shape == [Dim(3), Dim("x")]
+    assert t.device == DeviceRef.CPU()
 
-
-def test_buffer_type_accessors(mlir_context) -> None:
-    """Tests buffer type property accessors."""
-    dtype = _graph.dtype_type(mlir_context, "f32")
-    dim1 = _graph.static_dim(mlir_context, 3)
-    dim2 = _graph.symbolic_dim(mlir_context, "x")
-    buffer_type = _graph.buffer_type(mlir_context, dtype, [dim1, dim2])
-
-    assert _graph.buffer_type_get_dtype(buffer_type) == DType.float32._mlir
-    assert _graph.buffer_type_get_rank(buffer_type) == 2
-
-
-def test_buffer_type_with_device_accessors(mlir_context) -> None:
-    """Tests buffer type with device property accessors."""
-    dtype = _graph.dtype_type(mlir_context, "f32")
-    dim1 = _graph.static_dim(mlir_context, 3)
-    dim2 = _graph.symbolic_dim(mlir_context, "x")
-    cpu_device = _graph.device_attr(mlir_context, "cpu", 0)
-    cpu_buffer_type = _graph.buffer_type_with_device(
-        mlir_context, dtype, [dim1, dim2], cpu_device
+    tt = t.to_mlir()
+    assert tt == mo.BufferType(
+        mosh.ShapeAttr(
+            [Dim(3).to_mlir(), Dim("x").to_mlir()],
+            mosh.ShapeType(),
+        ),
+        DType.float32,
+        m.DeviceRefAttr("cpu", 0),
     )
-
-    cuda_device0 = _graph.device_attr(mlir_context, "cuda", 0)
-    cuda_buffer_type = _graph.buffer_type_with_device(
-        mlir_context, dtype, [dim1, dim2], cuda_device0
-    )
-
-    default_buffer_type = _graph.buffer_type(mlir_context, dtype, [dim1, dim2])
-
-    assert _graph.buffer_type_get_device(cpu_buffer_type) == cpu_device
-    assert _graph.buffer_type_get_device(cuda_buffer_type) == cuda_device0
-    assert _graph.buffer_type_get_device(default_buffer_type) == cpu_device
 
 
 def test_chain_type(mlir_context):
