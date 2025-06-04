@@ -25,6 +25,11 @@ def torch_grayscale(img: torch.Tensor) -> torch.Tensor:
     return result
 
 
+def test_missing_operation(op_library: CustomOpLibrary):
+    with pytest.raises(AttributeError):
+        _ = op_library.some_kernel_that_doesnt_exist[{"const": 10}]
+
+
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_grayscale(op_library: CustomOpLibrary, backend: str):
     @torch.compile(backend=backend)
