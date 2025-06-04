@@ -9,7 +9,7 @@ import functools
 
 import pytest
 from max import mlir
-from max._core import OpBuilder, Type
+from max._core import NamedAttribute, OpBuilder, Type
 from max._core.dialects import builtin, m, mo, mosh
 from max._core.dtype import DType
 
@@ -31,16 +31,16 @@ def test_mosh(mlir_context):
 def test_mosh_shapeattr(mlir_context):
     shape_type = mosh.ShapeType()
     attr = mosh.ShapeAttr([1, 2, 3], shape_type)
-    dims = attr.values
+    dims = list(attr.values)
     index_type = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
     uint8_type = builtin.IntegerType(8, builtin.SignednessSemantics.unsigned)
     Index = functools.partial(builtin.IntegerAttr, index_type)
     UInt8 = functools.partial(builtin.IntegerAttr, uint8_type)
     expected = [Index(1), Index(2), Index(3)]
-    assert attr.values == expected
-    assert attr.values != []
-    assert attr.values != [Index(1), Index(1), Index(1)]
-    assert attr.values != [UInt8(1), UInt8(2), UInt8(3)]
+    assert dims == expected
+    assert dims != []
+    assert dims != [Index(1), Index(1), Index(1)]
+    assert dims != [UInt8(1), UInt8(2), UInt8(3)]
 
 
 def test_mosh_shapeattr_empty(mlir_context):
@@ -72,7 +72,7 @@ def test_mo_graph_op(mlir_context):
     graph = builder.create(mo.GraphOp, loc)("hello", [], [], is_subgraph=False)
 
     assert graph.name == "hello"
-    assert graph.input_parameters == []
+    assert list(graph.input_parameters) == []
     assert graph.function_type == builtin.FunctionType([], [])
 
 
@@ -80,3 +80,28 @@ def test_device_ref_attr(mlir_context):
     attr = m.DeviceRefAttr("cpu", 0)
     assert attr.label == "cpu"
     assert attr.id == 0
+
+
+def test_dictattr_arrayview(mlir_context):
+    na = NamedAttribute("foo", builtin.StringAttr("bar"))
+    print(na)
+    print(na.name)
+    print(na.value)
+    attr = builtin.DictionaryAttr([na])
+    assert list(attr.value) == [na]
+
+
+def test_arrayview_dead_attr_reference(mlir_context):
+    na = NamedAttribute("foo", builtin.StringAttr("bar"))
+    attr = builtin.DictionaryAttr([na])
+    array_view = attr.value
+    del attr
+    assert array_view[0] == na
+
+
+def test_arrayview_dead_array_reference(mlir_context):
+    na = NamedAttribute("foo", builtin.StringAttr("bar"))
+    attr = builtin.DictionaryAttr([na])
+    out = attr.value[0]
+    del attr
+    assert out == na
