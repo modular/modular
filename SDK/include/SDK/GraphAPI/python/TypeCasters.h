@@ -8,6 +8,7 @@
 #define SDK_GRAPHAPI_PYTHON_TYPECASTERS_H
 
 #include "KGEN/KGENDialect/KGENEnums.h"
+#include "SDK/GraphAPI/python/SequenceView.h"
 #include "Support/AssertStream.h"
 #include "Support/ErrorOr.h"
 #include "Support/ML/DType.h"
@@ -587,13 +588,12 @@ struct type_hook<::mlir::OpState> {
 /// This currently copies in each direction.
 /// - For Python -> C++ it's unlikely we could improve this, except in the case
 /// where the Python value already represents a contiguous C++ array.
-/// - For C++ -> Python, we can eventually return a special type which wraps the
-/// ArrayRef as a Sequence type, and could be passed back to C++ as an ArrayRef.
-/// Care needs to be taken with the lifetime of this reference.
+/// - For C++ -> Python, we return a special SequenceView type which wraps the
+/// ArrayRef as a Sequence type of type-erased references.
 template <typename Entry>
 struct type_caster<::llvm::ArrayRef<Entry>> {
   using Caster = make_caster<Entry>;
-  using VecCaster = make_caster<std::vector<Entry>>;
+  using VecCaster = make_caster<llvm::SmallVector<Entry>>;
   NB_TYPE_CASTER(::llvm::ArrayRef<Entry>,
                  const_name("Sequence[") + Caster::Name + const_name("]"))
 
@@ -616,47 +616,14 @@ struct type_caster<::llvm::ArrayRef<Entry>> {
   }
   static handle from_cpp(::llvm::ArrayRef<Entry> ar, rv_policy policy,
                          cleanup_list *cleanup) noexcept {
-    // TODO(MAXPLAT-123): Make these views.
-    return VecCaster::from_cpp(ar.vec(), policy, cleanup);
-  }
-};
-
-/// Casts sequence[bool] <-> ArrayRef<bool>.
-/// The default implementation doesn't work because std::vector<bool>
-/// is specialized as a bit vector, which we can't take a reference to.
-template <>
-struct type_caster<::llvm::ArrayRef<bool>> {
-  using Caster = make_caster<bool>;
-  NB_TYPE_CASTER(::llvm::ArrayRef<bool>, const_name("Sequence[bool]"))
-
-  Caster caster;
-  ::llvm::SmallVector<bool> storage;
-  bool used = false;
-
-  bool from_python(handle_t<nb::sequence> src, uint8_t flags,
-                   cleanup_list *cleanup) noexcept {
-    // Nanobind's built in typecasters for collections re-use
-    // their internal typecasters, which isn't safe for array refs.
-    // We can do something smart like specialize the caster for
-    // std::vector<ArrayRef<T>> to hold a vector of typecaster instances.
-    ASSERT_STREAM(!used, "ArrayRef typecasters cannot be reused.");
-    for (auto entry : src) {
-      if (!caster.from_python(entry, flags, cleanup)) {
-        storage.clear();
-        return false;
-      }
-      storage.push_back(caster.value);
-    }
-    used = true;
-    const bool *start = storage.data();
-    value = ::llvm::ArrayRef<bool>(start, storage.size());
-    return true;
-  }
-
-  static handle from_cpp(::llvm::ArrayRef<bool> ar, rv_policy policy,
-                         cleanup_list *cleanup) noexcept {
-    // TODO(MAXPLAT-123): Make these views.
-    return make_caster<std::vector<bool>>::from_cpp(ar.vec(), policy, cleanup);
+    // HACK: Somehow ArrayViews are causing reference leaks at shutdown
+    // (nanobind warnings) These are likely caused by references used in default
+    // arguments. We circumvent the problem by avoiding the ArrayView caster
+    // when the list is empty and just creating an empty list.
+    if (ar.empty())
+      return PyList_New(0);
+    return make_caster<M::Graph::Python::SequenceView>::from_cpp(
+        M::Graph::Python::SequenceView(ar), policy, cleanup);
   }
 };
 
