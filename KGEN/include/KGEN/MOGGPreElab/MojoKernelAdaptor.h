@@ -415,14 +415,13 @@ StreamType &operator<<(StreamType &os, const TensorOperandAdaptor &tensor) {
 template <typename StreamType>
 StreamType &operator<<(StreamType &os,
                        const VariadicTensorOperandAdaptor &tensors) {
-  os << "*" << *reinterpret_cast<const TensorOperandAdaptor *>(&tensors);
+  os << "*" << *static_cast<const TensorOperandAdaptor *>(&tensors);
   return os;
 }
 
 template <typename StreamType>
 StreamType &operator<<(StreamType &os, const ListOfTensorOperandAdaptor &list) {
-  os << "List[" << *reinterpret_cast<const TensorOperandAdaptor *>(&list)
-     << "]";
+  os << "List[" << *static_cast<const TensorOperandAdaptor *>(&list) << "]";
   return os;
 }
 
