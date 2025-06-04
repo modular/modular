@@ -39,6 +39,10 @@ what we publish.
 
 ### Language changes
 
+- `var` declarations in functions now support more flexible "patterns", allowing
+  multiple values to be declared at once, e.g. `var a, b = 4, 5` and
+  `var a, b : Int, Float64`.
+
 - Mojo now supports 'ref' patterns that bind a stored LValue into a named
   declaration, extending the argument convention into local function scope.
 
