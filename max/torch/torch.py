@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Optional, Union
 
@@ -120,6 +120,11 @@ class CustomOpLibrary:
             @torch.compiler.disable
             def update_cache():
                 nonlocal result
+                if attr not in self._kernel_library:
+                    raise AttributeError(
+                        f"custom library does not register operation {attr}"
+                    )
+
                 result = CustomOp(self, attr)
                 compiled[attr] = result
 
@@ -129,7 +134,7 @@ class CustomOpLibrary:
         return result
 
 
-ParametersDict = dict[str, Union[bool, int, str, DType]]
+ParametersDict = Mapping[str, Union[bool, int, str, DType]]
 ParameterKey = tuple[str, Union[bool, int, str, DType]]
 
 
