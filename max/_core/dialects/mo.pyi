@@ -2778,7 +2778,7 @@ class CustomOp(max._core.Operation):
     with the exact same symbol string.
 
     The `function` attribute specifies which labeled function the operation
-    refers to. Examples: `mogg.shape`, `mogg.pytorch_fallback`.
+    refers to. Examples: `mogg.shape`.
 
     Example:
 
