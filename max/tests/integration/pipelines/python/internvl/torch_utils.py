@@ -18,6 +18,7 @@ import requests
 import torch
 import torchvision.transforms as T
 from max.pipelines.architectures.internvl.tokenizer import (
+    InternVLProcessor,
     find_closest_aspect_ratio,
 )
 from PIL import Image
@@ -27,6 +28,7 @@ from test_common.torch_utils import (
 )
 from torchvision.transforms.functional import InterpolationMode
 from transformers import (
+    AutoConfig,
     PreTrainedModel,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
@@ -36,10 +38,20 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
+def load_pil_image_from_url(image_file: str) -> Image.Image:
+    """Load PIL image from URL, file path, or existing PIL image."""
+    if isinstance(image_file, str) and image_file.startswith("http"):
+        return Image.open(requests.get(image_file, stream=True).raw).convert(
+            "RGB"
+        )
+    else:
+        # Handle local files.
+        return Image.open(image_file).convert("RGB")
+
+
 def build_transform(input_size: int) -> T.Compose:
     """Build transform pipeline for InternVL image preprocessing."""
-    MEAN, STD = IMAGENET_MEAN, IMAGENET_STD
-    transform = T.Compose(
+    return T.Compose(
         [
             T.Lambda(
                 lambda img: img.convert("RGB") if img.mode != "RGB" else img
@@ -49,13 +61,12 @@ def build_transform(input_size: int) -> T.Compose:
                 interpolation=InterpolationMode.BICUBIC,
             ),
             T.ToTensor(),
-            T.Normalize(mean=MEAN, std=STD),
+            T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
         ]
     )
-    return transform
 
 
-def dynamic_preprocess(
+def crop_into_patches(
     image: Image.Image,
     min_num: int = 1,
     max_num: int = 12,
@@ -108,93 +119,77 @@ def dynamic_preprocess(
     return processed_images
 
 
-def load_image(
-    image_file: str | Image.Image,
-    input_size: int = 448,
-    max_num: int = 12,
+def preprocess_image_to_tensor(
+    pil_image: Image.Image, input_size: int = 448, max_num: int = 12
 ) -> torch.Tensor:
-    """Load and preprocess image for InternVL."""
-    if isinstance(image_file, str) and image_file.startswith("http"):
-        # Download image from URL
-        image = Image.open(requests.get(image_file, stream=True).raw).convert(
-            "RGB"
-        )
-    elif isinstance(image_file, str):
-        # Load from file path
-        image = Image.open(image_file).convert("RGB")
-    else:
-        # Assume it's already a PIL Image
-        image = image_file.convert("RGB")
-
+    """Preprocess image to tensor with dynamic patching - must match InternVLProcessor."""
     transform = build_transform(input_size=input_size)
-    images = dynamic_preprocess(
-        image, image_size=input_size, use_thumbnail=True, max_num=max_num
+    images = crop_into_patches(
+        pil_image, image_size=input_size, use_thumbnail=True, max_num=max_num
     )
     pixel_values = [transform(image) for image in images]
-    pixel_values = torch.stack(pixel_values)
-    return pixel_values
-
-
-def _setup_internvl_model(
-    model: PreTrainedModel,
-    data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
-) -> None:
-    """Set up InternVL model with required special tokens."""
-    IMG_CONTEXT_TOKEN = "<IMG_CONTEXT>"
-    img_context_token_id = data_processor.convert_tokens_to_ids(
-        IMG_CONTEXT_TOKEN
-    )
-    model.img_context_token_id = img_context_token_id
-
-
-def _format_internvl_prompt(
-    prompt: str,
-    image: str,
-    pixel_values: torch.Tensor,
-    model: PreTrainedModel,
-    data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
-) -> tuple[str, torch.Tensor]:
-    """Format prompt for InternVL with proper image tokens."""
-    # Get actual patch count from preprocessed image
-    num_patches = pixel_values.shape[0]
-
-    # InternVL-specific tokens
-    IMG_START_TOKEN = "<img>"
-    IMG_END_TOKEN = "</img>"
-    IMG_CONTEXT_TOKEN = "<IMG_CONTEXT>"
-
-    # Build the proper prompt with image tokens
-    if "<image>" not in prompt:
-        prompt = "<image>\n" + prompt
-
-    # Replace <image> with InternVL's format, accounting for actual number of patches
-    image_tokens = (
-        IMG_START_TOKEN
-        + IMG_CONTEXT_TOKEN * (model.num_image_token * num_patches)
-        + IMG_END_TOKEN
-    )
-    formatted_prompt = prompt.replace("<image>", image_tokens, 1)
-
-    return formatted_prompt, pixel_values
+    return torch.stack(pixel_values)
 
 
 def run_text_generation(
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
-    requests: Iterable[TextGenerationRequest],
+    textgen_requests: Iterable[TextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
 ) -> list[dict]:
-    """Run text generation for InternVL with custom image preprocessing."""
+    """Run text generation for InternVL using InternVLProcessor for text formatting."""
+    # Set up model tokens.
+    IMG_CONTEXT_TOKEN = "<IMG_CONTEXT>"
+    img_context_token_id = data_processor.convert_tokens_to_ids(
+        IMG_CONTEXT_TOKEN
+    )
+    model.img_context_token_id = img_context_token_id
+
+    # Create multimodal processor for text formatting.
+    config = AutoConfig.from_pretrained(
+        "OpenGVLab/InternVL3-8B-Instruct", trust_remote_code=True
+    )
+    processor = InternVLProcessor(data_processor, config)
+
+    def internvl_request_processor(
+        request: TextGenerationRequest,
+    ) -> dict[str, torch.Tensor]:
+        if request.is_multimodal:
+            assert len(request.images) == 1
+            pil_image = load_pil_image_from_url(request.images[0])
+
+            # Use InternVLProcessor for text formatting.
+            result = processor(text=request.prompt, images=[pil_image])
+
+            # Resize and split the image into patches.
+            pixel_values = preprocess_image_to_tensor(pil_image)
+
+            return {
+                "input_ids": torch.tensor(result["input_ids"])
+                .unsqueeze(0)
+                .to(device),
+                "attention_mask": torch.tensor(result["attention_mask"])
+                .unsqueeze(0)
+                .to(device),
+                "pixel_values": pixel_values.to(device).to(model.dtype),
+            }
+        else:
+            encoded_prompt = data_processor.encode(
+                request.prompt, return_tensors="pt"
+            ).to(device)
+            return {
+                "input_ids": encoded_prompt,
+                "attention_mask": torch.ones_like(encoded_prompt),
+            }
+
     return run_text_generation_with_custom_image_processing(
         model=model,
         data_processor=data_processor,
         device=device,
-        requests=requests,
+        textgen_requests=textgen_requests,
         num_steps=num_steps,
         print_outputs=print_outputs,
-        image_loader_fn=load_image,
-        prompt_formatter_fn=_format_internvl_prompt,
-        model_setup_fn=_setup_internvl_model,
+        request_processor_fn=internvl_request_processor,
     )

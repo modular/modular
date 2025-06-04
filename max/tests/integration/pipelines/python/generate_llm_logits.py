@@ -166,7 +166,7 @@ class PipelineOracle(ABC):
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            requests=self.inputs,
+            textgen_requests=self.inputs,
             print_outputs=True,
             use_cache=self.use_cache,
         )
@@ -261,7 +261,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            requests=self.inputs,
+            textgen_requests=self.inputs,
             print_outputs=True,
             # Omit `use_cache` since the InternVL code hardcodes it.
         )

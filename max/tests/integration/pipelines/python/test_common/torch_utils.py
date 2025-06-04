@@ -24,12 +24,6 @@ from transformers import (
 from test_common.evaluate import TextGenerationRequest
 
 
-def _process_images(images: Iterable[str]) -> list[Image.Image]:
-    return [
-        Image.open(requests.get(image, stream=True).raw) for image in images
-    ]
-
-
 def default_image_text_processor(
     data_processor, image, prompt: str, device: torch.device
 ) -> dict[str, torch.Tensor]:
@@ -72,148 +66,77 @@ def run_text_generation(
     | MllamaProcessor
     | PixtralProcessor,
     device: torch.device,
-    requests: Iterable[TextGenerationRequest],
+    textgen_requests: Iterable[TextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
 ):
-    saved_logits, store_logits = _create_logits_store()
-    results = []
+    """Run text generation using standard data processor for both text and images."""
 
-    for request in requests:
+    def standard_request_processor(
+        request: TextGenerationRequest,
+    ) -> dict[str, torch.Tensor]:
         if request.is_multimodal:
-            processed_images = _process_images(request.images)
-            # Assume one image per prompt for now.
+            processed_images = [
+                Image.open(requests.get(image, stream=True).raw)
+                for image in request.images
+            ]
             assert len(processed_images) == 1
-
-            inputs = data_processor(
+            return data_processor(
                 images=processed_images[0],
                 text=request.prompt,
                 return_tensors="pt",
             ).to(device)
-
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=num_steps,
-                do_sample=False,
-                logits_processor=LogitsProcessorList([store_logits]),
-                num_return_sequences=1,
-                # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
-                pad_token_id=getattr(data_processor, "eos_token_id", None),
-                use_cache=use_cache,
-            )
         else:
-            # Process text-only inputs.
             encoded_prompt = data_processor.encode(
                 request.prompt, return_tensors="pt"
             ).to(device)
-            mask = torch.ones_like(encoded_prompt)
+            return {
+                "input_ids": encoded_prompt,
+                "attention_mask": torch.ones_like(encoded_prompt),
+            }
 
-            outputs = model.generate(
-                input_ids=encoded_prompt,
-                attention_mask=mask,
-                max_new_tokens=num_steps,
-                do_sample=False,
-                logits_processor=LogitsProcessorList([store_logits]),
-                num_return_sequences=1,
-                # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
-                pad_token_id=getattr(data_processor, "eos_token_id", None),
-                use_cache=use_cache,
-            )
-
-        if print_outputs:
-            print(
-                "Prompt:",
-                f"{request.prompt[:100]}..."
-                if len(request.prompt) > 100
-                else request.prompt,
-            )
-            print(
-                "Output:",
-                data_processor.batch_decode(outputs, skip_special_tokens=True)[
-                    0
-                ],
-            )
-
-        # TODO: We likely want to track input image here too for multimodal requests.
-        results.append({"prompt": request.prompt, "values": saved_logits[:]})
-        saved_logits.clear()
-
-    return results
+    return run_text_generation_with_custom_image_processing(
+        model=model,
+        data_processor=data_processor,
+        device=device,
+        textgen_requests=textgen_requests,
+        num_steps=num_steps,
+        print_outputs=print_outputs,
+        use_cache=use_cache,
+        request_processor_fn=standard_request_processor,
+    )
 
 
 def run_text_generation_with_custom_image_processing(
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
-    requests: Iterable[TextGenerationRequest],
+    textgen_requests: Iterable[TextGenerationRequest],
     num_steps: int,
     print_outputs: bool,
-    image_loader_fn: Callable[[str], torch.Tensor],
-    prompt_formatter_fn: Callable[
-        [
-            str,
-            str,
-            torch.Tensor,
-            PreTrainedModel,
-            PreTrainedTokenizer | PreTrainedTokenizerFast,
-        ],
-        tuple[str, torch.Tensor],
+    request_processor_fn: Callable[
+        [TextGenerationRequest], dict[str, torch.Tensor]
     ],
-    model_setup_fn: Callable[
-        [PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast],
-        None,
-    ],
+    use_cache: bool | None = None,
 ):
-    """Run text generation with custom image processing for specialized models like InternVL."""
+    """Run text generation with custom request processing for specialized models."""
     saved_logits, store_logits = _create_logits_store()
-
-    # Call model setup function (e.g., for setting special tokens)
-    model_setup_fn(model, data_processor)
-
     results = []
 
-    # Process each request (multimodal or text-only).
-    for request in requests:
-        if request.is_multimodal:
-            # Use custom image loader on first image (assume single image for now).
-            assert len(request.images) == 1
-
-            # Prepare multimodal inputs.
-            pixel_values = image_loader_fn(request.images[0])
-            formatted_prompt, pixel_values = prompt_formatter_fn(
-                request.prompt,
-                request.images[0],
-                pixel_values,
-                model,
-                data_processor,
-            )
-            inputs = data_processor(formatted_prompt, return_tensors="pt")
-
-            generate_kwargs = {
-                "input_ids": inputs["input_ids"].to(device),
-                "attention_mask": inputs["attention_mask"].to(device),
-                "pixel_values": pixel_values.to(device).to(model.dtype),
-            }
-        else:
-            # Text-only input preparation
-            encoded_prompt = data_processor.encode(
-                request.prompt, return_tensors="pt"
-            ).to(device)
-            generate_kwargs = {
-                "input_ids": encoded_prompt,
-                "attention_mask": torch.ones_like(encoded_prompt),
-            }
-
-        # Common generation call
+    for request in textgen_requests:
+        generate_kwargs = request_processor_fn(request)
         outputs = model.generate(
             **generate_kwargs,
             max_new_tokens=num_steps,
             do_sample=False,
             logits_processor=LogitsProcessorList([store_logits]),
             num_return_sequences=1,
-            # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
             pad_token_id=getattr(data_processor, "eos_token_id", None),
+            # Only pass use_cache if it's not None to avoid conflicts with
+            # models such as InternVL that hardcode use_cache in their
+            # generate_kwargs.
+            **({"use_cache": use_cache} if use_cache is not None else {}),
         )
 
         if print_outputs:
