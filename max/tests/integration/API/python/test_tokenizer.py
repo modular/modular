@@ -23,7 +23,7 @@ from max.pipelines import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import SamplingParams, TextAndVisionContext, TextContext
 from test_common.mocks import mock_estimate_memory_footprint
 
 LLAMA_3_1_HF_REPO_ID = "meta-llama/Llama-3.1-8B-Instruct"
@@ -271,3 +271,28 @@ def test_text_tokenizer_with_constrained_decoding(
 
     assert context.json_schema
     assert isinstance(context.prompt, str)
+
+
+def test_tokenizer_encode_stop_criteria(llama_3_1_8b_instruct_local_path):
+    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+
+    prompt = "hi my name is"
+
+    request = TokenGeneratorRequest(
+        id="id_0",
+        index=0,
+        model_name=llama_3_1_8b_instruct_local_path,
+        messages=[
+            TokenGeneratorRequestMessage(
+                role="user",
+                content=prompt,
+            )
+        ],
+        sampling_params=SamplingParams(stop=["!"]),
+    )
+
+    context = asyncio.run(tokenizer.new_context(request))
+    # encoded stop criteria should equal [0]
+    assert len(context.eos_sequences) == 1
+    assert len(context.eos_sequences[0]) == 1
+    assert np.array_equal(context.eos_sequences[0], [0])

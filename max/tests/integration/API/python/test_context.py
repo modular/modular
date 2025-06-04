@@ -177,3 +177,70 @@ def test_context_sampling_params_integration():
     assert context.sampling_params is custom_params
     assert context.sampling_params.temperature == 0.7
     assert context.sampling_params.temperature == 0.7
+
+
+def test_context_sampling_params_stop():
+    """Tests that TextContext can stop on user-defined sequences."""
+    custom_params = SamplingParams(stop=["This is a test"])
+
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="This is a test prompt",
+        max_length=50,
+        tokens=np.array([0]),
+        eos_sequences=[[1, 2]],
+        sampling_params=custom_params,
+    )
+
+    context.update(1)
+    context.update(2)
+    print(context.generated_tokens)
+    assert context.is_done
+    assert np.array_equal(context.generated_tokens, np.array([1, 2]))
+
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="This is a test prompt",
+        max_length=50,
+        tokens=np.array([0]),
+        eos_sequences=[[2], [3, 1]],
+        sampling_params=custom_params,
+    )
+    context.update(1)
+    context.update(3)
+
+    assert not context.is_done
+    assert np.array_equal(context.generated_tokens, np.array([1, 3]))
+
+
+def test_context_sampling_params_eos_token_ids():
+    """Tests that TextContext can stop on user-defined sequences."""
+    custom_params = SamplingParams(stop=["This is a test"])
+
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="This is a test prompt",
+        max_length=50,
+        tokens=np.array([0]),
+        eos_token_ids=set([5, 4, 2]),
+        sampling_params=custom_params,
+    )
+    context.update(1)
+    context.update(2)
+
+    assert context.is_done
+    assert np.array_equal(context.generated_tokens, np.array([1, 2]))
+
+    context = TextContext(
+        cache_seq_id=0,
+        prompt="This is a test prompt",
+        max_length=50,
+        tokens=np.array([0]),
+        eos_token_ids=set([5, 4, 2]),
+        sampling_params=custom_params,
+    )
+    context.update(3)
+    context.update(6)
+
+    assert not context.is_done
+    assert np.array_equal(context.generated_tokens, np.array([3, 6]))
