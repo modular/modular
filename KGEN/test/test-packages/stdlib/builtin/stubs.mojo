@@ -940,7 +940,7 @@ struct UnsafePointer[
 
 
 @register_passable("trivial")
-struct _StridedRangeIterator(_IntIter):
+struct _StridedRangeIterator(_ParamForIterator):
     var start: Int
     var end: Int
     var step: Int
@@ -970,40 +970,46 @@ struct _StridedRangeIterator(_IntIter):
 # ===-----------------------------------------------------------------------===#
 
 
-trait _IntIter(Copyable):
+trait _ParamForIterator(Copyable):
+    alias _IndexType: Copyable
+
     fn __has_next__(self) -> Bool:
         ...
 
-    fn __next__(mut self) -> Int:
+    fn __next__(mut self) -> _IndexType:
         ...
 
 
-struct _ParamForIterator[IteratorT: Copyable]:
+struct _ParamForIteratorWrapper[IteratorT: _ParamForIterator]:
     var next_it: IteratorT
-    var value: Int
+    var value: IteratorT._IndexType
     var stop: Bool
 
-    fn __init__(out self, next_it: IteratorT, value: Int, stop: Bool):
+    fn __init__(
+        out self,
+        next_it: IteratorT,
+        owned value: IteratorT._IndexType,
+        stop: Bool,
+    ):
         self.next_it = next_it
-        self.value = value
+        self.value = value^
         self.stop = stop
 
 
-fn declval[T: AnyType]() -> T:
-    while True:
-        pass
-
-
 fn parameter_for_generator[
-    IteratorT: _IntIter
-](it: IteratorT, out result: _ParamForIterator[IteratorT]):
+    IteratorT: _ParamForIterator
+](it: IteratorT) -> _ParamForIteratorWrapper[IteratorT]:
     if it.__has_next__():
         var next_it = it
-        var value = next_it.__next__()
-        return _ParamForIterator(next_it, value, False)
-    var value: IteratorT
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(value))
-    return _ParamForIterator(value^, 0, True)
+        return _ParamForIteratorWrapper(next_it, next_it.__next__(), False)
+
+    var next_iter: IteratorT
+    __mlir_op.`lit.ownership.mark_initialized`(
+        __get_mvalue_as_litref(next_iter)
+    )
+    var next_val: IteratorT._IndexType
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(next_val))
+    return _ParamForIteratorWrapper(next_iter^, next_val^, True)
 
 
 struct Optional[T: Copyable & Movable]:

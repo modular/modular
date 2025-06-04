@@ -413,6 +413,8 @@ struct WrapperNestedInt:
 @value
 @register_passable("trivial")
 struct TrivialRange:
+    alias _IndexType = Int
+
     fn __iter__(self) -> Self:
         return self
 
