@@ -76,16 +76,15 @@ class DistributedTransformerBlock(Module):
         self.devices = devices
         self.use_subgraph = use_subgraph
 
-    def build_subgraph(self, name: str) -> Module:
+    def build_subgraph(
+        self,
+        name: str,
+        weight_prefix: str,
+    ) -> Module:
         num_devices = len(self.devices)
 
         raw_state_dict = self.raw_state_dict()
-        weights = [
-            value
-            for _, value in sorted(raw_state_dict.items(), key=lambda x: x[0])
-        ]
-        weight_mlir_values = [w._mlir_value for w in weights]
-
+        layer_weights = list(raw_state_dict.values())
         outer_self = self
 
         class DistributedTransformerBlockSubgraph(Module):
@@ -107,7 +106,6 @@ class DistributedTransformerBlock(Module):
                     *[kv_collection.type for kv_collection in kv_collections],
                     freqs_cis.type,
                     input_row_offsets.type,
-                    *[w.type for w in weights],
                 ]
 
                 name_suffix = md5(
@@ -140,16 +138,20 @@ class DistributedTransformerBlock(Module):
                         arg_freqs_cis = next(inputs)
 
                         arg_input_row_offsets = next(inputs)
-                        for weight, subgraph_input in zip(
-                            weights,
-                            take(inputs, len(weights)),
+                        for weight in filter(
+                            lambda w: w.name.startswith(weight_prefix),
+                            layer_weights,
                         ):
-                            weight._mlir_value = subgraph_input._mlir_value
+                            weight._placeholder = True
+                            weight.name = weight.name.removeprefix(
+                                weight_prefix
+                            )
 
                         # prevent re-entry
                         try:
                             outer_self.use_subgraph = False
                             results = outer_self(
+                                weight_prefix,
                                 arg_layer_idx,
                                 arg_xs,
                                 arg_signal_buffers,
@@ -159,10 +161,7 @@ class DistributedTransformerBlock(Module):
                             )
                         finally:
                             outer_self.use_subgraph = True
-                            for weight, original_weight_mlir_value in zip(
-                                weights, weight_mlir_values
-                            ):
-                                weight._mlir_value = original_weight_mlir_value
+
                         subgraph.output(*results)
 
                 call_args: MutableSequence[Value] = [
@@ -170,15 +169,21 @@ class DistributedTransformerBlock(Module):
                     *xs,
                     *signal_buffers,
                     *kv_collections,
+                    freqs_cis,
                     input_row_offsets,
                 ]
-                call_args.extend([w.tensor for w in weights])
-                return [res.tensor for res in ops.call(subgraph, *call_args)]
+                return [
+                    res.tensor
+                    for res in ops.call(
+                        subgraph, *call_args, prefix=weight_prefix
+                    )
+                ]
 
         return DistributedTransformerBlockSubgraph()
 
     def __call__(
         self,
+        prefix: str,
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
@@ -191,6 +196,7 @@ class DistributedTransformerBlock(Module):
         if self.use_subgraph:
             return self.build_subgraph(
                 "dist_transformer_block",
+                prefix,
             )(
                 layer_idx,
                 xs,
@@ -273,6 +279,7 @@ class DistributedTransformer(Module):
         freqs_cis = self.rope.freqs_cis
         for idx, layer in enumerate(self.layers):
             h = layer(
+                f"layers.{idx}.",
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
