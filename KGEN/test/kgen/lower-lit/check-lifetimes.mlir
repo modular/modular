@@ -334,3 +334,25 @@ module {
     lit.struct.field a : index
   }
 }
+
+// -----
+
+// COM: Ensure that checklifetimes processes the function defined by a closure.
+
+#type_value = #kgen.type<!kgen.closure<@make_closure, "foo" nonescaping>> : !kgen.type
+module {
+  lit.fn @make_closure[imm Y, imm Z]() {
+    // CHECK:       lit.call @use[imm W]
+    // CHECK-NEXT:   [[V7:%.*]] = kgen.rebind %arg0 : !lit.ref<@S, imm W> to !lit.ref<@S, mut (mutcast imm W)>
+    // CHECK-NEXT:   lit.call @S::@__del__[mut (mutcast imm W)]([[V7]])
+    %0 = lit.closure.init[#type_value]()[imm W](%w: !lit.ref<@S, imm W> owned_in_mem, %a: index ) -> index {
+      %3 = lit.call @use[imm W](%w) : !lit.generator<[1](!lit.ref<@S, imm *[0,0]> read_mem) -> !kgen.none>
+      kgen.return %a : index
+    } : (), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, imm C>
+    kgen.return
+  }
+  lit.struct.decl @S
+   destructor :!lit.generator<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none> @S::@__del__ {
+    lit.struct.field a : index
+  }
+}

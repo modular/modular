@@ -30,13 +30,28 @@ using namespace LIT;
 using llvm::BitVector;
 
 static constexpr StringRef extraOriginUsesAttrName = ".mojo.extra.origin.uses";
+namespace {
+/// FunctionLikeOp abstracts a function. It defines the interface necessary for
+/// an op to undergo a checklifetimes pass. It is either a ClosureInitOp or FnOp
+struct FunctionLikeOp {
+  FunctionLikeOp(LIT::ClosureInitOp closure) : op(closure) {}
+  FunctionLikeOp(FnOp fn) : op(fn) {}
+  unsigned getNumArguments() const;
+  Location getLoc() const { return op->getLoc(); }
+  DebugInfo::DISubprogramAttr getSubprogramScope() const;
+  Region &getBodyRegion() const;
+  FnTypeGeneratorType getFuncTypeGenerator() const;
+  /// The underlying function like op.
+  Operation *op;
+};
+} // namespace
 
 /// Find all the functions and types in the module.
-static std::tuple<std::vector<FnOp>, DenseMap<SymbolRefAttr, FnOp>,
+static std::tuple<std::vector<FunctionLikeOp>, DenseMap<SymbolRefAttr, FnOp>,
                   DenseMap<SymbolRefAttr, LIT::StructDeclOp>,
                   DenseMap<SymbolRefAttr, LIT::TraitDeclOp>>
 collectFunctionsAndTypes(Operation *module) {
-  std::vector<FnOp> funcList;
+  std::vector<FunctionLikeOp> funcList;
   DenseMap<SymbolRefAttr, FnOp> funcMap;
   DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
   DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
@@ -49,8 +64,11 @@ collectFunctionsAndTypes(Operation *module) {
       // We don't process external functions. They don't have a body to check.
       if (funcOp.isExternal())
         return;
-      funcList.push_back(funcOp);
+      funcList.emplace_back(funcOp);
     }
+    if (auto closureOp = dyn_cast<LIT::ClosureInitOp>(op))
+      funcList.emplace_back(closureOp);
+
     // Collect structs.
     else if (auto structOp = dyn_cast<LIT::StructDeclOp>(op)) {
       structMap[getFullyResolvedSymbolRef(structOp)] = structOp;
@@ -95,8 +113,8 @@ createDebugVariableForVarDecl(VarDeclOp op,
 /// `funcSpAttr` is the DISubprogramAttr of the surrounding function `func`.
 /// Returns the VarInfo of the inserted ValueOp.
 static DebugInfo::DILocalVariableAttr
-insertDebugVariableForArg(OpBuilder &builder, FnOp func, BlockArgument arg,
-                          ArrayRef<PogMetadataAttr> pogList,
+insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
+                          BlockArgument arg, ArrayRef<PogMetadataAttr> pogList,
                           DebugInfo::DISubprogramAttr funcSpAttr) {
   // Skip synthesized args.
   if (arg.getArgNumber() >= pogList.size())
@@ -605,7 +623,7 @@ struct ValueSet {
   ///
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
-  ValueSet(TypeDeclInfo &typeDeclInfo, FnOp func,
+  ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
            CachedOriginFinder &originFinder);
 
   /// Return the number of values we are tracking.
@@ -673,7 +691,7 @@ struct ValueSet {
 
 private:
   /// This is the function we're analyzing.
-  FnOp func;
+  FunctionLikeOp func;
   /// These are all of the value infos, indexed by ID #.
   SmallVector<ValueInfo> valueInfos;
   /// This is a lookup from SSA values to the thing they are referencing.
@@ -696,7 +714,7 @@ private:
 ///
 /// This sentinel is also used by DestructorInsertion as a marker for
 /// "unreachable" code to avoid unnecessary meets.
-ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FnOp func,
+ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
                    CachedOriginFinder &originFinder)
     : typeDeclInfo(typeDeclInfo), originFinder(originFinder), func(func) {
   addValue(Value(), OriginTrackable(Value()), DebugInfo::DILocalVariableAttr());
@@ -709,7 +727,7 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FnOp func,
                                          DebugInfo::EmissionKind::Full;
 
   SmallVector<bool> argShadowed(func.getNumArguments(), false);
-  func.getBody()->walk<mlir::WalkOrder::PreOrder>(
+  func.getBodyRegion().walk<mlir::WalkOrder::PreOrder>(
       [&](Operation *op) -> WalkResult {
         // Skip looking at nested functions, they are handled as separate
         // contexts.
@@ -748,8 +766,9 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FnOp func,
 
   ArrayRef<PogMetadataAttr> pogList =
       func.getFuncTypeGenerator().getArgListAttrs().getPogs();
-  OpBuilder debugBuilder = OpBuilder::atBlockBegin(func.getBody());
-  for (BlockArgument arg : func.getArguments()) {
+  OpBuilder debugBuilder =
+      OpBuilder::atBlockBegin(&func.getBodyRegion().front());
+  for (BlockArgument arg : func.getBodyRegion().front().getArguments()) {
     DebugInfo::DILocalVariableAttr debugVariable;
     if (genDebugInfo && !argShadowed[arg.getArgNumber()])
       debugVariable = insertDebugVariableForArg(debugBuilder, func, arg,
@@ -822,7 +841,7 @@ raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
 }
 
 void ValueSet::printFuncName(raw_ostream &os) const {
-  if (auto funcOp = dyn_cast<FnOp>(func))
+  if (auto funcOp = dyn_cast<FnOp>(func.op))
     os << "'" << funcOp.getName() << "'";
   else
     os << "(non func)";
@@ -1052,7 +1071,7 @@ struct UninitializedValueScan {
   UninitializedValueScan(ValueSet &valueSet) : valueSet(valueSet) {}
   UninitializedValueScan(const UninitializedValueScan &existing) = delete;
 
-  void scanFunction(FnOp func);
+  void scanFunction(FunctionLikeOp func);
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -1449,7 +1468,7 @@ void UninitializedValueScan::handleAnyOriginUse(
              mlir::DenseI32ArrayAttr::get(op.getContext(), valueIdsToExtend));
 }
 
-void UninitializedValueScan::scanFunction(FnOp func) {
+void UninitializedValueScan::scanFunction(FunctionLikeOp func) {
   // Initialize the BitVector with all the elements that are live-in.  We treat
   // all values live at the start of the function (even before they are actually
   // defined) because we know that all uses must be after them due to SSA
@@ -1465,7 +1484,7 @@ void UninitializedValueScan::scanFunction(FnOp func) {
     }
 
   // Scan the body of the function.
-  scanBlock(func.getFunctionBody().front());
+  scanBlock(func.getBodyRegion().front());
 }
 
 /// Scan a block top down, checking all the operations that may use a value or
@@ -2593,7 +2612,7 @@ struct DestructorInsertion {
     return result;
   }
 
-  void scanFunction(FnOp func);
+  void scanFunction(FunctionLikeOp func);
   void scanBlock(Block &body);
 
   LLVM_DUMP_METHOD void dump() const;
@@ -2688,7 +2707,7 @@ private:
   os.flush();
 }
 
-void DestructorInsertion::scanFunction(FnOp func) {
+void DestructorInsertion::scanFunction(FunctionLikeOp func) {
   functionSignature = func.getFuncTypeGenerator();
 
   consumedValues.resize(valueSet.getNumTotalBits());
@@ -2697,7 +2716,7 @@ void DestructorInsertion::scanFunction(FnOp func) {
   consumedValues.set(0);
 
   // Scan the body of the function.
-  Block &funcBody = func.getFunctionBody().front();
+  Block &funcBody = func.getBodyRegion().front();
   scanBlock(funcBody);
 
   // The sentinel tracks reachability.
@@ -2707,7 +2726,7 @@ void DestructorInsertion::scanFunction(FnOp func) {
   // Emit their destructor calls at the start of the function by acting as
   // though there is a use.
   for (auto [argValue, conv] :
-       llvm::zip(func.getArguments(),
+       llvm::zip(func.getBodyRegion().front().getArguments(),
                  func.getFuncTypeGenerator().getArgConventions())) {
     // Ignore undef-on-input values.
     if (isResultSlot(conv))
@@ -2715,8 +2734,7 @@ void DestructorInsertion::scanFunction(FnOp func) {
 
     bool isIndirect = hasAddress(conv);
     Location loc = argValue.getLoc();
-    if (DebugInfo::DISubprogramAttr scope =
-            DebugInfo::extractScope(cast<mlir::FunctionOpInterface>(*func)))
+    if (DebugInfo::DISubprogramAttr scope = func.getSubprogramScope())
       loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
     ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
@@ -2734,6 +2752,7 @@ void DestructorInsertion::scanFunction(FnOp func) {
 /// change its liveness state.  This diagnoses uses of values that are not yet
 /// initialized, and returns the set of values that are live at the end of the
 /// block.
+
 void DestructorInsertion::scanBlock(Block &block) {
   // Process each operation bottom-up in the block.
   SmallVector<std::pair<Value, OperandEffect>> operandEffects;
@@ -3770,18 +3789,18 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
       return signalPassFailure();
   }
 
-  LogicalResult processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
+  LogicalResult processFunction(FunctionLikeOp func, TypeDeclInfo &typeDeclInfo,
                                 CachedOriginFinder &originFinder);
 };
 } // namespace
 
 LogicalResult
-CheckLifetimes::processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
+CheckLifetimes::processFunction(FunctionLikeOp func, TypeDeclInfo &typeDeclInfo,
                                 CachedOriginFinder &originFinder) {
 
   // If the function is a trait function or something else unreachable, we don't
   // need to process it.
-  Block &funcBody = func.getFunctionBody().front();
+  Block &funcBody = func.getBodyRegion().front();
   if (isa<UnreachableOp>(funcBody.front()))
     return success();
 
@@ -3845,4 +3864,25 @@ CheckLifetimes::processFunction(FnOp func, TypeDeclInfo &typeDeclInfo,
   return failure(llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
     return info.hasErrorDiagnosed;
   }));
+}
+
+DebugInfo::DISubprogramAttr FunctionLikeOp::getSubprogramScope() const {
+  if (auto debuggable = dyn_cast<DebugInfo::SubprogramScoped>(op))
+    return debuggable.getSubprogramScope();
+  return {};
+}
+
+Region &FunctionLikeOp::getBodyRegion() const { return op->getRegion(0); }
+
+FnTypeGeneratorType FunctionLikeOp::getFuncTypeGenerator() const {
+  if (auto fn = dyn_cast<FnOp>(op))
+    return fn.getFuncTypeGenerator();
+  if (auto closure = dyn_cast<LIT::ClosureInitOp>(op))
+    return closure.getFuncTypeGenerator();
+  return {};
+}
+
+unsigned FunctionLikeOp::getNumArguments() const {
+  unsigned args = getBodyRegion().getBlocks().front().getNumArguments();
+  return args;
 }

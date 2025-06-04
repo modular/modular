@@ -154,10 +154,17 @@ OriginTrackable::OriginTrackable(Value v) {
   auto bbArg = dyn_cast<BlockArgument>(v);
   if (!bbArg || !bbArg.getOwner())
     return;
-  auto func = dyn_cast<FnOp>(bbArg.getOwner()->getParentOp());
-  if (!func)
+  FnTypeGeneratorType signature;
+  bool isInit = false;
+  if (auto func = dyn_cast<FnOp>(bbArg.getOwner()->getParentOp())) {
+    signature = func.getFuncTypeGenerator();
+    isInit = func.getSpecialFunctionInfo().isInitializer();
+  } else if (auto closure = dyn_cast<LIT::ClosureInitOp>(
+                 bbArg.getOwner()->getParentOp())) {
+    signature = closure.getFuncTypeGenerator();
+  }
+  if (!signature)
     return;
-  FnTypeGeneratorType signature = func.getFuncTypeGenerator();
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getArgConvention(argIdx)) {
@@ -191,7 +198,7 @@ OriginTrackable::OriginTrackable(Value v) {
 
     // Initializers allow member-wise initialization of 'self' to construct a
     // full value.
-    if (func.getSpecialFunctionInfo().isInitializer())
+    if (isInit)
       isFullObjectLiveOnEntry = true;
     break;
   case ArgConvention::ByRefError:
