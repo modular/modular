@@ -135,6 +135,9 @@ class Qwen3Model(LlamaModelBase):
             state_dict,
             override_quantization_encoding=True,
             weight_alignment=1,
+            # Stops strict from raising error when sharing LM head weights
+            # (as LM head is never technically loaded from the state dict)
+            strict=(not self.huggingface_config.tie_word_embeddings),
         )
 
         self.state_dict = nn_model.state_dict()
