@@ -56,6 +56,19 @@ class AudioGenerationRequest:
     capabilities of the response generation.
     """
 
+    max_new_tokens: int | None = None
+    """
+    The maximum number of new tokens to generate in the response. If not set,
+    the model may generate tokens until it reaches its internal limits or based
+    on other stopping criteria.
+    """
+
+    ignore_eos: bool = False
+    """
+    If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
+    stop string is hit.
+    """
+
     voice: str | None = None
     """The voice to use for audio generation.
     """
@@ -71,12 +84,6 @@ class AudioGenerationRequest:
 
     seed: int | None = None
     """The seed to use for the random number generator."""
-
-    ignore_eos: bool = False
-    """
-    If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
-    stop string is hit.
-    """
 
     sampling_params: SamplingParams = SamplingParams()
     """Request sampling configuration options."""
