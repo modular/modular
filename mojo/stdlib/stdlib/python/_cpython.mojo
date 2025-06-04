@@ -127,7 +127,14 @@ struct PyKeysValuePair:
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyObjectPtr(Copyable, Movable):
+struct PyObjectPtr(
+    Copyable,
+    Movable,
+    Defaultable,
+    Boolable,
+    Intable,
+    Writable,
+):
     """Equivalent to `PyObject*` in C.
 
     It is crucial that this type has the same size and alignment as `PyObject*`
@@ -164,13 +171,14 @@ struct PyObjectPtr(Copyable, Movable):
     @always_inline
     fn __init__(out self):
         """Initialize a null PyObjectPtr."""
-        self.unsized_obj_ptr = UnsafePointer[PyObject]()
+        self.unsized_obj_ptr = {}
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __eq__(self, rhs: PyObjectPtr) -> Bool:
+    @always_inline
+    fn __eq__(self, rhs: Self) -> Bool:
         """Compare two PyObjectPtr for equality.
 
         Args:
@@ -181,7 +189,8 @@ struct PyObjectPtr(Copyable, Movable):
         """
         return Int(self.unsized_obj_ptr) == Int(rhs.unsized_obj_ptr)
 
-    fn __ne__(self, rhs: PyObjectPtr) -> Bool:
+    @always_inline
+    fn __ne__(self, rhs: Self) -> Bool:
         """Compare two PyObjectPtr for inequality.
 
         Args:
@@ -193,25 +202,40 @@ struct PyObjectPtr(Copyable, Movable):
         return not (self == rhs)
 
     # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn __bool__(self) -> Bool:
+        return Bool(self.unsized_obj_ptr)
+
+    @always_inline
+    fn __int__(self) -> Int:
+        return Int(self.unsized_obj_ptr)
+
+    # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @always_inline
     fn is_null(self) -> Bool:
         """Check if the pointer is null.
 
         Returns:
             Bool: True if the pointer is null, False otherwise.
         """
-        return Int(self.unsized_obj_ptr) == 0
+        return not self
 
-    # TODO: Consider removing this and inlining Int(p.value) into callers
-    fn _get_ptr_as_int(self) -> Int:
-        """Get the pointer value as an integer.
+    fn write_to[W: Writer](self, mut writer: W):
+        """Formats to the provided Writer.
 
-        Returns:
-            Int: The integer representation of the pointer.
+        Parameters:
+            W: A type conforming to the Writable trait.
+
+        Args:
+            writer: The object to write to.
         """
-        return Int(self.unsized_obj_ptr)
+        writer.write(self.unsized_obj_ptr)
 
 
 @fieldwise_init
@@ -971,7 +995,7 @@ struct CPython(Copyable, Movable):
         https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef).
         """
 
-        self.log(ptr._get_ptr_as_int(), " INCREF refcnt:", self._Py_REFCNT(ptr))
+        self.log(ptr, " INCREF refcnt:", self._Py_REFCNT(ptr))
 
         self.Py_IncRef_func(ptr)
         self._inc_total_rc()
@@ -981,7 +1005,7 @@ struct CPython(Copyable, Movable):
         https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef).
         """
 
-        self.log(ptr._get_ptr_as_int(), " DECREF refcnt:", self._Py_REFCNT(ptr))
+        self.log(ptr, " DECREF refcnt:", self._Py_REFCNT(ptr))
         self.Py_DecRef_func(ptr)
         self._dec_total_rc()
 
@@ -991,7 +1015,7 @@ struct CPython(Copyable, Movable):
     # debugging. We shouldn't rely on this function anywhere - its only purpose
     # is debugging.
     fn _Py_REFCNT(self, ptr: PyObjectPtr) -> Int:
-        if ptr._get_ptr_as_int() == 0:
+        if ptr.is_null():
             return -1
         # NOTE:
         #   The "obvious" way to write this would be:
@@ -1051,7 +1075,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PySet_New", PyObjectPtr](PyObjectPtr())
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PySet_New, refcnt:",
             self._Py_REFCNT(r),
         )
@@ -1067,9 +1091,9 @@ struct CPython(Copyable, Movable):
 
         var r = self.lib.call["PySet_Add", c_int](set, element)
         self.log(
-            set._get_ptr_as_int(),
+            set,
             " PySet_Add, element: ",
-            element._get_ptr_as_int(),
+            element,
         )
         return r
 
@@ -1085,7 +1109,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyDict_New", PyObjectPtr]()
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyDict_New, refcnt:",
             self._Py_REFCNT(r),
         )
@@ -1105,9 +1129,9 @@ struct CPython(Copyable, Movable):
 
         self.log(
             "PyDict_SetItem, key: ",
-            key._get_ptr_as_int(),
+            key,
             " value: ",
-            value._get_ptr_as_int(),
+            value,
         )
 
         return r
@@ -1122,7 +1146,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyDict_GetItemWithError", PyObjectPtr](
             dict_obj, key
         )
-        self.log("PyDict_GetItemWithError, key: ", key._get_ptr_as_int())
+        self.log("PyDict_GetItemWithError, key: ", key)
         return r
 
     fn PyDict_Check(self, maybe_dict: PyObjectPtr) -> Bool:
@@ -1131,9 +1155,8 @@ struct CPython(Copyable, Movable):
         """
 
         var my_type = self.PyObject_Type(maybe_dict)
-        var my_type_as_int = my_type._get_ptr_as_int()
         var dict_type = self.PyDict_Type()
-        var result = my_type_as_int == dict_type._get_ptr_as_int()
+        var result = my_type == dict_type
         self.Py_DecRef(my_type)
         return result
 
@@ -1160,17 +1183,17 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            dictionary._get_ptr_as_int(),
+            dictionary,
             " NEWREF PyDict_Next",
-            dictionary._get_ptr_as_int(),
+            dictionary,
             "refcnt:",
             self._Py_REFCNT(dictionary),
             " key: ",
-            key._get_ptr_as_int(),
+            key,
             ", refcnt(key):",
             self._Py_REFCNT(key),
             "value:",
-            value._get_ptr_as_int(),
+            value,
             "refcnt(value)",
             self._Py_REFCNT(value),
         )
@@ -1200,7 +1223,7 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyImport_ImportModule, str:",
             name,
             ", refcnt:",
@@ -1347,11 +1370,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            result._get_ptr_as_int(),
+            result,
             " NEWREF PyRun_String, str:",
             str,
             ", ptr: ",
-            result._get_ptr_as_int(),
+            result,
             ", refcnt:",
             self._Py_REFCNT(result),
         )
@@ -1451,13 +1474,13 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyObject_GetItem", PyObjectPtr](obj, key)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_GetItem, key:",
-            key._get_ptr_as_int(),
+            key,
             ", refcnt:",
             self._Py_REFCNT(r),
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
         )
 
         self._inc_total_rc()
@@ -1476,11 +1499,11 @@ struct CPython(Copyable, Movable):
             "PyObject_SetItem result:",
             r,
             ", key:",
-            key._get_ptr_as_int(),
+            key,
             ", value:",
-            value._get_ptr_as_int(),
+            value,
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
         )
         return r
 
@@ -1513,13 +1536,13 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_GetAttrString, str:",
             name,
             ", refcnt:",
             self._Py_REFCNT(r),
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
         )
 
         self._inc_total_rc()
@@ -1544,9 +1567,9 @@ struct CPython(Copyable, Movable):
             "PyObject_SetAttrString str:",
             name,
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
             ", new value:",
-            new_value._get_ptr_as_int(),
+            new_value,
             " new value ref count: ",
             self._Py_REFCNT(new_value),
         )
@@ -1567,11 +1590,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_CallObject, refcnt:",
             self._Py_REFCNT(r),
             ", callable obj:",
-            callable_obj._get_ptr_as_int(),
+            callable_obj,
         )
 
         self._inc_total_rc()
@@ -1592,11 +1615,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_Call, refcnt:",
             self._Py_REFCNT(r),
             ", callable obj:",
-            callable_obj._get_ptr_as_int(),
+            callable_obj,
         )
 
         self._inc_total_rc()
@@ -1631,11 +1654,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            iterator._get_ptr_as_int(),
+            iterator,
             " NEWREF PyObject_GetIter, refcnt:",
             self._Py_REFCNT(iterator),
             "referencing ",
-            traversable_py_object._get_ptr_as_int(),
+            traversable_py_object,
             "refcnt of traversable: ",
             self._Py_REFCNT(traversable_py_object),
         )
@@ -1658,7 +1681,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyTuple_New", PyObjectPtr](length)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyTuple_New, refcnt:",
             self._Py_REFCNT(r),
             ", tuple size:",
@@ -1716,7 +1739,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyList_New", PyObjectPtr](length)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyList_New, refcnt:",
             self._Py_REFCNT(r),
             ", list size:",
@@ -1792,7 +1815,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyBool_FromLong", PyObjectPtr](value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyBool_FromLong, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1820,7 +1843,7 @@ struct CPython(Copyable, Movable):
         var r = self.PyLong_FromSsize_t_func(value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyLong_FromSsize_t, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1838,7 +1861,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyLong_FromSize_t", PyObjectPtr](value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyLong_FromSize_t, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1878,7 +1901,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyFloat_FromDouble", PyObjectPtr](value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyFloat_FromDouble, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1909,7 +1932,7 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyUnicode_DecodeUTF8, refcnt:",
             self._Py_REFCNT(r),
             ", str:",
@@ -1993,7 +2016,7 @@ struct CPython(Copyable, Movable):
         var r = value
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyErr_Fetch, refcnt:",
             self._Py_REFCNT(r),
         )
@@ -2057,16 +2080,16 @@ struct CPython(Copyable, Movable):
         var next_obj = self.lib.call["PyIter_Next", PyObjectPtr](iterator)
 
         self.log(
-            next_obj._get_ptr_as_int(),
+            next_obj,
             " NEWREF PyIter_Next from ",
-            iterator._get_ptr_as_int(),
+            iterator,
             ", refcnt(obj):",
             self._Py_REFCNT(next_obj),
             "refcnt(iter)",
             self._Py_REFCNT(iterator),
         )
 
-        if next_obj._get_ptr_as_int() != 0:
+        if next_obj:
             self._inc_total_rc()
         return next_obj
 
@@ -2095,15 +2118,15 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PySlice_New", PyObjectPtr](start, stop, step)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PySlice_New, refcnt:",
             self._Py_REFCNT(r),
             ", start:",
-            start._get_ptr_as_int(),
+            start,
             ", stop:",
-            stop._get_ptr_as_int(),
+            stop,
             ", step:",
-            step._get_ptr_as_int(),
+            step,
         )
 
         self._inc_total_rc()
