@@ -41,7 +41,6 @@ from ..kv_cache import (
 from ..layer import LayerList, Module
 from ..linear import ColumnParallelLinear
 from ..norm import DistributedRMSNorm
-from ..rotary_embedding import OptimizedRotaryEmbedding
 from .transformer import ReturnLogits
 
 
@@ -82,7 +81,6 @@ class DistributedTransformerBlock(Module):
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
-        freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
         attn_outs = self.self_attn(
@@ -90,7 +88,6 @@ class DistributedTransformerBlock(Module):
             self.input_layernorm(xs),
             signal_buffers,
             kv_collections,
-            freqs_cis,
             input_row_offsets,
         )
 
@@ -118,7 +115,6 @@ class DistributedTransformer(Module):
             | FetchPagedKVCacheCollection
         ),
         devices: list[DeviceRef],
-        rope: OptimizedRotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         use_subgraphs: bool = False,
     ):
@@ -133,7 +129,6 @@ class DistributedTransformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.return_logits = return_logits
         self.devices = devices
-        self.rope = rope
         self.use_subgraphs = use_subgraphs
         if self.return_logits == ReturnLogits.VARIABLE:
             raise ValueError(
@@ -155,9 +150,6 @@ class DistributedTransformer(Module):
             for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
-        # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
-
         input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
 
         if self.use_subgraphs:
@@ -166,7 +158,6 @@ class DistributedTransformer(Module):
                 *[hidden.type for hidden in h],
                 *[signal_buffer.type for signal_buffer in signal_buffers],
                 *[kv_collection.type for kv_collection in kv_collections],
-                *[freq.type for freq in freqs_cis],
                 *[offset.type for offset in input_row_offsets_],
             ]
             num_devices = len(self.devices)
@@ -194,7 +185,6 @@ class DistributedTransformer(Module):
                     ],
                     take(inputs, num_devices),
                 )
-                arg_freqs_cis = [x.tensor for x in take(inputs, num_devices)]
                 arg_input_row_offsets = [
                     x.tensor for x in take(inputs, num_devices)
                 ]
@@ -214,7 +204,6 @@ class DistributedTransformer(Module):
                     arg_xs,
                     arg_signal_buffers,
                     arg_kv_collections,
-                    arg_freqs_cis,
                     arg_input_row_offsets,
                 )
 
@@ -229,7 +218,6 @@ class DistributedTransformer(Module):
                         *h,
                         *signal_buffers,
                         *kv_collections,
-                        *freqs_cis,
                         *input_row_offsets_,
                         prefix=f"layers.{idx}.",
                     )
@@ -241,7 +229,6 @@ class DistributedTransformer(Module):
                     h,
                     signal_buffers,
                     kv_collections,
-                    freqs_cis,
                     input_row_offsets_,
                 )
         h0 = h[0]

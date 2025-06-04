@@ -112,7 +112,6 @@ class AttentionImpl(Layer, ABC):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
-        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue: ...
 
@@ -131,7 +130,6 @@ class DistributedAttentionImpl(Module, ABC):
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
-        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> list[TensorValue]: ...
 
@@ -224,6 +222,5 @@ class AttentionImplQKV(Layer, ABC):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
-        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue: ...

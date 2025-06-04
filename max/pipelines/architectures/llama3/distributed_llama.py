@@ -193,7 +193,6 @@ class DistributedLlama3(DistributedTransformer):
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
             devices=config.devices,
-            rope=rope,
             return_logits=config.return_logits,
             use_subgraphs=config.use_subgraphs,
             # TODO: Support the following config options.

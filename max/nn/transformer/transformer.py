@@ -31,7 +31,6 @@ from ..kv_cache import (
 )
 from ..layer import Layer, LayerList, Module
 from ..linear import Linear, LinearV1
-from ..rotary_embedding import OptimizedRotaryEmbedding
 
 
 class TransformerBlock(Module):
@@ -58,7 +57,6 @@ class TransformerBlock(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
-        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         residual_multiplier = ops.constant(
@@ -68,7 +66,6 @@ class TransformerBlock(Module):
             layer_idx,
             self.input_layernorm(x),
             kv_collection,
-            freqs_cis,
             input_row_offsets,
         )
 
@@ -108,7 +105,6 @@ class Transformer(Module):
             FetchContinuousBatchingKVCacheCollection
             | FetchPagedKVCacheCollection
         ),
-        rope: OptimizedRotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
@@ -125,7 +121,6 @@ class Transformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.embedding_multiplier = embedding_multiplier
         self.logits_postprocessor = logits_postprocessor
-        self.rope = rope
         self.return_logits = return_logits
 
     def _apply_logits_postprocessor(
@@ -151,15 +146,11 @@ class Transformer(Module):
 
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
-        # Create position embeddings shared across the decoder layers.
-        freqs_cis = self.rope.freqs_cis
-
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 kv_collection,
-                freqs_cis,
                 input_row_offsets,
             )
 

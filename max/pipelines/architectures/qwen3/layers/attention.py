@@ -179,7 +179,6 @@ class Qwen3Attention(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
-        freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.

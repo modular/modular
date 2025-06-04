@@ -120,7 +120,6 @@ class DeepseekV2(Transformer):
             kv_collection_constructor=FetchPagedKVCacheCollection(
                 config.kv_params
             ),
-            rope=rope,
         )
 
     def _get_mlp(self, config: DeepseekV2Config, i: int) -> Module:

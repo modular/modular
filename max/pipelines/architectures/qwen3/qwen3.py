@@ -193,7 +193,6 @@ class Qwen3(Transformer):
             kv_collection_constructor=kv_collection_cls(
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
-            rope=rope,
             return_logits=config.return_logits,
             embedding_multiplier=config.embedding_multiplier,
             logits_postprocessor=config.logits_postprocessor,
