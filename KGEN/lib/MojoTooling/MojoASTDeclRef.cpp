@@ -286,15 +286,6 @@ ResultType MojoASTDeclRef::getDeclImpl() const {
   // DefArgumentWrapperDLValue so we need to dig through them to find the
   // underlying BlockArgument for the function.
   if (auto lvalue = decl->getIfIRValue().getIfLValue()) {
-    // Unresolved to mutable.
-    if (auto dlvalue = lvalue.getIfDLValue()) {
-      if (std::optional<size_t> argIndex = dlvalue->getDefArgumentIndex()) {
-        if constexpr (isApproximateResult)
-          return PublicDeclKind::DK_PublicArgumentDecl;
-        else
-          return createPublicArgumentDecl(*this, *argIndex);
-      }
-    }
     // Resolved to mutable.
     if (auto mlValue = lvalue.getIfMLValue()) {
       if (auto var = mlValue.getDefiningOp<VarDeclOp>()) {

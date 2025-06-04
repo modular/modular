@@ -33,11 +33,6 @@ DLValue &DLValue::operator=(const DLValue &existing) {
 
 BaseDLValue::~BaseDLValue() = default; // vtable anchor.
 
-// This hook is called before an argument is passed mut.
-LValue BaseDLValue::prepareForMutAccess(SMLoc loc, IREmitter &emitter) const {
-  return DLValue(RCRef<BaseDLValue>::copy(const_cast<BaseDLValue *>(this)));
-}
-
 // This hook is called if the DLValue needs to be resolved to a physical ref.
 // This emits an error and returns null on failure.
 Value BaseDLValue::emitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const {
@@ -132,17 +127,6 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   // Store the whole result back, transferring ownership as an MRValue.
   return baseVal.ir->emitStore({MRValue(tmpDecl), expr}, emitter);
-}
-
-MBValue StoredAttributeRefDLValue::emitMBValueFromDefArgument(
-    IREmitter &emitter) const {
-  auto baseRef = baseVal.ir->emitMBValueFromDefArgument(emitter);
-  if (!baseRef)
-    return {};
-
-  auto fieldRef = emitter.builder->create<RefStructGEROp>(
-      expr->getLocation(emitter), baseRef, cast<StructFieldOp>(fieldOp));
-  return MBValue(fieldRef);
 }
 
 //===----------------------------------------------------------------------===//
@@ -330,111 +314,4 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   }
 
   return bvalue;
-}
-
-//===----------------------------------------------------------------------===//
-// DefArgumentWrapperDLValue
-//===----------------------------------------------------------------------===//
-
-DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
-                                                     CValue argRef,
-                                                     ASTType eltType,
-                                                     size_t argIndex)
-    : BaseDLValue(eltType), argDecl(argDecl), argRef(argRef),
-      argIndex(argIndex) {}
-
-/// If this is a def argument shadow, resolve it to the incoming immutable
-/// borrowed value without forming a local copy.  Otherwise return null.
-MBValue DefArgumentWrapperDLValue::emitMBValueFromDefArgument(
-    IREmitter &emitter) const {
-  return argRef.getIfMBValue();
-}
-
-void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
-  os << "def argument wrapper of type " << elementType;
-}
-
-// This hook is called before an argument is passed mut.
-LValue
-DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
-                                               IREmitter &emitter) const {
-  // Okay, if the by-reg def argument is mutated, we need to snap into action
-  // and lazily build a shadow in the function entry.
-  auto func = cast<FnOp>(argDecl->getParentDecl());
-
-  // We may have already emitted read-only accesses that use the argument, and
-  // they need to be revectored to the new vardecl.  Collect them so we can
-  // update them later and not get confused by the access we're about to
-  // generate. This can matter on things like:
-  //    for ...:
-  //      use(arg)  # Emitted as a direct use of the arg.
-  //      arg += 1  # Forces mutation after the use was emitted.
-  BlockArgument bbArg = func.getArgument(argIndex);
-  SmallVector<OpOperand *> argUses;
-  for (auto &use : bbArg.getUses())
-    argUses.push_back(&use);
-
-  IREmitter entryEmitter(*argDecl->getParentDecl(),
-                         OpBuilder::atBlockBegin(func.getBody()));
-  StringAttr argName = func.getFuncTypeGenerator().getArgName(argIndex);
-
-  // Create the shadow box that has an address and copy the argument into it.
-  VarDeclOp varDecl = entryEmitter.emitVarDecl(argName, argRef.getRValueType(),
-                                               emitter.translateLocation(loc),
-                                               VarDeclKind::Arg);
-  if (!entryEmitter.emitStoreToLValue({argRef, SyntheticNode(loc)},
-                                      MLValue(varDecl), EC_OwnedRegArgShadow)) {
-    // This can fail if not copyable/movable.
-    argDecl->setErroneous();
-    return LValue();
-  }
-
-  // Now that we've got the new representation as an MLValue, we need to update
-  // the previous uses.  The arg was either an MBValue (for normal types) or
-  // SRValue for trivial types.
-  bool isTrivial = argRef.getIfSRValue() != SRValue();
-  for (OpOperand *use : argUses) {
-    Value valueToUse = varDecl.getResult();
-    auto *user = use->getOwner();
-    OpBuilder builder(user);
-
-    if (isTrivial) {
-      // Trivial values need a load from the vardecl at the point of the use.
-      valueToUse = builder.create<RefLoadOp>(user->getLoc(), valueToUse);
-    } else {
-      // Non-trivial need an adjustment of the reference type because the
-      // origins mismatch.
-      // FIXME: This won't propagate the origin of the vardecl correctly for
-      // ref-returning values.
-      valueToUse = builder.create<RebindOp>(user->getLoc(),
-                                            use->get().getType(), valueToUse);
-    }
-    use->set(valueToUse);
-  }
-
-  // This helps debug info and QoI.
-  varDecl.setArgShadowIndex(argIndex);
-  // Update the representation so we don't do this again.
-  argDecl->setIRValue(MLValue(varDecl));
-
-  return MLValue(varDecl);
-}
-
-CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
-                                           IREmitter &emitter) const {
-  // Loads of the def argument wrapper are simple enough.
-  SyntheticNode expr(argDecl->getLoc());
-  return emitter.emitCResult(argRef, &expr, dest);
-}
-
-CValue DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
-                                            IREmitter &emitter) const {
-  // Okay, if the def argument is mutated, we need to snap into action and
-  // lazily build a shadow in the function entry.
-  LValue newVal = prepareForMutAccess(value.expr->getLoc(), emitter);
-  if (!newVal)
-    return BValue();
-
-  // Ok, now emit a normal store.
-  return emitter.emitStoreToLValue(value, newVal, ExprContext::EC_Assignment);
 }

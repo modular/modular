@@ -754,20 +754,9 @@ public:
   // This emits an error and returns null on failure.
   virtual Value emitAsRefValue(llvm::SMLoc loc, IREmitter &emitter) const;
 
-  // This hook is called before an argument is passed 'mut'.
-  virtual LValue prepareForMutAccess(llvm::SMLoc loc, IREmitter &emitter) const;
-
   virtual CValue emitLoad(ValueDest &dest, IREmitter &emitter) const = 0;
   virtual CValue emitStore(ASTExprAnd<CValue> value,
                            IREmitter &emitter) const = 0;
-
-  /// If this is a def argument shadow, resolve it to the incoming immutable
-  /// borrowed value without forming a local copy.  Otherwise return null.
-  virtual MBValue emitMBValueFromDefArgument(IREmitter &emitter) const {
-    return MBValue();
-  }
-
-  virtual std::optional<size_t> getDefArgumentIndex() const { return {}; }
 };
 
 } // namespace M::KGEN::LIT

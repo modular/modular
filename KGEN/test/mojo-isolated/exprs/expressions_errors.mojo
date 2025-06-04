@@ -140,8 +140,8 @@ def test_member_access():
 # Conversions
 ##===----------------------------------------------------------------------===##
 
-def invalid_conversion(a: Int, b: __mlir_type.index):
-  b = a # expected-error {{cannot implicitly convert 'Int' value to 'index' in assignment}}
+def invalid_conversion(a: Int):
+  var b: __mlir_type.index = a # expected-error {{implicitly convert 'Int' value to 'index' in 'var' initializer}}
 
   # expected-error @+1 {{cannot use initializer syntax on MLIR type 'index'}}
   _ = __mlir_type.index(4)
@@ -516,7 +516,9 @@ fn bad_exprs(cond: Bool, x: Error, c1: Conv1, c2: Conv2):
   # expected-note @below {{or cast the right value to 'Conv1'}}
   _ = c1 if cond else c2
 
-def bad_assignment0(a: Int, b: Int):
+def bad_assignment0():
+   var a: Int
+   var b: Int
    # expected-error @+1 {{cannot implicitly convert 'None' value to 'Int'}}
    a = b += b
 

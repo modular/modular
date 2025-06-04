@@ -103,14 +103,6 @@ struct NonCopyable:
     fn __init__(out self):
        pass
 
-def test_non_copyable_def_arg(arg: NonCopyable, arg2: Index):
-    # expected-error @+1 {{'NonCopyable' is not copyable because it has no '__copyinit__'}}
-    arg = NonCopyable()
-
-    # OK!
-    arg2 = arg2
-
-
 def defTests() -> None:
   alias abc = 1
 
