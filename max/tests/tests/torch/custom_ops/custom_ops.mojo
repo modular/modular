@@ -39,8 +39,8 @@ struct Grayscale:
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
-        img_out: OutputTensor[type = DType.uint8, rank=2],
-        img_in: InputTensor[type = DType.uint8, rank=3],
+        img_out: OutputTensor[dtype = DType.uint8, rank=2],
+        img_in: InputTensor[dtype = DType.uint8, rank=3],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
@@ -72,15 +72,15 @@ struct MyAdd:
     fn execute[
         type: DType, rank: Int, target: StaticString
     ](
-        C: OutputTensor[type=type, rank=rank],
-        A: InputTensor[type=type, rank=rank],
-        B: InputTensor[type=type, rank=rank],
+        C: OutputTensor[dtype=type, rank=rank],
+        A: InputTensor[dtype=type, rank=rank],
+        B: InputTensor[dtype=type, rank=rank],
     ) raises:
         @parameter
         @always_inline
         fn doit[
             simd_width: Int
-        ](idx: IndexList[C.rank]) -> SIMD[C.type, simd_width]:
+        ](idx: IndexList[C.rank]) -> SIMD[C.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             var b = B.load[simd_width](idx)
             return a + b
@@ -94,14 +94,14 @@ struct ParameterIncrement:
     fn execute[
         type: DType, rank: Int, increment: Int, target: StaticString
     ](
-        B: OutputTensor[type=type, rank=rank],
-        A: InputTensor[type=type, rank=rank],
+        B: OutputTensor[dtype=type, rank=rank],
+        A: InputTensor[dtype=type, rank=rank],
     ) raises:
         @parameter
         @always_inline
         fn doit[
             simd_width: Int
-        ](idx: IndexList[B.rank]) -> SIMD[B.type, simd_width]:
+        ](idx: IndexList[B.rank]) -> SIMD[B.dtype, simd_width]:
             var a = A.load[simd_width](idx)
             return a + __type_of(a)(increment)
 
