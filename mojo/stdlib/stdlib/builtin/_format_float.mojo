@@ -766,6 +766,9 @@ fn _uint128_low(input: UInt128) -> UInt64:
 fn _uint128_high(input: UInt128) -> UInt64:
     return (input >> 64).cast[DType.uint64]()
 
+fn _uint64_to_uint128(high: UInt64, low: UInt64) -> UInt128:
+    return high.cast[DType.uint128]() << 64 | low.cast[DType.uint128]()
+
 # fmt: off
 alias cache_f32 = StaticTuple[UInt64, 78](
     0x81CEB32C4B43FCF5, 0xA2425FF75E14FC32,
