@@ -25,6 +25,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
+from layout import Layout, LayoutTensor
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
@@ -1592,3 +1593,80 @@ fn _gather_nd_impl[
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output.get_shape(), cuda_ctx)
+
+
+# ===-----------------------------------------------------------------------===#
+# ScatterSetConstant
+# ===-----------------------------------------------------------------------===#
+
+
+fn scatter_set_constant[
+    data_type: DType,
+    index_type: DType, //,
+    target: StaticString,
+    single_thread_blocking_override: Bool = False,
+](
+    data: LayoutTensor[mut=True, data_type, **_],
+    indices: LayoutTensor[index_type, **_],
+    fill_value: Scalar[data_type],
+    ctx: DeviceContextPtr,
+) raises:
+    """
+    Scatter the fill_value into the data at the specified indices.
+
+    Example:
+        Suppose we have a 3x3 matrix `data` initialized to zeros:
+
+        data = [[0, 0, 0],
+                [0, 0, 0],
+                [0, 0, 0]]
+
+        And `indices` is a 2D tensor with shape [2, 2]:
+
+        indices = [[0, 1],
+                   [2, 0]]
+
+        If `fill_value` is 5, after calling `scatter_set_constant`, `data` will be:
+
+        data = [[0, 5, 0],
+                [0, 0, 0],
+                [5, 0, 0]]
+
+    Arguments:
+        data: The data to scatter the updates into.
+        indices: The indices to scatter the updates into.
+        fill_value: The value to fill the data with.
+        ctx: The device context.
+    """
+    constrained[
+        index_type.is_integral(),
+        "index_type must be an integer type",
+    ]()
+    constrained[
+        data.layout.rank() == 2,
+        "scatter_set: data must have rank 2",
+    ]()
+    constrained[
+        indices.layout.rank() == 2,
+        "scatter_set: indices must have rank 2",
+    ]()
+    debug_assert(
+        indices.dim[1]() == 2,
+        "scatter_set: indices must have shape [total_seq_len, 2]",
+    )
+
+    @always_inline
+    @parameter
+    fn scatter_set_constant_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+        constrained[rank_ == 1, "scatter_set_constant_fn: rank must be 1"]()
+
+        data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
+
+    var dispatch_shape = IndexList[1](indices.dim[0]())
+    elementwise[
+        func=scatter_set_constant_fn,
+        simd_width=1,
+        target=target,
+        use_blocking_impl=single_thread_blocking_override,
+        _trace_description="scatter_set_constant",
+    ](dispatch_shape, ctx)

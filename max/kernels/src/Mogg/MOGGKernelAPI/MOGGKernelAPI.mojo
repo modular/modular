@@ -118,6 +118,7 @@ from nn.gather_scatter import (
     scatter_nd,
     scatter_nd_generator,
     scatter_nd_shape,
+    scatter_set_constant,
 )
 from nn.index_tensor import (
     advanced_indexing_getitem,
@@ -2262,6 +2263,28 @@ struct ScatterNDMax:
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
+        )
+
+
+@compiler.register("mo.scatter_set_constant")
+struct ScatterSetConstant:
+    @staticmethod
+    fn execute[
+        data_type: DType,
+        index_type: DType, //,
+        target: StaticString,
+        _synchronous: Bool,
+    ](
+        data: MutableInputTensor[dtype=data_type, rank=2],
+        indices: InputTensor[dtype=index_type, rank=2],
+        fill_value: Scalar[data_type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        scatter_set_constant[target, _synchronous](
+            data.to_layout_tensor(),
+            indices.to_layout_tensor(),
+            fill_value,
+            ctx,
         )
 
 

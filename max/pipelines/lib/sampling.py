@@ -15,14 +15,7 @@ from __future__ import annotations
 """Token sampling algorithms."""
 
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    Dim,
-    Graph,
-    TensorType,
-    ops,
-)
+from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
 from max.nn.kernels import (
     apply_penalties_to_logits,
     topk_fused_sampling,

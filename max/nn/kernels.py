@@ -2199,6 +2199,36 @@ def update_frequency_data(
     )
 
 
+def scatter_set_constant(
+    data: BufferValue,
+    indices: TensorValue,
+    fill_val: float,
+) -> None:
+    """
+    Scatters values into a tensor at specified indices.
+    """
+
+    if data.rank != 2:
+        raise ValueError(
+            "scatter_set_constant currently only supports 2d tensors"
+        )
+
+    if indices.rank != 2:
+        raise ValueError(
+            "scatter_set_constant currently only supports 2d indices"
+        )
+
+    ops.inplace_custom(
+        "mo.scatter_set_constant",
+        values=[
+            data,
+            indices,
+            ops.constant(fill_val, data.dtype, device=DeviceRef.CPU()),
+        ],
+        device=data.device,
+    )
+
+
 def topk_fused_sampling(
     logits: TensorValue,
     top_k: int,
