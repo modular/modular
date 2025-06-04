@@ -66,11 +66,11 @@ def test_constructors():
 
     # Construction with capacity
     var s4 = String(capacity=1)
-    assert_equal(s4.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s4.capacity(), _StringCapacityField.INLINE_CAPACITY)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_equal(s5.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s5.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s5, "A")
 
 
@@ -1520,7 +1520,7 @@ def test_variadic_ctors():
 def test_sso():
     # String literals are stored inline when short and not nul-terminated.
     var s: String = String("hello")
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
     assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
@@ -1534,20 +1534,22 @@ def test_sso():
 
     # Empty strings are stored inline.
     s = String()
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
     assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
-    s += "f" * _StringCapacityField.NUM_SSO_BYTES
-    assert_equal(len(s), _StringCapacityField.NUM_SSO_BYTES)
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    s += "f" * _StringCapacityField.INLINE_CAPACITY
+    assert_equal(len(s), _StringCapacityField.INLINE_CAPACITY)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
 
     # One more byte.
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (_StringCapacityField.NUM_SSO_BYTES * 2 + 7) & ~7
+    alias expected_capacity = (
+        _StringCapacityField.INLINE_CAPACITY * 2 + 7
+    ) & ~7
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._capacity_or_data.is_inline(), False)
 
