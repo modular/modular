@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping, Sequence
 
 from max import mlir
 from max._core import graph as _graph
+from max._core.dialects import builtin
 from max.dtype import DType
 from max.mlir import BoolAttr, IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
@@ -33,9 +34,9 @@ def _parameter_attribute(
     elif isinstance(param, DType):
         # Wrap the MLIR type corresponding to dtype in a TypeAttr,
         # which MOToKGENLowering expects.
-        return mlir.TypeAttr.get(
-            _graph.dtype_type(Graph.current._context, param._mlir)
-        )
+        dtype = _graph.dtype_type(param)
+        attr = builtin.TypeAttr(dtype)
+        return mlir.Attribute._CAPICreate(attr._CAPIPtr)  # type: ignore
     else:
         msg = f"unsupported parameter type {type(param)} for custom op"
         raise TypeError(msg)

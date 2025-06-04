@@ -3,9 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+import re
+
 import numpy as np
 from hypothesis import assume, given
-from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ops
 
@@ -46,6 +48,8 @@ def test_scalar_constant(dtype: DType) -> None:
 
         graph.output(const)
 
-        mlir_dtype = _graph.dtype_type(graph._context, dtype._mlir)
-        assert "7" in str(graph._mlir_op)
-        assert str(mlir_dtype).lower() in str(graph._mlir_op)
+        if dtype.is_float():
+            expected = rf"mo.constant {{value = #M.dense_array<7\..*> : tensor<{dtype._mlir}>}}"
+        else:
+            expected = rf"mo.constant {{value = #M.dense_array<7> : tensor<{dtype._mlir}>}}"
+        assert re.search(expected, str(graph._mlir_op))
