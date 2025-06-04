@@ -1366,20 +1366,22 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
-        freqs_cis: TensorValue,
-        input_row_offsets: TensorValue,
+        freqs_cis: list[TensorValue],
+        input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
-        assert isinstance(input_row_offsets, TensorValue)
         assert self.devices
-        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+        assert len(freqs_cis) == len(input_row_offsets) == len(self.devices)
+        assert all(
+            isinstance(x, TensorValue) for x in freqs_cis + input_row_offsets
+        )
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
                     layer_idx,
                     x[i],
                     kv_collections[i],
-                    freqs_cis,
-                    input_row_offsets_[i],
+                    freqs_cis[i],
+                    input_row_offsets[i],
                 )
                 for i in range(len(self.devices))
             ],
