@@ -11,10 +11,7 @@
 #include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
 #include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MOGGPreElab/Passes.h"
-#include "KGEN/POPDialect/POPAttrs.h"
-#include "KGEN/POPDialect/POPOps.h"
 #include "Support/AssertStream.h"
-#include "mlir/Pass/Pass.h"
 
 using namespace M;
 using namespace KGEN;
@@ -28,8 +25,6 @@ namespace M::KGEN::MOGGPreElab {
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
 static constexpr llvm::StringLiteral kUpdateViewFuncName = "update_input_view";
-static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
-    "pytorch_fallback";
 
 static constexpr std::array<StringLiteral, 3> kIOSpec = {"tensor_internal",
                                                          "io_spec", "IOSpec"};
@@ -42,8 +37,6 @@ static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
     "tensor_internal", "managed_tensor_slice", "VariadicTensors"};
 static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "list", "List"};
-static constexpr std::array<StringLiteral, 4> kPythonObject = {
-    "stdlib", "python", "python_object", "PythonObject"};
 static constexpr std::array<StringLiteral, 4> kMaxRuntimeDeviceContextPtrList =
     {"stdlib", "runtime", "asyncrt", "DeviceContextPtrList"};
 
@@ -829,47 +822,6 @@ processIOSpecs(LIT::FnOp func, bool isShapeFunc = false) {
   return specs;
 }
 
-LogicalResult allTypesArePythonObject(LIT::FnOp pytorch_fallback) {
-
-  auto isPythonObject = [](Type type) {
-    auto structType = getAsDeclRefOrNull(type);
-
-    if (!structType)
-      return false;
-
-    return symbolMatches(structType.getSymbol(), kPythonObject);
-  };
-
-  bool error = false;
-  // Check argument types
-  for (auto &&[argIdx, argType] :
-       llvm::enumerate(pytorch_fallback.getArgumentTypes())) {
-
-    if (isPythonObject(argType))
-      continue;
-
-    auto argName = pytorch_fallback.getFuncTypeGenerator().getArgName(argIdx);
-    auto loc = pytorch_fallback.getBodyRegion().getArgument(argIdx).getLoc();
-
-    emitError(loc, "Error for argument '" + argName.strref() +
-                       "' all arguments to 'pytorch_fallback' functions must "
-                       "have type 'PythonObject'");
-
-    error = true;
-  }
-
-  auto resultType = pytorch_fallback.getFuncTypeGenerator().getUserResultType();
-  if (!isPythonObject(resultType)) {
-    pytorch_fallback.emitError(
-        "Error for result type: the only permitted return type for "
-        "'pytorch_fallback' functions is 'PythonObject'");
-
-    error = true;
-  }
-
-  return failure(error);
-}
-
 // Run standard checks and mutations on a function. emits an
 // error and returns false if an issue was present.
 //
@@ -890,11 +842,6 @@ LogicalResult processStructFuncCommon(
   if (annotation == kMOGGShapeFunctionLabel) {
     auto result = processIOSpecs(func, /*isShapeFunc=*/true);
     if (!result.has_value())
-      return failure();
-  }
-
-  if (annotation == kMOGGPyTorchFallbackFunctionLabel) {
-    if (failed(allTypesArePythonObject(func)))
       return failure();
   }
 
@@ -1060,11 +1007,6 @@ public:
           if (failed(processStructFuncCommon(structDeclOp, registrationInfo,
                                              func, kMOGGShapeFunctionLabel,
                                              builder)))
-            return WalkResult::interrupt();
-        } else if (func.getSourceName() == kPyTorchFallbackFuncName) {
-          if (failed(processStructFuncCommon(
-                  structDeclOp, registrationInfo, func,
-                  kMOGGPyTorchFallbackFunctionLabel, builder)))
             return WalkResult::interrupt();
         } else if (func.getSourceName() == kUpdateViewFuncName) {
           if (failed(processStructFuncCommon(structDeclOp, registrationInfo,
