@@ -10,7 +10,7 @@ from conftest import buffer_types, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
-from max._core import graph as _graph
+from max._core.dialects import mo
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -43,9 +43,7 @@ def test_mlir_type_checking(buffer_type: BufferType):
         assert isinstance(buffer, BufferValue)
         assert type == buffer_type
         assert not isinstance(buffer, mlir.Value)
-        assert _graph.type_is_buffer(buffer._mlir_value.type)
-        assert not _graph.type_is_tensor(buffer._mlir_value.type)
-        assert not _graph.type_is_opaque(buffer._mlir_value.type)
+        assert isinstance(buffer._mlir_value.type, mo.BufferType)
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)

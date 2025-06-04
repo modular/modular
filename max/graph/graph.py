@@ -231,24 +231,27 @@ class Graph:
         with context, self._location() as loc:
             # Create the top level module op.
             self._module = module or mlir.Module.create()
+            _module: builtin.ModuleOp = Operation._from_cmlir(  # type: ignore
+                self._module.operation
+            )
+            builder = OpBuilder(_module.body.end)
 
-            with mlir.InsertionPoint(self._module.body):
-                # Initially create the function type with blank output types --
-                # we'll fill it out later when output() is called.
-                function_type = mlir.FunctionType.get(
-                    [t.to_mlir() for t in input_types], []
-                )
-                # Call the C++ builder to build the MO graph op.
-                self._mlir_op = _graph.graph(
-                    self._module, loc, name, function_type
-                )
-                self._current_block = self._mlir_op.regions[0].blocks[0]
-                self._graph_body = self._current_block
-        param_decl = _graph.dim_param_decl_array_attr(
-            context,
-            [_graph.dim_param_decl_attr(context, p) for p in self._params],
-        )
-        self._mlir_op.attributes["inputParams"] = param_decl
+            op = builder.create(_mo.GraphOp, loc)(
+                name=name,
+                input_types=[t.to_mlir() for t in input_types],
+                result_types=[],
+            )
+
+            si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+            # TODO(MAXPLAT-306): Type annotations are wrong here
+            op.input_parameters = kgen.ParamDeclArrayAttr(  # type: ignore
+                [kgen.ParamDeclAttr(p, si64) for p in self._params]
+            )
+
+            self._mlir_op = mlir.Operation._CAPICreate(op._CAPIPtr)  # type: ignore
+            self._current_block = self._mlir_op.regions[0].blocks[0]
+            self._graph_body = self._current_block
+
         self._weights = {}
         self._has_chain_input = False
 
@@ -327,9 +330,9 @@ class Graph:
             # **kwargs,
         )
         subgraph._mlir_op.attributes["isSubgraph"] = mlir.UnitAttr.get()
-        subgraph._mlir_op.attributes["inputParams"] = self._mlir_op.attributes[
-            "inputParams"
-        ]
+        subgraph._mlir_op.attributes["inputParameters"] = (
+            self._mlir_op.attributes["inputParameters"]
+        )
         subgraph._params = dict.fromkeys(self._params)
         self._subgraphs[name] = subgraph
         return subgraph
@@ -486,7 +489,7 @@ class Graph:
             self._params.update(new_params)
             si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
             # We can't overload the setter yet, so the interface annotation is wrong
-            # See https://github.com/wjakob/nanobind/discussions/1063
+            # TODO(MAXPLAT-306): See https://github.com/wjakob/nanobind/discussions/1063
             op.output_param_decls = kgen.ParamDeclArrayAttr(
                 [kgen.ParamDeclAttr(name, si64) for name in new_params]
             )
@@ -650,6 +653,10 @@ class Graph:
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.
         # Note that result_names here needs to match kMgpModelResultNames.
+        input_names = [f'"input{i}"' for i in range(len(self.inputs))]
+        self._mlir_op.attributes["argument_names"] = mlir.Attribute.parse(
+            f"[{', '.join(input_names)}]"
+        )
         output_names = [f'"output{i}"' for i in range(len(output_types))]
         self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
             f"[{', '.join(output_names)}]"
