@@ -416,13 +416,9 @@ fn test_result_optimization():
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 # CHECK-LABEL: lit.fn @"impl_mutable_arg
-def impl_mutable_arg(a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExample) -> None:
+fn impl_mutable_arg(mut a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExample):
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%b)
-  # CHECK-NEXT: %a_0 = lit.var.decl "a" arg(0)
-  # CHECK-NEXT: lifetime.start %a_0
-  # CHECK-NEXT: lit.call {{.*}}@"__copyinit__{{.*}}(%a, %a_0)
-  # CHECK-NEXT: lit.call {{.*}}use_inout_and_return{{.*}}(%a_0, %b)
-  # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%a_0)
+  # CHECK-NEXT: lit.call {{.*}}use_inout_and_return{{.*}}(%a, %b)
 
   b = use_inout_and_return(a)
 

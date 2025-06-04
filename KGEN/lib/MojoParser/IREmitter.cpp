@@ -380,19 +380,6 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
         return lValue;
       }
 
-      // If this the first mutation to a def box, emit the box to a local
-      // variable (materializing the value) so we can implace this destination
-      // directly into the box, avoiding an extra temporary.
-      if (auto dlv = lValue.getIfDLValue()) {
-        lValue = dlv->prepareForMutAccess(loc, emitter);
-        if (lValue)
-          representation = lValue;
-        else {
-          representation = NullRepresentation();
-          lValue = LValue();
-        }
-      }
-
       // Otherwise, we can only work if we have an MLValue in the correct
       // address space.
       if (auto mlVal = lValue.getIfMLValue();
@@ -907,14 +894,8 @@ PValue IREmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 /// and returns the value of RefType for the result.
 /// This emits an error and returns null if emission fails.
 Value IREmitter::emitRefValue(ASTExprAnd<AnyValue> value, ExprContext context) {
-  // Emit the DefArgumentWrapperDLValue as the underlying MBValue that it may
-  // contain.
-  if (auto dlValue = value.ir.getIfDLValue()) {
-    // FIXME: Def arguments are busted.
-    if (MBValue underlying = dlValue->emitMBValueFromDefArgument(*this))
-      return underlying;
+  if (auto dlValue = value.ir.getIfDLValue())
     return dlValue->emitAsRefValue(value.expr->getLoc(), *this);
-  }
 
   // If this got resolved to an MValue then we're done.
   if (value.ir.isMValue())

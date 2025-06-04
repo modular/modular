@@ -1526,14 +1526,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       argValue = SRValue(bbArg);
     }
 
-    if (!funcOp.isDef()) { // Don't bother 'fn' arguments.
-      setDecl(argValue);
-    } else {
-      // Borrowed arguments in 'def's get a special wrapper that allows them to
-      // be made lazily mutable on demand.
-      setDecl(DLValue(RCRef<DefArgumentWrapperDLValue>::create(
-          &argDecl, argValue, argValue.getRValueType(), argIdx)));
-    }
+    setDecl(argValue);
   }
 
   // If we had a named result in a register, create a var decl to hold the

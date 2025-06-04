@@ -40,7 +40,6 @@ public:
                             ASTType elementType, const ExprNode *expr);
 
   StructFieldOp getField() const;
-  MBValue emitMBValueFromDefArgument(IREmitter &emitter) const override;
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
@@ -93,39 +92,6 @@ public:
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
   CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
-};
-
-/// This DLValue is used to lazily synthesize a def argument box the first time
-/// the argument is mutated.  When this happens, it replaces itself in the
-/// ASTDecl with a direct reference to the box.
-class DefArgumentWrapperDLValue : public BaseDLValue {
-public:
-  DefArgumentWrapperDLValue(ASTDecl *argDecl, CValue argRef, ASTType eltType,
-                            size_t argIndex);
-
-  // This hook is called before an argument is passed mut.  The specified
-  // location indicates where diagnostics should be produced if this cannot be
-  // done.  This returns null on failure.
-  LValue prepareForMutAccess(llvm::SMLoc loc,
-                             IREmitter &emitter) const override;
-
-  void print(raw_ostream &os) const override;
-  CValue emitLoad(ValueDest &dest, IREmitter &emitter) const override;
-  CValue emitStore(ASTExprAnd<CValue> value, IREmitter &emitter) const override;
-
-  /// If this is a def argument shadow, resolve it to the incoming immutable
-  /// borrowed value without forming a local copy.  Otherwise return null.
-  MBValue emitMBValueFromDefArgument(IREmitter &emitter) const override;
-
-  std::optional<size_t> getDefArgumentIndex() const override {
-    return argIndex;
-  }
-
-  /// This is the argument decl we're the representation of.
-  ASTDecl *argDecl;
-  // The MBValue (normal things) or SRValue (trivial types) for the argument.
-  CValue argRef;
-  size_t argIndex;
 };
 
 } // namespace M::KGEN::LIT

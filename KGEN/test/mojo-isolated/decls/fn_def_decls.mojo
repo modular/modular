@@ -119,40 +119,6 @@ struct MemoryOnly:
 struct NonTrivialReg:
     pass
 
-
-# CHECK-LABEL: lit.fn @"defTests({{.*}},
-def defTests(
-    a: Int, b: Int, mem: MemoryOnly, reg: NonTrivialReg
-) -> None:
-    # CHECK-NEXT: lit.var.decl "defTests"
-
-    # CHECK-NEXT: %reg_0 = lit.var.decl "reg" arg(3)
-    # CHECK-NEXT: lit.call {{.*}}NonTrivialReg::@"__copyinit__{{.*}}(%reg, %reg_0)
-
-    # CHECK-NEXT: %mem_1 = lit.var.decl "mem" arg(2)
-    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__copyinit__{{.*}}(%mem, %mem_1)
-
-    # CHECK-NEXT: %a_2 = lit.var.decl "a" arg
-    # CHECK-NEXT: lit.ref.store %a, %a_2
-
-    # CHECK-NEXT: lit.ref.store %b, %a_2
-    a = b  # Arguments are mutable!
-
-    # CHECK-NEXT: lit.ref.store %b, %a_2
-    a = b  # Subsequent arguments don't re-make the box.
-
-    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}(%mem_1)
-    mem = MemoryOnly()
-
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}NonTrivialReg::@"__init__{{.*}}()
-    # CHECK-NEXT: lit.ref.store [[TMP]], %reg_0
-    reg = NonTrivialReg()
-
-    # Issue#38762
-    # MOCO-83: [mojo][Bug] def methods can't shadow names via assignment
-    defTests = 4
-
-
 struct TypeWithParametricSelf:
     fn method(ref self):
         pass
@@ -174,44 +140,6 @@ def test_def_arg_box_mbvalue(
     # MOCO-715: failed to infer implicit parameter 'mut' of argument 'self' type 'Pointer
     # CHECK-NEXT: [[MEMBERREF:%.*]] = lit.ref.struct.ger %b[member]
     _ = b.member.method()
-
-fn use(a: Int): pass
-fn use(a: String): pass
-
-# https://github.com/modular/mojo/issues/3955
-# Unexpected copy-on-write behaviour with for loops
-# CHECK-LABEL: test_mutable_def_arg_emission
-def test_mutable_def_arg_emission(byte: Int, str: String):
-   # CHECK-NEXT: %str_0 = lit.var.decl "str"
-   # CHECK-NEXT: lit.call {{.*}}String::@"__copyinit__{{.*}}(%str, %str_0)
-   # CHECK-NEXT: %byte_1 = lit.var.decl "byte"
-   # CHECK-NEXT: lit.ref.store %byte, %byte_1 
-
-   # CHECK: } body {
-    while True:
-        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %byte_1
-        # CHECK-NEXT: lit.call {{.*}}use(::Int)"([[TMP]])        
-        use(byte)
-
-        # CHECK: lit.call {{.*}}@Int::@"__iadd__{{.*}}(%byte_1, 
-        byte += 1
-        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %byte_1
-        # CHECK-NEXT: lit.call {{.*}}use(::Int)"([[TMP]])        
-        use(byte)
-        # CHECK-NEXT: lit.break
-        break
-
-    # CHECK: } body {
-    while True:
-        # CHECK-NEXT: [[TMP:%.*]] = kgen.rebind %str_0
-        # CHECK-NEXT: lit.call {{.*}}use(::String)"{{.*}}([[TMP]])        
-        use(str)
-        # CHECK: lit.call {{.*}}String::@"__iadd__{{.*}}(%str_0, 
-        str += ""
-        # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %str_0 
-        # CHECK: lit.call {{.*}}use(::String)"{{.*}}([[TMP]])        
-        use(str)
-        break
 
 fn returnsMultiple() -> (Int, MemoryOnly):
     pass
