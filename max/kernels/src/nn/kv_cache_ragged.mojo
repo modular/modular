@@ -1857,7 +1857,7 @@ fn generic_flash_attention_kv_cache_ragged[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -1912,7 +1912,7 @@ fn _flash_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2375,7 +2375,7 @@ fn _cross_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
-    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: NDBuffer[DType.uint32, 1],
     kv_cache: collection_t,
@@ -2449,7 +2449,7 @@ fn generic_cross_attention_kv_cache[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[mut=True, type, 3, *_],
-    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
     kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
@@ -2505,7 +2505,7 @@ fn generic_cross_attention_kv_cache[
 # TODO: Remove this when we're no longer using NDBuffers.
 @always_inline
 fn valid_length_managed_tensor_slice_to_ndbuffer(
-    tensor: ManagedTensorSlice[type = DType.uint32, rank=1]
+    tensor: ManagedTensorSlice[dtype = DType.uint32, rank=1]
 ) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
     var ptr = tensor._ptr.address_space_cast[AddressSpace.GENERIC]()
     return NDBuffer[DType.uint32, 1, MutableAnyOrigin](

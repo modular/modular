@@ -236,7 +236,7 @@ fn flash_attention[
     v: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
@@ -384,7 +384,7 @@ fn flash_attention_dispatch[
     v: v_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
@@ -4257,7 +4257,7 @@ fn mha_gpu_naive[
     v: v_t,
     mask_functor: mask_t,
     output: NDBuffer[output_type, rank, *_],
-    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -4626,7 +4626,7 @@ fn mha_gpu_naive[
     v: cache_t,
     mask_functor: mask_t,
     output: NDBuffer[mut=True, output_type, rank, *_],
-    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -4814,7 +4814,7 @@ fn _naive_attention[
 fn managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec, //
 ](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
-    spec.type,
+    spec.dtype,
     spec.rank,
     MutableAnyOrigin,
     spec.shape,
@@ -4825,7 +4825,7 @@ fn managed_tensor_slice_to_ndbuffer[
 ]:
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
     return NDBuffer[
-        spec.type,
+        spec.dtype,
         spec.rank,
         _,
         spec.shape,

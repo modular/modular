@@ -241,7 +241,7 @@ fn mha_sm90_dispatch[
     v: v_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     max_prompt_len_arg: max_prompt_len_t,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -2333,7 +2333,7 @@ fn _mha_sm90[
 # TODO: Remove this when we're no longer using NDBuffers.
 @always_inline
 fn valid_length_managed_tensor_slice_to_ndbuffer(
-    tensor: ManagedTensorSlice[type = DType.uint32, rank=1]
+    tensor: ManagedTensorSlice[dtype = DType.uint32, rank=1]
 ) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
     var ptr = tensor._ptr.address_space_cast[AddressSpace.GENERIC]()
     return NDBuffer[DType.uint32, 1, MutableAnyOrigin](

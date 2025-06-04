@@ -56,21 +56,21 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
 @value
 @register_passable("trivial")
 struct StaticTensorSpec[
-    type: DType,
+    dtype: DType,
     rank: Int,
 ]:
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
-        type, simd_width
+        dtype, simd_width
     ]
     alias out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
-        IndexList[rank], SIMD[type, simd_width]
+        IndexList[rank], SIMD[dtype, simd_width]
     ) capturing -> None
 
     alias out_compute_lambda_t = fn[
         simd_width: Int, element_alignment: Int = 1
-    ] (IndexList[rank], SIMD[type, simd_width]) capturing -> SIMD[
-        type, simd_width
+    ] (IndexList[rank], SIMD[dtype, simd_width]) capturing -> SIMD[
+        dtype, simd_width
     ]
 
     var shape: DimList
@@ -121,7 +121,7 @@ struct StaticTensorSpec[
         )
         self.shape = shape
         self.strides = _row_major_strides[rank](shape)
-        self.alignment = alignof[type]()
+        self.alignment = alignof[dtype]()
         self.address_space = AddressSpace.GENERIC
         self.exclusive = False
         self.in_lambda = None
@@ -149,9 +149,9 @@ struct StaticTensorSpec[
     fn with_layout[
         new_rank: Int
     ](self, new_shape: DimList, new_strides: DimList) -> StaticTensorSpec[
-        type, new_rank
+        dtype, new_rank
     ]:
-        return StaticTensorSpec[type, new_rank](
+        return StaticTensorSpec[dtype, new_rank](
             new_shape,
             new_strides,
             self.alignment,

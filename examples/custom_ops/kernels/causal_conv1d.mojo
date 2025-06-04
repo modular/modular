@@ -61,11 +61,11 @@ struct CausalConv1Dcpu:
         width: Int,
         target: StaticString,
     ](
-        output: OutputTensor[type=dtype, rank=3],
-        output2d: OutputTensor[type=dtype, rank=2],
-        x: InputTensor[type=dtype, rank=3],
-        weight: InputTensor[type=dtype, rank=2],
-        bias: InputTensor[type=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=3],
+        output2d: OutputTensor[dtype=dtype, rank=2],
+        x: InputTensor[dtype=dtype, rank=3],
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         # print("Running on CPU")
@@ -92,11 +92,11 @@ struct CausalConv1Dgpu:
         width: Int,
         target: StaticString,
     ](
-        output: OutputTensor[type=dtype, rank=3],
-        output2d: OutputTensor[type=dtype, rank=2],
-        x: InputTensor[type=dtype, rank=3],
-        weight: InputTensor[type=dtype, rank=2],
-        bias: InputTensor[type=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=3],
+        output2d: OutputTensor[dtype=dtype, rank=2],
+        x: InputTensor[dtype=dtype, rank=3],
+        weight: InputTensor[dtype=dtype, rank=2],
+        bias: InputTensor[dtype=dtype, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         dev_ctx = ctx.get_device_context()
@@ -117,10 +117,10 @@ struct CausalConv1Dgpu:
 fn causal_conv1d_cpu[
     dtype: DType, threads: Int, elements: Int, width: Int
 ](
-    input: InputTensor[type=dtype, rank=3],
-    weight: InputTensor[type=dtype, rank=2],
-    bias: InputTensor[type=dtype, rank=1],
-    output: OutputTensor[type=dtype, rank=3],
+    input: InputTensor[dtype=dtype, rank=3],
+    weight: InputTensor[dtype=dtype, rank=2],
+    bias: InputTensor[dtype=dtype, rank=1],
+    output: OutputTensor[dtype=dtype, rank=3],
 ):
     alias kChunkSize = threads * elements
     var batch = input.shape()[0]

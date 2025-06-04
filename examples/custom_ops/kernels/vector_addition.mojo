@@ -23,8 +23,8 @@ from utils.index import IndexList
 
 fn _vector_addition_cpu(
     out: ManagedTensorSlice[mut=True],
-    lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
-    rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
+    lhs: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
+    rhs: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
     ctx: DeviceContextPtr,
 ):
     # Warning: This is an extremely inefficient implementation! It's merely an
@@ -39,8 +39,8 @@ fn _vector_addition_cpu(
 
 fn _vector_addition_gpu(
     out: ManagedTensorSlice[mut=True],
-    lhs: ManagedTensorSlice[type = out.type, rank = out.rank],
-    rhs: ManagedTensorSlice[type = out.type, rank = out.rank],
+    lhs: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
+    rhs: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
     ctx: DeviceContextPtr,
 ) raises:
     # Note: The following has not been tuned for any GPU hardware, and is an
@@ -78,8 +78,8 @@ struct VectorAddition:
         target: StaticString,
     ](
         out: OutputTensor[rank=1],
-        lhs: InputTensor[type = out.type, rank = out.rank],
-        rhs: InputTensor[type = out.type, rank = out.rank],
+        lhs: InputTensor[dtype = out.dtype, rank = out.rank],
+        rhs: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:

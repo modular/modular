@@ -29,8 +29,8 @@ struct Grayscale:
     fn execute[
         target: StaticString,  # "cpu" or "gpu"
     ](
-        img_out: OutputTensor[type = DType.uint8, rank=2],
-        img_in: InputTensor[type = DType.uint8, rank=3],
+        img_out: OutputTensor[dtype = DType.uint8, rank=2],
+        img_in: InputTensor[dtype = DType.uint8, rank=3],
         ctx: DeviceContextPtr,
     ) raises:
         """Execute grayscale conversion on the input image tensor.

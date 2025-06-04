@@ -95,8 +95,8 @@ struct Histogram:
     fn execute[
         target: StaticString
     ](
-        out: OutputTensor[type = DType.int64, rank=1],
-        input: InputTensor[type = DType.uint8, rank=1],
+        out: OutputTensor[dtype = DType.int64, rank=1],
+        input: InputTensor[dtype = DType.uint8, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         _histogram_cpu(out, input) if is_cpu[target]() else _histogram_gpu(

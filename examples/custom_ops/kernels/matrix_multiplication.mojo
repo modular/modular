@@ -44,8 +44,8 @@ from utils.index import Index
 
 fn naive_matrix_multiplication_cpu(
     out: ManagedTensorSlice,
-    a: ManagedTensorSlice[type = out.type, rank = out.rank],
-    b: ManagedTensorSlice[type = out.type, rank = out.rank],
+    a: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
+    b: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
 ):
     """A naive matrix multiplication used as a fallback on CPU hardware."""
     var M = a.shape()[0]
@@ -786,8 +786,8 @@ struct MatrixMultiplication[algorithm: StaticString]:
         target: StaticString,
     ](
         out: OutputTensor[rank=2],
-        a: InputTensor[type = out.type, rank = out.rank],
-        b: InputTensor[type = out.type, rank = out.rank],
+        a: InputTensor[dtype = out.dtype, rank = out.rank],
+        b: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
@@ -806,9 +806,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
 
             # Zero out the memory in the outbound tensor.
             gpu_ctx.enqueue_memset(
-                DeviceBuffer[out.type](
+                DeviceBuffer[out.dtype](
                     gpu_ctx,
-                    rebind[UnsafePointer[Scalar[out.type]]](out_layout.ptr),
+                    rebind[UnsafePointer[Scalar[out.dtype]]](out_layout.ptr),
                     M * N,
                     owning=False,
                 ),
@@ -836,7 +836,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BN = 32
                 gpu_ctx.enqueue_function[
                     naive_matrix_multiplication[
-                        out.type,
+                        out.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -855,7 +855,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BN = 32
                 gpu_ctx.enqueue_function[
                     coalescing_matrix_multiplication[
-                        out.type,
+                        out.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -876,7 +876,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = BM * BN
                 gpu_ctx.enqueue_function[
                     tiled_matrix_multiplication[
-                        out.type,
+                        out.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -900,7 +900,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = (BM * BN) // TM
                 gpu_ctx.enqueue_function[
                     tiled_register_matrix_multiplication[
-                        out.type,
+                        out.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -926,7 +926,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
                 gpu_ctx.enqueue_function[
                     block_tiled_matrix_multiplication[
-                        out.type,
+                        out.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -953,7 +953,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
                 gpu_ctx.enqueue_function[
                     block_tiled_matrix_multiplication[
-                        out.type,
+                        out.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -983,7 +983,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_WARPS = (BM // WM) * (BN // WN)
                 gpu_ctx.enqueue_function[
                     tensor_core_matrix_multiplication[
-                        out.type,
+                        out.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,

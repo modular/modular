@@ -391,7 +391,7 @@ fn generic_flash_attention_kv_cache_padded[
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -451,7 +451,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -506,7 +506,7 @@ fn _flash_attention_dispatch[
     q: NDBuffer[type, 4, *_],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -555,7 +555,7 @@ fn _flash_attention_dispatch_materialized_mask[
     kv_cache: collection_t,
     layer_idx: UInt32,
     mask_nd: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -1208,7 +1208,7 @@ fn generic_get_paged_cache[
 fn managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec, //
 ](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
-    spec.type,
+    spec.dtype,
     spec.rank,
     MutableAnyOrigin,
     spec.shape,
@@ -1219,7 +1219,7 @@ fn managed_tensor_slice_to_ndbuffer[
 ]:
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
     return NDBuffer[
-        spec.type,
+        spec.dtype,
         spec.rank,
         _,
         spec.shape,

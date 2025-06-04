@@ -49,7 +49,7 @@ struct Mandelbrot:
         @always_inline
         fn elementwise_mandelbrot[
             width: Int
-        ](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
+        ](idx: IndexList[out.rank]) -> SIMD[out.dtype, width]:
             # Obtain the position in the grid from the X, Y thread locations.
             var row = idx[0]
             var col = idx[1]
@@ -67,7 +67,7 @@ struct Mandelbrot:
             var z = ComplexSIMD[float_dtype, width](0, 0)
 
             # Perform the Mandelbrot iteration loop calculation.
-            var iters = SIMD[out.type, width](0)
+            var iters = SIMD[out.dtype, width](0)
             var in_set_mask: SIMD[DType.bool, width] = True
             for _ in range(max_iterations):
                 if not any(in_set_mask):

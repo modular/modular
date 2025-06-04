@@ -1336,7 +1336,7 @@ def flare_mla_prefill_plan(
 
     assert kv_params.page_size is not None
     parameters: dict[str, int | str | DType] = {
-        "type": kv_params.dtype,
+        "dtype": kv_params.dtype,
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "page_size": kv_params.page_size,

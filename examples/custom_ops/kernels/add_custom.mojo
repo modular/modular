@@ -31,7 +31,7 @@ struct AddConstantCustom[value: Int]:
         target: StaticString,
     ](
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
@@ -39,7 +39,7 @@ struct AddConstantCustom[value: Int]:
         @always_inline
         fn add_constant[
             width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.type, width]:
+        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + value
 
         foreach[add_constant, target=target](out, ctx)
@@ -61,7 +61,7 @@ struct AddOneCustom:
         target: StaticString,
     ](
         out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
@@ -69,7 +69,7 @@ struct AddOneCustom:
         @always_inline
         fn elementwise_add_one[
             width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.type, width]:
+        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[elementwise_add_one, target=target](out, ctx)

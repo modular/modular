@@ -1160,11 +1160,11 @@ fn scatter_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: ManagedTensorSlice[type=input_type, rank=rank],
-    indices: ManagedTensorSlice[type=indices_type, rank=rank],
-    updates: ManagedTensorSlice[type=input_type, rank=rank],
+    input: ManagedTensorSlice[dtype=input_type, rank=rank],
+    indices: ManagedTensorSlice[dtype=indices_type, rank=rank],
+    updates: ManagedTensorSlice[dtype=input_type, rank=rank],
     _axis: Int,
-    output: ManagedTensorSlice[type=input_type, rank=rank],
+    output: ManagedTensorSlice[dtype=input_type, rank=rank],
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
