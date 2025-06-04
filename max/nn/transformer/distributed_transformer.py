@@ -13,8 +13,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, MutableSequence
-from hashlib import md5
+from collections.abc import Iterable
 from itertools import islice
 from typing import Union, cast
 
@@ -23,6 +22,7 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Graph,
+    TensorType,
     TensorValue,
     TensorValueLike,
     Type,
@@ -66,7 +66,6 @@ class DistributedTransformerBlock(Module):
         attention_norm: DistributedRMSNorm,
         mlp_norm: DistributedRMSNorm,
         devices: list[DeviceRef],
-        use_subgraph: bool = False,
     ):
         super().__init__()
         self.self_attn = attention
@@ -74,116 +73,9 @@ class DistributedTransformerBlock(Module):
         self.input_layernorm = attention_norm
         self.post_attention_layernorm = mlp_norm
         self.devices = devices
-        self.use_subgraph = use_subgraph
-
-    def build_subgraph(
-        self,
-        name: str,
-        weight_prefix: str,
-    ) -> Module:
-        num_devices = len(self.devices)
-
-        raw_state_dict = self.raw_state_dict()
-        layer_weights = list(raw_state_dict.values())
-        outer_self = self
-
-        class DistributedTransformerBlockSubgraph(Module):
-            def __call__(
-                self,
-                layer_idx: TensorValue,
-                xs: list[TensorValue],
-                signal_buffers: list[BufferValue],
-                kv_collections: list[
-                    ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-                ],
-                freqs_cis: TensorValue,
-                input_row_offsets: TensorValue,
-            ) -> list[TensorValue]:
-                subgraph_input_types: list[Type] = [
-                    layer_idx.type,
-                    *[x.type for x in xs],
-                    *[signal_buffer.type for signal_buffer in signal_buffers],
-                    *[kv_collection.type for kv_collection in kv_collections],
-                    freqs_cis.type,
-                    input_row_offsets.type,
-                ]
-
-                name_suffix = md5(
-                    str(
-                        tuple(t.to_mlir() for t in subgraph_input_types)
-                    ).encode()
-                ).hexdigest()
-                subgraph = Graph.current._subgraphs.get(f"{name}_{name_suffix}")
-
-                if subgraph is None:
-                    with Graph.current.add_subgraph(
-                        f"{name}_{name_suffix}",
-                        input_types=subgraph_input_types,
-                    ) as subgraph:
-                        inputs = iter(subgraph.inputs)
-                        arg_layer_idx = next(inputs)
-                        arg_xs = [x.tensor for x in take(inputs, num_devices)]
-                        arg_signal_buffers = [
-                            x.buffer for x in take(inputs, num_devices)
-                        ]
-                        arg_kv_collections = cast(
-                            list[
-                                Union[
-                                    ContinuousBatchingKVCacheCollection,
-                                    PagedKVCacheCollection,
-                                ]
-                            ],
-                            take(inputs, num_devices),
-                        )
-                        arg_freqs_cis = next(inputs)
-
-                        arg_input_row_offsets = next(inputs)
-                        for weight in filter(
-                            lambda w: w.name.startswith(weight_prefix),
-                            layer_weights,
-                        ):
-                            weight._placeholder = True
-                            weight.name = weight.name.removeprefix(
-                                weight_prefix
-                            )
-
-                        # prevent re-entry
-                        try:
-                            outer_self.use_subgraph = False
-                            results = outer_self(
-                                weight_prefix,
-                                arg_layer_idx,
-                                arg_xs,
-                                arg_signal_buffers,
-                                arg_kv_collections,
-                                arg_freqs_cis,
-                                arg_input_row_offsets,
-                            )
-                        finally:
-                            outer_self.use_subgraph = True
-
-                        subgraph.output(*results)
-
-                call_args: MutableSequence[Value] = [
-                    layer_idx,
-                    *xs,
-                    *signal_buffers,
-                    *kv_collections,
-                    freqs_cis,
-                    input_row_offsets,
-                ]
-                return [
-                    res.tensor
-                    for res in ops.call(
-                        subgraph, *call_args, prefix=weight_prefix
-                    )
-                ]
-
-        return DistributedTransformerBlockSubgraph()
 
     def __call__(
         self,
-        prefix: str,
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
@@ -193,19 +85,6 @@ class DistributedTransformerBlock(Module):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> list[TensorValue]:
-        if self.use_subgraph:
-            return self.build_subgraph(
-                "dist_transformer_block",
-                prefix,
-            )(
-                layer_idx,
-                xs,
-                signal_buffers,
-                kv_collections,
-                freqs_cis,
-                input_row_offsets,
-            )
-
         attn_outs = self.self_attn(
             layer_idx,
             self.input_layernorm(xs),
@@ -241,6 +120,7 @@ class DistributedTransformer(Module):
         devices: list[DeviceRef],
         rope: OptimizedRotaryEmbedding,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        use_subgraphs: bool = False,
     ):
         super().__init__()
         self.dim = dim
@@ -254,7 +134,7 @@ class DistributedTransformer(Module):
         self.return_logits = return_logits
         self.devices = devices
         self.rope = rope
-
+        self.use_subgraphs = use_subgraphs
         if self.return_logits == ReturnLogits.VARIABLE:
             raise ValueError(
                 "DistributedTransformer does not support variable logits."
@@ -277,17 +157,89 @@ class DistributedTransformer(Module):
 
         # Create position embeddings shared across the decoder layers.
         freqs_cis = self.rope.freqs_cis
-        for idx, layer in enumerate(self.layers):
-            h = layer(
-                f"layers.{idx}.",
-                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                h,
-                signal_buffers,
-                kv_collections,
-                freqs_cis,
-                input_row_offsets,
-            )
 
+        if self.use_subgraphs:
+            subgraph_input_types: list[Type] = [
+                TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
+                *[hidden.type for hidden in h],
+                *[signal_buffer.type for signal_buffer in signal_buffers],
+                *[kv_collection.type for kv_collection in kv_collections],
+                freqs_cis.type,
+                input_row_offsets.type,
+            ]
+            num_devices = len(self.devices)
+            subgraph_layer = self.layers[0]
+            assert isinstance(subgraph_layer, DistributedTransformerBlock)
+            layer_weights = list(subgraph_layer.raw_state_dict().values())
+            subgraph_weight_prefix = "layers.0."
+
+            with Graph.current.add_subgraph(
+                "dist_transformer_block",
+                input_types=subgraph_input_types,
+            ) as subgraph:
+                inputs = iter(subgraph.inputs)
+                arg_layer_idx = next(inputs)
+                arg_xs = [x.tensor for x in take(inputs, num_devices)]
+                arg_signal_buffers = [
+                    x.buffer for x in take(inputs, num_devices)
+                ]
+                arg_kv_collections = cast(
+                    list[
+                        Union[
+                            ContinuousBatchingKVCacheCollection,
+                            PagedKVCacheCollection,
+                        ]
+                    ],
+                    take(inputs, num_devices),
+                )
+                arg_freqs_cis = next(inputs)
+
+                arg_input_row_offsets = next(inputs)
+                for weight in filter(
+                    lambda w: w.name.startswith(subgraph_weight_prefix),
+                    layer_weights,
+                ):
+                    weight._placeholder = True
+                    weight.name = weight.name.removeprefix(
+                        subgraph_weight_prefix
+                    )
+
+                # prevent re-entry
+                results = subgraph_layer(
+                    arg_layer_idx,
+                    arg_xs,
+                    arg_signal_buffers,
+                    arg_kv_collections,
+                    arg_freqs_cis,
+                    arg_input_row_offsets,
+                )
+
+                subgraph.output(*results)
+
+            for idx in range(len(self.layers)):
+                h = [
+                    x.tensor
+                    for x in ops.call(
+                        subgraph,
+                        ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                        *h,
+                        *signal_buffers,
+                        *kv_collections,
+                        freqs_cis,
+                        input_row_offsets,
+                        prefix=f"layers.{idx}.",
+                    )
+                ]
+        else:
+            for idx, layer in enumerate(self.layers):
+                h = layer(
+                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                    h,
+                    signal_buffers,
+                    kv_collections,
+                    freqs_cis,
+                    input_row_offsets,
+                )
         h0 = h[0]
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)

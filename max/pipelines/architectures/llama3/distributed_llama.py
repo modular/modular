@@ -135,7 +135,6 @@ class DistributedLlama3(DistributedTransformer):
                     attention_norm=create_distributed_norm(),
                     mlp_norm=create_distributed_norm(),
                     devices=config.devices,
-                    use_subgraph=config.use_subgraphs,
                     # TODO: Support residual_multiplier
                     # residual_multiplier=config.residual_multiplier,
                 )
@@ -196,6 +195,7 @@ class DistributedLlama3(DistributedTransformer):
             devices=config.devices,
             rope=rope,
             return_logits=config.return_logits,
+            use_subgraphs=config.use_subgraphs,
             # TODO: Support the following config options.
             # embedding_multiplier=config.embedding_multiplier,
             # logits_postprocessor=config.logits_postprocessor,
