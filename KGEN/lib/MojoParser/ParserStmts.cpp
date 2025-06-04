@@ -1267,9 +1267,25 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   Location forLocation = translateLocation(forLoc);
   ASTDecl &scope = getParentDecl();
 
-  // Emit the sequence as a PValue parameter.
-  PValue seqPValue = getEmitter().emitExprPValue(seqExpr, EC_ForParamSeq);
-  if (!seqPValue)
+  // All expressions we need are emitted into the param domain.
+  IREmitter emitter = getParamEmitter(EC_ForIterator);
+
+  // On any semantic failure, skip the body for better error recovery.
+  auto skipBodyOnFailure =
+      llvm::make_scope_exit([&]() { skipUntilIndentation(curIndent); });
+
+  // Emit the sequence and call __iter__() on it.
+  AnyValue seqValue = emitter.emitExprCValue(seqExpr, EC_ForParamSeq);
+  if (!seqValue)
+    return failure();
+  ValueDest rangeDest(EC_ForIterator);
+  PValue iterVal =
+      emitter.emitPValue({emitter.emitNamedMethodCall(
+                              "__iter__", CallOperands({{seqValue, seqExpr}}),
+                              rangeDest, CallSyntax::kMethodCall, seqExpr),
+                          seqExpr},
+                         EC_ForIterator);
+  if (!iterVal)
     return failure();
 
   // Bind the sequence initial value to the parameter for iterator generator.
@@ -1282,7 +1298,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // Resolve the overload with the sequence's type. This succeeds if the
   // iterator type is currently supported.
   ParamBindings bindings(scope);
-  bindings.add(seqExpr, PValue(seqPValue.getType()));
+  bindings.add(seqExpr, PValue(iterVal.getType()));
   OverloadSet call("parameter_for_generator", paramForImpl, std::move(bindings),
                    seqExpr, CallSyntax::kDirectCall);
   PValue iterate = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
@@ -1292,9 +1308,8 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // Sniff the type of the induction variable and create its declaration.
   // We expect that the struct returned by the range() call has an _IndexType
   // alias.
-  IREmitter emitter = getEmitter();
   std::optional<Type> indexType =
-      getIndexType(emitter, seqPValue.getType(), forLoc);
+      getIndexType(emitter, iterVal.getRValueType(), forLoc);
   if (!indexType)
     indexType = shared.lookupNamedType("Int", scope, forLoc);
   if (!indexType)
@@ -1304,12 +1319,14 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   if (!target)
     return failure();
 
+  skipBodyOnFailure.release();
+
   auto indVarDecl = ParamDeclAttr::get(scope.mangleParamName(target.getValue()),
                                        indexType.value());
 
   // Create the loop and parse the body into it.
   auto paramFor =
-      builder.create<ParamForOp>(forLocation, seqPValue, iterate, indVarDecl);
+      builder.create<ParamForOp>(forLocation, iterVal, iterate, indVarDecl);
   builder.createBlock(&paramFor.getBody());
 
   { // Create a scope for the induction variable.
