@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 modular_py_library(
     name = "torch_utils",
@@ -11,5 +11,15 @@ modular_py_library(
         requirement("torch"),
         requirement("torchvision"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    size = "small",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//SDK/lib/API/python/max",
+        requirement("pytest-asyncio"),
     ],
 )
