@@ -214,18 +214,21 @@ class InputContext(Protocol):
     @property
     def is_ce(self) -> bool:
         """Returns True if the context is a context encoding context, False otherwise."""
+        ...
 
     @property
     def is_initial_prompt(self) -> bool:
         """Returns true if the context has not been updated with tokens."""
         ...
 
+    @property
+    def sampling_params(self) -> SamplingParams:
+        """Returns the per-request sampling configuration"""
+        ...
+
 
 class TextContext:
     """A base class for model context, specifically for Text model variants."""
-
-    sampling_params: SamplingParams
-    """Per-request sampling configuration."""
 
     def __init__(
         self,
@@ -233,6 +236,7 @@ class TextContext:
         max_length: int,
         tokens: np.ndarray,
         eos_token_ids: set[int] | None = None,
+        eos_sequences: list[list[int]] | None = None,
         cache_seq_id: int | None = None,
         log_probabilities: int = 0,
         log_probabilities_echo: bool = False,
@@ -242,6 +246,9 @@ class TextContext:
         self._cache_seq_id = cache_seq_id
         self._eos_token_ids = (
             eos_token_ids if eos_token_ids is not None else set()
+        )
+        self._eos_sequences = (
+            eos_sequences if eos_sequences is not None else list()
         )
         self.prompt = prompt
         self.max_length = max_length
@@ -279,7 +286,7 @@ class TextContext:
         self.json_schema = json_schema
         self._is_initial_prompt = True
         self._status = TextGenerationStatus.ACTIVE
-        self.sampling_params = sampling_params
+        self._sampling_params = sampling_params
 
         self._draft_offset = 0
 
@@ -294,6 +301,10 @@ class TextContext:
     @property
     def eos_token_ids(self) -> set[int]:
         return self._eos_token_ids
+
+    @property
+    def eos_sequences(self) -> list[list[int]]:
+        return self._eos_sequences
 
     @property
     def start_idx(self) -> int:
@@ -431,6 +442,32 @@ class TextContext:
             self.size += CHUNK_SIZE
             self._tokens = np.resize(self._tokens, self.size)
 
+    def _is_eos(self, new_token: int) -> bool:
+        """
+        Checks for end-of-sequence conditions.
+
+        This function performs two checks:
+        1. Whether the newly generated token is in the set of `eos_token_ids`.
+        2. Whether appending the new token results in a sequence that matches any per-request `stop` sequence.
+        """
+        if new_token in self._eos_token_ids:
+            return True
+
+        if not self._eos_sequences:
+            return False
+
+        for eos in self._eos_sequences:
+            if self._end_idx - self._prompt_len < len(eos):
+                continue
+
+            comp_tokens = self.generated_tokens
+            comp_tokens = comp_tokens[len(comp_tokens) - len(eos) :]
+
+            if np.array_equal(comp_tokens, eos):
+                return True
+
+        return False
+
     def update_status(self, status: TextGenerationStatus) -> None:
         self._status = status
 
@@ -444,8 +481,6 @@ class TextContext:
         # The scheduler will update the active_idx via bump_token_indices and pass through the model
         # To accommodate this, if we identify that the active_idx is not at the end of the completed
         # token array, we only update the start_idx and active_idx, leaving the token array alone.
-        is_eos = new_token in self._eos_token_ids
-
         if self._active_idx < self._end_idx:
             self._start_idx = self._active_idx
             self._active_idx = self._end_idx
@@ -462,7 +497,7 @@ class TextContext:
         self._active_idx += 1
         self._end_idx += 1
 
-        if is_eos:
+        if self._is_eos(new_token):
             self._status = TextGenerationStatus.END_OF_SEQUENCE
         elif self.active_idx >= self.max_length:
             self._status = TextGenerationStatus.MAXIMUM_LENGTH
@@ -566,6 +601,11 @@ class TextContext:
     def is_initial_prompt(self) -> bool:
         """Returns true if the context has not been updated with tokens."""
         return self._is_initial_prompt
+
+    @property
+    def sampling_params(self) -> SamplingParams:
+        """Returns the per-request sampling configuration"""
+        return self._sampling_params
 
     def __repr__(self) -> str:
         return (

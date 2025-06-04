@@ -127,6 +127,12 @@ class SamplingParams:
     min_tokens: int = 0
     """The minimum number of tokens to generate in the response."""
 
+    stop: Optional[list[str]] = None
+    """A list of detokenized sequences that can be used as stop criteria when generating a new sequence."""
+
+    stop_token_ids: Optional[list[int]] = None
+    """A list of token ids that are used as stopping criteria when generating a new sequence."""
+
 
 @dataclass(frozen=True)
 class TokenGeneratorRequest:

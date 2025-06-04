@@ -261,6 +261,8 @@ class TextTokenizer(
                 raise ValueError(
                     f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {self.max_length})."
                 )
+
+            encoded_prompt = np.array(encoded_prompt)
         else:
             encoded_prompt = np.array(list(prompt))
 
@@ -328,14 +330,23 @@ class TextTokenizer(
             if request.response_format
             else None
         )
+
+        eos_token_ids = self._default_eos_token_ids
+        eos_sequences = list()
+
         if request.ignore_eos:
             eos_token_ids = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
+        elif request.sampling_params.stop_token_ids:
+            eos_token_ids.update(request.sampling_params.stop_token_ids)
+        elif request.sampling_params.stop:
+            eos_sequences = await self._encode_stop_criteria(
+                request.sampling_params.stop
+            )
 
         context = TextContext(
             prompt=prompt,
             eos_token_ids=eos_token_ids,
+            eos_sequences=eos_sequences,
             cache_seq_id=request.index,
             max_length=len(encoded_prompt) + max_gen_tokens
             if max_gen_tokens is not None
@@ -344,6 +355,7 @@ class TextTokenizer(
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
+            sampling_params=request.sampling_params,
         )
         return context
 
@@ -376,6 +388,17 @@ class TextTokenizer(
             **kwargs,
         )
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
+
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes `stop` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+
+        return stop_tokenized
 
 
 class TextAndVisionTokenizer(
