@@ -487,6 +487,14 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     if (isa<LIT::FnOp>(op))
       continue;
 
+    if (auto closure = dyn_cast<LIT::ClosureInitOp>(op)) {
+      bool closureDoesRaise = false, closureDoesBreak = false,
+           closureDoesFallThrough = false;
+      lowerBlock(closure.getBodyRegion().front(), closureDoesRaise,
+                 closureDoesBreak, closureDoesFallThrough);
+      continue;
+    }
+
     // Process a try op specially to identify dead code and warn.
     if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
       bool tryBodyRaises = false, tryBodyBreaks = false,
