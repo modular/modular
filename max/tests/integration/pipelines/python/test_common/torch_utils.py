@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
 import requests
 import torch
@@ -20,6 +21,34 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+
+
+@dataclass(frozen=True)
+class TextGenerationRequest:
+    """Request for text generation testing, supporting both text-only and multimodal inputs."""
+
+    prompt: str
+    """The text prompt to be processed by the model."""
+
+    images: list[str]
+    """List of image URLs or file paths. None for text-only requests."""
+
+    @property
+    def is_multimodal(self) -> bool:
+        """Returns True if this request includes images."""
+        return len(self.images) > 0
+
+    @classmethod
+    def text_only(cls, prompt: str) -> TextGenerationRequest:
+        """Creates a text-only generation request."""
+        return cls(prompt=prompt, images=[])
+
+    @classmethod
+    def with_images(
+        cls, prompt: str, images: list[str]
+    ) -> TextGenerationRequest:
+        """Creates a multimodal generation request."""
+        return cls(prompt=prompt, images=images)
 
 
 def _process_images(images: Iterable[str]) -> list[Image.Image]:
@@ -70,23 +99,27 @@ def run_text_generation(
     | MllamaProcessor
     | PixtralProcessor,
     device: torch.device,
-    prompts: Iterable[str],
-    images: Iterable[str] | None = None,
+    requests: list[TextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
     use_cache: bool | None = None,
 ):
     saved_logits, store_logits = _create_logits_store()
-
     results = []
-    if images:
-        processed_images = _process_images(images)
 
-        for image, prompt in zip(processed_images, prompts):
+    for request in requests:
+        if request.is_multimodal:
+            processed_images = _process_images(request.images)
+            # Assume one image per prompt for now.
+            assert len(processed_images) == 1
+
             inputs = data_processor(
-                images=image, text=prompt, return_tensors="pt"
+                images=processed_images[0],
+                text=request.prompt,
+                return_tensors="pt",
             ).to(device)
-            model.generate(
+
+            outputs = model.generate(
                 **inputs,
                 max_new_tokens=num_steps,
                 do_sample=False,
@@ -95,16 +128,13 @@ def run_text_generation(
                 pad_token_id=getattr(data_processor, "eos_token_id", None),
                 use_cache=use_cache,
             )
-
-            # TODO: We likely want to track input image here too.
-            results.append({"prompt": prompt, "values": saved_logits[:]})
-            saved_logits.clear()
-    else:
-        for prompt in prompts:
+        else:
+            # Process text-only inputs.
             encoded_prompt = data_processor.encode(
-                prompt, return_tensors="pt"
+                request.prompt, return_tensors="pt"
             ).to(device)
             mask = torch.ones_like(encoded_prompt)
+
             outputs = model.generate(
                 input_ids=encoded_prompt,
                 attention_mask=mask,
@@ -112,23 +142,27 @@ def run_text_generation(
                 do_sample=False,
                 logits_processor=LogitsProcessorList([store_logits]),
                 num_return_sequences=1,
-                # Suppress "Setting `pad_token_id` to `eos_token_id`" warnings.
                 pad_token_id=getattr(data_processor, "eos_token_id", None),
                 use_cache=use_cache,
             )
-            if print_outputs:
-                print(
-                    "Prompt:",
-                    f"{prompt[:100]}..." if len(prompt) > 100 else prompt,
-                )
-                print(
-                    "Output:",
-                    data_processor.batch_decode(
-                        outputs, skip_special_tokens=True
-                    )[0][len(prompt) :],
-                )
-            results.append({"prompt": prompt, "values": saved_logits[:]})
-            saved_logits.clear()
+
+        if print_outputs:
+            print(
+                "Prompt:",
+                f"{request.prompt[:100]}..."
+                if len(request.prompt) > 100
+                else request.prompt,
+            )
+            print(
+                "Output:",
+                data_processor.batch_decode(outputs, skip_special_tokens=True)[
+                    0
+                ],
+            )
+
+        # TODO: We likely want to track input image here too for multimodal requests.
+        results.append({"prompt": request.prompt, "values": saved_logits[:]})
+        saved_logits.clear()
 
     return results
 
@@ -137,8 +171,7 @@ def run_text_generation_with_custom_image_processing(
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
     device: torch.device,
-    prompts: Iterable[str],
-    images: Iterable[str],
+    requests: list[TextGenerationRequest],
     num_steps: int,
     print_outputs: bool,
     image_loader_fn: Callable[[str], torch.Tensor],
@@ -164,13 +197,20 @@ def run_text_generation_with_custom_image_processing(
     model_setup_fn(model, data_processor)
 
     results = []
-    for image, prompt in zip(images, prompts):
-        # Use custom image loader
-        pixel_values = image_loader_fn(image)
+
+    # Process each multimodal request.
+    for request in requests:
+        # Use custom image loader on first image (assume single image for now).
+        assert len(request.images) == 1
+        pixel_values = image_loader_fn(request.images[0])
 
         # Use custom prompt formatter
         formatted_prompt, pixel_values = prompt_formatter_fn(
-            prompt, image, pixel_values, model, data_processor
+            request.prompt,
+            request.images[0],
+            pixel_values,
+            model,
+            data_processor,
         )
 
         # Process the formatted prompt
@@ -203,7 +243,9 @@ def run_text_generation_with_custom_image_processing(
         if print_outputs:
             print(
                 "Prompt:",
-                f"{prompt[:100]}..." if len(prompt) > 100 else prompt,
+                f"{request.prompt[:100]}..."
+                if len(request.prompt) > 100
+                else request.prompt,
             )
             print(
                 "Output:",
@@ -212,7 +254,7 @@ def run_text_generation_with_custom_image_processing(
                 ],
             )
 
-        results.append({"prompt": prompt, "values": saved_logits[:]})
+        results.append({"prompt": request.prompt, "values": saved_logits[:]})
         saved_logits.clear()
 
     return results

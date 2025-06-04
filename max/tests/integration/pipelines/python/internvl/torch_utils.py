@@ -22,10 +22,11 @@ from max.pipelines.architectures.internvl.tokenizer import (
 )
 from PIL import Image
 from test_common.torch_utils import (
-    run_text_generation as standard_run_text_generation,
+    TextGenerationRequest,
+    run_text_generation_with_custom_image_processing,
 )
 from test_common.torch_utils import (
-    run_text_generation_with_custom_image_processing,
+    run_text_generation as standard_run_text_generation,
 )
 from torchvision.transforms.functional import InterpolationMode
 from transformers import (
@@ -192,12 +193,15 @@ def run_text_generation(
     """Run text generation for InternVL with custom image preprocessing."""
 
     if images:
+        requests = [
+            TextGenerationRequest.with_images(prompt, [img])
+            for prompt, img in zip(prompts, images)
+        ]
         return run_text_generation_with_custom_image_processing(
             model=model,
             data_processor=data_processor,
             device=device,
-            prompts=prompts,
-            images=images,
+            requests=requests,
             num_steps=num_steps,
             print_outputs=print_outputs,
             image_loader_fn=load_image,
@@ -205,12 +209,14 @@ def run_text_generation(
             model_setup_fn=_setup_internvl_model,
         )
     else:
+        requests = [
+            TextGenerationRequest.text_only(prompt) for prompt in prompts
+        ]
         return standard_run_text_generation(
             model=model,
             data_processor=data_processor,
             device=device,
-            prompts=prompts,
-            images=None,
+            requests=requests,
             num_steps=num_steps,
             print_outputs=print_outputs,
         )

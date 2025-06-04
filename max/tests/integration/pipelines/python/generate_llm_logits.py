@@ -42,6 +42,7 @@ from test_common import (
     torch_utils,
 )
 from test_common.evaluate import ModelOutput
+from test_common.torch_utils import TextGenerationRequest
 from typing_extensions import ParamSpec
 
 # This is far from a universal standard, but this is the closest to a standard
@@ -160,14 +161,23 @@ class PipelineOracle(ABC):
 
         Can be overridden by subclasses that need custom preprocessing logic.
         """
+        # Create TextGenerationRequest objects
+        if isinstance(self, MultiModalPipelineOracle) and self.images:
+            requests = [
+                TextGenerationRequest.with_images(prompt, [img])
+                for prompt, img in zip(self.prompts, self.images)
+            ]
+        else:
+            requests = [
+                TextGenerationRequest.text_only(prompt)
+                for prompt in self.prompts
+            ]
+
         return torch_utils.run_text_generation(
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
-            prompts=self.prompts,
-            images=self.images
-            if isinstance(self, MultiModalPipelineOracle)
-            else None,
+            requests=requests,
             print_outputs=True,
             use_cache=self.use_cache,
         )
