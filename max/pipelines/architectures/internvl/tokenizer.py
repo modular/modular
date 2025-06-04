@@ -206,7 +206,6 @@ class InternVLTokenizer(TextAndVisionTokenizer):
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
@@ -215,6 +214,9 @@ class InternVLTokenizer(TextAndVisionTokenizer):
             trust_remote_code=trust_remote_code,
             model_max_length=max_length,
         )
+
+        # Set max_length after delegate is created (like parent class)
+        self.max_length = max_length or self.delegate.model_max_length
 
         # Set up encode methods (copied from TextAndVisionTokenizer)
         self._encode_with_special_tokens = functools.partial(
@@ -233,3 +235,6 @@ class InternVLTokenizer(TextAndVisionTokenizer):
 
         # Create custom processor instead of AutoProcessor (which doesn't exist for InternVL)
         self.processor = InternVLProcessor(self.delegate, config)
+
+        # Initialize default EOS token IDs (required by parent class new_context method)
+        self._default_eos_token_ids = set([self.eos])
