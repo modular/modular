@@ -11,9 +11,10 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
-        requirement("torch"),
+        requirement("hypothesis"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
+        requirement("torch"),
     ],
 )
 
@@ -30,9 +31,10 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
-        requirement("torch"),
+        requirement("hypothesis"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
+        requirement("torch"),
     ],
 )
 
@@ -46,8 +48,9 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
-        requirement("torch"),
+        requirement("hypothesis"),
         requirement("numpy"),
         requirement("pytest-asyncio"),
+        requirement("torch"),
     ],
 )
