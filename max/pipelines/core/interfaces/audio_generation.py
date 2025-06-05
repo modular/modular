@@ -73,12 +73,6 @@ class AudioGenerationRequest:
     """The voice to use for audio generation.
     """
 
-    stop: list[str] | None = None
-    """Optional list of stop expressions that will cause generation to stop when encountered."""
-
-    stop_token_ids: list[int] | None = None
-    """Optional list of token IDs that will cause generation to stop when encountered."""
-
     detokenize: bool = True
     """Whether to detokenize the output tokens into text."""
 
