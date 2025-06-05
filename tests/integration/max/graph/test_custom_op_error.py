@@ -21,6 +21,7 @@ def test_no_operation_dump(custom_ops_mojopkg: Path) -> None:
                 "elab_error",
                 forward=lambda: ops.custom(
                     "fails_to_elaborate",
+                    device=DeviceRef.CPU(),
                     values=[],
                     out_types=[
                         TensorType(

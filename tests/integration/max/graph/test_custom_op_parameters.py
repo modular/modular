@@ -40,6 +40,7 @@ def test_custom_op_with_int_parameter(
         graph.output(
             ops.custom(
                 "op_with_int_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[unimportant_for_test_tensor_type],
                 parameters={"IntParameter": expected_int},
@@ -74,6 +75,7 @@ def test_custom_op_with_dtype_parameter(
         graph.output(
             ops.custom(
                 "op_with_dtype_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[unimportant_for_test_tensor_type],
                 parameters={"DTypeParameter": expected_dtype},
@@ -107,6 +109,7 @@ def test_custom_op_with_static_string_parameter(
         graph.output(
             ops.custom(
                 "op_with_static_string_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[unimportant_for_test_tensor_type],
                 parameters={"StringParameter": expected_string},

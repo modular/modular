@@ -32,6 +32,7 @@ def maker_model(session: InferenceSession, counter_ops_path: Path) -> Model:
         maker_graph.output(
             ops.custom(
                 "make_counter",
+                device=DeviceRef.CPU(),
                 values=[],
                 out_types=[counter_type],
                 parameters={"stride": 1},
@@ -53,6 +54,7 @@ def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     with bumper_graph:
         ops.inplace_custom(
             "bump_counter",
+            device=DeviceRef.CPU(),
             values=[bumper_graph.inputs[0]],
             out_types=[],
             parameters={"stride": 1},
@@ -74,6 +76,7 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     with reader_graph:
         c = ops.inplace_custom(
             "read_counter",
+            device=DeviceRef.CPU(),
             values=[reader_graph.inputs[0]],
             out_types=[TensorType(DType.int32, [2], device=DeviceRef.CPU())],
             parameters={"stride": 1},
@@ -122,9 +125,17 @@ def test_pyobject_opaque(
     )
     with bumper_graph:
         x = ops.inplace_custom(
-            "bump_python_counter", [bumper_graph.inputs[0]], [python_type]
+            "bump_python_counter",
+            device=DeviceRef.CPU(),
+            values=[bumper_graph.inputs[0]],
+            out_types=[python_type],
         )[0]
-        y = ops.inplace_custom("bump_python_counter", [x], [python_type])[0]
+        y = ops.inplace_custom(
+            "bump_python_counter",
+            device=DeviceRef.CPU(),
+            values=[x],
+            out_types=[python_type],
+        )[0]
         bumper_graph.output(y)
     bumper_compiled = session.load(bumper_graph)
 

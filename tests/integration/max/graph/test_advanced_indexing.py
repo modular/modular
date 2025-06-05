@@ -144,6 +144,7 @@ def test_advanced_indexing_get_item(
     ) as graph:
         out = ops.custom(
             "advanced_indexing_getitem",
+            device=input_types[0].device,
             values=list(graph.inputs),
             out_types=[
                 data_generator.max_output_tensor_type()
@@ -203,6 +204,7 @@ def test_advanced_indexing_set_item(
     ) as graph:
         out = ops.custom(
             "advanced_indexing_setitem",
+            device=input_types[0].device,
             values=list(graph.inputs),
             out_types=[data_generator.max_input_tensor_type()],
             parameters={"start_axis": start_axis},
@@ -263,6 +265,7 @@ def test_advanced_indexing_set_item_inplace(
     ) as graph:
         ops.inplace_custom(
             "advanced_indexing_setitem_inplace",
+            device=input_types[0].device,
             values=list(graph.inputs),
             out_types=[],
             parameters={"start_axis": start_axis},

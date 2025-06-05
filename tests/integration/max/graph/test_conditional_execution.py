@@ -152,15 +152,25 @@ def test_conditional_inplace_user_supplied(
 
         def then_fn():
             # this custom op is equivalent to buffer[0,0] += 1
-            ops.inplace_custom("mutable_test_op", values=[buffer])
-            ops.inplace_custom("mutable_test_op", values=[buffer])
+            ops.inplace_custom(
+                "mutable_test_op", device=buffer.device, values=[buffer]
+            )
+            ops.inplace_custom(
+                "mutable_test_op", device=buffer.device, values=[buffer]
+            )
             buffer[...] = ops.negate(buffer[...])
 
         def else_fn():
             # this custom op is equivalent to buffer[0,0] += 1
-            ops.inplace_custom("mutable_test_op", values=[buffer])
-            ops.inplace_custom("mutable_test_op", values=[buffer])
-            ops.inplace_custom("mutable_test_op", values=[buffer])
+            ops.inplace_custom(
+                "mutable_test_op", device=buffer.device, values=[buffer]
+            )
+            ops.inplace_custom(
+                "mutable_test_op", device=buffer.device, values=[buffer]
+            )
+            ops.inplace_custom(
+                "mutable_test_op", device=buffer.device, values=[buffer]
+            )
 
         ops.cond(cond, None, then_fn, else_fn)
 

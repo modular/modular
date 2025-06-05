@@ -35,6 +35,7 @@ def _repack_quantized_weights(
     rhs_type = rhs[0].type
     return custom(
         op_name,
+        rhs[0].device,
         list(rhs),
         out_types=[
             TensorType(
@@ -64,6 +65,7 @@ def _packed_qmatmul(
 ) -> TensorValue:
     return custom(
         op_name,
+        lhs_matrix.device,
         [lhs_matrix, rhs_repack],
         out_types=[
             TensorType(
@@ -253,6 +255,7 @@ def dequantize(
     flat_quantized = quantized.reshape([-1, qdim])
     flat_dequantized = custom(
         name=op_name,
+        device=flat_quantized.device,
         values=[flat_quantized],
         out_types=[
             TensorType(

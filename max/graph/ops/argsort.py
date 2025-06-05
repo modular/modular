@@ -29,6 +29,7 @@ def argsort(x: TensorValue, ascending: bool = True) -> TensorValue:
         raise ValueError("argsort only implemented for input tensors of rank 1")
     return custom(
         "mx.argsort",
+        x.device,
         [x],
         out_types=[
             TensorType(dtype=DType.int64, shape=x.shape, device=x.device)

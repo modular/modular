@@ -31,7 +31,12 @@ def test_compile_config_split_k_reduction_scheme(
         "graph", input_types=[], custom_extensions=[compile_config_ops_path]
     ) as graph:
         graph.output(
-            ops.custom("use_splitk_reduction_scheme", [], [tensor_type])[0]
+            ops.custom(
+                "use_splitk_reduction_scheme",
+                device=tensor_type.device,
+                values=[],
+                out_types=[tensor_type],
+            )[0]
         )
 
     session.set_split_k_reduction_precision("ACCUM")
@@ -58,7 +63,9 @@ def test_compile_config_use_logger(
     with Graph(
         "graph", input_types=[], custom_extensions=[compile_config_ops_path]
     ) as graph:
-        graph.output(ops.custom("use_logger", [], [tensor_type])[0])
+        graph.output(
+            ops.custom("use_logger", DeviceRef.CPU(), [], [tensor_type])[0]
+        )
 
     session.set_mojo_log_level(LogLevel.DEBUG)
     model = session.load(graph)
@@ -95,6 +102,7 @@ def test_compile_config_dump_asm(
         "addition",
         forward=lambda x: ops.custom(
             name="add_one_custom",
+            device=DeviceRef.CPU(),
             values=[x],
             out_types=[
                 TensorType(

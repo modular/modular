@@ -99,7 +99,9 @@ def test_while_loop_inplace_user_supplied(
             return buffer[0, 0] < 10
 
         def body_fn(_):
-            ops.inplace_custom("mutable_test_op", values=[buffer])
+            ops.inplace_custom(
+                "mutable_test_op", device=buffer.device, values=[buffer]
+            )
             return buffer[0, 0]
 
         _ = ops.while_loop(buffer[0, 0], pred_fn, body_fn)

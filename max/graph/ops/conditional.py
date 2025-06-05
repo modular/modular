@@ -52,9 +52,9 @@ def cond(
         .. code-block:: python
 
             def then_fn():
-                ops.inplace_custom("increment", [buffer])
+                ops.inplace_custom("increment", device=buffer.device, values=[buffer])
             def else_fn():
-                ops.inplace_custom("decrement", [buffer])
+                ops.inplace_custom("decrement", device=buffer.device, values=[buffer])
 
             ops.cond(pred, None, then_fn, else_fn)
 

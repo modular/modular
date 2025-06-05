@@ -101,6 +101,7 @@ def fold(
 
     return custom(
         "fold",
+        input.device,
         [
             input,
             shape_to_tensor(output_size),
@@ -110,5 +111,4 @@ def fold(
             shape_to_tensor(padding),
         ],
         [TensorType(input.dtype, output_shape, input.device)],
-        device=input.device,
     )[0].tensor

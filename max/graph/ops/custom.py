@@ -44,10 +44,10 @@ def _parameter_attribute(
 
 def custom(
     name: str,
+    device: DeviceRef,
     values: Sequence[Value],
     out_types: Sequence[Type],
     parameters: Mapping[str, bool | int | str | DType] | None = None,
-    device: DeviceRef | None = None,
 ) -> list[Value]:
     """Creates a node to execute a custom graph operation in the graph.
 
@@ -87,10 +87,9 @@ def custom(
                 param, graph._context
             )
 
-    if device is not None:
-        custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
-            device.to_mlir()._CAPIPtr  # type: ignore
-        )
+    custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
+        device.to_mlir()._CAPIPtr  # type: ignore
+    )
 
     # Call the verifier, will throw if the call is invalid.
     graph._kernel_library.verify_custom_op(custom_op)
@@ -100,10 +99,10 @@ def custom(
 
 def inplace_custom(
     name: str,
+    device: DeviceRef,
     values: Iterable[Value],
     out_types: Iterable[Type] | None = None,
     parameters: dict[str, bool | int | str | DType] | None = None,
-    device: DeviceRef | None = None,
 ) -> list[Value]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 
@@ -113,10 +112,10 @@ def inplace_custom(
 
     Args:
         name: The op name provided to ``@compiler.register``.
-        values: The op function's arguments.
-        parameters: Dictionary of extra parameters expected by the kernel.
         device: Device that the op is assigned to.
             This becomes a `target` parameter to the kernel.
+        values: The op function's arguments.
+        parameters: Dictionary of extra parameters expected by the kernel.
     """
     # Unfortunately there's no existing way to mark a particular NDBuffer input
     # as needing to be backed by a `mo.buffer` value at the graph level.
@@ -153,10 +152,9 @@ def inplace_custom(
                 param, graph._context
             )
 
-    if device is not None:
-        custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
-            device.to_mlir()._CAPIPtr  # type: ignore
-        )
+    custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
+        device.to_mlir()._CAPIPtr  # type: ignore
+    )
 
     # Call the verifier, will throw if the call is invalid.
     graph._kernel_library.verify_custom_op(custom_op)

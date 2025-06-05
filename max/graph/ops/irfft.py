@@ -137,6 +137,7 @@ def irfft(
     x = x.reshape((*x.shape[:axis], x.shape[axis] * 2))
     irfft_out = custom(
         "irfft",
+        input_tensor.device,
         [x],
         [
             TensorType(

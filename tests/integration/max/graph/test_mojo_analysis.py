@@ -53,6 +53,7 @@ def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:
         with pytest.raises(ValueError) as err:
             ops.custom(
                 "i_am_not_a_kernel",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )
@@ -76,6 +77,7 @@ def test_my_add_valid(
         graph.output(
             ops.custom(
                 "my_add",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0], graph.inputs[1]],
                 out_types=[tensor_type],
             )[0]
@@ -100,6 +102,7 @@ def test_my_add_invalid_inputs_count(
         with pytest.raises(ValueError) as err:
             ops.custom(
                 "my_add",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )
@@ -124,6 +127,7 @@ def test_my_add_invalid_outputs_count(
         with pytest.raises(ValueError) as err:
             ops.custom(
                 "my_add",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0], graph.inputs[1]],
                 out_types=[tensor_type, tensor_type],
             )
@@ -147,6 +151,7 @@ def test_op_with_device_context_valid(
         graph.output(
             ops.custom(
                 "op_with_device_context",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )[0]
@@ -170,6 +175,7 @@ def test_op_multiple_outputs_valid(
         graph.output(
             *ops.custom(
                 "op_with_multiple_outputs",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type, tensor_type],
             )
@@ -194,6 +200,7 @@ def test_op_multiple_outputs_invalid_outputs_count(
         with pytest.raises(ValueError) as err:
             ops.custom(
                 "op_with_multiple_outputs",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )
@@ -218,6 +225,7 @@ def test_op_without_outputs_invalid_outputs_count(
         with pytest.raises(ValueError) as err:
             ops.custom(
                 "op_without_outputs",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )
@@ -242,6 +250,7 @@ def test_return_opaque_mem_type(
         graph.output(
             ops.custom(
                 "make_my_int_memory",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[opaque_type],
             )[0]
@@ -266,6 +275,7 @@ def test_return_opaque_reg_type(
         graph.output(
             ops.custom(
                 "make_my_int_reg",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[opaque_type],
             )[0]
@@ -289,6 +299,7 @@ def test_variadic_ins_outs_valid(
         graph.output(
             *ops.custom(
                 "variadic_input_to_output",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0], graph.inputs[1], graph.inputs[2]],
                 out_types=[tensor_type, tensor_type],
             )
@@ -310,6 +321,7 @@ def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
         with pytest.raises(ValueError) as err:
             ops.custom(
                 "variadic_add",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
             )
@@ -333,6 +345,7 @@ def test_tensor_kernel_raises_valid(
         graph.output(
             ops.custom(
                 "binary_kernel_with_raises",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0], graph.inputs[1]],
                 out_types=[tensor_type],
             )[0]
@@ -355,6 +368,7 @@ def test_mutable_input_tensor_valid(
         graph._import_kernels([kernel_verification_ops_path])
         ops.inplace_custom(
             "mutable_input_tensor",
+            device=DeviceRef.CPU(),
             values=[graph.inputs[0]],
         )
         graph.output()

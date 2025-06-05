@@ -139,6 +139,7 @@ def repeat_interleave(
 
     output = custom(
         "repeat_interleave",
+        device=x.device,
         values=[x, repeats, axis_val],
         out_types=[TensorType(x.dtype, result_shape, device=x.device)],
     )

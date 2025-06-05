@@ -6,6 +6,7 @@
 """Integration tests for mutable ops."""
 
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -186,8 +187,12 @@ def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
         buffer: BufferValue = graph.inputs[0].buffer
 
         # this custom op is equivalent to buffer[0,0] += 1
-        ops.inplace_custom("mutable_test_op", values=[buffer])
-        ops.inplace_custom("mutable_test_op", values=[buffer])
+        ops.inplace_custom(
+            "mutable_test_op", device=buffer.device, values=[buffer]
+        )
+        ops.inplace_custom(
+            "mutable_test_op", device=buffer.device, values=[buffer]
+        )
         buffer[...] = ops.negate(buffer[...])
 
         graph.output()
@@ -219,6 +224,7 @@ def test_variadic_buffer_handling(
             "variadic_buffer_test",
             forward=lambda x, y: ops.inplace_custom(
                 "reduce_buffers",
+                device=x.device,
                 values=[x, y],
                 out_types=[
                     TensorType(DType.float32, [1], device=DeviceRef.CPU())
@@ -254,17 +260,17 @@ def test_inplace_custom(custom_ops_path: Path) -> None:
 
         chain_0 = graph._current_chain
 
-        ops.inplace_custom("foo", values=[buffer])
+        ops.inplace_custom("foo", device=buffer.device, values=[buffer])
         chain_1 = graph._current_chain
 
         ops.buffer_store(buffer, tensor)
         chain_2 = graph._current_chain
 
-        ops.inplace_custom("bar", values=[buffer])
+        ops.inplace_custom("bar", device=buffer.device, values=[buffer])
         chain_3 = graph._current_chain
 
         with pytest.raises(TypeError):
-            ops.inplace_custom("baz", values=[tensor])
+            ops.inplace_custom("baz", device=tensor.device, values=[tensor])
 
         graph.output()
 
@@ -272,8 +278,14 @@ def test_inplace_custom(custom_ops_path: Path) -> None:
         assert chain_1 != chain_2
         assert chain_2 != chain_3
 
-        assert 'mo.custom {symbol = "foo"}' in str(graph)
-        assert 'mo.custom {symbol = "bar"}' in str(graph)
+        assert re.search(
+            r'mo\.custom.*symbol = "foo"',
+            str(graph),
+        )
+        assert re.search(
+            r'mo\.custom.*symbol = "bar"',
+            str(graph),
+        )
 
 
 def test_forward_inplace_custom(custom_ops_path: Path) -> None:
@@ -282,7 +294,9 @@ def test_forward_inplace_custom(custom_ops_path: Path) -> None:
     N = 37
     graph = Graph(
         "foo",
-        forward=lambda x: ops.inplace_custom("foo", values=[x]),
+        forward=lambda x: ops.inplace_custom(
+            "foo", device=x.device, values=[x]
+        ),
         input_types=[
             BufferType(
                 dtype=DType.float32, shape=(M, N), device=DeviceRef.GPU()
@@ -312,6 +326,7 @@ def test_custom_buffer_error(custom_ops_path: Path) -> None:
         ):
             _ = ops.custom(
                 "bar",
+                device=DeviceRef.CPU(),
                 values=[buffer],
                 out_types=[
                     TensorType(DType.uint32, shape=[], device=DeviceRef.CPU())

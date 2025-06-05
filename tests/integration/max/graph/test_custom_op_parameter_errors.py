@@ -34,6 +34,7 @@ def test_op_with_int_parameter_passed_as_string(
         graph.output(
             ops.custom(
                 "op_with_int_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"IntParameter": "Not an int!"},
@@ -63,6 +64,7 @@ def test_op_with_int_parameter_passed_as_dtype(
         graph.output(
             ops.custom(
                 "op_with_int_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"IntParameter": DType.int32},
@@ -92,6 +94,7 @@ def test_op_with_dtype_parameter_passed_as_string(
         graph.output(
             ops.custom(
                 "op_with_dtype_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"DTypeParameter": "Not a dtype!"},
@@ -121,6 +124,7 @@ def test_op_with_dtype_parameter_passed_as_int(
         graph.output(
             ops.custom(
                 "op_with_dtype_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"DTypeParameter": 42},
@@ -150,6 +154,7 @@ def test_op_with_string_parameter_passed_as_int(
         graph.output(
             ops.custom(
                 "op_with_string_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": 42},
@@ -179,6 +184,7 @@ def test_op_with_string_parameter_passed_as_dtype(
         graph.output(
             ops.custom(
                 "op_with_string_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": DType.int32},
@@ -208,6 +214,7 @@ def test_op_with_string_parameter_passed_as_string_literal(
         graph.output(
             ops.custom(
                 "op_with_string_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": "String literal"},
@@ -237,6 +244,7 @@ def test_op_with_string_slice_parameter_passed_as_int(
         graph.output(
             ops.custom(
                 "op_with_string_slice_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": 42},
@@ -266,6 +274,7 @@ def test_op_with_string_slice_parameter_passed_as_dtype(
         graph.output(
             ops.custom(
                 "op_with_string_slice_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": DType.int32},
@@ -295,6 +304,7 @@ def test_op_with_string_slice_parameter_passed_as_string_literal(
         graph.output(
             ops.custom(
                 "op_with_string_slice_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": "String literal"},
@@ -324,6 +334,7 @@ def test_op_with_static_string_parameter_passed_as_int(
         graph.output(
             ops.custom(
                 "op_with_static_string_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": 42},
@@ -353,6 +364,7 @@ def test_op_with_static_string_parameter_passed_as_dtype(
         graph.output(
             ops.custom(
                 "op_with_static_string_parameter",
+                device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
                 parameters={"StringParameter": DType.int32},
