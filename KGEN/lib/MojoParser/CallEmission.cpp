@@ -931,7 +931,7 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
   diag.attachNote(loc)
       << "computing member method closure is not yet supported";
   diag.attachNote(loc) << "did you forget '()'s?";
-  dest.resetForError();
+  dest.resetForError(emitter);
   return {};
 }
 
@@ -953,7 +953,7 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
   PValue callee = filterOverloadSet(operands,
                                     /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee) {
-    dest.resetForError();
+    dest.resetForError(emitter);
     return {};
   }
 
@@ -975,7 +975,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   // If we have a function pointer, resolve it to an RValue.
   RValue calleeRV = emitRValue({callee, callExpr}, EC_CallCalleeValue);
   if (!calleeRV) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
 
@@ -989,7 +989,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     // If not, diagnose it with an error.
     emitError(callExpr->getLoc(), "invalid indirect call: ")
         << fitness.takeDiag();
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
 
@@ -1001,7 +1001,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     if (!calleePVal) {
       emitError(callExpr->getLoc(),
                 "cannot call dynamic function with parameterized type");
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
     boundCalleeRV = PValue(
@@ -1016,7 +1016,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     if (failed(emitOperandsNeedingOriginsToMemory(
             fitness, cast<FnTypeGeneratorType>(boundCalleeRV.getType()),
             operands, *this))) {
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
     // Now that we mutated the operand list by introducing some new memory
@@ -1043,7 +1043,7 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
   if (!selfVal) {
     selfVal = emitCValue(operands[0], EC_CallArgValue);
     if (!selfVal) {
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
     operands[0].ir = selfVal;
@@ -1075,7 +1075,7 @@ CValue IREmitter::emitNamedMethodCall(StringRef methodName,
       OverloadSet::lookupAndResolve(type, methodName, operands, callNode,
                                     syntax, emitNoMethodError, true, *this);
   if (!callee) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
 
@@ -1090,7 +1090,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
                                       ValueDest &dest) {
   // If the dest type is invalid, then an error has already been reported.
   if (type.isTypeCheckErrorType()) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
 
@@ -1100,7 +1100,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);
   if (callee.isErroneous()) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
 
@@ -1122,7 +1122,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
         emitModuleCallSubscriptDiag(diag, metaType, "call", expr->getLoc(),
                                     shared);
         diag << expr->getRange();
-        dest.resetForError();
+        dest.resetForError(*this);
         return {};
       }
     }
@@ -1139,7 +1139,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
       if (isa<StructType>(type)) {
         diag << "invalid implicit conversion to " << type
              << ": no constructors found";
-        dest.resetForError();
+        dest.resetForError(*this);
         return {};
       }
 
@@ -1160,7 +1160,7 @@ CValue IREmitter::emitConstructorCall(ASTType type, CallOperands &&callOperands,
       if (isConvertingTypeValue)
         diag << "; did you mean to instantiate " << type << "?";
       diag << expr->getRange();
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
   }

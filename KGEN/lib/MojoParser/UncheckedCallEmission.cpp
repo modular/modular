@@ -187,7 +187,8 @@ private:
       // If an error happens before we emit the write backs, make sure to nuke
       // them so they don't crash the compiler.
       while (!lvalueWritebacks.empty())
-        lvalueWritebacks.pop_back_val().first.resetForError();
+        lvalueWritebacks.pop_back_val().first.resetForError(
+            callEmitter.emitter);
     }
   } afterCallActions;
 
@@ -213,7 +214,7 @@ void CallEmitter::AfterCallActions::emit() {
     // pass it as an MRValue to the "set" method, allowing the value to be
     // consumed directly by an 'owned' argument without a copy.
     if (!emitter.emitResult(MRValue(lValue), callEmitter.callExpr, dest))
-      dest.resetForError();
+      dest.resetForError(emitter);
   }
 }
 
@@ -933,8 +934,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // Emit the 'get' into the buffer.
     ValueDest bufferDest(mlvBuffer, EC_CallArgValue);
     if (!emitter.emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {
-      bufferDest.resetForError();
-      dlvBuffer.resetForError();
+      bufferDest.resetForError(emitter);
+      dlvBuffer.resetForError(emitter);
       return {};
     }
     afterCallActions.lvalueWritebacks.push_back(
@@ -1522,7 +1523,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>> argumentValuesOr =
       callEmitter.emitArgValues(callOperands);
   if (failed(argumentValuesOr)) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues = *argumentValuesOr;
@@ -1543,7 +1544,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     // into a DLValue.
     CValue result = emitCResult(paramCallResult, callExpr, dest);
     if (!result)
-      dest.resetForError();
+      dest.resetForError(*this);
     return result;
   }
 
@@ -1606,7 +1607,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
         argValAndExpr, convention, declaredArgType, callArgs);
     if (!arg) {
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
 
@@ -1680,7 +1681,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
           computeArgumentsOrigin(call, shared.cachedOriginFinder));
 
       if (!coroType) {
-        dest.resetForError();
+        dest.resetForError(*this);
         return {};
       }
       // Emit the implicit conversion to Coroutine[T].  We emit into the call's
@@ -1689,7 +1690,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
           emitConstructorCall(coroType, {{{SRValue(call), callExpr}}}, callExpr,
                               CallSyntax::kImplicitConvert, dest);
       if (!callResult) {
-        dest.resetForError();
+        dest.resetForError(*this);
         return {};
       }
     } else {
@@ -1732,7 +1733,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   if (calleeSig.isRefResult()) {
     auto resultVal = emitSRValue({callResult, callExpr}, EC_CallCalleeValue);
     if (!resultVal) {
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
 

@@ -2639,8 +2639,14 @@ AnyValue BinOpNode::emitAssign(ValueDest &dest, IREmitter &emitter) const {
   // LHS, then we can resolve it from the RHS.  If neither can decided then we
   // have an ambiguity.
   auto resultValue = emitter.emitExpr(rhs, assignDest);
-  if (!resultValue)
-    return {};
+  if (!resultValue) {
+    // If emitting the RHS failed, use a "type check error" expression as the
+    // RHS so we can make sure to emit any vars declared, to silence downstream
+    // errors.
+    //     var x = <bad>
+    //     use(x)  # Don't warn here.
+    resultValue = UnknownAttr::get(emitter.shared.getTypeCheckErrorType());
+  }
 
   // To support the walrus operator and chained assignment like `x = y = 1`, the
   /// assignment operation returns a borrowed version of the dest value.
@@ -2910,14 +2916,12 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
 
   emitter.builder = falseBuilder;
   ValueDest falseDest(destBuffer, EC_CondExpr);
-  if (!emitter.emitResult(lhsV, lhs, falseDest))
-    falseDest.resetForError();
+  (void)emitter.emitResult(lhsV, lhs, falseDest);
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
   emitter.builder = trueBuilder;
   ValueDest trueDest(destBuffer, EC_CondExpr);
-  if (!emitter.emitResult(rhsV, rhs, trueDest))
-    trueDest.resetForError();
+  (void)emitter.emitResult(rhsV, rhs, trueDest);
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
   // MemoryOnly results don't need the 'if' result.  There is no way to remove
@@ -3281,7 +3285,7 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   };
   if (emitter.coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal,
                                      falseExpr, configEmitter)) {
-    dest.resetForError();
+    dest.resetForError(emitter);
     return {};
   }
 
@@ -3320,14 +3324,12 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getElseBlock());
   ValueDest falseDest(destBuffer, EC_CondExpr);
-  if (!emitter.emitResult(falseVal, falseExpr, falseDest))
-    falseDest.resetForError();
+  (void)emitter.emitResult(falseVal, falseExpr, falseDest);
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
   emitter.builder->setInsertionPointToEnd(&ifOp.getThenBlock());
   ValueDest trueDest(destBuffer, EC_CondExpr);
-  if (!emitter.emitResult(trueVal, falseExpr, trueDest))
-    trueDest.resetForError();
+  (void)emitter.emitResult(trueVal, falseExpr, trueDest);
   emitter.builder->create<HLCF::YieldOp>(ifLoc);
 
   // MemoryOnly results don't need the 'if' result.  There is no way to remove

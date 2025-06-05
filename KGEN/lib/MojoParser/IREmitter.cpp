@@ -264,7 +264,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     // Emit the target as an LValue to understand what we're assigning into.
     LValue exprLValue = emitter.emitExprLValue(expr, dest);
     if (!exprLValue) {
-      dest.resetForError();
+      dest.resetForError(emitter);
       representation = NullRepresentation();
       return {};
     }
@@ -289,7 +289,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
     } else {
-      dest.resetForError();
+      dest.resetForError(emitter);
       representation = NullRepresentation(); // Error already emitted!
     }
   }
@@ -363,7 +363,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     if (LValue lValue = emitter.emitExprLValue(target, dest)) {
       representation = lValue;
     } else {
-      dest.resetForError();
+      dest.resetForError(emitter);
       representation = NullRepresentation(); // Consumed!
     }
   }
@@ -536,7 +536,7 @@ RValue IREmitter::emitRValue(ASTExprAnd<AnyValue> value, ExprContext context,
   CValue result = emitRValue(value, dest);
   while (true) {
     if (!result) {
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
     // Typically emitRValue will return an RValue, but it might return a BValue.
@@ -555,7 +555,7 @@ CValue IREmitter::emitCValue(ASTExprAnd<AnyValue> value, ExprContext context,
   ValueDest dest(resultType, context);
   if (auto c = emitCValue(value, dest))
     return c;
-  dest.resetForError();
+  dest.resetForError(*this);
   return {};
 }
 
@@ -644,7 +644,7 @@ BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
   ValueDest dest(resultType, context);
   if (auto result = emitBValue(value, dest))
     return result;
-  dest.resetForError();
+  dest.resetForError(*this);
   return {};
 }
 
@@ -809,7 +809,7 @@ MRValue IREmitter::emitMRValue(ASTExprAnd<AnyValue> value,
       return {};
     ValueDest dest(MLValue(varOp), context);
     if (!emitRValue(value, dest))
-      dest.resetForError();
+      dest.resetForError(*this);
     return MRValue(varOp);
   }
 
@@ -874,7 +874,7 @@ PValue IREmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
     ValueDest dest(context);
     value.ir = dl->emitLoad(dest, *this);
     if (!value.ir) {
-      dest.resetForError();
+      dest.resetForError(*this);
       return {};
     }
   }
@@ -976,7 +976,7 @@ CValue IREmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
 AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
                                ValueDest &dest) {
   if (!value) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
   ExprContext context = dest.getContext();
@@ -1040,7 +1040,7 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
                                           /*allowIncompatibleTypes=*/true,
                                           /*requireMLValue=*/false, *this);
   if (!destLV) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
 
@@ -1066,7 +1066,7 @@ AnyValue IREmitter::emitExpr(const ExprNode *expr, ValueDest &dest) {
   assert(expr && "cannot emit a null node");
   if (auto result = expr->emitIR(dest, *this))
     return result;
-  dest.resetForError();
+  dest.resetForError(*this);
   return {};
 }
 
@@ -1331,7 +1331,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     ValueDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);
     if (!result)
-      dest.resetForError();
+      dest.resetForError(*this);
     return result;
   }
 
