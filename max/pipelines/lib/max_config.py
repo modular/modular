@@ -150,6 +150,12 @@ class SamplingConfig(MAXConfig):
     do_penalties: bool = False
     """Whether to apply frequency and presence penalties to the model's output."""
 
+    enable_min_tokens: bool = False
+    """Whether to enable min_tokens, which blocks the model from generating
+    stopping tokens before the min_tokens count is reached. This defaults to
+    false.
+    """
+
     def __post_init__(self):
         if self.min_p < 0.0 or self.min_p > 1.0:
             raise ValueError("min_p must be in [0.0, 1.0]")
@@ -171,6 +177,7 @@ class SamplingConfig(MAXConfig):
             "repetition_penalty": "The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens that have already appeared in prompt and generated text at least once by dividing the logits by the repetition penalty.",
             "seed": "The seed to use for the random number generator. This defaults to 0.",
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
+            "enable_min_tokens": "Whether to enable min_tokens, which blocks the model from generating stopping tokens before the min_tokens count is reached. This defaults to false.",
         }
 
 

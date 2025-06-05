@@ -18,6 +18,7 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
 from max.nn.kernels import (
     apply_penalties_to_logits,
+    scatter_set_constant,
     topk_fused_sampling,
     update_frequency_data,
 )
@@ -100,6 +101,13 @@ def _sampling_input_types(
         )
         inputs["repetition_freq_offsets"] = repetition_freq_offsets_type
 
+    # If we have min_tokens enabled
+    if sampling_config.enable_min_tokens:
+        min_tokens_mask_type = TensorType(
+            DType.int32, ["num_token_masks", 2], device=device
+        )
+        inputs["min_tokens_mask"] = min_tokens_mask_type
+
     return inputs
 
 
@@ -153,6 +161,17 @@ def token_sampler(
                     repetition_freq_offsets,
                     repetition_penalty=sampling_config.repetition_penalty,
                 )
+
+        if sampling_config.enable_min_tokens:
+            min_tokens_mask = graph.inputs[
+                list(_input_dict).index("min_tokens_mask")
+            ].tensor
+
+            scatter_set_constant(
+                logits_buffer,
+                min_tokens_mask,
+                fill_val=-10000,
+            )
 
         # freeze the logits buffer (no more writes)
         logits = ops.buffer_load(logits_buffer)

@@ -5174,6 +5174,7 @@ class CreateAudioGenerationRequest(BaseModel):
     instructions: str = Field(..., description='The instructions for the audio generation.')
     response_format: Literal['wav', 'mp3', 'pcm'] = Field(..., description='The response format for the audio generation.')
     speed: float = Field(..., description='The speed of the audio generation.')
+    min_tokens: int = Field(default=0, description='Generate at least this many tokens, even if we generate EOS before we get there.')
 
 class CreateAudioGenerationResponse(BaseModel):
     audio_data: bytes = Field(..., description='The audio data for the audio generation.')

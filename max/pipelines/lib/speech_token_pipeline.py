@@ -111,6 +111,10 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         else:
             frequency_data = None
 
+        min_tokens_masks = self._build_min_tokens_masks(
+            context_batch, num_steps
+        )
+
         curr_step_inputs = model_inputs
 
         seq_has_eos = np.zeros([len(context_batch)], dtype=np.bool)
@@ -147,6 +151,9 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 logit_offsets=model_outputs.logit_offsets,
                 bitmask=bitmask,
                 frequency_data=frequency_data,
+                min_tokens_mask=min_tokens_masks[i]
+                if min_tokens_masks
+                else None,
             )
 
             assert isinstance(new_tokens, Tensor)

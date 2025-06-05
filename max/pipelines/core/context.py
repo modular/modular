@@ -21,6 +21,7 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
+import numpy.typing as npt
 
 from .interfaces import LogProbabilities, SamplingParams, TextGenerationStatus
 
@@ -81,6 +82,11 @@ class InputContext(Protocol):
         ...
 
     @property
+    def min_tokens(self) -> int:
+        """The minimum number of new tokens to generate."""
+        ...
+
+    @property
     def log_probabilities(self) -> int:
         """When > 0, returns the log probabilities for the top N tokens for each
         element token in the sequence."""
@@ -128,6 +134,17 @@ class InputContext(Protocol):
         """All generated tokens in the context."""
         ...
 
+    def get_min_token_logit_mask(
+        self, num_steps: int
+    ) -> list[npt.NDArray[np.int32]]:
+        """Returns a set of indices for the tokens in the output that should be masked.
+
+        This is primarly used for the min_tokens setting, where we mask
+        `eos` tokens in the logits to avoid generating them before we reach
+        min_tokens.
+        """
+        ...
+
     def update(
         self,
         new_token: int,
@@ -136,7 +153,7 @@ class InputContext(Protocol):
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         ...
 
-    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
+    def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
         ...
 
@@ -250,6 +267,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         matcher: Optional grammar matcher for constrained decoding
         json_schema: Optional JSON schema for structured output
         sampling_params: Parameters controlling the token sampling strategy
+        min_tokens: Minimum number of new tokens to generate.
         _status: Current generation status (active, finished, etc)
         _cache_seq_id: ID of KV cache slot assigned to this context
         _size: Current allocated size of token array
@@ -337,6 +355,11 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         if self._prompt_len == -1:
             self._prompt_len = self._active_idx
 
+        if self.min_tokens + self._prompt_len > self.max_length:
+            raise ValueError(
+                f"min_tokens ({self.min_tokens}) + prompt_len ({self._prompt_len}) must be less than or equal to max_length ({self.max_length})"
+            )
+
         # Resize Data Up
         # Ensure the tokens array is at least self._size
         if self._end_idx < self._size:
@@ -394,12 +417,47 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         return self._active_idx
 
     @property
+    def min_tokens(self) -> int:
+        """The minimum number of new tokens to generate."""
+        return self.sampling_params.min_tokens
+
+    @property
     def end_idx(self) -> int:
         return self._end_idx
 
     @property
     def committed_idx(self) -> int:
         return self._committed_idx
+
+    def get_min_token_logit_mask(
+        self, num_steps: int
+    ) -> list[npt.NDArray[np.int32]]:
+        """Returns a set of indices for the tokens in the output that should be masked.
+
+        This is primarly used for the min_tokens setting, where we mask
+        `eos` tokens in the logits to avoid generating them before we reach
+        min_tokens.
+
+        Returns:
+            A set of indices for the tokens in the output that should be masked.
+        """
+
+        ret_list: list[npt.NDArray[np.int32]] = []
+        start_range = self._prompt_len
+        end_range = self._prompt_len + self.min_tokens
+
+        for i in range(self._active_idx, self._active_idx + num_steps):
+            if i < start_range or i >= end_range:
+                ret_list.append(np.zeros((0, 2), dtype=np.int32))
+                continue
+
+            new_list = []
+            for eos_token_id in self.eos_token_ids:
+                new_list.append((0, eos_token_id))
+
+            ret_list.append(np.asarray(new_list, dtype=np.int32))
+
+        return ret_list
 
     def set_matcher(self, matcher: xgr.GrammarMatcher) -> None:  # type: ignore
         self._matcher = matcher
@@ -614,9 +672,9 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 
         self._is_initial_prompt = False
 
-    def jump_ahead(self, new_token: int, is_eos: bool = False) -> None:
+    def jump_ahead(self, new_token: int) -> None:
         """Updates the token array, while ensuring the new token is returned to the user."""
-
+        is_eos = new_token in self.eos_token_ids
         self._upsize()
 
         # Update tokens

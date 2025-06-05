@@ -37,6 +37,7 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+from max.pipelines.core.interfaces.audio_generation import SamplingParams
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -1085,13 +1086,16 @@ async def create_streaming_audio_speech(
         )
         pipeline = get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
-
+        sampling_params = SamplingParams(
+            min_tokens=audio_generation_request.min_tokens,
+        )
         audio_request = AudioGenerationRequest(
             id=request_id,
             input=audio_generation_request.input,
             index=audio_generation_request.index,
             model=audio_generation_request.model,
             voice=audio_generation_request.voice,
+            sampling_params=sampling_params,
             # TODO: Add support for these options.
             # instructions=audio_generation_request.instructions,
             # response_format=audio_generation_request.response_format,
