@@ -356,121 +356,56 @@ extractMutInputFromTensorStruct(LIT::StructType structType) {
   return std::make_pair(mut, input);
 }
 
-/// Return a set of named attributes mapping all unbound parameters in the
-/// tensor type struct
-static SmallVector<NamedAttribute>
-getUnboundParametersForTensor(LIT::StructType &structType, Builder &builder) {
-  auto allParameters = structType.getParamValues();
-  ASSERT_STREAM(
-      allParameters.size() >= toIndex(ManagedTensorSliceParams::kNumParams),
-      << "Expected at least " << toIndex(ManagedTensorSliceParams::kNumParams)
-      << " parameters on the tensor type");
-
-  auto mut = allParameters[toIndex(ManagedTensorSliceParams::kMut)];
-  auto input = allParameters[toIndex(ManagedTensorSliceParams::kInput)];
-  auto dtype = allParameters[toIndex(ManagedTensorSliceParams::kDType)];
-  auto rank = allParameters[toIndex(ManagedTensorSliceParams::kRank)];
-  auto spec = allParameters[toIndex(ManagedTensorSliceParams::kStaticSpec)];
-
-  SmallVector<NamedAttribute> tensorSpecNamedAttrs;
-  if (dtype)
-    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterDType),
-                                      dtype);
-
-  if (rank)
-    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterRank),
-                                      rank);
-
-  if (spec)
-    tensorSpecNamedAttrs.emplace_back(
-        builder.getStringAttr(kParameterStaticSpec), spec);
-
-  if (mut)
-    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterMut),
-                                      mut);
-
-  if (input)
-    tensorSpecNamedAttrs.emplace_back(builder.getStringAttr(kParameterInput),
-                                      input);
-
-  return tensorSpecNamedAttrs;
-}
-
-static SmallVector<NamedAttribute>
-getUnboundParametersForSIMD(LIT::StructType structType, Builder &builder) {
-  auto allParameters = structType.getParamValues();
-  ASSERT_STREAM(allParameters.size() >= toIndex(SIMDParams::kNumParams),
-                << "Expected at least " << toIndex(SIMDParams::kNumParams)
-                << " parameters on the SIMD type");
-
-  auto dtype = allParameters[toIndex(SIMDParams::kDType)];
-  auto size = allParameters[toIndex(SIMDParams::kSize)];
-
-  SmallVector<NamedAttribute> tensorSpecNamedAttrs;
-  if (dtype)
-    tensorSpecNamedAttrs.push_back(
-        NamedAttribute{builder.getStringAttr(kParameterDType), dtype});
-  if (size)
-    tensorSpecNamedAttrs.push_back(
-        NamedAttribute{builder.getStringAttr(kParameterSize), size});
-
-  return tensorSpecNamedAttrs;
-}
-
-/// Return a set of named attributes mapping all unbound parameters in the tuple
-/// of tensor struct
+/// Checks if a parameter of a given type will be present in as an argument
+/// to a KGEN function. Structs with no fields are elided as arguments to KGEN
+/// functions. For example, the IOSpec struct carries only parameters:
 ///
-//  mut: Bool,
-//  input: IO, //,
-//  type: DType,
-//  rank: Int,
-//  size: Int,
-//  ioSpec: IOSpec[mut, input],
-//  *,
-//  static_specs: StaticTuple[StaticTensorSpec[type, rank], size],
-static SmallVector<NamedAttribute>
-getUnboundParametersForVariadicTensors(LIT::StructType structType,
-                                       Builder &builder) {
-  auto allParameters = structType.getParamValues();
-  ASSERT_STREAM(
-      allParameters.size() >= toIndex(VariadicTensorsParams::kNumParams),
-      << "Expected at least " << toIndex(VariadicTensorsParams::kNumParams)
-      << " parameters on the tuple-of-tensors type");
+///     @value
+///     @register_passable("trivial")
+///     struct IOSpec[mut: Bool, input: IO]:
+///         ...
+///
+/// Functions parameterized on an IOSpec in Mojo will take a `mut` and an
+/// `input` parameter at the KGEN level, but not an IOSpec parameter.
+static bool willBePresentInKgen(KGENModule &kgenModule, LIT::StructType type) {
+  if (auto decl = kgenModule.lookup<LIT::StructDeclOp>(type.getSymbol()))
+    return !decl.getFieldDecls().empty();
+  return true;
+}
 
-  auto mut = allParameters[toIndex(VariadicTensorsParams::kMut)];
-  auto input = allParameters[toIndex(VariadicTensorsParams::kInput)];
-  auto type = allParameters[toIndex(VariadicTensorsParams::kDType)];
-  auto rank = allParameters[toIndex(VariadicTensorsParams::kRank)];
-  auto size = allParameters[toIndex(VariadicTensorsParams::kSize)];
-  auto spec = allParameters[toIndex(VariadicTensorsParams::kStaticSpecs)];
+static DictionaryAttr getUnboundParameters(KGENModule &kgenModule,
+                                           LIT::StructType type) {
+  Builder builder(type.getContext());
 
-  SmallVector<NamedAttribute> namedAttrs;
-  if (mut)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterMut), mut);
+  auto allValues = type.getParamValues();
+  auto decl = kgenModule.lookup<LIT::StructDeclOp>(type.getSymbol());
 
-  if (input)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterInput), input);
+  ASSERT_STREAM(decl.getAllParams().size() == allValues.size(),
+                << "number of parameters does not match struct declaration");
 
-  if (type)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterDType), type);
+  SmallVector<NamedAttribute> result;
+  result.reserve(allValues.size());
 
-  if (rank)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterRank), rank);
+  for (auto [decl, value] : llvm::zip(decl.getAllParams(), allValues)) {
+    if (auto structType = dyn_cast<LIT::StructType>(decl.getType()))
+      if (!willBePresentInKgen(kgenModule, structType))
+        continue;
 
-  if (size)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterSize), size);
+    Attribute stubbedValue = value;
+    if (!stubbedValue)
+      stubbedValue = builder.getUnitAttr();
 
-  if (spec)
-    namedAttrs.emplace_back(builder.getStringAttr(kParameterStaticSpecs), spec);
+    result.emplace_back(LIT::demangleParameterName(decl.getName()),
+                        stubbedValue);
+  }
 
-  return namedAttrs;
+  return builder.getDictionaryAttr(result);
 }
 
 /// Return a set of named attributes mapping all unbound parameters in the list
 /// of tensor struct
-static std::optional<SmallVector<NamedAttribute>>
-getUnboundParametersForTensorList(LIT::StructType structType,
-                                  Builder &builder) {
+static Attribute getUnboundParametersForTensorList(KGENModule &kgenModule,
+                                                   LIT::StructType structType) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
   [[maybe_unused]] auto allParameters = structType.getParamValues();
@@ -486,35 +421,13 @@ getUnboundParametersForTensorList(LIT::StructType structType,
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
 
   if (!symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice))
-    return std::nullopt;
+    return Builder(structType.getContext()).getUnitAttr();
 
-  auto elementTypeParams =
-      getUnboundParametersForTensor(elementTypeStruct, builder);
-
-  listNamedAttrs.append(elementTypeParams);
-  return listNamedAttrs;
+  return getUnboundParameters(kgenModule, elementTypeStruct);
 }
 
-static SmallVector<NamedAttribute>
-getUnboundParametersForDeviceContextPtrList(LIT::StructType structType,
-                                            Builder &builder) {
-  auto allParameters = structType.getParamValues();
-  ASSERT_STREAM(
-      allParameters.size() >= toIndex(DeviceContextPtrListParams::kNumParams),
-      << "Expected at least " << toIndex(DeviceContextPtrListParams::kNumParams)
-      << " parameters on the DeviceContextrPtrList type");
-
-  auto size = allParameters[toIndex(DeviceContextPtrListParams::kSize)];
-
-  SmallVector<NamedAttribute> tensorSpecNamedAttrs;
-  if (size)
-    tensorSpecNamedAttrs.push_back(
-        NamedAttribute{builder.getStringAttr(kParameterSize), size});
-
-  return tensorSpecNamedAttrs;
-}
-
-static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
+static void labelTensorParamsInKernel(KGENModule &kgenModule,
+                                      LIT::FnOp funcOp) {
   Builder builder{funcOp.getContext()};
 
   if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp) &&
@@ -529,49 +442,36 @@ static void labelTensorParamsInKernel(LIT::FnOp funcOp) {
     return dyn_cast<LIT::StructType>(t);
   };
 
-  SmallVector<Attribute> tensorSpecs;
+  SmallVector<Attribute> valueParameters;
   Attribute emptyAttr = builder.getUnitAttr();
 
   for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
-    auto asStructType = getAsStructType(litType);
+    LIT::StructType asStructType = getAsStructType(litType);
 
     if (!asStructType) {
-      tensorSpecs.push_back(emptyAttr);
+      valueParameters.push_back(emptyAttr);
       continue;
     }
 
-    if (symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice)) {
-      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
-          getUnboundParametersForTensor(asStructType, builder);
-      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
-    } else if (symbolMatches(asStructType.getSymbol(), kMaxSIMD)) {
-      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
-          getUnboundParametersForSIMD(asStructType, builder);
-      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
-    } else if (symbolMatches(asStructType.getSymbol(), kMaxVariadicTensors)) {
+    if (symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice) ||
+        symbolMatches(asStructType.getSymbol(), kMaxSIMD) ||
+        symbolMatches(asStructType.getSymbol(), kMaxVariadicTensors) ||
+        symbolMatches(asStructType.getSymbol(),
+                      kMaxRuntimeDeviceContextPtrList)) {
       auto tensorSpecNamedAttrs =
-          getUnboundParametersForVariadicTensors(asStructType, builder);
-      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
+          getUnboundParameters(kgenModule, asStructType);
+      valueParameters.push_back(tensorSpecNamedAttrs);
     } else if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
       auto tensorSpecNamedAttrs =
-          getUnboundParametersForTensorList(asStructType, builder);
-      if (!tensorSpecNamedAttrs) {
-        tensorSpecs.push_back(emptyAttr);
-      } else {
-        tensorSpecs.push_back(builder.getDictionaryAttr(*tensorSpecNamedAttrs));
-      }
-    } else if (symbolMatches(asStructType.getSymbol(),
-                             kMaxRuntimeDeviceContextPtrList)) {
-      auto tensorSpecNamedAttrs =
-          getUnboundParametersForDeviceContextPtrList(asStructType, builder);
-      tensorSpecs.push_back(builder.getDictionaryAttr(tensorSpecNamedAttrs));
+          getUnboundParametersForTensorList(kgenModule, asStructType);
+      valueParameters.push_back(tensorSpecNamedAttrs);
     } else {
       // Unsupported type, can ignore
-      tensorSpecs.push_back(emptyAttr);
+      valueParameters.push_back(emptyAttr);
     }
   }
   funcOp->setDiscardableAttr(kKernelValueParameterAttrName,
-                             builder.getArrayAttr(tensorSpecs));
+                             builder.getArrayAttr(valueParameters));
 }
 
 namespace {
@@ -1037,7 +937,12 @@ public:
     if (moduleOp.walk(walker).wasInterrupted())
       signalPassFailure();
 
-    moduleOp.walk([](LIT::FnOp funcOp) { labelTensorParamsInKernel(funcOp); });
+    mlir::SymbolTableCollection symtab;
+    KGENModule kgenModule(moduleOp, symtab);
+
+    moduleOp.walk([&](LIT::FnOp funcOp) {
+      labelTensorParamsInKernel(kgenModule, funcOp);
+    });
   }
 };
 } // namespace
