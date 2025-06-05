@@ -1,0 +1,53 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+modular_py_test(
+    name = "kvcache_tests",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["*_gpu.py"],
+    ),
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        requirement("torch"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "kvcache_gpu_tests",
+    srcs = glob(
+        ["*_gpu.py"],
+        exclude = ["*_distributed_gpu.py"],
+    ) + ["conftest.py"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        requirement("torch"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "kvcache_distributed_gpu_tests",
+    srcs = glob(["*_gpu.py"]) + ["conftest.py"],
+    gpu_constraints = ["//:has_4_gpus"],
+    tags = ["gpu"],
+    deps = [
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        requirement("torch"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+    ],
+)

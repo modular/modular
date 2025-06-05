@@ -1,4 +1,3 @@
-# Test for shared layers.
 load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 modular_py_library(
@@ -13,22 +12,12 @@ modular_py_library(
 )
 
 modular_py_test(
-    name = "tests",
+    name = "nn_tests",
     size = "large",
     srcs = glob(
-        [
-            "**/*.py",
-        ],
-        exclude = [
-            "**/*_gpu.py",
-            "**/*_distributed_gpu.py",
-            "**/test_transfer_engine.py",
-        ],
+        ["*.py"],
+        exclude = ["*_gpu.py"],
     ),
-    data = [
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
-    ],
     imports = ["."],
     deps = [
         ":shared_conv_impl",
@@ -38,7 +27,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/nn/hooks",
         "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
         "//SDK/lib/API/python/max/serve",
         requirement("torch"),
         requirement("transformers"),
@@ -50,26 +38,14 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "tests_gpu",
+    name = "nn_gpu_tests",
     srcs = glob(
-        [
-            "**/*_gpu.py",
-        ],
-        exclude = [
-            "**/*_distributed_gpu.py",
-            "**/*_attention_gpu.py",
-            "**/*_nixl_gpu.py",
-        ],
+        ["*_gpu.py"],
+        exclude = ["*_distributed_gpu.py"],
     ) + ["conftest.py"],
-    data = [
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
-    ],
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],
-    tags = [
-        "gpu",
-    ],
+    tags = ["gpu"],
     deps = [
         ":shared_conv_impl",
         "//SDK/integration-test/API/python/graph:modular_graph_test",
@@ -77,7 +53,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
         "//SDK/lib/API/python/max/serve",
         requirement("torch"),
         requirement("transformers"),
@@ -88,13 +63,9 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "tests_distributed_gpu",
+    name = "nn_distributed_gpu_tests",
     size = "enormous",
-    srcs = glob(["**/*_distributed_gpu.py"]),
-    data = [
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
-    ],
+    srcs = glob(["**/*_distributed_gpu.py"]) + ["conftest.py"],
     gpu_constraints = ["//:has_4_gpus"],
     tags = ["gpu"],
     deps = [
@@ -103,69 +74,11 @@ modular_py_test(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
         "//SDK/lib/API/python/max/serve",
         requirement("torch"),
         requirement("transformers"),
         requirement("hypothesis"),
         requirement("gguf"),
         requirement("pytest-asyncio"),
-    ],
-)
-
-modular_py_test(
-    name = "tests_attention_gpu",
-    srcs = glob(
-        [
-            "**/*_attention_gpu.py",
-        ],
-    ),
-    data = [
-        "//Kernels/tools/gpu-query",
-        "//Support/tools/system-info",
-    ],
-    env = {
-        "BAZEL": "true",
-    },
-    gpu_constraints = ["//:has_gpu"],
-    tags = [
-        "gpu",
-    ],
-    deps = [
-        "//SDK/integration-test/API/python/graph:modular_graph_test",
-        "//SDK/integration-test/pipelines/python/test_common",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
-        "//SDK/lib/API/python/max/pipelines",
-        "//SDK/lib/API/python/max/pipelines/dataprocessing",
-        "//SDK/lib/API/python/max/serve",
-        requirement("torch"),
-        requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("gguf"),
-        requirement("pytest-asyncio"),
-    ],
-)
-
-modular_py_test(
-    name = "tests_transfer_engine",
-    srcs = glob(["**/test_transfer_engine.py"]),
-    data = ["//AsyncRT:plugin_ucx"],
-    env = {
-        # TODO(GENAI-170): Make plugin directory discovery more robust and work
-        # outside of Bazel.
-        "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
-    },
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ],
-    tags = ["gpu"],
-    deps = [
-        "//SDK/lib/API/python/max:_core",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
-        requirement("numpy"),
-        requirement("torch"),
     ],
 )
