@@ -109,6 +109,9 @@ class SamplingConfig(MAXConfig):
     top_p: float = 1
     """Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens."""
 
+    min_p: float = 0.0
+    """Float that represents the minimum probability for a token to be considered, relative to the probability of the most likely token. Must be in [0, 1]. Set to 0 to disable this."""
+
     temperature: float = 1
     """Controls the randomness of the model's output; higher values produce more diverse responses."""
 
@@ -147,11 +150,21 @@ class SamplingConfig(MAXConfig):
     do_penalties: bool = False
     """Whether to apply frequency and presence penalties to the model's output."""
 
+    def __post_init__(self):
+        if self.min_p < 0.0 or self.min_p > 1.0:
+            raise ValueError("min_p must be in [0.0, 1.0]")
+
+        if self.min_p != 0.0 and self.top_k != 1:
+            raise ValueError(
+                "We currently do not support explicit min_p and top_k at the same time."
+            )
+
     @staticmethod
     def help() -> dict[str, str]:
         return {
             "top_k": "Limit sampling to the top K most probable tokens during generation. This can help control randomness and improve output quality. This defaults to 1, which defaults to greedy sampling.",
             "top_p": "Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens.",
+            "min_p": "Float that represents the minimum probability for a token to be considered, relative to the probability of the most likely token. Must be in [0, 1]. Set to 0 to disable this.",
             "temperature": "Controls the randomness of the model's output; higher values produce more diverse responses.",
             "frequency_penalty": "The frequency penalty to apply to the model's output. A positive value will penalize new tokens based on their frequency in the generated text: tokens will receive a penalty proportional to the count of appearances.",
             "presence_penalty": "The presence penalty to apply to the model's output. A positive value will penalize new tokens that have already appeared in the generated text at least once by applying a constant penalty.",
