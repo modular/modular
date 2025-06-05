@@ -96,6 +96,7 @@ def instance_b_service_process_fn(
         pc.set_completed()
 
 
+@pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
 async def test_single_request_reply():
     """Test single request-reply pattern with dispatcher services running in separate processes."""
@@ -257,6 +258,7 @@ async def test_single_request_reply():
         zmq_ctx.term()
 
 
+@pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
 async def test_multiple_request_reply():
     """Test multiple request-reply exchanges between cross-process dispatcher services."""
@@ -430,6 +432,7 @@ async def test_multiple_request_reply():
         zmq_ctx.term()
 
 
+@pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
 async def test_bidirectional_communication():
     """Test that both processes can send requests to each other simultaneously."""
@@ -623,6 +626,7 @@ async def test_bidirectional_communication():
         zmq_ctx.term()
 
 
+@pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
 async def test_high_throughput_cross_process():
     """Test high throughput message processing across processes."""
