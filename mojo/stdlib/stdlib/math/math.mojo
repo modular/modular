@@ -2338,7 +2338,6 @@ fn lcm(m: Int, n: Int, /) -> Int:
     Returns:
         The least common multiple of the two integers.
     """
-    var d: Int
     if d := gcd(m, n):
         return abs((m // d) * n if m > n else (n // d) * m)
     return 0

@@ -2536,9 +2536,7 @@ struct SIMD[dtype: DType, size: Int](
         if size == size_out:
             return rebind[Self._T[size_out]](self)
         else:
-            var lhs: Self._SIMDHalfType
-            var rhs: Self._SIMDHalfType
-            lhs, rhs = self.split()
+            var lhs, rhs = self.split()
             return func(lhs, rhs).reduce[func, size_out]()
 
     @always_inline("nodebug")
@@ -3063,9 +3061,7 @@ fn _powf_scalar(base: Scalar, exponent: Scalar) -> __type_of(base):
         exponent.dtype.is_floating_point(), "exponent must be floating point"
     ]()
 
-    var integral: __type_of(exponent)
-    var fractional: __type_of(exponent)
-    integral, fractional = _modf_scalar(exponent)
+    var integral, fractional = _modf_scalar(exponent)
 
     if integral == exponent:
         return _powi(base, integral.cast[DType.int32]())

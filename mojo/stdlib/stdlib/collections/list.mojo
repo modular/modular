@@ -905,11 +905,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Returns:
             A new list containing the list at the specified slice.
         """
-
-        var start: Int
-        var end: Int
-        var step: Int
-        start, end, step = slice.indices(len(self))
+        var start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
 
         if not len(r):

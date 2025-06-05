@@ -163,9 +163,7 @@ fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
     Returns:
         The number of elements in the slice for the specified dimension.
     """
-    var start: Int
-    var end: Int
-    start, end, _ = slc.indices(Int(layout.shape[dim]))
+    var start, end, _ = slc.indices(Int(layout.shape[dim]))
     return end - start
 
 

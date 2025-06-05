@@ -64,10 +64,7 @@ fn __source_location() -> _SourceLocation:
     Returns:
         The location information of the __source_location() call.
     """
-    var line: __mlir_type.index
-    var col: __mlir_type.index
-    var file_name: __mlir_type.`!kgen.string`
-    line, col, file_name = __mlir_op.`kgen.source_loc`[
+    var line, col, file_name = __mlir_op.`kgen.source_loc`[
         inlineCount = Int(0).value,
         _type = (
             __mlir_type.index,
@@ -104,10 +101,7 @@ fn __call_location[inline_count: Int = 1]() -> _SourceLocation:
         The location information of where the caller of this function (i.e. the
           function whose body __call_location() is used in) is called.
     """
-    var line: __mlir_type.index
-    var col: __mlir_type.index
-    var file_name: __mlir_type.`!kgen.string`
-    line, col, file_name = __mlir_op.`kgen.source_loc`[
+    var line, col, file_name = __mlir_op.`kgen.source_loc`[
         inlineCount = inline_count.value,
         _type = (
             __mlir_type.index,

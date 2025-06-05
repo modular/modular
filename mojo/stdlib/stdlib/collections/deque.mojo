@@ -561,8 +561,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             values: List whose elements will be added at the right side of the deque.
         """
-        n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = (
-            self._compute_pop_and_move_counts(len(self), len(values))
+        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
+            len(self), len(values)
         )
 
         # pop excess `self` elements
@@ -595,8 +595,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             values: List whose elements will be added at the left side of the deque.
         """
-        n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = (
-            self._compute_pop_and_move_counts(len(self), len(values))
+        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
+            len(self), len(values)
         )
 
         # pop excess `self` elements

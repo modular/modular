@@ -127,7 +127,7 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
         ]
 
     for i in range(len(all_close)):
-        a, b = all_close[i]
+        var a, b = all_close[i]
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_true(all(res))
 
@@ -152,7 +152,7 @@ fn test_isclose_numerics[*, symm: Bool]() raises:
         ]
 
     for i in range(len(none_close)):
-        a, b = none_close[i]
+        var a, b = none_close[i]
         var res = isclose[symmetrical=symm](a, b, atol=atol, rtol=rtol)
         assert_false(any(res))
 

@@ -386,9 +386,9 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
     Returns:
         A tuple containing two strings: (head, tail).
     """
-    fspath = path.__fspath__()
-    i = fspath.rfind(os.sep) + 1
-    head, tail = fspath[:i], fspath[i:]
+    var fspath = path.__fspath__()
+    var i = fspath.rfind(os.sep) + 1
+    var head, tail = fspath[:i], fspath[i:]
     if head and head != String(os.sep) * len(head):
         head = String(head.rstrip(sep))
     return head, tail
@@ -663,7 +663,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
                 buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
-            name, length = _parse_variable_name(bytes[j + 1 :])
+            var name, length = _parse_variable_name(bytes[j + 1 :])
 
             # Invalid syntax (`${}` or `${`) or $ was not followed by a name; write as is.
             if name.startswith("{") or name == "":
