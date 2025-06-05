@@ -156,7 +156,7 @@ struct Python:
             var code_obj_ptr = cpython.Py_CompileString(
                 expr^, "<evaluate>", Py_file_input
             )
-            if code_obj_ptr.is_null():
+            if not code_obj_ptr:
                 raise cpython.get_error()
             var code = PythonObject(from_owned_ptr=code_obj_ptr)
 
@@ -168,7 +168,7 @@ struct Python:
             var result_ptr = cpython.PyEval_EvalCode(
                 code.py_object, dict_obj.py_object, dict_obj.py_object
             )
-            if result_ptr.is_null():
+            if not result_ptr:
                 raise cpython.get_error()
 
             var result = PythonObject(from_owned_ptr=result_ptr)
@@ -182,7 +182,7 @@ struct Python:
             var result = cpython.PyRun_String(
                 expr^, dict_obj.py_object, dict_obj.py_object, Py_eval_input
             )
-            if result.is_null():
+            if not result:
                 raise cpython.get_error()
             return PythonObject(from_owned_ptr=result)
 
@@ -241,7 +241,7 @@ struct Python:
         # Throw error if it occurred during initialization
         cpython.check_init_error()
         var module_ptr = cpython.PyImport_ImportModule(module^)
-        if module_ptr.is_null():
+        if not module_ptr:
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=module_ptr)
 
@@ -268,7 +268,7 @@ struct Python:
         cpython.check_init_error()
 
         var module_ptr = cpython.PyModule_Create(name)
-        if module_ptr.is_null():
+        if not module_ptr:
             raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=module_ptr)
@@ -370,14 +370,14 @@ struct Python:
     ](kwargs: OwnedKwargsDict[V]) raises -> PyObjectPtr:
         var cpython = Python().cpython()
         var dict_obj_ptr = cpython.PyDict_New()
-        if dict_obj_ptr.is_null():
+        if not dict_obj_ptr:
             raise Error("internal error: PyDict_New failed")
 
         for ref entry in kwargs.items():
             var key_ptr = cpython.PyUnicode_DecodeUTF8(
                 entry.key.as_string_slice()
             )
-            if key_ptr.is_null():
+            if not key_ptr:
                 raise Error("internal error: PyUnicode_DecodeUTF8 failed")
 
             var val_obj = entry.value.to_python_object()
@@ -438,7 +438,7 @@ struct Python:
 
         var cpython = Python().cpython()
         var dict_obj_ptr = cpython.PyDict_New()
-        if dict_obj_ptr.is_null():
+        if not dict_obj_ptr:
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(tuples)):
@@ -618,7 +618,7 @@ struct Python:
         """
         var cpython = Python().cpython()
         var py_str_ptr = cpython.PyObject_Str(obj.py_object)
-        if py_str_ptr.is_null():
+        if not py_str_ptr:
             raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=py_str_ptr)
@@ -639,7 +639,7 @@ struct Python:
         """
         var cpython = Python().cpython()
         var py_obj_ptr = cpython.PyNumber_Long(obj.py_object)
-        if py_obj_ptr.is_null():
+        if not py_obj_ptr:
             raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=py_obj_ptr)
@@ -660,7 +660,7 @@ struct Python:
         var cpython = Python().cpython()
 
         var float_obj = cpython.PyNumber_Float(obj.py_object)
-        if float_obj.is_null():
+        if not float_obj:
             raise cpython.get_error()
 
         return PythonObject(from_owned_ptr=float_obj)
