@@ -52,7 +52,8 @@ def create_test_request_with_sampling_params(
         input="Test prompt for sampling params",
         index=0,
         model="test-model",
-        voice="test-voice",
+        audio_prompt_tokens=[1, 2, 3],
+        audio_prompt_transcription="test-transcription",
         sampling_params=sampling_params,
     )
 
@@ -117,7 +118,8 @@ def test_pipeline_receives_default_sampling_params() -> None:
         input="Default sampling params test",
         index=0,
         model="test-model",
-        voice="test-voice",
+        audio_prompt_tokens=[1, 2, 3],
+        audio_prompt_transcription="test-transcription",
     )
 
     # Execute the pipeline.

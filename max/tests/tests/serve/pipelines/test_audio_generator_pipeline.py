@@ -42,7 +42,8 @@ def create_test_request() -> AudioGenerationRequest:
         input="Hello, this is a test prompt",
         index=0,
         model="test-model",
-        voice="test-voice",
+        audio_prompt_tokens=[1, 2, 3],
+        audio_prompt_transcription="test-transcription",
     )
 
 
