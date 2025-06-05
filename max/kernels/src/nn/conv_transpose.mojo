@@ -1237,7 +1237,11 @@ fn pack_filter_shape(
 
 
 @always_inline
-fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
+fn pack_filter(
+    filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
+    num_groups: Int,
+):
     """This packs the filter form RSFC to FRSCf."""
 
     alias simd_size = simdwidthof[filter.type]()
@@ -1364,7 +1368,7 @@ fn conv_transposed[
 ](
     output: NDBuffer[mut=True, output_type, input_rank, _, output_shape],
     input: NDBuffer[input_type, input_rank, _, input_shape],
-    filter: NDBuffer[filter_type, filter_rank, _, filter_shape],
+    filter: NDBuffer[mut=True, filter_type, filter_rank, _, filter_shape],
     stride: IndexList[input_rank - 2],
     dilation: IndexList[input_rank - 2],
     pad_d: IndexList[2],

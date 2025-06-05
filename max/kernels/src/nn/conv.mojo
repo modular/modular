@@ -2666,7 +2666,7 @@ fn _get_group_filter_base(
 @always_inline
 fn pack_filter(
     filter: NDBuffer,
-    packed_filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
@@ -2694,7 +2694,11 @@ fn pack_filter(
 fn pack_filter[
     simd_size: Int,
     micro_kernel_f_size: Int,  # 64
-](filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
+](
+    filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
+    num_groups: Int,
+):
     """This packs the filter form RSCF to FRSCf.
 
     Parameters:
