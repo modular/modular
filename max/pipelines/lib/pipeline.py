@@ -713,7 +713,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # Calculate max size needed for token frequency pairs
         if include_prompt:
             total_tokens = sum(
-                len(context.tokens) + padding_size for context in batch
+                context.current_length + padding_size for context in batch
             )
         else:
             total_tokens = sum(

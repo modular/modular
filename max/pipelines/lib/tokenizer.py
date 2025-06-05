@@ -347,7 +347,6 @@ class TextTokenizer(
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             eos_sequences=eos_sequences,
-            cache_seq_id=request.index,
             max_length=len(encoded_prompt) + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
@@ -357,6 +356,7 @@ class TextTokenizer(
             json_schema=json_schema,
             sampling_params=request.sampling_params,
         )
+        context.assign_to_cache(request.index)
         return context
 
     @property
@@ -631,11 +631,11 @@ class TextAndVisionTokenizer(
             eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,
             extra_model_args=extra_model_args,
-            cache_seq_id=request.index,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
         )
+        context.assign_to_cache(request.index)
         return context
