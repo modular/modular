@@ -15,7 +15,11 @@ from collections import OptionalReg
 from collections.string import StaticString
 from math import align_down, ceildiv
 from sys.info import simdwidthof
-from nn.conv import check_cudnn_error
+from nn.conv import (
+    check_cudnn_error,
+    CuDNNConvMeta,
+    _get_cudnn_meta,
+)
 
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
@@ -1506,75 +1510,60 @@ fn conv_backward_data_cudnn[
     Thin wrapper around `cudnnConvolutionBackwardData` for a 2-D NHWC layout.
 
     Arguments mirror `conv_cudnn` for ease of use:
-      • `filter`  -> pointer to RSCK filter (interpreted as K,C,H,W in NCHW).
-      • `diff`    -> pointer to output gradient (dy) in NHWC order.
-      • `grad`    -> pointer to input gradient buffer (dx) in NHWC order.
-      • `stride`/`dilation`/`padding` -> spatial parameters (H,W order).
+      • `filter`  -> pointer to CKRS filter
+      • `diff`    -> pointer to output gradient (dy) in NCHW order (output grad is input of this)
+      • `grad`    -> pointer to input gradient buffer (dx) in NCHW order (input grad is output of this)
+      • `stride`/`dilation`/`padding` -> spatial parameters (H,W order)
       • `ctx`     -> device context that provides the CUDA stream.
     """
-
-    var cudnn_handle = UnsafePointer[cudnnContext]()
-    check_cudnn_error(cudnnCreate(UnsafePointer(to=cudnn_handle)))
+    var cudnn_handle = _get_cudnn_meta(ctx)
 
     # basically, vibes are that a cuda handle is the gateway to using cudnn
     # we want all the work from that handle to be done on a separate stream
     # than the main stream, otherwise, everyhting goes on main stream and
     # slows down the whole thing. binding handle to stream unclocks parallelism, and now
     # 2 handles , wth 2 separate functions, can work at same time.
-    check_cudnn_error(cudnnSetStream(cudnn_handle, CUDA(ctx.stream())))
 
     # ---------------- Tensor / filter descriptors -------------------------
-    var filter_desc = UnsafePointer[cudnnFilterStruct]()
-    check_cudnn_error(
-        cudnnCreateFilterDescriptor(UnsafePointer(to=filter_desc))
-    )
     check_cudnn_error(
         cudnnSetFilter4dDescriptor(
-            filter_desc,
+            cudnn_handle[].ptr_filter_desc,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-            filter_dim.get[0](),  # K (out channels)
-            filter_dim.get[1](),  # C (in channels)
-            filter_dim.get[2](),  # H (kernel height)
-            filter_dim.get[3](),  # W (kernel width)
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,  # cudnn documentation correction: cudnnSetFilter4dDescriptor() takes CKRS, not KCRS
+            filter_dim.get[0](),  # C (out channels)
+            filter_dim.get[1](),  # K (in channels)
+            filter_dim.get[2](),  # R (kernel height)
+            filter_dim.get[3](),  # S (kernel width)
         )
     )
 
-    var dy_desc = UnsafePointer[cudnnTensorStruct]()
-    check_cudnn_error(cudnnCreateTensorDescriptor(UnsafePointer(to=dy_desc)))
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            dy_desc,
+            cudnn_handle[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
             diff_dim.get[0](),  # N
             diff_dim.get[1](),  # C_in
-            diff_dim.get[2](),  # H_out
-            diff_dim.get[3](),  # W_out
+            diff_dim.get[2](),  # H_in
+            diff_dim.get[3](),  # W_in
         )
     )
 
-    var dx_desc = UnsafePointer[cudnnTensorStruct]()
-    check_cudnn_error(cudnnCreateTensorDescriptor(UnsafePointer(to=dx_desc)))
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            dx_desc,
+            cudnn_handle[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
             grad_dim.get[0](),  # N
             grad_dim.get[1](),  # C_out
-            grad_dim.get[2](),  # H
-            grad_dim.get[3](),  # W
+            grad_dim.get[2](),  # H_out
+            grad_dim.get[3](),  # W_out
         )
     )
 
-    var conv_desc = UnsafePointer[cudnnConvolutionStruct]()
-    check_cudnn_error(
-        cudnnCreateConvolutionDescriptor(UnsafePointer(to=conv_desc))
-    )
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
-            conv_desc,
+            cudnn_handle[].ptr_conv_desc,
             padding[0],
             padding[1],
             stride[0],
@@ -1598,18 +1587,18 @@ fn conv_backward_data_cudnn[
 
     check_cudnn_error(
         cudnnConvolutionBackwardData(
-            cudnn_handle,
+            cudnn_handle[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
-            filter_desc,
+            cudnn_handle[].ptr_filter_desc,
             filter.bitcast[NoneType](),
-            dy_desc,
+            cudnn_handle[].ptr_input_desc,
             diff.bitcast[NoneType](),
-            conv_desc,
+            cudnn_handle[].ptr_conv_desc,
             algo,
-            workspace_ptr.bitcast[NoneType](),
-            workspace_bytes,
+            UnsafePointer[Scalar[data_type]]().bitcast[NoneType](),
+            0,
             UnsafePointer(to=beta).bitcast[NoneType](),
-            dx_desc,
+            cudnn_handle[].ptr_output_desc,
             grad.bitcast[NoneType](),
         )
     )
@@ -1617,8 +1606,3 @@ fn conv_backward_data_cudnn[
     # ---------------- Cleanup ---------------------------------------------
     if workspace_ptr:
         workspace_ptr.free()
-    check_cudnn_error(cudnnDestroyTensorDescriptor(dx_desc))
-    check_cudnn_error(cudnnDestroyConvolutionDescriptor(conv_desc))
-    check_cudnn_error(cudnnDestroyTensorDescriptor(dy_desc))
-    check_cudnn_error(cudnnDestroyFilterDescriptor(filter_desc))
-    check_cudnn_error(cudnnDestroy(cudnn_handle))
