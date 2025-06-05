@@ -254,6 +254,19 @@ def custom_op_graph(
     output_types = [t.as_buffer() for t in result_types]
     graph_types: list[Type] = [*output_types, *input_types]
 
+    device = None
+    for type in input_types:
+        device = type.device
+        break
+
+    if device is None:
+        for type in result_types:
+            device = type.device
+            break
+
+    if device is None:
+        device = DeviceRef.CPU(0)
+
     with Graph(
         op.name,
         input_types=graph_types,
@@ -262,6 +275,7 @@ def custom_op_graph(
     ) as graph:
         results = ops.custom(
             op.name,
+            device,
             list(graph.inputs[len(output_types) :]),
             out_types=list(result_types),
             parameters=parameters,
