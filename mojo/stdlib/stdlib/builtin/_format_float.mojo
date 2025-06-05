@@ -464,7 +464,7 @@ fn _umul64(x: UInt32, y: UInt32) -> UInt64:
 
 fn _umul128[
     CarrierDType: DType
-](x: Scalar[CarrierDType], y: UInt64) -> _UInt128:
+](x: Scalar[CarrierDType], y: UInt64) -> UInt128:
     var a = (x >> 32).cast[DType.uint32]()
     var b = x.cast[DType.uint32]()
     var c = (y >> 32).cast[DType.uint32]()
@@ -569,7 +569,7 @@ fn _divide_by_pow10[
             return n / pow(10, N)
 
 
-fn _umul192_lower128(x: UInt64, y: _UInt128) -> _UInt128:
+fn _umul192_lower128(x: UInt64, y: UInt128) -> UInt128:
     """Get lower 128-bits of multiplication of a 64-bit unsigned integer and a
     128-bit unsigned integer.
     """
@@ -677,7 +677,7 @@ fn _compute_delta[
 
 fn _umul192_upper128[
     CarrierDType: DType
-](x: Scalar[CarrierDType], y: _UInt128) -> _UInt128:
+](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
     var r = _umul128(x, y.high)
     r += _umul128_upper64(x, y.low).cast[DType.uint64]()
     return r
