@@ -479,7 +479,7 @@ fn _umul128[
         DType.uint32
     ](bc)
 
-    return _UInt128(
+    return _uint64_to_uint128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
         (intermediate << 32) + _truncate[DType.uint32](bd),
     )
@@ -575,7 +575,7 @@ fn _umul192_lower128(x: UInt64, y: UInt128) -> UInt128:
     """
     var high = x * y.high
     var high_low = _umul128(x, y.low)
-    return _UInt128((high + high_low.high) & UInt64.MAX, high_low.low)
+    return _uint64_to_uint128((high + high_low.high) & UInt64.MAX, high_low.low)
 
 
 fn _compute_mul_parity[
