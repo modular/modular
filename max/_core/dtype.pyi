@@ -60,6 +60,12 @@ class DType(enum.Enum):
     def is_integral(self) -> __builtins__.bool:
         """Returns true if the dtype is an integer."""
 
+    def is_unsigned_integral(self) -> __builtins__.bool:
+        """Returns true if the dtype is an unsigned integer."""
+
+    def is_signed_integral(self) -> __builtins__.bool:
+        """Returns true if the dtype is a signed integer."""
+
     def is_float(self) -> __builtins__.bool:
         """Returns true if the dtype is floating point."""
 
