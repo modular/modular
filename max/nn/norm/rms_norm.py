@@ -44,6 +44,7 @@ class RMSNormV1(Layer):
     def __call__(self, x: TensorValue) -> TensorValue:
         return ops.custom(
             "rms_norm",
+            x.device,
             [
                 x,
                 TensorValue(self.weight).cast(x.dtype),
@@ -92,6 +93,7 @@ class RMSNorm(Module):
 
         return ops.custom(
             "rms_norm",
+            x.device,
             [
                 x,
                 weight,

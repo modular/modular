@@ -56,6 +56,7 @@ def main():
         q, k, v, *_ = graph.inputs
         results = ops.custom(
             name="modular_ops::fused_attention_custom",
+            device=DeviceRef.from_device(device),
             parameters={"BD": BD, "BN": BN},
             values=[q, k, v],
             out_types=[

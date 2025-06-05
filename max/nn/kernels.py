@@ -109,6 +109,7 @@ def fused_qkv_ragged_matmul(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=values,
         out_types=[
             TensorType(
@@ -186,6 +187,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -277,6 +279,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     return ops.inplace_custom(
         name=f"mo.unfused_qkv_matmul.ragged.{cache_strategy_str}.gguf_quantized",
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -360,6 +363,7 @@ def fused_qkv_ragged_matmul_quantized(
         perm_idx = perm_idx.to(input.type.device or DeviceRef.CPU())
         wqkv = ops.custom(
             "GPTQ_gpu_repack_b4_g128_desc_act",
+            wqkv.device,
             list((wqkv, perm_idx)),
             out_types=[
                 TensorType(
@@ -372,6 +376,7 @@ def fused_qkv_ragged_matmul_quantized(
     else:
         wqkv = ops.custom(
             "GPTQ_gpu_repack_b4_g128",
+            wqkv.device,
             list((wqkv,)),
             out_types=[
                 TensorType(
@@ -399,6 +404,7 @@ def fused_qkv_ragged_matmul_quantized(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=args,
         out_types=[
             TensorType(
@@ -452,6 +458,7 @@ def fused_qkv_matmul(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[input, wqkv, kv_collection, layer_idx],
         out_types=[
             TensorType(
@@ -520,6 +527,7 @@ def matmul_kv_cache_ragged(
 
     ops.inplace_custom(
         name=op_name,
+        device=hidden_states.device,
         values=[
             hidden_states,
             input_row_offsets,
@@ -584,6 +592,7 @@ def matmul_k_cache_ragged(
 
     ops.inplace_custom(
         name=op_name,
+        device=hidden_states.device,
         values=[
             hidden_states,
             input_row_offsets,
@@ -655,6 +664,7 @@ def fused_qk_ragged_rope(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[input, input_row_offsets, kv_collection, freqs_cis, layer_idx],
         out_types=[
             TensorType(
@@ -711,6 +721,7 @@ def fused_qk_rope(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[input, kv_collection, freqs_cis_2d, layer_idx],
         out_types=[
             TensorType(
@@ -766,6 +777,7 @@ def flash_attention(
     }
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             kv_collection,
@@ -832,6 +844,7 @@ def flash_attention_with_causal_mask(
     }
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             kv_collection,
@@ -934,6 +947,7 @@ def causal_flash_attention_gpu(
 
     return ops.custom(
         "causal_flash_attention_gpu",
+        device=q.device,
         values=[
             q,
             k,
@@ -984,6 +998,7 @@ def null_mask_flash_attention_gpu(
 
     return ops.custom(
         "no_mask_flash_attention_gpu",
+        device=q.device,
         values=[
             q,
             k,
@@ -1070,6 +1085,7 @@ def flash_attention_ragged(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -1148,6 +1164,7 @@ def flare_mla_decode_ragged(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -1275,6 +1292,7 @@ def flare_mla_prefill_ragged(
 
     results = ops.inplace_custom(
         op_name,
+        device=input.device,
         values=input_values,
         out_types=[
             TensorType(
@@ -1348,6 +1366,7 @@ def flare_mla_prefill_plan(
 
     results = ops.inplace_custom(
         "mo.mla.prefill.ragged.plan",
+        device=input_row_offsets.device,
         values=[
             input_row_offsets,
             kv_collection,
@@ -1421,6 +1440,7 @@ def flare_mla_decompress_k_cache(
 
     results = ops.inplace_custom(
         "mo.mla.decompress.k.cache.ragged.paged",
+        device=buffer_row_offsets_1d.device,
         values=[
             buffer_row_offsets_1d,
             cache_offsets_1d,
@@ -1453,6 +1473,7 @@ def kv_cache_get_max_seq_len(
     """This kernel returns the maximum sequence length."""
     return ops.inplace_custom(
         "mo.kv_cache.get_max_seq_len.paged",
+        device=DeviceRef.CPU(),
         values=[kv_collection],
         out_types=[
             TensorType(
@@ -1537,6 +1558,7 @@ def cross_attention_ragged(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -1556,7 +1578,6 @@ def cross_attention_ragged(
             )
         ],
         parameters=parameters,
-        device=input.device,
     )[0].tensor
 
 
@@ -1601,6 +1622,7 @@ def swish_glu(
 
     return ops.custom(
         "swishGLU",
+        device=a.device,
         values=[a, b0, b1],
         out_types=[
             TensorType(
@@ -1675,6 +1697,7 @@ def rms_norm_key_cache(
 
     ops.inplace_custom(
         op_name,
+        device=input_row_offsets.device,
         values=[
             kv_collection,
             gamma,
@@ -1712,6 +1735,7 @@ def moe_create_indices(
 
     results = ops.custom(
         "mo.moe.create.indices",
+        device=topk_ids.device,
         values=[
             topk_ids,
         ],
@@ -1790,6 +1814,7 @@ def grouped_matmul_ragged(
 
     output = ops.custom(
         "mo.grouped.matmul.ragged",
+        device=hidden_states.device,
         values=[
             hidden_states,
             weight,
@@ -1833,6 +1858,7 @@ def quantize_static_scaled_float8(
 
     return ops.custom(
         "mo.quantize_static_scaled_float8",
+        device=x.device,
         values=[x, scale.reshape([])],
         parameters={"scale_is_inverted": scale_is_inverted},
         out_types=[
@@ -1881,6 +1907,7 @@ def quantize_dynamic_scaled_float8(
 
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
+        device=input.device,
         values=[
             input,
             ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
@@ -1951,6 +1978,7 @@ def dynamic_scaled_matmul(
 
     result = ops.custom(
         "mo.matmul_dynamic_scaled_fp8",
+        device=a.device,
         values=[a, b, a_scales, b_scales],
         out_types=[
             TensorType(
@@ -1959,7 +1987,6 @@ def dynamic_scaled_matmul(
                 device=a.device,
             )
         ],
-        device=a.device,
     )[0].tensor
 
     return result
@@ -2009,6 +2036,7 @@ def matmul_static_scaled_float8(
 
     return ops.custom(
         "mo.matmul_static_scaled_float8",
+        device=input.device,
         values=[
             input,
             weight,
@@ -2076,6 +2104,7 @@ def merge_ragged_tensors(
 
     results = ops.custom(
         "mo.merge_ragged_tensors",
+        device=a.device,
         values=[a, a_row_offsets, b, b_row_offsets],
         out_types=[
             TensorType(
@@ -2138,6 +2167,7 @@ def apply_penalties_to_logits(
 
     ops.inplace_custom(
         "sampler.apply_penalties",
+        device=logits_buffer.device,
         values=[
             logits_buffer,
             frequency_data,
@@ -2158,7 +2188,6 @@ def apply_penalties_to_logits(
                 device=DeviceRef.CPU(),
             ),
         ],
-        device=logits_buffer.device,
     )
 
 
@@ -2190,12 +2219,12 @@ def update_frequency_data(
 
     ops.inplace_custom(
         "sampler.update_frequency_data",
+        device=frequency_data.device,
         values=[
             frequency_data,
             frequency_offsets,
             tokens,
         ],
-        device=tokens.device,
     )
 
 
@@ -2220,12 +2249,12 @@ def scatter_set_constant(
 
     ops.inplace_custom(
         "mo.scatter_set_constant",
+        device=data.device,
         values=[
             data,
             indices,
             ops.constant(fill_val, data.dtype, device=DeviceRef.CPU()),
         ],
-        device=data.device,
     )
 
 
@@ -2267,6 +2296,7 @@ def topk_fused_sampling(
 
     return ops.custom(
         "sampler.fused_token_sampling",
+        device=logits.device,
         values=[
             ops.constant(top_k, dtype=DType.int64, device=DeviceRef.CPU()),
             ops.constant(

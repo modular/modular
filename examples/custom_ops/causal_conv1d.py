@@ -51,6 +51,7 @@ def create_graph(
             bias = bias.tensor.cast(DType.bfloat16)
         results = ops.custom(
             name=custom_op_name,
+            device=device,
             parameters={
                 "threads": threads,
                 "elements": elements,

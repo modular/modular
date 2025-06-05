@@ -40,6 +40,7 @@ class MinPSampler(nn.Module):
     def __call__(self, input: TensorValue) -> TensorValue:
         return ops.custom(
             "min_p_sampling",
+            input.device,
             [
                 ops.constant(
                     self.min_p, dtype=self.dtype, device=DeviceRef.CPU()

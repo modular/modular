@@ -38,6 +38,7 @@ if __name__ == "__main__":
         # parameters as a dictionary.
         forward=lambda x: ops.custom(
             name="add_constant_custom",
+            device=DeviceRef.from_device(device),
             values=[x],
             out_types=[
                 TensorType(

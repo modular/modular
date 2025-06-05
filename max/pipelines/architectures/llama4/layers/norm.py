@@ -30,6 +30,7 @@ def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
     x = x.cast(DType.float32)
     return ops.custom(
         "rms_norm",
+        x.device,
         [
             x,
             weight,
