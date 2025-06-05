@@ -41,7 +41,9 @@ def mock_pipeline():
             responses[request_id].tokens = []
             responses[request_id].is_done = False
             for _ in range(num_steps):
+                assert request.active_idx != 128, "pre update"
                 request.update(new_token=1)
+                assert request.active_idx != 128, "post update"
 
         return cast(dict[str, TextGenerationResponse], responses)
 
@@ -96,12 +98,14 @@ def create_mock_request(
     start_idx=0,
 ) -> TextContext:
     tokens = np.ones(seq_len)
+    assert len(tokens) == seq_len
     context = TextContext(
-        cache_seq_id=cache_seq_id,
         prompt=tokens.tolist(),
         max_length=100,
         tokens=tokens,
     )
+    assert context.active_idx == seq_len
+    context.assign_to_cache(cache_seq_id)
     context.bump_token_indices(start_idx=start_idx)
     return context
 
@@ -353,6 +357,8 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx):
     scheduler.scheduler_config.target_tokens_per_batch_ce = 20
 
     mock_request_tg = create_mock_request(cache_seq_id=0, seq_len=10)
+    assert mock_request_tg.active_idx == 10
+    assert mock_request_tg.end_idx == 10
 
     # Create a push socket to send data.
     request_push_socket = ZmqPushSocket[tuple[str, InputContext]](

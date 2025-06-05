@@ -229,11 +229,11 @@ def create_mock_request(
 ) -> TextContext:
     tokens = np.ones(seq_len, dtype=np.int32)
     context = TextContext(
-        cache_seq_id=cache_seq_id,
         prompt=tokens.tolist(),
         max_length=100,
         tokens=tokens,
     )
+    context.assign_to_cache(cache_seq_id)
     context.bump_token_indices(start_idx=start_idx)
     return context
 
