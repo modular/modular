@@ -218,7 +218,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
-        b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
+        var b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
                 Index(Int(b_idx), Int(t_idx), idx[1]),

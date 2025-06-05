@@ -3011,7 +3011,7 @@ fn mha_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
@@ -4386,9 +4386,7 @@ fn _bmm0_bs[
     alias k_type = k_t.type
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var q_offset: Int
@@ -4510,9 +4508,7 @@ fn _bmm1_bs[
     var y = global_idx.y
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var output_offset: Int

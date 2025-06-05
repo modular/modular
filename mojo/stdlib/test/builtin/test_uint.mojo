@@ -174,9 +174,7 @@ def test_mod():
 
 
 def test_divmod():
-    var a: UInt
-    var b: UInt
-    a, b = divmod(UInt(7), UInt(3))
+    var a, b = divmod(UInt(7), UInt(3))
     assert_equal(a, UInt(2))
     assert_equal(b, UInt(1))
 

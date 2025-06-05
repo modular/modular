@@ -544,7 +544,7 @@ fn multistage_qgemm_kernel[
     ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.

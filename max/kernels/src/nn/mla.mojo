@@ -594,7 +594,7 @@ fn mla_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth

@@ -593,7 +593,7 @@ fn crd2idx[
 
             @parameter
             for i in range(last_elem_idx):
-                divisor, quotient = divmod(Int(int_crd), product(shape[i]))
+                var divisor, quotient = divmod(Int(int_crd), product(shape[i]))
                 result += crd2idx[crd_t, out_type=out_type](
                     quotient, shape[i], stride[i]
                 )

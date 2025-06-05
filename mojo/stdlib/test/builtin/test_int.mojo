@@ -103,9 +103,7 @@ def test_mod():
 
 
 def test_divmod():
-    var a: Int
-    var b: Int
-    a, b = divmod(7, 3)
+    var a, b = divmod(7, 3)
     assert_equal(a, 2)
     assert_equal(b, 1)
 

@@ -1525,7 +1525,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     var tid = thread_idx.x
     var lane = lane_id()
-    warp_y, warp_x = divmod(tid // WARP_SIZE, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(tid // WARP_SIZE, UInt(num_warps_n))
 
     alias fragment_layout = Layout.row_major(
         1, 2
