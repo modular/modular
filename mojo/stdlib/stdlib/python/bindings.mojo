@@ -210,7 +210,7 @@ fn _default_tp_new_wrapper[
     var cpython = Python().cpython()
 
     try:
-        if len(args) != 0 or keyword_args != PyObjectPtr():
+        if len(args) or keyword_args:
             raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
 
         # Create a new Python object with a default initialized Mojo value.
@@ -648,7 +648,7 @@ struct PythonTypeBuilder(Movable, Copyable):
         # Construct a Python 'type' object from our type spec.
         var type_obj_ptr = cpython.PyType_FromSpec(UnsafePointer(to=type_spec))
 
-        if type_obj_ptr.is_null():
+        if not type_obj_ptr:
             raise cpython.get_error()
 
         var type_obj = PythonObject(from_owned_ptr=type_obj_ptr)

@@ -104,7 +104,7 @@ struct _PyIter(Sized):
         var cpython = Python().cpython()
         self.iterator = iter
         var maybe_next_item = cpython.PyIter_Next(self.iterator.py_object)
-        if maybe_next_item.is_null():
+        if not maybe_next_item:
             self.is_done = True
             self.prepared_next_item = PythonObject(from_owned_ptr=PyObjectPtr())
         else:
@@ -135,7 +135,7 @@ struct _PyIter(Sized):
         var cpython = Python().cpython()
         var current = self.prepared_next_item
         var maybe_next_item = cpython.PyIter_Next(self.iterator.py_object)
-        if maybe_next_item.is_null():
+        if not maybe_next_item:
             self.is_done = True
         else:
             self.prepared_next_item = PythonObject(
@@ -427,7 +427,7 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var obj_ptr = cpython.PySet_New()
-        if obj_ptr.is_null():
+        if not obj_ptr:
             raise cpython.get_error()
 
         @parameter
@@ -455,7 +455,7 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var dict_obj_ptr = cpython.PyDict_New()
-        if dict_obj_ptr.is_null():
+        if not dict_obj_ptr:
             raise Error("internal error: PyDict_New failed")
 
         for i in range(len(keys)):
@@ -490,7 +490,7 @@ struct PythonObject(
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.
         var state = cpython.PyGILState_Ensure()
-        if not self.py_object.is_null():
+        if self.py_object:
             cpython.Py_DecRef(self.py_object)
         self.py_object = PyObjectPtr()
         cpython.PyGILState_Release(state)
@@ -562,7 +562,7 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var iter_ptr = cpython.PyObject_GetIter(self.py_object)
-        if iter_ptr.is_null():
+        if not iter_ptr:
             raise cpython.get_error()
         return _PyIter(PythonObject(from_owned_ptr=iter_ptr))
 
@@ -577,7 +577,7 @@ struct PythonObject(
         """
         var cpython = Python().cpython()
         var result = cpython.PyObject_GetAttrString(self.py_object, name^)
-        if result.is_null():
+        if not result:
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=result)
 
@@ -659,7 +659,7 @@ struct PythonObject(
         cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self.py_object, key_obj)
         cpython.Py_DecRef(key_obj)
-        if result.is_null():
+        if not result:
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=result)
 
@@ -689,7 +689,7 @@ struct PythonObject(
         cpython.Py_IncRef(key_obj)
         var result = cpython.PyObject_GetItem(self.py_object, key_obj)
         cpython.Py_DecRef(key_obj)
-        if result.is_null():
+        if not result:
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=result)
 
@@ -1316,7 +1316,7 @@ struct PythonObject(
         cpython.Py_DecRef(callable_obj)
         cpython.Py_DecRef(tuple_obj)
         cpython.Py_DecRef(dict_ptr)
-        if result.is_null():
+        if not result:
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=result)
 

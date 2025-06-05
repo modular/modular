@@ -217,15 +217,6 @@ struct PyObjectPtr(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
-    fn is_null(self) -> Bool:
-        """Check if the pointer is null.
-
-        Returns:
-            Bool: True if the pointer is null, False otherwise.
-        """
-        return not self
-
     fn write_to[W: Writer](self, mut writer: W):
         """Formats to the provided Writer.
 
@@ -921,7 +912,7 @@ struct CPython(Copyable, Movable):
         # TODO(MSTDL-1479): PyErr_Fetch is deprecated since Python 3.12.
         var err_ptr = self.PyErr_Fetch()
         debug_assert(
-            not err_ptr.is_null(),
+            Bool(err_ptr),
             "Python exception occurred but PyErr_Fetch returned null",
         )
 
@@ -1015,7 +1006,7 @@ struct CPython(Copyable, Movable):
     # debugging. We shouldn't rely on this function anywhere - its only purpose
     # is debugging.
     fn _Py_REFCNT(self, ptr: PyObjectPtr) -> Int:
-        if ptr.is_null():
+        if not ptr:
             return -1
         # NOTE:
         #   The "obvious" way to write this would be:
@@ -1998,7 +1989,7 @@ struct CPython(Copyable, Movable):
         """[Reference](
         https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred).
         """
-        return not self.lib.call["PyErr_Occurred", PyObjectPtr]().is_null()
+        return Bool(self.lib.call["PyErr_Occurred", PyObjectPtr]())
 
     fn PyErr_Fetch(self) -> PyObjectPtr:
         """[Reference](
