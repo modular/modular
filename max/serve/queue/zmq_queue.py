@@ -22,7 +22,7 @@ import tempfile
 import uuid
 import weakref
 from collections import deque
-from typing import Generic, Optional, TypeVar
+from typing import Any, Callable, Generic, Optional, TypeVar
 
 import psutil
 import zmq
@@ -145,6 +145,7 @@ class ZmqPushSocket(Generic[T]):
         self,
         zmq_ctx: zmq.Context,
         zmq_endpoint: Optional[str] = None,
+        serialize: Callable[[Any], bytes] = pickle.dumps,
     ):
         self.zmq_endpoint = (
             zmq_endpoint
@@ -154,6 +155,7 @@ class ZmqPushSocket(Generic[T]):
         self.push_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.PUSH
         )
+        self.serialize = serialize
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
 
@@ -170,18 +172,25 @@ class ZmqPushSocket(Generic[T]):
             # Cancel the weakref finalizer since we've manually cleaned up
             self._finalize.detach()
 
-    def put_nowait(self, *args, **kwargs):
-        if self._closed:
-            raise RuntimeError("Socket is closed")
-        self.put(*args, **kwargs, flags=zmq.NOBLOCK)
+    def put_nowait(
+        self,
+        msg: Any,
+        **kwargs,
+    ):
+        self.put(msg, flags=zmq.NOBLOCK, **kwargs)
 
-    def put(self, *args, **kwargs) -> None:
+    def put(
+        self,
+        msg: Any,
+        **kwargs,
+    ) -> None:
         if self._closed:
             raise RuntimeError("Socket is closed")
 
         while True:
             try:
-                self.push_socket.send_pyobj(*args, **kwargs)
+                serialized_msg = self.serialize(msg)
+                self.push_socket.send(serialized_msg, **kwargs)
 
                 # Exit since we succeeded
                 break
@@ -202,7 +211,10 @@ class ZmqPushSocket(Generic[T]):
 
 class ZmqPullSocket(Generic[T]):
     def __init__(
-        self, zmq_ctx: zmq.Context, zmq_endpoint: Optional[str] = None
+        self,
+        zmq_ctx: zmq.Context,
+        zmq_endpoint: Optional[str] = None,
+        deserialize=pickle.loads,
     ):
         self.zmq_endpoint = (
             zmq_endpoint
@@ -212,6 +224,7 @@ class ZmqPullSocket(Generic[T]):
         self.pull_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.PULL
         )
+        self.deserialize = deserialize
         self.local_queue: deque[T] = deque()
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
@@ -235,12 +248,12 @@ class ZmqPullSocket(Generic[T]):
             raise RuntimeError("Socket is closed")
         self.local_queue.append(item)
 
-    def _pull_from_socket(self, *args, **kwargs) -> T:
+    def _pull_from_socket(self, **kwargs) -> T:
         if self._closed:
             raise RuntimeError("Socket is closed")
 
         try:
-            return self.pull_socket.recv_pyobj(*args, **kwargs)
+            msg = self.pull_socket.recv(**kwargs)
 
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
@@ -251,18 +264,23 @@ class ZmqPullSocket(Generic[T]):
             )
             raise e
 
-    def get(self, *args, **kwargs) -> T:
+        try:
+            return self.deserialize(msg)
+        except Exception as e:
+            raise e
+
+    def get(self, **kwargs) -> T:
         if self._closed:
             raise RuntimeError("Socket is closed")
 
         if self.local_queue:
             return self.local_queue.pop()
 
-        return self._pull_from_socket(*args, **kwargs)
+        return self._pull_from_socket(**kwargs)
 
     @traced
-    def get_nowait(self) -> T:
-        return self.get(flags=zmq.NOBLOCK)
+    def get_nowait(self, **kwargs) -> T:
+        return self.get(flags=zmq.NOBLOCK, **kwargs)
 
     def qsize(self) -> int:
         """Return the size of the queue by repeatedly polling the ZmqSocket and
