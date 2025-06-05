@@ -32,6 +32,7 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.device_context import DeviceBuffer
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
@@ -93,7 +94,11 @@ from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from .utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, block_swizzle
+from .utils_gpu import (
+    MatmulConfig,
+    block_swizzle,
+    get_hilbert_lut_with_cache,
+)
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4
@@ -843,11 +848,15 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     elementwise_compute_lambda_fn: OptionalReg[
         elementwise_compute_lambda_type
     ] = None,
+    hilbert_swizzle: Bool = False,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
     c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    lut_ptr: UnsafePointer[
+        UInt32, address_space = AddressSpace.GLOBAL
+    ] = UnsafePointer[UInt32, address_space = AddressSpace.GLOBAL](),
 ):
     constrained[transpose_b, "Only support transposed B in layout"]()
 
@@ -890,18 +899,30 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     alias accum_type = get_accum_type[a_type]()
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
 
-    alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
-    alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
-
     alias use_cluster = cluster_size[cluster_shape]() > 1
+    var block_idx_swizzle: __type_of(Index[dtype = DType.uint32](0, 0))
 
-    var block_idx_swizzle = block_swizzle(
-        Index[dtype = DType.uint32](block_idx.x, block_idx.y),
-        Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
-    ) if not use_cluster else Index[dtype = DType.uint32](
-        block_idx.x, block_idx.y
-    )
+    @parameter
+    if not use_cluster:
+
+        @parameter
+        if hilbert_swizzle:
+            # a 32-bit (UInt32) value that encodes a block's Hilbert-swizzled coordinates as
+            # upper 16 bits = y, lower 16 bits = x
+            var linear: UInt32 = UInt32(block_idx.y * grid_dim.x + block_idx.x)
+            var packed: UInt32 = lut_ptr[linear]
+            var new_x: UInt32 = packed & 0xFFFF
+            var new_y: UInt32 = packed >> 16
+            block_idx_swizzle = Index[dtype = DType.uint32](new_x, new_y)
+        else:
+            block_idx_swizzle = block_swizzle(
+                Index[dtype = DType.uint32](block_idx.x, block_idx.y),
+                Index[dtype = DType.uint32](grid_dim.x, grid_dim.y),
+            )
+    else:
+        block_idx_swizzle = Index[dtype = DType.uint32](
+            block_idx.x, block_idx.y
+        )
 
     wgmma_op = TensorCoreAsync[
         accum_type,
@@ -1108,7 +1129,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     if pdl_level >= PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
-    # TO ensure SEMEM destruction doesn't happen
+    # TO ensure SMEM destruction doesn't happen
     @parameter
     if cluster_size[cluster_shape]() > 1:
         cluster_sync()
@@ -1290,8 +1311,6 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
             full[i].init(1)
             empty[i].init(num_consumer * CLUSTER_SIZE)
 
-    # We need this to guarantee that the Pipeline init is visible
-    # To all producers and consumer blocks in the cluster
     @parameter
     if cluster_size[cluster_shape]() > 1:
         fence_mbarrier_init()
@@ -1424,7 +1443,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     if pdl_level >= PDLLevel.OVERLAP_AT_END:
         launch_dependent_grids()
 
-    # TO ensure SEMEM destruction doesn't happen
+    # TO ensure SMEM destruction doesn't happen
     @parameter
     if cluster_size[cluster_shape]() > 1:
         cluster_sync()
@@ -1635,7 +1654,7 @@ fn hopper_matmul_tma_wgmma[
 
     constrained[
         transpose_b,
-        "Only support transposeed B",
+        "Only support transposed B",
     ]()
 
     constrained[
@@ -1704,7 +1723,7 @@ fn _get_grid_shape[
         h100_num_SMs // num_blocks_n,
     )
 
-    # A Naive heristic to select grid shape based on number of tile in N.
+    # A Naive heuristic to select grid shape based on number of tile in N.
     if num_tiles_n % 8 == 0 or not _is_valid_cluster_shape[cluster_shape](
         adjusted_grid_shape, num_tiles_n
     ):
@@ -1805,6 +1824,7 @@ fn warp_specialize_gemm_with_multicasting[
         elementwise_compute_lambda_type
     ] = None,
     schedule: MatmulSchedule = MatmulSchedule.NONE,
+    hilbert_swizzle: Bool = False,
 ](
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
@@ -1916,6 +1936,14 @@ fn warp_specialize_gemm_with_multicasting[
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
     ](ctx, c)
 
+    var lut_ptr = UnsafePointer[UInt32]()
+
+    @parameter
+    if hilbert_swizzle:
+        var grid_x = ceildiv(N, BN)
+        var grid_y = ceildiv(M, BM)
+        lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)._unsafe_ptr()
+
     alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * sizeof[a_type]()
@@ -2000,6 +2028,7 @@ fn warp_specialize_gemm_with_multicasting[
             pdl_level = config.pdl_level(),
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            hilbert_swizzle=hilbert_swizzle,
         ]
 
         ctx.enqueue_function[kernel](
@@ -2007,6 +2036,7 @@ fn warp_specialize_gemm_with_multicasting[
             b_tma_op,
             c_tma_op,
             c,
+            lut_ptr,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,

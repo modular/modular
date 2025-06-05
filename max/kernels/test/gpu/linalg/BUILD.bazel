@@ -23,6 +23,7 @@ _EXTRA_CONSTRAINTS = {
     "test_vendor_blas.mojo": ["//:nvidia_gpu"],
     "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],
     "test_warp_specialization_gemm_with_cluster.mojo": ["//:h100_gpu"],
+    "test_warp_specialization_gemm_correctness.mojo": ["//:h100_gpu"],
 }
 
 _FILECHECK_TESTS = [
