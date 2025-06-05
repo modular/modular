@@ -21,8 +21,8 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn import MLPV1, RMSNormV1
+from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
-    MHAMaskVariant,
     cross_attention_ragged,
     matmul_kv_cache_ragged,
     rms_norm_key_cache,

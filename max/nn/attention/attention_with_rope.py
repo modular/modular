@@ -33,7 +33,6 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from ..clamp import clamp
 from ..comm import Allreduce
 from ..kernels import (
-    MHAMaskVariant,
     flare_mla_decode_ragged,
     flare_mla_decompress_k_cache,
     flare_mla_prefill_plan,
@@ -64,6 +63,7 @@ from .interfaces import (
     AttentionImplQKV,
     DistributedAttentionImpl,
 )
+from .mask_config import MHAMaskVariant
 
 
 @dataclass

@@ -15,8 +15,6 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from dataclasses import dataclass
-from enum import Enum
 from typing import Optional
 
 import numpy as np
@@ -34,12 +32,41 @@ from max.graph import (
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 
+from .attention.mask_config import (
+    AttentionMaskVariant,
+    MHAMaskConfig,
+    MHAMaskVariant,
+    PositionalEncodingVariant,
+)
 from .kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheCollection,
 )
+
+_MHA_MASK_CONFIG_DICT = {
+    MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.CAUSAL_ALIBI_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.ALIBI_POS,
+    ),
+    MHAMaskVariant.NULL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.NULL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+}
 
 
 def fused_qkv_ragged_matmul(
@@ -860,57 +887,6 @@ def flash_attention_with_causal_mask(
         ],
         parameters=parameters,
     )[0].tensor
-
-
-@dataclass
-class MHAMaskConfig:
-    attention_mask_variant: AttentionMaskVariant
-    positional_encoding_variant: PositionalEncodingVariant
-
-
-class AttentionMaskVariant(str, Enum):
-    NULL_MASK = "null"
-    CAUSAL_MASK = "causal"
-    TENSOR_MASK = "tensor_mask"
-    CHUNKED_CAUSAL_MASK = "chunked_causal"
-    SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal"
-
-
-class PositionalEncodingVariant(str, Enum):
-    NO_POS = "no_pos"
-    ALIBI_POS = "alibi_pos"
-
-
-class MHAMaskVariant(str, Enum):
-    CAUSAL_MASK = 0
-    CAUSAL_ALIBI_MASK = 1
-    NULL_MASK = 2
-    CHUNKED_CAUSAL_MASK = 3
-    SLIDING_WINDOW_CAUSAL_MASK = 4
-
-
-_MHA_MASK_CONFIG_DICT = {
-    MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.CAUSAL_ALIBI_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.ALIBI_POS,
-    ),
-    MHAMaskVariant.NULL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.NULL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-}
 
 
 def causal_flash_attention_gpu(

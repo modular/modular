@@ -27,10 +27,10 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import distribute_value
 from max.nn.comm import Allreduce
 from max.nn.kernels import (
-    MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
