@@ -1094,8 +1094,9 @@ async def create_streaming_audio_speech(
             input=audio_generation_request.input,
             index=audio_generation_request.index,
             model=audio_generation_request.model,
-            voice=audio_generation_request.voice,
             sampling_params=sampling_params,
+            audio_prompt_tokens=audio_generation_request.audio_prompt_tokens,
+            audio_prompt_transcription=audio_generation_request.audio_prompt_transcription,
             # TODO: Add support for these options.
             # instructions=audio_generation_request.instructions,
             # response_format=audio_generation_request.response_format,

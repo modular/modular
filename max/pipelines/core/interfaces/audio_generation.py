@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -69,9 +69,11 @@ class AudioGenerationRequest:
     stop string is hit.
     """
 
-    voice: str | None = None
-    """The voice to use for audio generation.
-    """
+    audio_prompt_tokens: list[int] = field(default_factory=list)
+    """The prompt speech IDs to use for audio generation."""
+
+    audio_prompt_transcription: str = ""
+    """The audio prompt transcription to use for audio generation."""
 
     detokenize: bool = True
     """Whether to detokenize the output tokens into text."""

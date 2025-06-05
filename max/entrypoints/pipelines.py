@@ -322,47 +322,6 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 
 
 @main.command(
-    name="text-to-speech",
-    cls=WithLazyPipelineOptions,
-)
-@click.option(
-    "--prompt",
-    type=str,
-    default="42 is the meaning of life.",
-    help="The text prompt to synthesize to audio.",
-)
-@click.option(
-    "--output",
-    type=click.Path(),
-    default=None,
-    help="Path to the output WAV audio file.",
-)
-@click.option(
-    "--voice",
-    type=str,
-    default=None,
-    help="Name of the speaker to use for the synthesis. If set, `--audio-prompt-speakers` must also be provided.",
-)
-@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
-def text_to_speech(
-    prompt: str,
-    output: str | None,
-    voice: str | None,
-    task_flags: list[str],
-    **config_kwargs: Any,
-) -> None:
-    """Generate speech from text."""
-    from max.entrypoints.cli.config import parse_task_flags
-    from max.entrypoints.cli.synthesize_speech import synthesize_speech
-    from max.pipelines import AudioGenerationConfig
-
-    config = AudioGenerationConfig.from_flags(
-        parse_task_flags(task_flags), **config_kwargs
-    )
-    synthesize_speech(config, prompt, voice, output or "output.wav")
-
-
-@main.command(
     name="warm-cache",
     cls=WithLazyPipelineOptions,
 )
