@@ -582,7 +582,7 @@ struct SIMD[dtype: DType, size: Int](
         )
 
     @always_inline("nodebug")
-    fn __init__(out self, *elems: Scalar[dtype]):
+    fn __init__(out self, *elems: Scalar[dtype], __list_literal__: () = ()):
         """Constructs a SIMD vector via a variadic list of elements.
 
         The input values are assigned to the corresponding elements of the SIMD
@@ -594,6 +594,7 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             elems: The variadic list of elements from which the SIMD vector is
                    constructed.
+            __list_literal__: Tell Mojo to use this method for list literals.
         """
         _simd_construction_checks[dtype, size]()
 

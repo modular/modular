@@ -1033,6 +1033,22 @@ fn test_str_and_repr() raises:
     assert_equal(s.__repr__(), "Deque('a', 'b', 'c')")
 
 
+def test_deque_literal():
+    var q: Deque[Int] = [1, 2, 3]
+    assert_equal(3, len(q))
+    assert_equal(1, q[0])
+    assert_equal(2, q[1])
+    assert_equal(3, q[2])
+
+    var q2: Deque[Float64] = [1, 2.5]
+    assert_equal(2, len(q2))
+    assert_equal(1.0, q2[0])
+    assert_equal(2.5, q2[1])
+
+    var q3: Deque[Int] = []
+    assert_equal(0, len(q3))
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
@@ -1083,3 +1099,4 @@ def main():
     test_iter_with_list()
     test_reversed_iter()
     test_str_and_repr()
+    test_deque_literal()

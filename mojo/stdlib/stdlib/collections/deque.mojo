@@ -134,11 +134,14 @@ struct Deque[ElementType: Copyable & Movable](
         if elements is not None:
             self.extend(elements.value())
 
-    fn __init__(out self, owned *values: ElementType):
+    fn __init__(
+        out self, owned *values: ElementType, __list_literal__: () = ()
+    ):
         """Constructs a deque from the given values.
 
         Args:
             values: The values to populate the deque with.
+            __list_literal__: Tell Mojo to use this method for list literals.
         """
         self = Self(elements=values^)
 

@@ -164,11 +164,14 @@ struct LinkedList[
         self._tail = Self._NodePointer()
         self._size = 0
 
-    fn __init__(out self, owned *elements: ElementType):
+    fn __init__(
+        out self, owned *elements: ElementType, __list_literal__: () = ()
+    ):
         """Initialize a linked list with the given elements.
 
         Args:
             elements: Variable number of elements to initialize the list with.
+            __list_literal__: Tell Mojo to use this method for list literals.
 
         Notes:
             Time Complexity: O(n) in len(elements).
