@@ -8,7 +8,6 @@ modular_py_test(
         "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    uses_mojo_extension = True,
     deps = [
         "//SDK/lib/API/python/max/_core_mojo",
         requirement("numpy"),
