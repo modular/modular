@@ -2473,6 +2473,7 @@ fn mha_single_batch_pipelined[
 
 
 # Entry point for mha_decoding with batch_size > 1.
+@__llvm_metadata(`rocdl.waves_per_eu`=Int(4))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](num_threads)
 )
