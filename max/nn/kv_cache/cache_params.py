@@ -46,7 +46,7 @@ class KVCacheParams:
     n_devices: int = 1
 
     def __post_init__(self):
-        self.n_kv_heads_per_device = self.n_kv_heads // self.n_devices
+        self.n_kv_heads_per_device = max(self.n_kv_heads // self.n_devices, 1)
 
         # Validate inputs
         if (
