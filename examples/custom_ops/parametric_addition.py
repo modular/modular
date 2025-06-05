@@ -37,7 +37,7 @@ if __name__ == "__main__":
         # Since the custom operation is parametric, we need to provide the
         # parameters as a dictionary.
         forward=lambda x: ops.custom(
-            name="add_constant_custom",
+            name="add_constant",
             device=DeviceRef.from_device(device),
             values=[x],
             out_types=[
