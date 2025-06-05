@@ -878,18 +878,16 @@ fn _matmul_gpu[
                     elif m >= 256:
                         return kernel_helper[128, 192, num_k_partitions=4]()
                 elif static_N == 65536 and static_K == 5120:
-                    if m >= 8192:
+                    if m > 384:
                         return kernel_helper[256, 256]()
-                    elif m >= 7000:
+                    elif m > 256:
+                        return kernel_helper[192, 256]()
+                    elif m > 192:
                         return kernel_helper[256, 256]()
-                    elif m >= 3500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 512:
-                        return kernel_helper[256, 224]()
-                    elif m >= 500:
-                        return kernel_helper[256, 256]()
-                    elif m >= 256:
-                        return kernel_helper[128, 128]()
+                    elif m > 128:
+                        return kernel_helper[192, 256]()
+                    elif m > 64:
+                        return kernel_helper[128, 256]()
                 elif static_N == 5120 and static_K == 32768:
                     if m >= 8192:
                         return kernel_helper[192, 256]()
