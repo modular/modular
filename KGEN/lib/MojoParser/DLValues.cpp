@@ -116,7 +116,7 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   ValueDest tmpValueDest(MLValue(tmpDecl), EC_AttributeRefBase);
   auto base = baseVal.ir->emitLoad(tmpValueDest, emitter);
   if (!base) {
-    tmpValueDest.resetForError();
+    tmpValueDest.resetForError(emitter);
     return BValue();
   }
 
@@ -308,7 +308,7 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     // this value as an index.
     if (!emitGetterSetterAccess(&subscript, {bvalue, value.expr}, exprOperand,
                                 eltDest, emitter)) {
-      eltDest.resetForError();
+      eltDest.resetForError(emitter);
       return BValue();
     }
   }

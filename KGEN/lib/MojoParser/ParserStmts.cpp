@@ -740,7 +740,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     // Convert the returned value to the returned type of the function.
     resultValue = emitter.emitExpr(operandExpr, resultDest);
     if (!resultValue) {
-      resultDest.resetForError();
+      resultDest.resetForError(emitter);
       return {};
     }
   } else {
@@ -748,14 +748,14 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     auto resultCValue = emitter.emitExprCValue(
         operandExpr, EC_ReturnValue, userResultType.getReferenceElementType());
     if (!resultCValue) {
-      resultDest.resetForError();
+      resultDest.resetForError(emitter);
       return {};
     }
 
     Value refValue =
         emitter.emitRefValue({resultCValue, operandExpr}, EC_ReturnValue);
     if (!refValue) {
-      resultDest.resetForError();
+      resultDest.resetForError(emitter);
       return {};
     }
     RefType argType = cast<RefType>(refValue.getType());
@@ -787,7 +787,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
           diag << "address space: " << argType.getAddressSpace() << " vs "
                << expectedRefType.getAddressSpace();
         }
-        resultDest.resetForError();
+        resultDest.resetForError(emitter);
         return {};
       }
     }
@@ -798,7 +798,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     resultValue =
         emitter.emitRValue({SRValue(refValue), operandExpr}, resultDest);
     if (!resultValue) {
-      resultDest.resetForError();
+      resultDest.resetForError(emitter);
       return success();
     }
   }
@@ -878,7 +878,7 @@ static std::pair<TryOp, bool> findParentTry(Block *currentBlock) {
 /// Inject a call to a special method that the debugger stops at when
 /// supporting exception/error breakpoints.
 static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
-                                                 IREmitter &&emitter,
+                                                 IREmitter &emitter,
                                                  ASTDecl &declContext,
                                                  llvm::SMLoc loc,
                                                  ExprNode *node) {
@@ -890,8 +890,8 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
   ParamBindings bindings(declContext);
   OverloadSet call("__mojo_debugger_raise_hook", raiseHookFns,
                    std::move(bindings), node, CallSyntax::kDirectCall);
-  ValueDest raseHookDest(EC_RaiseValue);
-  call.emitCall({}, raseHookDest, emitter);
+  ValueDest raiseHookDest(EC_RaiseValue);
+  call.emitCall({}, raiseHookDest, emitter);
   return success();
 }
 
@@ -920,7 +920,8 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   //
 
   // Find the nearest error slot if the parser is in a context that can raise.
-  MLValue errSlot = getEmitter().findNearestErrorSlot();
+  auto emitter = getEmitter();
+  MLValue errSlot = emitter.findNearestErrorSlot();
   if (!errSlot) {
     InflightDiag diag =
         emitError(loc.Start, "cannot raise error in this context") << loc;
@@ -933,7 +934,7 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   ValueDest dest(errSlot, EC_RaiseValue);
   if (errorExpr) {
     // If we had an error, emit it.
-    getEmitter().emitExpr(errorExpr, dest);
+    emitter.emitExpr(errorExpr, dest);
   } else {
     // Figure it if we're in a try, and if so, which subregion.
     auto [tryOp, inExceptRegion] = findParentTry(builder.getInsertionBlock());
@@ -946,21 +947,20 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
                           << loc;
       diag.attachNote(loc.Start) << "provide an error to raise or place "
                                     "'raise' statement inside an except region";
-      dest.resetForError();
+      dest.resetForError(emitter);
       return success();
     }
 
     // Re-raise the contextual exception.
-    getEmitter().emitResult(MRValue(tryOp.getErr()), SyntheticNode(loc.Start),
-                            dest);
+    emitter.emitResult(MRValue(tryOp.getErr()), SyntheticNode(loc.Start), dest);
   }
 
   // If we are in a debug build, we inject a call to a stop hook for the
   // debugger right before a RaiseOp.
   if (shared.options.debugLevel !=
       CompilationOptions::DebugInfoLevel::kNoDebug) {
-    if (failed(injectDebuggerRaiseHookCall(
-            shared, getEmitter(), getParentDecl(), loc.Start, errorExpr)))
+    if (failed(injectDebuggerRaiseHookCall(shared, emitter, getParentDecl(),
+                                           loc.Start, errorExpr)))
       return failure();
   }
 

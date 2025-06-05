@@ -509,20 +509,16 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   CValue callResult =
       emitter.emitIndirectCall(PValue(calleeParam), std::move(operands), dest,
                                CallSyntax::kMethodCall, node);
-  if (!callResult) {
-    dest.resetForError();
+  if (!callResult)
     return {};
-  }
 
   // If the callee is async, we got a coroutine. Now await it into the result.
   if (thunkSignature.isAsync()) {
     ValueDest dest(MLValue(thunk.getArguments().back()), EC_Trait);
     if (!emitter.emitNamedMethodCall("__await__",
                                      CallOperands({{callResult, node}}), dest,
-                                     CallSyntax::kMethodCall, node)) {
-      dest.resetForError();
+                                     CallSyntax::kMethodCall, node))
       return {};
-    }
   }
 
   // Emit the function return. It's just a none return if the function has a
@@ -543,7 +539,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
         expr->getLoc(),
         "TODO: function type conversions between closures not supported yet")
         << expr->getRange();
-    dest.resetForError();
+    dest.resetForError(emitter);
     return {};
   }
 
@@ -659,7 +655,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   FnOp thunk =
       emitter.shared.getOrCreateFunctionThunk(key, generateConversionThunk);
   if (!thunk) {
-    dest.resetForError();
+    dest.resetForError(emitter);
     return {};
   }
 
@@ -1357,7 +1353,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   // already-diagnosed error about this expression.
   auto rvType = value.getRValueType();
   if (rvType.isTypeCheckErrorType() || requiredType.isTypeCheckErrorType()) {
-    dest.resetForError();
+    dest.resetForError(*this);
     return {};
   }
 

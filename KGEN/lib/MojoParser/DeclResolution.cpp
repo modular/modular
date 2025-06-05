@@ -1397,7 +1397,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
       emitter.emitConstructorCall(varListType, std::move(operands), &srcLocNode,
                                   CallSyntax::kTypeCall, ctorDest);
   if (!ctorResult) {
-    ctorDest.resetForError();
+    ctorDest.resetForError(emitter);
     return {};
   }
   return varDecl;
