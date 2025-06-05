@@ -91,11 +91,12 @@ ErrorOrSuccess InterpreterState::MemoryBlob::setMarkedRegion(
   // `(offset - pointerSize, offset)` or between
   // `(offset + size - pointerSize, offset + size)`, indicating partial
   // overwrite of a pointer region.
-  if (regionField->find_first_in(std::max<int64_t>(0, offset - pointerSize + 1),
-                                 offset) != -1 ||
-      regionField->find_first_in(
-          std::max<int64_t>(0, offset + regionSize - pointerSize + 1),
-          offset + regionSize) != -1)
+  if (regionSize >= 0 &&
+      (regionField->find_first_in(
+           std::max<int64_t>(0, offset - pointerSize + 1), offset) != -1 ||
+       regionField->find_first_in(
+           std::max<int64_t>(0, offset + regionSize - pointerSize + 1),
+           offset + regionSize) != -1))
     return Error("write clobbers a pointer region");
 
   if (!write)
@@ -572,6 +573,11 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
         llvm::StoreIntToMemory(addrInt,
                                (uint8_t *)interned->getOwned() + ptr.offset,
                                target.getDataLayout().getPointerSize());
+
+        // Mark ptrRegion for the internalized blob.
+        (void)interned->setMarkedRegion(ptr.offset, -1,
+                                        target.getDataLayout().getPointerSize(),
+                                        RegionMark::Pointer);
       }
 
       // Update the symbol indices in the blobs so they are with respect to
