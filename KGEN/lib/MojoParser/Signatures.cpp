@@ -238,9 +238,10 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
   auto handleContextualArgConvention = [&](StringRef str,
                                            PAArgConvention conv) {
-    // Handle "out: Foo" as a name, not an argument convention.
-    if (p.getToken().isNot(Token::colon, Token::equal, Token::r_paren,
-                           Token::r_square)) {
+    // Handle "out: Foo" as a name if we're in a parameter list, because
+    // they don't get argument conventions.
+    if (kind != ArgListKind::kFnTypeParamList &&
+        kind != ArgListKind::kParamList) {
       convention = conv;
     } else {
       // Otherwise, the "out" is the argument name.
@@ -327,7 +328,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   // Parse an optional type annotation: `":" ["*"] expression`. Omit the colon
   // if a name was not specified.  Bare lambda arg lists do not allow types.
   if (kind != ArgListKind::kBareLambdaArgList) {
-    if (!name || p.consumeIf(Token::colon)) {
+    if (p.consumeIf(Token::colon) || !name) {
       SMLoc starLoc = p.getToken().getLoc();
       if (p.consumeIf(Token::star)) {
         if (variadicKind != VariadicKind::PosVarArg) {

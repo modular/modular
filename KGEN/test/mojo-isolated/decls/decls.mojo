@@ -29,7 +29,7 @@ fn implicit_variable_decls(a: Int) -> Int:
     return b
 
 
-alias IntToFloat32Type = fn (Int) -> FloatDyn
+alias IntToFloat32Type = fn (:Int) -> FloatDyn
 
 
 fn takeIntToFloat32Param[f: IntToFloat32Type]():
@@ -405,18 +405,18 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
 
 
 # CHECK-LABEL: lit.fn @"testContextSensitiveKeyword
-# CHECK-SAME: (%out: !Int) -> !Int
-fn testContextSensitiveKeyword(out x: Int, out: Int):
+# CHECK-SAME: (%out2: !Int) -> !Int
+fn testContextSensitiveKeyword(out x: Int, out2: Int):
     # Check that we handle the result slot correctly.
 
     # CHECK-NEXT: %x = lit.var.decl "x"
-    # CHECK-NEXT: lit.ref.store %out, %x
+    # CHECK-NEXT: lit.ref.store %out2, %x
     # CHECK-NEXT: %0 = lit.load.consume %x
     # CHECK-NEXT: lit.return %0
 
     # out is an argument specifier, but that's a context sensitive keyword.
     # The identifier can be used like normal as well.
-    x = out
+    x = out2
 
 
 ##===----------------------------------------------------------------------===##
@@ -868,7 +868,7 @@ fn initializersAsFunctions():
     # CHECK-NEXT: %fn_ptr1 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr1
-    var fn_ptr1: fn (Int) -> MyInt = MyInt.__init__
+    var fn_ptr1: fn (:Int) -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
 
@@ -881,7 +881,7 @@ fn initializersAsFunctions():
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr4
     var fn_ptr4: fn (
-        StructExample
+        :StructExample
     ) -> StructExample = StructExample.__copyinit__
 
     # Memory

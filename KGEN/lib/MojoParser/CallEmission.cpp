@@ -578,7 +578,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
   if (!isa<FnTypeGeneratorType>(functionType)) {
-    if (emitError) {
+    if (emitError && !isa<TypeCheckErrorType>(functionType)) {
       auto &diag = emitError(expr->getLoc())
                    << "cannot convert function to non-function type "
                    << functionType;
