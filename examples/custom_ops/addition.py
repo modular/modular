@@ -65,10 +65,10 @@ if __name__ == "__main__":
     # Fill an input matrix with random values.
     x_values = np.random.uniform(size=(rows, columns)).astype(np.float32)
 
-    # Create a driver tensor from this, and move it to the accelerator.
+    # Create a tensor and move it to the device (CPU or GPU).
     x = Tensor.from_numpy(x_values).to(device)
 
-    # Perform the calculation on the target device.
+    # Run inference with the input tensor.
     result = model.execute(x)[0]
 
     # Copy values back to the CPU to be read.
