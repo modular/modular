@@ -182,7 +182,9 @@ def test_tokenizer_regression_MODELS_467() -> None:
         return rank1([item])[0]
 
     def decode(tokens: np.ndarray) -> str:
-        context = TextContext("Irrelevant", 65535, rank1([]))
+        context = TextContext(
+            prompt="Irrelevant", max_length=65535, tokens=rank1([])
+        )
         return asyncio.run(tokenizer.decode(context, tokens))
 
     # Single token here needs preceding space, including rank-0.
@@ -202,10 +204,10 @@ async def test_tokenizer__encode_and_decode(llama_3_1_8b_instruct_local_path):
     encoded = await tokenizer.encode(test_string, add_special_tokens=False)
     context = TextContext(
         max_length=10,
-        cache_seq_id=0,
         prompt=test_string,
         tokens=np.array(encoded),
     )
+    context.assign_to_cache(0)
     assert context.current_length == len(encoded)
     decoded = await tokenizer.decode(context, encoded)
     assert test_string == decoded

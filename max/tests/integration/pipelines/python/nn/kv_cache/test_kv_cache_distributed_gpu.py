@@ -152,7 +152,7 @@ async def test_swapping_to_host_multi_gpu(enable_swapping_to_host: bool):
     for i in range(10):
         reqs.append(create_text_context(len(reqs), gen_prompt(prompt_len)))
     for i in range(10):
-        reqs.append(create_text_context(len(reqs), reqs[i].tokens))
+        reqs.append(create_text_context(len(reqs), reqs[i].all_tokens))
 
     # Each batch has 4 requests
     batch_size = 4

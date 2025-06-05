@@ -51,6 +51,7 @@ modular_py_test(
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
+        requirement("msgspec"),
     ] + select({
         "//:has_gpu": [requirement("xgrammar")],  # needed only for test_sampling.py
         "//conditions:default": [],

@@ -4,19 +4,27 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pickle
+
 import numpy as np
 import pytest
-from max.pipelines.core import SamplingParams, TextContext, TextGenerationStatus
+from max.pipelines.core import (
+    SamplingParams,
+    TextContext,
+    TextGenerationStatus,
+    msgpack_numpy_decoder,
+    msgpack_numpy_encoder,
+)
 
 
 def test_context__eos():
     context = TextContext(
-        cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
     )
+    context.assign_to_cache(cache_seq_id=0)
     assert context.eos_token_ids == {4}
     assert context.is_initial_prompt == True
     context.update(4)
@@ -27,11 +35,11 @@ def test_context__eos():
 
 def test_context__max_length():
     context = TextContext(
-        cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=6,
         tokens=np.array([0, 1, 2, 3]),
     )
+    context.assign_to_cache(cache_seq_id=0)
     for i in range(2):
         assert context.status == TextGenerationStatus.ACTIVE
         context.update(i)
@@ -40,11 +48,11 @@ def test_context__max_length():
 
 def test_context__current_length():
     context = TextContext(
-        cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
+    context.assign_to_cache(0)
 
     assert context.current_length == 4
     assert context.is_initial_prompt == True
@@ -65,11 +73,11 @@ def test_context__current_length():
 
 def test_context__seq_len():
     context = TextContext(
-        cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
+    context.assign_to_cache(0)
 
     assert context.active_length == 4
     context.update(4)
@@ -81,11 +89,11 @@ def test_context__seq_len():
 
 def test_context__bump_token_indices():
     context = TextContext(
-        cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
+    context.assign_to_cache(0)
 
     # Can't trim more tokens than the context has.
     with pytest.raises(ValueError):
@@ -116,11 +124,11 @@ def test_context__update_beyond_chunk_size():
     # Before making changes to resize behaviour, ensure you
     # test with the server, not just the `generate` entrypoint.
     context = TextContext(
-        cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
+    context.assign_to_cache(0)
 
     # 128, is the CHUNK_SIZE defined in context
     for i in range(128):
@@ -129,11 +137,11 @@ def test_context__update_beyond_chunk_size():
 
 def test_context__reset():
     context = TextContext(
-        cache_seq_id=0,
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
     )
+    context.assign_to_cache(0)
     assert context.active_length == 4
     assert context.next_tokens.tolist() == [0, 1, 2, 3]
     context.update(4)
@@ -161,12 +169,12 @@ def test_context_sampling_params_integration():
     )
 
     context = TextContext(
-        cache_seq_id=0,
         prompt="sampling params test prompt",
         max_length=50,
         tokens=np.array([0, 1, 2, 3, 4]),
         sampling_params=custom_params,
     )
+    context.assign_to_cache(0)
 
     # Verify the sampling params persist through context operations
     context.update(5)
@@ -184,13 +192,13 @@ def test_context_sampling_params_stop():
     custom_params = SamplingParams(stop=["This is a test"])
 
     context = TextContext(
-        cache_seq_id=0,
         prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_sequences=[[1, 2]],
         sampling_params=custom_params,
     )
+    context.assign_to_cache(0)
 
     context.update(1)
     context.update(2)
@@ -199,13 +207,13 @@ def test_context_sampling_params_stop():
     assert np.array_equal(context.generated_tokens, np.array([1, 2]))
 
     context = TextContext(
-        cache_seq_id=0,
         prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_sequences=[[2], [3, 1]],
         sampling_params=custom_params,
     )
+    context.assign_to_cache(0)
     context.update(1)
     context.update(3)
 
@@ -218,13 +226,13 @@ def test_context_sampling_params_eos_token_ids():
     custom_params = SamplingParams(stop=["This is a test"])
 
     context = TextContext(
-        cache_seq_id=0,
         prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
         sampling_params=custom_params,
     )
+    context.assign_to_cache(0)
     context.update(1)
     context.update(2)
 
@@ -232,15 +240,38 @@ def test_context_sampling_params_eos_token_ids():
     assert np.array_equal(context.generated_tokens, np.array([1, 2]))
 
     context = TextContext(
-        cache_seq_id=0,
         prompt="This is a test prompt",
         max_length=50,
         tokens=np.array([0]),
         eos_token_ids=set([5, 4, 2]),
         sampling_params=custom_params,
     )
+    context.assign_to_cache(0)
     context.update(3)
     context.update(6)
 
     assert not context.is_done
     assert np.array_equal(context.generated_tokens, np.array([3, 6]))
+
+
+def test_context_serializable():
+    # Test that we can encode a sample TextContext with Pickle
+    original_context = TextContext(
+        prompt="sampling params test prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+    )
+
+    pickle_encoded = pickle.dumps(original_context)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert isinstance(pickle_decoded, TextContext)
+    assert pickle_decoded == original_context
+
+    # Test that we can encode a sample TextContext with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(TextContext)
+    msgpack_encoded = serialize(original_context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert msgpack_decoded == original_context

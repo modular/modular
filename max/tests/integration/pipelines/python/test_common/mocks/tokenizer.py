@@ -107,8 +107,7 @@ class MockTextTokenizer(
             else None
         )
 
-        return TextContext(
-            cache_seq_id=self.i,
+        ctx = TextContext(
             prompt=prompt,
             max_length=max_length,
             tokens=encoded,
@@ -116,6 +115,8 @@ class MockTextTokenizer(
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
         )
+        ctx.assign_to_cache(self.i)
+        return ctx
 
     async def encode(
         self, prompt: str, add_special_tokens: bool = False

@@ -55,11 +55,11 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
     tokens1 = np.array([1, 450, 6593, 310, 2834, 338], dtype=np.int64)
 
     context1 = TextContext(
-        cache_seq_id=1,
         prompt=tokens1.tolist(),
         tokens=tokens1,
         max_length=1024,
     )
+    context1.assign_to_cache(1)
 
     req_id2 = "2"
     tokens2 = np.array(
@@ -80,11 +80,11 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
         dtype=np.int64,
     )
     context2 = TextContext(
-        cache_seq_id=2,
         prompt=tokens2.tolist(),
         tokens=tokens2,
         max_length=1024,
     )
+    context2.assign_to_cache(2)
 
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
@@ -387,7 +387,7 @@ def test_speculative_decoding_context_update(
     assert context2.start_idx == len(context2.prompt_tokens) + reject_token2
 
     assert np.all(
-        context1.tokens
+        context1.all_tokens
         == np.concatenate(
             (
                 context1.prompt_tokens,
@@ -398,7 +398,7 @@ def test_speculative_decoding_context_update(
     )
 
     assert np.all(
-        context2.tokens
+        context2.all_tokens
         == np.concatenate(
             (
                 context2.prompt_tokens,
