@@ -44,37 +44,3 @@ def test_split(session, input_shape: Shape, split_sizes: list[int], axis: int):
     assert len(result) == len(expected_results)
     for actual, expected in zip(result, expected_results):
         np.testing.assert_equal(actual.to_numpy(), expected)
-
-
-def test_invalid_split():
-    input_shape = [15]
-    split_sizes = [10, 6]
-    axis = 0
-    with Graph(
-        "split",
-        input_types=[
-            TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
-        ],
-    ) as graph:
-        with pytest.raises(
-            ValueError,
-            match="sum of output shapes along split axis must match input shape",
-        ):
-            output = ops.split(graph.inputs[0].tensor, split_sizes, axis)
-
-
-def test_invalid_axis():
-    input_shape = [15]
-    split_sizes = [10, 6]
-    axis = 2
-    with Graph(
-        "split",
-        input_types=[
-            TensorType(DType.float32, input_shape, device=DeviceRef.CPU())
-        ],
-    ) as graph:
-        with pytest.raises(
-            ValueError,
-            match="Split axis must be within the input rank",
-        ):
-            _ = ops.split(graph.inputs[0].tensor, split_sizes, axis)

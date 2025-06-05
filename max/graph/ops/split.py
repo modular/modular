@@ -47,6 +47,11 @@ def split(
     elif axis < 0:
         axis += v.rank
 
+    if sum(int(size) for size in split_sizes) != v.shape[axis]:
+        raise ValueError(
+            f"The split_sizes values should sum to {v.shape[axis]} (input tensor's size at dimension {axis}), but got split_sizes={split_sizes}"
+        )
+
     result_types = []
     for size in split_sizes:
         new_shape = v.shape.copy()
