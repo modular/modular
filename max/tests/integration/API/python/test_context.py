@@ -17,6 +17,133 @@ from max.pipelines.core import (
 )
 
 
+def test_context__get_min_token_logit_mask():
+    context = TextContext(
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+        eos_token_ids={4},
+        sampling_params=SamplingParams(min_tokens=3),
+    )
+    context.assign_to_cache(0)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == [[0, 4]]
+
+    context.update(1)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == [[0, 4]]
+
+    context.update(2)
+    vocab_mask = context.get_min_token_logit_mask(3)
+    assert len(vocab_mask) == 3
+    assert vocab_mask[0].tolist() == [[0, 4]]
+    assert vocab_mask[1].tolist() == []
+    assert vocab_mask[2].tolist() == []
+
+
+def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids():
+    context = TextContext(
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+        sampling_params=SamplingParams(min_tokens=3),
+        eos_token_ids={4, 5},
+    )
+    context.assign_to_cache(0)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == [[0, 4], [0, 5]]
+
+    context.update(1)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == [[0, 4], [0, 5]]
+
+    context.update(2)
+    vocab_mask = context.get_min_token_logit_mask(3)
+    assert len(vocab_mask) == 3
+    assert vocab_mask[0].tolist() == [[0, 4], [0, 5]]
+    assert vocab_mask[1].tolist() == []
+    assert vocab_mask[2].tolist() == []
+
+
+def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep():
+    context = TextContext(
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+        sampling_params=SamplingParams(min_tokens=3),
+        eos_token_ids={4, 5},
+    )
+    context.assign_to_cache(0)
+    vocab_mask = context.get_min_token_logit_mask(4)
+    assert len(vocab_mask) == 4
+    assert vocab_mask[0].tolist() == [[0, 4], [0, 5]]
+    assert vocab_mask[1].tolist() == [[0, 4], [0, 5]]
+    assert vocab_mask[2].tolist() == [[0, 4], [0, 5]]
+    assert vocab_mask[3].tolist() == []
+
+    context.update(1)
+    context.update(1)
+    context.update(1)
+    context.update(1)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == []
+
+
+def test_context__get_min_token_logit_mask_with_no_eos_token_ids():
+    context = TextContext(
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+        sampling_params=SamplingParams(min_tokens=3),
+    )
+    context.assign_to_cache(0)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == []
+
+    context.update(1)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == []
+
+    context.update(2)
+    vocab_mask = context.get_min_token_logit_mask(3)
+    assert len(vocab_mask) == 3
+    assert vocab_mask[0].tolist() == []
+    assert vocab_mask[1].tolist() == []
+    assert vocab_mask[2].tolist() == []
+
+
+def test_context__get_min_token_logit_mask_with_no_min_new_tokens():
+    context = TextContext(
+        prompt="this is a test prompt",
+        max_length=10,
+        tokens=np.array([0, 1, 2, 3]),
+        eos_token_ids={4, 5},
+    )
+    context.assign_to_cache(0)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == []
+
+    context.update(1)
+    vocab_mask = context.get_min_token_logit_mask(1)
+    assert len(vocab_mask) == 1
+    assert vocab_mask[0].tolist() == []
+
+    context.update(2)
+    vocab_mask = context.get_min_token_logit_mask(3)
+    assert len(vocab_mask) == 3
+    assert vocab_mask[0].tolist() == []
+    assert vocab_mask[1].tolist() == []
+    assert vocab_mask[2].tolist() == []
+
+
 def test_context__eos():
     context = TextContext(
         prompt="this is a test prompt",

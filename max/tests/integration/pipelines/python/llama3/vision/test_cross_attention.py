@@ -232,7 +232,12 @@ def test_cross_attention(
     seq_ids = kv_manager.claim(n=batch_size)
     # Use cross states sequence length when fetching from the KV manager since
     # KV are cross states.
-    batch = [create_text_context(s, np.empty(cross_seq_len)) for s in seq_ids]
+    batch = [
+        create_text_context(
+            s, np.empty(cross_seq_len), max_length=int(cross_seq_len * 1.1)
+        )
+        for s in seq_ids
+    ]
     kv_cache_inputs = kv_manager.fetch(batch)[0]
 
     # Initialize model inputs.

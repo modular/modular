@@ -12,10 +12,11 @@ from max.pipelines.core import InputContext, TextContext
 def create_text_context(
     cache_seq_id: int,
     tokens: np.ndarray,
+    max_length: int = 1000,
 ) -> InputContext:
     ctx = TextContext(
         prompt=tokens.tolist(),
-        max_length=1000,
+        max_length=max_length,
         tokens=tokens,
     )
     ctx.assign_to_cache(cache_seq_id)
