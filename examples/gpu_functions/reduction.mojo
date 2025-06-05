@@ -44,7 +44,7 @@ alias dtype = DType.int32
 
 fn sum_kernel[
     size: Int, batch_size: Int
-](out: UnsafePointer[Int32], a: UnsafePointer[Int32],):
+](output: UnsafePointer[Int32], a: UnsafePointer[Int32],):
     """Efficent reduction of the vector a."""
     sums = stack_allocation[
         TPB,
@@ -80,7 +80,7 @@ fn sum_kernel[
         warp_sum = warp.sum(warp_sum)
 
         if tid == 0:
-            _ = Atomic.fetch_add(out, warp_sum)
+            _ = Atomic.fetch_add(output, warp_sum)
 
 
 # Benchmark function for sum_kernel

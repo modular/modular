@@ -18,7 +18,7 @@ from testing import *
 
 
 fn add_constant_fn(
-    out: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
     input: UnsafePointer[Float32],
     constant: Float32,
     len: Int,
@@ -26,7 +26,7 @@ fn add_constant_fn(
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = input[tid] + constant
+    output[tid] = input[tid] + constant
 
 
 def run_add_constant(ctx: DeviceContext):

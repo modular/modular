@@ -1649,7 +1649,7 @@ struct Select:
         _synchronous: Bool,
         _trace_name: StaticString,
     ](
-        out: FusedOutputTensor,
+        output: FusedOutputTensor,
         condition: FusedInputTensor,
         true_case: FusedInputTensor,
         false_case: FusedInputTensor,
@@ -1657,12 +1657,14 @@ struct Select:
     ) capturing raises:
         @parameter
         @always_inline
-        fn func[width: Int](idx: IndexList[out.rank]) -> SIMD[out.dtype, width]:
+        fn func[
+            width: Int
+        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, width]:
             var cond = condition._fused_load[width](idx)
-            var tc = rebind[SIMD[out.dtype, width]](
+            var tc = rebind[SIMD[output.dtype, width]](
                 true_case._fused_load[width](idx)
             )
-            var fc = rebind[SIMD[out.dtype, width]](
+            var fc = rebind[SIMD[output.dtype, width]](
                 false_case._fused_load[width](idx)
             )
             return cond.select(tc, fc)
@@ -1672,7 +1674,7 @@ struct Select:
             target=target,
             _synchronous=_synchronous,
             _trace_name=_trace_name,
-        ](out, ctx)
+        ](output, ctx)
 
 
 @compiler.register("mo.trunc")

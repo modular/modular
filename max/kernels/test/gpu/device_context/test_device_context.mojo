@@ -23,14 +23,14 @@ from testing import assert_equal
 fn vec_func(
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],
-    out: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
     len: Int,
     supplement: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + supplement
+    output[tid] = in0[tid] + in1[tid] + supplement
 
 
 def test_is_compatible(ctx: DeviceContext):

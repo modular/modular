@@ -45,9 +45,9 @@ from utils.index import Index
 
 
 fn naive_matrix_multiplication_cpu(
-    out: ManagedTensorSlice,
-    a: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
-    b: ManagedTensorSlice[dtype = out.dtype, rank = out.rank],
+    output: ManagedTensorSlice,
+    a: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
+    b: ManagedTensorSlice[dtype = output.dtype, rank = output.rank],
 ):
     """A naive matrix multiplication used as a fallback on CPU hardware."""
     var M = a.shape()[0]
@@ -57,7 +57,7 @@ fn naive_matrix_multiplication_cpu(
     for row in range(M):
         for col in range(N):
             for k in range(K):
-                out[row, col] = out[row, col] + a[row, k] * b[k, col]
+                output[row, col] = output[row, col] + a[row, k] * b[k, col]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -773,9 +773,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
     ](
-        out: OutputTensor[rank=2],
-        a: InputTensor[dtype = out.dtype, rank = out.rank],
-        b: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor[rank=2],
+        a: InputTensor[dtype = output.dtype, rank = output.rank],
+        b: InputTensor[dtype = output.dtype, rank = output.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
@@ -785,7 +785,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
         if target == "gpu":
             a_layout = a.to_layout_tensor()
             b_layout = b.to_layout_tensor()
-            out_layout = out.to_layout_tensor()
+            out_layout = output.to_layout_tensor()
 
             M = a_layout.shape[0]()
             N = b_layout.shape[1]()
@@ -794,9 +794,9 @@ struct MatrixMultiplication[algorithm: StaticString]:
 
             # Zero out the memory in the outbound tensor.
             gpu_ctx.enqueue_memset(
-                DeviceBuffer[out.dtype](
+                DeviceBuffer[output.dtype](
                     gpu_ctx,
-                    rebind[UnsafePointer[Scalar[out.dtype]]](out_layout.ptr),
+                    rebind[UnsafePointer[Scalar[output.dtype]]](out_layout.ptr),
                     M * N,
                     owning=False,
                 ),
@@ -824,7 +824,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BN = 32
                 gpu_ctx.enqueue_function[
                     naive_matrix_multiplication[
-                        out.dtype,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -843,7 +843,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias BN = 32
                 gpu_ctx.enqueue_function[
                     coalescing_matrix_multiplication[
-                        out.dtype,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -864,7 +864,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = BM * BN
                 gpu_ctx.enqueue_function[
                     tiled_matrix_multiplication[
-                        out.dtype,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -888,7 +888,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = (BM * BN) // TM
                 gpu_ctx.enqueue_function[
                     tiled_register_matrix_multiplication[
-                        out.dtype,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -914,7 +914,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
                 gpu_ctx.enqueue_function[
                     block_tiled_matrix_multiplication[
-                        out.dtype,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -941,7 +941,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 alias NUM_THREADS = (BM * BN) // (TM * TN)
                 gpu_ctx.enqueue_function[
                     block_tiled_vectorized_matrix_multiplication[
-                        out.dtype,
+                        output.dtype,
                         a_layout.layout,
                         b_layout.layout,
                         out_layout.layout,
@@ -976,7 +976,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     alias NUM_WARPS = (BM // WM) * (BN // WN)
                     gpu_ctx.enqueue_function[
                         tensor_core_matrix_multiplication[
-                            out.dtype,
+                            output.dtype,
                             a_layout.layout,
                             b_layout.layout,
                             out_layout.layout,
@@ -1002,4 +1002,4 @@ struct MatrixMultiplication[algorithm: StaticString]:
                 raise Error("No known matmul algorithm:", algorithm)
 
         else:
-            naive_matrix_multiplication_cpu(out, a, b)
+            naive_matrix_multiplication_cpu(output, a, b)

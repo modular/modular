@@ -26,8 +26,8 @@ fn run_func[
     ],
 ](ctx: DeviceContext, val: Scalar[type] = 0) raises:
     @parameter
-    fn kernel(out: UnsafePointer[Scalar[type]], input: Scalar[type]):
-        out[0] = kernel_fn(input)
+    fn kernel(output: UnsafePointer[Scalar[type]], input: Scalar[type]):
+        output[0] = kernel_fn(input)
 
     var out = ctx.enqueue_create_buffer[type](1)
     ctx.enqueue_function_experimental[kernel](out, val, grid_dim=1, block_dim=1)

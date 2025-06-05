@@ -54,14 +54,14 @@ struct OneS(DevicePassable):
 fn vec_func(
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     s: TwoS,
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
+    output[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
 
 
 fn test_function_unchecked(ctx: DeviceContext) raises:

@@ -51,14 +51,14 @@ fn kl_div(x: SIMD, y: __type_of(x)) -> __type_of(x):
 fn kl_div[
     type: DType, //
 ](
-    out: UnsafePointer[Scalar[type]],
-    x: __type_of(out),
-    y: __type_of(out),
+    output: UnsafePointer[Scalar[type]],
+    x: __type_of(output),
+    y: __type_of(output),
     len: Int,
 ) raises:
     @parameter
     fn kl_div_elementwise[simd_width: Int, rank: Int](idx: IndexList[rank]):
-        out.store(
+        output.store(
             idx[0],
             kl_div(
                 x.load[width=simd_width](idx[0]),
@@ -254,8 +254,8 @@ fn cosine[
 fn relative_difference[
     dtype: DType, //,
 ](
-    out: UnsafePointer[Scalar[dtype]],
-    ref_out: __type_of(out),
+    output: UnsafePointer[Scalar[dtype]],
+    ref_out: __type_of(output),
     len: Int,
 ) -> Float64:
     var sum_abs_diff: Float64 = 0.0
@@ -263,7 +263,7 @@ fn relative_difference[
     var size = len
 
     for idx in range(len):
-        var ui = out[idx].cast[DType.float64]()
+        var ui = output[idx].cast[DType.float64]()
         var vi = ref_out[idx].cast[DType.float64]()
 
         sum_abs_diff += abs(ui - vi).cast[DType.float64]()
@@ -284,10 +284,10 @@ fn relative_difference[
 
 fn _sqrt[
     type: DType, //
-](out: UnsafePointer[Scalar[type]], x: __type_of(out), len: Int) raises:
+](output: UnsafePointer[Scalar[type]], x: __type_of(output), len: Int) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
-        out.store(
+        output.store(
             idx[0],
             rebind[SIMD[type, simd_width]](
                 sqrt(x.load[width=simd_width](idx[0]))
@@ -300,14 +300,14 @@ fn _sqrt[
 fn _mul[
     type: DType, //
 ](
-    out: UnsafePointer[Scalar[type]],
-    x: __type_of(out),
-    y: __type_of(out),
+    output: UnsafePointer[Scalar[type]],
+    x: __type_of(output),
+    y: __type_of(output),
     len: Int,
 ) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
-        out.store(
+        output.store(
             idx[0],
             rebind[SIMD[type, simd_width]](
                 x.load[width=simd_width](idx[0])
@@ -321,14 +321,14 @@ fn _mul[
 fn _div[
     type: DType, //
 ](
-    out: UnsafePointer[Scalar[type]],
-    x: __type_of(out),
+    output: UnsafePointer[Scalar[type]],
+    x: __type_of(output),
     c: Scalar[type],
     len: Int,
 ) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
-        out.store(
+        output.store(
             idx[0],
             rebind[SIMD[type, simd_width]](x.load[width=simd_width](idx[0]))
             / c,
