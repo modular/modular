@@ -113,7 +113,7 @@ def _impl(rctx):
     rctx.file("BUILD.bazel", """
 platform(
     name = "modular_host_platform",
-    parents = ["@local_config_platform//:host"],
+    parents = ["@platforms//host"],
     visibility = ["//visibility:public"],
     constraint_values = [{constraints}],
     exec_properties = {{
