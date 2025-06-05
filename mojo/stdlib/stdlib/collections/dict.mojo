@@ -774,9 +774,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             present, otherwise an empty Optional.
         """
         var hash = hash(key)
-        var found: Bool
-        var index: Int
-        found, _, index = self._find_index(hash, key)
+        var found, _, index = self._find_index(hash, key)
 
         if found:
             ref entry = self._entries[index]
@@ -841,10 +839,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             "KeyError" if the key was not present in the dictionary.
         """
         var hash = hash(key)
-        var found: Bool
-        var slot: UInt64
-        var index: Int
-        found, slot, index = self._find_index(hash, key)
+        var found, slot, index = self._find_index(hash, key)
         if found:
             self._set_index(slot, Self.REMOVED)
             ref entry = self._entries[index]
@@ -982,10 +977,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         @parameter
         if not safe_context:
             self._maybe_resize()
-        var found: Bool
-        var slot: UInt64
-        var index: Int
-        found, slot, index = self._find_index(entry.hash, entry.key)
+        var found, slot, index = self._find_index(entry.hash, entry.key)
 
         self._entries[index] = entry^
         if not found:

@@ -888,7 +888,7 @@ struct IntervalTree[
         work_list.append((self._root, String(), True))
 
         while work_list:
-            node, indent, is_last = work_list.pop()
+            var node, indent, is_last = work_list.pop()
             if not node:
                 continue
             writer.write(indent)
@@ -940,7 +940,7 @@ struct IntervalTree[
 
         while work_list:
             # Recursively fills the grid with node values and connecting branches.
-            node, level, left, right = work_list.pop()
+            var node, level, left, right = work_list.pop()
             if not node:
                 continue
 

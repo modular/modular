@@ -235,10 +235,7 @@ struct Span[
             This function allocates when the step is negative, to avoid a memory
             leak, take ownership of the value.
         """
-        var start: Int
-        var end: Int
-        var step: Int
-        start, end, step = slc.indices(len(self))
+        var start, end, step = slc.indices(len(self))
 
         # TODO: Introduce a new slice type that just has a start+end but no
         # step.  Mojo supports slice type inference that can express this in the
