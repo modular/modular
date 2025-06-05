@@ -38,12 +38,12 @@ from max.pipelines.architectures.llama3.llama3 import (
     ConstantLayerNorm,
     StackedMLP,
 )
-from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
+from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 
 class Qwen3(Transformer):
-    def __init__(self, config: Llama3Config):
+    def __init__(self, config: Qwen3Config):
         assert len(config.devices) == 1
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,

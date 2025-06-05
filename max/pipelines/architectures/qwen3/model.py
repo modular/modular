@@ -16,18 +16,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Literal, Optional
 
-from max.driver import Device, Tensor
-from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max._core.engine import Model
+from max.driver import Tensor
 from max.graph import Graph, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import Module, ReturnLogits, Signals
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-    SupportedEncoding,
-)
-from transformers.models.auto.configuration_auto import AutoConfig
+from max.nn.layer import Module
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Qwen3Config
@@ -56,53 +49,6 @@ class Qwen3Model(LlamaModelBase):
 
     state_dict: dict[str, Any]
     """Weights to load into the model."""
-
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        adapter: Optional[WeightsAdapter] = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-    ) -> None:
-        """
-        Args:
-            pipeline_config: The configuration for this pipeline.
-            session: The container for the runtime for this model.
-        """
-        super().__init__(
-            pipeline_config,
-            session,
-            huggingface_config,
-            encoding,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter,
-            return_logits,
-        )
-        self.model = self.load_model(session)
-
-        # Initialize state needed for communication collectives.
-        # Contents of signal buffer should be filled with zeros.
-        self.signal_buffers = (
-            [
-                Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,),
-                    dtype=DType.uint8,
-                    device=dev,
-                )
-                for dev in self.devices
-            ]
-            if len(self.devices) > 1
-            # Skip creating buffers for single-device, where communication
-            # collectives shouldn't be called.
-            else []
-        )
 
     def _build_graph(
         self, weights: Weights, adapter: Optional[WeightsAdapter] = None
@@ -137,7 +83,11 @@ class Qwen3Model(LlamaModelBase):
             weight_alignment=1,
             # Stops strict from raising error when sharing LM head weights
             # (as LM head is never technically loaded from the state dict)
-            strict=(not self.huggingface_config.tie_word_embeddings),
+            strict=(
+                not getattr(
+                    self.huggingface_config, "tie_word_embeddings", False
+                )
+            ),
         )
 
         self.state_dict = nn_model.state_dict()
