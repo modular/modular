@@ -3804,9 +3804,10 @@ auto TupleNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         }
       }
     } else if (isLValueType) {
-      emitter.emitError(getLoc(), "cannot unpack value of type ")
-          << expectedType << " into " << exprs.size() << " value"
-          << plural(exprs.size()) << getRange();
+      if (!isa<TypeCheckErrorType>(expectedType))
+        emitter.emitError(getLoc(), "cannot unpack value of type ")
+            << expectedType << " into " << exprs.size() << " value"
+            << plural(exprs.size()) << getRange();
       return {};
     }
   }
