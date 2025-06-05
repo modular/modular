@@ -38,7 +38,7 @@ fn fill_b(buf: NDBuffer[mut=True, *_]):
             buf[i, j] = Scalar[buf.type](i // (j + 1) + j)
 
 
-fn clear_c(buf: NDBuffer):
+fn clear_c(buf: NDBuffer[mut=True, *_, **_]):
     buf.zero()
 
 
