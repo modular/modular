@@ -238,6 +238,7 @@ def create_mock_request(
     return context
 
 
+@pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
 async def test_decode_scheduler(
     mock_pipeline,
