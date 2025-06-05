@@ -17,8 +17,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.nn import LinearV1, RMSNormV1
+from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
-    MHAMaskVariant,
     causal_flash_attention_gpu,
     flare_mla_prefill_ragged,
     null_mask_flash_attention_gpu,

@@ -38,7 +38,7 @@ modular_py_test(
 
 modular_py_test(
     name = "kvcache_distributed_gpu_tests",
-    srcs = glob(["*_gpu.py"]) + ["conftest.py"],
+    srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
     gpu_constraints = ["//:has_4_gpus"],
     tags = ["gpu"],
     deps = [
