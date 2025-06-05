@@ -1321,8 +1321,7 @@ struct String(
         """
         return self.as_string_slice().isspace()
 
-    # TODO(MSTDL-590): String.split() should return `StringSlice`s.
-    fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
+    fn split(self, sep: StringSlice, maxsplit: Int = -1) -> List[String]:
         """Split the string by a separator.
 
         Args:
@@ -1333,9 +1332,6 @@ struct String(
         Returns:
             A List of Strings containing the input split by the separator.
 
-        Raises:
-            If the separator is empty.
-
         Examples:
 
         ```mojo
@@ -1345,8 +1341,9 @@ struct String(
         _ = String("hello,,world").split(",") # ["hello", "", "world"]
         # Splitting with maxsplit
         _ = String("1,2,3").split(",", 1) # ['1', '2,3']
+        # Splitting with an empty separator
+        _ = StringSlice("123").split("") # ["", "1", "2", "3", ""]
         ```
-        .
         """
         return _to_string_list(
             self.as_string_slice().split(sep, maxsplit=maxsplit)

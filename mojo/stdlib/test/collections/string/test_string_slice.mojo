@@ -526,17 +526,13 @@ def test_split():
     assert_true(len(S("").split(" ")) == 1)
     assert_true(len(S(",").split(",")) == 2)
     assert_true(len(S(" ").split(" ")) == 2)
-    # assert_true(len(S("").split("")) == 2) # TODO(#3528)
+    assert_true(len(S("").split("")) == 2)
     assert_true(len(S("  ").split(" ")) == 3)
     assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
     assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
     assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
-
-    # TODO(#3528): delete this test
-    with assert_raises():
-        _ = S("").split("")
 
     # Split in middle
     assert_equal(S("faang").split("n"), L("faa", "g"))
@@ -566,11 +562,10 @@ def test_split():
     s3 = S("Лорем ипсум долор сит амет").split("м")
     assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
 
-    # TODO(#3528)
-    # assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
-    # assert_equal(S("").join(S("123").split("")), "123")
-    # assert_equal(S(",1,2,3,").split(","), S("123").split(""))
-    # assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():

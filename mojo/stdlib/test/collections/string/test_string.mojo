@@ -679,6 +679,9 @@ def test_rfind():
 
 
 def test_split():
+    alias S = StaticString
+    alias L = List[StaticString]
+
     # empty separators default to whitespace
     var d = String("hello world").split()
     assert_true(len(d) == 2)
@@ -741,11 +744,9 @@ def test_split():
     assert_true(len(String(" ").split()) == 0)
     assert_true(len(String().split(" ")) == 1)
     assert_true(len(String(" ").split(" ")) == 2)
+    assert_true(len(S("").split("")) == 2)
     assert_true(len(String("  ").split(" ")) == 3)
     assert_true(len(String("   ").split(" ")) == 4)
-
-    with assert_raises():
-        _ = String().split("")
 
     # Split in middle
     var d1 = String("n")
@@ -818,8 +819,10 @@ def test_split():
     assert_equal(res6[3], "сит")
     assert_equal(res6[4], "амет")
 
-    with assert_raises(contains="Separator cannot be empty."):
-        _ = String("1, 2, 3").split("")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
