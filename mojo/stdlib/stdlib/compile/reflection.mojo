@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from sys.info import _current_target
 
 

@@ -31,7 +31,6 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-from collections.string import StringSlice
 from sys import bitwidthof, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: env MODULAR_PROFILE_FILENAME="-" %mojo-no-debug %s | FileCheck %s
 
-from collections.string import StaticString
 from pathlib import Path
 
 from runtime.asyncrt import create_task

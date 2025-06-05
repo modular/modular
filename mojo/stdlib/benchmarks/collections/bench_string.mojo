@@ -15,7 +15,7 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from collections.string import String
+from collections import Dict, Optional
 from collections.string._utf8 import _is_valid_utf8
 from memory import stack_allocation
 from os import abort

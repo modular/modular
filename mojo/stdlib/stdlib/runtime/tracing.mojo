@@ -14,7 +14,6 @@
 
 
 from collections.optional import OptionalReg
-from collections.string import StaticString
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
 

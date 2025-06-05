@@ -50,11 +50,9 @@ Note that the following features from Python's `str.format()` are
 - Accessing an indexed value from the argument (for example, `"{1[0]}"`).
 - Format specifiers for controlling output format (width, precision, and so on).
 
-Example:
+Examples:
 
 ```mojo
-from collections.string import String
-
 # Basic formatting
 var s1 = String("Hello {0}!").format("World")  # Hello World!
 

@@ -26,7 +26,6 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from collections.string import StaticString
 from collections.optional import OptionalReg
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (

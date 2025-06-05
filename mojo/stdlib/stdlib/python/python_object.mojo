@@ -25,8 +25,8 @@ from sys.ffi import c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from compile.reflection import get_type_name
 
-# This apparently redundant import is needed so PythonBindingsGen.cpp can find
-# the StringLiteral declaration.
+# NOTE: This apparently redundant import is needed so PythonBindingsGen.cpp can
+# find the StringLiteral declaration.
 from builtin.string_literal import StringLiteral
 from memory import UnsafePointer
 
