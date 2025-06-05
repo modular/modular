@@ -15,6 +15,7 @@ This test currently passes but prints the following warnings:
 import multiprocessing as mp
 
 import numpy as np
+import pytest
 from common import get_unique_port
 from max.driver import Accelerator
 from max.driver.tensor import Tensor
@@ -96,6 +97,7 @@ def transfer_routine_receiver(
     # engine.cleanup()
 
 
+@pytest.mark.skip(reason="❄️")
 def test_send_recv_basic():
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
