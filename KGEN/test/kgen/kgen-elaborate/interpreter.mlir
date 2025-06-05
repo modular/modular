@@ -791,3 +791,82 @@ kgen.generator export @test_union() {
   %1 = kgen.param.constant: index = <union_in_memory>
   kgen.return
 }
+
+// -----
+// COME: test for MOCO-1978
+!structTy = !kgen.struct<(!kgen.pointer<index>)>
+!structTy2 = !kgen.struct<(!kgen.pointer<!structTy>, !kgen.pointer<!structTy>)>
+
+// CHECK: [[BLOB:#.*]] = #interp.memory_handle<8, "0x0004000000000000">
+// CHECK: [[BLOB1:#.*]] = #interp.memory_handle<8, "0x00CA9A3B00000000">
+// CHECK: [[BLOB2:#.*]] = #interp.memory_handle<8, "0x08CA9A3B0000000008CA9A3B00000000">
+
+// CHECK-LABEL @f
+kgen.generator @f(
+    %arg0: index) -> !kgen.pointer<index> no_inline {
+  %idx8 = index.constant 8
+  %0 = pop.aligned_alloc %idx8, %idx8 : !kgen.pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<none> to !kgen.pointer<index>
+  pop.store %arg0, %1: !kgen.pointer<index>
+  kgen.return %1: !kgen.pointer<index>
+}
+
+// CHECK-LABEL @g
+kgen.generator @g(
+    %arg0: !kgen.pointer<index>) -> !kgen.pointer<!structTy> no_inline {
+  %idx8 = index.constant 8
+  %0 = pop.aligned_alloc %idx8, %idx8 : !kgen.pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<none> to !kgen.pointer<!structTy>
+  %2 = kgen.struct.gep %1[0] : <!structTy>
+  pop.store %arg0, %2: !kgen.pointer<pointer<index>>
+  kgen.return %1: !kgen.pointer<!structTy>
+}
+
+// CHECK-LABEL @h
+kgen.generator @h(%arg0: !kgen.pointer<!structTy>,%arg1: !kgen.pointer<!structTy>) -> !kgen.pointer<!structTy2> no_inline {
+  %idx8 = index.constant 8
+  %idx16 = index.constant 16
+  %0 = pop.aligned_alloc %idx8, %idx16 : !kgen.pointer<none>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<none> to !kgen.pointer<!structTy2>
+  %2 = kgen.struct.gep %1[0] : <!structTy2>
+  %3 = kgen.struct.gep %1[1] : <!structTy2>
+  pop.store %arg0, %2: !kgen.pointer<pointer<!structTy>>
+  pop.store %arg1, %3: !kgen.pointer<pointer<!structTy>>
+  kgen.return %1: !kgen.pointer<!structTy2>
+}
+
+// CHECK-LABEL @m
+kgen.generator @m(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<!structTy2>) -> !kgen.pointer<index> no_inline {
+  %1 = kgen.struct.gep %arg1[0] : <!structTy2>
+  %2 = pop.load %1 : !kgen.pointer<pointer<!structTy>>
+  %3 = kgen.struct.gep %2[0] : <!structTy>
+  %4 = pop.load %3 : !kgen.pointer<pointer<index>>
+  kgen.return %4: !kgen.pointer<index>
+}
+
+// CHECK-LABEL @top
+kgen.generator export @top() -> () {
+  kgen.param.declare v0 = <512>
+  kgen.param.declare v1 = <1024>
+  kgen.param.declare v2 = <2048>
+
+  // COM: check that BLOB1 and BLOB2 have pointer regions.
+  // CHECK: kgen.param.materialize
+  // CHECK-SAME: [[BLOB]], heap, [], [])
+  // CHECK-SAME: [[BLOB1]], heap, [(0, 0, 0)], [])
+  // CHECK-SAME: [[BLOB2]], heap, [(0, 1, 0), (8, 1, 0)], [])
+  %3 = kgen.param.materialize: !kgen.pointer<index> = <
+    apply(:(!kgen.pointer<index>, !kgen.pointer<!structTy2>) -> !kgen.pointer<index> @m,
+      store_to_mem(v0),
+      apply(:(!kgen.pointer<!structTy>, !kgen.pointer<!structTy>) -> !kgen.pointer<!structTy2> @h,
+        apply(:(!kgen.pointer<index>) -> !kgen.pointer<!structTy> @g,
+            apply(:(index) -> !kgen.pointer<index> @f, v1)
+        ),
+        apply(:(!kgen.pointer<index>) -> !kgen.pointer<!structTy> @g,
+            apply(:(index) -> !kgen.pointer<index> @f, v1)
+        )
+      )
+    )
+  >
+  kgen.return
+}
