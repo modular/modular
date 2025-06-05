@@ -3750,12 +3750,12 @@ struct AvgPool:
         paddings: InputTensor[dtype=int_type, rank=1],
     ):
         avg_pool[count_boundary=count_boundary](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            filter.to_layout_tensor(),
+            strides.to_layout_tensor(),
+            dilations.to_layout_tensor(),
+            paddings.to_layout_tensor(),
+            output.to_layout_tensor(),
             False,
         )
 
@@ -3770,12 +3770,14 @@ struct AvgPool:
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
-        return pool_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+        return rebind[IndexList[input.rank]](
+            pool_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
+                strides.to_layout_tensor(),
+                dilations.to_layout_tensor(),
+                paddings.to_layout_tensor(),
+            )
         )
 
 
@@ -3795,12 +3797,12 @@ struct AvgPoolCeilModeTrue:
         paddings: InputTensor[dtype=int_type, rank=1],
     ):
         avg_pool[count_boundary=count_boundary](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            filter.to_layout_tensor(),
+            strides.to_layout_tensor(),
+            dilations.to_layout_tensor(),
+            paddings.to_layout_tensor(),
+            output.to_layout_tensor(),
             True,
         )
 
@@ -3816,12 +3818,14 @@ struct AvgPoolCeilModeTrue:
         paddings: InputTensor[dtype=int_type, rank=1],
         ctx: DeviceContextPtr,
     ) raises -> IndexList[input.rank]:
-        return pool_shape_ceil[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+        return rebind[IndexList[input.rank]](
+            pool_shape_ceil[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
+                strides.to_layout_tensor(),
+                dilations.to_layout_tensor(),
+                paddings.to_layout_tensor(),
+            )
         )
 
 
@@ -3840,12 +3844,12 @@ struct MaxPool:
         paddings: InputTensor[dtype=int_type, rank=1],
     ):
         max_pool(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            filter.to_layout_tensor(),
+            strides.to_layout_tensor(),
+            dilations.to_layout_tensor(),
+            paddings.to_layout_tensor(),
+            output.to_layout_tensor(),
             False,
         )
 
@@ -3860,12 +3864,14 @@ struct MaxPool:
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
-        return pool_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+        return rebind[IndexList[input.rank]](
+            pool_shape[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
+                strides.to_layout_tensor(),
+                dilations.to_layout_tensor(),
+                paddings.to_layout_tensor(),
+            )
         )
 
 
@@ -3884,12 +3890,12 @@ struct MaxPoolCeilModeTrue:
         paddings: InputTensor[dtype=int_type, rank=1],
     ):
         max_pool(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            input.to_layout_tensor(),
+            filter.to_layout_tensor(),
+            strides.to_layout_tensor(),
+            dilations.to_layout_tensor(),
+            paddings.to_layout_tensor(),
+            output.to_layout_tensor(),
             True,
         )
 
@@ -3904,12 +3910,14 @@ struct MaxPoolCeilModeTrue:
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
     ) raises -> IndexList[input.rank]:
-        return pool_shape_ceil[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+        return rebind[IndexList[input.rank]](
+            pool_shape_ceil[single_thread_blocking_override=True](
+                input.to_layout_tensor(),
+                filter.to_layout_tensor(),
+                strides.to_layout_tensor(),
+                dilations.to_layout_tensor(),
+                paddings.to_layout_tensor(),
+            )
         )
 
 

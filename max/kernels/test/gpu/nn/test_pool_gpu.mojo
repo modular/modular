@@ -17,8 +17,16 @@ import builtin
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, TestTensor
+from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer, stack_allocation
+from layout import (
+    LayoutTensor,
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout._fillers import arange
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import (
     PoolMethod,
@@ -111,184 +119,266 @@ fn test_average_pool_2d_ceil_includeBound_gpu(ctx: DeviceContext) raises:
 fn pool[
     count_boundary: Bool = False
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
-    alias in_shape = DimList(2, 5, 7, 2)
-    alias out_shape = DimList(2, 2, 2, 2)
+    alias in_layout = Layout.row_major(2, 5, 7, 2)
+    alias out_layout = Layout.row_major(2, 2, 2, 2)
 
-    var input_tensor = TestTensor[DType.float32, 4](in_shape)
-    fill_tensor(input_tensor.ndbuffer.data, input_tensor.num_elements)
+    var in_heap = List[Float32](capacity=in_layout.size())
+    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    arange(input_tensor)
 
-    var output_tensor = TestTensor[DType.float32, 4](out_shape)
-    fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
-
-    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
-        Int(out_shape.product())
+    var out_heap = List[Float32](capacity=out_layout.size())
+    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
+        0
     )
-    var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)
-    fill_tensor(h_output_ref.data, output_tensor.num_elements, 0)
+
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(Int(out_layout.size()))
+    var h_output_ref = LayoutTensor[DType.float32, Layout.row_major[4]()](
+        h_output_ref_ptr,
+        RuntimeLayout[
+            Layout.row_major[4](), element_type = output_tensor.layout_int_type
+        ].row_major(
+            IndexList[4, element_type = output_tensor.layout_int_type](
+                2, 2, 2, 2
+            )
+        ),
+    ).fill(0)
 
     var paddings = List[Int32](0, 0, 0, 0)
     var filter = List[Int32](3, 2)
     var stride = List[Int32](2, 3)
     var dilation = List[Int32](1, 1)
 
-    var paddings_tensor = TestTensor[DType.int32, 1](DimList(4), paddings)
-    var filter_tensor = TestTensor[DType.int32, 1](DimList(2), filter)
-    var stride_tensor = TestTensor[DType.int32, 1](DimList(2), stride)
-    var dilation_tensor = TestTensor[DType.int32, 1](DimList(2), dilation)
+    var paddings_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        paddings,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE), element_type = DType.int32
+        ].row_major(IndexList[1, element_type = DType.int32](4)),
+    )
+    var filter_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        filter,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE), element_type = DType.int32
+        ].row_major(IndexList[1, element_type = DType.int32](2)),
+    )
+    var stride_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        stride,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE), element_type = DType.int32
+        ].row_major(IndexList[1, element_type = DType.int32](2)),
+    )
+    var dilation_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        dilation,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE), element_type = DType.int32
+        ].row_major(IndexList[1, element_type = DType.int32](2)),
+    )
 
     # Copy data to device
-    var d_input = DeviceNDBuffer[DType.float32, 4](in_shape, ctx=ctx)
-    var d_output = DeviceNDBuffer[DType.float32, 4](out_shape, ctx=ctx)
+    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
+        in_layout.size()
+    )
+    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
+        out_layout.size()
+    )
+    var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
+    var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input.buffer, input_tensor.ndbuffer.data)
-    ctx.enqueue_copy(d_output.buffer, output_tensor.ndbuffer.data)
+    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
+    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
 
     if pool_method == PoolMethod.MAX:
         max_pool_gpu[int_type = DType.int32](
             ctx,
-            d_input.tensor,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
-            d_output.tensor,
+            d_input,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            d_output,
         )
         max_pool[int_type = DType.int32](
-            input_tensor.ndbuffer,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
             h_output_ref,
         )
     else:
         avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
             ctx,
-            d_input.tensor,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
-            d_output.tensor,
+            d_input,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            d_output,
         )
         avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-            input_tensor.ndbuffer,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
             h_output_ref,
         )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ndbuffer.data, d_output.buffer)
+    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same
-    assert_allclose(h_output_ref, output_tensor.ndbuffer)
+    assert_allclose(h_output_ref, output_tensor)
 
-    _ = input_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
-    _ = paddings_tensor
-    _ = output_tensor
     h_output_ref_ptr.free()
 
 
 fn pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
-    alias in_shape = DimList(1, 4, 4, 1)
-    alias out_shape = DimList(1, 2, 2, 1)
+    alias in_layout = Layout.row_major(1, 4, 4, 1)
+    alias out_layout = Layout.row_major(1, 2, 2, 1)
 
-    var input_tensor = TestTensor[DType.float32, 4](in_shape)
-    fill_tensor(input_tensor.ndbuffer.data, input_tensor.num_elements)
+    var in_heap = List[Float32](capacity=in_layout.size())
+    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    arange(input_tensor)
 
-    var output_tensor = TestTensor[DType.float32, 4](out_shape)
-    fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
-
-    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
-        Int(out_shape.product())
+    var out_heap = List[Float32](capacity=out_layout.size())
+    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
+        0
     )
-    var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)
-    fill_tensor(h_output_ref.data, output_tensor.num_elements, 0)
+
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(out_layout.size())
+    var h_output_ref = LayoutTensor[DType.float32, out_layout](
+        h_output_ref_ptr,
+        RuntimeLayout[
+            out_layout, element_type = output_tensor.layout_int_type
+        ].row_major(
+            IndexList[4, element_type = output_tensor.layout_int_type](
+                1, 2, 2, 1
+            )
+        ),
+    ).fill(0)
 
     var paddings = List[Int32](0, 0, 0, 0)
     var filter = List[Int32](3, 3)
     var stride = List[Int32](2, 2)
     var dilation = List[Int32](1, 1)
 
-    var paddings_tensor = TestTensor[DType.int32, 1](DimList(4), paddings)
-    var filter_tensor = TestTensor[DType.int32, 1](DimList(2), filter)
-    var stride_tensor = TestTensor[DType.int32, 1](DimList(2), stride)
-    var dilation_tensor = TestTensor[DType.int32, 1](DimList(2), dilation)
+    var paddings_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        paddings,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](4)
+        ),
+    )
+    var filter_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        filter,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
+    var stride_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        stride,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
+    var dilation_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        dilation,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
 
     # Copy data to device
-    var d_input = DeviceNDBuffer[DType.float32, 4](in_shape, ctx=ctx)
-    var d_output = DeviceNDBuffer[DType.float32, 4](out_shape, ctx=ctx)
+    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
+        in_layout.size()
+    )
+    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
+        in_layout.size()
+    )
+    var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
+    var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input.buffer, input_tensor.ndbuffer.data)
-    ctx.enqueue_copy(d_output.buffer, output_tensor.ndbuffer.data)
+    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
+    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
 
     if pool_method == PoolMethod.MAX:
         max_pool_gpu[int_type = DType.int32](
             ctx,
-            d_input.tensor,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
-            d_output.tensor,
+            d_input,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            d_output,
             ceil_mode,
         )
         max_pool[int_type = DType.int32](
-            input_tensor.ndbuffer,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
             h_output_ref,
             ceil_mode,
         )
     else:
         avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
             ctx,
-            d_input.tensor,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
-            d_output.tensor,
+            d_input,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            d_output,
             ceil_mode,
         )
         avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-            input_tensor.ndbuffer,
-            filter_tensor.ndbuffer,
-            stride_tensor.ndbuffer,
-            dilation_tensor.ndbuffer,
-            paddings_tensor.ndbuffer,
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
             h_output_ref,
             ceil_mode,
         )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ndbuffer.data, d_output.buffer)
+    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same
-    assert_allclose(h_output_ref, output_tensor.ndbuffer)
+    assert_allclose(h_output_ref, output_tensor)
 
-    _ = input_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
-    _ = paddings_tensor
-    _ = output_tensor
-    _ = paddings^
-    _ = filter^
-    _ = stride^
-    _ = dilation^
     h_output_ref_ptr.free()
 
 
@@ -297,161 +387,249 @@ fn test_avg_pool_2d_with_padding_gpu[
 ](ctx: DeviceContext) raises:
     print("== test_avg_pool_2d_with_padding_gpu:", count_boundary)
 
-    alias in_shape = DimList(1, 7, 7, 1)
-    alias out_shape = DimList(1, 7, 7, 1)
+    alias in_layout = Layout.row_major(1, 7, 7, 1)
+    alias out_layout = Layout.row_major(1, 7, 7, 1)
 
-    var input_tensor = TestTensor[DType.float32, 4](in_shape)
-    fill_tensor(input_tensor.ndbuffer.data, input_tensor.num_elements)
+    var in_heap = List[Float32](capacity=in_layout.size())
+    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    arange(input_tensor)
 
-    var output_tensor = TestTensor[DType.float32, 4](out_shape)
-    fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
-
-    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
-        Int(out_shape.product())
+    var out_heap = List[Float32](capacity=out_layout.size())
+    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
+        0
     )
-    var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)
-    fill_tensor(h_output_ref.data, output_tensor.num_elements, 0)
+
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(out_layout.size())
+    var h_output_ref = LayoutTensor[DType.float32, out_layout](
+        h_output_ref_ptr,
+        RuntimeLayout[
+            out_layout, element_type = output_tensor.layout_int_type
+        ].row_major(
+            IndexList[4, element_type = output_tensor.layout_int_type](
+                1, 7, 7, 1
+            )
+        ),
+    ).fill(0)
 
     var paddings = List[Int32](1, 1, 1, 1)
     var filter = List[Int32](3, 3)
     var stride = List[Int32](1, 1)
     var dilation = List[Int32](1, 1)
 
-    var paddings_tensor = TestTensor[DType.int32, 1](DimList(4), paddings)
-    var filter_tensor = TestTensor[DType.int32, 1](DimList(2), filter)
-    var stride_tensor = TestTensor[DType.int32, 1](DimList(2), stride)
-    var dilation_tensor = TestTensor[DType.int32, 1](DimList(2), dilation)
+    var paddings_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        paddings,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](4)
+        ),
+    )
+    var filter_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        filter,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
+    var stride_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        stride,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
+    var dilation_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        dilation,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
 
     # Copy data to device
-    var d_input = DeviceNDBuffer[DType.float32, 4](in_shape, ctx=ctx)
-    var d_output = DeviceNDBuffer[DType.float32, 4](out_shape, ctx=ctx)
+    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
+        in_layout.size()
+    )
+    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
+        in_layout.size()
+    )
+    var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
+    var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input.buffer, input_tensor.ndbuffer.data)
-    ctx.enqueue_copy(d_output.buffer, output_tensor.ndbuffer.data)
+    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
+    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
 
     avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
         ctx,
-        d_input.tensor,
-        filter_tensor.ndbuffer,
-        stride_tensor.ndbuffer,
-        dilation_tensor.ndbuffer,
-        paddings_tensor.ndbuffer,
-        d_output.tensor,
+        d_input,
+        filter_tensor,
+        stride_tensor,
+        dilation_tensor,
+        paddings_tensor,
+        d_output,
     )
     avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-        input_tensor.ndbuffer,
-        filter_tensor.ndbuffer,
-        stride_tensor.ndbuffer,
-        dilation_tensor.ndbuffer,
-        paddings_tensor.ndbuffer,
+        input_tensor,
+        filter_tensor,
+        stride_tensor,
+        dilation_tensor,
+        paddings_tensor,
         h_output_ref,
     )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ndbuffer.data, d_output.buffer)
+    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same
-    assert_allclose(h_output_ref, output_tensor.ndbuffer)
+    assert_allclose(h_output_ref, output_tensor)
 
-    _ = input_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
-    _ = paddings_tensor
-    _ = output_tensor
     h_output_ref_ptr.free()
 
 
 fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     print("== test_max_pool_pad_dilation_2d_gpu")
 
-    alias in_shape = DimList(1, 4, 4, 1)
-    alias out_shape = DimList(1, 1, 3, 1)
+    alias in_layout = Layout.row_major(1, 4, 4, 1)
+    alias out_layout = Layout.row_major(1, 1, 3, 1)
 
-    var input_tensor = TestTensor[DType.float32, 4](in_shape)
-    fill_tensor(input_tensor.ndbuffer.data, input_tensor.num_elements)
+    var in_heap = List[Float32](capacity=in_layout.size())
+    var input_tensor = LayoutTensor[DType.float32, in_layout](in_heap)
+    arange(input_tensor)
 
-    var output_tensor = TestTensor[DType.float32, 4](out_shape)
-    fill_tensor(output_tensor.ndbuffer.data, output_tensor.num_elements, 0)
-
-    var h_output_ref_ptr = UnsafePointer[Float32].alloc(
-        Int(out_shape.product())
+    var out_heap = List[Float32](capacity=out_layout.size())
+    var output_tensor = LayoutTensor[DType.float32, out_layout](out_heap).fill(
+        0
     )
-    var h_output_ref = NDBuffer[DType.float32, 4](h_output_ref_ptr, out_shape)
-    fill_tensor(h_output_ref.data, output_tensor.num_elements, 0)
+
+    var h_output_ref_ptr = UnsafePointer[Float32].alloc(out_layout.size())
+    var h_output_ref = LayoutTensor[DType.float32, out_layout](
+        h_output_ref_ptr,
+        RuntimeLayout[
+            out_layout,
+            element_type = output_tensor.layout_int_type,
+        ].row_major(
+            IndexList[4, element_type = output_tensor.layout_int_type](
+                1, 1, 3, 1
+            )
+        ),
+    ).fill(0)
 
     var paddings = List[Int32](0, 0, 2, 0)
     var filter = List[Int32](2, 2)
     var stride = List[Int32](1, 1)
     var dilation = List[Int32](3, 3)
 
-    var paddings_tensor = TestTensor[DType.int32, 1](DimList(4), paddings)
-    var filter_tensor = TestTensor[DType.int32, 1](DimList(2), filter)
-    var stride_tensor = TestTensor[DType.int32, 1](DimList(2), stride)
-    var dilation_tensor = TestTensor[DType.int32, 1](DimList(2), dilation)
+    var paddings_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        paddings,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](4)
+        ),
+    )
+    var filter_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        filter,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
+    var stride_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        stride,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
+    var dilation_tensor = LayoutTensor[
+        DType.int32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        dilation,
+        RuntimeLayout[
+            Layout.row_major(UNKNOWN_VALUE),
+            element_type = input_tensor.layout_int_type,
+        ].row_major(
+            IndexList[1, element_type = input_tensor.layout_int_type](2)
+        ),
+    )
 
     # Copy data to device
-    var d_input = DeviceNDBuffer[DType.float32, 4](in_shape, ctx=ctx)
-    var d_output = DeviceNDBuffer[DType.float32, 4](out_shape, ctx=ctx)
+    var d_input_buffer = ctx.enqueue_create_buffer[DType.float32](
+        in_layout.size()
+    )
+    var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](
+        in_layout.size()
+    )
+    var d_input = LayoutTensor[DType.float32, in_layout](d_input_buffer)
+    var d_output = LayoutTensor[DType.float32, out_layout](d_output_buffer)
 
-    ctx.enqueue_copy(d_input.buffer, input_tensor.ndbuffer.data)
-    ctx.enqueue_copy(d_output.buffer, output_tensor.ndbuffer.data)
+    ctx.enqueue_copy(d_input_buffer, input_tensor.ptr)
+    ctx.enqueue_copy(d_output_buffer, output_tensor.ptr)
 
     max_pool_gpu[int_type = DType.int32](
         ctx,
-        d_input.tensor,
-        filter_tensor.ndbuffer,
-        stride_tensor.ndbuffer,
-        dilation_tensor.ndbuffer,
-        paddings_tensor.ndbuffer,
-        d_output.tensor,
+        d_input,
+        filter_tensor,
+        stride_tensor,
+        dilation_tensor,
+        paddings_tensor,
+        d_output,
     )
     max_pool[int_type = DType.int32](
-        input_tensor.ndbuffer,
-        filter_tensor.ndbuffer,
-        stride_tensor.ndbuffer,
-        dilation_tensor.ndbuffer,
-        paddings_tensor.ndbuffer,
+        input_tensor,
+        filter_tensor,
+        stride_tensor,
+        dilation_tensor,
+        paddings_tensor,
         h_output_ref,
     )
 
     # Copy data back to host
-    ctx.enqueue_copy(output_tensor.ndbuffer.data, d_output.buffer)
+    ctx.enqueue_copy(output_tensor.ptr, d_output_buffer)
     ctx.synchronize()
 
     # Ensure the GPU and CPU results are the same
-    assert_allclose(h_output_ref, output_tensor.ndbuffer)
+    assert_allclose(h_output_ref, output_tensor)
 
-    _ = input_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
-    _ = paddings_tensor
-    _ = output_tensor
     h_output_ref_ptr.free()
 
 
-fn fill_tensor(tensor: UnsafePointer[Float32], num_elements: Int):
-    for j in range(num_elements):
-        tensor[j] = Float32(j)
-
-
-fn fill_tensor(tensor: UnsafePointer[Float32], num_elements: Int, val: Float32):
-    for j in range(num_elements):
-        tensor[j] = val
-
-
 fn assert_allclose[
-    dtype: DType, rank: Int
+    dtype: DType,
 ](
-    h_output_ref: NDBuffer[dtype, rank],
-    h_output_gpu: NDBuffer[dtype, rank],
+    h_output_ref: LayoutTensor[dtype, **_],
+    h_output_gpu: LayoutTensor[dtype, **_],
 ) raises:
-    var shape = h_output_ref.get_shape()
     try:
-        for i in range(shape.flattened_length()):
-            assert_almost_equal(h_output_ref.data[i], h_output_gpu.data[i])
+        for i in range(h_output_ref.size()):
+            assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
     except e:
         print(e)
         print("left: ", h_output_ref)
