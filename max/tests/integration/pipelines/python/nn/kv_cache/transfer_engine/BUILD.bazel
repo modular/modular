@@ -1,24 +1,34 @@
 load("//bazel:api.bzl", "modular_py_test", "requirement")
 
-modular_py_test(
-    name = "transfer_engine_gpu_tests",
-    srcs = glob(["*.py"]),
-    data = ["//AsyncRT:plugin_ucx"],
-    env = {
-        # TODO(GENAI-170): Make plugin directory discovery more robust and work
-        # outside of Bazel.
-        "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
-    },
-    gpu_constraints = [
-        "//:has_gpu",
-        "//:nvidia_gpu",
-    ],
-    tags = ["gpu"],
-    deps = [
-        "//SDK/lib/API/python/max:_core",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/nn",
-        requirement("numpy"),
-        requirement("torch"),
-    ],
-)
+[
+    modular_py_test(
+        name = src.split("/")[-1].split(".")[0],
+        srcs = [
+            src,
+            "common.py",
+        ],
+        data = ["//AsyncRT:plugin_ucx"],
+        env = {
+            # TODO(GENAI-170): Make plugin directory discovery more robust and work
+            # outside of Bazel.
+            "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
+        },
+        gpu_constraints = [
+            "//:has_gpu",
+            "//:nvidia_gpu",
+        ],
+        imports = ["."],
+        tags = ["gpu"],
+        deps = [
+            "//SDK/lib/API/python/max:_core",
+            "//SDK/lib/API/python/max/engine",
+            "//SDK/lib/API/python/max/nn",
+            requirement("numpy"),
+            requirement("torch"),
+        ],
+    )
+    for src in glob(
+        ["*.py"],
+        exclude = ["common.py"],
+    )
+]
