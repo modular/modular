@@ -9,9 +9,8 @@ from queue import Queue
 from threading import Thread
 
 import numpy as np
-import pytest
 from common import get_unique_port
-from max.driver import Accelerator, Device
+from max.driver import Accelerator
 from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
     KVTransferEngine,
@@ -20,8 +19,7 @@ from max.nn.kv_cache import (
 )
 
 
-@pytest.mark.parametrize("device", [Accelerator()])
-def test_send_recv_basic(device: Device):
+def test_send_recv_basic():
     # Queues for communication between threads
     sender_md_queue: Queue[KVTransferEngineMetadata] = Queue()
     receiver_md_queue: Queue[KVTransferEngineMetadata] = Queue()
@@ -33,6 +31,8 @@ def test_send_recv_basic(device: Device):
     dst_idxs = [1, 0]
 
     def transfer_routine_sender():
+        device = Accelerator()
+
         blocks_np = np.array(
             [10, 11, 12, 13, 14, 15, 16, 17, 18],
         )
@@ -66,6 +66,8 @@ def test_send_recv_basic(device: Device):
         # engine.cleanup()
 
     def transfer_routine_receiver():
+        device = Accelerator()
+
         blocks_np = np.array(
             [80, 81, 82, 83, 84, 85, 86, 87, 88],
         )
