@@ -909,3 +909,9 @@ fn test_mergewith_pointer():
     # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
     for elt in [Pointer(to=a), Pointer(to=b)]:
         elt[] *= 2
+
+
+fn test_var_decl_error():
+  var a = Y # expected-error {{use of unknown declaration 'Y'}}
+  var b = a # no secondary error.
+  var c = b+1 # no tertiary error.

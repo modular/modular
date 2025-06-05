@@ -248,9 +248,7 @@ public:
 
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.
-  void resetForError(IREmitter &emitter) {
-    representation = NullRepresentation();
-  }
+  void resetForError(IREmitter &emitter);
 
   void dump() const;
 

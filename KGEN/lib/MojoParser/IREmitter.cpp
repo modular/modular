@@ -211,6 +211,36 @@ ASTType ValueDest::getExpectedTypeIfSpecified() const {
   return cast<LValue>(representation).getRValueType();
 }
 
+/// When an error is emitted instead of generating IR, this method resets the
+/// ValueDest so it doesn't complain when emission is done.
+void ValueDest::resetForError(IREmitter &emitter) {
+  // We generally just abandon this ValueDest, but if this was set up to
+  // initialize something that could infer types, we need to infer them to
+  // TypeCheckErrorType to avoid downstream errors using whatever we failed to
+  // initialize.
+
+  if (auto *opDest = dyn_cast<Operation *>(representation)) {
+    if (auto varOp = dyn_cast<VarDeclOp>(opDest)) {
+      assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
+             "Cannot resolve an already-resolved vardecl");
+      varOp.getResult().setType(varOp.getType().getWithElement(
+          emitter.shared.getTypeCheckErrorType()));
+    }
+  } else if (auto target = dyn_cast<const ExprNode *>(representation)) {
+    // If emitting the RHS failed, use a "type check error" expression as the
+    // RHS so we can make sure to emit any vars declared, to silence
+    // downstream errors.
+    //     var x = <bad>
+    //     use(x)  # Don't warn here.
+    ValueDest dest(
+        LValueInitializerType{emitter.shared.getTypeCheckErrorType()},
+        getContext());
+    (void)emitter.emitExprLValue(target, dest);
+  }
+
+  representation = NullRepresentation();
+}
+
 /// Inspect the ValueDest to see if it implies a specific type for the value
 /// being computed, emitting ExprNode targets if present to get their implied
 /// type if present.  This returns null if there is no implied type.
@@ -264,7 +294,6 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     // Emit the target as an LValue to understand what we're assigning into.
     LValue exprLValue = emitter.emitExprLValue(expr, dest);
     if (!exprLValue) {
-      dest.resetForError(emitter);
       representation = NullRepresentation();
       return {};
     }
@@ -338,7 +367,7 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
       assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(
-          RefType::get(materializedType, varOp.getType().getOrigin()));
+          varOp.getType().getWithElement(materializedType));
       typedRef = varOp.getResult();
     } else {
       auto globalOp = cast<GlobalVarDeclOp>(opDest);
@@ -649,8 +678,10 @@ BValue IREmitter::emitBValue(ASTExprAnd<AnyValue> value, ExprContext context,
 }
 
 LValue IREmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
-  if (!value)
+  if (!value) {
+    dest.resetForError(*this);
     return {};
+  }
 
   if (LValue lValue = value.ir.getIfLValue()) {
     if (!dest.isSpecified())
@@ -663,6 +694,7 @@ LValue IREmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   emitError(value.expr->getLoc())
       << "expression must be mutable" << getContextMessage(dest.context)
       << value.expr->getRange();
+  dest.resetForError(*this);
   return {};
 }
 
@@ -1106,8 +1138,10 @@ PValue IREmitter::emitExprPValue(const ExprNode *expr, ExprContext context,
 
 LValue IREmitter::emitExprLValue(const ExprNode *expr, ValueDest &dest) {
   AnyValue anyValue = expr->emitIR(dest, *this);
-  if (!anyValue)
+  if (!anyValue) {
+    dest.resetForError(*this);
     return {}; // Error already diagnosed.
+  }
   return emitLValue({anyValue, expr}, dest);
 }
 CValue IREmitter::emitLoadOfLValue(ASTExprAnd<LValue> value, ValueDest &dest) {

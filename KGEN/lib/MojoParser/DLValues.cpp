@@ -256,8 +256,9 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   //
   // We currently require the input be a Tuple.
   if (srcRValueType.getDecl(emitter.shared) != &tupleLiteralDecl) {
-    emitError() << "cannot unpack value of type " << srcRValueType
-                << " into a tuple";
+    if (!isa<TypeCheckErrorType>(srcRValueType))
+      emitError() << "cannot unpack value of type " << srcRValueType
+                  << " into a tuple";
     return BValue();
   }
 
