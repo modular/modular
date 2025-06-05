@@ -84,7 +84,7 @@ fn out1(a: Int, out b: Int): pass
 # expected-error @+1 {{'out' convention may not be variadic}}
 fn bad_out2(out *b: Int): pass
 
-# expected-error @+1 {{parameters cannot be 'out'}}
+# expected-error @+1 {{expected ']' for parameter list}}
 fn bad_out3[out x: Int](): pass
 
 # expected-error @+1 {{function may not have multiple 'out' arguments}}

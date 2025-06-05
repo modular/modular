@@ -299,7 +299,7 @@ fn matmul_unrolled[I: Index](mut C: Matrix):
 
 @always_inline
 fn test_matrix_equal[
-    func: fn (mut Matrix) -> None
+    func: fn (mut: Matrix) -> None
 ](mut C: Matrix) raises -> Bool:
     func(C)
     return True
