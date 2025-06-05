@@ -12,6 +12,6 @@ from tensor import ManagedTensorSlice, OutputTensor
 struct FailsToElaborate:
     @staticmethod
     fn execute(
-        out: OutputTensor[dtype = DType.int32, rank=1],
+        output: OutputTensor[dtype = DType.int32, rank=1],
     ):
         constrained[False, "oops"]()

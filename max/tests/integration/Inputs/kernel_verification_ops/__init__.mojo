@@ -25,11 +25,11 @@ from runtime.asyncrt import DeviceContextPtr
 struct MyAdd:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
-        y: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        y: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
-        out[0] = x[0] + y[0]
+        output[0] = x[0] + y[0]
 
     @staticmethod
     fn shape(
@@ -43,11 +43,11 @@ struct MyAdd:
 struct OpWidthDeviceContext:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ):
-        out[0] = x[0]
+        output[0] = x[0]
 
     @staticmethod
     fn shape(
@@ -144,27 +144,27 @@ struct VariadicAdd:
         dtype: DType,
         size: Int,
     ](
-        out: OutputTensor[dtype=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=1],
         bias: InputTensor[dtype=dtype, rank=1],
         input: InputVariadicTensors[dtype, rank=1, size=size],
     ):
-        for i in range(out.size()):
-            out[i] = bias[i]
+        for i in range(output.size()):
+            output[i] = bias[i]
 
             @parameter
             for j in range(size):
-                out[i] += input[j][i]
+                output[i] += input[j][i]
 
 
 @compiler.register("binary_kernel_with_raises")
 struct BinaryKernelWithRaises:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
-        y: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        y: InputTensor[dtype = output.dtype, rank = output.rank],
     ) raises:
-        out[0] = x[0] + y[0]
+        output[0] = x[0] + y[0]
 
     @staticmethod
     fn shape(
@@ -185,10 +185,10 @@ struct MutableInputTensorKernel:
 struct OpWithIntParameter[IntParameter: Int]:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
-        out[0] = x[0]
+        output[0] = x[0]
         print(IntParameter)
 
 
@@ -196,10 +196,10 @@ struct OpWithIntParameter[IntParameter: Int]:
 struct OpWithDTypeParameter[DTypeParameter: DType]:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
-        out[0] = x[0]
+        output[0] = x[0]
         print(DTypeParameter)
 
 
@@ -207,10 +207,10 @@ struct OpWithDTypeParameter[DTypeParameter: DType]:
 struct OpWithStringParameter[StringParameter: String]:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
-        out[0] = x[0]
+        output[0] = x[0]
         print(StringParameter)
 
 
@@ -218,10 +218,10 @@ struct OpWithStringParameter[StringParameter: String]:
 struct OpWithStringSliceParameter[StringParameter: StringSlice]:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
-        out[0] = x[0]
+        output[0] = x[0]
         print(StringParameter)
 
 
@@ -229,8 +229,8 @@ struct OpWithStringSliceParameter[StringParameter: StringSlice]:
 struct OpWithStaticStringParameter[StringParameter: StaticString]:
     @staticmethod
     fn execute(
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
     ):
-        out[0] = x[0]
+        output[0] = x[0]
         print(StringParameter)

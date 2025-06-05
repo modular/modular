@@ -20,22 +20,22 @@ alias logger = Logger()
 struct UseSplitkReductionScheme:
     @staticmethod
     fn execute(
-        out: OutputTensor[dtype = DType.int32, rank=1],
+        output: OutputTensor[dtype = DType.int32, rank=1],
     ):
         alias split_k_reduction_scheme = env_get_int[
             "SPLITK_REDUCTION_SCHEME", 2
         ]()
-        out[0] = split_k_reduction_scheme
+        output[0] = split_k_reduction_scheme
 
 
 @compiler.register("use_logger")
 struct UseLogger:
     @staticmethod
     fn execute(
-        out: OutputTensor[dtype = DType.int32, rank=1],
+        output: OutputTensor[dtype = DType.int32, rank=1],
     ):
         logger.error("I'm a custom Mojo function!")
-        out[0] = Int(logger.level._value)
+        output[0] = Int(logger.level._value)
 
 
 @compiler.register("add_one_custom")
@@ -44,15 +44,15 @@ struct AddOneCustom:
     fn execute[
         target: StaticString
     ](
-        out: OutputTensor,
-        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        output: OutputTensor,
+        x: InputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         fn add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
-        foreach[add_one, target=target](out, ctx)
+        foreach[add_one, target=target](output, ctx)
 
     @staticmethod
     fn shape(
