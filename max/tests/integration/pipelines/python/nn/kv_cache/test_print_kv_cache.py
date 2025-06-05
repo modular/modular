@@ -45,6 +45,7 @@ class PrintKVCacheModel:
         kv_collection = self.fetch_layer(*fetch_args)
         ops.inplace_custom(
             "mo.print_kv_cache.continuous_batching",
+            device=valid_lengths.device,
             values=[
                 valid_lengths,
                 kv_collection,

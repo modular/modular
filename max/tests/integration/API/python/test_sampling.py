@@ -557,6 +557,7 @@ def test_top_p_sampling(session: InferenceSession):
             # doesn't accept seed as tensor
             sampled_tokens = ops.custom(
                 "sampler.fused_token_sampling",
+                device=device_ref,
                 values=[
                     ops.constant(top_k, DType.int64, device=DeviceRef.CPU()),
                     ops.constant(temp, DType.float32, device=DeviceRef.CPU()),
