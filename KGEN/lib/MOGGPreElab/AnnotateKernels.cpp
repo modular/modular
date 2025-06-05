@@ -213,7 +213,7 @@ getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
 }
 
 /// Look through ref types to get underlaying decl ref type if needed.
-LIT::StructType getAsDeclRefOrNull(Type t) {
+static LIT::StructType getAsStructType(Type t) {
   auto asLitRef = dyn_cast<LIT::RefType>(t);
   if (asLitRef)
     return dyn_cast<LIT::StructType>(asLitRef.getElementType());
@@ -224,8 +224,8 @@ LIT::StructType getAsDeclRefOrNull(Type t) {
 static LogicalResult checkByRefTensorArgs(LIT::FnOp func) {
   LIT::FnTypeGeneratorType signature = func.getFuncTypeGenerator();
   for (auto [index, litType] : llvm::enumerate(signature.getArguments())) {
-    if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
-      if (isExtensibilityFunc(func) && isDPSTensor(asDeclRef) &&
+    if (LIT::StructType structType = getAsStructType(litType)) {
+      if (isExtensibilityFunc(func) && isDPSTensor(structType) &&
           isa<LIT::RefType>(litType)) {
         return func.emitError()
                << " Only the borrowed argument (read) convention is supported "
@@ -242,9 +242,9 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
   // Anything taking a tensor needs the annotation.
   bool takesTensor = false;
   for (Type litType : func.getArgumentTypes()) {
-    if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
-      takesTensor |= isExtensibilityTensor(asDeclRef);
-      takesTensor |= isDPSTensor(asDeclRef);
+    if (LIT::StructType structType = getAsStructType(litType)) {
+      takesTensor |= isExtensibilityTensor(structType);
+      takesTensor |= isDPSTensor(structType);
     }
   }
 
@@ -263,30 +263,30 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
 
   // Extract the source name any of the lit argument.
   auto litTypeToSourceName = [&](Type litType) -> Attribute {
-    LIT::StructType asDeclRef = getAsDeclRefOrNull(litType);
-    if (!asDeclRef)
+    LIT::StructType structType = getAsStructType(litType);
+    if (!structType)
       return emptyAttr;
 
     // We can't lower the symbol as it may become illegal at some point in IR so
     // we combine it into ROOT::LEAF;
     std::string combinedName =
-        Twine(asDeclRef.getSymbol().getRootReference().strref())
+        Twine(structType.getSymbol().getRootReference().strref())
             .concat("::")
-            .concat(asDeclRef.getSymbol().getLeafReference().strref())
+            .concat(structType.getSymbol().getLeafReference().strref())
             .str();
     return builder.getStringAttr(combinedName);
   };
 
   // Extract the used parameters from the lit type.
   auto litTypeToParams = [&](Type litType) -> Attribute {
-    LIT::StructType asDeclRef = getAsDeclRefOrNull(litType);
+    LIT::StructType structType = getAsStructType(litType);
 
     // We still need to have one entry per argument even if it is empty.
-    if (!asDeclRef || asDeclRef.getParamValues().empty())
+    if (!structType || structType.getParamValues().empty())
       return emptyAttr;
 
     SmallVector<Attribute> attrs;
-    for (TypedAttr param : asDeclRef.getParamValues())
+    for (TypedAttr param : structType.getParamValues())
       attrs.push_back(param);
     return builder.getArrayAttr(attrs);
   };
@@ -433,14 +433,6 @@ static void labelTensorParamsInKernel(KGENModule &kgenModule,
   if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp) &&
       !isViewMaterializeFunc(funcOp) && !isKernel(funcOp))
     return;
-
-  // Look through ref types to get underlying decl ref type if needed.
-  auto getAsStructType = [](Type t) {
-    auto asLitRef = dyn_cast<LIT::RefType>(t);
-    if (asLitRef)
-      return dyn_cast<LIT::StructType>(asLitRef.getElementType());
-    return dyn_cast<LIT::StructType>(t);
-  };
 
   SmallVector<Attribute> valueParameters;
   Attribute emptyAttr = builder.getUnitAttr();
@@ -659,7 +651,7 @@ processIOSpecs(LIT::FnOp func, bool isShapeFunc = false) {
   bool foundNonOutputOperand = false;
 
   for (auto &&[argIdx, argType] : llvm::enumerate(func.getArgumentTypes())) {
-    auto structType = getAsDeclRefOrNull(argType);
+    auto structType = getAsStructType(argType);
 
     if (!structType) {
       foundNonOutputOperand = true;
