@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import functools
 import logging
 from threading import Thread
 
@@ -20,10 +19,6 @@ from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.pipelines.performance_fake import (
-    PerformanceFakingPipelineTokenizer,
-    get_performance_fake,
-)
 from max.serve.scheduler import TokenGeneratorSchedulerConfig
 from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionResponse,
@@ -33,25 +28,18 @@ logger = logging.getLogger(__name__)
 
 
 @pytest_asyncio.fixture(scope="function")
-def app(fixture_tokenizer, model_name: str):
+def app(fixture_tokenizer):
     settings = Settings(
         api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
     )
     pipeline_config = TokenGeneratorSchedulerConfig.continuous_heterogenous(
         tg_batch_size=1, ce_batch_size=1
     )
-    model_factory = (
-        EchoTokenGenerator
-        if model_name == "echo"
-        else functools.partial(get_performance_fake, "no-op")
-    )
-    tokenizer = (
-        EchoPipelineTokenizer()
-        if model_name == "echo"
-        else PerformanceFakingPipelineTokenizer(fixture_tokenizer)
-    )
+    model_factory = EchoTokenGenerator
+    tokenizer = EchoPipelineTokenizer()
+
     serving_settings = ServingTokenGeneratorSettings(
-        model_name=model_name,
+        model_name="echo",
         model_factory=model_factory,
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
@@ -60,14 +48,13 @@ def app(fixture_tokenizer, model_name: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model_name", ["perf_fake", "echo"])
-async def test_openai_chat_completion_single(app, model_name):
+async def test_openai_chat_completion_single(app):
     async with AsyncTestClient(app) as client:
         request_content = "test data"
         response_json = await client.post(
             "/v1/chat/completions",
             json=simple_openai_request(
-                model_name=model_name, content=request_content
+                model_name="echo", content=request_content
             ),
         )
         # This is not a streamed completion - There is no [DONE] at the end.
@@ -76,14 +63,11 @@ async def test_openai_chat_completion_single(app, model_name):
         )
         assert len(response.choices) == 1
         choice = response.choices[0]
-        if model_name == "echo_app":
-            # The echo app actually reverses the input..
-            assert choice.message.content == request_content[::-1]
+        assert choice.message.content == request_content[::-1]
         assert choice.finish_reason == "stop"
 
 
-@pytest.mark.parametrize("model_name", ["perf_fake", "echo"])
-def test_openai_chat_completion_concurrent(app, model_name):
+def test_openai_chat_completion_concurrent(app):
     request_contents: dict[int, str] = {}
     responses: dict[int, CreateChatCompletionResponse] = {}
 
@@ -93,7 +77,7 @@ def test_openai_chat_completion_concurrent(app, model_name):
         response_json = client.post(
             "/v1/chat/completions",
             json=simple_openai_request(
-                model_name=model_name, content=request_content
+                model_name="echo", content=request_content
             ),
         )
         response = CreateChatCompletionResponse.model_validate(
@@ -114,10 +98,9 @@ def test_openai_chat_completion_concurrent(app, model_name):
     for id, response in responses.items():
         assert len(response.choices) == 1
         assert response.choices[0].finish_reason == "stop"
-        if model_name == "echo_app":
-            received_response = response.choices[0].message.content
-            expected_response = request_contents[id][::-1]
-            assert received_response == expected_response
+        received_response = response.choices[0].message.content
+        expected_response = request_contents[id][::-1]
+        assert received_response == expected_response
 
 
 def test_vllm_response_deserialization():
