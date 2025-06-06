@@ -57,7 +57,7 @@ class MojoModulePath:
 
     path: Path
     """Mojo source file that is the root of the module. Either an `__init__` file
-    or a signle-file module. """
+    or a single-file module. """
 
     is_package: bool
 
