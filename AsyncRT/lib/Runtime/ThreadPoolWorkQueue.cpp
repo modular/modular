@@ -581,7 +581,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
         std::chrono::duration<double, std::micro>(end - start);
     start = std::chrono::high_resolution_clock::now();
 #endif
-    // Check for tasks in local taskId affinitized queue.
+    // Check for tasks in local taskId affinities queue.
     if (auto workItem = affinityTaskList.dequeue()) {
       doWork</*IsWaiter=*/false>(std::move(workItem), kAffinity);
 #if ASYNCRT_WORKER_STATS

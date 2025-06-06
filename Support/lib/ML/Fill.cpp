@@ -192,7 +192,7 @@ ErrorOrSuccess M::fillHomogeneous(void *destPtr, size_t numElements,
 }
 
 /// Fill the given buffer with random floats in [-1, 1) with the given
-/// sematic (e.g. IEEESingle, BFloat). Meant to use if no native C++ type.
+/// semantic (e.g. IEEESingle, BFloat). Meant to use if no native C++ type.
 template <typename StorageType>
 inline ErrorOrSuccess handleSpecialFloats(void *destPtr, size_t numElements,
                                           const llvm::fltSemantics &semantic) {

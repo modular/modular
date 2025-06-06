@@ -39,7 +39,7 @@ struct OpBytecodeGenerator {
 #include "KGEN/Interpreter/MemoryableTypeInterface.h.inc"
 
 //===----------------------------------------------------------------------===//
-// Delegate Interace Declarations
+// Delegate Interface Declarations
 //===----------------------------------------------------------------------===//
 
 namespace M::detail {

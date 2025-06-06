@@ -446,7 +446,7 @@ void BytecodeInterpreter::transferControlFlowTo(Region &target,
   assert(bc && "expected an active function frame");
 
   // FIXME: This is the only hashmap lookup in the bytecode interpreter. Is
-  // there some way we can remove ths?
+  // there some way we can remove this?
   auto it = bc->cfgIndices.find(&target);
   assert(it != bc->cfgIndices.end() && "region key missing");
   uint32_t offset = it->second;

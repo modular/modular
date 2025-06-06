@@ -38,7 +38,7 @@ struct \
   fn bar(self):
     print("called bar")
 
-# Wil test variable persistence by using `bar` in a later expression
+# Will test variable persistence by using `bar` in a later expression
 var bar = Bar()
 
 # CHECK: called bar
