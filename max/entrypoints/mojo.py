@@ -73,9 +73,9 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_MOJO_MAX_REPL_ENTRY_POINT": str(lib / "mojo-repl-entry-point"),
         "MODULAR_MOJO_MAX_LLD_PATH": str(bin / "lld"),
         "MODULAR_MOJO_MAX_SYSTEM_LIBS": (
-            "-lm,-lz,-lcurses"
+            "-lm"
             if sys.platform == "darwin"
-            else "-lrt,-ldl,-lpthread,-lm,-lz,-ltinfo"
+            else "-lrt,-ldl,-lpthread,-lm"
         ),
         "MODULAR_MOJO_MAX_TEST_EXECUTOR_PATH": str(lib / "mojo-test-executor"),
 
