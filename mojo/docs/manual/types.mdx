@@ -534,7 +534,7 @@ type at compile time using a [parameter](/mojo/manual/parameters/). For
 example, you can create a `List` of `Int` values like this:
 
 ```mojo
-var l = List[Int](1, 2, 3, 4)
+var l: List[Int] = [1, 2, 3, 4]
 # l.append(3.14) # error: FloatLiteral cannot be converted to Int
 ```
 
@@ -575,8 +575,6 @@ ability to append to the list, pop items out of the list, and access list items
 using subscript notation.
 
 ```mojo
-from collections import List
-
 var list = [2, 3, 5]
 list.append(7)
 list.append(11)
@@ -595,7 +593,7 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-* Mojo supports list and dictionary literals for collection initialization:
+* Mojo supports list, set, and dictionary literals for collection initialization:
 
   ```mojo
   # List literal, element type infers to Int.
@@ -721,8 +719,6 @@ dictionaries, sets support standard literal syntax, as well as generator
 comprehensions:
 
 ```mojo
-from collections import Set
-
 i_like = {String("sushi"), "ice cream", "tacos", "pho"}
 you_like = {String("burgers"), "tacos", "salad", "ice cream"}
 we_like = i_like.intersection(you_like)
