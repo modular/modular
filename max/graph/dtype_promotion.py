@@ -14,7 +14,7 @@ This avoids accidentally over promoting and harming performance.
 The target DType for promoting a value `x` and `y` is:
     `(max(category(x), category(y)), max(bitwidth(x), bitwidth(y))`
 
-Where category is an ordered hierachy of: `bool < unsigned int < signed int < float`
+Where category is an ordered hierarchy of: `bool < unsigned int < signed int < float`
 
 If all input dtypes can be fully represented by the target dtype, the promotion is successful.
 If an input can not be guaranteed representable (e.g. `uint8` -> `int8`), an error is raised.

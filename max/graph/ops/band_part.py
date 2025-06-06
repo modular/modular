@@ -25,8 +25,8 @@ def band_part(
     """Masks out everything except a diagonal band of an input matrix.
 
     Copies a tensor setting everything outside the central diagonal band of the
-    matricies to zero, where all but the last two axes are effectively batches,
-    and the last two axes define sub matricies.
+    matrices to zero, where all but the last two axes are effectively batches,
+    and the last two axes define sub matrices.
 
     Assumes the input has dimensions [I, J, ..., M, N], then the output tensor
     has the same shape as the input, and the values are given by

@@ -37,7 +37,7 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
 
     Returns:
         A tensor graph value representing he result of broadcasting the two
-        matricies together and then performing a matrix multiply
+        matrices together and then performing a matrix multiply
         along the innermost two dimension of each tensor.
     """
     return Graph.current._add_op(

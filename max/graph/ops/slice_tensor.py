@@ -194,7 +194,7 @@ def _slice_and_output_tensors(
     if not x.shape:
         raise ValueError("Slicing does not support scalar inputs")
 
-    # The indicies where Ellipsis appears in the indicies list
+    # The indices where Ellipsis appears in the indices list
     ellipsis_indices = [
         i for i, index in enumerate(indices) if index is Ellipsis
     ]

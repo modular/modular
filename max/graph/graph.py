@@ -545,7 +545,7 @@ class Graph:
 
             except (mlir.MLIRError, ValueError) as e:  # type: ignore
                 # MLIRError is raised from the MLIR Python bindings on MLIR
-                # errors, however so is ValueError when operation create faile.
+                # errors, however so is ValueError when operation creation fails.
                 # So catch both exception types here.
                 mapped_args: dict[str, Any]
                 try:
