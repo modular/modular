@@ -5,11 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
+from typing import Union
 
 import numpy as np
 import pytest
 from max.pipelines.core import (
     SamplingParams,
+    TextAndVisionContext,
     TextContext,
     TextGenerationStatus,
     msgpack_numpy_decoder,
@@ -397,8 +399,35 @@ def test_context_serializable():
 
     # Test that we can encode a sample TextContext with MsgPack
     serialize = msgpack_numpy_encoder()
-    deserialize = msgpack_numpy_decoder(TextContext)
+    deserialize = msgpack_numpy_decoder(
+        Union[TextContext, TextAndVisionContext]
+    )
     msgpack_encoded = serialize(original_context)
     msgpack_decoded = deserialize(msgpack_encoded)
 
     assert msgpack_decoded == original_context
+
+
+def test_context_tuple_serializable():
+    # Test that we can encode a tuple of (str, TextContext) with Pickle
+    original_context = TextContext(
+        prompt="sampling params test prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+    )
+    original_tuple = ("test_key", original_context)
+
+    pickle_encoded = pickle.dumps(original_tuple)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert pickle_decoded == original_tuple
+
+    # Test that we can encode a tuple of (str, TextContext) with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    )
+    msgpack_encoded = serialize(original_tuple)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert msgpack_decoded == original_tuple
