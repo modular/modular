@@ -91,8 +91,8 @@ class EchoPipelineTokenizer(
         return EchoTokenGeneratorContext(
             prompt=prompt,
             index=0,
-            max_tokens=request.max_new_tokens
-            if request.max_new_tokens
+            max_tokens=request.sampling_params.max_new_tokens
+            if request.sampling_params.max_new_tokens
             else len(prompt),
             active_length=len(prompt),
         )

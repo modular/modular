@@ -25,6 +25,7 @@ from threading import Thread
 from typing import Callable, Optional, TypeVar, cast
 
 import tqdm
+from max.pipelines.core import SamplingParams
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
@@ -187,12 +188,13 @@ async def _async_worker(
 
             # Lambda to do a full text generation for a request.
             async def all_tokens(prompt: str) -> str:
+                sampling_params = SamplingParams(max_new_tokens=max_new_tokens)
                 request = TokenGeneratorRequest(
                     id=str(uuid.uuid4()),
                     index=0,
                     model_name=model_name,
                     prompt=prompt,
-                    max_new_tokens=max_new_tokens,
+                    sampling_params=sampling_params,
                 )
 
                 # Generate this request until complete

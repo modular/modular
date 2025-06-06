@@ -134,7 +134,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             with record_ms(METRICS.output_time):
                 # stop detector is stateful, so new it up here for
                 # use in the response stream
-                stop_detector = StopDetector(stop=request.stop)
+                stop_detector = StopDetector(stop=request.sampling_params.stop)
 
                 n_tokens = 0
                 async for response in self.engine_queue.stream(

@@ -13,6 +13,8 @@
 
 """Interfaces for text generation pipeline behaviors."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
@@ -124,11 +126,17 @@ class SamplingParams:
     do_penalties: bool = False
     """Whether to apply frequency and presence penalties to the model's output."""
 
-    max_tokens: int = 1792
-    """The maximum number of tokens to generate in the response."""
+    max_new_tokens: int | None = None
+    """The maximum number of new tokens to generate in the response. If not set,
+    the model may generate tokens until it reaches its internal limits or based
+    on other stopping criteria."""
 
-    min_tokens: int = 0
+    min_new_tokens: int = 0
     """The minimum number of tokens to generate in the response."""
+
+    ignore_eos: bool = False
+    """If True, the response will ignore the EOS token, and continue to
+    generate until the max tokens or a stop string is hit."""
 
     stop: Optional[list[str]] = None
     """A list of detokenized sequences that can be used as stop criteria when generating a new sequence."""
@@ -196,12 +204,6 @@ class TokenGeneratorRequest:
     Specifies the desired format for the model's output. When set, it enables
     structured generation, which adheres to the json_schema provided.
     """
-    max_new_tokens: Optional[int] = None
-    """
-    The maximum number of new tokens to generate in the response. If not set,
-    the model may generate tokens until it reaches its internal limits or based
-    on other stopping criteria.
-    """
     timestamp_ns: int = 0
     """
     The time (in nanoseconds) when the request was received by the server. This
@@ -228,25 +230,18 @@ class TokenGeneratorRequest:
     """
     Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
     """
-    ignore_eos: bool = False
-    """
-    If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
-    stop string is hit.
-    """
     chat_template_options: Optional[dict[str, Any]] = None
     """
     Optional dictionary of options to pass when applying the chat template.
     """
 
     sampling_params: SamplingParams = SamplingParams()
-    """
-    Token sampling configuration parameters for the request.
-    """
+    """Token sampling configuration parameters for the request."""
 
     def __str__(self) -> str:
         txt = f"Id: {self.id}"
-        if self.max_new_tokens:
-            txt += f", MaxNewTokens: {self.max_new_tokens}"
+        if self.sampling_params.max_new_tokens is not None:
+            txt += f", MaxNewTokens: {self.sampling_params.max_new_tokens}"
         return txt
 
 

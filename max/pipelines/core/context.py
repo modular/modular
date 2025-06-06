@@ -419,7 +419,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     @property
     def min_tokens(self) -> int:
         """The minimum number of new tokens to generate."""
-        return self.sampling_params.min_tokens
+        return self.sampling_params.min_new_tokens
 
     @property
     def end_idx(self) -> int:

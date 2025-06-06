@@ -37,7 +37,7 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core.interfaces.audio_generation import SamplingParams
+from max.pipelines.core.interfaces.text_generation import SamplingParams
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -572,6 +572,11 @@ async def openai_create_chat_completion(
         )
 
         response_generator = OpenAIChatResponseGenerator(pipeline)
+        sampling_params = SamplingParams(
+            max_new_tokens=completion_request.max_tokens,
+            stop=completion_request.stop,
+            ignore_eos=completion_request.ignore_eos,
+        )
         token_request = TokenGeneratorRequest(
             id=request_id,
             index=0,
@@ -579,12 +584,10 @@ async def openai_create_chat_completion(
             messages=request_messages,
             images=request_images,
             tools=tools,
-            max_new_tokens=completion_request.max_tokens,
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
             response_format=response_format,
-            stop=completion_request.stop,
-            ignore_eos=completion_request.ignore_eos,
+            sampling_params=sampling_params,
         )
 
         if completion_request.stream:
@@ -983,18 +986,21 @@ async def openai_create_completion(
         token_requests = []
         for i, prompt in enumerate(prompts):
             prompt = cast(Union[str, Sequence[int]], prompt)
+            sampling_params = SamplingParams(
+                max_new_tokens=completion_request.max_tokens,
+                ignore_eos=completion_request.ignore_eos,
+            )
             tgr = TokenGeneratorRequest(
                 # Generate a unique id for each prompt in the request
                 id=f"{http_req_id}_{i}",
                 index=i,
                 model_name=completion_request.model,
                 prompt=prompt,
-                max_new_tokens=completion_request.max_tokens,
                 timestamp_ns=request.state.request_timer.start_ns,
                 request_path=request.url.path,
                 logprobs=completion_request.logprobs,
                 echo=completion_request.echo,
-                ignore_eos=completion_request.ignore_eos,
+                sampling_params=sampling_params,
             )
             token_requests.append(tgr)
 
@@ -1087,7 +1093,7 @@ async def create_streaming_audio_speech(
         pipeline = get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams(
-            min_tokens=audio_generation_request.min_tokens,
+            min_new_tokens=audio_generation_request.min_tokens,
         )
         audio_request = AudioGenerationRequest(
             id=request_id,
