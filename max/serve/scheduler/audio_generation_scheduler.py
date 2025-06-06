@@ -20,6 +20,7 @@ from typing import Any, cast
 
 import torch
 import zmq
+from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerationResponse,
     AudioGenerator,
@@ -75,6 +76,9 @@ class AudioGenerationSchedulerOutput:
         self.batch_type = batch_type
         self.batch_size = len(batch_inputs)
         self.num_steps = num_steps
+        self.input_tokens = sum(
+            context.active_length for context in batch_inputs.values()
+        )
 
     @property
     def num_terminated(self) -> int:
@@ -97,6 +101,7 @@ class AudioGenerationScheduler(Scheduler):
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
+        paged_manager: PagedKVCacheManager,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -124,6 +129,7 @@ class AudioGenerationScheduler(Scheduler):
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_tg)
         )
+        self.paged_manager = paged_manager
 
         if self.scheduler_config.enable_chunked_prefill:
             logger.warning(
@@ -217,9 +223,19 @@ class AudioGenerationScheduler(Scheduler):
         return True
 
     def _create_tg_batch(self) -> AudioGenerationSchedulerOutput:
+        num_steps = self.scheduler_config.max_forward_steps_tg
+        for req_data in self.decode_reqs.values():
+            num_available_steps = req_data.compute_num_available_steps(
+                self.paged_manager.max_seq_len
+            )
+            num_steps = min(num_steps, num_available_steps)
+
+            if not self.paged_manager.prefetch(req_data, num_steps=num_steps):
+                raise RuntimeError("Ran out of KV cache")
+
         return AudioGenerationSchedulerOutput(
             self.decode_reqs.copy(),
-            num_steps=self.scheduler_config.max_forward_steps_tg,
+            num_steps=num_steps,
             batch_type=BatchType.TokenGeneration,
         )
 
@@ -236,6 +252,9 @@ class AudioGenerationScheduler(Scheduler):
         if self.scheduler_config.enable_in_flight_batching:
             ce_batch.update(self.decode_reqs)
             input_len += len(self.decode_reqs)
+            for req_data in self.decode_reqs.values():
+                if not self.paged_manager.prefetch(req_data, num_steps=1):
+                    raise RuntimeError("Ran out of KV cache")
 
         while (
             self.pending_reqs
@@ -245,6 +264,8 @@ class AudioGenerationScheduler(Scheduler):
         ):
             req_id, req_data = self.pending_reqs.popleft()
             req_data.assign_to_cache(self.available_cache_indices.pop())
+            if not self.paged_manager.prefetch(req_data, num_steps=1):
+                raise RuntimeError("Ran out of KV cache")
             ce_batch[req_id] = req_data
             input_len += req_data.active_length
 
@@ -255,6 +276,7 @@ class AudioGenerationScheduler(Scheduler):
         )
 
     def _create_batch_to_execute(self) -> AudioGenerationSchedulerOutput:
+        self._retrieve_pending_requests()
         if self._should_schedule_ce():
             return self._create_ce_batch()
         return self._create_tg_batch()
@@ -286,8 +308,6 @@ class AudioGenerationScheduler(Scheduler):
         while i % 10 or not self.pc.is_canceled():
             self.pc.beat()
             i += 1
-
-            self._retrieve_pending_requests()
 
             try:
                 # Construct the batch to execute

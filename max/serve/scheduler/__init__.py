@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Optional
-
 import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
@@ -25,7 +23,6 @@ from max.pipelines.lib import PipelineRole
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.process_control import ProcessControl
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 from .audio_generation_scheduler import AudioGenerationScheduler
 from .base import Scheduler
@@ -71,6 +68,8 @@ def load_scheduler(
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert isinstance(pipeline, AudioGenerator)
+        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
+        assert isinstance(paged_manager, PagedKVCacheManager)
         token_gen_config = TokenGenerationSchedulerConfig(
             max_batch_size_tg=config.max_batch_size_tg,
             max_forward_steps_tg=config.max_forward_steps_tg,
@@ -91,6 +90,7 @@ def load_scheduler(
             response_zmq_endpoint=settings.response_zmq_endpoint,
             cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
             zmq_ctx=zmq_ctx,
+            paged_manager=paged_manager,
         )
     elif config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, TokenGenerator)
