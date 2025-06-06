@@ -279,10 +279,10 @@ class Llama3RotaryEmbedding(OptimizedRotaryEmbedding):
                 )
             else:
                 smooth = ops.constant(0, DType.float32, device=self.device)
-            inv_freqs = ops.select(
+            inv_freqs = ops.where(
                 wave_len < high_freq_wavelen,
                 inv_freqs,
-                ops.select(
+                ops.where(
                     wave_len > low_freq_wavelen,
                     inv_freqs / self.scaling_params.factor,
                     (1 - smooth) * inv_freqs / self.scaling_params.factor

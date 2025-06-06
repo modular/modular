@@ -480,7 +480,7 @@ class MPNetEncoder(Layer):
         )
 
         val_if_large = ops.min(val_if_large, max_bucket)
-        ret += ops.select(is_small, n, val_if_large)
+        ret += ops.where(is_small, n, val_if_large)
         return ret
 
 
