@@ -27,6 +27,7 @@ from max.pipelines.core import (
     AudioGenerator,
     AudioGeneratorOutput,
     TTSContext,
+    msgpack_numpy_decoder,
 )
 from max.profiler import Trace, traced
 from max.serve.process_control import ProcessControl
@@ -84,13 +85,17 @@ class AudioGenerationScheduler(Scheduler):
         self.pc = process_control
 
         self.request_q = ZmqPullSocket[tuple[str, TTSContext]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=request_zmq_endpoint
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=request_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(TTSContext),
         )
         self.response_q = ZmqPushSocket[list[dict[str, AudioGeneratorOutput]]](
             zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
         )
         self.cancel_q = ZmqPullSocket[list[str]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=cancel_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(list[str]),
         )
 
         # Override text generation config based on audio generation config.

@@ -31,7 +31,7 @@ def msgpack_numpy_encoder() -> Callable[[Any], bytes]:
     return encoder.encode
 
 
-def msgpack_numpy_decoder(type_: type[T]) -> Callable[[bytes], T]:
+def msgpack_numpy_decoder(type_: Any) -> Callable[[bytes], Any]:
     """Create a decoder function for the specified type.
 
     Args:
@@ -44,7 +44,7 @@ def msgpack_numpy_decoder(type_: type[T]) -> Callable[[bytes], T]:
     return decoder.decode
 
 
-def encode_numpy_array(obj: np.ndarray) -> dict:
+def encode_numpy_array(obj: Any) -> dict:
     """Custom encoder for numpy arrays to be used with msgspec."""
     if isinstance(obj, np.ndarray):
         return {
@@ -53,6 +53,7 @@ def encode_numpy_array(obj: np.ndarray) -> dict:
             "shape": obj.shape,
             "dtype": str(obj.dtype),
         }
+
     return obj
 
 

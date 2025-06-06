@@ -17,15 +17,17 @@ import tempfile
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import cast
+from typing import Union, cast
 
 import zmq
 from max.nn.kv_cache import KVTransferEngine, PagedKVCacheManager
 from max.pipelines.core import (
-    InputContext,
+    TextAndVisionContext,
+    TextContext,
     TextGenerationResponse,
     TextResponse,
     TokenGenerator,
+    msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
@@ -78,14 +80,26 @@ class DecodeScheduler(Scheduler):
         self.pc = process_control
 
         # Initialize Queues
-        self.request_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
-            zmq_ctx, zmq_endpoint=request_zmq_endpoint
+        self.request_pull_socket = ZmqPullSocket[
+            tuple[str, Union[TextContext, TextAndVisionContext]]
+        ](
+            zmq_ctx,
+            zmq_endpoint=request_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(
+                tuple[str, Union[TextContext, TextAndVisionContext]]
+            ),
         )
         self.response_push_socket = ZmqPushSocket[tuple[str, TextResponse]](
             zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
         )
-        self.cancel_pull_socket = ZmqPullSocket[tuple[str, InputContext]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
+        self.cancel_pull_socket = ZmqPullSocket[
+            tuple[str, Union[TextContext, TextAndVisionContext]]
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=cancel_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(
+                tuple[str, Union[TextContext, TextAndVisionContext]]
+            ),
         )
 
         self.dispatcher_client = dispatcher_client
@@ -93,13 +107,15 @@ class DecodeScheduler(Scheduler):
             MessageType.PREFILL_RESPONSE, self.handle_prefill_response
         )
 
-        self.preempted_request: queue.Queue[tuple[str, InputContext]] = (
-            queue.Queue()
-        )
+        self.preempted_request: queue.Queue[
+            tuple[str, Union[TextContext, TextAndVisionContext]]
+        ] = queue.Queue()
         self.prefill_complete: queue.Queue[PrefillResponse] = queue.Queue()
 
         # Initialize Scheduler state.
-        self.active_batch: OrderedDict[str, InputContext] = OrderedDict()
+        self.active_batch: OrderedDict[
+            str, Union[TextContext, TextAndVisionContext]
+        ] = OrderedDict()
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_tg)
         )
@@ -145,11 +161,13 @@ class DecodeScheduler(Scheduler):
         socket.send_pyobj(self.transfer_engine.metadata)
         logger.debug("agent and remote engine registered!")
 
-    def pull_from_request_socket(self) -> tuple[str, InputContext]:
+    def pull_from_request_socket(
+        self,
+    ) -> tuple[str, Union[TextContext, TextAndVisionContext]]:
         """Pulls a request from the request socket.
 
         Returns:
-            tuple[str, InputContext]: A tuple containing the request ID and input context.
+            tuple[str, Union[TextContext, TextAndVisionContext]]: A tuple containing the request ID and input context.
 
         Raises:
             queue.Empty: If no requests are available.
@@ -189,14 +207,14 @@ class DecodeScheduler(Scheduler):
     def send_prefill_request(
         self,
         request_id: str,
-        data: InputContext,
+        data: Union[TextContext, TextAndVisionContext],
         dst_idx: list[int],
     ) -> None:
         """Pushes a request to the prefill socket.
 
         Args:
             request_id: The ID of the request to send
-            data: The InputContext containing the request data
+            data: The Union[TextContext, TextAndVisionContext] containing the request data
 
         Raises:
             zmq.ZMQError: If there is an error sending on the socket

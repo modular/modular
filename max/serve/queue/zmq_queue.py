@@ -190,6 +190,11 @@ class ZmqPushSocket(Generic[T]):
         while True:
             try:
                 serialized_msg = self.serialize(msg)
+            except Exception as e:
+                logger.exception(f"Failed to serialize message: {e}")
+                raise
+
+            try:
                 self.push_socket.send(serialized_msg, **kwargs)
 
                 # Exit since we succeeded
@@ -203,10 +208,10 @@ class ZmqPushSocket(Generic[T]):
                     continue
 
                 # Unknown error, log it and let caller handle it
-                logger.error(
+                logger.exception(
                     f"Failed to send message on ZMQ socket for unknown reason: {e}"
                 )
-                raise e
+                raise
 
 
 class ZmqPullSocket(Generic[T]):
@@ -254,20 +259,19 @@ class ZmqPullSocket(Generic[T]):
 
         try:
             msg = self.pull_socket.recv(**kwargs)
-
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
                 raise queue.Empty()
 
-            logger.error(
+            logger.exception(
                 f"Failed to receive message on ZMQ socket for unknown reason: {e}"
             )
-            raise e
+            raise
 
         try:
             return self.deserialize(msg)
         except Exception as e:
-            raise e
+            raise
 
     def get(self, **kwargs) -> T:
         if self._closed:
@@ -342,8 +346,8 @@ class ZmqRouterSocket(Generic[T]):
             )
         except zmq.ZMQError as e:
             if e.errno != zmq.EAGAIN:
-                logger.error(f"Failed to send multipart message: {e}")
-            raise e
+                logger.exception(f"Failed to send multipart message: {e}")
+            raise
 
     def recv_multipart(self, flags: int = 0) -> tuple[bytes, T]:
         """Receive a message with sender identity."""
@@ -359,8 +363,8 @@ class ZmqRouterSocket(Generic[T]):
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
                 raise queue.Empty()
-            logger.error(f"Failed to receive multipart message: {e}")
-            raise e
+            logger.exception(f"Failed to receive multipart message: {e}")
+            raise
 
     def recv_multipart_nowait(self) -> tuple[bytes, T]:
         """Non-blocking receive."""
@@ -404,8 +408,8 @@ class ZmqDealerSocket(Generic[T]):
             self.dealer_socket.send_pyobj(message, flags=flags)
         except zmq.ZMQError as e:
             if e.errno != zmq.EAGAIN:
-                logger.error(f"Failed to send message: {e}")
-            raise e
+                logger.exception(f"Failed to send message: {e}")
+            raise
 
     def recv_pyobj(self, flags: int = 0) -> T:
         """Receive a message."""
@@ -417,8 +421,8 @@ class ZmqDealerSocket(Generic[T]):
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
                 raise queue.Empty()
-            logger.error(f"Failed to receive message: {e}")
-            raise e
+            logger.exception(f"Failed to receive message: {e}")
+            raise
 
     def recv_pyobj_nowait(self) -> T:
         """Non-blocking receive."""
