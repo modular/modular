@@ -718,12 +718,26 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       return {};
     }
     // This is either a var or ref pattern binding.
-    bool isRef = dest.patternDeclKind == PatternDeclKind::kRef;
-    auto declKind = isRef ? VarDeclKind::Ref : VarDeclKind::Var;
+    bool isRefOrBind = dest.patternDeclKind == PatternDeclKind::kRef ||
+                       dest.patternDeclKind == PatternDeclKind::kBind;
+    VarDeclKind declKind;
+    switch (dest.patternDeclKind) {
+    default:
+      assert(0 && "unhandled pattern decl kind");
+    case PatternDeclKind::kRef:
+      declKind = VarDeclKind::Ref;
+      break;
+    case PatternDeclKind::kVar:
+      declKind = VarDeclKind::Var;
+      break;
+    case PatternDeclKind::kBind:
+      declKind = VarDeclKind::Bind;
+      break;
+    }
     // The ultimate reference will be a !lit.ref<lit.ref<T>> but we don't know
     // the origin of the input value type yet. Just use a placeholder for it,
     // the emitStoreToLValue function will replace it with the actual type.
-    if (isRef)
+    if (isRefOrBind)
       varType = RefType::getAnyOrigin(varType, true);
 
     VarDeclOp varDecl = emitter.emitVarDecl(
@@ -732,7 +746,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
         DeclIRValue(varDecl), varDecl.getNameAttr(), loc, &lookupScope);
     emitter.shared.notifyListenerOnVariableDecl(varASTDecl, loc);
 
-    CValue result = isRef ? CValue(RLValue(varDecl)) : MLValue(varDecl);
+    CValue result = isRefOrBind ? CValue(RLValue(varDecl)) : MLValue(varDecl);
     return emitter.emitCResult(result, expr, dest);
   }
 

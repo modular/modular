@@ -473,7 +473,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
 
     # CHECK-NEXT: %$RANGE = lit.var.decl "$RANGE" synth
     # CHECK-NEXT: [[ITER:%.*]] = lit.call @{{.*}}__iter__{{.*}}(%mut_list_ref_iter, %$RANGE)
-    for item in mut_list_ref_iter:
+    for ref item in mut_list_ref_iter:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
         # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
@@ -481,20 +481,19 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
         # CHECK:   lit.loop.condition [[COND]]
         # CHECK: } body {
         # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next__{{.*}}(%$RANGE)
-        # CHECK:   [[ITEM:%.*]] = lit.var.decl "item"
+        # CHECK:   %item = lit.var.decl "item" ref
 
         # The Index value from this element is captured into item, not the reference.
+        # CHECK: [[ELTREF:%.*]] = lit.ref.load %item
         # CHECK: [[ELTVAL:%.*]] = lit.ref.load [[ELTREF]]
-        # CHECK: lit.ref.store [[ELTVAL]], %item
-
-        # CHECK: [[ELTVAL:%.*]] = lit.ref.load %item
         # CHECK: lit.call {{.*}}use{{.*}}([[ELTVAL]])
         use(item)
 
         # The iterator is a mutable var, so this changes the value of the var
         # not the list element.
         item = 4
-        # CHECK: lit.ref.store {{.*}}, %item
+        # CHECK: [[ELTREF:%.*]] = lit.ref.load %item
+        # CHECK: lit.ref.store {{.*}}, [[ELTREF]]
 
         # CHECK:   lit.loop.continue
         # CHECK: } else {
@@ -539,25 +538,23 @@ fn induction_var_scope():
 
 # CHECK-LABEL: @"induction_var_scope_def()"
 def induction_var_scope_def():
-    # CHECK-NEXT: %item = lit.var.decl "item"
     # CHECK: lit.loop
     # CHECK: } body {
     for item in IterRange(0):
         # CHECK-NEXT: __next__
+        # CHECK-NEXT: %item = lit.var.decl "item"
+        # CHECK: lit.ref.store {{.*}}, %item
         # CHECK: lit.ref.load %item
-        # CHECK: lit.ref.store %{{.*}}, %g
+        # CHECK: lit.ref.store {{.*}}, %g
         var g = item
 
     # CHECK: lit.loop
     # CHECK: } body {
     for item in IterRange(0):
         # CHECK-NEXT: __next__
+        # CHECK-NEXT: %item = lit.var.decl "item"
         # CHECK: lit.ref.load %item
         var g = item
-
-    # CHECK: [[ELTVAL:%.*]] = lit.ref.load %item
-    # CHECK: lit.call {{.*}}use{{.*}}([[ELTVAL]])
-    use(item)
 
 struct MyType:
     pass

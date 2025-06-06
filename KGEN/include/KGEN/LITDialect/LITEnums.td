@@ -77,18 +77,22 @@ def LIT_VarDeclKind : I32EnumAttr<"VarDeclKind",
   I32EnumAttrCase<"Var", 0, "var">,
   /// "ref x = ...": Explicitly declared reference binding.
   I32EnumAttrCase<"Ref", 1, "ref">,
+  /// "for x in ..": Bind to either a immutable value or a reference depending
+  /// on the initializer. On assignment, this switches to Var or Ref.
+  I32EnumAttrCase<"Bind", 2, "bind">,
+
   /// Value is declared implicitly by the user via non-var/let syntax.
   /// For example, implicit declarations in `def` functions, target declarations
   /// in `for` statements.
-  I32EnumAttrCase<"Implicit", 2, "imp">,
+  I32EnumAttrCase<"Implicit", 3, "imp">,
   /// Value is not declared by the user at all.
-  I32EnumAttrCase<"Synthesized", 3, "synth">,
+  I32EnumAttrCase<"Synthesized", 4, "synth">,
   /// Value is a shadow of a function argument, for arguments that need a
   /// variable location.
-  I32EnumAttrCase<"Arg", 4, "arg">,
+  I32EnumAttrCase<"Arg", 5, "arg">,
   /// Value is a shadow of an 'out' argument for a register passable
   /// initializer.
-  I32EnumAttrCase<"InitOutArg", 5, "initoutarg">,
+  I32EnumAttrCase<"InitOutArg", 6, "initoutarg">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

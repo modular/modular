@@ -1198,12 +1198,8 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // into.  This will synthesize the VarDeclOp from the inferred result type,
   // which will be in scope for the body that we will parse.
   ValueDest indvarDest(targetExpr, EC_ForIterator);
-
-  // If we're in an 'fn' then we use lexically scoped vardecls. If we're in a
-  // 'def' then we use function-scoped vardecls.
-  if (auto funcDecl = curDeclScope->getNearestDeclOfType<FnOp>())
-    if (!cast<FnOp>(*funcDecl).isDef())
-      indvarDest.patternDeclKind = PatternDeclKind::kVar;
+  // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
+  indvarDest.patternDeclKind = PatternDeclKind::kBind;
 
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
@@ -1721,29 +1717,17 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
     }
   }
 
-  // If we are in a def, we need to use function scoping.  If we are in a fn,
-  // we need to use lexical scope.  When we support `with` at the top level, we
-  // should decide whether it is lexical or global scope.  This largely depends
-  // on our view of what `python superset` or `python++` means.
-  bool useLexicalScope = true;
-  if (auto funcDecl = curDeclScope->getNearestDeclOfType<FnOp>())
-    useLexicalScope = !cast<FnOp>(*funcDecl).isDef();
-
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
   llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
-  if (useLexicalScope)
-    pushChildScope(scopeGuard, keepDecl);
+  pushChildScope(scopeGuard, keepDecl);
 
   // If there is an explicit target specified, use it.
   ValueDest enterDest(EC_WithContextMgr);
   if (targetExpr) {
     // Initialize the target expression with the result of the __enter__ call.
     enterDest = ValueDest(targetExpr, EC_WithContextMgr);
-    // If we're in a 'def' just use the DeclRefNode as the destination. This
-    // ensures that we reuse and/or implicitly declare variables at the top
-    // level of the function, just like "x = foo()" does for "x".
-    if (useLexicalScope)
-      enterDest.patternDeclKind = PatternDeclKind::kVar;
+    // Lexically scope enterDest as a 'bind' pattern like a 'read' arg.
+    enterDest.patternDeclKind = PatternDeclKind::kBind;
   }
 
   // Emit the call to __enter__ and (if 'as TARGET' was specified), bind to
