@@ -390,8 +390,8 @@ struct LayoutTensor[
         ]()
 
         self.ptr = span.unsafe_ptr()
-        self.runtime_layout = __type_of(self.runtime_layout)()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_layout = {}
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -423,7 +423,7 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, linear_idx_type=linear_idx_type
         ]()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -491,8 +491,8 @@ struct LayoutTensor[
         ]()
 
         self.ptr = ptr
-        self.runtime_layout = __type_of(self.runtime_layout)()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_layout = {}
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -525,7 +525,7 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, linear_idx_type=linear_idx_type
         ]()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -7512,11 +7512,11 @@ struct LayoutTensorIter[
                 "Circular use case is not supported if an axis is defined.",
             ]()
 
-        self.ptr = __type_of(self.ptr)()
+        self.ptr = {}
         self.offset = 0
         self.stride = 0
         self.bound = 0
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
         self.dimension_bound = 0
         self.idx = 0
 
@@ -7562,7 +7562,7 @@ struct LayoutTensorIter[
         self.ptr = ptr
         self.bound = bound
         self.stride = stride
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
         self.offset = offset
         self.dimension_bound = 0
         self.idx = 0
@@ -7929,7 +7929,7 @@ struct LayoutTensorIter[
         return __type_of(result)(
             self.ptr,
             Int(self.bound),
-            __type_of(result.runtime_layout)(),
+            {},
             Int(self.stride),
             Int(self.offset),
             dimension_bound=Int(self.dimension_bound),

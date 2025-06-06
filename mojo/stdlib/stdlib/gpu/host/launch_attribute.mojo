@@ -422,8 +422,8 @@ struct LaunchAttribute(Copyable, Movable):
     fn __init__(out self):
         """Initializes a new LaunchAttribute with IGNORE ID and zeroed value."""
         self.id = LaunchAttributeID.IGNORE
-        self.__pad = __type_of(self.__pad)()
-        self.value = LaunchAttributeValue()
+        self.__pad = {}
+        self.value = {}
 
     fn __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
         """Initializes a `LaunchAttribute` with a specific ID and value.
@@ -433,7 +433,7 @@ struct LaunchAttribute(Copyable, Movable):
             value: The `LaunchAttributeValue` to set.
         """
         self.id = id
-        self.__pad = __type_of(self.__pad)()
+        self.__pad = {}
         self.value = value
 
     @implicit

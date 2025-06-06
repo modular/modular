@@ -100,7 +100,7 @@ struct RuntimeTuple[
         For dimensions with known compile-time values in S, uses those values.
         For unknown dimensions, initializes them to UNKNOWN_VALUE.
         """
-        self.value = __type_of(self.value)()
+        self.value = {}
 
         alias f = flatten(S)
 
