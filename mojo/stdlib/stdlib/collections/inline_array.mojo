@@ -499,12 +499,13 @@ struct InlineArray[
         return UnsafePointer(ptr)[]
 
     @always_inline
-    fn unsafe_ptr(
-        ref self,
-    ) -> UnsafePointer[
+    fn unsafe_ptr[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref [origin, address_space]self) -> UnsafePointer[
         Self.ElementType,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+        mut = origin.mut,
+        origin=origin,
+        address_space=address_space,
     ]:
         """Gets an unsafe pointer to the underlying array storage.
 
@@ -534,9 +535,8 @@ struct InlineArray[
         return (
             UnsafePointer(to=self._array)
             .bitcast[Self.ElementType]()
-            .origin_cast[
-                mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
-            ]()
+            .origin_cast[origin.mut, origin]()
+            .address_space_cast[address_space]()
         )
 
     @always_inline

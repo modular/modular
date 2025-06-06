@@ -1058,20 +1058,22 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if elt_idx_1 != elt_idx_2:
             swap((self.data + elt_idx_1)[], (self.data + elt_idx_2)[])
 
-    fn unsafe_ptr(
-        ref self,
-    ) -> UnsafePointer[
-        T,
-        mut = Origin(__origin_of(self)).mut,
-        origin = __origin_of(self),
+    fn unsafe_ptr[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref [origin, address_space]self) -> UnsafePointer[
+        T, mut = origin.mut, origin=origin, address_space=address_space
     ]:
         """Retrieves a pointer to the underlying memory.
+
+        Parameters:
+            origin: The origin of the `List`.
+            address_space: The `AddressSpace` of the `List`.
 
         Returns:
             The pointer to the underlying memory.
         """
-        return self.data.origin_cast[
-            mut = Origin(__origin_of(self)).mut, origin = __origin_of(self)
+        return self.data.origin_cast[origin.mut, origin]().address_space_cast[
+            address_space
         ]()
 
     @always_inline
