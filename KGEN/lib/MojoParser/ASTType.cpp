@@ -1323,7 +1323,7 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
 
     // Otherwise, check each bound parameter to see if it is unknown.  If so,
     // replace it.
-    SmallVector<TypedAttr> newParms;
+    SmallVector<TypedAttr> newParams;
     bool anyBound = false;
     for (auto curValue : getParamBindings()) {
       if (!finder.hasReferences(curValue)) {
@@ -1337,11 +1337,11 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
               ASTType(UnboundAttr::get(TypeType::get(paramType.getContext())));
         curValue = UnboundAttr::get(paramType);
       }
-      newParms.push_back(curValue);
+      newParams.push_back(curValue);
     }
 
     if (anyBound)
-      return cast<StructDeclOp>(getDecl(shared)).bindReference(newParms);
+      return cast<StructDeclOp>(getDecl(shared)).bindReference(newParams);
   }
 
   // Otherwise return it with all parameters replaced.

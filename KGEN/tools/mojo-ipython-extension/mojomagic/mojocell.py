@@ -36,7 +36,7 @@ _global_ipython_exec_info = None
 
 
 def _pre_exec_hook(exec_info):
-    """pre_run_cell IPython event hook to store exec_info for later retrival of cell_id"""
+    """pre_run_cell IPython event hook to store exec_info for later retrieval of cell_id"""
     global _global_ipython_exec_info
     _global_ipython_exec_info = exec_info
 

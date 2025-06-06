@@ -2289,7 +2289,7 @@ void MojoServer::updateDocument(
     return removeDocument(uri);
   }
 
-  // Overrite the original document with the new contents.
+  // Overwrite the original document with the new contents.
   addDocument(uri, std::move(contents), version);
 }
 
@@ -2440,7 +2440,7 @@ void MojoServer::updateNotebookDocument(
     }
   }
 
-  // Overrite the original document with the new contents.
+  // Overwrite the original document with the new contents.
   addNotebookDocument(uri, cells, version, cellDocs);
 }
 

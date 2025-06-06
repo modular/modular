@@ -267,7 +267,7 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
                              bool emitDiagnostics, StringAttr moduleName,
                              StringAttr declNameInModule) {
   // Check to see if the decl is an import. We create new decls within the
-  // context for thse instead of aliasing, because import decls lazily replace
+  // context for these instead of aliasing, because import decls lazily replace
   // themselves with new decls (depending on what gets imported). That
   // replacement is only known when the import decl is referenced (and thus
   // resolved), so we can't alias the import directly.
