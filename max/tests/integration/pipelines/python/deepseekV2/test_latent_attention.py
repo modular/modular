@@ -12,7 +12,7 @@ from max.driver import Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention.attention_with_rope import LatentAttentionWithRope
+from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheParams,
