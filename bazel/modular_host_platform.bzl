@@ -17,6 +17,8 @@ def _get_amd_constraint(blob):
         series = value["Card Series"]
         if "MI300X" in series:
             return "@//:mi300x_gpu"
+        if "MI325" in series:
+            return "@//:mi325_gpu"
         if "AMD Radeon Graphics" in series:
             return "@//:radeon_gpu"
 
