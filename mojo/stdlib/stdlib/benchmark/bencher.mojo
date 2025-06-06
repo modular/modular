@@ -122,7 +122,7 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
         Returns:
             The selected metric.
         """
-        for ref m in metric_list:
+        for m in metric_list:
             if m.check_name(name):
                 return m
 
@@ -134,7 +134,7 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             "Couldn't match metric [" + name + "]\n",
             "Available throughput metrics (case-insensitive) in the list:\n",
         )
-        for ref m in metric_list:
+        for m in metric_list:
             err += String("    metric: [" + m.name.lower(), "]\n")
         err += String(
             sep, sep, "[ERROR]: metric [", name, "] is NOT supported!\n"
@@ -679,7 +679,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
@@ -737,7 +737,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
@@ -840,7 +840,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
@@ -892,7 +892,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
@@ -1118,7 +1118,7 @@ struct Bench(Writable, Stringable):
             var iters_pad = self.pad(iters_width, String(run.result.iters()))
             writer.write(sep, run.result.iters(), iters_pad)
 
-            for var name in metrics:
+            for name in metrics:
                 try:
                     var rates = metrics[name].rates
                     var max_width = metrics[name].max_width

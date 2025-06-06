@@ -557,7 +557,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             The new dictionary.
         """
         var my_dict = Dict[K, V]()
-        for ref key in keys:
+        for key in keys:
             my_dict[key] = value
         return my_dict
 
@@ -723,7 +723,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         result += "{"
 
         var i = 0
-        for ref key_value in self.items():
+        for key_value in self.items():
             result += repr(key_value.key) + ": " + repr(key_value.value)
             if i < len(self) - 1:
                 result += ", "
@@ -869,7 +869,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         var key = Optional[K](None)
         var val = Optional[V](None)
 
-        for ref item in reversed(self.items()):
+        for item in reversed(self.items()):
             key = Optional(item.key)
             val = Optional(item.value)
             break
@@ -929,7 +929,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         Notes:
             The argument must be positional only.
         """
-        for ref entry in other.items():
+        for entry in other.items():
             self[entry.key] = entry.value
 
     fn clear(mut self):
@@ -1262,7 +1262,7 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         my_dict["a"] = 1
         my_dict["b"] = 2
 
-        for ref e in my_dict.items():
+        for e in my_dict.items():
             print(e.key, e.value)
         ```
 

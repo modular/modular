@@ -373,7 +373,7 @@ struct Python:
         if not dict_obj_ptr:
             raise Error("internal error: PyDict_New failed")
 
-        for ref entry in kwargs.items():
+        for entry in kwargs.items():
             var key_ptr = cpython.PyUnicode_DecodeUTF8(
                 entry.key.as_string_slice()
             )

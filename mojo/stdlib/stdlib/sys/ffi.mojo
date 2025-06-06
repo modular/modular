@@ -498,7 +498,7 @@ fn _try_find_dylib[
         Error: If the library could not be loaded from any of the provided paths.
     """
     alias dylib_name = name if name != "" else "dynamic library"
-    for ref path in paths:
+    for path in paths:
         # If we are given a library name like libfoo.so, pass it directly to
         # dlopen(), which will invoke the system linker to find the library.
         # We can't check the existence of the path ahead of time, we have to
@@ -524,7 +524,7 @@ fn _try_find_dylib[
     """
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
-    for ref path in paths:
+    for path in paths:
         paths_list.append(path)
     return _try_find_dylib[name](paths_list)
 
@@ -555,7 +555,7 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
     """
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
-    for ref path in paths:
+    for path in paths:
         paths_list.append(path)
     return _find_dylib[name](paths_list)
 

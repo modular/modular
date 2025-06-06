@@ -224,7 +224,7 @@ struct Deque[ElementType: Copyable & Movable](
             The newly created deque with the properties of `self`.
         """
         new = self.copy()
-        for ref element in other:
+        for element in other:
             new.append(element)
         return new^
 
@@ -234,7 +234,7 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             other: Deque whose elements will be appended to self.
         """
-        for ref element in other:
+        for element in other:
             self.append(element)
 
     fn __mul__(self, n: Int) -> Self:
@@ -255,7 +255,7 @@ struct Deque[ElementType: Copyable & Movable](
             )
         new = self.copy()
         for _ in range(n - 1):
-            for ref element in self:
+            for element in self:
                 new.append(element)
         return new^
 
@@ -271,7 +271,7 @@ struct Deque[ElementType: Copyable & Movable](
 
         orig = self.copy()
         for _ in range(n - 1):
-            for ref element in orig:
+            for element in orig:
                 self.append(element)
 
     fn __eq__[

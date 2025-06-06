@@ -17,7 +17,7 @@ from sys import has_neon, simdwidthof
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, HostBuffer
 from gpu.host._compile import _get_gpu_target
 from testing import *
 
@@ -37,9 +37,11 @@ def run_elementwise[
     var in_device = ctx.enqueue_create_buffer[type](length)
     var out_device = ctx.enqueue_create_buffer[type](length)
 
-    with in_device.map_to_host() as in_host:
+    var in_host: HostBuffer[type]
+    with in_device.map_to_host() as in_host2:
         for i in range(length):
-            in_host[i] = 0.001 * abs(Scalar[type](i) - length // 2)
+            in_host2[i] = 0.001 * abs(Scalar[type](i) - length // 2)
+        in_host = in_host2^
 
     var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
     var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))

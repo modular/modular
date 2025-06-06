@@ -70,8 +70,9 @@ def example(...):
 The way this works is through recursion: this concept is known as a "pattern"
 in other languages.  A more generalized form of these expressions is used in the
 Python "match" statement (which adds so-called "failable" patterns). The type
-annotation is technically not recursive in the target grammar, but we include it
-in the collection here for simplicity.
+annotation is technically not recursive in the target grammar (it is tightly
+bound to assignment statements), but we include it in the collection here for
+simplicity.
 
 ## Mojo `var` and `ref` extensions
 
@@ -83,13 +84,17 @@ specifically important for `def` declarations and while we do have more
 flexibility `fn`s, we don't want them to be completely discordant from each
 other.
 
+Sidebar: Mojo and Python being syntactically identical is not required, but we
+want to keep the languages close to each other and mechanically transformable
+with high confidence.
+
 The two most important extensions that Mojo adds are the notion of a `var`
 binding and the notion of a `ref` binding: `var` defines a "lexically scoped"
 variable (as opposed to a "function scoped" variable like in Python) and `ref`
 captures the address of an LValue expression, rather than dereferencing and
 copying the value.
 
-Let's look at an example of these in a def statement, working on a mutable
+Let's look at an example of these, working on a mutable
 list of integers, with an `if` statement.  Recall that `List.__getitem__`
 is defined to return a `ref` to the element inside the list.
 
@@ -219,33 +224,45 @@ scoping of a variable binding, and this behavior is consistent in `def` and
 well, and here the behavior is perhaps surprising:
 
 ```mojo
-def def_examples():
+def examples():
   a = 4  # Function scoped implicit definition or reassignment.
 
-  # 'for' statement use implicit definition or reassignment.
-  b = 0
-  for b in [1, 2]: pass # Reassigns to 'b' in the function.
-  use(b) # This prints '2' like in Python.
+  # 'for' statement binds to a local scope.
+  for b in [1, 2]: pass
+  use(b) # Error: b is not in scope here, unlike Python
 
   c = 42
-  # 'c' is function scoped implicit definition or reassignment.
-  # NOTE: This seems like a bug, Python scopes these within the expression, this
-  # should simplicitly be a 'var'.
+  # 'c' in the list shadows 'c' in the function and doesn't collide.
   list = [c*c for c in [1, 2, 3]]
-  print(c) # This prints 3 but should print 42 like in Python.
+  print(c) # This prints 42 like in Python.
+```
 
-fn fn_examples():
-    # This is a function scoped implicit definition or assignment.
-    a = 4
+When names are bound if `for` statements, they are bound into a local scope with
+semantics that mirror the `read` convention: returned references are bound to a
+read-only reference (avoiding a copy, and preventing mutation) and returned
+values are bound into an owned temporary and an immutable reference is live
+across the loop body.  This is why you see behavior like this:
 
-    # Variables without 'ref' or 'var' in a 'for' statement get 'var' scoping
-    # automatically.
-    for b in [1, 2]: pass
-    use(b)  # Error, b is not in scope here.
+```mojo
+def examples():
+  # Valid even though the elements are non-copyable, because 'a' is an immutable
+  # reference.
+  for a in CollectionOfNonCopyableValues():
+     use(a)
 
-    # Comprehensions are also implicitly scoped as `var`
-    list = [c*c for c in [1, 2, 3]]
-    use(b)  # Error, b is not in scope here.
+  for b in [1, 2]:
+     b = 42 # error, cannot assign into immutable reference.
+
+  list = [1, 2]
+  for ref c in list:  # c is a ref
+     c += 1 # Ok, mutable reference!
+  assert(list == [2, 3])
+
+  for var d in [1, 2]: # d is a var
+     d += 42 # Ok, modifying the local 'd' var, doesn't affect the list.
+
+  for e in range(10): # range iterator returns Int by copy, not by reference.
+     e = 42 # error, cannot assign into immutable reference.
 ```
 
 ## Controversial behavior
@@ -307,4 +324,50 @@ I'm aware of the following controversial behavior:
 
 ## Alternatives considered
 
-For statements should default to an immutable ref like functions?
+Several alternate designs were considered: This section captures some of them.
+
+## Why not allow multiple type annotations?
+
+["yinon" asked](https://forum.modular.com/t/variable-bindings-proposal-discussion/1579/2)
+why we don't support `var a2: Int, b2: String`.
+
+In Mojo, type annotations are part of the assignment grammar, not part of the
+recursive expression grammar, so they can only be used on the outer part of a
+pattern, indeed even `(var a2: Int) = 4` isn't valid, but `(var a2): Int = 4`
+is.  We could relax that in principle, but it wouldn't scale well.  Let's
+explore why:
+
+First, people would expect assignment to work, which could be done if type
+patterns are at the right precedence level:
+
+```mojo
+var a2: Int, b2: String = fn_returning_int_and_string()
+```
+
+Given this, we would then be asked to support the next "obvious" adjacent thing:
+
+```mojo
+var a2: Int = fn_returning_int(), b2: String = fn_returning_string()
+var a2 = fn_returning_int(), b2 = fn_returning_string()
+```
+
+However, this is a fundamentally different design than Python or Mojo use for
+their expression grammars, because now we’re taking `=` and using it as an
+expression instead of a statement.
+
+If we don't want to change that (in the forseeable future), then there isn't a
+strong argument to support things like:
+
+```mojo
+var a2: Int, b2: String = fn_returning_int_and_string()
+```
+
+First, people will ask for the next obvious thing, but second, reasonable people
+could be confused about whether b2 is being initialized or a2/b2 together (it
+needs to be both).  If we don't want to support this, then it doesn't seem like
+a good idea to support `var a2: Int, b2: String` unless and until we decide we
+want to scale this all the way.
+
+For the forseeable future, we will keep things simple and narrow, rather than
+providing a partially paved path.  If we decide this is important enough to
+address, we should scope solving the full problem.

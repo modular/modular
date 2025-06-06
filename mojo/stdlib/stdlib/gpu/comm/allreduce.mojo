@@ -361,7 +361,7 @@ fn _allreduce_naive[
         )
 
         # Reduce remote buffers.
-        for ref tmp in tmp_buffers:
+        for tmp in tmp_buffers:
             curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
                 accum_buffer,
                 tmp,

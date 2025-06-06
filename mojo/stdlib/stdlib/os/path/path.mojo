@@ -352,7 +352,7 @@ fn join(owned path: String, *paths: String) -> String:
     """
     var joined_path = path
 
-    for ref cur_path in paths:
+    for cur_path in paths:
         if cur_path.startswith(sep):
             joined_path = cur_path
         elif not joined_path or path.endswith(sep):

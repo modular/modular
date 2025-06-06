@@ -135,7 +135,7 @@ def test_iter():
     c["b"] = 2
 
     var keys = String()
-    for ref key in c:
+    for key in c:
         keys += key
 
     assert_equal(keys, "ab")
@@ -147,7 +147,7 @@ def test_iter_keys():
     c["b"] = 2
 
     var keys = String()
-    for ref key in c.keys():
+    for key in c.keys():
         keys += key
 
     assert_equal(keys, "ab")
@@ -185,7 +185,7 @@ def test_iter_items():
 
     var keys = String()
     var sum = 0
-    for ref entry in c.items():
+    for entry in c.items():
         keys += entry.key
         sum += entry.value
 

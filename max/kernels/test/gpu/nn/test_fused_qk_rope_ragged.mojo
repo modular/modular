@@ -470,7 +470,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     )
     for page_idx in range(num_paged_blocks):
         for kv_idx in range(2):
-            for var layer_idx in range(num_layers):
+            for layer_idx in range(num_layers):
                 for tok_idx in range(page_size):
                     for head_idx in range(kv_params.num_heads):
                         memcpy(
@@ -646,7 +646,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     for page_idx in range(num_paged_blocks):
         # only compare the K cache
         for kv_idx in range(1):
-            for var layer_idx in range(num_layers):
+            for layer_idx in range(num_layers):
                 for tok_idx in range(page_size):
                     if tok_idx + page_idx * page_size < seq_len:
                         for head_idx in range(kv_params.num_heads):

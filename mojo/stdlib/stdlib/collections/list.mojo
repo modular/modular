@@ -121,7 +121,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             A copy of the value.
         """
         var copy = Self(capacity=self.capacity)
-        for ref e in self:
+        for e in self:
             copy.append(e)
         return copy^
 
@@ -186,7 +186,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             span: The span of values to populate the list with.
         """
         self = Self(capacity=len(span))
-        for ref value in span:
+        for value in span:
             self.append(value)
 
     @always_inline
@@ -252,7 +252,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if len(self) != len(other):
             return False
         var index = 0
-        for ref element in self:
+        for element in self:
             if element != other[index]:
                 return False
             index += 1
@@ -306,7 +306,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
-        for ref i in self:
+        for i in self:
             if i == value:
                 return True
         return False
@@ -551,7 +551,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if hint_trivial_type:
             memcpy(self.data + i, elements.unsafe_ptr(), elements_len)
         else:
-            for ref elt in elements:
+            for elt in elements:
                 UnsafePointer(to=self[i]).init_pointee_copy(elt)
                 i += 1
 
@@ -1020,7 +1020,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             The number of occurrences of the value in the list.
         """
         var count = 0
-        for ref elem in self:
+        for elem in self:
             if elem == value:
                 count += 1
         return count

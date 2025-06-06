@@ -624,32 +624,24 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   As shown above, you can print the individual elements in a list as long as
   they're a [`Stringable`](/mojo/stdlib/builtin/str/Stringable) type.
 
-* Iterating a `List` returns a
+* Iterating a `List` returns an immutable
   [reference](/mojo/manual/values/lifetimes#working-with-references) to each
-  item, which is copied into name you provide by default:
+  item:
 
 ```mojo
-#: from collections import List
 var list = [2, 3, 4]
-for item in list:     # Copies the integer into "item"
+for item in list:
       print(item, end=", ")
-      item = 0 # warning: assignment to 'item' was never used
-  print(list[0], list[1], list[2])
 ```
 
 ```output
 2, 3, 4,
-2 3 4
 ```
 
-Mojo warns you that the assignment to `item` isn't doing anything useful,
-because `item` is a copy of value from the list, and it's overwritten on the
-next loop iteration.
 If you would like to mutate the elements of the list, capture the reference to
 the element with `ref` instead of making a copy:
 
 ```mojo
-#: from collections import List
 var list = [2, 3, 4]
 for ref item in list:     # Capture a ref to the list element
       print(item, end=", ")
@@ -703,7 +695,7 @@ var d: Dict[String, Float64] = {
     "elasticity": 1.3,
     "electricity": 9.7
 }
-for ref item in d.items():
+for item in d.items():
     print(item.key, item.value)
 ```
 

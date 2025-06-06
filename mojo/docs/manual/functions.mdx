@@ -327,7 +327,7 @@ Memory-only types, such as `String`, are available as a
 [`VariadicListMem`](/mojo/stdlib/builtin/variadics/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
 reference to the element, which can be mutable with a `mut` variadic list. Use
-the `ref` binding pattern to capture the reference (instead of a copy) if you
+the `ref` binding pattern to capture a mutable reference if you
 want to mutate the elements of the list:
 
 ```mojo
