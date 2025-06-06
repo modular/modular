@@ -34,6 +34,7 @@ Then, run `verify` with the logit files:
 ```
 """
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -276,15 +277,39 @@ def verify(
 
     def compare(pipeline_value, torch_value, description):
         nonlocal any_failed
-        if isinstance(pipeline_value, (int, float)):
+
+        # TODO: These assertions assume we're working with LLMs
+        # or embedding models. They might need to be updated
+        # when we add support for other model types.
+
+        # For integers, we expect next_token and need exact match
+        if isinstance(pipeline_value, int):
+            assert isinstance(torch_value, int)
+            assert description.startswith("'next_token'")
             if pipeline_value != torch_value:
-                pf = "⚠️" if description.startswith("'next_token'") else ""
                 print(
-                    f"{pf}Got mismatching {description}: {pipeline_value} !="
+                    f"⚠️ Got mismatching {description}: {pipeline_value} !="
                     f" {torch_value}"
                 )
             return
 
+        # For floats, we expect next_token_logits and check with tolerances
+        if isinstance(pipeline_value, float):
+            assert isinstance(torch_value, float)
+            assert description.startswith("'next_token_logits'")
+            if not math.isclose(
+                pipeline_value,
+                torch_value,
+                rel_tol=2e-2,
+                abs_tol=1e-6,
+            ):
+                print(
+                    f"Got mismatching {description}: {pipeline_value} !="
+                    f" {torch_value}"
+                )
+            return
+
+        # For arrays, apply tolerance checking
         validation_result = validator(pipeline_value, torch_value)
         results.append(validation_result)
         if validation_result.any_failed():
