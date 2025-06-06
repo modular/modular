@@ -23,7 +23,7 @@ from max.mlir import Context, Location
 #
 # mypy: disable-error-code="overload-cannot-match"
 
-# DiagnosticHandlers aren't a thing that Python can reasonbly provided. In most cases
+# DiagnosticHandlers aren't a thing that Python can reasonably provided. In most cases
 # these are automatically provided, but there are a few custom verifiers not covered yet.
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
@@ -1931,7 +1931,7 @@ class CostOfOp(max._core.Operation):
     the cost of the function. This operation must be resolved at compile time.
 
     Currently, `kgen.cost_of` returns the number of loads, stores, additions,
-    comparisions, divisions, multiplications, multiply-adds, and other
+    comparisons, divisions, multiplications, multiply-adds, and other
     operations, that is, operations that do not fall into any of the above
     categories. The cost is evaluated on the function at the output of
     elaboration, without running any post-elaboration passes.
@@ -2023,7 +2023,7 @@ class CreateRegStubOp(max._core.Operation):
         !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none>
     ```
 
-    The type is wrapped aound a memory struct to preverse the signature,
+    The type is wrapped around a memory struct to preserve the signature,
     and also to indicate to LLVM that pointers don't alias.
 
     After LowerCallConvention, only `callee`'s signature change:

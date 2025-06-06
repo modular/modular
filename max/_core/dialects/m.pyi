@@ -21,7 +21,7 @@ import max._core.dialects.builtin
 #
 # mypy: disable-error-code="overload-cannot-match"
 
-# DiagnosticHandlers aren't a thing that Python can reasonbly provided. In most cases
+# DiagnosticHandlers aren't a thing that Python can reasonably provided. In most cases
 # these are automatically provided, but there are a few custom verifiers not covered yet.
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
