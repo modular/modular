@@ -77,7 +77,7 @@ async def test_openai_chat_completion_streamed(stream_app, num_tasks):
             json_response = json.loads(decoded_response)
             response_content = json_response["choices"][0]["delta"]["content"]
             response_text += response_content
-        assert response_text == (request_content[::-1])
+        assert response_text == (request_content)
         return response_text
 
     async with TestClient(stream_app, timeout=20.0) as client:

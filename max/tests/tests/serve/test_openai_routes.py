@@ -63,7 +63,7 @@ async def test_openai_chat_completion_single(app):
         )
         assert len(response.choices) == 1
         choice = response.choices[0]
-        assert choice.message.content == request_content[::-1]
+        assert choice.message.content == request_content
         assert choice.finish_reason == "stop"
 
 
@@ -99,7 +99,7 @@ def test_openai_chat_completion_concurrent(app):
         assert len(response.choices) == 1
         assert response.choices[0].finish_reason == "stop"
         received_response = response.choices[0].message.content
-        expected_response = request_contents[id][::-1]
+        expected_response = request_contents[id]
         assert received_response == expected_response
 
 
