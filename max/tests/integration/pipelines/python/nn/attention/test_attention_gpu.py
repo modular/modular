@@ -646,6 +646,7 @@ def null_mask_max_flash_attn(
 @pytest.mark.parametrize(
     "q_seqlen,k_seqlen",
     [
+        (20, 20),
         (128, 128),
         # TODO(KERN-1634): support num_keys != seq_len.
         # (2, 3),
@@ -762,8 +763,7 @@ def padded_max_flash_attn(
     "actual_seq_len, padded_seq_len",
     [
         (128, 160),
-        # TODO: Hopper MHA doesn't support NullMask with num_keys!=128
-        # (20, 128),
+        (20, 128),
     ],
 )
 def test_padded_flash_attention_gpu(actual_seq_len: int, padded_seq_len: int):
