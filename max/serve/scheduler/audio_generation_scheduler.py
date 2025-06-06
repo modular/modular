@@ -16,11 +16,10 @@ import logging
 import queue
 import time
 from collections import deque
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import torch
 import zmq
-from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerationResponse,
     AudioGenerator,
@@ -31,7 +30,6 @@ from max.pipelines.core import (
 from max.profiler import Trace, traced
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
-from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
@@ -74,7 +72,6 @@ class AudioGenerationScheduler(Scheduler):
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
-        paged_manager: PagedKVCacheManager | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -98,25 +95,17 @@ class AudioGenerationScheduler(Scheduler):
 
         # Initialize Scheduler state.
         self.pending_reqs: deque[tuple[str, TTSContext]] = deque()
-        self.active_batch: dict[str, TTSContext] = {}
+        self.decode_reqs: dict[str, TTSContext] = {}
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_tg)
         )
-        self.ce_batch_start_time: Optional[float] = None
-
-        # Optional reference to the paged kv cache manager.
-        # Note that the paged manager is shared with the model worker thread.
-        # Care must be taken to ensure no race conditions.
-        self.paged_manager = paged_manager
-        self.total_preemption_count = 0
-        self.last_preemption_logging_time: float = 0.0
 
         # TODO health check
 
     def _should_schedule_ce(self) -> bool:
-        if len(self.active_batch) == 0:
+        if len(self.decode_reqs) == 0:
             return True
-        if len(self.active_batch) == self.scheduler_config.max_batch_size_tg:
+        if len(self.decode_reqs) == self.scheduler_config.max_batch_size_tg:
             return False
         if len(self.pending_reqs) == 0:
             return False
@@ -124,7 +113,7 @@ class AudioGenerationScheduler(Scheduler):
 
     def _create_tg_batch(self) -> AudioGenerationSchedulerOutput:
         return AudioGenerationSchedulerOutput(
-            self.active_batch.copy(),
+            self.decode_reqs.copy(),
             num_steps=self.scheduler_config.max_forward_steps_tg,
             batch_type=BatchType.TokenGeneration,
         )
@@ -135,7 +124,7 @@ class AudioGenerationScheduler(Scheduler):
         max_tg_batch_size = self.scheduler_config.max_batch_size_tg
 
         while (len(ce_batch) < max_ce_batch_size) and (
-            len(ce_batch) + len(self.active_batch) < max_tg_batch_size
+            len(ce_batch) + len(self.decode_reqs) < max_tg_batch_size
         ):
             try:
                 req_id, req_data = self.pending_reqs.popleft()
@@ -251,8 +240,8 @@ class AudioGenerationScheduler(Scheduler):
                 del batch_executed[request_id]
 
                 # Remove from active batch
-                if request_id in self.active_batch:
-                    del self.active_batch[request_id]
+                if request_id in self.decode_reqs:
+                    del self.decode_reqs[request_id]
 
     @traced
     def _handle_cancelled_requests(self) -> None:
@@ -260,13 +249,13 @@ class AudioGenerationScheduler(Scheduler):
             while not self.cancel_q.empty():
                 try:
                     for req_id in self.cancel_q.get_nowait():
-                        if req_id not in self.active_batch:
+                        if req_id not in self.decode_reqs:
                             continue
-                        self.pipeline.release(self.active_batch[req_id])
+                        self.pipeline.release(self.decode_reqs[req_id])
                         self.available_cache_indices.add(
-                            self.active_batch[req_id].cache_seq_id
+                            self.decode_reqs[req_id].cache_seq_id
                         )
-                        del self.active_batch[req_id]
+                        del self.decode_reqs[req_id]
 
                         stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
                         self.response_q.put_nowait([{req_id: stop_stream}])
@@ -310,48 +299,23 @@ class AudioGenerationScheduler(Scheduler):
 
         self.response_q.put_nowait([audio_responses, stop_responses])
 
-    def _schedule_ce(self, sch_output: AudioGenerationSchedulerOutput) -> None:
-        batch_to_execute = sch_output.batch_inputs
-
-        # we about to execute the batch, reset the CE batch timer
-        self.ce_batch_start_time = None
-
-        # execute the batch
-        batch_responses = self.pipeline.next_chunk(
-            batch_to_execute,
-            num_tokens=sch_output.num_steps,
-        )
-
-        # remove terminated requests from the batch
-        self._handle_terminated_responses(batch_to_execute, batch_responses)
-        # add the encoded requests to the continuous batch
-        for req_id in batch_to_execute:
-            self.active_batch[req_id] = batch_to_execute[req_id]
-
-        # send the responses to the API process
-        self._stream_responses_to_frontend(batch_responses)
-
-    def _schedule_tg(self, sch_output: AudioGenerationSchedulerOutput) -> None:
-        batch_to_execute = sch_output.batch_inputs
-
-        METRICS.batch_size(len(batch_to_execute))
-        # execute the batch
-        batch_responses = self.pipeline.next_chunk(
-            batch_to_execute,
-            num_tokens=sch_output.num_steps,
-        )
-        # remove terminated requests from the batch
-        self._handle_terminated_responses(batch_to_execute, batch_responses)
-
-        # send the responses to the API process
-        self._stream_responses_to_frontend(batch_responses)
-
     def _schedule(self, sch_output: AudioGenerationSchedulerOutput) -> None:
         assert sch_output.batch_size > 0
 
+        batch_to_execute = sch_output.batch_inputs
+
+        # execute the batch
         with Trace(f"_schedule({sch_output})"):
-            if sch_output.batch_type == BatchType.ContextEncoding:
-                self._schedule_ce(sch_output)
-            else:
-                assert sch_output.batch_type == BatchType.TokenGeneration
-                self._schedule_tg(sch_output)
+            batch_responses = self.pipeline.next_chunk(
+                batch_to_execute,
+                num_tokens=sch_output.num_steps,
+            )
+
+        # remove terminated requests from the batch
+        self._handle_terminated_responses(batch_to_execute, batch_responses)
+
+        # add the encoded requests to the continuous batch
+        self.decode_reqs.update(batch_to_execute)
+
+        # send the responses to the API process
+        self._stream_responses_to_frontend(batch_responses)

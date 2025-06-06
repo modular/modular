@@ -71,8 +71,6 @@ def load_scheduler(
         )
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert isinstance(pipeline, AudioGenerator)
-        paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
-        assert isinstance(paged_manager, PagedKVCacheManager)
         token_gen_config = TokenGenerationSchedulerConfig(
             max_batch_size_tg=config.max_batch_size_tg,
             max_forward_steps_tg=config.max_forward_steps_tg,
@@ -93,7 +91,6 @@ def load_scheduler(
             response_zmq_endpoint=settings.response_zmq_endpoint,
             cancel_zmq_endpoint=settings.cancel_zmq_endpoint,
             zmq_ctx=zmq_ctx,
-            paged_manager=paged_manager,
         )
     elif config.pipeline_role == PipelineRole.PrefillAndDecode:
         assert isinstance(pipeline, TokenGenerator)
