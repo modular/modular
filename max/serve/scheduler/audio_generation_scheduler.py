@@ -87,7 +87,7 @@ class AudioGenerationScheduler(Scheduler):
         self.request_q = ZmqPullSocket[tuple[str, TTSContext]](
             zmq_ctx=zmq_ctx,
             zmq_endpoint=request_zmq_endpoint,
-            deserialize=msgpack_numpy_decoder(TTSContext),
+            deserialize=msgpack_numpy_decoder(tuple[str, TTSContext]),
         )
         self.response_q = ZmqPushSocket[list[dict[str, AudioGeneratorOutput]]](
             zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
