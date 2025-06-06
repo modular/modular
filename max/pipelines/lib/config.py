@@ -639,6 +639,14 @@ class AudioGenerationConfig(PipelineConfig):
         )
         self._run_model_test_mode = run_model_test_mode
 
+        minimum_max_num_steps = 1024
+        if self.max_num_steps < minimum_max_num_steps:
+            logger.warning(
+                f"max-num-steps of {self.max_num_steps} is less than {minimum_max_num_steps},"
+                f" which is not recommended for audio generation. Overriding to {minimum_max_num_steps}."
+            )
+            self.max_num_steps = minimum_max_num_steps
+
     @classmethod
     def from_flags(
         cls, audio_flags: dict[str, str], **config_flags: Any
