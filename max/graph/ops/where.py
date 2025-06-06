@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Op implementation for select."""
+"""Op implementation for where."""
 
 from max.dtype import DType
 from max.mlir.dialects import rmo
@@ -13,7 +13,7 @@ from ..graph import Graph
 from ..value import TensorValue, TensorValueLike
 
 
-def select(
+def where(
     condition: TensorValueLike, x: TensorValueLike, y: TensorValueLike
 ) -> TensorValue:
     """

@@ -64,7 +64,6 @@ from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
 from .reshape import reshape
 from .scatter import masked_scatter, scatter
-from .select import select
 from .shape_to_tensor import shape_to_tensor
 from .slice_tensor import slice_tensor
 from .split import split
@@ -75,6 +74,7 @@ from .top_k import top_k
 from .transfer_to import transfer_to
 from .transpose import transpose
 from .unsqueeze import unsqueeze
+from .where import where
 from .while_loop import while_loop
 
 

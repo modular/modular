@@ -24,12 +24,12 @@ from max.graph.type import Dim, StaticDim
 
 
 @given(input_types=broadcastable_tensor_types(3))
-def test_select(input_types: list[TensorType]):
+def test_where(input_types: list[TensorType]):
     input_types[0].dtype = DType.bool
 
-    with Graph("select", input_types=input_types) as graph:
+    with Graph("where", input_types=input_types) as graph:
         cond, x, y = graph.inputs
-        out = ops.select(cond, x, y)
+        out = ops.where(cond, x, y)
 
         expected = reduce(broadcast_shapes, (t.shape for t in input_types))
         assert out.shape == expected
@@ -73,17 +73,17 @@ shared_dtypes = st.shared(st.from_type(DType))
     x=tensor_types(dtypes=shared_dtypes),
     y=tensor_types(dtypes=shared_dtypes),
 )
-def test_select_with_non_broadcastable_shapes(graph_builder, condition, x, y):
+def test_where_with_non_broadcastable_shapes(graph_builder, condition, x, y):
     assume(not_broadcastable(condition.shape, x.shape, y.shape))
-    with Graph("select", input_types=[condition, x, y]) as graph:
+    with Graph("where", input_types=[condition, x, y]) as graph:
         cond, x, y = graph.inputs
         with pytest.raises(ValueError):
-            ops.select(cond, x, y)
+            ops.where(cond, x, y)
 
 
-def test_select_error_message_with_non_bool_condition():
+def test_where_error_message_with_non_bool_condition():
     with Graph(
-        "select_non_bool",
+        "where_non_bool",
         input_types=[
             TensorType(shape=[3], dtype=DType.float32, device=DeviceRef.CPU()),
             TensorType(shape=[3], dtype=DType.int32, device=DeviceRef.CPU()),
@@ -95,12 +95,12 @@ def test_select_error_message_with_non_bool_condition():
             ValueError,
             match="Expected condition to be a boolean tensor, but got a tensor with dtype DType.float32",
         ):
-            ops.select(cond, x, y)
+            ops.where(cond, x, y)
 
 
-def test_select_error_message_with_mismatched_condition_shape():
+def test_where_error_message_with_mismatched_condition_shape():
     with Graph(
-        "select_mismatched_condition_shape",
+        "where_mismatched_condition_shape",
         input_types=[
             TensorType(shape=[2, 4], dtype=DType.bool, device=DeviceRef.CPU()),
             TensorType(shape=[2, 6], dtype=DType.int32, device=DeviceRef.CPU()),
@@ -112,12 +112,12 @@ def test_select_error_message_with_mismatched_condition_shape():
             ValueError,
             match="are neither equivalent nor broadcastable",
         ):
-            ops.select(cond, x, y)
+            ops.where(cond, x, y)
 
 
-def test_select_error_message_with_mismatched_devices():
+def test_where_error_message_with_mismatched_devices():
     with Graph(
-        "select_mismatched_devices",
+        "where_mismatched_devices",
         input_types=[
             TensorType(shape=[3], dtype=DType.bool, device=DeviceRef.CPU()),
             TensorType(shape=[3], dtype=DType.int32, device=DeviceRef.CPU()),
@@ -131,12 +131,12 @@ def test_select_error_message_with_mismatched_devices():
                 "All tensors must be on the same device, but got devices: cpu:0, cpu:0, gpu:0"
             ),
         ):
-            ops.select(cond, x, y)
+            ops.where(cond, x, y)
 
 
 # The next two tests for dtype promotion rules are pretty non-trivial. Using Cursor AI,
 # we've attempted to read the promotion logic in RMO::promoteDtype and validate the
-# behavior with these two tests, one for cases where promotion should work for select
+# behavior with these two tests, one for cases where promotion should work for where
 # and one for cases where it should not.
 
 
@@ -183,10 +183,10 @@ def test_select_error_message_with_mismatched_devices():
         ]
     ),
 )
-def test_select_with_promotable_dtypes(
+def test_where_with_promotable_dtypes(
     graph_builder, condition, x_dtype, y_dtype
 ):
-    """Test select with dtypes that should promote according to RMO::promoteDtype rules."""
+    """Test where with dtypes that should promote according to RMO::promoteDtype rules."""
     # Skip cases where we expect promotion to fail
     assume(
         not (
@@ -329,7 +329,7 @@ def test_select_with_promotable_dtypes(
 
     with graph_builder(input_types=[condition, x, y]) as graph:
         cond, x, y = graph.inputs
-        out = ops.select(cond, x, y)
+        out = ops.where(cond, x, y)
 
         # Bool always promotes to other type
         if x_dtype == DType.bool:
@@ -410,10 +410,10 @@ def test_select_with_promotable_dtypes(
         ]
     ),
 )
-def test_select_with_incompatible_dtypes(
+def test_where_with_incompatible_dtypes(
     graph_builder, condition, x_dtype, y_dtype
 ):
-    """Test select with dtypes that should fail to promote according to RMO::promoteDtype rules."""
+    """Test where with dtypes that should fail to promote according to RMO::promoteDtype rules."""
     assume(
         # Unsafe uint->sint promotions with same bitwidth
         (
@@ -491,12 +491,12 @@ def test_select_with_incompatible_dtypes(
         with pytest.raises(
             ValueError, match="Failed to resolve valid dtype: Unsafe cast from"
         ):
-            ops.select(cond, x, y)
+            ops.where(cond, x, y)
 
 
 # Like the Dtype promotion tests above, these two tests validate the behavior of
-# select with Python scalar values and NumPy arrays. They use hypothesis to generate
-# python and numpy values that should be safe and unsafe for the select operation.
+# where with Python scalar values and NumPy arrays. They use hypothesis to generate
+# python and numpy values that should be safe and unsafe for the where operation.
 # They use fixed values for the tensor shapes, to isolate the tests only on the python
 # and numpy values.
 
@@ -516,12 +516,12 @@ def test_select_with_incompatible_dtypes(
         allow_infinity=False,
     ),
 )
-def test_select_with_python_scalars(
+def test_where_with_python_scalars(
     safe_int, unsafe_int_float16, unsafe_int_float32, safe_float
 ):
-    """Test select with Python scalar values (int, float) using hypothesis to probe boundaries."""
+    """Test where with Python scalar values (int, float) using hypothesis to probe boundaries."""
     with Graph(
-        "select_python_scalars",
+        "where_python_scalars",
         input_types=[
             TensorType(DType.bool, [2, 2], DeviceRef.CPU()),
             TensorType(DType.float32, [2, 2], DeviceRef.CPU()),
@@ -542,15 +542,15 @@ def test_select_with_python_scalars(
 
         # Test successful promotions
         # Python int -> float32 (safe case)
-        out = ops.select(cond, safe_int, float32_tensor1)
+        out = ops.where(cond, safe_int, float32_tensor1)
         assert out.dtype == DType.float32
 
         # Python float -> float32 (safe case)
-        out = ops.select(cond, float32_tensor2, safe_float)
+        out = ops.where(cond, float32_tensor2, safe_float)
         assert out.dtype == DType.float32
 
         # Python int -> int32 (safe case)
-        out = ops.select(cond, safe_int, int32_tensor)
+        out = ops.where(cond, safe_int, int32_tensor)
         assert out.dtype == DType.int32
 
         # Test failed promotions
@@ -558,13 +558,13 @@ def test_select_with_python_scalars(
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote python int"
         ):
-            ops.select(cond, unsafe_int_float16, float16_tensor)
+            ops.where(cond, unsafe_int_float16, float16_tensor)
 
         # Python int too large for float32
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote python int"
         ):
-            ops.select(cond, unsafe_int_float32, float32_tensor3)
+            ops.where(cond, unsafe_int_float32, float32_tensor3)
 
 
 @given(
@@ -598,12 +598,12 @@ def test_select_with_python_scalars(
         max_size=4,
     ).map(lambda x: np.array(x, dtype=np.uint64).reshape(2, 2)),
 )
-def test_select_with_numpy_arrays(
+def test_where_with_numpy_arrays(
     safe_int32, safe_float64, unsafe_int64, unsafe_uint64
 ):
-    """Test select with NumPy arrays using hypothesis to probe boundaries."""
+    """Test where with NumPy arrays using hypothesis to probe boundaries."""
     with Graph(
-        "select_numpy_arrays",
+        "where_numpy_arrays",
         input_types=[
             TensorType(DType.bool, [2, 2], DeviceRef.CPU()),
             TensorType(DType.float32, [2, 2], DeviceRef.CPU()),
@@ -624,15 +624,15 @@ def test_select_with_numpy_arrays(
 
         # Test successful promotions
         # NumPy int32 -> float32
-        out = ops.select(cond, safe_int32, float32_tensor1)
+        out = ops.where(cond, safe_int32, float32_tensor1)
         assert out.dtype == DType.float32
 
         # NumPy float64 -> float32
-        out = ops.select(cond, safe_float64, float32_tensor2)
+        out = ops.where(cond, safe_float64, float32_tensor2)
         assert out.dtype == DType.float32
 
         # NumPy int32 -> int64
-        out = ops.select(cond, safe_int32, int64_tensor)
+        out = ops.where(cond, safe_int32, int64_tensor)
         assert out.dtype == DType.int64
 
         # Test failed promotions
@@ -640,10 +640,10 @@ def test_select_with_numpy_arrays(
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote numpy integer array"
         ):
-            ops.select(cond, unsafe_int64, float32_tensor3)
+            ops.where(cond, unsafe_int64, float32_tensor3)
 
         # NumPy uint64 too large for float32
         with pytest.raises(
             ValueError, match="Unsafe cast: Can't promote numpy integer array"
         ):
-            ops.select(cond, unsafe_uint64, float32_tensor4)
+            ops.where(cond, unsafe_uint64, float32_tensor4)

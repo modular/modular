@@ -31,7 +31,7 @@ from ..graph import Graph
 from ..type import DeviceRef, Dim, DimLike, Shape, StaticDim, TensorType
 from ..value import BufferValue, TensorValue
 from .constant import constant
-from .select import select
+from .where import where
 
 # Currently slicing does not have any shape inference in RMO. Instead, it is
 # done in python.
@@ -134,7 +134,7 @@ def _slice_index_and_output(
         return (  # Same as int index.
             slice(
                 index,
-                select(index == -1, int64_max, index + 1),
+                where(index == -1, int64_max, index + 1),
                 1,
             ),
             None,
@@ -169,9 +169,9 @@ def _slice_index_and_output(
         if step is None:
             step = 1
         if start is None:
-            start = select(step >= zero, zero, int64_max)
+            start = where(step >= zero, zero, int64_max)
         if stop is None:
-            stop = select(step >= zero, int64_max, zero)
+            stop = where(step >= zero, int64_max, zero)
         return (slice(start, stop, step), index[1])
 
     raise ValueError(f"Unsupported slice inputs {dim=}, {index=}")
