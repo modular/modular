@@ -373,9 +373,11 @@ fn flash_attention_dispatch[
     # tokens e.g. zero for CE, and KV NBuffer's length is the latest length
     # e.g. prompt length for CE.
     _is_cache_length_accurate: Bool = False,
-    # valid_length is needed for KV cache inputs and is empty for NDBuffer inputs
-    # to avoid overhead in benchmark.
+    # valid_length is needed for KV cache inputs and is empty for homogeneous
+    # NDBuffer inputs to avoid overhead in benchmark.
     _use_valid_length: Bool = True,
+    # we might also want to use valid length for padded NDBuffer inputs
+    _padded_ndbuffer: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
@@ -469,6 +471,7 @@ fn flash_attention_dispatch[
                     is_shared_kv=is_shared_kv,
                     _use_valid_length=_use_valid_length,
                     _is_cache_length_accurate=_is_cache_length_accurate,
+                    _padded_ndbuffer=_padded_ndbuffer,
                 ]
                 ctx.enqueue_function[kernel](
                     q.data,
@@ -801,6 +804,8 @@ fn flash_attention[
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
+    _use_valid_length: Bool = False,
+    _padded_ndbuffer: Bool = False,
     naive_kernel: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
@@ -813,6 +818,12 @@ fn flash_attention[
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
     num_partitions: OptionalReg[Int] = None,
+    valid_length: OptionalReg[
+        ManagedTensorSlice[
+            IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ]
+    ] = None,
 ) raises:
     # See the kV cache overloads for comments.
 
@@ -839,11 +850,6 @@ fn flash_attention[
     var k_operand = NDBufferMHAOperand(k)
     var v_operand = NDBufferMHAOperand(v)
 
-    var null_valid_length = ManagedTensorSlice[
-        IOUnknown,
-        static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
-    ](UnsafePointer[UInt32](), IndexList[1](0), IndexList[1](0))
-
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
         use_score_mod=use_score_mod,
@@ -851,7 +857,8 @@ fn flash_attention[
         ragged=False,
         _is_flash_attention_applicable=flash_attention_applicable,
         _is_cache_length_accurate=True,
-        _use_valid_length=False,
+        _use_valid_length=_use_valid_length,
+        _padded_ndbuffer=_padded_ndbuffer,
         decoding_warp_split_k=decoding_warp_split_k,
     ](
         output,
@@ -860,7 +867,7 @@ fn flash_attention[
         v_operand,
         mask_functor,
         score_mod_functor,
-        null_valid_length,
+        valid_length.or_else(valid_length.T(UnsafePointer[UInt32](), [1], [1])),
         q.dim[1](),
         num_keys,
         scale,
@@ -896,6 +903,7 @@ fn mha[
     is_shared_kv: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
+    _padded_ndbuffer: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: k_t,
@@ -949,7 +957,7 @@ fn mha[
         q_batch_offset = start_of_seq * config.depth * config.num_heads
 
     # KVCache inputs, prompt lengths are all padded to the max in batch.
-    elif _use_valid_length:
+    elif _use_valid_length and not _padded_ndbuffer:
         # treat valid_lengths as valid lengths
         seq_len = Int(valid_length[batch_idx])
 
@@ -965,13 +973,19 @@ fn mha[
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
         )
-    # NDBuffer inputs, homogeneous batching.
+    # NDBuffer inputs, homogeneous and padded batching.
     else:
-        seq_len = seq_len_arg
+
+        @parameter
+        if _padded_ndbuffer:
+            seq_len = Int(valid_length[batch_idx])
+            num_keys = seq_len
+        else:
+            seq_len = seq_len_arg
+            num_keys = num_keys_arg
+
         if seq_len < block_idx.x * config.block_m():
             return
-
-        num_keys = num_keys_arg
         q_batch_offset = (
             config.depth * config.num_heads * max_seq_len * batch_idx
         )

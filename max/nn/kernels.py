@@ -889,66 +889,30 @@ def flash_attention_with_causal_mask(
     )[0].tensor
 
 
-def causal_flash_attention_gpu(
-    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
-) -> TensorValue:
-    """Computes causal flash attention using GPU-optimized kernel.
-    Args:
-        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
-        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
-        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
-        scale: Scaling factor for attention scores
-    """
-    if q.dtype != k.dtype or q.dtype != v.dtype:
-        msg = (
-            "q, k, v must have matching dtypes. Got "
-            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
-        )
-        raise ValueError(msg)
-
-    expected_rank = 4
-    for name, tensor in [("q", q), ("k", k), ("v", v)]:
-        if tensor.rank != expected_rank:
-            msg = f"{name} must be rank {expected_rank}, got {tensor.rank}"
-            raise ValueError(msg)
-
-    # Validate head dimension matches across all inputs
-    head_dim = q.shape[-1]
-    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
-        msg = (
-            "All inputs must have same head_dim. Got "
-            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
-        )
-        raise ValueError(msg)
-
-    return ops.custom(
-        "causal_flash_attention_gpu",
-        device=q.device,
-        values=[
-            q,
-            k,
-            v,
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
-        out_types=[
-            TensorType(
-                dtype=q.dtype,
-                shape=q.shape,
-                device=q.device,
-            )
-        ],
-    )[0].tensor
-
-
-def null_mask_flash_attention_gpu(
-    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
+def flash_attention_gpu(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    local_window_size: int = -1,
+    valid_length: Optional[TensorValue] = None,
 ) -> TensorValue:
     """Computes flash attention using GPU-optimized kernel.
+
     Args:
         q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
         k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
         v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
+        mask_variant: The mask variant to use for attention
         scale: Scaling factor for attention scores
+        local_window_size: Local window size for sliding window attention
+        valid_length: Optional tensor of shape [batch] with dtype uint32.
+            When provided, uses the padded kernel variant that respects
+            the valid sequence lengths for each batch element.
+
+    Returns:
+        Output tensor of shape [batch, seq_len, num_heads, head_dim]
     """
     if q.dtype != k.dtype or q.dtype != v.dtype:
         msg = (
@@ -972,15 +936,45 @@ def null_mask_flash_attention_gpu(
         )
         raise ValueError(msg)
 
+    # Validate valid_length if provided
+    if valid_length is not None:
+        if valid_length.dtype != DType.uint32:
+            msg = (
+                f"valid_length must have dtype uint32, got {valid_length.dtype}"
+            )
+            raise ValueError(msg)
+
+        if valid_length.rank != 1:
+            msg = f"valid_length must be rank 1, got {valid_length.rank}"
+            raise ValueError(msg)
+
+        if valid_length.shape[0] != q.shape[0]:
+            msg = (
+                f"valid_length batch size ({valid_length.shape[0]}) must match "
+                f"q batch size ({q.shape[0]})"
+            )
+            raise ValueError(msg)
+
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters: dict[str, int | str | DType] = {}
+    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
+    parameters["score_mod_str"] = (
+        mha_mask_config.positional_encoding_variant.value
+    )
+    parameters["local_window_size"] = local_window_size
+
+    op_name = "mo.mha.no_cache"
+    values = [q, k, v]
+    if valid_length is not None:
+        op_name = "mo.mha.padded.no_cache"
+        values.append(valid_length)
+    values.append(
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU())
+    )
+
     return ops.custom(
-        "no_mask_flash_attention_gpu",
-        device=q.device,
-        values=[
-            q,
-            k,
-            v,
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
+        op_name,
+        values=values,
         out_types=[
             TensorType(
                 dtype=q.dtype,
@@ -988,6 +982,8 @@ def null_mask_flash_attention_gpu(
                 device=q.device,
             )
         ],
+        parameters=parameters,
+        device=q.device,
     )[0].tensor
 
 

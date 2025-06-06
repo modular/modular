@@ -36,6 +36,7 @@ from math import (
 from random import randn, seed
 from sys import bitwidthof, external_call, llvm_intrinsic
 from sys.info import simdwidthof, sizeof
+from sys.intrinsics import _type_is_eq
 
 import compiler_internal as compiler
 
@@ -159,8 +160,9 @@ from nn.kv_cache_ragged import (
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, MaskName, NullMask
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
+from nn.mha_mask import MHAMask
+from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
+from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
@@ -5938,11 +5940,15 @@ struct MaskedFlashAttentionGPU:
         )
 
 
-@compiler.register("causal_flash_attention_gpu")
-struct CausalFlashAttentionGPU:
+@compiler.register("mo.mha.no_cache")
+struct FlashAttentionGPU:
     @staticmethod
     fn execute[
-        target: StaticString, rank: Int
+        rank: Int, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
         q: InputTensor[rank=rank],
@@ -5951,7 +5957,7 @@ struct CausalFlashAttentionGPU:
         scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
-        """`causal_flash_attention_gpu` is a hand-fused operator which does
+        """`mo.mha.no_cache` is a hand-fused operator which does
         something analogous to the following list of operations.
 
         **Step 0:
@@ -5968,10 +5974,7 @@ struct CausalFlashAttentionGPU:
 
         **Step 3:
         # Normalize and apply masking
-        attentionMatrixNorm = attentionMatrix * scale
-
-        # Note attention_mask is HSS and auto-broadcasts
-        attentionMatrixNormMasked = attentionMatrixNorm + attention_mask
+        attentionMatrixNormMasked = mask_functor(attentionMatrix * scale)
 
         **Step 4:
         # Apply softmax and reproject result
@@ -6001,67 +6004,57 @@ struct CausalFlashAttentionGPU:
         var k_buffer = managed_tensor_slice_to_ndbuffer(k)
         var v_buffer = managed_tensor_slice_to_ndbuffer(v)
 
-        flash_attention(
-            output_buffer,
-            q_buffer,
-            k_buffer,
-            v_buffer,
-            CausalMask(),
-            IdentityScoreMod(),
-            scale,
-            ctx[],
-        )
+        alias num_kv_heads = k_buffer.shape.get[
+            2
+        ]() if k_buffer.shape.has_value[2]() else -1
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        fn _dispatch_flash_attention[
+            mask_t: MHAMask, score_mod_t: ScoreModTrait
+        ](mask: mask_t, score_mod: score_mod_t) raises:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+
+            flash_attention[use_score_mod=use_score_mod](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                mask,
+                score_mod,
+                scale,
+                ctx[],
+            )
+
+        dispatch_mask_and_score_mod[
+            mask_str,
+            score_mod_str,
+            _dispatch_flash_attention,
+            local_window_size,
+            num_kv_heads,
+        ]()
 
 
-@compiler.register("no_mask_flash_attention_gpu")
-struct NoMaskFlashAttentionGPU:
+@compiler.register("mo.mha.padded.no_cache")
+struct PaddedFlashAttentionGPU:
     @staticmethod
     fn execute[
-        target: StaticString, rank: Int
+        rank: Int, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
         q: InputTensor[rank=rank],
         k: InputTensor[rank=rank],
         v: InputTensor[rank=rank],
-        scale: Scalar[dtype = DType.float32],
+        valid_length: InputTensor[dtype = DType.uint32, rank=1],
+        scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
-        """`no_mask_flash_attention_gpu` is a hand-fused operator which does
-        something analogous to the following list of operations.
-
-        **Step 0:
-        Transpose:
-        query_processed = transpose(query) # BSHD --> BHSD
-        key_processed = transpose(key)     # BSHD --> BHDS
-        value_processed = transpose(value) # BSHD --> BHSD
-
-        **Step 1:
-        attentionMatrix = query_processed @ key_processed
-
-        **Step 2:
-        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
-
-        **Step 3:
-        # Apply softmax and reproject result
-        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
-        answer = attentionMatrixSoftMax @ value_processed
-        answer = transpose(answer) # BHSD --> BSHD
-
-        Compared to the CPU patterns the notable differences are:
-        1. The transposes are part of the kernel itself
-
-        Finally, this pattern supports grouped attention patterns. That is if we
-        have G groups, then let h = H / G. Key and value are allowed to be BShD
-        in these scenarios. Both key and value must be BShD if one is. If this is
-        true the following is equivalently run before Step 0:
-
-        ** Step -1:
-        key = concat(key, ...) # concat BShD --> BSHD
-        value = concat(value, ...) # concat BShD --> BSHD
-
-        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
-        by Tri Dao et al.
-        """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
         var output_buffer = managed_tensor_slice_to_ndbuffer(output)
@@ -6069,16 +6062,48 @@ struct NoMaskFlashAttentionGPU:
         var k_buffer = managed_tensor_slice_to_ndbuffer(k)
         var v_buffer = managed_tensor_slice_to_ndbuffer(v)
 
-        flash_attention(
-            output_buffer,
-            q_buffer,
-            k_buffer,
-            v_buffer,
-            NullMask(),
-            IdentityScoreMod(),
-            scale,
-            ctx[],
-        )
+        alias valid_length_t = ManagedTensorSlice[
+            IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ]
+        _valid_length = rebind[valid_length_t](valid_length)
+
+        alias num_kv_heads = k_buffer.shape.get[
+            2
+        ]() if k_buffer.shape.has_value[2]() else -1
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        fn _dispatch_flash_attention[
+            mask_t: MHAMask, score_mod_t: ScoreModTrait
+        ](mask: mask_t, score_mod: score_mod_t) raises:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+
+            flash_attention[
+                use_score_mod=use_score_mod,
+                _use_valid_length=True,
+                _padded_ndbuffer=True,
+            ](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                mask,
+                score_mod,
+                scale,
+                ctx[],
+                valid_length=OptionalReg[valid_length_t](_valid_length),
+            )
+
+        dispatch_mask_and_score_mod[
+            mask_str,
+            score_mod_str,
+            _dispatch_flash_attention,
+            local_window_size,
+            num_kv_heads,
+        ]()
 
 
 @compiler.register("no_mask_flash_attention_cpu")
