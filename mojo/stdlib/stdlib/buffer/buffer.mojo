@@ -270,10 +270,9 @@ struct NDBuffer[
         """Default initializer for NDBuffer. By default the fields are all
         initialized to 0.
         """
-
-        self.data = __type_of(self.data)()
-        self.dynamic_shape = __type_of(self.dynamic_shape)()
-        self.dynamic_stride = __type_of(self.dynamic_stride)()
+        self.data = {}
+        self.dynamic_shape = {}
+        self.dynamic_stride = {}
 
     @always_inline
     @implicit

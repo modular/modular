@@ -2989,7 +2989,7 @@ fn _pow[
         return result
     else:
         constrained[False, "unsupported type combination"]()
-        return __type_of(base)()
+        return {}
 
 
 @always_inline

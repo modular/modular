@@ -177,7 +177,7 @@ struct LayoutTensorBuild[
         """
         Initializes a new `LayoutTensorBuild` instance with default values.
         """
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
 
     fn row_major[
         *shapes: Int
@@ -199,7 +199,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with row-major layout.
         """
-        return __type_of(res)()
+        return {}
 
     fn row_major(
         self,
@@ -502,7 +502,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with the specified layout.
         """
-        return __type_of(res)()
+        return {}
 
     fn layout[
         rank: Int, shape: IndexList[rank], stride: IndexList[rank]
@@ -525,7 +525,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with the specified custom layout.
         """
-        return __type_of(res)()
+        return {}
 
     fn layout[
         rank: Int
