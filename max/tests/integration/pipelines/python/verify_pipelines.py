@@ -944,6 +944,27 @@ PIPELINES = {
             kl_div_threshold=1.1e-02,
         ),
     ),
+    # TODO: Gemma-3-12B requires unusually high tolerances (atol=7.6, rtol=1.2).
+    # This should be investigated to improve model accuracy.
+    "Gemma-3-12B-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline="gemma3-multimodal",
+            encoding="bfloat16",
+            absolute_tolerance=7.6,
+            relative_tolerance=1.2,
+            cos_dist_threshold=1.1e-01,
+            kl_div_threshold=2.5e-01,
+        ),
+    ),
 }
 
 
