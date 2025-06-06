@@ -63,6 +63,12 @@ def _sampling_input_types(
     temperature_type = TensorType(DType.float32, ["batch"], device=device)
     inputs["temperature"] = temperature_type
 
+    top_p_type = TensorType(DType.float32, ["batch"], device=device)
+    inputs["top_p"] = top_p_type
+
+    seed_type = TensorType(DType.uint64, ["batch"], device=device)
+    inputs["seed"] = seed_type
+
     # If we need to return logits, introduce tensor to append to.
     if return_logits:
         logits_type = TensorType(
@@ -216,13 +222,16 @@ def token_sampler(
         ].tensor
         top_k = graph.inputs[list(_input_dict).index("top_k")].tensor
         max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
+        top_p = graph.inputs[list(_input_dict).index("top_p")].tensor
+        seed = graph.inputs[list(_input_dict).index("seed")].tensor
+
         tokens = topk_fused_sampling(
             logits=logits,
             top_k=top_k,
             max_k=max_k,
             temperature=temperature,
-            top_p=sampling_config.top_p,
-            seed=sampling_config.seed,
+            top_p=top_p,
+            seed=seed,
         )
 
         # Update frequency data for penalties that are actually enabled

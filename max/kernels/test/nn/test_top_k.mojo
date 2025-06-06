@@ -107,13 +107,22 @@ fn test_case_sampling[
         )
     )
 
+    var seed_ptr = UnsafePointer[Scalar[DType.uint64]].alloc(batch_size)
+    for i in range(batch_size):
+        seed_ptr[i] = 12
+    var seed_buf = OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]](
+        NDBuffer[DType.uint64, 1, MutableAnyOrigin](
+            seed_ptr, DimList(batch_size)
+        )
+    )
+
     _top_k_sampling(
         max_k,
         input,
         out_vals,
         out_idxs,
         temperature=temperature_buf,
-        seed=12,
+        seed=seed_buf,
     )
 
     var _xxx_no_lifetimes = input  # intentionally bad name

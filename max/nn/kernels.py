@@ -2240,8 +2240,8 @@ def topk_fused_sampling(
     *,
     temperature: TensorValueLike = 1.0,
     max_k: Optional[TensorValueLike] = None,
-    top_p: float = 1.0,
-    seed: int = 0,
+    top_p: TensorValueLike = 1.0,
+    seed: TensorValueLike = 0,
 ) -> TensorValue:
     """Performs top-k sampling with temperature scaling.
 
@@ -2250,9 +2250,9 @@ def topk_fused_sampling(
         top_k: Number of top tokens to consider for sampling. Can be a scalar
             (which will be expanded to batch_size) or a tensor of shape [batch_size].
         temperature: Temperature for scaling logits before sampling.
-        top_p: Top-p (nucleus) sampling threshold.
-        seed: Seed for the random number generator.
         max_k: Maximum value of k across the batch. Required when top_k is a tensor.
+        top_p: Top-p (nucleus) sampling threshold. Can be a scalar or tensor.
+        seed: Seed for the random number generator. Can be a scalar or tensor.
     Returns:
         Sampled tokens tensor of shape [batch_size, 1].
 
@@ -2295,8 +2295,33 @@ def topk_fused_sampling(
                 f"temperature tensor shape {temperature_tensor.shape} does not match batch_size {batch_size}"
             )
 
-    if top_p <= 0 or top_p > 1:
-        raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
+    # Handle top_p parameter - can be scalar or tensor
+    if isinstance(top_p, (float, int)):
+        if top_p <= 0 or top_p > 1:
+            raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
+        top_p_tensor = ops.broadcast_to(
+            ops.constant(top_p, dtype=DType.float32, device=device),
+            [batch_size],
+        )
+    else:
+        top_p_tensor = TensorValue(top_p)
+        if top_p_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"top_p tensor shape {top_p_tensor.shape} does not match batch_size {batch_size}"
+            )
+
+    # Handle seed parameter - can be scalar or tensor
+    if isinstance(seed, int):
+        seed_tensor = ops.broadcast_to(
+            ops.constant(seed, dtype=DType.uint64, device=device),
+            [batch_size],
+        )
+    else:
+        seed_tensor = TensorValue(seed)
+        if seed_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"seed tensor shape {seed_tensor.shape} does not match batch_size {batch_size}"
+            )
 
     batch_shape = logits.shape[:-1]
 
@@ -2307,8 +2332,8 @@ def topk_fused_sampling(
             top_k_tensor,
             max_k_tensor,
             temperature_tensor,
-            ops.constant(top_p, dtype=DType.float32, device=DeviceRef.CPU()),
-            ops.constant(seed, dtype=DType.uint64, device=DeviceRef.CPU()),
+            top_p_tensor,
+            seed_tensor,
             logits,
         ],
         out_types=[

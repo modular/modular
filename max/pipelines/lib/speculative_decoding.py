@@ -398,12 +398,25 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         temperature = Tensor.from_numpy(temperature_np).to(
             self.draft_devices[0]
         )
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in batch],
+            dtype=np.float32,
+        )
+        top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
+        seed_np = np.array(
+            [context.sampling_params.seed for context in batch],
+            dtype=np.uint64,
+        )
+        seed = Tensor.from_numpy(seed_np).to(self.draft_devices[0])
+
         graph_inputs = [
             model_outputs.logits,
             prev_tokens,
             top_k,
             max_k,
             temperature,
+            top_p,
+            seed,
             prev_logits,
         ]
         a, b, c = self._draft_sampler(*graph_inputs)[:3]

@@ -8571,8 +8571,8 @@ struct Struct_fused_token_sampling:
         K: InputTensor[dtype = DType.int64, rank=1],
         max_k: Scalar,
         temperature: InputTensor[dtype = DType.float32, rank=1],
-        top_p: Scalar[dtype],
-        seed: UInt64,
+        top_p: InputTensor[dtype = DType.float32, rank=1],
+        seed: InputTensor[dtype = DType.uint64, rank=1],
         input: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
@@ -8586,6 +8586,12 @@ struct Struct_fused_token_sampling:
         var temperature_buf = OptionalReg[
             NDBuffer[DType.float32, 1, MutableAnyOrigin]
         ](managed_tensor_slice_to_ndbuffer(temperature))
+        var top_p_buf = OptionalReg[
+            NDBuffer[DType.float32, 1, MutableAnyOrigin]
+        ](managed_tensor_slice_to_ndbuffer(top_p))
+        var seed_buf = OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]](
+            managed_tensor_slice_to_ndbuffer(seed)
+        )
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
@@ -8606,8 +8612,8 @@ struct Struct_fused_token_sampling:
                     out_idxs_buf,
                     k=K_buf,
                     temperature=temperature_buf,
-                    top_p=top_p,
-                    seed=seed,
+                    top_p=top_p_buf,
+                    seed=seed_buf,
                 )
             else:
                 var cuda_ctx = ctx.get_device_context()
@@ -8618,8 +8624,8 @@ struct Struct_fused_token_sampling:
                     out_idxs_buf,
                     k=K_buf,
                     temperature=temperature_buf,
-                    top_p=top_p,
-                    seed=seed,
+                    top_p=top_p_buf,
+                    seed=seed_buf,
                 )
 
 

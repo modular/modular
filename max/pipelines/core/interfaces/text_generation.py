@@ -147,7 +147,7 @@ class SamplingParams:
     detokenize: bool = True
     """Whether to detokenize the output tokens into text."""
 
-    seed: int | None = None
+    seed: int = 0
     """The seed to use for the random number generator."""
 
     def __post_init__(self):

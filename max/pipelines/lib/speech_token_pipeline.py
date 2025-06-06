@@ -131,6 +131,18 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         top_k = Tensor.from_numpy(top_k_np).to(self._devices[0])
         max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
         max_k = Tensor.from_numpy(max_k_np)
+        top_p = Tensor.from_numpy(
+            np.array(
+                [context.sampling_params.top_p for context in context_batch],
+                dtype=np.float32,
+            )
+        ).to(self._devices[0])
+        seed = Tensor.from_numpy(
+            np.array(
+                [context.sampling_params.seed for context in context_batch],
+                dtype=np.uint64,
+            )
+        ).to(self._devices[0])
 
         curr_step_inputs = model_inputs
 
@@ -168,6 +180,8 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 top_k,
                 max_k,
                 temperature,
+                top_p,
+                seed,
                 logit_offsets=model_outputs.logit_offsets,
                 bitmask=bitmask,
                 frequency_data=frequency_data,

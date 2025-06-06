@@ -174,8 +174,8 @@ fn top_k[
 
     Args:
         input: The input tensor.
-        max_k: Largest number of top elements.
-        axis: On which axis it should operate.
+        max_k: The largest number of top elements.
+        axis: The axis along which to operate.
         out_vals: Output values.
         out_idxs: Output indices.
         sorted: Indicates if the top/bottom K elements are in (stable) sorted order.
@@ -333,8 +333,8 @@ fn fused_token_sampling_cpu[
     temperature: OptionalReg[
         NDBuffer[DType.float32, 1, MutableAnyOrigin]
     ] = None,
-    top_p: Scalar[type] = 1,
-    seed: UInt64 = 0,
+    top_p: OptionalReg[NDBuffer[DType.float32, 1, MutableAnyOrigin]] = None,
+    seed: OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]] = None,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -390,8 +390,8 @@ fn _top_k_sampling[
     temperature: OptionalReg[
         NDBuffer[DType.float32, 1, MutableAnyOrigin]
     ] = None,
-    top_p: Scalar[type] = 1,
-    seed: UInt64 = 0,
+    top_p: OptionalReg[NDBuffer[DType.float32, 1, MutableAnyOrigin]] = None,
+    seed: OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]] = None,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with sampling.
@@ -477,11 +477,20 @@ fn _top_k_sampling[
             exp_vals[i] = exp_val
             sum_exp += exp_val
 
-        var _top_p = _adjust_top_p[type](top_p, exp_vals, k_val, sum_exp)
+        # Handle top_p parameter - extract scalar value from buffer
+        var top_p_val = Scalar[type](1.0)
+        if top_p:
+            top_p_val = top_p.value()[batch].cast[type]()
+        var _top_p = _adjust_top_p[type](top_p_val, exp_vals, k_val, sum_exp)
+
+        # Handle seed parameter - extract scalar value from buffer
+        var seed_val = UInt64(0)
+        if seed:
+            seed_val = seed.value()[batch]
 
         # Use the same RNG as the GPU sampling implementation
         var rng_state = Random(
-            seed=seed, offset=out_idxs_tmp[batch, 0].cast[DType.uint64]()
+            seed=seed_val, offset=out_idxs_tmp[batch, 0].cast[DType.uint64]()
         )
         var rng = rng_state.step_uniform()
 
@@ -801,8 +810,8 @@ fn _topk_stage2[
         Scalar[out_idx_type]
     ],  # sampling ? sampled token : Output array of size K
     temperature: UnsafePointer[Scalar[DType.float32]],
-    top_p: Scalar[T] = 1,
-    seed: UInt64 = 0,
+    top_p: UnsafePointer[Scalar[DType.float32]],
+    seed: UnsafePointer[Scalar[DType.uint64]],
 ):
     """
     Computes the global Top-K elements from the local Top-K results produced by stage 1.
@@ -958,13 +967,22 @@ fn _topk_stage2[
         @parameter
         if sampling:
             if tid == 0:
-                var _top_p = _adjust_top_p[T](top_p, s_val2, k_batch, s_sum[0])
+                var top_p_val = Scalar[T](1.0)
+                if top_p:
+                    top_p_val = top_p[batch_id].cast[T]()
+                var _top_p = _adjust_top_p[T](
+                    top_p_val, s_val2, k_batch, s_sum[0]
+                )
 
                 # Use the largest logit's id as the offset for the random number
                 # generator, so that we don't use the same random number for every
                 # token in the sequence.
+                var seed_val = UInt64(0)
+                if seed:
+                    seed_val = seed[batch_id]
                 var rng_state = Random(
-                    seed=seed, offset=_local_topk_idxs[0].cast[DType.uint64]()
+                    seed=seed_val,
+                    offset=_local_topk_idxs[0].cast[DType.uint64](),
                 )
                 var rng = rng_state.step_uniform()
                 var softmax_norm = s_sum[0]
@@ -1001,8 +1019,8 @@ fn _topk_gpu[
     ] = None,
     block_size: Int = 256,
     num_blocks_per_input: OptionalReg[Int] = None,
-    top_p: Scalar[type] = 1,
-    seed: UInt64 = 0,
+    top_p: OptionalReg[NDBuffer[DType.float32, 1, MutableAnyOrigin]] = None,
+    seed: OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]] = None,
 ) raises:
     """Computes the Top-K elements from the input tensor using a GPU-accelerated two-stage algorithm.
 
@@ -1012,7 +1030,7 @@ fn _topk_gpu[
 
     Parameters:
         type: DType - The data type of the input tensor.
-        rank: Int - The rank of the input tensor (must be 2 right now, first dim is batch size).
+        rank: Int - The rank of the input tensor.
         out_idx_type: DType - The data type of the output indices (default is DType.index).
         sampling: Bool - Whether to return token samples from topK dist (default is True).
         largest: Bool - Whether to find the maximum or minimum value.
@@ -1125,6 +1143,24 @@ fn _topk_gpu[
     else:
         temp_ptr = UnsafePointer[Scalar[DType.float32]]()  # null pointer
 
+    # Handle optional top_p parameter
+    var top_p_ptr: UnsafePointer[Scalar[DType.float32]]
+    if top_p:
+        top_p_ptr = rebind[UnsafePointer[Scalar[DType.float32]]](
+            top_p.value().data
+        )
+    else:
+        top_p_ptr = UnsafePointer[Scalar[DType.float32]]()  # null pointer
+
+    # Handle optional seed parameter
+    var seed_ptr: UnsafePointer[Scalar[DType.uint64]]
+    if seed:
+        seed_ptr = rebind[UnsafePointer[Scalar[DType.uint64]]](
+            seed.value().data
+        )
+    else:
+        seed_ptr = UnsafePointer[Scalar[DType.uint64]]()  # null pointer
+
     # Enqueue the second kernel (stage 2)
     ctx.enqueue_function[_topk_stage2[type, out_idx_type, sampling, largest]](
         k_ptr,
@@ -1135,8 +1171,8 @@ fn _topk_gpu[
         out_vals.data,
         out_idxs.data,
         temp_ptr,
-        top_p,
-        seed,
+        top_p_ptr,
+        seed_ptr,
         grid_dim=grid_dim_stage2,
         block_dim=block_dim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
@@ -1163,8 +1199,8 @@ fn topk_gpu[
     temperature: OptionalReg[
         NDBuffer[DType.float32, 1, MutableAnyOrigin]
     ] = None,
-    top_p: Scalar[type] = 1,
-    seed: UInt64 = 0,
+    top_p: OptionalReg[NDBuffer[DType.float32, 1, MutableAnyOrigin]] = None,
+    seed: OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]] = None,
 ) raises:
     """
     Generalized implementation of the Top K algorithm with/without sampling.
@@ -1309,9 +1345,9 @@ fn topk_gpu[
         internal_out_idxs,
         k=k,
         temperature=temperature,
-        top_p=top_p,
         block_size=block_size_,
         num_blocks_per_input=num_blocks_per_input_,
+        top_p=top_p,
         seed=seed,
     )
 
@@ -1336,8 +1372,8 @@ fn fused_token_sampling_gpu[
     temperature: OptionalReg[
         NDBuffer[DType.float32, 1, MutableAnyOrigin]
     ] = None,
-    top_p: Scalar[type] = 1,
-    seed: UInt64 = 0,
+    top_p: OptionalReg[NDBuffer[DType.float32, 1, MutableAnyOrigin]] = None,
+    seed: OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]] = None,
 ) raises:
     """
     Top K algorithm with fused sampling.
