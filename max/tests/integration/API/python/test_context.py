@@ -14,6 +14,7 @@ from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
     TextGenerationStatus,
+    TTSContext,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,
 )
@@ -431,3 +432,64 @@ def test_context_tuple_serializable():
     msgpack_decoded = deserialize(msgpack_encoded)
 
     assert msgpack_decoded == original_tuple
+
+
+def test_tts_context_msgpack_serialization_and_speech_tokens():
+    """Tests that TTSContext can be serialized/deserialized with msgpack and that _speech_tokens can be written to after deserialization."""
+    # Create a TTSContext with some audio prompt tokens
+    audio_prompt_tokens = np.array([100, 101, 102, 103], dtype=np.int32)
+    original_context = TTSContext(
+        prompt="TTS test prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        audio_prompt_tokens=audio_prompt_tokens,
+        sampling_params=SamplingParams(temperature=0.8),
+    )
+    original_context.assign_to_cache(0)
+
+    # Add some initial speech tokens to the context
+    initial_speech_tokens = np.array([200, 201, 202], dtype=np.int32)
+    original_context.update_speech_tokens(initial_speech_tokens)
+
+    # Verify initial state
+    assert np.array_equal(
+        original_context.audio_prompt_tokens, audio_prompt_tokens
+    )
+    assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
+    assert original_context._speech_token_end_idx == 3
+    assert original_context.block_counter == 1
+
+    # Test that we can encode TTSContext with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(TTSContext)
+    msgpack_encoded = serialize(original_context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    # Verify the deserialized context matches the original
+    assert isinstance(msgpack_decoded, TTSContext)
+    assert msgpack_decoded == original_context
+    assert np.array_equal(
+        msgpack_decoded.audio_prompt_tokens, audio_prompt_tokens
+    )
+    assert np.array_equal(msgpack_decoded.speech_tokens, initial_speech_tokens)
+    assert msgpack_decoded._speech_token_end_idx == 3
+    assert msgpack_decoded.block_counter == 1
+
+    # Test writing to the _speech_tokens array after deserialization
+    new_speech_tokens = np.array([300, 301, 302, 303], dtype=np.int32)
+    msgpack_decoded.update_speech_tokens(new_speech_tokens)
+
+    # Verify that the new speech tokens were added correctly
+    expected_combined_tokens = np.concatenate(
+        [initial_speech_tokens, new_speech_tokens]
+    )
+    assert np.array_equal(
+        msgpack_decoded.speech_tokens, expected_combined_tokens
+    )
+    assert msgpack_decoded._speech_token_end_idx == 7
+    assert msgpack_decoded.block_counter == 2
+
+    # Verify that the original context was not affected
+    assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
+    assert original_context._speech_token_end_idx == 3
+    assert original_context.block_counter == 1
