@@ -321,6 +321,19 @@ struct LayoutTensor[
     alias rank = layout.rank()
     """The number of dimensions in the tensor's layout."""
 
+    alias Immutable = LayoutTensor[
+        dtype,
+        layout,
+        ImmutableOrigin.cast_from[origin].result,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+        alignment=alignment,
+    ]
+    """The immutable version of the `LayoutTensor`."""
+
     var ptr: UnsafePointer[
         Scalar[dtype],
         address_space=address_space,
@@ -363,6 +376,31 @@ struct LayoutTensor[
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
+
+    @doc_private
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(
+        other: LayoutTensor,
+        out self: LayoutTensor[
+            other.dtype,
+            other.layout,
+            ImmutableOrigin.cast_from[other.origin].result,
+            address_space = other.address_space,
+            element_layout = other.element_layout,
+            layout_int_type = other.layout_int_type,
+            linear_idx_type = other.linear_idx_type,
+            masked = other.masked,
+            alignment = other.alignment,
+        ],
+    ):
+        """Implicitly cast the mutable origin of self to an immutable one.
+
+        Args:
+            other: The `LayoutTensor` to cast.
+        """
+        self = rebind[__type_of(self)](other)
+
     @always_inline
     @implicit
     fn __init__(
@@ -899,36 +937,17 @@ struct LayoutTensor[
         )
 
     @always_inline
-    fn get_immutable(
-        self,
-    ) -> LayoutTensor[
-        dtype,
-        layout,
-        ImmutableOrigin.cast_from[origin].result,
-        address_space=address_space,
-        element_layout=element_layout,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
-        masked=masked,
-        alignment=alignment,
-    ]:
-        """
-        Return an immutable version of this tensor.
+    fn get_immutable(self) -> Self.Immutable:
+        """Return an immutable version of this tensor.
 
         Returns:
             A `LayoutTensor` covering the same elements, but without mutability.
         """
-        return LayoutTensor[
-            dtype,
-            layout,
-            ImmutableOrigin.cast_from[origin].result,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ](self.ptr, self.runtime_layout, self.runtime_element_layout)
+        # NOTE: We use a rebind and not the constructor here because otherwise
+        # we get "argument of '__init__' call allows reading a memory location
+        # previously writable through another aliased argument" when used with
+        # a mutable value in the same scope
+        return rebind[Self.Immutable](self)
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
@@ -2631,7 +2650,7 @@ struct LayoutTensor[
     ](
         self,
         *tile_coords: Int,
-        out result: __type_of(self.tile_type[*tile_sizes]()),
+        out result: __type_of(Self.tile_type[*tile_sizes]()),
     ):
         """Extract a tile (sub-tensor) from this tensor with specified
         dimensions and position.
