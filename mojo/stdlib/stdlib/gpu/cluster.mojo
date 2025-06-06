@@ -22,6 +22,11 @@ with careful consideration of the underlying hardware synchronization mechanisms
 """
 from sys import is_nvidia_gpu, llvm_intrinsic
 from sys.info import _is_sm_9x_or_newer
+from sys.info import _is_sm_100x_or_newer
+from sys._assembly import inlined_assembly
+from memory import UnsafePointer
+from gpu.memory import _GPUAddressSpace as AddressSpace
+from sys import sizeof, _RegisterPackType
 
 # ===-----------------------------------------------------------------------===#
 #  1D ctaid in a cluster
@@ -71,6 +76,38 @@ fn elect_one_sync() -> Bool:
         "elect one sync is only implemented for NVIDIA SM90+ GPUs",
     ]()
     return Bool(__mlir_op.`nvvm.elect.sync`[_type = __mlir_type.`i1`]())
+
+
+@always_inline("nodebug")
+fn elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
+    """Elects a single thread within a warp to perform an operation.
+
+    Args:
+        mask: The mask to use for the election. Defaults to 0xFFFFFFFF.
+
+    Returns:
+        True for the elected thread, False for all other threads in the warp.
+
+    Note:
+        - Only supported on NVIDIA SM90+ GPUs.
+        - Maps directly to the `elect.sync` instruction in CUDA PTX.
+        - Useful for having a single thread perform an operation while
+          maintaining warp synchronization.
+    """
+    constrained[
+        _is_sm_9x_or_newer(),
+        "elect one sync is only implemented for NVIDIA SM90+ GPUs",
+    ]()
+
+    alias asm = """{
+        .reg .pred P1;
+        elect.sync _|P1, $1;
+        selp.b32 $0, 1, 0, P1;
+        }"""
+    var is_elected: UInt32 = inlined_assembly[
+        asm, UInt32, has_side_effect=True, constraints="=r,r"
+    ](mask)
+    return Bool(is_elected)
 
 
 @always_inline("nodebug")
@@ -147,3 +184,203 @@ fn cluster_sync_relaxed():
     """
     cluster_arrive_relaxed()
     cluster_wait()
+
+
+@always_inline("nodebug")
+fn cluster_sync_acquire():
+    """Acquires the cluster sync proxy.
+
+    Only supported on NVIDIA SM90+ GPUs.
+    """
+    constrained[
+        _is_sm_9x_or_newer(),
+        "cluster sync acquire is only supported by NVIDIA SM90+ GPUs",
+    ]()
+    inlined_assembly[
+        "fence.proxy.async::generic.acquire.sync_restrict::shared::cluster.cluster;",
+        NoneType,
+        has_side_effect=True,
+        constraints="",
+    ]()
+
+
+@always_inline("nodebug")
+fn cluster_sync_release():
+    """Release the cluster sync proxy.
+
+    Only supported on NVIDIA SM90+ GPUs."""
+    constrained[
+        _is_sm_9x_or_newer(),
+        "cluster sync release is only supported by NVIDIA SM90+ GPUs",
+    ]()
+    inlined_assembly[
+        "fence.proxy.async::generic.release.sync_restrict::shared::cta.cluster;",
+        NoneType,
+        has_side_effect=True,
+        constraints="",
+    ]()
+
+
+@always_inline("nodebug")
+fn clusterlaunchcontrol_query_cancel_is_canceled(
+    result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED]
+) -> UInt32:
+    """Decodes the cancellation request.
+
+    Args:
+        result: A pointer to 2 `UInt64`s that make up the cancellation request result to decode.
+
+    Returns:
+        True if the cancellation request is canceled, False otherwise.
+
+    Only supported on NVIDIA SM100+ GPUs."""
+    constrained[
+        _is_sm_100x_or_newer(),
+        (
+            "clusterlaunchcontrol_query_cancel_is_canceled is only supported by"
+            "  NVIDIA SM100+ GPUs"
+        ),
+    ]()
+
+    var ret_val = inlined_assembly[
+        """
+    {
+    .reg .b128 %result;
+    mov.b128 %result, {$1, $2};
+    .reg .pred %ret_val;
+    clusterlaunchcontrol.query_cancel.is_canceled.pred.b128 %ret_val, %result;
+    selp.b32 $0, 1, 0, %ret_val;
+    }
+    """,
+        UInt32,
+        has_side_effect=True,
+        constraints="=r,l,l",
+    ](result[0], result[1])
+    return ret_val
+
+
+@always_inline("nodebug")
+fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
+    id: String
+](result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED]) -> UInt32:
+    """Decodes the cancellation request.
+
+    Parameters:
+        id: The dimension to decode. Must be one of `x`, `y`, `z`.
+
+    Args:
+        result: A pointer to 2 `UInt64`s that make up the cancellation request result to decode.
+
+    Returns:
+        The coordinate of the first CTAID in the canceled cluster.
+
+    Only supported on NVIDIA SM100+ GPUs."""
+    constrained[
+        _is_sm_100x_or_newer(),
+        (
+            "clusterlaunchcontrol_query_cancel_get_first_ctaid is only"
+            " supported by NVIDIA SM100+ GPUs"
+        ),
+    ]()
+    constrained[
+        id == "x" or id == "y" or id == "z",
+        "id must be one of `x`, `y`, `z`",
+    ]()
+
+    alias asm = (
+        """
+        {
+        .reg .b128 %result;
+        mov.b128 %result, {$1, $2};
+        clusterlaunchcontrol.query_cancel.get_first_ctaid::"""
+        + id
+        + """.b32.b128 $0, %result;
+        }
+        """
+    )
+
+    var ret_val = inlined_assembly[
+        asm,
+        UInt32,
+        has_side_effect=True,
+        constraints="=r,l,l",
+    ](result[0], result[1])
+    return ret_val
+
+
+@always_inline("nodebug")
+fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
+    block_dim: UnsafePointer[UInt32],
+    result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED],
+):
+    """Decodes the cancellation request.
+
+    Args:
+        block_dim: A pointer to 4 `UInt32`s that will store the coordinates of the first CTAID in the canceled cluster.
+        result: A pointer to 2 `UInt64`s that make up the cancellation request result to decode.
+
+    Only supported on NVIDIA SM100+ GPUs."""
+    constrained[
+        _is_sm_100x_or_newer(),
+        (
+            "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
+            " supported by NVIDIA SM100+ GPUs"
+        ),
+    ]()
+
+    alias asm = """
+        .reg .b128 %result;
+        mov.b128 %result, {$4, $5};
+        clusterlaunchcontrol.query_cancel.get_first_ctaid.v4.b32.b128 {$0, $1, $2, $3}, %result;
+        """
+
+    inlined_assembly[
+        asm,
+        NoneType,
+        has_side_effect=True,
+        constraints="=r,=r,=r,=r,l,l",
+    ](
+        block_dim[0],
+        block_dim[1],
+        block_dim[2],
+        block_dim[3],
+        result[0],
+        result[1],
+    )
+
+
+@always_inline("nodebug")
+fn clusterlaunchcontrol_try_cancel[
+    multicast: Bool = False
+](
+    result: UnsafePointer[UInt64, address_space = AddressSpace.SHARED],
+    mbar: UnsafePointer[Int64, address_space = AddressSpace.SHARED],
+):
+    """Requests to atomically cancel the cluster launch if it has not started running yet.
+
+    Args:
+        result: A pointer to 2 `UInt64`s (16B aligned) that will store the result of the cancellation request.
+        mbar: A pointer to an `Int64` (8B aligned) memory barrier state.
+
+    Only supported on NVIDIA SM100+ GPUs."""
+    constrained[
+        _is_sm_100x_or_newer(),
+        (
+            "clusterlaunchcontrol_query_cancel_get_first_ctaid_v4 is only"
+            " supported by NVIDIA SM100+ GPUs"
+        ),
+    ]()
+
+    alias asm = (
+        """
+        clusterlaunchcontrol.try_cancel.async.shared::cta.mbarrier::complete_tx::bytes"""
+        + (".multicast::cluster::all" if multicast else "")
+        + """.b128 [$0], [$1];"""
+    )
+
+    inlined_assembly[
+        asm,
+        NoneType,
+        has_side_effect=True,
+        constraints="r,r",
+    ](result, mbar)
