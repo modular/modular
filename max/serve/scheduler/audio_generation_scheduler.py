@@ -39,6 +39,31 @@ from .text_generation_scheduler import BatchType, TokenGenerationSchedulerConfig
 logger = logging.getLogger("max.serve")
 
 
+def _log_metrics(
+    batch_to_execute: AudioGenerationSchedulerOutput,
+    num_pending_reqs: int,
+    batch_creation_time_s: float,
+    batch_execution_time_s: float,
+) -> None:
+    batch_type = batch_to_execute.batch_type
+    batch_size = batch_to_execute.batch_size
+    terminated_reqs = batch_to_execute.num_terminated
+    batch_creation_latency_str = to_human_readable_latency(
+        batch_creation_time_s
+    )
+    batch_execution_latency_str = to_human_readable_latency(
+        batch_execution_time_s
+    )
+
+    logger.debug(
+        f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
+        f"Terminated: {terminated_reqs} reqs, "
+        f"Pending: {num_pending_reqs} reqs | "
+        f"Batch creation: {batch_creation_latency_str}, "
+        f"Execution: {batch_execution_latency_str}"
+    )
+
+
 class AudioGenerationSchedulerOutput:
     def __init__(
         self,
@@ -102,6 +127,93 @@ class AudioGenerationScheduler(Scheduler):
 
         # TODO health check
 
+    def _retrieve_pending_requests(self) -> None:
+        while not self.request_q.empty():
+            try:
+                req_id, req_data = self.request_q.get_nowait()
+                req_data.unassign_from_cache()
+                self.pending_reqs.append((req_id, req_data))
+            except queue.Empty:
+                break
+
+    @traced
+    def _handle_terminated_responses(
+        self,
+        batch_executed: dict[str, Any],
+        batch_responses: dict[str, AudioGenerationResponse],
+    ) -> None:
+        """Task that handles responses"""
+        if not batch_responses:
+            return
+
+        for req_id, response in batch_responses.items():
+            if response.is_done:
+                # Release from cache
+                cache_id = batch_executed[req_id].cache_seq_id
+                self.pipeline.release(batch_executed[req_id])
+                self.available_cache_indices.add(cache_id)
+                del batch_executed[req_id]
+
+                # Remove from active batch
+                if req_id in self.decode_reqs:
+                    del self.decode_reqs[req_id]
+
+    @traced
+    def _handle_cancelled_requests(self) -> None:
+        try:
+            while not self.cancel_q.empty():
+                try:
+                    for req_id in self.cancel_q.get_nowait():
+                        if req_id not in self.decode_reqs:
+                            continue
+                        self.pipeline.release(self.decode_reqs[req_id])
+                        self.available_cache_indices.add(
+                            self.decode_reqs[req_id].cache_seq_id
+                        )
+                        del self.decode_reqs[req_id]
+
+                        stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
+                        self.response_q.put_nowait([{req_id: stop_stream}])
+                except queue.Empty:
+                    break
+        except Exception:
+            logger.exception(
+                "An error occurred while handling cancelled requests"
+            )
+
+    @traced
+    def _stream_responses_to_frontend(
+        self,
+        batch_responses: dict[str, AudioGenerationResponse],
+    ) -> None:
+        if not batch_responses:
+            return
+
+        # The output audio tensors are sent to frontend when the request is completed.
+        # Streaming is not yet supported.
+
+        stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
+        audio_responses: dict[str, AudioGeneratorOutput] = {}
+        stop_responses: dict[str, AudioGeneratorOutput] = {}
+        for req_id, response in batch_responses.items():
+            if response.has_audio_data:
+                audio_gen_output = AudioGeneratorOutput(
+                    audio_data=torch.from_numpy(response.audio_data),
+                    metadata={},
+                    is_done=response.is_done,
+                )
+            else:
+                audio_gen_output = AudioGeneratorOutput(
+                    audio_data=torch.tensor([], dtype=torch.float32),
+                    metadata={},
+                    is_done=response.is_done,
+                )
+            audio_responses[req_id] = audio_gen_output
+            if response.is_done:
+                stop_responses[req_id] = stop_stream
+
+        self.response_q.put_nowait([audio_responses, stop_responses])
+
     def _should_schedule_ce(self) -> bool:
         if len(self.decode_reqs) == 0:
             return True
@@ -144,161 +256,6 @@ class AudioGenerationScheduler(Scheduler):
             return self._create_ce_batch()
         return self._create_tg_batch()
 
-    def _retrieve_pending_requests(self) -> None:
-        while not self.request_q.empty():
-            try:
-                req_id, req_data = self.request_q.get_nowait()
-                req_data.unassign_from_cache()
-                self.pending_reqs.append((req_id, req_data))
-            except queue.Empty:
-                break
-
-    def run(self) -> None:
-        """The Scheduler loop that creates batches and schedules them on GPU"""
-        i = 0
-        while i % 10 or not self.pc.is_canceled():
-            self.pc.beat()
-            i += 1
-
-            self._retrieve_pending_requests()
-
-            try:
-                # Construct the batch to execute
-                t0 = time.monotonic()
-                batch_to_execute = self._create_batch_to_execute()
-                t1 = time.monotonic()
-                batch_creation_time_s = t1 - t0
-
-                # If the batch is empty, skip
-                batch_size = batch_to_execute.batch_size
-                if batch_size == 0:
-                    continue
-
-                # Schedule the batch
-                t0 = time.monotonic()
-                self._schedule(batch_to_execute)
-                t1 = time.monotonic()
-                batch_execution_time_s = t1 - t0
-
-                # Log batch metrics
-                self._log_metrics(
-                    batch_to_execute,
-                    batch_creation_time_s,
-                    batch_execution_time_s,
-                )
-
-                # occasionally handle cancelled requests
-                if i % 20 == 0:
-                    self._handle_cancelled_requests()
-
-            except Exception as e:
-                logger.exception("An error occurred during scheduling ")
-                # TODO try to recover
-                raise e
-
-    def _log_metrics(
-        self,
-        batch_to_execute: AudioGenerationSchedulerOutput,
-        batch_creation_time_s: float,
-        batch_execution_time_s: float,
-    ) -> None:
-        batch_type = batch_to_execute.batch_type
-        batch_size = batch_to_execute.batch_size
-        terminated_reqs = batch_to_execute.num_terminated
-        pending_reqs = len(self.pending_reqs)
-        batch_creation_latency_str = to_human_readable_latency(
-            batch_creation_time_s
-        )
-        batch_execution_latency_str = to_human_readable_latency(
-            batch_execution_time_s
-        )
-
-        logger.debug(
-            f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
-            f"Terminated: {terminated_reqs} reqs, "
-            f"Pending: {pending_reqs} reqs | "
-            f"Batch creation: {batch_creation_latency_str}, "
-            f"Execution: {batch_execution_latency_str}"
-        )
-
-    @traced
-    def _handle_terminated_responses(
-        self,
-        batch_executed: dict[str, Any],
-        batch_responses: dict[str, AudioGenerationResponse],
-    ) -> None:
-        """Task that handles responses"""
-        if not batch_responses:
-            return
-
-        for request_id, response in batch_responses.items():
-            if response.is_done:
-                # Release from cache
-                cache_id = batch_executed[request_id].cache_seq_id
-                self.pipeline.release(batch_executed[request_id])
-                self.available_cache_indices.add(cache_id)
-                del batch_executed[request_id]
-
-                # Remove from active batch
-                if request_id in self.decode_reqs:
-                    del self.decode_reqs[request_id]
-
-    @traced
-    def _handle_cancelled_requests(self) -> None:
-        try:
-            while not self.cancel_q.empty():
-                try:
-                    for req_id in self.cancel_q.get_nowait():
-                        if req_id not in self.decode_reqs:
-                            continue
-                        self.pipeline.release(self.decode_reqs[req_id])
-                        self.available_cache_indices.add(
-                            self.decode_reqs[req_id].cache_seq_id
-                        )
-                        del self.decode_reqs[req_id]
-
-                        stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
-                        self.response_q.put_nowait([{req_id: stop_stream}])
-                except queue.Empty:
-                    break
-        except Exception:
-            logger.exception(
-                "An error occurred while handling cancelled requests"
-            )
-
-    @traced
-    def _stream_responses_to_frontend(
-        self,
-        batch_responses: dict[str, AudioGenerationResponse],
-    ) -> None:
-        if not batch_responses:
-            return
-
-        # The output audio tensors are sent to frontend when the request is completed.
-        # Streaming is not yet supported.
-
-        stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
-        audio_responses: dict[str, AudioGeneratorOutput] = {}
-        stop_responses: dict[str, AudioGeneratorOutput] = {}
-        for request_id, response in batch_responses.items():
-            if response.has_audio_data:
-                audio_gen_output = AudioGeneratorOutput(
-                    audio_data=torch.from_numpy(response.audio_data),
-                    metadata={},
-                    is_done=response.is_done,
-                )
-            else:
-                audio_gen_output = AudioGeneratorOutput(
-                    audio_data=torch.tensor([], dtype=torch.float32),
-                    metadata={},
-                    is_done=response.is_done,
-                )
-            audio_responses[request_id] = audio_gen_output
-            if response.is_done:
-                stop_responses[request_id] = stop_stream
-
-        self.response_q.put_nowait([audio_responses, stop_responses])
-
     def _schedule(self, sch_output: AudioGenerationSchedulerOutput) -> None:
         assert sch_output.batch_size > 0
 
@@ -319,3 +276,46 @@ class AudioGenerationScheduler(Scheduler):
 
         # send the responses to the API process
         self._stream_responses_to_frontend(batch_responses)
+
+    def run(self) -> None:
+        """The Scheduler loop that creates batches and schedules them on GPU"""
+        i = 0
+        while i % 10 or not self.pc.is_canceled():
+            self.pc.beat()
+            i += 1
+
+            self._retrieve_pending_requests()
+
+            try:
+                # Construct the batch to execute
+                t0 = time.monotonic()
+                batch_to_execute = self._create_batch_to_execute()
+                t1 = time.monotonic()
+                batch_creation_time_s = t1 - t0
+
+                # If the batch is empty, skip
+                if batch_to_execute.batch_size == 0:
+                    continue
+
+                # Schedule the batch
+                t0 = time.monotonic()
+                self._schedule(batch_to_execute)
+                t1 = time.monotonic()
+                batch_execution_time_s = t1 - t0
+
+                # Log batch metrics
+                _log_metrics(
+                    batch_to_execute,
+                    len(self.pending_reqs),
+                    batch_creation_time_s,
+                    batch_execution_time_s,
+                )
+
+                # occasionally handle cancelled requests
+                if i % 20 == 0:
+                    self._handle_cancelled_requests()
+
+            except Exception as e:
+                logger.exception("An error occurred during scheduling ")
+                # TODO try to recover
+                raise e
