@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Callable
+from typing import Callable, Optional
 
 import numpy as np
 from max.dtype import DType
@@ -313,7 +313,7 @@ class Linear(Module):
         Args:
             strategy: The strategy describing the weight sharding.
         """
-        self.weight.set_sharding_strategy(strategy)
+        self.weight.sharding_strategy = strategy
 
         if self.weight_scale:
             # Weight scale should only be added when a float8 config is passed.
@@ -326,7 +326,7 @@ class Linear(Module):
                 strategy.is_colwise
                 and self.float8_config.weight_scale.is_rowwise
             )
-            self.weight_scale.set_sharding_strategy(
+            self.weight_scale.sharding_strategy = (
                 ShardingStrategy.replicate(strategy.num_devices)
                 if should_replicate
                 else strategy
@@ -334,11 +334,25 @@ class Linear(Module):
 
         if self.bias:
             # Only shard the bias when the weight sharding is rowwise.
-            self.bias.set_sharding_strategy(
+            self.bias.sharding_strategy = (
                 strategy
                 if strategy.is_rowwise
                 else ShardingStrategy.replicate(strategy.num_devices)
             )
+
+    @property
+    def sharding_strategy(self) -> Optional[ShardingStrategy]:
+        """Get the weight sharding strategy."""
+        return self.weight.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the weight sharding strategy.
+
+        Args:
+            strategy: The strategy describing the weight sharding.
+        """
+        self.set_sharding(strategy)
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.
@@ -494,7 +508,7 @@ class ColumnParallelLinear(Linear):
         self.devices = devices
         self.num_devices = len(self.devices)
 
-        self.set_sharding(ShardingStrategy.rowwise(self.num_devices))
+        self.sharding_strategy = ShardingStrategy.rowwise(self.num_devices)
 
         # Create normal Linear layers for each device. These layers and weights
         # are not recorded by the nn.Module and do not appear in the state dict.
@@ -1053,11 +1067,15 @@ class DistributedMLP(MLP):
 
         self.num_devices = len(self.devices)
 
-        self.gate_proj.set_sharding(ShardingStrategy.rowwise(self.num_devices))
-        self.down_proj.set_sharding(
-            ShardingStrategy.columnwise(self.num_devices)
+        self.gate_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.num_devices
         )
-        self.up_proj.set_sharding(ShardingStrategy.rowwise(self.num_devices))
+        self.down_proj.sharding_strategy = ShardingStrategy.columnwise(
+            self.num_devices
+        )
+        self.up_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.num_devices
+        )
 
         # Create normal MLP layers for each device. These layers and weights are
         # not recorded by the nn.Module and do not appear in the state dict.

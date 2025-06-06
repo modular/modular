@@ -1323,20 +1323,20 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         self.allreduce = Allreduce(num_devices)
 
         if self.stacked_qkv:
-            self.qkv_proj.set_sharding_strategy(
-                ShardingStrategy.columnwise(num_devices)
+            self.qkv_proj.sharding_strategy = ShardingStrategy.columnwise(
+                num_devices
             )
         else:
-            self.q_proj.set_sharding_strategy(
-                ShardingStrategy.rowwise(num_devices)
+            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
             )
-            self.k_proj.set_sharding_strategy(
-                ShardingStrategy.rowwise(num_devices)
+            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
             )
-            self.v_proj.set_sharding_strategy(
-                ShardingStrategy.rowwise(num_devices)
+            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
             )
-        self.o_proj.set_sharding(ShardingStrategy.columnwise(num_devices))
+        self.o_proj.sharding_strategy = ShardingStrategy.columnwise(num_devices)
 
         self.list_of_attentions = []
         kwargs = kwargs.copy()
