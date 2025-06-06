@@ -13,6 +13,7 @@
 
 """Msgpack Support for Numpy Arrays"""
 
+import functools
 from typing import Any, Callable, TypeVar
 
 import msgspec
@@ -31,16 +32,21 @@ def msgpack_numpy_encoder() -> Callable[[Any], bytes]:
     return encoder.encode
 
 
-def msgpack_numpy_decoder(type_: Any) -> Callable[[bytes], Any]:
+def msgpack_numpy_decoder(
+    type_: Any, copy: bool = True
+) -> Callable[[bytes], Any]:
     """Create a decoder function for the specified type.
 
     Args:
         type_: The type to decode into
+        copy: Copy numpy arrays if true
 
     Returns:
         A function that decodes bytes into the specified type
     """
-    decoder = msgspec.msgpack.Decoder(type=type_, dec_hook=decode_numpy_array)
+    decoder = msgspec.msgpack.Decoder(
+        type=type_, dec_hook=functools.partial(decode_numpy_array, copy=copy)
+    )
     return decoder.decode
 
 
@@ -57,7 +63,7 @@ def encode_numpy_array(obj: Any) -> dict:
     return obj
 
 
-def decode_numpy_array(type_: type, obj: Any) -> Any:
+def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
     """Custom decoder for numpy arrays from msgspec.
 
     Args:
@@ -65,7 +71,13 @@ def decode_numpy_array(type_: type, obj: Any) -> Any:
         obj: The object to decode
     """
     if isinstance(obj, dict) and obj.get("__np__") is True:
-        return np.frombuffer(obj["data"], dtype=obj["dtype"]).reshape(
+        arr = np.frombuffer(obj["data"], dtype=obj["dtype"]).reshape(
             obj["shape"]
         )
+
+        if copy:
+            arr = np.copy(arr)
+
+        return arr
+
     return obj
