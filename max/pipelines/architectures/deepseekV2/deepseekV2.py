@@ -23,7 +23,7 @@ from max.nn import (
     Transformer,
     TransformerBlock,
 )
-from max.nn.attention.attention_with_rope import LatentAttentionWithRope
+from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
 from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
