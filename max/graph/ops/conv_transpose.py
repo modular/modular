@@ -11,7 +11,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import DeviceRef, Shape
+from ..type import ConvInputLayout, DeviceRef, Shape
 from ..value import TensorValue, TensorValueLike
 
 
@@ -23,6 +23,7 @@ def conv2d_transpose(
     padding: tuple[int, int, int, int] = (0, 0, 0, 0),
     output_paddings: tuple[int, int] = (0, 0),
     bias: Optional[TensorValueLike] = None,
+    input_layout: ConvInputLayout = ConvInputLayout.NHWC,
 ) -> TensorValue:
     """Computes the 2-D deconvolution of the input with the given filter,
     strides, dilations, paddings, and groups.
@@ -121,6 +122,7 @@ def conv2d_transpose(
         dilations=Shape(dilation).to_mlir(),
         paddings=Shape(padding).to_mlir(),
         output_paddings=Shape(output_paddings).to_mlir(),
+        input_layout=input_layout.to_mlir(),
     )[0].tensor
 
     out = out.to(original_device)

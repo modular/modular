@@ -11,7 +11,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import FilterLayout, Shape
+from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
 
 
@@ -23,6 +23,7 @@ def conv2d(
     padding: tuple[int, int, int, int] = (0, 0, 0, 0),
     groups: int = 1,
     bias: Optional[TensorValueLike] = None,
+    input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:
     """Computes the 2-D convolution product of the input with the given filter, bias,
@@ -103,6 +104,7 @@ def conv2d(
         Shape(dilation).to_mlir(),
         Shape(padding).to_mlir(),
         groups,
+        input_layout=input_layout.to_mlir(),
     )[0].tensor
 
     if bias is not None:
@@ -118,6 +120,7 @@ def conv3d(
     padding: tuple[int, int, int, int, int, int] = (0, 0, 0, 0, 0, 0),
     groups: int = 1,
     bias: Optional[TensorValueLike] = None,
+    input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.QRSCF,
 ) -> TensorValue:
     """Computes the 3-D convolution product of the input with the given filter,
@@ -198,6 +201,7 @@ def conv3d(
         Shape(dilation).to_mlir(),
         Shape(padding).to_mlir(),
         groups,
+        input_layout=input_layout.to_mlir(),
     )[0].tensor
 
     if bias is not None:

@@ -65,6 +65,35 @@ class FilterLayout(enum.Enum):
         return FilterLayout(attr.format.value)
 
 
+class ConvInputLayout(enum.Enum):
+    # TODO(GEX-2302): We need to differentiate between 2D - 3D layouts.
+    # TODO(GEX-2302): Another Layout type should be used instead of StringAttr.
+    # Simpler implementation to quickly support CUDNN input formats.
+    NHWC = "NHWC"
+    NCHW = "NCHW"
+
+    def to_mlir(self) -> builtin.StringAttr:
+        """Returns an mlir Attribute representing this Layout.
+        This attribute is used for certain convolution ops.
+
+        Returns:
+            An Attribute representing the layout.
+        """
+        return builtin.StringAttr(self.value)
+
+    @staticmethod
+    def from_mlir(attr: builtin.StringAttr) -> ConvInputLayout:
+        """Constructs a layout from an attribute.
+
+        Args:
+            attr: The MLIR Attribute object to parse into a layout.
+
+        Returns:
+            The FilterLayout represented by the Attribute value.
+        """
+        return ConvInputLayout(attr.value)
+
+
 class Dim:
     """A tensor dimension.
 
