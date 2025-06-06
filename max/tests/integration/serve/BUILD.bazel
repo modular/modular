@@ -19,6 +19,7 @@ modular_py_test(
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/serve",
         "//SDK/lib/API/python/max/serve/schemas",
         requirement("async-asgi-testclient"),
@@ -54,6 +55,7 @@ modular_py_test(
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/serve",
         "//SDK/lib/API/python/max/serve/schemas",
         requirement("async-asgi-testclient"),
@@ -98,6 +100,7 @@ modular_py_test(
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/pipelines/core",
         "//SDK/lib/API/python/max/serve",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),

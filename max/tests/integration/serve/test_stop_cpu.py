@@ -18,8 +18,7 @@ request = {
         }
     ],
     "stream": False,
-    # The echo token generator actually reverses the input...
-    "stop": ["doesn't show up", "ekil I ,elcycib", "elcycib"],
+    "stop": ["doesn't show up", "bicycle, I like", "bicycle"],
 }
 
 
@@ -33,7 +32,7 @@ async def test_stop_sequence(echo_app) -> None:
 
         # Expected continuation stops at the first match ("ekil I ,elcycib")
         # and does not include the stop sequence
-        expected = "ekib ym edir ot "
+        expected = "I like to ride my "
 
         assert expected == result["choices"][0]["message"]["content"]
 
@@ -56,7 +55,7 @@ async def test_stop_sequence_streaming(
         # clean up the response in the same way we can in the sync case.
         # The full requested tokens was 512, so 128 is a meaningful cutoff
         # (also keeping in mind additional padding for noisy neighbors in CI)
-        expected = "ekib ym edir ot "
+        expected = "to ride my bike"
         assert len(response_text) - len(expected) < 128, (
             "Got too many extra characters after stop sequence"
         )

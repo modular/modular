@@ -9,13 +9,12 @@ import time
 
 import pytest
 from max.pipelines import PIPELINE_REGISTRY, PipelineTask
-from max.pipelines.core import TextGenerationResponse
+from max.pipelines.core import TextContext, TextGenerationResponse
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
-    EchoTokenGeneratorContext,
 )
 from max.serve.pipelines.llm import batch_config_from_pipeline_config
 from max.serve.scheduler import TokenGeneratorSchedulerConfig
@@ -24,7 +23,7 @@ from max.serve.telemetry.common import configure_metrics
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
     def next_token(
-        self, batch: dict[str, EchoTokenGeneratorContext], num_steps: int = 1
+        self, batch: dict[str, TextContext], num_steps: int = 1
     ) -> dict[str, TextGenerationResponse]:
         # Sleep for 1 ms - otherwise, the echo token generator
         # can break some separation of timescale assumptions
