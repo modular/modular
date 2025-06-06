@@ -20,6 +20,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
+    Optional,
     Protocol,
     TypeVar,
     runtime_checkable,
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
     import torch
 
 from .response import AudioGenerationResponse
-from .text_generation import SamplingParams
+from .text_generation import SamplingParams, TokenGeneratorRequestMessage
 
 
 @dataclass(frozen=True)
@@ -37,10 +38,6 @@ class AudioGenerationRequest:
     id: str
     """A unique identifier for the request. This ID can be used to trace and log
     the request throughout its lifecycle, facilitating debugging and tracking.
-    """
-
-    input: str
-    """The text to generate audio for. The maximum length is 4096 characters.
     """
 
     index: int
@@ -56,8 +53,8 @@ class AudioGenerationRequest:
     capabilities of the response generation.
     """
 
-    voice: str | None = None
-    """The voice to use for audio generation.
+    input: Optional[str] = None
+    """The text to generate audio for. The maximum length is 4096 characters.
     """
 
     audio_prompt_tokens: list[int] = field(default_factory=list)
@@ -66,11 +63,10 @@ class AudioGenerationRequest:
     audio_prompt_transcription: str = ""
     """The audio prompt transcription to use for audio generation."""
 
-    detokenize: bool = True
-    """Whether to detokenize the output tokens into text."""
-
-    seed: int | None = None
-    """The seed to use for the random number generator."""
+    messages: Optional[list[TokenGeneratorRequestMessage]] = None
+    """The messages to use for audio generation. If provided, the `input`,
+    `audio_prompt_tokens`, and `audio_prompt_transcription` will be ignored.
+    """
 
     sampling_params: SamplingParams = SamplingParams()
     """Request sampling configuration options."""

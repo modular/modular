@@ -144,6 +144,12 @@ class SamplingParams:
     stop_token_ids: Optional[list[int]] = None
     """A list of token ids that are used as stopping criteria when generating a new sequence."""
 
+    detokenize: bool = True
+    """Whether to detokenize the output tokens into text."""
+
+    seed: int | None = None
+    """The seed to use for the random number generator."""
+
     def __post_init__(self):
         if self.min_p < 0.0 or self.min_p > 1.0:
             raise ValueError("min_p must be in [0.0, 1.0]")
