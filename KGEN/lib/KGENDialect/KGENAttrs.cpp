@@ -1213,7 +1213,7 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
 
   auto sig = cast<FuncTypeGeneratorType>(operands.front().getType()).getBody();
   // TODO: Cannot check !lit.ref reference types in KGEN.
-  auto resultArgType = sig.getArguments().back();
+  auto resultArgType = upbindApplyResult(sig.getArguments().back());
   if (auto resultPtr = dyn_cast<PointerType>(resultArgType)) {
     auto expectedResult = resultPtr.getElementType();
     if (expectedResult != type)

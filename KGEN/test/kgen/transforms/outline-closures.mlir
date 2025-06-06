@@ -342,3 +342,21 @@ kgen.generator @lifetime_markers_hack() {
   }
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @apply_result_closure<rank>
+// CHECK-SAME: (%arg0: !pop.array<load_from_mem(:pointer<array<rank, index>>
+// CHECK-SAME: store_to_mem(apply_result_slot(:(!kgen.pointer<array<rank, index>> byref_result) -> !kgen.none @getIt<rank>))), scalar<si64>>) capturing -> !kgen.none
+kgen.generator @apply_result<rank>() -> () {
+  kgen.param.declare.region closure = (
+    %arg5: !pop.array<load_from_mem(:pointer<array<rank, index>> store_to_mem(apply_result_slot(:(!kgen.pointer<array<rank,index>> byref_result) -> !kgen.none bind_params(:<index>(!kgen.pointer<array<*(0,0),index>> byref_result) -> !kgen.none @getIt, rank)))), scalar<si64>>
+  ) capturing -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
+  kgen.return
+}
+
+kgen.generator @getIt<R>(%arg0: !kgen.pointer<!pop.array<R, index>> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
