@@ -3,16 +3,17 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from typing import Optional
+from typing import Optional, Union
 
+import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn import MLP
+from max.graph import DeviceRef, Graph, TensorType, Type, Value, ops
+from max.nn import MLP, Module
 
 DTYPE = DType.float32
 TORCH_DTYPE = torch.float32
@@ -82,6 +83,32 @@ class TorchMLP(nn.Module):
         )
 
 
+class WrapModuleForSubgraph(Module):
+    def __init__(self, module: Module):
+        super().__init__()
+        # The name of the variable is used to determine the prefix of the weights in the Module class
+        self.prefix = module
+
+    def __call__(self, *args):
+        subgraph_arg_types: list[Type] = []
+
+        def flatten(t, result):
+            if isinstance(t, (list, tuple)):
+                for item in t:
+                    flatten(item, result)
+            else:
+                assert isinstance(t, Value)
+                result.append(t.type)
+
+        flatten(args, subgraph_arg_types)
+        subgraph = self.prefix.build_subgraph(
+            name="subgraph",
+            input_types=subgraph_arg_types,
+            weight_prefix="prefix.",
+        )
+        return ops.call(subgraph, *args, prefix="prefix.")
+
+
 def mlp_output(
     gate_proj: torch.Tensor,
     down_proj: torch.Tensor,
@@ -92,6 +119,7 @@ def mlp_output(
     is_gpu: bool = False,
     has_bias: bool = False,
     bias: Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+    use_subgraphs: bool = True,
 ):
     state_dict = {
         "gate_proj.weight": gate_proj.cpu(),
@@ -109,7 +137,7 @@ def mlp_output(
             }
         )
 
-    mlp = MLP(
+    mlp: Union[MLP, WrapModuleForSubgraph] = MLP(
         dtype,
         None,
         gate_proj.shape[1],
@@ -118,6 +146,11 @@ def mlp_output(
         activation_function=activation_function,
         has_bias=has_bias,
     )
+
+    if use_subgraphs:
+        mlp = WrapModuleForSubgraph(mlp)
+        state_dict = {f"prefix.{k}": v for k, v in state_dict.items()}
+
     mlp.load_state_dict(state_dict)
 
     session = (
@@ -152,6 +185,7 @@ def compare_mlp_outputs(
     dtype: DType,
     is_gpu: bool = False,
     has_bias: bool = False,
+    use_subgraphs: bool = True,
 ):
     gate_proj_w = generate_tensor((hidden_dim, dim), torch_dtype, seed=42)
     down_proj_w = generate_tensor((dim, hidden_dim), torch_dtype, seed=43)
@@ -174,6 +208,7 @@ def compare_mlp_outputs(
             is_gpu=is_gpu,
             has_bias=has_bias,
             bias=(gate_proj_b, down_proj_b, up_proj_b),
+            use_subgraphs=use_subgraphs,
         )
     else:
         max_output = mlp_output(
@@ -184,6 +219,7 @@ def compare_mlp_outputs(
             activation_function,
             dtype,
             is_gpu=is_gpu,
+            use_subgraphs=use_subgraphs,
         )
 
     device = "cuda" if is_gpu else "cpu"
@@ -227,27 +263,86 @@ def compare_mlp_outputs(
     )
 
 
-def test_mlp():
-    compare_mlp_outputs(1024, 1024, "silu", torch.float32, DType.float32)
-    compare_mlp_outputs(2048, 1024, "gelu", torch.float32, DType.float32)
-    compare_mlp_outputs(1024, 512, "gelu_tanh", torch.float32, DType.float32)
-    compare_mlp_outputs(256, 1024, "tanh", torch.float32, DType.float32)
+@pytest.mark.parametrize("use_subgraphs", [True, False])
+def test_mlp(use_subgraphs: bool):
     compare_mlp_outputs(
-        2048, 1024, "gelu", torch.float32, DType.float32, has_bias=True
+        1024,
+        1024,
+        "silu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        2048,
+        1024,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        1024,
+        512,
+        "gelu_tanh",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        256,
+        1024,
+        "tanh",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        2048,
+        1024,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
     )
 
     # TODO(MODELS-506): Investigate high atol on very few elements at index (0, _) when using bias.
     compare_mlp_outputs(
-        256, 1024, "tanh", torch.float32, DType.float32, has_bias=True
+        256,
+        1024,
+        "tanh",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
     )
     compare_mlp_outputs(
-        1024, 1024, "silu", torch.float32, DType.float32, has_bias=True
+        1024,
+        1024,
+        "silu",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
     )
     compare_mlp_outputs(
-        1024, 512, "gelu_tanh", torch.float32, DType.float32, has_bias=True
+        1024,
+        512,
+        "gelu_tanh",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
     )
     compare_mlp_outputs(
-        1024, 2048, "gelu", torch.float32, DType.float32, has_bias=True
+        1024,
+        2048,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
     )
 
     # TODO: Investigate why the following tests fail
