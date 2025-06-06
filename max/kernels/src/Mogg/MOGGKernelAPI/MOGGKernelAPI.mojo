@@ -5426,6 +5426,7 @@ struct SplitOutputShapeHelper:
 struct Conv:
     @staticmethod
     fn execute[
+        input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
         static_strides: DimList,
@@ -5455,6 +5456,10 @@ struct Conv:
         constrained[
             strides.dtype.is_integral() and dilation.dtype.is_integral(),
             "stride and dilation must have integral type",
+        ]()
+
+        constrained[
+            input_layout == "NHWC", "only NHWC input layout is supported"
         ]()
 
         if strides.size() != input.rank - 2:
@@ -5608,6 +5613,7 @@ struct Conv:
 struct ConvTranspose:
     @staticmethod
     fn execute[
+        input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
     ](
@@ -5623,6 +5629,10 @@ struct ConvTranspose:
             strides.dtype.is_integral()
             and dilation.dtype.is_integral()
             and output_paddings.dtype.is_integral()
+        ]()
+
+        constrained[
+            input_layout == "NHWC", "only NHWC input layout is supported"
         ]()
 
         if strides.size() != input.rank - 2:
