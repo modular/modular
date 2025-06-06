@@ -124,7 +124,7 @@ async fn fn_that_async() -> Int:
 # CHECK:  "name": "fn_that_raises",
 # CHECK:  "overloads":
 # CHECK:      "raises": true
-# CHECK:      "raisesDoc": "Raises an exeception when it wants to.\n"
+# CHECK:      "raisesDoc": "Raises an exception when it wants to.\n"
 # CHECK:      "returnsDoc": "An Int."
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
@@ -136,7 +136,7 @@ def fn_that_raises() -> Int:
     The is some kind of description.
 
     Raises:
-        Raises an exeception when it wants to.
+        Raises an exception when it wants to.
 
     Returns:
         An Int.

@@ -229,7 +229,7 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
 }
 
 /// When converting an 'in' argument to be pass-by-value, return the
-/// corresponding argument convention. To be pendantic, we preserve the
+/// corresponding argument convention. To be pedantic, we preserve the
 /// ownedness of the convention.
 static ArgConvention getByValueConvention(ArgConvention conv) {
   assert(hasAddress(conv));

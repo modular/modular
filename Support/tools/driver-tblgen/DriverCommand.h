@@ -71,7 +71,7 @@ public:
   ///   * If more than one record describes a top-level command, a warning is
   ///     emitted. In all cases, there should only be one top-level command
   ///     description.
-  /// * If NO records describe a top-level command, then the viable record wll
+  /// * If NO records describe a top-level command, then the viable record will
   ///   be a subcommand description.
   ///   * If more than one record describes a subcommand, a warning is emitted.
   ///     In the subcommand case, there should only be one subcommand

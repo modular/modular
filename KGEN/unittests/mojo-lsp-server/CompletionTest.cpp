@@ -190,7 +190,7 @@ fn function() -> Int:
                 }));
           })
       .completion(
-          doc, *doc.findLastPos("alue"),
+          doc, *doc.findLastPos("value"),
           [](const lsp::CompletionList &completionList) {
             // Check that we can complete the `value` from `v` in the return
             // statement.

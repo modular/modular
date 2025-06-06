@@ -75,7 +75,7 @@ namespace {
 /// materialized global variable that matches an entry in the string table and
 /// directly copy the data over into the new LLVM context.
 ///
-/// We can generalize this optimziation to other large data types as necessary.
+/// We can generalize this optimization to other large data types as necessary.
 ///
 /// This class is used in an `RCRef` to be shared across multiple threads.
 class StringConstantTable : public ReferenceCounted<StringConstantTable> {

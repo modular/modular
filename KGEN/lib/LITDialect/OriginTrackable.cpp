@@ -54,7 +54,7 @@ OriginTrackable::OriginTrackable(Value v) {
     return;
   }
 
-  // Global variable references start and end initialzied.
+  // Global variable references start and end initialized.
   if (auto globalRef = v.getDefiningOp<GlobalVarRefOp>()) {
     // FIXME: The global variable's name is attached to the symbol op.
     name = StringAttr::get(v.getContext(), "(global variable)");

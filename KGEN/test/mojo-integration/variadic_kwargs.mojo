@@ -21,7 +21,7 @@ fn takes_int_variadic_kwargs(**kwargs: Int) raises:
         print("non-existent key not found (as expected)")
 
 
-trait Resetable(Copyable, Movable):
+trait Resettable(Copyable, Movable):
     fn reset(mut self):
         ...
 
@@ -30,7 +30,7 @@ trait Resetable(Copyable, Movable):
 
 
 @value
-struct MemOnly(Resetable):
+struct MemOnly(Resettable):
     var value: Int
 
     fn get(self) -> Int:
@@ -40,7 +40,7 @@ struct MemOnly(Resetable):
         self.value = 0
 
 
-fn takes_mem_only_variadic_kwargs[T: Resetable](owned **kwargs: T) raises:
+fn takes_mem_only_variadic_kwargs[T: Resettable](owned **kwargs: T) raises:
     var key = "fizzbuzz"
     # CHECK: fizzbuzz 13
     print(key, kwargs[key].get())

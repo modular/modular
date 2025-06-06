@@ -54,7 +54,7 @@ std::optional<bool> getDictValueAs<bool>(PyObject *dict, llvm::StringRef key) {
 bool setDictKeyValueString(PyObject *dict, llvm::StringRef key,
                            llvm::StringRef val);
 
-/// Set a boolean vlaue in a dict[key:string, value: bool]
+/// Set a boolean value in a dict[key:string, value: bool]
 bool setDictKeyValueBool(PyObject *dict, llvm::StringRef key, bool val);
 
 /// Set an integer value in a dict[key:string, value:int]

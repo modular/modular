@@ -145,7 +145,7 @@ private:
   /// Check if use is Live, if not mark it by putting it into maybeLiveUses.
   Liveness markIfNotLive(const RetOrArg &use, UseVector &maybeLiveUses);
 
-  /// Check if the operand/use can be decided Live, if so propogate the Liveness
+  /// Check if the operand/use can be decided Live, if so propagate the Liveness
   /// to its known defs and uses.
   Liveness surveyUse(OpOperand &use, CallGraphNode *node,
                      UseVector &maybeLiveUses, bool isArg);
@@ -160,7 +160,7 @@ private:
   /// Check if retOrArg is surely to be known as Live.
   bool isLive(const RetOrArg &retOrArg);
 
-  /// Mark the liveness for retOrArg if needed and propogate the info to its
+  /// Mark the liveness for retOrArg if needed and propagate the info to its
   /// upstream and downstream defs/uses.
   void markValue(const RetOrArg &retOrArg, Liveness l,
                  const UseVector &maybeLiveUses);
@@ -171,7 +171,7 @@ private:
   /// Mark func to be known as Live.
   void markLive(FuncOp func);
 
-  /// Propogate liveness to downstream uses and upstream defs of retOrArg.
+  /// Propagate liveness to downstream uses and upstream defs of retOrArg.
   void propagateLiveness(const RetOrArg &retOrArg);
 
   /// Helper function to create RetOrArg for a function's return value/result.

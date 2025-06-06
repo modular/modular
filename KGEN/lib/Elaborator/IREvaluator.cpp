@@ -502,7 +502,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // sufficient to produce a standalone object for the generator being JIT'd.
   SymbolTable symtabCopy = elaborator->oldSymTab;
 
-  // Slice out a stanalone module to re-elaborate with the new target.
+  // Slice out a standalone module to re-elaborate with the new target.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getOperand(1)).getValue();
   StringRef emissionOptionsStr = cast<StringAttr>(op.getOperand(2)).getValue();
@@ -721,7 +721,7 @@ ErrorTreeOr<Attribute> IREvaluator::concretizeParameterExpr(ImplNode *parent,
   // Otherwise we had an error folding the expression tree or we just have a
   // some foreign attribute that doesn't participate in the parameter system.
   // Walk the attribute tree postorder - if we see any attribute that has
-  // all-simple-constant leaves, then we check to see if it is errorneous so we
+  // all-simple-constant leaves, then we check to see if it is erroneous so we
   // can report the error.  We do this in postorder because you could have:
   //    add(4, div(8000000000, 4))
   // and the problem is that div isn't target invariant.  The problem isn't the

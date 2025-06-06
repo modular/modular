@@ -53,7 +53,7 @@ struct Reducer {
 
   cl::opt<unsigned> snapshotDelta{
       "snapshot-delta",
-      llvm::cl::desc("delta between snapshots in millseconds"),
+      llvm::cl::desc("delta between snapshots in milliseconds"),
       llvm::cl::init(2000)};
 
   cl::opt<unsigned> startAt{"start-at",
@@ -283,7 +283,7 @@ ErrorOrSuccess Reducer::maybeSnapshot(ModuleOp module) {
 /// cloning and running the pass pipeline is really, really slow compared to
 /// stubbing functions (just moving regions around).
 ///
-/// This algorithm assumes that the minium reproducer is the same regardless of
+/// This algorithm assumes that the minimum reproducer is the same regardless of
 /// the order in which it is found, which is almost certainly not the case.
 /// That's why we still run a linear search after this one. The linear search is
 /// O( N^2 + C*N*log(N) ). The C component is O(N*log(N)) because the module

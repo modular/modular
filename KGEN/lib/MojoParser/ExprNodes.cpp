@@ -274,8 +274,8 @@ static std::string getStringRepresentation(AttrCtorDeferredAttr attr) {
 #endif // NDEBUG
 
 /// Report a warning to let user know that they should use __mlir_attr instead.
-static void emitMLIRDeferedAttrToMLIRAttrWarning(SMLoc loc,
-                                                 IREmitter &emitter) {
+static void emitMLIRDeferredAttrToMLIRAttrWarning(SMLoc loc,
+                                                  IREmitter &emitter) {
   emitter.emitWarning(loc)
       << "trivially constructable attribute. Use `__mlir_attr` "
          "instead.";
@@ -1344,7 +1344,7 @@ LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
                                           ArrayRef<Operand> operands,
                                           IREmitter &emitter) {
   // Build a list of all the things we can bind. Remember the number of
-  // positional parmaeters that have already been bound.
+  // positional parameters that have already been bound.
   SmallVector<InProgressBindings> bindables;
   unsigned numPosBindings =
       overloadSet.paramBindings.getParameters().getNumPositional();
@@ -1650,7 +1650,7 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       /// `__mlir_deferred_attr` always behaves like `__mlir_attr` when used
       /// with backticks. Don't want to strictly enforce that, but user should
       /// be aware that use of `__mlir_attr` is preferred
-      emitMLIRDeferedAttrToMLIRAttrWarning(getLoc(), emitter);
+      emitMLIRDeferredAttrToMLIRAttrWarning(getLoc(), emitter);
       PValue result = synthesizeMLIRAttrFromString(spelling, getLoc(), shared);
       return emitter.emitResult(result, this, dest);
     }
@@ -2367,7 +2367,7 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
           // If attribute can be constructed at this point, but user used
           // `__mlir_deferred_attr`, let user know that regular `__mlir_attr`
           // should be used instead.
-          emitMLIRDeferedAttrToMLIRAttrWarning(getLoc(), emitter);
+          emitMLIRDeferredAttrToMLIRAttrWarning(getLoc(), emitter);
         }
       }
       return emitter.emitResult(attr, this, dest);
@@ -2957,7 +2957,7 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   auto loc = getLoc();
   // We don't track ownership right in parameter expressions, e.g. we don't have
   // a PBValue to correspond to PRValue (which is what PValue really is).  As
-  // such, transfering in a parameter context isn't useful, just disallow it.
+  // such, transferring in a parameter context isn't useful, just disallow it.
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(
         loc, "cannot transfer a value in a parameter context");

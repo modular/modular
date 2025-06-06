@@ -629,7 +629,7 @@ ends up lowering:
       // Create a lit.ref.pack with the two !lit.ref references.
       %6 = lit.ref.pack.create(%4, %5) : !lit.ref.pack<:variadic<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>
       %7 = kgen.param.constant: !Bool = <{:i1 0}>
-      // Create an instace of the VariadicPack with __init__.
+      // Create an instance of the VariadicPack with __init__.
       %8 = lit.call @VariadicPack::@__init__<:!Bool {:i1 0}, :Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>(%6, %7) : !lit.generator<("value": !lit.ref.pack<:variadic<!AnyType> [#String1, #MyRPType1], imm {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}>, "is_owned": !Bool) -> !lit.struct<#VariadicPack <:!Bool {:i1 0}, :@stdlib::@builtin::@type_aliases::@Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = {(mutcast mut *"my_rp`1"), (mutcast mut *"my_str`")}}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#String1, #MyRPType1]>>>
       // We need to pass this by-ref into the callee, so create a stack temp.
       // This will be eliminated when argument lowering turns this into a

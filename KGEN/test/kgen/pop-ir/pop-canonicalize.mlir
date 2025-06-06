@@ -861,8 +861,8 @@ kgen.func @cast_index_to_si32_large() -> !pop.scalar<si32> {
   kgen.return %1 : !pop.scalar<si32>
 }
 
-// CHECK-LABEL: @cast_and_trancate
-kgen.func @cast_and_trancate(%v0 : !pop.simd<2, si64>) -> !pop.simd<2, si32> {
+// CHECK-LABEL: @cast_and_truncate
+kgen.func @cast_and_truncate(%v0 : !pop.simd<2, si64>) -> !pop.simd<2, si32> {
   // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, si64> to !pop.simd<2, si32>
   // CHECK-NOT: pop.cast
   %v1 = pop.cast %v0 : !pop.simd<2, si64> to !pop.simd<2, si32>

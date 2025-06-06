@@ -164,7 +164,7 @@ struct MicroBenchmark {
     /// When enabled, the first run of the benchmark will print a warning if you
     /// are in debug mode. This is generally useful to always have enabled,
     /// unless in cases where the benchmark is performed by some internal
-    /// function withing the Modular stack. When enabled, the warning is printed
+    /// function within the Modular stack. When enabled, the warning is printed
     /// at most once in the session.
     bool printWarningIfDebugMode = true;
     /// When positive, the benchmark will clear the level of cache specified

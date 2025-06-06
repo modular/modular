@@ -394,7 +394,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
        &tmMutex]() mutable {
         if (isNVPTXBackend(options) && isParLLC) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-              "cannot do per function codegen for NVPTX backedn.", loc));
+              "cannot do per function codegen for NVPTX backend.", loc));
         }
         LLVMModuleAndContext moduleAndContext;
         if (isParLLC) {
@@ -1430,7 +1430,7 @@ static LogicalResult linkBitcodeLibraries(Location loc,
         /*librariesToLink=*/{
             b.getStringAttr("/opt/rocm/amdgcn/bitcode/asanrtl.bc")});
     AMDGPUModuleLinker moduleLinker(**mlirModule, target, targetOptions);
-    // Both ocml & ockl libs are requried for asan.
+    // Both ocml & ockl libs are required for asan.
     mlir::ROCDL::AMDGCNLibraries libs =
         mlir::ROCDL::AMDGCNLibraries::Ockl | mlir::ROCDL::AMDGCNLibraries::Ocml;
     if (failed(moduleLinker.link(llvmModule, libs)))
@@ -1465,7 +1465,7 @@ static ErrorOr<BufferRef> compilePTXToCUBIN(AsyncRT::DeviceContextRef &ctx,
                                             CompilationOptions options) {
   // If the environment variable MODULAR_USE_DRIVER_CUBIN_COMPILER is set, we
   // use the driver cubin compiler. This allows for temporary experimentation.
-  // If this pathway is always benificial, then we will stop checking the env
+  // If this pathway is always beneficial, then we will stop checking the env
   // var.
   if (llvm::sys::Process::GetEnv("MODULAR_USE_DRIVER_CUBIN_COMPILER")) {
     LLVM_DEBUG(
@@ -1795,7 +1795,7 @@ static std::pair<AnyAsyncValueRef, AnyAsyncValueRef> lowerLLVMModuleToObject(
 //   We don't do per function splitting for GPU kernels since
 //   the backends are inter-procedural.
 // - Extract kernel ID for each split.
-// - Run LLVM pipleine (opt + asmprint) to generate code for each kernel:
+// - Run LLVM pipeline (opt + asmprint) to generate code for each kernel:
 //   PTX for Nvidia, an so lib for AMD.
 ErrorOr<DenseMap<uint64_t, DenseMap<EmitAs, BufferRef>>>
 ObjectCompiler::emitGPUKernels(

@@ -2200,7 +2200,7 @@ kgen.generator @test_wrap_source_loc_param() -> !kgen.string always_inline_no_de
 // -----
 
 // COM: Given a compile_offload op over a capturing function FOO,
-// verify that the populate captures function is generated and accesible
+// verify that the populate captures function is generated and accessible
 // for calls via the compile_offload_closure operator.
 kgen.generator @HELLO<x: () capturing -> index>() capturing -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>

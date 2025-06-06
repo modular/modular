@@ -111,7 +111,7 @@ public:
 
   bool operator==(CompactRuntimePtr that) const { return index == that.index; }
 
-  /// We implicitly convert to Runtime& since we are used interchangably with
+  /// We implicitly convert to Runtime& since we are used interchangeably with
   /// it.
   /*implicit*/ operator Runtime &() const { return *get(); }
 

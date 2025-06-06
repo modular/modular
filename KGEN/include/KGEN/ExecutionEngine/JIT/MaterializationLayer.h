@@ -71,7 +71,7 @@ protected:
 
   /// Layers should override this function if they need to filter the symbols
   /// coming from the current process. The MaterializationLayer automatically
-  /// adds visiblity to current process symbols when creating a new dylib, so
+  /// adds visibility to current process symbols when creating a new dylib, so
   /// this allows layers to customize that behavior.
   virtual llvm::unique_function<bool(const llvm::orc::SymbolStringPtr &)>
   getTargetProcessSymbolFilter() {

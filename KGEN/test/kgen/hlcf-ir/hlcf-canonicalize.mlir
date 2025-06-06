@@ -245,7 +245,7 @@ kgen.func @dont_hoist_cond_return_nested(%cond1: i1, %cond2: i1, %arg1: index, %
 }
 
 // CHECK-LABEL: @several_ifs
-// Here we in theory whould hoist all returns out. This would happen if we
+// Here we in theory would hoist all returns out. This would happen if we
 // visit ifs from bottom to top, but doesn't happen if we go in the usual
 // order. We can't control the order in canonicalizer so we should add another
 // simplification to deal with that - the function below shows the test that we

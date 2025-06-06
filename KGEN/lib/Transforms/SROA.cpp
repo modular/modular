@@ -201,7 +201,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
   bool canRun() {
     for (Operation *user : alloc->getUsers()) {
       // If the user is something which actually expects the full structure like
-      // a call then we cannot perfom the optimization.
+      // a call then we cannot perform the optimization.
       if (!isa<StructGEPOp, POP::StoreOp, POP::LoadOp, DebugInfo::ValueOp,
                StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
         return false;
@@ -333,7 +333,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
 
     for (Operation *user : alloc->getUsers()) {
       // If the user is something which actually expects the full structure like
-      // a call then we cannot perfom the optimization.
+      // a call then we cannot perform the optimization.
       if (!isa<POP::ArrayGEPOp, POP::StoreOp, POP::LoadOp,
                StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
         return false;
@@ -410,7 +410,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
 
       // Replace the *user* of each load with the loaded scalar or for GEPs the
       // pointer itself. We can't replace all users but we have several which
-      // are easy cases to catch and help the compiler without requring
+      // are easy cases to catch and help the compiler without requiring
       // canonicalize & cse to be run again before mem2reg / more sroa.
       for (Operation *loadUser : llvm::make_early_inc_range(load->getUsers())) {
         if (auto get = dyn_cast<POP::ArrayGetOp>(loadUser)) {
@@ -455,7 +455,7 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
   }
 };
 
-/// In this case we treat the underlaying stack allocation as the container
+/// In this case we treat the underlying stack allocation as the container
 /// itself.
 struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
   using ContainerType = POP::StackAllocationOp;
@@ -545,7 +545,7 @@ struct ReplaceStack : public Replacer<ReplaceStack, POP::StackAllocationOp> {
                                                gep.getIndex());
       gep.replaceAllUsesWith(newGep.getResult());
     } else if (auto gep = dyn_cast<StructGEPOp>(user)) {
-      // Dito with struct geps, index is always legal.
+      // Ditto with struct geps, index is always legal.
       auto newGep = builder.create<StructGEPOp>(gep.getLoc(), newAllocas[0],
                                                 gep.getIndex());
       gep.replaceAllUsesWith(newGep.getResult());
@@ -565,9 +565,9 @@ void SROAPass::runOnOperation() {
 
   SROAStructLeafReplacer leafReplacer;
 
-  // The loop limit is an arbritary value to provide an upperbound on compile
+  // The loop limit is an arbitrary value to provide an upperbound on compile
   // time. However from experimentation this pass does not take a significant
-  // amount of time to run and is a net-postive on compile time.
+  // amount of time to run and is a net-positive on compile time.
   constexpr size_t loopLimit = 10;
 
   SmallVector<Operation *, 32> toDelete;

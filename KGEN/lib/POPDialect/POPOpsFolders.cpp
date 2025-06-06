@@ -38,7 +38,7 @@ Operation *POPDialect::materializeConstant(OpBuilder &b, Attribute value,
 //===----------------------------------------------------------------------===//
 
 namespace Detail {
-/// Detector for whether `T` posseses a `has_value` method.
+/// Detector for whether `T` possesses a `has_value` method.
 template <typename T>
 using IsOptionalType = decltype(std::declval<T>().has_value());
 

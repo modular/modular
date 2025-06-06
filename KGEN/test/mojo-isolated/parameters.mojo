@@ -648,14 +648,14 @@ fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
 
 # CHECK: lit.alias.decl *"boolDtype{{.*}}": dtype = <bool>
 alias boolDtype = __mlir_attr.`#kgen.dtype.constant<bool> : !kgen.dtype`
-# CHECK: lit.alias.decl *"FOURTY_TWO{{.*}}": {{.*}}<:!pop.int_literal 42>
-alias FOURTY_TWO = 42
+# CHECK: lit.alias.decl *"FORTY_TWO{{.*}}": {{.*}}<:!pop.int_literal 42>
+alias FORTY_TWO = 42
 
 # CHECK-LABEL: lit.struct.decl @A
 # CHECK-SAME: <v: !Int>
 struct A[v: Int]:
   # CHECK: lit.alias.decl *"member{{.*}}": !Int = <{value = add(#lit.struct.extract<:!Int v, "value">, 42)}>
-  alias member = v + FOURTY_TWO
+  alias member = v + FORTY_TWO
 
 # CHECK-LABEL: lit.fn @"testUseOfAliases
 fn testUseOfAliases():

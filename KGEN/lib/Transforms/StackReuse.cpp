@@ -331,7 +331,7 @@ static void scanRegion(
   // Visit the operations in program order.
   for (Operation &op : llvm::make_early_inc_range(region.front())) {
     // For loads, check if it is reading a projection of a stack allocation, and
-    // if so, whether at this point there is a more dominanting stack allocation
+    // if so, whether at this point there is a more dominating stack allocation
     // with the same value. If not, then the stack allocation in question cannot
     // be elided.
     if (auto load = dyn_cast<LoadOp>(op)) {

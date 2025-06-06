@@ -176,7 +176,7 @@ static bool functionRequiresByVal(LLVM::LLVMFuncOp func,
 }
 
 /// Convert LLVM metadata expressed in KGEN attributes to an LLVM dialect
-/// compatible representation. Unsupport metadata values are rejected.
+/// compatible representation. Unsupported metadata values are rejected.
 static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
                                          DictionaryAttr metadata,
                                          ArrayAttr argMetadata,
@@ -382,7 +382,7 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
 }
 
 /// Convert inline level to an LLVM passthrough attribute.
-/// compatible representation. Unsupport metadata values are rejected.
+/// compatible representation. Unsupported metadata values are rejected.
 static void convertInlineLevel(LLVM::LLVMFuncOp func, InlineLevel inlineLevel) {
   if (inlineLevel == InlineLevel::Automatic)
     return;
@@ -456,8 +456,8 @@ static void dropEmptyStructArguments(LLVM::LLVMFuncOp &func,
       sigConverter.addInputs(idx, type);
 
     for (auto [idx, type] : zip(emptyArgIdx, emptyArgType)) {
-      Value emtpyStruct = rewriter.create<LLVM::UndefOp>(func->getLoc(), type);
-      sigConverter.remapInput(idx, emtpyStruct);
+      Value emptyStruct = rewriter.create<LLVM::UndefOp>(func->getLoc(), type);
+      sigConverter.remapInput(idx, emptyStruct);
     }
     rewriter.applySignatureConversion(&func.getBody().front(), sigConverter);
   }

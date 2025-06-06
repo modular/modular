@@ -1166,7 +1166,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
     memory on the stack. The operation returns a pointer to the allocated memory
     of count elements aligned to the element type.
 
-    The user can specifiy the alignment of the allocation via the optional
+    The user can specify the alignment of the allocation via the optional
     `align` attribute. Similarly, the user can provide the address space
     of the allocation via the `address_space` parameter.
 
@@ -1179,7 +1179,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
     %3 = pop.stack_allocation count x !pop.scalar<ui64> align 8 address_space 5
     ```
 
-    The allocated memory is automatically released when control tranfers back
+    The allocated memory is automatically released when control transfers back
     from the region of its closest surrounding operation.
 
     Example:
@@ -1458,7 +1458,7 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 //===----------------------------------------------------------------------===//
 
 def POP_ExternPointerSymbolOp : POPOp<"extern_ptr_symbol"> {
-  let summary = "Gets a pointer to an external symbol with particular aligment";
+  let summary = "Gets a pointer to an external symbol with particular alignment";
 
   let description = [{
     The `pop.external_ptr_symbol` returns a pointer to an opaque external symbol
@@ -1469,7 +1469,7 @@ def POP_ExternPointerSymbolOp : POPOp<"extern_ptr_symbol"> {
     Example:
 
     ```mlir
-    %1 = pop.extern_ptr_symbol "name" aligment <4> : !kgen.pointer<scalar<f32>, 3>
+    %1 = pop.extern_ptr_symbol "name" alignment <4> : !kgen.pointer<scalar<f32>, 3>
     ```
   }];
 

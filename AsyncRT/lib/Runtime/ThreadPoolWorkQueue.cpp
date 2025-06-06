@@ -194,7 +194,7 @@ struct SharedThreadState {
 
   /// If there are any workerGroup's with suspended threads, return the id for
   /// one of them. Otherwise return -1. Since we do not know the workerID which
-  /// is suspeneded, we assume all worker's are suspended and hence will post
+  /// is suspended, we assume all worker's are suspended and hence will post
   /// all the semaphores.
   int takeAnySuspendedThread() {
     SuspendedThreadsBitvec loadedSuspendedThreads =
@@ -714,7 +714,7 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
     // if(takeSuspended())                      markSuspended()
     // sema.post()                              sema.wait()
     //
-    // Ordering 1: markSuspeneded() andThen takeSuspended().
+    // Ordering 1: markSuspended() andThen takeSuspended().
     // if sema.post() andThen sema.wait() T1 does not go to sleep.
     // else T1 sleeps and wakes immediately.
     //
@@ -874,8 +874,8 @@ private:
 #ifdef ASYNCRT_WORKER_STATS
   AlignedAtomic<double> affinityEnqueueTime = 0.0f;
   AlignedAtomic<double> taskListEnqueueTime = 0.0f;
-  AlignedAtomic<uint64_t> taskListEnqueCount = 0;
-  AlignedAtomic<uint64_t> affinityEnqueCount = 0;
+  AlignedAtomic<uint64_t> taskListEnqueueCount = 0;
+  AlignedAtomic<uint64_t> affinityEnqueueCount = 0;
 #endif
 };
 } // namespace
@@ -918,10 +918,11 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
 // Note we can't assert state == kShutdown since queue may be created
 // and destroyed without ever being included in a runtime.
 #if ASYNCRT_WORKER_STATS
-  llvm::dbgs() << "affinityEnqueueTime,affinityEnqueCount,taskListEnqueueTime,"
-                  "taskListEnqueCount\n";
-  llvm::dbgs() << affinityEnqueueTime << "," << affinityEnqueCount << ","
-               << taskListEnqueueTime << "," << taskListEnqueCount << "\n";
+  llvm::dbgs()
+      << "affinityEnqueueTime,affinityEnqueueCount,taskListEnqueueTime,"
+         "taskListEnqueueCount\n";
+  llvm::dbgs() << affinityEnqueueTime << "," << affinityEnqueueCount << ","
+               << taskListEnqueueTime << "," << taskListEnqueueCount << "\n";
 #endif
   assert(!taskList.dequeue() &&
          "destroying ThreadPoolWorkQueue with pending work items");
@@ -1032,7 +1033,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     }
 #if ASYNCRT_WORKER_STATS
     auto end = std::chrono::high_resolution_clock::now();
-    atomicAdd(affinityEnqueCount, (uint64_t)1);
+    atomicAdd(affinityEnqueueCount, (uint64_t)1);
     atomicAdd(affinityEnqueueTime,
               std::chrono::duration<double, std::micro>(end - start).count());
 #endif
@@ -1057,7 +1058,7 @@ void ThreadPoolWorkQueue::addTask(WorkItem &&workItem, int taskId) {
     }
 #if ASYNCRT_WORKER_STATS
     auto end = std::chrono::high_resolution_clock::now();
-    atomicAdd(taskListEnqueCount, (uint64_t)1);
+    atomicAdd(taskListEnqueueCount, (uint64_t)1);
     atomicAdd(taskListEnqueueTime,
               std::chrono::duration<double, std::micro>(end - start).count());
 #endif

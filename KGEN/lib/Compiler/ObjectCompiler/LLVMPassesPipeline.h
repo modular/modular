@@ -28,7 +28,7 @@ bool addPassesToEmitFile(CompilationOptions &options,
                          llvm::CodeGenFileType fileType, bool disableVerify,
                          llvm::MachineModuleInfoWrapperPass *mmiwp);
 
-/// Build a pipeline that does machine specific codgen but stops before
+/// Build a pipeline that does machine specific codegen but stops before
 /// AsmPrint.
 bool addPassesToEmitMC(CompilationOptions &options,
                        llvm::TargetMachine &targetMachine,

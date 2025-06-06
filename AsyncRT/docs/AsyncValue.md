@@ -58,7 +58,7 @@ Fortunately, `AsyncValue` instances is that they always know what
 `M::AsyncRT::Runtime` they came from. You can access this through the
 `asyncVal->getRuntime()` method which returns a
 [`CompactRuntimePtr`](../include/AsyncRT/Runtime/CompactRuntimePtr.h). A
-`CompactRuntimePtr` is a specialized class that can be used interchangably with
+`CompactRuntimePtr` is a specialized class that can be used interchangeably with
 `Runtime&`.
 
 The consequence of this is that having an `AsyncValue` at hand gives you access

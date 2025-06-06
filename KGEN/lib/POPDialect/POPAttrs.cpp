@@ -340,7 +340,7 @@ static void printDTypeValues(AsmPrinter &p, ArrayRef<DTypeValue> values,
   });
 }
 
-/// Parse a splat or a list of values deliminated as by `<` and `>`. If
+/// Parse a splat or a list of values delimited as by `<` and `>`. If
 /// `optionalParse` is set and no valid tokens were found, then `std::nullopt`
 /// is returned, otherwise failure.
 template <bool optionalParse>
@@ -394,7 +394,7 @@ parseSplatOrVector(AsmParser &p, SmallVector<DTypeValue> &values,
 }
 
 /// Print the values of a SIMD vector as either a splat if they're all the same
-/// or a list of values deliminated by `<` and `>`.
+/// or a list of values delimited by `<` and `>`.
 template <bool inAttr>
 static void printSplatOrVector(AsmPrinter &p, ArrayRef<DTypeValue> values,
                                SIMDType type) {
@@ -959,7 +959,7 @@ floatLiteralConvertGetBitstring(const IPRational &input,
     return signBits | exponentBits;
   }
 
-  // Handle subnormal numbers, including zero valuess.  (I'm not sure whether
+  // Handle subnormal numbers, including zero values.  (I'm not sure whether
   // zero counts technically as a subnormal number, but it fits the subnormal
   // encoding.)
   if (exponent < minExponent) {

@@ -635,7 +635,7 @@ static void emitCycleError(ParameterUseDefGraph &g,
   SmallPtrSet<StringAttr, 4> paramsInPath;
   ParameterUseDefGraphNode nextNode = nodes.front();
 
-  // Loop until we find a backrefence.
+  // Loop until we find a backreference.
   while (paramsInPath.insert(nextNode.param).second) {
     // Find an iterator from this node to another within this SCC.
     ParameterUseDefGraphNodeIterator it = nextNode.begin();

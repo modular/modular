@@ -239,7 +239,7 @@ struct AttributeRefNode final : public LValueCapableExprNode, Identifier {
 };
 
 /// Struct to represent an expression passed as a parameter or argument operand,
-/// along with metatadata to help overload resolution and call emission.
+/// along with metadata to help overload resolution and call emission.
 struct Operand {
   /// This specifies how the operand is passed, these are always present
   /// in a specific order, and any of these may be missing.

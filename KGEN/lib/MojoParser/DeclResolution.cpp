@@ -1378,7 +1378,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
     assert(varListType && "Failed to bind type params");
   }
 
-  // Emit a VarDeclOp: VaridicListMem needs a origin for its self accesses.
+  // Emit a VarDeclOp: VariadicListMem needs a origin for its self accesses.
   // This also provides a user name for the argument.
   auto mlirLoc = emitter.translateLocation(loc);
   VarDeclOp varDecl =

@@ -88,7 +88,7 @@ public:
     return base->nodeKind == kBranch;
   }
 
-  // We support up to four childen in this, reducing the number of tree nodes
+  // We support up to four children in this, reducing the number of tree nodes
   // that get created.
   ConcatenationTree child[4];
   size_t totalSize;

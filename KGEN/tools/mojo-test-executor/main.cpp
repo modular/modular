@@ -58,7 +58,7 @@ static void
 emitInitializationError(ArrayRef<ExecutableTest> tests,
                         function_ref<void(TestExecutionResult)> emitFn,
                         StringRef error) {
-  // Emit an intialization error for the first test, and skip the rest.
+  // Emit an initialization error for the first test, and skip the rest.
   emitFn(TestExecutionResult::buildInitError(tests[0].id, error));
 
   // Emit skipped results for the rest of the tests.

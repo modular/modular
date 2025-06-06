@@ -58,7 +58,7 @@ def draw_if_interactive():
         return
     fig = manager.canvas.figure
 
-    # Hack: matplotlib FigureManager objects in interacive backends (at least
+    # Hack: matplotlib FigureManager objects in interactive backends (at least
     # in some of them) monkeypatch the figure object and add a .show() method
     # to it.  This applies the same monkeypatch in order to support user code
     # that might expect `.show()` to be part of the official API of figure

@@ -457,7 +457,7 @@ void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
 
 /// Converts the string into a Mojo string literal, making sure the set of
 /// special characters supported in Lexer::getStringLiteralValue are taken into
-/// account. It is *not* intended to be a general alterative to
+/// account. It is *not* intended to be a general alternative to
 /// llvm::printEscapedString.
 void printAsMojoStringLiteral(StringRef Name, raw_ostream &Out);
 

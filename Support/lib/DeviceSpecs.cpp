@@ -197,11 +197,11 @@ static llvm::StringMap<VersionedName>
 parseFeatures(const std::vector<std::string> &features) {
   llvm::StringMap<VersionedName> map;
   for (const auto &feature : features) {
-    // HACK: Ignore features emited in older versions of system-info when
+    // HACK: Ignore features emitted in older versions of system-info when
     // matching against new versions. These are pretty much a given anyways
     // on just about every x64 CPU for the last 20 years and shouldn't be
     // missed.
-    // TODO: remove once we clean up old manfiests.
+    // TODO: remove once we clean up old manifests.
     if (feature == "64Bit" || feature == "shstk" || feature == "cmov")
       continue;
     auto versionedFeature = VersionedName::decode(feature);

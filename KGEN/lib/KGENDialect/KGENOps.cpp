@@ -1097,7 +1097,7 @@ LogicalResult CreateRegStubOp::verify() {
     return emitOpError("throwing function not supported");
   for (Type ty : resSig.getResults())
     if (!isa<NoneType>(ty))
-      return emitOpError("result signature with output types not suported");
+      return emitOpError("result signature with output types not supported");
 
   bool expectPromotedMemOutputs =
       resSig.hasMemoryOnlyResult() && !calleeSig.hasMemoryOnlyResult();

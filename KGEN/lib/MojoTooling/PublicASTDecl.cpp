@@ -33,7 +33,7 @@ static unsigned getDeclNamePriority(StringRef name) {
   if (specialFnKind != SpecialFunctionKind::kNormal)
     return static_cast<unsigned>(specialFnKind);
 
-  // Otherwise, we can't discern any priorty from the name.
+  // Otherwise, we can't discern any priority from the name.
   return std::numeric_limits<unsigned>::max();
 }
 
@@ -443,7 +443,7 @@ static void dumpMarkdownSectionTitle(llvm::raw_ostream &os, StringRef title) {
 }
 
 /// Dump a markdown section with a list of decls. Each decl is printed with the
-/// format `name: description`. Decls without description are ommitted, and the
+/// format `name: description`. Decls without description are omitted, and the
 /// section title is only dumped if there is at least one decl to show.
 template <typename PublicDeclList>
 static void dumpMarkdownDeclListSection(llvm::raw_ostream &os,

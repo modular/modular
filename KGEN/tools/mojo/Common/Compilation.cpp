@@ -72,7 +72,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     }
   }
 
-  // Enable overwritting of the auto-imported paths, which is where the compiler
+  // Enable overwriting of the auto-imported paths, which is where the compiler
   // first looks for builtins.
   if (stdLibPath.isValid()) {
     StringRef value = args.getLastArgValue(stdLibPath);

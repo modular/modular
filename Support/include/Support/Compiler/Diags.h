@@ -119,7 +119,7 @@ private:
   Diags(const Diags &) = delete;
 
   /// This is the StringAttr for the main buffer identifier. It is type erased
-  /// to void* to reduce header polution. This field is lazy initialized to
+  /// to void* to reduce header pollution. This field is lazy initialized to
   /// handle the case where the main buffer is added after the Diags object is
   /// constructed.
   mutable std::optional<const void *> bufferNameIdentifier;

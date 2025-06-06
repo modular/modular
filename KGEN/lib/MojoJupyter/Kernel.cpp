@@ -541,7 +541,7 @@ ExecutionFinishedState MojoKernel::Impl::startExecution(StringRef cellId,
 }
 
 void MojoKernel::Impl::flushLLDBStreams() {
-  // Reading the following streams from LLDB is thread safe becaause each reader
+  // Reading the following streams from LLDB is thread safe because each reader
   // has its own mutex.
 
   // Flush type system messages.

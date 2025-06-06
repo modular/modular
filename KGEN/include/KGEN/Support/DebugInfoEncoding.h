@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file declares logic for how KGEN entities are encoded in DebugInfo,
-// providing shared utilites between the compiler and debugger.
+// providing shared utilities between the compiler and debugger.
 //
 //===----------------------------------------------------------------------===//
 

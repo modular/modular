@@ -115,7 +115,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// If a region in blob of memory requires a mapping before it can be used by
-/// the intepreter then we must mark that region. There are two cases where we
+/// the interpreter then we must mark that region. There are two cases where we
 /// mark blob regions: (1) Pointer Region: This region contains the address of
 /// another region and (2) Symbol Region: This region refers to a symbol. A
 /// Symbol is not represented in the blob.

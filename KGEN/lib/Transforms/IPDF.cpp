@@ -56,7 +56,7 @@ private:
 
 /// The "top" state is the unknown state of a lattice. This state indicates that
 /// nothing is known about the state of a lattice element and we have to make
-/// wholly pessimistic assumptions about the value: we don't know its constaint
+/// wholly pessimistic assumptions about the value: we don't know its constraint
 /// value, its value range, and that it may alias anything.
 struct TopState {
   /// This is a singleton state.

@@ -460,7 +460,7 @@ struct ValueInfo {
   /// True if this values starts out uninitialized at the beginning of its
   /// lifetime.
   const bool startsUninit;
-  /// Enum indicating whether the value is initalized at function exit.
+  /// Enum indicating whether the value is initialized at function exit.
   const OriginTrackable::ExitInitState endInitState;
 
   /// True if this value lives in memory, not a @register_passable SSA value.
@@ -970,7 +970,7 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
 ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
   // If the value is deref, it must have reference type.
   assert((!isDeref || isa<RefType>(value.getType())) &&
-         "only references are dereferencable!");
+         "only references are dereferenceable!");
 
   // If this is testing a reference value (not the dereference value) then it is
   // ignored: references can be passed around and used with the contents being
@@ -3426,7 +3426,7 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
       auto varDecl = valueEntry.value.getDefiningOp<VarDeclOp>();
       if (varDecl && varDecl.shouldWarnAboutUnused()) {
         if (varDecl.getKind() == VarDeclKind::Ref) {
-          // Ref's can only have a single store - their initalizer. If unused,
+          // Ref's can only have a single store - their initializer. If unused,
           // then the ref is never used.
           mlir::emitWarning(varDecl.getLoc())
               << "ref '" << varDecl.getName().str()

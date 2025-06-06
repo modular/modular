@@ -79,7 +79,7 @@ public:
   /// Add a attribute initializer method for this struct with a body.
   FnOp synthesizeFieldwiseInit(ASTDecl &structDecl);
 
-  /// Emit an emtpy function stub at the specified location. The block arguments
+  /// Emit an empty function stub at the specified location. The block arguments
   /// are added to the body of the function but no ops are added to the body.
   /// `suffix` is appended to the mangled function name. This adds the
   /// declaration to `parent`.
