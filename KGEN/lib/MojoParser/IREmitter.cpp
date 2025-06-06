@@ -300,8 +300,21 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     representation = exprLValue;
   }
 
+  // We must have an LValue at this point.
+  auto lvalue = cast<LValue>(representation);
+
+  // If this is a "bind" operation (e.g. in a for stmt) infer the type of the
+  // var decl from the assignment and yield the MLValue.
+  if (RLValue rlValue = lvalue.getIfRLValue()) {
+    // Unbound 'bind' values will have two layers of !lit.ref on the RValue
+    // type.
+    VarDeclOp refOp = cast<VarDeclOp>(rlValue.getDefiningOp());
+    if (refOp.getKind() == VarDeclKind::Bind)
+      return cast<RefType>(refOp.getType().getElementType()).getElementType();
+  }
+
   // If we have an lvalue already specified, return it.
-  return cast<LValue>(representation).getRValueType();
+  return lvalue.getRValueType();
 }
 
 /// If this ValueDest specifies an MLValue that will be returned by
@@ -329,6 +342,18 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
       if (lValue.getRValueType().isEqualCanon(resultType) &&
           lValue.getMValueType().isDefaultAddrSpace())
         return refValue;
+    }
+
+    // If this is a "bind" operation (e.g. in a for stmt) infer the type of the
+    // var decl from the assignment and yield the MLValue.
+    if (RLValue rlValue = lValue.getIfRLValue()) {
+      VarDeclOp refOp = cast<VarDeclOp>(rlValue.getDefiningOp());
+      if (refOp.getKind() == VarDeclKind::Bind) {
+        refOp.setKind(VarDeclKind::Var);
+        refOp.getResult().setType(refOp.getType().getWithElement(resultType));
+        representation = LValue(MLValue(refOp));
+        return MLValue(refOp);
+      }
     }
   }
 
@@ -1299,19 +1324,47 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (auto dlValue = destLV.getIfDLValue())
     return dlValue->emitStore(value, *this);
 
-  // If the destination is a RLValue, then the source value must be an MLValue
-  // and we're binding its address into the VarDeclOp.
+  // If the destination is a RLValue, then we are resolving a 'ref' or 'bind'
+  // value into a VarDeclOp.
   if (auto rlValue = destLV.getIfRLValue()) {
     // The destination must be a VarDeclOp by construction.
-    VarDeclOp destRef = cast<VarDeclOp>(rlValue.getDefiningOp());
-    assert(destRef && destRef.getKind() == VarDeclKind::Ref &&
-           "not a ref to initialize!");
+    VarDeclOp refOp = cast<VarDeclOp>(rlValue.getDefiningOp());
+    assert(refOp &&
+           (refOp.getKind() == VarDeclKind::Ref ||
+            refOp.getKind() == VarDeclKind::Bind) &&
+           "not a ref or bind to initialize!");
     // There must be an ASTDecl for it with the same name, in scope.
     ArrayRef<ASTDecl *> decls =
-        declScope.lookupInCurrentScope(destRef.getNameAttr());
-    assert(decls.size() == 1 && cast<VarDeclOp>(decls[0]) == destRef &&
+        declScope.lookupInCurrentScope(refOp.getNameAttr());
+    assert(decls.size() == 1 && cast<VarDeclOp>(decls[0]) == refOp &&
            "lookup failure");
 
+    // Handle 'bind' by determining if this is a 'var' or immutable 'ref'.
+    if (refOp.getKind() == VarDeclKind::Bind) {
+      // If the value isn't a reference, we materialize it into a var binding.
+      if (!value.ir.isMValue()) {
+        // Switch the vardecl to be a var binding.
+        refOp.setKind(VarDeclKind::Var);
+        refOp.getResult().setType(
+            refOp.getType().getWithElement(value.ir.getRValueType()));
+
+        ValueDest bindDest(MLValue(refOp), context);
+        emitBValue({value.ir, value.expr}, bindDest);
+        return MBValue(refOp);
+      }
+
+      // Otherwise, handle this as an immutable ref.
+      refOp.setKind(VarDeclKind::Ref);
+      Value refValue = value.ir.getMValueReference();
+
+      if (!cast<RefType>(refValue.getType()).isMutableKnown(false)) {
+        refValue = builder->create<RefImmutOp>(value.expr->getLocation(*this),
+                                               refValue);
+      }
+      value.ir = MBValue(refValue);
+    }
+
+    // If this is a 'ref', then we want non-MValues to be an error.
     Value mValue = emitRefValue(value, EC_RefBinding);
     if (!mValue) {
       decls[0]->setErroneous();
@@ -1320,11 +1373,10 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
     // Now that we have the origin of the input, we can replace the placeholder
     // with the actual type so that uses of it will have the correct origin.
-    destRef.getResult().setType(
-        destRef.getType().getWithElement(mValue.getType()));
+    refOp.getResult().setType(refOp.getType().getWithElement(mValue.getType()));
     builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()), mValue,
-                                destRef);
-    return value.ir; // Return the input reference.
+                                refOp);
+    return CValue::getMValueForRef(mValue); // Return the input reference.
   }
 
   // Otherwise, we know we have an MLValue destination.

@@ -37,6 +37,7 @@ enum class PatternDeclKind {
   kNone, // Reuse or synthesize or function-scope variable like Python.
   kVar,  // Make a scoped vardecl in this context. "var x = ..."
   kRef,  // Bind a scoped reference in this context. "ref x = ..."
+  kBind, // Bind a scoped variable in this context like a 'read' arg convention.
 };
 
 //===----------------------------------------------------------------------===//

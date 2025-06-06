@@ -406,7 +406,10 @@ fn testExampleCMTuple(cm: ExampleCMTuple):
     # CHECK: %b = lit.var.decl "b"
     # CHECK: [[TARGET:%.*]] = lit.call {{.*}}__enter__
     with cm as (a,b):
+        # Captures the refs from the tuple.
         # CHECK: [[A:%.*]] = lit.ref.load %a
         # CHECK: [[B:%.*]] = lit.ref.load %b
-        # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A]], [[B]])
+        # CHECK: [[A2:%.*]] = lit.ref.load [[A]]
+        # CHECK: [[B2:%.*]] = lit.ref.load [[B]]
+        # CHECK: lit.call {{.*}}@Int::@"__add__{{.*}}([[A2]], [[B2]])
         _ = a+b

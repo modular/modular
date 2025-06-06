@@ -131,16 +131,19 @@ struct ListValueInt:
     fn __next__(mut self) -> Int: return 0
     fn __has_next__(self) -> Bool: return False
 
-struct ListValueString:
+struct ListValueStringRef:
     fn __init__(out self): pass
-    fn __iter__(self) -> ListValueString: return ListValueString()
-    fn __next__(mut self) -> String: return ""
+    fn __iter__(self) -> ListValueStringRef: return ListValueStringRef()
+    fn __next__(mut self) -> ref [self] String: pass
     fn __has_next__(self) -> Bool: return False
 
 
-def contradictory_for_loop_variable_types():
+def loop_variable_scoped():
   for i in ListValueInt(): pass
-  for i in ListValueString(): pass # expected-error {{cannot implicitly convert 'String' value to 'Int'}}
+  _ = i # expected-error {{use of unknown declaration 'i'}}
+
+  for elt in ListValueStringRef():
+    elt = "foo" # expected-error {{expression must be mutable in assignment}}
 
 ##===----------------------------------------------------------------------===##
 # With
