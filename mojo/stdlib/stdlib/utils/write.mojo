@@ -321,7 +321,15 @@ struct _WriteBufferStack[
         elif self.pos + len_bytes > capacity:
             self.flush()
         # Continue writing to buffer
-        memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
+        var ptr = bytes.unsafe_ptr()
+
+        # TODO: fix memcpy alignment on nvidia GPU
+        @parameter
+        if is_nvidia_gpu():
+            for i in range(len_bytes):
+                self.data[i + self.pos] = ptr[i]
+        else:
+            memcpy(self.data.unsafe_ptr() + self.pos, ptr, len_bytes)
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
@@ -397,9 +405,8 @@ fn write_buffered[
         var arg_bytes = _TotalWritableBytes()
         write_args(arg_bytes, args, sep=sep, end=end)
 
-        var buffer = _WriteBufferHeap(arg_bytes.size + 1)
+        var buffer = _WriteBufferHeap(arg_bytes.size)
         write_args(buffer, args, sep=sep, end=end)
-        buffer.data[buffer.pos] = 0
         writer.write_bytes(
             Span[Byte, ImmutableAnyOrigin](ptr=buffer.data, length=buffer.pos)
         )

@@ -101,7 +101,7 @@ from memory import Span, UnsafePointer, memcpy, memset
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
 from utils import IndexList, Variant, Writable, Writer, write_args
-from utils.write import write_buffered
+from utils.write import write_buffered, _TotalWritableBytes, _WriteBufferStack
 from utils._select import _select_register_value as select
 
 # ===----------------------------------------------------------------------=== #
@@ -421,12 +421,11 @@ struct String(
         """
         self = value.__str__()
 
-    @no_inline
+    @always_inline
     fn __init__[
         *Ts: Writable
     ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
-        """
-        Construct a string by concatenating a sequence of Writable arguments.
+        """Construct a string by concatenating a sequence of Writable arguments.
 
         Args:
             args: A sequence of Writable arguments.
@@ -445,51 +444,26 @@ struct String(
         var string = String(1, 2.0, "three", sep=", ")
         print(string) # "1, 2.0, three"
         ```
-        .
         """
-        self = String()
-        write_buffered(self, args, sep=sep, end=end)
+        self = String.write(args, sep=sep, end=end)
 
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
     # to declare sep/end as StringSlice.
-    @staticmethod
-    @no_inline
-    fn __init__[
-        *Ts: Writable
-    ](
+    @always_inline
+    fn __init__(
         out self,
-        args: VariadicPack[_, _, Writable, *Ts],
+        args: VariadicPack[element_trait=Writable],
         sep: StaticString = "",
         end: StaticString = "",
     ):
-        """
-        Construct a string by passing a variadic pack.
+        """Construct a string by passing a variadic pack.
 
         Args:
             args: A VariadicPack of Writable arguments.
             sep: The separator used between elements.
             end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: The types of the arguments to format. Each type must be satisfy
-                `Writable`.
-
-        Examples:
-
-        ```mojo
-        fn variadic_pack_to_string[
-            *Ts: Writable,
-        ](*args: *Ts) -> String:
-            return String(args)
-
-        string = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
-        %# from testing import assert_equal
-        %# assert_equal(string, "1, 2.0, three")
-        ```
-        .
         """
-        self = String()
-        write_buffered(self, args, sep=sep, end=end)
+        self = String.write(args, sep=sep, end=end)
 
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
@@ -639,9 +613,9 @@ struct String(
             args[i].write_to(self)
 
     @staticmethod
-    @no_inline
+    @always_inline
     fn write[
-        *Ts: Writable
+        *Ts: Writable, buffer_size: Int = 4096
     ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
         """Construct a string by concatenating a sequence of Writable arguments.
 
@@ -653,32 +627,60 @@ struct String(
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
+            buffer_size: The max size of the stack buffer.
 
         Returns:
             A string formed by formatting the argument sequence.
-
-        This is used only when reusing the `write_to` method for
-        `__str__` in order to avoid an endless loop recalling
-        the constructor:
-
-        ```mojo
-        fn write_to[W: Writer](self, mut writer: W):
-            writer.write_bytes(self.as_bytes())
-
-        fn __str__(self) -> String:
-            return String.write(self)
-        ```
-
-        Otherwise you can use the `String` constructor directly without calling
-        the `String.write` static method:
-
-        ```mojo
-        var msg = String("my message", 42, 42.2, True)
-        ```
         """
-        var string = String()
-        write_buffered(string, args, sep=sep, end=end)
-        return string^
+        return String.write[buffer_size=buffer_size](args, sep=sep, end=end)
+
+    @staticmethod
+    @no_inline
+    fn write[
+        buffer_size: Int = 4096
+    ](
+        args: VariadicPack[element_trait=Writable],
+        sep: StaticString = "",
+        end: StaticString = "",
+    ) -> Self:
+        """Construct a string by concatenating a sequence of Writable arguments.
+
+        Args:
+            args: A sequence of Writable arguments.
+            sep: The separator used between elements.
+            end: The String to write after printing the elements.
+
+        Parameters:
+            buffer_size: The max size of the stack buffer.
+
+        Returns:
+            A string formed by formatting the argument sequence.
+        """
+
+        var total_bytes = _TotalWritableBytes()
+        write_args(total_bytes, args, sep=sep, end=end)
+        if total_bytes.size == 0:
+            return String()
+        var result = String(capacity=total_bytes.size)
+
+        @parameter
+        fn _write[W: Writer](mut writer: W):
+            @parameter
+            for i in range(args.__len__()):
+                if i == 0:
+                    args[0].write_to(writer)
+                else:
+                    sep.write_to(writer)
+                    args[i].write_to(writer)
+            end.write_to(writer)
+
+        if result._capacity_or_data.is_inline():
+            _write(result)
+        else:
+            var buffer = _WriteBufferStack[buffer_size](result)
+            _write(buffer)
+            buffer.flush()
+        return result^
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
