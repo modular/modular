@@ -48,14 +48,15 @@ def test_bitmask_sampling_vs_xgrammar(
     # Instantiate grammar matcher
     matcher = xgr.GrammarMatcher(compiled_grammar)
 
+    sampling_config = SamplingConfig(
+        top_k=5,
+        enable_structured_output=True,
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
     # Create one op sampling graph
     graph = token_sampler(
-        SamplingConfig(
-            top_k=5,
-            enable_structured_output=True,
-            in_dtype=DType.float32,
-            out_dtype=DType.float32,
-        ),
+        sampling_config,
         device=DeviceRef.GPU(),
     )
 
@@ -73,6 +74,12 @@ def test_bitmask_sampling_vs_xgrammar(
         device=device,
     )
 
+    temperature = Tensor.from_numpy(
+        np.array([sampling_config.temperature] * batch_size, dtype=np.float32)
+    ).to(device)
+    top_k_np = np.array([sampling_config.top_k] * batch_size, dtype=np.int64)
+    top_k = Tensor.from_numpy(top_k_np).to(device)
+    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
     for i in range(n_trials):
         # Allocate a bitmask
         token_bitmask = torch.ones(
@@ -100,6 +107,9 @@ def test_bitmask_sampling_vs_xgrammar(
         _, new_tokens = sampler(
             Tensor.from_dlpack(logits).to(device),
             generated_tokens,  # This isnt used by the sampler, so we can safely ignore it.
+            top_k,
+            max_k,
+            temperature,
             Tensor.from_dlpack(bitmask).to(device),
         )[:2]
         assert isinstance(new_tokens, Tensor)
@@ -110,13 +120,14 @@ def test_bitmask_sampling_vs_xgrammar(
 @pytest.mark.skip("TODO(AITLIB-348): Fix this test")
 def test_sampling_return_logits(session: InferenceSession):
     # Create one op sampling graph
+    sampling_config = SamplingConfig(
+        top_k=5,
+        enable_structured_output=False,
+        in_dtype=DType.float32,
+        out_dtype=DType.float32,
+    )
     graph = token_sampler(
-        SamplingConfig(
-            top_k=5,
-            enable_structured_output=False,
-            in_dtype=DType.float32,
-            out_dtype=DType.float32,
-        ),
+        sampling_config,
         return_logits=True,
         device=DeviceRef.GPU(),
     )
@@ -132,9 +143,18 @@ def test_sampling_return_logits(session: InferenceSession):
         dtype=DType.int64,
         device=device,
     )
+    temperature = Tensor.from_numpy(
+        np.array([1.0] * batch_size, dtype=np.float32)
+    ).to(device)
     generated_logits = Tensor(
         shape=(batch_size, 0), dtype=DType.float32, device=device
     )
+    temperature = Tensor.from_numpy(
+        np.array([sampling_config.temperature] * batch_size, dtype=np.float32)
+    ).to(device)
+    top_k_np = np.array([sampling_config.top_k] * batch_size, dtype=np.int64)
+    top_k = Tensor.from_numpy(top_k_np).to(device)
+    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
 
     # Generate Random Logits
     for j in range(3):
@@ -145,6 +165,9 @@ def test_sampling_return_logits(session: InferenceSession):
         # Run through Sampler
         new_tokens, generated_tokens_max, generated_logits_max = sampler(
             Tensor.from_dlpack(logits).to(device),
+            top_k,
+            max_k,
+            temperature,
             generated_tokens,  # This isnt used by the sampler, so we can safely ignore it.
             generated_logits,
         )[:3]
@@ -162,8 +185,11 @@ def test_sampling_return_logits(session: InferenceSession):
 
 def test_rejection_sampler(session: InferenceSession):
     device = session.devices[0]
-    graph = rejection_sampler(
+    sampling_config = SamplingConfig(
         top_k=1,
+        temperature=1.0,
+    )
+    graph = rejection_sampler(
         device=DeviceRef.from_device(device),
     )
 
@@ -188,6 +214,15 @@ def test_rejection_sampler(session: InferenceSession):
     target_logit_offsets = np.arange(
         0, (batch_size + 1) * (num_steps + 1), num_steps + 1
     )
+
+    top_k_np = np.array([sampling_config.top_k] * batch_size, dtype=np.int64)
+    top_k_tensor = Tensor.from_numpy(top_k_np).to(device)
+    max_k_tensor = Tensor.from_numpy(
+        np.array([np.max(top_k_np)], dtype=np.int64)
+    )
+    temperature_tensor = Tensor.from_numpy(
+        np.array([sampling_config.temperature] * batch_size, dtype=np.float32)
+    ).to(device)
 
     first_rejected_token, sampled_tokens = sampler(
         Tensor.from_dlpack(draft_tokens).to(device),
@@ -216,7 +251,7 @@ def test_rejection_sampler(session: InferenceSession):
                     np.argmax(target_logits[target_idx])
                     == sampled_tokens_np[x][0]
                 ), (
-                    f"target_logits: {target_logits[target_idx]}, sampled: {sampled_tokens[x][0]}"
+                    f"target_logits: {target_logits[target_idx]}, sampled: {sampled_tokens_np[x][0]}"
                 )
 
                 break
@@ -439,7 +474,6 @@ def test_sampling_with_seed(session: InferenceSession):
     batch_size = 1
     vocab_size = 128256  # Large enough vocab size for testing
     top_k = 100
-    temperature = 1.0
     seed_1 = 42
     seed_2 = 41
     num_trials = 10  # Run multiple times to ensure determinism
@@ -447,7 +481,6 @@ def test_sampling_with_seed(session: InferenceSession):
     # Create sampling configuration
     sampling_config = SamplingConfig(
         top_k=top_k,
-        temperature=temperature,
         seed=seed_1,
         in_dtype=DType.float32,
         out_dtype=DType.float32,
@@ -455,6 +488,12 @@ def test_sampling_with_seed(session: InferenceSession):
 
     # Create sampling graph
     graph = token_sampler(sampling_config, device=device_ref)
+    temperature = Tensor.from_numpy(
+        np.array([sampling_config.temperature] * batch_size, dtype=np.float32)
+    ).to(device)
+    top_k_np = np.array([sampling_config.top_k] * batch_size, dtype=np.int64)
+    top_k_tensor = Tensor.from_numpy(top_k_np).to(device)
+    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
 
     sampler = session.load(graph)
 
@@ -465,7 +504,6 @@ def test_sampling_with_seed(session: InferenceSession):
     # Update sampling config with same seed
     sampling_config_42 = SamplingConfig(
         top_k=top_k,
-        temperature=temperature,
         seed=seed_1,
         in_dtype=DType.float32,
         out_dtype=DType.float32,
@@ -485,7 +523,9 @@ def test_sampling_with_seed(session: InferenceSession):
     # Test 1: Sample multiple times with seed=42, results should be identical
     for _ in range(num_trials):
         # Sample with the same logits and seed
-        tokens, new_prev_tokens = sampler_42(logits_tensor, prev_tokens)[:2]
+        tokens, new_prev_tokens = sampler_42(
+            logits_tensor, prev_tokens, top_k_tensor, max_k, temperature
+        )[:2]
 
         assert isinstance(new_prev_tokens, Tensor)
         prev_tokens = new_prev_tokens
@@ -502,7 +542,6 @@ def test_sampling_with_seed(session: InferenceSession):
     # Test 2: Sample with seed=41, result should be different from seed=42
     sampling_config_41 = SamplingConfig(
         top_k=top_k,
-        temperature=temperature,
         seed=seed_2,  # Different seed
         in_dtype=DType.float32,
         out_dtype=DType.float32,
@@ -511,7 +550,9 @@ def test_sampling_with_seed(session: InferenceSession):
     graph_41 = token_sampler(sampling_config_41, device=device_ref)
     sampler_41 = session.load(graph_41)
 
-    tokens_41, _ = sampler_41(logits_tensor, prev_tokens)[:2]
+    tokens_41, _ = sampler_41(
+        logits_tensor, prev_tokens, top_k_tensor, max_k, temperature
+    )[:2]
 
     assert isinstance(tokens_41, Tensor)
     result_seed_41 = tokens_41.to_numpy()
@@ -544,14 +585,26 @@ def test_top_p_sampling(session: InferenceSession):
     # Create graph with logits and seed as inputs
     logits_type = TensorType(DType.float32, [1, vocab_size], device=device_ref)
     seed_type = TensorType(DType.uint64, [1], device=DeviceRef.CPU())
+    top_k_type = TensorType(DType.int64, [1], device=device_ref)
+    max_k_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
+    temperature_type = TensorType(DType.float32, [1], device=device_ref)
 
     def create_sampling_graph(top_p):
         with Graph(
             f"top_p_sampling_{top_p}",
-            input_types=(logits_type, seed_type),
+            input_types=(
+                logits_type,
+                seed_type,
+                top_k_type,
+                max_k_type,
+                temperature_type,
+            ),
         ) as graph:
             logits_input = graph.inputs[0].tensor
             seed_input = graph.inputs[1].tensor
+            top_k_input = graph.inputs[2].tensor
+            max_k_input = graph.inputs[3].tensor
+            temperature_input = graph.inputs[4].tensor
 
             # We need to manually create the custom op since topk_fused_sampling
             # doesn't accept seed as tensor
@@ -559,8 +612,9 @@ def test_top_p_sampling(session: InferenceSession):
                 "sampler.fused_token_sampling",
                 device=device_ref,
                 values=[
-                    ops.constant(top_k, DType.int64, device=DeviceRef.CPU()),
-                    ops.constant(temp, DType.float32, device=DeviceRef.CPU()),
+                    top_k_input,
+                    max_k_input,
+                    temperature_input,
                     ops.constant(top_p, DType.float32, device=DeviceRef.CPU()),
                     seed_input,
                     logits_input,
@@ -582,9 +636,18 @@ def test_top_p_sampling(session: InferenceSession):
     logits_tensor = Tensor.from_dlpack(logits_np).to(device)
     sampled_tokens_0 = []
 
+    temperature = Tensor.from_numpy(np.array([temp], dtype=np.float32)).to(
+        device
+    )
+    top_k_np = np.array([top_k], dtype=np.int64)
+    top_k_tensor = Tensor.from_numpy(top_k_np).to(device)
+    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
+
     for seed in range(num_trials):
         seed_tensor = Tensor.from_dlpack(np.array([seed], dtype=np.uint64))
-        tokens = sampler_0(logits_tensor, seed_tensor)[0]
+        tokens = sampler_0(
+            logits_tensor, seed_tensor, top_k_tensor, max_k, temperature
+        )[0]
         assert isinstance(tokens, Tensor)
         token_idx = tokens.to_numpy()[0, 0]
         sampled_tokens_0.append(token_idx)
@@ -602,7 +665,9 @@ def test_top_p_sampling(session: InferenceSession):
 
     for seed in range(num_trials):
         seed_tensor = Tensor.from_dlpack(np.array([seed], dtype=np.uint64))
-        tokens = sampler_1(logits_tensor, seed_tensor)[0]
+        tokens = sampler_1(
+            logits_tensor, seed_tensor, top_k_tensor, max_k, temperature
+        )[0]
         assert isinstance(tokens, Tensor)
         token_idx = tokens.to_numpy()[0, 0]
         sampled_tokens_1.append(token_idx)
