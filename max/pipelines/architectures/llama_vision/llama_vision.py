@@ -28,7 +28,7 @@ from max.graph import (
     DeviceRef,
     Dim,
     Graph,
-    Shape,
+    SymbolicDim,
     TensorType,
     TensorValue,
     ops,
@@ -346,45 +346,33 @@ class MultimodalKVCacheManager(KVCacheManager):
     ) -> Sequence[MultimodalKVCacheInputSymbols]:
         """Returns concatenated input symbols for text and vision KV managers.
 
-        This has to rename input symbols that aren't necessarily the same:
-        `num_layers` and `max_seq_len` differ in general between text and
-        vision modalities.
+        This renames symbolic dimensions to avoid conflicts between text and
+        vision modalities which may have different numbers of pages/layers.
         """
+        # Get input symbols from both managers
+        text_symbols = self.text_kv_manager.input_symbols()[0]
+        vision_symbols = self.vision_kv_manager.input_symbols()[0]
 
-        def _input_symbols(
-            manager: KVCacheManager,
-            num_layers_key: str,
-            max_seq_len_key: str | int,
-        ) -> KVCacheInputSymbols:
-            input_symbols = manager.input_symbols()[0]
-            # Get first element from input_symbols sequence
-            first_input_symbols = input_symbols[0]
-            assert isinstance(first_input_symbols, TensorType)
-            first_input_symbols.shape = Shape(
-                [
-                    "num_blocks",
-                    2,
-                    num_layers_key,
-                    max_seq_len_key,
-                    "num_kv_heads",
-                    "head_dim",
-                ]
-            )
+        # Rename conflicting symbolic dimensions in text symbols
+        text_symbols.kv_blocks.shape[0] = SymbolicDim("text_total_num_pages")
+        text_symbols.lookup_table.shape[1] = SymbolicDim("text_max_num_pages")
 
-            return input_symbols
+        # Rename conflicting symbolic dimensions in vision symbols
+        vision_symbols.kv_blocks.shape[0] = SymbolicDim(
+            "vision_total_num_pages"
+        )
+        vision_symbols.lookup_table.shape[1] = SymbolicDim(
+            "vision_max_num_pages"
+        )
+
+        # Also rename the num_layers dimension which differs between modalities
+        text_symbols.kv_blocks.shape[2] = SymbolicDim("text_num_layers")
+        vision_symbols.kv_blocks.shape[2] = SymbolicDim("vision_num_layers")
 
         return [
             MultimodalKVCacheInputSymbols(
-                text_kv_input_symbols=_input_symbols(
-                    self.text_kv_manager,
-                    "text_num_layers",
-                    self.text_kv_manager.page_size,
-                ),
-                vision_kv_input_symbols=_input_symbols(
-                    self.vision_kv_manager,
-                    "vision_num_layers",
-                    self.vision_kv_manager.page_size,
-                ),
+                text_kv_input_symbols=text_symbols,
+                vision_kv_input_symbols=vision_symbols,
             )
         ]
 
