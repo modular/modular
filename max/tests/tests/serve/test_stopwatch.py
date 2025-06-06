@@ -63,6 +63,6 @@ def test_stopwatch():
     sw2.reset(start_ns=sw.start_ns)
     assert sw2.start_ns == sw.start_ns
 
-    # creationg a StopWatch with an explicit start_ns works
+    # creating a StopWatch with an explicit start_ns works
     sw3 = StopWatch(start_ns=sw.start_ns)
     assert sw3.start_ns == sw.start_ns
