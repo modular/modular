@@ -24,13 +24,10 @@ request = {
 
 
 @pytest.mark.asyncio
-async def test_stop_sequence(echo_app):
+async def test_stop_sequence(echo_app) -> None:
     async with TestClient(echo_app, timeout=720.0) as client:
         # Test with streaming set to False
-        raw_response = await client.post(
-            "/v1/chat/completions",
-            json=request,
-        )
+        raw_response = await client.post("/v1/chat/completions", json=request)
 
         result = raw_response.json()
 
@@ -45,13 +42,11 @@ async def test_stop_sequence(echo_app):
 @pytest.mark.asyncio
 async def test_stop_sequence_streaming(
     echo_app, reset_sse_starlette_appstatus_event
-):
+) -> None:
     async with TestClient(echo_app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post(
-            "/v1/chat/completions",
-            json=request | {"stream": True},
-            stream=True,
+            "/v1/chat/completions", json=request | {"stream": True}, stream=True
         )
 
         response_text = await _stream_response(raw_response)

@@ -67,8 +67,8 @@ class MockTextTokenizer(
             raise ValueError(msg)
 
         max_new_tokens = None
-        if request.max_new_tokens is not None:
-            max_new_tokens = request.max_new_tokens
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
         elif self.max_new_tokens != -1:
             max_new_tokens = self.max_new_tokens
 
@@ -94,8 +94,8 @@ class MockTextTokenizer(
                 msg = "encoded is greater than the max_length of the tokenizer"
                 raise ValueError(msg)
 
-        if request.max_new_tokens:
-            max_length = len(encoded) + request.max_new_tokens
+        if request.sampling_params.max_new_tokens:
+            max_length = len(encoded) + request.sampling_params.max_new_tokens
         elif self.max_new_tokens:
             max_length = len(encoded) + self.max_new_tokens
         else:

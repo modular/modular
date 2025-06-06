@@ -23,7 +23,7 @@ def test_context__get_min_token_logit_mask():
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
         eos_token_ids={4},
-        sampling_params=SamplingParams(min_tokens=3),
+        sampling_params=SamplingParams(min_new_tokens=3),
     )
     context.assign_to_cache(0)
     vocab_mask = context.get_min_token_logit_mask(1)
@@ -48,7 +48,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids():
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
-        sampling_params=SamplingParams(min_tokens=3),
+        sampling_params=SamplingParams(min_new_tokens=3),
         eos_token_ids={4, 5},
     )
     context.assign_to_cache(0)
@@ -74,7 +74,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
-        sampling_params=SamplingParams(min_tokens=3),
+        sampling_params=SamplingParams(min_new_tokens=3),
         eos_token_ids={4, 5},
     )
     context.assign_to_cache(0)
@@ -99,7 +99,7 @@ def test_context__get_min_token_logit_mask_with_no_eos_token_ids():
         prompt="this is a test prompt",
         max_length=10,
         tokens=np.array([0, 1, 2, 3]),
-        sampling_params=SamplingParams(min_tokens=3),
+        sampling_params=SamplingParams(min_new_tokens=3),
     )
     context.assign_to_cache(0)
     vocab_mask = context.get_min_token_logit_mask(1)

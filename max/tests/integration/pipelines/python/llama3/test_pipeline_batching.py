@@ -17,7 +17,7 @@ from max.pipelines import (
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.core import TokenGeneratorRequest
+from max.pipelines.core import SamplingParams, TokenGeneratorRequest
 from max.pipelines.lib import generate_local_model_path
 from test_common.evaluate import next_token_with_logits
 from test_common.test_data import DEFAULT_PROMPTS
@@ -140,13 +140,14 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
         max_new_tokens = int(
             (pipeline._pipeline_config.max_length / batch_size) * (i + 1)
         )
+        sampling_params = SamplingParams(max_new_tokens=max_new_tokens)
         context = await pipeline_tokenizer.new_context(
             TokenGeneratorRequest(
                 id="",
                 index=i,
                 prompt=prompt,
                 model_name="llama3",
-                max_new_tokens=max_new_tokens,
+                sampling_params=sampling_params,
             )
         )
         batch_id = str(i)

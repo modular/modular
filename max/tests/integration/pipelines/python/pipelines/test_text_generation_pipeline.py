@@ -14,6 +14,7 @@ from max.driver import DeviceSpec
 from max.pipelines import (
     TokenGeneratorRequest,
 )
+from max.pipelines.core import SamplingParams
 from max.pipelines.lib import generate_local_model_path
 from test_common.mocks import (
     MockTextTokenizer,
@@ -92,13 +93,14 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
         for i, prompt in enumerate(prompts):
             id = f"request_{i}"
             max_new_tokens[id] = _max_new_tokens[i]
+            sampling_params = SamplingParams(max_new_tokens=max_new_tokens[id])
             request = TokenGeneratorRequest(
                 id=id,
                 index=i,
                 model_name=model_path,
                 prompt=prompt,
                 messages=None,
-                max_new_tokens=max_new_tokens[id],
+                sampling_params=sampling_params,
             )
 
             context_batch[id] = asyncio.run(tokenizer.new_context(request))

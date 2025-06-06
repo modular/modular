@@ -17,7 +17,7 @@ from max.pipelines import (
     TokenGeneratorRequestMessage,
     TokenGeneratorResponseFormat,
 )
-from max.pipelines.core import TextContext
+from max.pipelines.core import SamplingParams, TextContext
 
 pytest_plugins = "test_common.registry"
 
@@ -45,6 +45,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry):
     """
 
     request_id = "request_0"
+    sampling_params = SamplingParams(max_new_tokens=50)
     request = TokenGeneratorRequest(
         model_name=pipeline_config.model_config.model_path,
         id=request_id,
@@ -55,7 +56,7 @@ def test_smollm_with_structured_output_gpu(pipeline_registry):
                 content=prompt,
             )
         ],
-        max_new_tokens=50,
+        sampling_params=sampling_params,
         response_format=TokenGeneratorResponseFormat(
             type="json_schema",
             json_schema={
