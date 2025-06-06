@@ -343,7 +343,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     }
     ```
 
-    The `registerPassable` is used to indicate structs that are preferrably
+    The `registerPassable` is used to indicate structs that are preferably
     passed around as SSA values instead of being processed in memory.  This is
     true for simple values like F32 and Bool but not for complex aggregates like
     a SmallVector that can't be bitwise copied around or a Dictionary that
@@ -765,7 +765,7 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
     ASTDeclInterface,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
-  let summary = "Addressible local var declaration";
+  let summary = "Addressable local var declaration";
   let description = [{
     This declaration is used for var declarations with an exposed
     address.  `kind` encodes how this declaration was created, either via

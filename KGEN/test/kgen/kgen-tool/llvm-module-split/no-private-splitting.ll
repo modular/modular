@@ -3,7 +3,7 @@
 
 ; REQUIRES: ASSERTIONS
 
-; COM: At this momoent we do not support splitting of private symbols as they
+; COM: At this moment we do not support splitting of private symbols as they
 ; COM: could be wrongly linked
 
 ; DUMP: global .memset_pattern cannot be split

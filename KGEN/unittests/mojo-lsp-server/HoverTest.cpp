@@ -205,7 +205,7 @@ More docstring for SomeStruct.
 &nbsp;&nbsp;other_param: Another param.
 
 #### Constraints:
-&nbsp;&nbsp;The contraints of SomeStruct.
+&nbsp;&nbsp;The constraints of SomeStruct.
 
 
 )");

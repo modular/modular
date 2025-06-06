@@ -14,8 +14,8 @@
 namespace M::KGEN::Mojo {
 
 namespace Detail {
-/// Class that exposes common utilities reated to SB classes. It shuold be used
-/// via the concrete implementions that can be found below this class.
+/// Class that exposes common utilities reated to SB classes. It should be used
+/// via the concrete implementations that can be found below this class.
 template <typename SBClass, typename SPClass>
 class SBClassUtils : public SBClass {
 public:

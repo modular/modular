@@ -226,7 +226,7 @@ ErrorTreeOrSuccess BytecodeBuilder::writeOperation(Operation *op) {
       numOperands, numResults);
 
   // Get the interpret hook for the operation. If it does not implement the
-  // interpreter inteface, use the operation folder.
+  // interpreter interface, use the operation folder.
   OpBytecodeGenerator generator{0, nullptr, nullptr};
   if (auto itf = dyn_cast<BytecodeInterpreterOpInterface>(op))
     generator = itf.getBytecodeGenerator();

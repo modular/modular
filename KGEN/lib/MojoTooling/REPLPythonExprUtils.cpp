@@ -163,8 +163,8 @@ M::KGEN::Mojo::extractPythonSymbolsFromReplExpr(StringRef pythonExpr) {
   SmallVector<StringRef> symbolLines;
   symbols.split(symbolLines, '\n', /*MaxSplit=*/-1, /*keepEmpty=*/false);
 
-  // We process the symbols in reverse order so that we honor the last occurence
-  // of a given symbol name.
+  // We process the symbols in reverse order so that we honor the last
+  // occurrence of a given symbol name.
   llvm::StringSet<> seenVariables;
   std::vector<std::unique_ptr<ExtractedPythonSymbol>> extractedSymbols;
   for (StringRef symbolLine : llvm::reverse(symbolLines)) {

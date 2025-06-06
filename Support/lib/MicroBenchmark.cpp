@@ -175,7 +175,7 @@ ErrorOrSuccess MicroBenchmark::run(const RunOptions &options) {
 bool MicroBenchmark::isSignificantMeasurement(const Measurement &measurement,
                                               size_t idx) {
   // The measurement number of iteration is the same as the requested
-  // maxBatchSize and the measurement duration execeeded the requested min
+  // maxBatchSize and the measurement duration exceeded the requested min
   // runtime.
   if (runOptions.maxBatchSize &&
       measurement.iterations >= runOptions.maxBatchSize &&

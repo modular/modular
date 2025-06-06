@@ -832,7 +832,7 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
     the cost of the function. This operation must be resolved at compile time.
 
     Currently, `kgen.cost_of` returns the number of loads, stores, additions,
-    comparisions, divisions, multiplications, multiply-adds, and other
+    comparisons, divisions, multiplications, multiply-adds, and other
     operations, that is, operations that do not fall into any of the above
     categories. The cost is evaluated on the function at the output of
     elaboration, without running any post-elaboration passes.
@@ -1334,7 +1334,7 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
         !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none>
     ```
 
-    The type is wrapped aound a memory struct to preverse the signature,
+    The type is wrapped around a memory struct to preserve the signature,
     and also to indicate to LLVM that pointers don't alias.
 
     After LowerCallConvention, only `callee`'s signature change:

@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_HLCFDIALECT_ANALAYSIS_CFG_H
-#define KGEN_HLCFDIALECT_ANALAYSIS_CFG_H
+#ifndef KGEN_HLCFDIALECT_ANALYSIS_CFG_H
+#define KGEN_HLCFDIALECT_ANALYSIS_CFG_H
 
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 
@@ -60,4 +60,4 @@ struct DenseMapInfo<M::HLCF::CFGNode> {
 };
 } // namespace llvm
 
-#endif // KGEN_HLCFDIALECT_ANALAYSIS_CFG_H
+#endif // KGEN_HLCFDIALECT_ANALYSIS_CFG_H

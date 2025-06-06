@@ -660,7 +660,7 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     // For large, contiguous chunks of memory with the same byte value,
     // "compress" the generated IR by emitting a memset instead of a huge number
     // of SIMD stores. This struct tracks the current compression state, which
-    // has to be "comitted". This will prevent large materialized blobs from
+    // has to be "committed". This will prevent large materialized blobs from
     // destroying compile time. However, if the user fills a large blob with
     // "random" data, not much can be done.
     struct CompressionState {

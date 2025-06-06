@@ -202,7 +202,7 @@ struct ImplNode {
 
 /// The state of a parameter node, including the number of tasks waiting on it.
 /// These are stored together in an atomic so that the waiter count and the
-/// state can be transitioned atomically together, preventing erroenous waiters
+/// state can be transitioned atomically together, preventing erroneous waiters
 /// from being counted due to a race.
 class ParamNodeState {
   static constexpr uint64_t IN_PROGRESS_BIT = 62;

@@ -11,7 +11,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
     More docstring for SomeStruct.
 
     Constraints:
-        The contraints of SomeStruct.
+        The constraints of SomeStruct.
 
     Parameters:
         size: The size of SomeStruct.

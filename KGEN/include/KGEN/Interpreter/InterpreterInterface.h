@@ -26,7 +26,7 @@ struct OpBytecodeGenerator {
   // The alignment of the payload. Has to be a maximum of allowed alignment of
   // all Payloads in KGEN Dialect.
   // Ideally we want to use `alignof(KGEN*::Payload)` here, but that will
-  // introduce extra dependency to intepreter.
+  // introduce extra dependency to interpreter.
   static constexpr uint64_t payloadAlignment = 8;
 };
 } // namespace M

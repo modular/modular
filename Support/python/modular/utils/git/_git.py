@@ -28,7 +28,7 @@ def fetch_checkout_commit(repo_dir: Path, ref: str, remote: str = "origin"):
 
     Args:
         repo_dir: path to an existing git repository.
-        ref: a tag, brach, or (full) commit SHA.
+        ref: a tag, branch, or (full) commit SHA.
         remote: git remote to use. Default: "origin".
     """
 
@@ -60,7 +60,7 @@ def shallow_clone(
         clone_dir: path to the new clone directory. It is created if it doesn't
             already exist.
         url: repository url to clone from.
-        ref: a tag, brach, or (full) commit SHA.
+        ref: a tag, branch, or (full) commit SHA.
         remove_git: remove the .git directory after cloning.
 
     Raises:
@@ -178,7 +178,7 @@ def check_gh_installed():
     except CalledProcessError:
         raise GitError(
             "'gh' is not installed. Please visit https://cli.github.com/ for"
-            " installation instuctions."
+            " installation instructions."
         )
 
 

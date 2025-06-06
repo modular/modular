@@ -453,7 +453,7 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "loop exit operation";
   let description = [{
-    The `hlcf.break` opeartion is a control-flow terminator that transfer
+    The `hlcf.break` operation is a control-flow terminator that transfer
     control-flow to after the nearest surrounding loop operation. The operation
     expects its operand types to match the types of the results of that loop, if
     there are any.

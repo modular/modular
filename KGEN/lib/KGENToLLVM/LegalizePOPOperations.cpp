@@ -38,7 +38,7 @@ static KGENDType getScalarKGENDType(Type type) {
   return KGENDType();
 }
 
-/// Return simiar type to \p type, but with scalar type of \p dtype
+/// Return similar type to \p type, but with scalar type of \p dtype
 static Type convertKGENDTypeToType(KGENDType dtype, Type type) {
   if (auto simd = dyn_cast<SIMDType>(type))
     return SIMDType::get(simd.getContext(), *simd.getResolvedSize(), dtype);

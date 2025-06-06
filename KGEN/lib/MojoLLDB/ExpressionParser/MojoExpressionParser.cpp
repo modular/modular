@@ -563,7 +563,7 @@ Status MojoExpressionParser::prepareForExecution(
   }
 
   // Register the newly created persistent variables.
-  std::vector<lldb::ExpressionVariableSP> peristentVariables;
+  std::vector<lldb::ExpressionVariableSP> persistentVariables;
   for (auto [name, mlirType] : impl->newPersistentVariables) {
     // All persistent variables in the REPL are references, so wrap them in a
     // reference type.
@@ -589,7 +589,7 @@ Status MojoExpressionParser::prepareForExecution(
     impl->expr.GetMaterializer()->AddPersistentVariable(var, nullptr, error);
     if (error.Fail())
       return error;
-    peristentVariables.emplace_back(std::move(var));
+    persistentVariables.emplace_back(std::move(var));
   }
 
   // If a valid execution unit was produced and there is more than one external
@@ -605,7 +605,7 @@ Status MojoExpressionParser::prepareForExecution(
 
   // Register the persisted state for this execution.
   persistentState->registerExpressionInstance(std::move(persistedExecutionUnit),
-                                              std::move(peristentVariables),
+                                              std::move(persistentVariables),
                                               impl->expr.getPythonModuleName());
   return error;
 }

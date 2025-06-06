@@ -14,7 +14,7 @@
 namespace M {
 /// These mlirToString functions are mostly wrappers for MLIR's debugString
 /// function, except that they are concrete, and guaranteed to be available in a
-/// debugger, so you can get strings programatically in the debugger.
+/// debugger, so you can get strings programmatically in the debugger.
 /// Return the printed representation of the operation as a string.
 LLVM_DUMP_METHOD std::string mlirToString(mlir::Operation *op);
 /// Return the printed representation of the attribute as a string.

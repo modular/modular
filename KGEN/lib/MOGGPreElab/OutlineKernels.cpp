@@ -175,7 +175,7 @@ private:
         walker.walk(t);
       walker.walk(op->getAttrDictionary());
 
-      // Track parameters within lambda blocks ect.
+      // Track parameters within lambda blocks etc.
       if (auto definesParam = dyn_cast<KGEN::DeclInterface>(op)) {
         for (KGEN::ParamDeclAttr decl : definesParam.getAllParams())
           trackDefinedParams(decl);

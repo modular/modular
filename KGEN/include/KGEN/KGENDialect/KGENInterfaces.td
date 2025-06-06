@@ -306,7 +306,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
 
       ```mlir
       kgen.param.declare.region Fn = <A>() -> ()
-          contraints <[eq(A, 1), "A == 1"]> {
+          constraints <[eq(A, 1), "A == 1"]> {
       }
       ```
 

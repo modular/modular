@@ -3,7 +3,7 @@ load("//bazel:api.bzl", "modular_cc_binary")
 modular_cc_binary(
     name = "mojo-repl-entry-point",
     srcs = glob(["*.cpp"]),
-    # We need to prevent inline function expansion to guarentee our entry
+    # We need to prevent inline function expansion to guarantee our entry
     # point function is correctly invoked.
     copts = [
         "-O0",

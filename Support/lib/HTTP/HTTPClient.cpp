@@ -263,7 +263,7 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   // Set URL we will perform the HTTP
   CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_URL, request.URL.c_str()),
                    "set url");
-  // Follow any HTTP 301 or 302  redirects implicity.
+  // Follow any HTTP 301 or 302  redirects implicitly.
   CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true),
                    "set follow location");
   // Set our write callback function.
@@ -301,7 +301,7 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
     curl_easy_setopt(curl, CURLOPT_RANGE, nullptr);
   }
 
-  // Execute our reqeust.
+  // Execute our request.
   CURLcode res = curl_easy_perform(curl);
 
   HTTPResponse response;

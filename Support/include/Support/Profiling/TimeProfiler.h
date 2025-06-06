@@ -123,11 +123,11 @@ struct Trace {
     // kAsyncRT:
     //   For traces related to core AsyncRT scheduling and runtime.
     // Level 2:
-    //   AlgorithmProfilerEntry for addTask via parallization helpers
+    //   AlgorithmProfilerEntry for addTask via parallelization helpers
     //   InternalProfilerEntry for tracking thread spinning and sleeping.
     // Level 3:
     //   AsyncProfilerEntry for AsyncValue allocation and premature freeing.
-    //   AlllWorkItemsProfilerEntry for the execution of every work/wait item.
+    //   AllWorkItemsProfilerEntry for the execution of every work/wait item.
     kAsyncRT = 1,
 
     // kMem:

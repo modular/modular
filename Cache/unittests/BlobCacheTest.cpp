@@ -72,7 +72,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
   await(done);
 }
 
-TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
+TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistentItem) {
   auto done = AsyncValueRef<Chain>::allocate(*runtime);
   auto dneOr = cache->find(*runtime, "does not exist");
   std::move(dneOr).andThenSync(

@@ -17,7 +17,7 @@ class SourceMgr;
 }
 
 namespace M {
-/// This class provides an overrideable config map. The on-disk representation
+/// This class provides an overridable config map. The on-disk representation
 /// is essentially an INI file, since it's easy to parse, but every
 /// configuration can be overridden with an environment variable.
 /// For example, given the file:

@@ -1722,7 +1722,7 @@ static Attribute simplifyAssocOp(
 /// null as the second (standin for "multiplication by 1").
 static std::pair<TypedAttr, TypedAttr> decomposeAddend(TypedAttr operand) {
   auto mul = dyn_cast<ParamOperatorAttr>(operand);
-  // NOTE we are bascially converting the "looser" MulNuw with undef behavior
+  // NOTE we are basically converting the "looser" MulNuw with undef behavior
   // back to the tighter Mul with defined behavior on overflow. This allows us
   // to fold things like `add(mul(X, 2), mul_nuw(X, -1))`
   if (mul && llvm::is_contained({POC::MulNuw, POC::Mul}, mul.getOpcode())) {
@@ -2008,7 +2008,7 @@ static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
 namespace {
 struct DivOperandInfo {
   // tracks the occurrences of non-integral operands only, e.g. D1
-  SmallDenseMap<TypedAttr, size_t> symOccurences;
+  SmallDenseMap<TypedAttr, size_t> symOccurrences;
 
   // tracks the coalesced constant terms, e.g. mul_nuw(5, 10, D1)
   // this would be 5 * 10 = 50.
@@ -2063,14 +2063,14 @@ struct DivOperandInfo {
         if (auto constAttr = dyn_cast<IntegerAttr>(numOpAttr)) {
           updateConstant(constAttr);
         } else {
-          ++symOccurences[numOpAttr];
+          ++symOccurrences[numOpAttr];
         }
       }
       return;
     }
 
     if (auto declAttr = dyn_cast<KGEN::ParamDeclRefAttr>(attr)) {
-      ++symOccurences[declAttr];
+      ++symOccurrences[declAttr];
       return;
     }
 
@@ -2086,7 +2086,7 @@ struct DivOperandInfo {
     IntegerAttr constTerm = IntegerAttr::get(attrType, constant);
 
     operands.push_back(constTerm);
-    for (auto [operand, occurrences] : symOccurences)
+    for (auto [operand, occurrences] : symOccurrences)
       for (size_t i = 0; i < occurrences; i++)
         operands.push_back(operand);
 
@@ -2102,10 +2102,10 @@ struct DivOperandInfo {
   /// are dividing each other. Mutates operands in place.
   static void simplifyDivInPlace(DivOperandInfo &numerator,
                                  DivOperandInfo &denominator) {
-    SmallDenseMap<TypedAttr, size_t> &numeratorOperandOccurences =
-        numerator.symOccurences;
-    SmallDenseMap<TypedAttr, size_t> &denominatorOperandOccurences =
-        denominator.symOccurences;
+    SmallDenseMap<TypedAttr, size_t> &numeratorOperandOccurrences =
+        numerator.symOccurrences;
+    SmallDenseMap<TypedAttr, size_t> &denominatorOperandOccurrences =
+        denominator.symOccurrences;
 
     // Emulate cancelling out shared operand(s) by decrementing their
     // occurrences. e.g., for
@@ -2114,21 +2114,21 @@ struct DivOperandInfo {
     // the new occurrence mappings are
     //   `{ D0 : 1, D2 : 0 }`.
     //   `{ D0 : 0, D2 : 1 }`.
-    for (auto [numOpAttr, occurrences] : numeratorOperandOccurences) {
+    for (auto [numOpAttr, occurrences] : numeratorOperandOccurrences) {
       if (size_t denomOccurrences =
-              denominatorOperandOccurences.lookup(numOpAttr)) {
+              denominatorOperandOccurrences.lookup(numOpAttr)) {
         size_t sharedOccurrences = std::min(occurrences, denomOccurrences);
-        numeratorOperandOccurences[numOpAttr] -= sharedOccurrences;
-        denominatorOperandOccurences[numOpAttr] -= sharedOccurrences;
+        numeratorOperandOccurrences[numOpAttr] -= sharedOccurrences;
+        denominatorOperandOccurrences[numOpAttr] -= sharedOccurrences;
       }
     }
 
     // Cancel out the constant terms
     if (numerator.constant == 0) {
-      numerator.symOccurences.clear();
+      numerator.symOccurrences.clear();
     }
     if (denominator.constant == 0) {
-      denominator.symOccurences.clear();
+      denominator.symOccurrences.clear();
     }
     if (numerator.constant != 0 && denominator.constant != 0) {
       bool isSigned = isSignedIntType(numerator.attrType);

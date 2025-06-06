@@ -1875,7 +1875,7 @@ ElaborationState Elaborator::processDeferredOp(ImplNode *inode, DeferredOp op) {
   Attribute dict;
   HANDLE_EVALUATOR_CONC(dict, inode, loc, op.getOpAttrs());
   assert(isa<DictionaryAttr>(dict) && "expected dictionary attribute");
-  // At this poitn remove all deferred attrbutes by replacing them with their
+  // At this point remove all deferred attributes by replacing them with their
   // content. It's essential to do this before operation is constructed,
   // otherwise attribute may not be set if it's not concretized.
   mlir::AttrTypeReplacer replacer;

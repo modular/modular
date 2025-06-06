@@ -19,7 +19,7 @@ include "llvm/Option/OptParser.td"
 // * Option groups are sorted in ascending index order.
 // * Within each option group, options are sorted in ascending index order.
 // * Among an option's aliases, aliases are sorted in ascending index order.
-// * Wihtin any of these groupings, if two records have the same index, an error
+// * Within any of these groupings, if two records have the same index, an error
 //   is emitted.
 // * Errors are also emitted for records that do not have an index, even if that
 //   record is "hidden" from documentation (a hidden option or option group, for

@@ -193,7 +193,7 @@ runtime. In other words, lookup of implicitly-declared variables is deferred to
 runtime. On the other hand, the function does have a notion of what variable
 *could* be available in the function, in order to emit `UnboundLocalError`s as
 required. Of course, the compiler can optimize the table away and do all the
-nice stuff compilers do if posible.
+nice stuff compilers do if possible.
 
 ### Improving Dynamic Type Compatibility
 
@@ -214,7 +214,7 @@ This fits into Mojo's incremental performance story: implicitly declared
 variables are fully dynamic and provide huge amounts of expressibility, but to
 get guaranteed performance, programmers can add explicit `var` and `let`
 declarations.  Of course, we can also use MLIR optimizations to "unbox"
-dynamicly typed values in simple cases without loss of generality as well.
+dynamically typed values in simple cases without loss of generality as well.
 
 As an aside, while Python supports type annotations on implicitly-declared
 variables, they need to be ignored for compatibility with Python. For example,

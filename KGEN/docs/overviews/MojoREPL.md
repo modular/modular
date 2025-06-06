@@ -340,7 +340,7 @@ Feel free to add more event kinds as is appropriate - event kinds ending with
 `Message` are shown to the user in the notebook, while event kinds ending in
 `Log` are not shown to the user.
 
-Lastly, as a troublshooting aid you can pass the `-f /tmp/logs.txt` option to
+Lastly, as a troubleshooting aid you can pass the `-f /tmp/logs.txt` option to
 the `:log enable lldb expr` command to output the logs to a file for easier
 inspection.
 

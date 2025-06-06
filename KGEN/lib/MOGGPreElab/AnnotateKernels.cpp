@@ -212,7 +212,7 @@ getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
   return answer;
 }
 
-/// Look through ref types to get underlaying decl ref type if needed.
+/// Look through ref types to get underlying decl ref type if needed.
 static LIT::StructType getAsStructType(Type t) {
   auto asLitRef = dyn_cast<LIT::RefType>(t);
   if (asLitRef)

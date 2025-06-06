@@ -227,8 +227,8 @@ fn testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 
-# CHECK-LABEL: testGetAsUnitializedObject
-fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
+# CHECK-LABEL: testGetAsUninitializedObject
+fn testGetAsUninitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
    # Overwriting the value in a __get_address_as_uninit_lvalue does not destroy
   # the memory, because it is uninit.
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr start_uninit :
@@ -237,10 +237,10 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
 
   # CHECK-NEXT: kgen.param.constant: none
 
-# CHECK-LABEL: testCondGetAsUnitializedObject
+# CHECK-LABEL: testCondGetAsUninitializedObject
 # Early exit from fn using __get_address_as_uninit_lvalue should work.
 # https://github.com/modularml/modular/issues/27472
-fn testCondGetAsUnitializedObject(exit_early: __mlir_type.i1,
+fn testCondGetAsUninitializedObject(exit_early: __mlir_type.i1,
                                   ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
   # CHECK: hlcf.elif
   if exit_early:

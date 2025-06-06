@@ -43,7 +43,7 @@ struct FunctionStatsPass : impl::FunctionStatsBase<FunctionStatsPass> {
     });
 
     // Print <opcount> | trunc(name) | file_loc
-    // Compute the maximum required pading for opcount.
+    // Compute the maximum required padding for opcount.
     size_t maxOpCountSize = 0, maxNameLen = 0;
     constexpr size_t nameBound = 128;
     for (FunctionSummary &f : stats) {

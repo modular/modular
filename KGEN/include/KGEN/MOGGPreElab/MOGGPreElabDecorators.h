@@ -69,7 +69,7 @@ constexpr StringLiteral MOGG_INTRINSIC_ELEMWISE_FOR_EACH =
 constexpr StringLiteral MOGG_INTRINSIC_VIEW_MATERIALIZE =
     "mogg.view_materialize";
 
-/// MOGG Instrinsic for the input / output lambda implementations.
+/// MOGG Intrinsic for the input / output lambda implementations.
 constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
     "mogg.dps_input_fusion_hook";
 constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =

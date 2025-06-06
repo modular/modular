@@ -1,8 +1,8 @@
 // RUN: kgen-opt -split-input-file -pass-pipeline='builtin.module(lower-global-pop-to-llvm,kgen.func(lower-pop-to-llvm))'  %s | FileCheck %s
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  // CHECK-LABEL: extern_ptr_sybmols
-  kgen.func @extern_ptr_sybmols() {
+  // CHECK-LABEL: extern_ptr_symbols
+  kgen.func @extern_ptr_symbols() {
     // CHECK: %0 = llvm.mlir.addressof @hello : !llvm.ptr<3>
     // CHECK: %1 = llvm.mlir.addressof @hello_0 : !llvm.ptr<1>
     %0 = pop.extern_ptr_symbol "hello" alignment <1> : !kgen.pointer<scalar<f32>, 3>

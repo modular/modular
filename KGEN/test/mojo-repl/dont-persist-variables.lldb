@@ -9,7 +9,7 @@
 # Note: in REPL mode, expressions are delimited by empty lines.
 
 # This test must be first in the file, it is testing when the expression
-# instances are emtpy.
+# instances are empty.
 print(x)
 # CHECK: [User] error:
 

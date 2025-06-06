@@ -307,7 +307,7 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   enclosingBlockDoesBreak |= blockBreaks;
 
   // Now that we know how the exit block works, we can look at its terminator.
-  // If it falled through, it will end with lit.loop.yield: we replace it
+  // If it fell through, it will end with lit.loop.yield: we replace it
   // with a break from this loop.  Other exits like return/break/continue in the
   // else block will already be rewritten if they are present.
   //
@@ -372,7 +372,7 @@ static void addErrorRegions(Operation &op, LIT::FnType sig,
   b.setInsertionPointAfter(&op);
   auto ifOp = b.create<HLCF::IfOp>(op.getResult(0));
 
-  // In the error region, mark the resut has known consumed, then raise.
+  // In the error region, mark the result has known consumed, then raise.
   b.createBlock(&ifOp.getThenRegion());
   b.create<LIT::OwnershipMarkConsumedOp>(
       sig.hasMemoryOnlyResult() ? operands.back() : operands.front());

@@ -45,7 +45,7 @@ def DebugDescription : MojoCommandDescription<
   "Finally, it is worth mentioning that this debugger can debug programs "
   "written in other standard native languages like Rust, C and C++, as it is "
   "based on LLDB or cuda-gdb.\n\n"
-  "Debugger capabilitis:\n\n"
+  "Debugger capabilities:\n\n"
   "* LLDB: this is the default debugger and has great support for CPU Mojo "
   "code, but has no support at all for Mojo GPU code.\n\n"
   "* cuda-gdb: this is invoked via the `--cuda-gdb` option and has minimal "

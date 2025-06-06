@@ -51,7 +51,7 @@ def SourceNameKind : I64EnumAttr<
 def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
   let summary = "full source name information about a symbol";
   let description = [{
-    The `#debuginfo.source_name` attribute contains perserved source name
+    The `#debuginfo.source_name` attribute contains preserved source name
     information about a symbol and its lineage, e.g. including parent symbols.
     It contains all information that can be used to discriminate a function: its
     base name, its argument type strings, its parameter type strings, the

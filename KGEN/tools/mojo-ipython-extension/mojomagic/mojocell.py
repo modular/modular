@@ -27,7 +27,7 @@ def load_ipython_extension(ipython):
 global _global_verbose_log
 _global_verbose_log = [False]
 
-# IPython magic cell execution does not provide a uniqe cell_id
+# IPython magic cell execution does not provide a unique cell_id
 # which is necessary for cell content mapping
 # As a workaround, we can hook into pre cell run events and store
 # the cell exec_info in the _global_ipython_exec_info var
@@ -197,7 +197,7 @@ class _MojoMagic(IPython.core.magic.Magics):
             print(f"%%mojo error: {error_msg}", file=sys.stderr)
             return
 
-        # functionaliy equivalent to import module w/ custom name
+        # functionally equivalent to import module w/ custom name
         module = importlib.import_module(basename)
 
         symbols = (name for name in dir(module) if not name.startswith("__"))

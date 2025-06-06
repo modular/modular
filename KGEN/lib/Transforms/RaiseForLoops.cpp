@@ -538,7 +538,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
         rewriter.setInsertionPointAfter(&op);
 
         // Reorder ContinueOp's operands to match ForOp's operand order
-        // (return values first, loop interator last, and other loop carried
+        // (return values first, loop iterator last, and other loop carried
         // variables in between.)
         SmallVector<SmallVector<Value>> reorderedOperands =
             reorderValueIntoGroups(c.getOperands(), returnValueArgNumbers,
