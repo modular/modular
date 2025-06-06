@@ -149,7 +149,7 @@ def size():
 
 @pytest.fixture
 def img_features(size: tuple, img_dtype: torch.dtype):
-    # Gnerate imgs of shape (batch_size, seq_len=num_patches, hidden_size).
+    # Generate imgs of shape (batch_size, seq_len=num_patches, hidden_size).
     return torch.randint(low=0, high=1, size=size).to(img_dtype)
 
 

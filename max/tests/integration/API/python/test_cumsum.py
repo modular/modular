@@ -39,7 +39,7 @@ def test_cumsum(session: InferenceSession, dtype):
         torch.cumsum(input_data, dim=0).to(dtype=torch.float32).cpu().numpy()
     )
 
-    # Note: PyTorch is innacurate for bfloat16, so we use a larger tolerance
+    # Note: PyTorch is inaccurate for bfloat16, so we use a larger tolerance
     atol = 1e-1 if dtype == DType.bfloat16 else 1e-6
     rtol = 1e-1 if dtype == DType.bfloat16 else 1e-6
 

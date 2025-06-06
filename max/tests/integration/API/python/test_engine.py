@@ -551,7 +551,7 @@ def test_weight_device_mismatch(
         input_types=[TensorType(DType.float32, (10, 10), DeviceRef.GPU())],
     ) as g:
         x = g.inputs[0].tensor
-        # Note: this is actually a weight on CPU which is tranfered to GPU by runtime
+        # Note: this is actually a weight on CPU which is transferred to GPU by runtime
         weight = Weight("w", DType.float32, (10, 10), device=DeviceRef.GPU())
         y = x @ weight
         g.output(y)
@@ -592,7 +592,7 @@ def test_weight_device_implicit_mismatch(
     ) as g:
         x = g.inputs[0].tensor
 
-        # Note: weight is implictly on host (and has automatic transfer inserted)
+        # Note: weight is implicitly on host (and has automatic transfer inserted)
         weight = Weight("w", DType.float32, (10, 10), device=DeviceRef.GPU())
         y = x @ weight
         g.output(y)
