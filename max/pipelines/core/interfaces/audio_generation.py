@@ -65,6 +65,10 @@ class AudioGenerationRequest:
     sampling_params: SamplingParams = SamplingParams()
     """Request sampling configuration options."""
 
+    _assistant_message_override: str | None = None
+    """(ONLY FOR BENCHMARKING PURPOSES) An assistant message that replaces the
+    speech token pattern."""
+
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
