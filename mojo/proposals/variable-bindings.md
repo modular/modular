@@ -355,7 +355,7 @@ However, this is a fundamentally different design than Python or Mojo use for
 their expression grammars, because now we’re taking `=` and using it as an
 expression instead of a statement.
 
-If we don't want to change that (in the forseeable future), then there isn't a
+If we don't want to change that (in the foreseeable future), then there isn't a
 strong argument to support things like:
 
 ```mojo
@@ -368,6 +368,6 @@ needs to be both).  If we don't want to support this, then it doesn't seem like
 a good idea to support `var a2: Int, b2: String` unless and until we decide we
 want to scale this all the way.
 
-For the forseeable future, we will keep things simple and narrow, rather than
+For the foreseeable future, we will keep things simple and narrow, rather than
 providing a partially paved path.  If we decide this is important enough to
 address, we should scope solving the full problem.

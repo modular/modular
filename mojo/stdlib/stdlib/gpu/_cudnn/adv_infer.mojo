@@ -96,7 +96,7 @@ struct cudnnDirectionMode_t:
     alias UNIDIRECTIONAL = Self(0)
     """Single direction network."""
     alias BIDIRECTIONAL = Self(1)
-    """Output concatination at each layer."""
+    """Output concatenation at each layer."""
 
 
 @fieldwise_init

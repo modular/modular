@@ -32,7 +32,7 @@ from opentelemetry.sdk.metrics._internal import measurement
 """!! Jank alert !!
 
 We want to use OTEL for propagating telemetry. It is the best vendor-agnostic
-metrics system, but that doens't mean that it is _good_.  OTEL is _slow_. If we
+metrics system, but that doesn't mean that it is _good_.  OTEL is _slow_. If we
 use it directly, it significally degrades the perf of Max Serve. Consequently,
 we have all this machinery to observe some metric (MaxMeasurement) and record
 the observation async.

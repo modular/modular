@@ -141,7 +141,7 @@ fn test_basic_tensor_ops() raises:
 
 
 # CHECK-LABEL: test_tesnsor_fragments
-#   Get fragments of the followig layout
+#   Get fragments of the following layout
 #   TH_0    TH_2    TH_0    TH_2
 #   TH_1    TH_3    TH_1    TH_3
 #   TH_0    TH_2    TH_0    TH_2

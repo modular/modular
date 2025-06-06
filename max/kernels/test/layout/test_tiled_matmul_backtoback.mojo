@@ -746,7 +746,7 @@ fn matmulb2b[
                 # checks of the arrays vs the actual cache size, since you wouldn't
                 # want to forcefully flush it for smaller arrays, when everything
                 # would have actually fit. Having not tried it, I don't know if it's
-                # likely to help perforamnce.
+                # likely to help performance.
                 # We might be able to load `D` with `prefetchnta` when updating it,
                 # and using a streaming store to write? Although, this would
                 # necessitate fences.

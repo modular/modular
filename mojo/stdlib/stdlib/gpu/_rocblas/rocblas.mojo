@@ -7421,7 +7421,7 @@ fn rocblas_sgemmt_strided_batched(
     @param[in]
     batch_count
               [rocblas_int]
-              number of gemm operatons in the batch.
+              number of gemm operations in the batch.
 
     ******************************************************************."""
     return _get_dylib_function[
@@ -8698,7 +8698,7 @@ fn rocblas_sgemv_strided_batched(
                 handle to the rocblas library context queue.
     @param[in]
     transA      [rocblas_operation]
-                indicates whether matrices A_i are tranposed (conjugated) or not.
+                indicates whether matrices A_i are transposed (conjugated) or not.
     @param[in]
     m           [rocblas_int]
                 number of rows of matrices A_i.
@@ -9575,7 +9575,7 @@ fn rocblas_sgemv_batched(
                 handle to the rocblas library context queue.
     @param[in]
     trans       [rocblas_operation]
-                indicates whether matrices A_i are tranposed (conjugated) or not.
+                indicates whether matrices A_i are transposed (conjugated) or not.
     @param[in]
     m           [rocblas_int]
                 number of rows of each matrix A_i.
@@ -13759,7 +13759,7 @@ fn rocblas_strsm_batched(
             entry.
     @param[in]
     A       device array of device pointers storing each matrix A_i on the GPU.
-            Matricies are of dimension ( lda, k ), where k is m
+            Matrices are of dimension ( lda, k ), where k is m
             when  rocblas_side_left  and is  n  when  rocblas_side_right
             only the upper/lower triangular part is accessed.
     @param[in]
@@ -13775,7 +13775,7 @@ fn rocblas_strsm_batched(
            ldb specifies the first dimension of each B_i. ldb >= max( 1, m ).
     @param[in]
     batch_count [rocblas_int]
-                number of trsm operatons in the batch.
+                number of trsm operations in the batch.
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm_batched",
@@ -19312,7 +19312,7 @@ fn rocblas_sgbmv(
               handle to the rocblas library context queue.
     @param[in]
     trans     [rocblas_operation]
-              indicates whether matrix A is tranposed (conjugated) or not.
+              indicates whether matrix A is transposed (conjugated) or not.
     @param[in]
     m         [rocblas_int]
               number of rows of matrix A.
@@ -21357,7 +21357,7 @@ fn rocblas_rot_batched_ex(
     n       [rocblas_int]
             number of elements in each x_i and y_i vectors.
     @param[in, out]
-    x       device array of deivce pointers storing each vector x_i.
+    x       device array of device pointers storing each vector x_i.
     @param[in]
     x_type [rocblas_datatype]
            specifies the datatype of each vector x_i.
@@ -24217,7 +24217,7 @@ fn rocblas_stbmv_batched(
             - rocblas_fill_lower: each A_i is a  lower banded triangular matrix.
     @param[in]
     trans     [rocblas_operation]
-              indicates whether each matrix A_i is tranposed (conjugated) or not.
+              indicates whether each matrix A_i is transposed (conjugated) or not.
     @param[in]
     diag      [rocblas_diagonal]
             - rocblas_diagonal_unit: The main diagonal of each A_i is assumed to consist of only
@@ -24253,7 +24253,7 @@ fn rocblas_stbmv_batched(
                       0 0 0 0 5              0 0 0 0 0
 
             if uplo == rocblas_fill_lower:
-                The matrix represnted is a lower banded triangular matrix
+                The matrix represented is a lower banded triangular matrix
                 with the main diagonal and k sub-diagonals, everything else can be
                 assumed to be 0.
                 The matrix is compacted so that the main diagonal resides on the 0'th row,
@@ -25678,7 +25678,7 @@ fn rocblas_sgbmv_strided_batched(
               handle to the rocblas library context queue.
     @param[in]
     trans     [rocblas_operation]
-              indicates whether matrix A is tranposed (conjugated) or not.
+              indicates whether matrix A is transposed (conjugated) or not.
     @param[in]
     m         [rocblas_int]
               number of rows of matrix A.
@@ -26955,7 +26955,7 @@ fn rocblas_srot_batched(
     n       [rocblas_int]
             number of elements in each x_i and y_i vectors.
     @param[in, out]
-    x       device array of deivce pointers storing each vector x_i.
+    x       device array of device pointers storing each vector x_i.
     @param[in]
     incx    [rocblas_int]
             specifies the increment between elements of each x_i.
@@ -30395,7 +30395,7 @@ fn rocblas_strsm_strided_batched(
              stride from the start of one B_i matrix to the next B_(i + 1).
     @param[in]
     batch_count [rocblas_int]
-                number of trsm operatons in the batch.
+                number of trsm operations in the batch.
     ******************************************************************."""
     return _get_dylib_function[
         "rocblas_strsm_strided_batched",
@@ -34242,7 +34242,7 @@ fn rocblas_stbmv(
             - rocblas_fill_lower: A is a  lower banded triangular matrix.
     @param[in]
     trans     [rocblas_operation]
-              indicates whether matrix A is tranposed (conjugated) or not.
+              indicates whether matrix A is transposed (conjugated) or not.
     @param[in]
     diag      [rocblas_diagonal]
             - rocblas_diagonal_unit: The main diagonal of A is assumed to consist of only
@@ -34278,7 +34278,7 @@ fn rocblas_stbmv(
                       0 0 0 0 5              0 0 0 0 0
 
             if uplo == rocblas_fill_lower:
-                The matrix represnted is a lower banded triangular matrix
+                The matrix represented is a lower banded triangular matrix
                 with the main diagonal and k sub-diagonals, everything else can be
                 assumed to be 0.
                 The matrix is compacted so that the main diagonal resides on the 0'th row,
@@ -38473,7 +38473,7 @@ fn rocblas_sgbmv_batched(
               handle to the rocblas library context queue.
     @param[in]
     trans     [rocblas_operation]
-              indicates whether matrix A is tranposed (conjugated) or not.
+              indicates whether matrix A is transposed (conjugated) or not.
     @param[in]
     m         [rocblas_int]
               number of rows of each matrix A_i.
@@ -38644,7 +38644,7 @@ fn rocblas_sgemv(
               handle to the rocblas library context queue.
     @param[in]
     trans     [rocblas_operation]
-              indicates whether matrix A is tranposed (conjugated) or not.
+              indicates whether matrix A is transposed (conjugated) or not.
     @param[in]
     m         [rocblas_int]
               number of rows of matrix A.
@@ -40602,7 +40602,7 @@ fn rocblas_stbmv_strided_batched(
             - rocblas_fill_lower: each A_i is a  lower banded triangular matrix.
     @param[in]
     trans     [rocblas_operation]
-              indicates whether each matrix A_i is tranposed (conjugated) or not.
+              indicates whether each matrix A_i is transposed (conjugated) or not.
     @param[in]
     diag      [rocblas_diagonal]
             - rocblas_diagonal_unit: The main diagonal of each A_i is assumed to consist of only
@@ -40638,7 +40638,7 @@ fn rocblas_stbmv_strided_batched(
                       0 0 0 0 5              0 0 0 0 0
 
             if uplo == rocblas_fill_lower:
-                The matrix represnted is a lower banded triangular matrix
+                The matrix represented is a lower banded triangular matrix
                 with the main diagonal and k sub-diagonals, everything else can be
                 assumed to be 0.
                 The matrix is compacted so that the main diagonal resides on the 0'th row,

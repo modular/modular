@@ -762,7 +762,7 @@ fn test_quantized[
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(
-            "Tranpose B ",
+            "Transpose B ",
             "True",
             nrun,
             " runs avg(s)",

@@ -50,7 +50,7 @@ from ._gpu.reduction import reduce_launch
 fn _get_nd_indices_from_flat_index(
     flat_index: Int, shape: IndexList, skip_dim: Int
 ) -> __type_of(shape):
-    """Converts a flat index into ND indices but skip over one of the dimensons.
+    """Converts a flat index into ND indices but skip over one of the dimensions.
 
     The ND indices will iterate from right to left. I.E
 

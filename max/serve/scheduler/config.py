@@ -150,7 +150,7 @@ class TokenGeneratorSchedulerConfig:
         enable_in_flight_batching: bool = False,
         pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
     ) -> TokenGeneratorSchedulerConfig:
-        """The continuous-hetrogenous config creates 2 queues.
+        """The continuous-heterogenous config creates 2 queues.
         Context-encoding is done via dynamic batching.
         Token-generation is done via continuous batching.
         """
