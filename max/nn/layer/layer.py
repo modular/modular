@@ -17,16 +17,17 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
+from itertools import islice
 from typing import Any, Callable, Union, get_args
 
 import numpy as np
 from max._core_types.driver import DLPackArray
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import Shape, ShapeLike, Weight
+from max.graph import Graph, Shape, ShapeLike, Type, Value, Weight
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 
@@ -155,6 +156,78 @@ class Module(Layer, ABC):
     def set_shared_weight(self, name: str, weight: Weight):
         setattr(self, name, weight)
         self._shared_weights[name] = weight
+
+    def build_subgraph(
+        self,
+        name: str,
+        input_types: Sequence[Type | list[Type]],
+        weight_prefix: str = "",
+    ) -> Graph:
+        """Builds a subgraph for this module.
+
+        This method creates a subgraph that encapsulates the module's logic,
+        handling input types, weights, and creating a graph with the module's
+        computation.
+
+        Once the subgraph is built, it can be called using the :obj:`ops.call`
+        op.
+
+        Args:
+            name: The name of the subgraph to create.
+            input_types: A list of input types for the subgraph. Each element can be
+                either a single :obj:`Type` or a list of :obj:`Type` objects.
+            weight_prefix: Optional prefix for weight names in the subgraph. If provided,
+                weights with names starting with this prefix will have their names
+                modified by removing the prefix and will be marked as placeholders.
+
+        Returns:
+            :obj:`Graph`: The created subgraph containing the module's computation.
+
+        Note:
+            - Placeholder weights will require the :obj:`prefix` attribute of :obj:`ops.call` to be set.
+        """
+        layer_weights = list(self.raw_state_dict().values())
+        subgraph_input_types: list[Type] = []
+
+        def flatten(t, result):
+            if isinstance(t, (list, tuple)):
+                for item in t:
+                    flatten(item, result)
+            else:
+                result.append(t)
+
+        def take(it: Iterable[Value], n: int) -> list[Value]:
+            """Return the next *n* items from *it* as a list."""
+            return list(islice(it, n))
+
+        flatten(input_types, subgraph_input_types)
+        with Graph.current.add_subgraph(
+            name, input_types=subgraph_input_types
+        ) as subgraph:
+            subgraph_inputs = []
+            inputs = iter(subgraph.inputs)
+
+            for input_type in input_types:
+                if isinstance(input_type, list):
+                    subgraph_inputs.append(take(inputs, len(input_type)))
+                else:
+                    subgraph_inputs.append(next(inputs))
+
+            if weight_prefix:
+                for weight in filter(
+                    lambda w: w.name.startswith(weight_prefix),
+                    layer_weights,
+                ):
+                    weight._placeholder = True
+                    weight.name = weight.name.removeprefix(weight_prefix)
+
+            result = self(*subgraph_inputs)
+            if isinstance(result, (list, tuple)):
+                subgraph.output(*result)
+            else:
+                subgraph.output(result)
+
+        return subgraph
 
     @property
     def sublayers(self) -> dict[str, Module]:
