@@ -100,8 +100,8 @@ struct RuntimeLayout[
             layout.all_dims_known(), "Static layout with known dims is required"
         ]()
 
-        self.shape = __type_of(self.shape)()
-        self.stride = __type_of(self.stride)()
+        self.shape = {}
+        self.stride = {}
 
     @always_inline
     fn __init__(
