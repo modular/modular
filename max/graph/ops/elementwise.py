@@ -17,7 +17,7 @@ from ..value import TensorValue, TensorValueLike
 # ===----------------------------------------------------------------------=== #
 
 
-# Thie implementation needs to be in sync with the mojo implementation found in
+# This implementation needs to be in sync with the mojo implementation found in
 # stdlib/utils/numerics.mojo
 def _accum_type(x: TensorValue, preferred_type: DType = DType.float32) -> DType:
     dtype = x.dtype
