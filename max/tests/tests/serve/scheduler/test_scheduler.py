@@ -6,13 +6,17 @@
 
 import queue
 import time
-from typing import cast
+from typing import Union, cast
 from unittest.mock import MagicMock, Mock
 
 import numpy as np
 import pytest
 import zmq
-from max.pipelines.core import InputContext, TextContext
+from max.pipelines.core import (
+    TextAndVisionContext,
+    TextContext,
+    msgpack_numpy_encoder,
+)
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.scheduler import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_generation_scheduler import (
@@ -97,7 +101,7 @@ def create_mock_request(
     seq_len=30,
     start_idx=0,
 ) -> TextContext:
-    tokens = np.ones(seq_len)
+    tokens = np.ones(seq_len, dtype=np.int32)
     assert len(tokens) == seq_len
     context = TextContext(
         prompt=tokens.tolist(),
@@ -120,8 +124,12 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx):
         for i in range(scheduler.scheduler_config.max_batch_size_tg)
     }
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     request_push_socket.put(("req1", create_mock_request(cache_seq_id=None)))
     time.sleep(1)
@@ -130,8 +138,12 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx):
 
 def test_should_schedule_ce_empty_batch(scheduler, zmq_ctx):
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     request_push_socket.put_nowait(
@@ -147,8 +159,12 @@ def test_should_schedule_ce_empty_batch(scheduler, zmq_ctx):
 
 def test_should_schedule_ce_timeout(scheduler, zmq_ctx):
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     request_push_socket.put_nowait(
@@ -164,8 +180,12 @@ def test_should_schedule_ce_timeout(scheduler, zmq_ctx):
 
 def test_should_schedule_ce_timeout_not_reached(scheduler, zmq_ctx):
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     request_push_socket.put_nowait(
@@ -181,8 +201,12 @@ def test_try_create_ce_batch(scheduler, zmq_ctx):
     mock_data = MagicMock()
     mock_data.active_length = 10
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     request_push_socket.put_nowait(
@@ -204,8 +228,12 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx):
 
     mock_data = create_mock_request(cache_seq_id=0, seq_len=30)
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     request_push_socket.put_nowait(
@@ -271,7 +299,9 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx):
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
     cancel_push_socket = ZmqPushSocket[list[str]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.cancel_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     cancel_push_socket.put(["req1"])
     time.sleep(1)
@@ -285,7 +315,9 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx):
 
 def test_schedule_ce(scheduler, zmq_ctx):
     mock_request = create_mock_request(cache_seq_id=0)
-    batch_to_execute: dict[str, InputContext] = {"req1": mock_request}
+    batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
+        "req1": mock_request
+    }
     sch_output = SchedulerOutput(
         batch_type=BatchType.ContextEncoding,
         batch_inputs=batch_to_execute,
@@ -315,8 +347,12 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx):
 
     mock_request = create_mock_request(cache_seq_id=0, seq_len=30)
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     # Create a response queue endpoint to receive from.
@@ -361,8 +397,12 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx):
     assert mock_request_tg.end_idx == 10
 
     # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     request_push_socket.put_nowait(("req1", mock_request_tg))
     time.sleep(1)
@@ -398,7 +438,9 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx):
 
 def test_schedule_tg(scheduler, zmq_ctx):
     mock_request = create_mock_request(cache_seq_id=0)
-    batch_to_execute: dict[str, InputContext] = {"req1": mock_request}
+    batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
+        "req1": mock_request
+    }
     sch_output = SchedulerOutput(
         batch_inputs=batch_to_execute,
         num_steps=scheduler.scheduler_config.max_forward_steps_tg,
@@ -422,8 +464,12 @@ def test_run_basic_flow(scheduler, zmq_ctx):
     mock_request = create_mock_request(cache_seq_id=0, seq_len=10)
 
     # Create independent request push socket to test.
-    request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+    request_push_socket = ZmqPushSocket[
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    ](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     response_pull_socket = ZmqPullSocket[
         list[dict[str, TextGenerationResponse]]

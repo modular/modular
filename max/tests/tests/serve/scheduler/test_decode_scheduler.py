@@ -14,7 +14,11 @@ import pytest
 import zmq
 from max.driver import CPU, Tensor
 from max.nn.kv_cache import KVTransferEngine
-from max.pipelines.core import TextContext, TextGenerationResponse
+from max.pipelines.core import (
+    TextContext,
+    TextGenerationResponse,
+    msgpack_numpy_encoder,
+)
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_factory import (
     DispatcherConfig,
@@ -294,7 +298,7 @@ async def test_decode_scheduler(
             )
 
         request_push_socket = ZmqPushSocket[tuple[str, TextContext]](
-            zmq_ctx, request_zmq_endpoint
+            zmq_ctx, request_zmq_endpoint, serialize=msgpack_numpy_encoder()
         )
 
         # Create mock requests

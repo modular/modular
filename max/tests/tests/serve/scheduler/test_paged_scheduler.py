@@ -27,6 +27,7 @@ from max.pipelines.core import (
     TextGenerationStatus,
     TextResponse,
     TokenGenerator,
+    msgpack_numpy_encoder,
 )
 from max.serve.process_control import ProcessControl
 from max.serve.scheduler import ZmqPullSocket, ZmqPushSocket
@@ -62,7 +63,7 @@ def create_text_context(
     shared_prefix: np.ndarray | None = None,
 ) -> TextContext:
     if shared_prefix is None:
-        tokens = np.ones(prompt_len)
+        tokens = np.ones(prompt_len, dtype=np.int32)
     else:
         rem_tokens = prompt_len - len(shared_prefix)
         assert rem_tokens >= 0
@@ -404,7 +405,9 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     )
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     # Create this so the schedule process has a client to send to.
@@ -458,7 +461,9 @@ def test_paged_scheduler_basic_chunked_prefill(zmq_ctx):
         enable_chunked_prefill=True,
     )
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     # Create this so the schedule process has a client to send to.
     response_pull_socket = ZmqPullSocket[
@@ -512,7 +517,9 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
         enable_in_flight_batching=False,
     )
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
@@ -565,15 +572,18 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     )
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
         list[dict[str, TextGenerationResponse]]
     ](zmq_ctx, scheduler.response_q.zmq_endpoint)
 
-    cancel_pull_socket = ZmqPullSocket[list[dict[str, TextGenerationResponse]]](
-        zmq_ctx, scheduler.cancel_q.zmq_endpoint
+    cancel_pull_socket = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        scheduler.cancel_q.zmq_endpoint,
     )
 
     # set seed for reproducibility
@@ -629,7 +639,9 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     shared_prefix = rand(prefix_len)
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
@@ -692,7 +704,9 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     shared_prefix = rand(prefix_len)
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     response_pull_socket = ZmqPullSocket[
         list[dict[str, TextGenerationResponse]]
@@ -760,7 +774,9 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
     shared_prefix = rand(prefix_len)
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     response_pull_socket = ZmqPullSocket[
         list[dict[str, TextGenerationResponse]]
@@ -834,7 +850,9 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
     shared_prefix = rand(prefix_len)
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
     response_pull_socket = ZmqPullSocket[
         list[dict[str, TextGenerationResponse]]
@@ -920,7 +938,9 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
     )
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
@@ -977,7 +997,9 @@ def test_paged_scheduler_tg_preemption_basic(zmq_ctx):
     )
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
@@ -1045,7 +1067,9 @@ def test_paged_scheduler_oom(zmq_ctx):
     )
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
@@ -1113,7 +1137,9 @@ def test_paged_scheduler_dont_oom_during_cow(zmq_ctx):
     shared_prefix = rand(64)
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
@@ -1192,7 +1218,9 @@ def test_paged_scheduler_paging_to_host(
     prompts = [rand(prompt_len) for _ in range(num_prompts)]
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
@@ -1313,7 +1341,9 @@ def test_paged_scheduler_misc_sch_configs(
     shared_prefix = rand(prefix_len)
 
     push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        zmq_ctx, scheduler.request_q.zmq_endpoint
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
     )
 
     response_pull_socket = ZmqPullSocket[
