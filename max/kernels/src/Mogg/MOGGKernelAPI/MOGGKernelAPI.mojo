@@ -4356,7 +4356,9 @@ struct BottomK:
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
+            managed_tensor_slice_to_ndbuffer(input),
+            Int(k),
+            Int(axis),
         )
 
 
@@ -4396,7 +4398,9 @@ struct TopK:
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
+            managed_tensor_slice_to_ndbuffer(input),
+            Int(k),
+            Int(axis),
         )
 
 
@@ -8564,8 +8568,9 @@ struct Struct_fused_token_sampling:
         _trace_name: StaticString,
     ](
         out_idxs: OutputTensor[dtype=out_idx_type, rank=rank],
-        K: Scalar,
-        temperature: Scalar[dtype],
+        K: InputTensor[dtype = DType.int64, rank=1],
+        max_k: Scalar,
+        temperature: InputTensor[dtype = DType.float32, rank=1],
         top_p: Scalar[dtype],
         seed: UInt64,
         input: InputTensor[dtype=dtype, rank=rank],
@@ -8575,6 +8580,12 @@ struct Struct_fused_token_sampling:
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_idxs_buf = managed_tensor_slice_to_ndbuffer(out_idxs)
+        var K_buf = OptionalReg[NDBuffer[DType.int64, 1, MutableAnyOrigin]](
+            managed_tensor_slice_to_ndbuffer(K)
+        )
+        var temperature_buf = OptionalReg[
+            NDBuffer[DType.float32, 1, MutableAnyOrigin]
+        ](managed_tensor_slice_to_ndbuffer(temperature))
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
@@ -8582,7 +8593,7 @@ struct Struct_fused_token_sampling:
                 # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
                 # However, switching to just using our topk_fused_sampling leads to a -37% perf
                 # drop in q4_k benchmarking for llama 3.
-                if K == 1:
+                if max_k == 1:
                     argmax(
                         input.to_layout_tensor(),
                         rank - 1,
@@ -8590,16 +8601,23 @@ struct Struct_fused_token_sampling:
                     )
                     return
                 _fused_token_sampling_cpu(
-                    Int(K), input_buf, out_idxs_buf, temperature, top_p, seed
+                    Int(max_k),
+                    input_buf,
+                    out_idxs_buf,
+                    k=K_buf,
+                    temperature=temperature_buf,
+                    top_p=top_p,
+                    seed=seed,
                 )
             else:
                 var cuda_ctx = ctx.get_device_context()
                 _fused_token_sampling_gpu(
                     cuda_ctx,
-                    Int(K),
+                    Int(max_k),
                     input_buf,
                     out_idxs_buf,
-                    temperature=temperature,
+                    k=K_buf,
+                    temperature=temperature_buf,
                     top_p=top_p,
                     seed=seed,
                 )

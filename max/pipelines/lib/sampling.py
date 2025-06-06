@@ -54,6 +54,15 @@ def _sampling_input_types(
     )
     inputs["prev_tokens"] = prev_tokens_type
 
+    top_k_type = TensorType(DType.int64, ["batch"], device=device)
+    inputs["top_k"] = top_k_type
+
+    max_k_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
+    inputs["max_k"] = max_k_type
+
+    temperature_type = TensorType(DType.float32, ["batch"], device=device)
+    inputs["temperature"] = temperature_type
+
     # If we need to return logits, introduce tensor to append to.
     if return_logits:
         logits_type = TensorType(
@@ -202,10 +211,16 @@ def token_sampler(
             )
 
         # Apply top_k sampling
+        temperature = graph.inputs[
+            list(_input_dict).index("temperature")
+        ].tensor
+        top_k = graph.inputs[list(_input_dict).index("top_k")].tensor
+        max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
         tokens = topk_fused_sampling(
             logits=logits,
-            top_k=sampling_config.top_k,
-            temperature=sampling_config.temperature,
+            top_k=top_k,
+            max_k=max_k,
+            temperature=temperature,
             top_p=sampling_config.top_p,
             seed=sampling_config.seed,
         )
@@ -267,7 +282,6 @@ def token_sampler(
 
 
 def rejection_sampler(
-    top_k: int,
     device: DeviceRef,
     *,
     seed: int = 0,
@@ -305,7 +319,7 @@ def rejection_sampler(
             target_logit_offsets,
         ) = graph.inputs
 
-        sampler = RejectionSampler(device=device, top_k=top_k, seed=seed)
+        sampler = RejectionSampler(device=device, seed=seed)
         first_rejected_token, sampled_target_tokens = sampler(
             draft_tokens.tensor,
             draft_logits_for_sampled_tokens.tensor,

@@ -2236,9 +2236,10 @@ def scatter_set_constant(
 
 def topk_fused_sampling(
     logits: TensorValue,
-    top_k: int,
-    temperature: float,
+    top_k: TensorValueLike,
     *,
+    temperature: TensorValueLike = 1.0,
+    max_k: Optional[TensorValueLike] = None,
     top_p: float = 1.0,
     seed: int = 0,
 ) -> TensorValue:
@@ -2246,9 +2247,12 @@ def topk_fused_sampling(
 
     Args:
         logits: Input logits tensor of shape [batch_size, vocab_size].
-        top_k: Number of top tokens to consider for sampling.
+        top_k: Number of top tokens to consider for sampling. Can be a scalar
+            (which will be expanded to batch_size) or a tensor of shape [batch_size].
         temperature: Temperature for scaling logits before sampling.
+        top_p: Top-p (nucleus) sampling threshold.
         seed: Seed for the random number generator.
+        max_k: Maximum value of k across the batch. Required when top_k is a tensor.
     Returns:
         Sampled tokens tensor of shape [batch_size, 1].
 
@@ -2256,28 +2260,53 @@ def topk_fused_sampling(
         ValueError: If input validation fails.
     """
 
-    if top_k <= 0:
-        raise ValueError(f"expected top_k to be positive, got {top_k}")
+    batch_size = logits.shape[0]
+    device = logits.device
+    max_k_tensor = max_k
 
-    if temperature <= 0:
-        raise ValueError(
-            f"expected temperature to be positive, got {temperature}"
+    if isinstance(top_k, int):
+        max_k_tensor = ops.constant(
+            top_k, dtype=DType.int64, device=DeviceRef.CPU()
         )
+        top_k_tensor = ops.broadcast_to(
+            ops.constant(top_k, dtype=DType.int64, device=device), [batch_size]
+        )
+    else:
+        top_k_tensor = TensorValue(top_k)
+        if max_k_tensor is None:
+            raise ValueError(
+                "max_k must be explicitly set when top_k is a tensor"
+            )
+        if top_k_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"top_k tensor shape {top_k_tensor.shape} does not match batch_size {batch_size}"
+            )
+        max_k_tensor = TensorValue(max_k_tensor)
+
+    if isinstance(temperature, float):
+        temperature_tensor = ops.broadcast_to(
+            ops.constant(temperature, dtype=DType.float32, device=device),
+            [batch_size],
+        )
+    else:
+        temperature_tensor = TensorValue(temperature)
+        if temperature_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"temperature tensor shape {temperature_tensor.shape} does not match batch_size {batch_size}"
+            )
 
     if top_p <= 0 or top_p > 1:
         raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
 
     batch_shape = logits.shape[:-1]
-    device = logits.device
 
     return ops.custom(
         "sampler.fused_token_sampling",
         device=logits.device,
         values=[
-            ops.constant(top_k, dtype=DType.int64, device=DeviceRef.CPU()),
-            ops.constant(
-                temperature, dtype=DType.float32, device=DeviceRef.CPU()
-            ),
+            top_k_tensor,
+            max_k_tensor,
+            temperature_tensor,
             ops.constant(top_p, dtype=DType.float32, device=DeviceRef.CPU()),
             ops.constant(seed, dtype=DType.uint64, device=DeviceRef.CPU()),
             logits,

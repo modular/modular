@@ -24,7 +24,7 @@ from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
-
+from algorithm.reduction import max as reduce_max
 from utils import IndexList
 
 alias DEBUG_BENCH = False
@@ -100,6 +100,17 @@ fn test_case_batched[
     )
 
     ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+
+    var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
+        DimList(batch_size), ctx=ctx
+    )
+    var K_host_buffer = HostNDBuffer[DType.int64, 1](DimList(batch_size))
+    for i in range(batch_size):
+        K_host_buffer.tensor.data[i] = K
+
+    var max_k = Int(reduce_max(K_host_buffer.tensor))
+
+    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
     ctx.synchronize()
 
     @parameter
@@ -110,12 +121,13 @@ fn test_case_batched[
         fn run_func(ctx: DeviceContext) raises:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
-                K,
+                max_k,
                 device_in.tensor,
                 device_local_topk_vals.tensor,
                 device_local_topk_idxs.tensor,
                 device_out_vals.tensor,
                 device_out_idxs.tensor,
+                k=K_device_buffer.tensor,
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
             )
@@ -128,12 +140,13 @@ fn test_case_batched[
 
     _topk_gpu[sampling=sampling, largest=largest](
         ctx,
-        K,
+        max_k,  # max_k
         device_in.tensor,
         device_local_topk_vals.tensor,
         device_local_topk_idxs.tensor,
         device_out_vals.tensor,
         device_out_idxs.tensor,
+        k=K_device_buffer.tensor,
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -170,26 +183,35 @@ fn test_case_batched[
             @always_inline
             @parameter
             fn run_func_cpu(ctx: DeviceContext) raises:
-                _top_k_cpu[rank=rank, type=type, largest=largest](
+                _top_k_cpu[
+                    rank=rank,
+                    type=type,
+                    out_idx_type = DType.int64,
+                    largest=largest,
+                ](
                     in_buffer.tensor,
-                    K,
+                    max_k,
                     rank - 1,
                     topk_vals_cpu.tensor,
                     topk_idxs_cpu.tensor,
                     1,
                     True,
+                    k=K_host_buffer.tensor,
                 )
 
             time_kernel[run_func_cpu](m, ctx, "topk-cpu")
 
-        _top_k_cpu[rank=rank, type=type, largest=largest](
+        _top_k_cpu[
+            rank=rank, type=type, out_idx_type = DType.int64, largest=largest
+        ](
             in_buffer.tensor,
-            K,
+            max_k,
             rank - 1,
             topk_vals_cpu.tensor,
             topk_idxs_cpu.tensor,
             1,
             True,
+            k=K_host_buffer.tensor,
         )
 
         for i in range(topk_vals.tensor.num_elements()):
@@ -256,13 +278,35 @@ fn test_case_multi_rank[
     )
 
     ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    var batch_size: Int
+
+    @parameter
+    if rank == 1:
+        batch_size = 1
+    elif rank == 2:
+        batch_size = input_shape[0]
+    else:  # rank > 2
+        var last_dim = input_shape[rank - 1]
+        batch_size = Int(input_shape.flattened_length() / last_dim)
+
+    var K_host_buffer = HostNDBuffer[DType.int64, 1](DimList(batch_size))
+    for i in range(batch_size):
+        K_host_buffer.tensor.data[i] = K
+
+    var K_device_buffer = DeviceNDBuffer[DType.int64, 1](
+        DimList(batch_size), ctx=ctx
+    )
+    ctx.enqueue_copy(K_device_buffer.buffer, K_host_buffer.tensor.data)
+    ctx.synchronize()
+    var max_k = Int(reduce_max(K_host_buffer.tensor))
 
     topk_gpu[sampling=sampling, largest=largest](
         ctx,
-        K,
+        max_k,
         device_in.tensor,
         device_out_vals.tensor,
         device_out_idxs.tensor,
+        k=K_device_buffer.tensor,
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
@@ -278,14 +322,17 @@ fn test_case_multi_rank[
         var topk_vals_cpu = HostNDBuffer[type, rank](out_vals_shape)
         var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](out_idxs_shape)
 
-        _top_k_cpu[rank=rank, type=type, largest=largest](
+        _top_k_cpu[
+            rank=rank, type=type, out_idx_type = DType.int64, largest=largest
+        ](
             in_buffer.tensor,
-            K,
+            max_k,
             rank - 1,
             topk_vals_cpu.tensor,
             topk_idxs_cpu.tensor,
             1,
             True,
+            k=K_host_buffer.tensor,
         )
 
         for i in range(topk_vals.tensor.num_elements()):

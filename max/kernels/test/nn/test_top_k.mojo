@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
+from collections import List, OptionalReg
 from math import iota
 from random import rand, seed
 
@@ -86,10 +86,34 @@ fn test_case_sampling[
     )
 
     fill_fn[rank, type](input)
-    # input.fill(4)
+
+    var max_k = K
+
+    @parameter
+    if rank == 1:
+        batch_size = 1
+    elif rank == 2:
+        batch_size = input_shape.get[0]()
+    else:
+        batch_size = input_shape.get[0]() * input_shape.get[1]()
+    var temperature_ptr = UnsafePointer[Scalar[DType.float32]].alloc(batch_size)
+    for i in range(batch_size):
+        temperature_ptr[i] = temperature.cast[DType.float32]()
+    var temperature_buf = OptionalReg[
+        NDBuffer[DType.float32, 1, MutableAnyOrigin]
+    ](
+        NDBuffer[DType.float32, 1, MutableAnyOrigin](
+            temperature_ptr, DimList(batch_size)
+        )
+    )
 
     _top_k_sampling(
-        K, input, out_vals, out_idxs, temperature=temperature, seed=12
+        max_k,
+        input,
+        out_vals,
+        out_idxs,
+        temperature=temperature_buf,
+        seed=12,
     )
 
     var _xxx_no_lifetimes = input  # intentionally bad name

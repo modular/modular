@@ -796,6 +796,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self,
         logits: Tensor,
         prev_tokens: Tensor,
+        top_k: Tensor,
+        max_k: Tensor,
+        temperature: Tensor,
         *,
         logit_offsets: Optional[Tensor] = None,
         bitmask: Optional[Tensor] = None,
@@ -804,6 +807,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
     ) -> tuple[Tensor, Tensor]:
         base_inputs = [logits, prev_tokens]
         opt_inputs = [logit_offsets, bitmask]
+
+        base_inputs = [logits, prev_tokens, top_k, max_k, temperature]
 
         # Add frequency data if provided
         if frequency_data:
@@ -855,6 +860,23 @@ class TextGenerationPipeline(TokenGenerator[T]):
             dtype=DType.int64,
             device=self._devices[0],
         )
+
+        temperature = Tensor.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.temperature
+                    for context in context_batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(self._devices[0])
+        top_k_np = np.array(
+            [context.sampling_params.top_k for context in context_batch],
+            dtype=np.int64,
+        )
+        top_k = Tensor.from_numpy(top_k_np).to(self._devices[0])
+        max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
+        max_k = Tensor.from_numpy(max_k_np)
 
         if self._pipeline_config.sampling_config.do_penalties:
             frequency_data = []
@@ -910,6 +932,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             new_tokens, new_generated_tokens = self.sample_logits(
                 model_outputs.logits,
                 generated_tokens,
+                top_k,
+                max_k,
+                temperature,
                 logit_offsets=model_outputs.logit_offsets,
                 bitmask=bitmask,
                 frequency_data=frequency_data,
