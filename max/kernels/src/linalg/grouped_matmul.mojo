@@ -506,7 +506,7 @@ fn grouped_matmul_kernel[
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
-    var num_k_iters = K // BK
+    alias num_k_iters = K // BK
 
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
@@ -552,12 +552,12 @@ fn grouped_matmul_kernel[
                 block_tile_shape=block_tile_shape,
                 cluster_shape=cluster_shape,
                 partitioned_multicast=False,
+                num_k_iters=num_k_iters,
             ](
                 a_tma_op,
                 b_tma_op,
                 a_smem_iter,
                 b_smem_iter,
-                num_k_iters,
                 m_coord,
                 n_coord,
                 rank_n,
@@ -610,6 +610,7 @@ fn grouped_matmul_kernel[
         consumer_main_loop[
             cluster_shape=cluster_shape,
             num_consumer=num_consumer,
+            num_k_iters=num_k_iters,
         ](
             dummy_c_reg_tile,
             c_reg_tile,
@@ -619,7 +620,6 @@ fn grouped_matmul_kernel[
             full,
             empty,
             wgmma_op,
-            num_k_iters,
             local_warp_group_idx,
             warp_group_thread_idx,
         )
