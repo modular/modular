@@ -1283,7 +1283,7 @@ help_str = (
 @click.option(
     "--target-accelerator",
     default=None,
-    help="Specifiy the mojo target accelerator.",
+    help="Specify the mojo target accelerator.",
 )
 @click.option(
     "--disable-warnings",

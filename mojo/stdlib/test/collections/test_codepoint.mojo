@@ -23,7 +23,7 @@ def test_char_validity():
 
     assert_true(Codepoint.from_u32(0))
 
-    # For a visual intuition of what constitues a valid scalar value:
+    # For a visual intuition of what constitutes a valid scalar value:
     #   https://connorgray.com/ephemera/project-log#2025-01-09
 
     # Last valid code point in the smaller scalar value range.

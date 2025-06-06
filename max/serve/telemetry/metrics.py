@@ -31,7 +31,7 @@ from opentelemetry.sdk.metrics._internal import measurement
 
 """!! Jank alert !!
 
-We want to use OTEL for propagating telemetry. It is the best vendor-agnositc
+We want to use OTEL for propagating telemetry. It is the best vendor-agnostic
 metrics system, but that doens't mean that it is _good_.  OTEL is _slow_. If we
 use it directly, it significally degrades the perf of Max Serve. Consequently,
 we have all this machinery to observe some metric (MaxMeasurement) and record
@@ -39,13 +39,13 @@ the observation async.
 
 OTEL actively obscures its machinery, uses bunch of proxy classes, has an baroque inheritance tree, and is generally awful.
 To record an observation at a specific point in time you do the following:
-`meter.create_{foo}._real_instrument._measurement_consumer(Measurement(value, timestamp, instument, ...))`
+`meter.create_{foo}._real_instrument._measurement_consumer(Measurement(value, timestamp, instrument, ...))`
 
 Here is how you work with metrics (Instruments) observations (Measurements) and recording them (Consumers):
 Lets unpack:
 1. meter.create_{foo} gives you a proxy instrument with an obscured type eg _internal.instrument._ProxyCounter.
 2. `._real_instrument` The proxy can't do anything, you need to grab the _real_ instrument to record.
-3. `._measurement_consuemr` The _real_ instrument doesn't expose a way to set the time of the observation, so you have to directly talk to the consumer.
+3. `._measurement_consumer` The _real_ instrument doesn't expose a way to set the time of the observation, so you have to directly talk to the consumer.
 4. `Measurement(...)` now we can create a measurement with a timestamp & pass it down.
 """
 logger = logging.getLogger("max.serve")
@@ -55,7 +55,7 @@ _meter = get_meter_provider().get_meter("modular")
 NumberType = Union[float, int]
 OtelAttributes = Optional[dict[str, str]]
 
-# API_PROXIES the "types" of measurments we make from a meter
+# API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
 API_PROXIES = Union[
     api_instrument._ProxyCounter,

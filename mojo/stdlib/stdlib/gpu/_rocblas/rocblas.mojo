@@ -23546,7 +23546,7 @@ fn rocblas_stpmv(
 
     @param[in]
     A       device pointer storing matrix A,
-            of dimension at leat ( n * ( n + 1 ) / 2 ).
+            of dimension at least ( n * ( n + 1 ) / 2 ).
         - Before entry with uplo = rocblas_fill_upper, the array A
             must contain the upper triangular matrix packed sequentially,
             column by column, so that
@@ -24114,13 +24114,13 @@ fn rocblas_sgemm_batched(
               specifies the form of op( B ).
     @param[in]
     m         [rocblas_int]
-              matrix dimention m.
+              matrix dimension m.
     @param[in]
     n         [rocblas_int]
-              matrix dimention n.
+              matrix dimension n.
     @param[in]
     k         [rocblas_int]
-              matrix dimention k.
+              matrix dimension k.
     @param[in]
     alpha     device pointer or host pointer specifying the scalar alpha.
     @param[in]
@@ -45420,13 +45420,13 @@ fn rocblas_sgemm_strided_batched(
               specifies the form of op( B ).
     @param[in]
     m         [rocblas_int]
-              matrix dimention m.
+              matrix dimension m.
     @param[in]
     n         [rocblas_int]
-              matrix dimention n.
+              matrix dimension n.
     @param[in]
     k         [rocblas_int]
-              matrix dimention k.
+              matrix dimension k.
     @param[in]
     alpha     device pointer or host pointer specifying the scalar alpha.
     @param[in]
@@ -45458,7 +45458,7 @@ fn rocblas_sgemm_strided_batched(
     @param[in]
     batch_count
               [rocblas_int]
-              number of gemm operatons in the batch.
+              number of gemm operations in the batch.
 
     ******************************************************************."""
     return _get_dylib_function[

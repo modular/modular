@@ -5363,7 +5363,7 @@ struct DeviceContext(Copyable, Movable):
 
 
 struct DeviceMulticastBuffer[type: DType]:
-    """Represents a muticast memory object enables special memory operations to be broadcast
+    """Represents a multicast memory object enables special memory operations to be broadcast
     across a group of devices.
 
     Parameters:

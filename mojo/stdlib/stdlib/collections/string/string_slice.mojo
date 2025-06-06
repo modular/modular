@@ -649,7 +649,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
     # TODO: Change to `__init__(out self, *, from_utf8: Span[..])` once ambiguity
     #   with existing `unsafe_from_utf8` overload is fixed. Would require
-    #   signature comparision to take into account required named arguments.
+    #   signature comparison to take into account required named arguments.
     @staticmethod
     fn from_utf8(from_utf8: Span[Byte, origin]) raises -> StringSlice[origin]:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded

@@ -94,7 +94,7 @@ fn _block_swizzle_by_scale[
 
 
 # ===------------------------------------------------------------------===#
-# GPU Matmul Cofiguration
+# GPU Matmul Configuration
 # ===------------------------------------------------------------------===#
 
 
@@ -135,7 +135,7 @@ struct MatmulConfig[
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
     # done in lower precision to reduce traffic to intermediate buffer. This is
-    # acceptible since the number of partitions is small, typically < 8.
+    # acceptable since the number of partitions is small, typically < 8.
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 

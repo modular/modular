@@ -284,7 +284,7 @@ fn curandGetScrambleConstants64(
 
     Get a pointer to an array of scramble constants that can be used
     for quasirandom number generation.  The resulting pointer will
-    reference an array of unsinged long longs in host memory.
+    reference an array of unsigned long longs in host memory.
 
     The array contains constants for many dimensions.  Each dimension
     has a single unsigned long long constant.
@@ -1502,7 +1502,7 @@ fn curandGetScrambleConstants32(
 
     Get a pointer to an array of scramble constants that can be used
     for quasirandom number generation.  The resulting pointer will
-    reference an array of unsinged ints in host memory.
+    reference an array of unsigned ints in host memory.
 
     The array contains constants for many dimensions.  Each dimension
     has a single unsigned int constant.

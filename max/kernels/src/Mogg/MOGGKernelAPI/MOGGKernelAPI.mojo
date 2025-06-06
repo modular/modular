@@ -2800,7 +2800,7 @@ struct StaticReshape:
     fn get_view_strides[
         out_rank: Int,
     ](out_shape: DimList) -> DimList:
-        # reshape is a bit special as we assume the input is always contigous.
+        # reshape is a bit special as we assume the input is always contiguous.
         # So it will be the same with the output.
         var new_strides = StaticTuple[Dim, out_rank]()
 
@@ -4412,7 +4412,7 @@ struct TopK:
 
 
 @compiler.register("mo.non_maximum_suppression")
-struct NonMaximumSupression:
+struct NonMaximumSuppression:
     @staticmethod
     fn execute[
         dtype: DType
@@ -5205,7 +5205,7 @@ fn to_managed_tensor_slice_list[
         raw_list_ptr, data_ptrs.unsafe_ptr(), dim_values.unsafe_ptr()
     )
 
-    # TODO: revist the use of unknown here
+    # TODO: revisit the use of unknown here
     # Create output list
     var out_list = List[
         ManagedTensorSlice[
@@ -7175,7 +7175,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
     because the graph compiler doesn't know about the dependency between these
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
-    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
     """
     generic_fused_qk_rope_bshd_continuous_batch[
         interleaved=interleaved, target=target

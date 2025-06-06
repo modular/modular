@@ -67,7 +67,7 @@ fn mlirAffineExprEqual(lhs: MlirAffineExpr, rhs: MlirAffineExpr) -> Bool:
     return MLIR_func["mlirAffineExprEqual", Bool](lhs, rhs)
 
 
-# FIXEME(codegen): static function mlirAffineExprIsNull
+# FIXME(codegen): static function mlirAffineExprIsNull
 
 
 fn mlirAffineExprPrint[W: Writer](mut writer: W, affine_expr: MlirAffineExpr):

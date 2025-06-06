@@ -139,7 +139,7 @@ class InputContext(Protocol):
     ) -> list[npt.NDArray[np.int32]]:
         """Returns a set of indices for the tokens in the output that should be masked.
 
-        This is primarly used for the min_tokens setting, where we mask
+        This is primarily used for the min_tokens setting, where we mask
         `eos` tokens in the logits to avoid generating them before we reach
         min_tokens.
         """

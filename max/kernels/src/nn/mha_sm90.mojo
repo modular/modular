@@ -1284,7 +1284,7 @@ fn _mha_sm90[
     1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
       will need a separate reduction kernel at the end.
 
-    2 Frist bmm becomes gemv and second bmm becomes gevm.
+    2 First bmm becomes gemv and second bmm becomes gevm.
       TODO: use more optimized kernels for them
 
     """

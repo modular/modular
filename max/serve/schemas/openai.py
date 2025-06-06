@@ -1462,7 +1462,7 @@ class VectorStore(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1508,7 +1508,7 @@ class VectorStore1(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1642,7 +1642,7 @@ class ModifyRunRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1743,7 +1743,7 @@ class ThreadObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1776,7 +1776,7 @@ class VectorStore2(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1822,7 +1822,7 @@ class VectorStore3(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to a vector store. This can be useful for storing additional information about the vector store in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1867,7 +1867,7 @@ class ModifyThreadRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -1910,7 +1910,7 @@ class ModifyMessageRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -2310,7 +2310,7 @@ class VectorStoreObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -2324,7 +2324,7 @@ class UpdateVectorStoreRequest(BaseModel):
     expires_after: Optional[VectorStoreExpirationAfter] = None
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -2604,7 +2604,7 @@ class Batch(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -3761,7 +3761,7 @@ class AssistantObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
         1,
@@ -3844,7 +3844,7 @@ class CreateAssistantRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
         1,
@@ -3898,7 +3898,7 @@ class ModifyAssistantRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
         1,
@@ -4035,7 +4035,7 @@ class RunObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     usage: RunCompletionUsage
     temperature: Optional[float] = Field(
@@ -4092,7 +4092,7 @@ class CreateMessageRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4213,7 +4213,7 @@ class CreateVectorStoreRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4456,7 +4456,7 @@ class CreateRunRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
         1,
@@ -4500,7 +4500,7 @@ class CreateThreadRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4565,7 +4565,7 @@ class MessageObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
 
 
@@ -4837,7 +4837,7 @@ class CreateChatCompletionRequest(BaseModel):
     )
     service_tier: Optional[Literal['auto', 'default']] = Field(
         None,
-        description="Specifies the latency tier to use for processing the request. This parameter is relevant for customers subscribed to the scale tier service:\n  - If set to 'auto', the system will utilize scale tier credits until they are exhausted.\n  - If set to 'default', the request will be processed using the default service tier with a lower uptime SLA and no latency guarentee.\n  - When not set, the default behavior is 'auto'.\n\n  When this parameter is set, the response body will include the `service_tier` utilized.\n",
+        description="Specifies the latency tier to use for processing the request. This parameter is relevant for customers subscribed to the scale tier service:\n  - If set to 'auto', the system will utilize scale tier credits until they are exhausted.\n  - If set to 'default', the request will be processed using the default service tier with a lower uptime SLA and no latency guarantee.\n  - When not set, the default behavior is 'auto'.\n\n  When this parameter is set, the response body will include the `service_tier` utilized.\n",
     )
     stop: Optional[Union[str, List[str]]] = Field(
         None,
@@ -4955,7 +4955,7 @@ class CreateThreadAndRunRequest(BaseModel):
     )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
         1,
@@ -5044,7 +5044,7 @@ class RunStepObject(BaseModel):
     )
     metadata: Dict[str, Any] = Field(
         ...,
-        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maxium of 512 characters long.\n',
+        description='Set of 16 key-value pairs that can be attached to an object. This can be useful for storing additional information about the object in a structured format. Keys can be a maximum of 64 characters long and values can be a maximum of 512 characters long.\n',
     )
     usage: RunStepCompletionUsage
 

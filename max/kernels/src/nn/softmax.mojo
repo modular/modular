@@ -550,7 +550,7 @@ fn logsoftmax[
     output: NDBuffer[mut=True, type, rank, _, static_shape],
     axis: Int,
 ) raises:
-    # TODO: Add rowwise generator to de-duplicate partioning logic between
+    # TODO: Add rowwise generator to de-duplicate partitioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
         raise Error("logsoftmax not supported on non-inner axis yet")
@@ -580,7 +580,7 @@ fn logsoftmax[
             @always_inline
             # Given input lambda accepts N-dimensional coordinates, but the
             # softmax base routines operate on 1D buffers. Here we wrap the
-            # given input lamda with some 1d-to-Nd translation logic.
+            # given input lambda with some 1d-to-Nd translation logic.
             fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
@@ -634,7 +634,7 @@ fn _softmax_cpu[
     output: NDBuffer[mut=True, type, rank, _, static_shape],
     axis: Int,
 ) raises:
-    # TODO: Add rowwise generator to de-duplicate partioning logic between
+    # TODO: Add rowwise generator to de-duplicate partitioning logic between
     # softmax and logsoftmax
     if axis != rank - 1:
         raise Error("softmax not supported on non-inner axis yet")
@@ -664,7 +664,7 @@ fn _softmax_cpu[
             @always_inline
             # Given input lambda accepts N-dimensional coordinates, but the
             # softmax base routines operate on 1D buffers. Here we wrap the
-            # given input lamda with some 1d-to-Nd translation logic.
+            # given input lambda with some 1d-to-Nd translation logic.
             fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
@@ -897,7 +897,7 @@ fn _online_softmax_kernel[
     alias num_m_mmas = WM // mma_shape[0]
     alias num_n_mmas = WN // mma_shape[1]
 
-    # TODO: This is a temporary hack, hopefull we can come up with a better way.
+    # TODO: This is a temporary hack, hopefully we can come up with a better way.
     alias mma_fragment_groups = 2 if is_nvidia_gpu() else 1
 
     # Each 16x8 mma tile has two 8x8 units and corresponds to 8x4 thread layout
@@ -1499,7 +1499,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     rowmax: UnsafePointer[Scalar[type], **_],
     rowsum: UnsafePointer[Scalar[type], **_],
 ):
-    # Here, we use naming conventions alligning with MHA's
+    # Here, we use naming conventions aligning with MHA's
     alias num_m_mmas = score_layout_by_mma_unit.shape[0].value()
     alias num_n_mmas = score_layout_by_mma_unit.shape[1].value()
     alias num_warps_m = block_layout_by_warp.shape[0].value()

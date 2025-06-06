@@ -95,7 +95,7 @@ struct Codepoint(
     validly appear in UTF-16 encoded text.
 
     The difference between codepoints and scalar values is a technical
-    distiction related to the backwards-compatible workaround chosen to enable
+    distinction related to the backwards-compatible workaround chosen to enable
     UTF-16 to encode the full range of the Unicode codespace. For simplicities
     sake, and to avoid a confusing clash with the Mojo `Scalar` type, this type
     is pragmatically named `Codepoint`, even though it is restricted to valid

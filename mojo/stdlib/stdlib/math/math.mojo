@@ -2598,7 +2598,7 @@ fn _call_libm[
 
     @parameter
     if not _type_is_libm_supported(arg_type):
-        # Coerse to f32 if the value is not representable by libm.
+        # Coerce to f32 if the value is not representable by libm.
         return _call_libm_impl[func_name, result_type = DType.float32](
             arg.cast[DType.float32]()
         ).cast[result_type]()

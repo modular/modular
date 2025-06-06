@@ -681,7 +681,7 @@ fn matmulb2b[
                     # B[Kc, Nc]   - held
                     #
                     # If we use nontemporal prefetches (i.e. `prefetchnta`
-                    # on x86) on `A`, then it won't necessarilly be stored in the
+                    # on x86) on `A`, then it won't necessarily be stored in the
                     # L2 cache, or it might be stored but not in a recently used
                     # position, so that it would be quickly evicted, and unlikely
                     # to use more than 1-way from each set it occupies.
@@ -693,7 +693,7 @@ fn matmulb2b[
                         # A[Mr, Kc]   - held
                         # B[Kc, WNr]  - replaced
                         #
-                        # These sizes roughly indicate how mcuh data is needed at
+                        # These sizes roughly indicate how much data is needed at
                         # a cache level. Here, bbecause `A` is the only array that
                         # can be held, `matmul_ukern` strides across it, touching
                         # only one element per cacheline at a time, while streaming

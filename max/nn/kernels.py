@@ -377,7 +377,7 @@ def fused_qkv_ragged_matmul_quantized(
     # share the same scale. If `has_zp` is `True`, there is also a group-wise zero
     # point that need to be subtracted from the quantized weights.
     # Since the new extensibility API doesn't currently support `bool` type parameters,
-    # we pass `has_zp` as an interger (`has_zp_int`).
+    # we pass `has_zp` as an integer (`has_zp_int`).
     # For GPTQ, `has_zp_int` will always be 0.
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,

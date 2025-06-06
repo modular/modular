@@ -375,10 +375,10 @@ fn test_copy_to_tile_major_layout():
         print("")
 
     # CHECK: mat_4x4_tiled_2x2:
-    # CEHCK: row: 0 data 0.0         4.0     1.0     5.0
-    # CEHCK: row: 1 data 2.0         6.0     3.0     7.0
-    # CEHCK: row: 2 data 8.0         12.0    9.0     13.0
-    # CEHCK: row: 3 data 10.0        14.0    11.0    15.0
+    # CHECK: row: 0 data 0.0         4.0     1.0     5.0
+    # CHECK: row: 1 data 2.0         6.0     3.0     7.0
+    # CHECK: row: 2 data 8.0         12.0    9.0     13.0
+    # CHECK: row: 3 data 10.0        14.0    11.0    15.0
     print("mat_4x4_tiled_2x2:")
     for i in range(4):
         print("row:", i, "data ", end="")

@@ -33,7 +33,7 @@ fn _run_badbuf(ctx: DeviceContext) raises:
     host_ptr.free()
 
     try:
-        # Release the bad buffer, which should raise an execption in Mojo instead of crashing.
+        # Release the bad buffer, which should raise an exception in Mojo instead of crashing.
         _ = bad_buf^
         ctx.synchronize()
 

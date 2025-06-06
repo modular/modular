@@ -822,7 +822,7 @@ struct CPython(Copyable, Movable):
         #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
         #   is a dynamic library being loaded as a Python extension module,
         #   and we need to find CPython symbols that are statically linked
-        #   into the `python` main executable. On those paltforms where
+        #   into the `python` main executable. On those platforms where
         #   `python` executable can be statically linked (Linux), it's
         #   important that we don't load a second copy of CPython symbols
         #   into the process by loading the `libpython` dynamic library.
@@ -1251,7 +1251,7 @@ struct CPython(Copyable, Movable):
         # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
         # after the caller imports said module.
 
-        # TODO: it would be nice to programatically call a CPython API to get the value here
+        # TODO: it would be nice to programmatically call a CPython API to get the value here
         # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
         # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
         # docs.

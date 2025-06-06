@@ -170,7 +170,7 @@ Changes to Python-Mojo interoperability:
 - Since virtually any operation on a `PythonObject` can raise, the
   `PythonObject` struct no longer implements the `Indexer` and `Intable` traits.
   Instead, it now conforms to `IntableRaising`, and users should convert
-  explictly to builtin types and handle exceptions as needed. In particular, the
+  explicitly to builtin types and handle exceptions as needed. In particular, the
   `PythonObject.__int__` method now returns a Python `int` instead of a mojo
   `Int`, so users must explicitly convert to a mojo `Int` if they need one (and
   must handle the exception if the conversion fails, e.g. due to overflow).
@@ -304,6 +304,6 @@ Changes to Python-Mojo interoperability:
 - [#4684](https://github.com/modular/modular/issues/4684) - Failure inferring
   type of initializer list from field of struct.
 - [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
-  unsigned `gt` and `le` comparisions.
+  unsigned `gt` and `le` comparisons.
 - [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
   handling `x or y` expressions with PythonObject.

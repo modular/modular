@@ -73,7 +73,7 @@ fn mlirExecutionEngineDestroy(jit: MlirExecutionEngine) -> None:
     return MLIR_func["mlirExecutionEngineDestroy", NoneType._mlir_type](jit)
 
 
-# FIXEME(codegen): static function mlirExecutionEngineIsNull
+# FIXME(codegen): static function mlirExecutionEngineIsNull
 
 
 fn mlirExecutionEngineInvokePacked(

@@ -86,7 +86,7 @@ fn test[
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
-    # Contruct buffers.
+    # Construct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
@@ -132,7 +132,7 @@ fn test[
     ctx.enqueue_copy(v_device_ptr, v_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](

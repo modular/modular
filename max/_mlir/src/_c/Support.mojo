@@ -86,7 +86,7 @@ alias MlirStringRef = StaticString
 #  Constructs a string reference from the pointer and length. The pointer need
 #  not reference to a null-terminated string.
 
-# FIXEME(codegen): static function mlirStringRefCreate
+# FIXME(codegen): static function mlirStringRefCreate
 
 
 fn mlirStringRefCreateFromCString(str: UnsafePointer[Int8]) -> MlirStringRef:
@@ -117,13 +117,13 @@ struct MlirLogicalResult:
     var value: Int8
 
 
-# FIXEME(codegen): static function mlirLogicalResultIsSuccess
+# FIXME(codegen): static function mlirLogicalResultIsSuccess
 
-# FIXEME(codegen): static function mlirLogicalResultIsFailure
+# FIXME(codegen): static function mlirLogicalResultIsFailure
 
-# FIXEME(codegen): static function mlirLogicalResultSuccess
+# FIXME(codegen): static function mlirLogicalResultSuccess
 
-# FIXEME(codegen): static function mlirLogicalResultFailure
+# FIXME(codegen): static function mlirLogicalResultFailure
 
 # ===----------------------------------------------------------------------===//
 #  MlirLlvmThreadPool.
@@ -152,7 +152,7 @@ fn mlirTypeIDCreate(ptr: UnsafePointer[NoneType]) -> MlirTypeID:
     return MLIR_func["mlirTypeIDCreate", MlirTypeID](ptr)
 
 
-# FIXEME(codegen): static function mlirTypeIDIsNull
+# FIXME(codegen): static function mlirTypeIDIsNull
 
 
 fn mlirTypeIDEqual(type_id1: MlirTypeID, type_id2: MlirTypeID) -> Bool:

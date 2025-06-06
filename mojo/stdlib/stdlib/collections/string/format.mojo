@@ -88,7 +88,7 @@ from utils import Variant
 # NOTE(#3765): an interesting idea would be to allow custom start and end
 # characters for formatting (passed as parameters to Formatter), this would be
 # useful for people developing custom templating engines as it would allow
-# detemining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
+# determining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)

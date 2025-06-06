@@ -646,7 +646,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Args:
             value: The value to append.
-            count: The ammount of items to append. Must be less than or equal to
+            count: The amount of items to append. Must be less than or equal to
                 `value.size`.
 
         Notes:

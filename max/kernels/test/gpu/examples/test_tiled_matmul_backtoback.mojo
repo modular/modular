@@ -439,7 +439,7 @@ fn b2b_gemm[
             d_reg_tile,
             ab_iter,
             c_gmem_iter,
-            a_smem_iter,  # ingored
+            a_smem_iter,  # ignored
             c_smem_iter,
             ceildiv(N, BK),
             num_b_rows=num_rows_b,

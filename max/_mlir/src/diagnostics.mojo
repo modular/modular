@@ -73,7 +73,7 @@ alias DiagnosticHandlerID = _c.Diagnostics.MlirDiagnosticHandlerID
 
 @value
 struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
-    """Deals with attaching and detaching diagnostic funcions to an MLIRContext.
+    """Deals with attaching and detaching diagnostic functions to an MLIRContext.
 
     Parameters:
         handler: A function that handles a given Diagnostic.
@@ -114,7 +114,7 @@ struct DiagnosticHandlerWithData[
     handler: fn (Diagnostic, mut UserDataType) -> Bool,
     delete_user_data: fn (UnsafePointer[UserDataType]) -> None,
 ](Copyable, Movable):
-    """Deals with attaching and detaching diagnostic funcions along with user data to an MLIRContext.
+    """Deals with attaching and detaching diagnostic functions along with user data to an MLIRContext.
 
     Parameters:
         UserDataType: The type of data being stored for use in the handler.
@@ -154,7 +154,7 @@ struct DiagnosticHandlerWithData[
 
 
 struct ErrorCapturingDiagnosticHandler:
-    """Captures the errors craeted via a DiagnosticHandler and raises them as mojo exceptions.
+    """Captures the errors created via a DiagnosticHandler and raises them as mojo exceptions.
     """
 
     alias Handler = DiagnosticHandlerWithData[

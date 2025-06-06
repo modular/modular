@@ -78,7 +78,7 @@ class ModelWorker:
         ]
         if settings.metric_recording not in supported_methods:
             logger.info(
-                "Unsuported recording method. Metrics unavailable in model worker"
+                "Unsupported recording method. Metrics unavailable in model worker"
             )
             return
 

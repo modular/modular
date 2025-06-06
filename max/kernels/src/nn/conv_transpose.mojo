@@ -325,7 +325,7 @@ fn conv_transpose_shape[
 fn get_num_partitions[
     micro_kernel_height: Int, micro_kernel_f_size: Int
 ](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
-    """Partition the worload in (batch&group, C, F, H) dimensions.
+    """Partition the workload in (batch&group, C, F, H) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
     """
@@ -1454,7 +1454,7 @@ fn conv_transposed[
             @always_inline
             @parameter
             fn body[width: Int](idx: Int):
-                # Cooridates of the current index.
+                # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
@@ -1520,9 +1520,9 @@ fn conv_backward_data_cudnn[
 
     # basically, vibes are that a cuda handle is the gateway to using cudnn
     # we want all the work from that handle to be done on a separate stream
-    # than the main stream, otherwise, everyhting goes on main stream and
+    # than the main stream, otherwise, everything goes on main stream and
     # slows down the whole thing. binding handle to stream unclocks parallelism, and now
-    # 2 handles , wth 2 separate functions, can work at same time.
+    # 2 handles , with 2 separate functions, can work at same time.
 
     # ---------------- Tensor / filter descriptors -------------------------
     check_cudnn_error(

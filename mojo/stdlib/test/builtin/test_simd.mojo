@@ -2053,4 +2053,4 @@ def main():
     test_large_int_types()
     test_is_power_of_two_simd()
     test_comptime()
-    # TODO: add tests for __and__, __or__, anc comparison operators
+    # TODO: add tests for __and__, __or__, and comparison operators

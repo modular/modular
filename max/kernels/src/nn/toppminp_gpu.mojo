@@ -88,7 +88,7 @@ fn topk_wrapper[
         in_buffer: UnsafePointer[Scalar[T]] - Input buffer containing the elements to process
         local_topk_vals: UnsafePointer[Scalar[T]] - Output buffer to store the local top-K values
         local_topk_idxs: UnsafePointer[Scalar[out_idx_type]] - Output buffer to store the indices of local top-K elements
-        p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p cofficient
+        p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
         skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
     tid = thread_idx.x

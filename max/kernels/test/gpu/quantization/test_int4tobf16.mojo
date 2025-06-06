@@ -13,7 +13,7 @@
 
 # https://github.com/PaddlePaddle/Paddle/blob/3862f8303d2723c03ffb42ce332d4c570906669f/paddle/phi/kernels/funcs/weight_only_gemv.cu#L795
 
-# logic and shift instruciton: lop3
+# logic and shift instruction: lop3
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3
 
 from sys import has_neon

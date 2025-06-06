@@ -31,7 +31,7 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
         rhs: 64 bit uint.
 
     Returns:
-        A value which is similar in its bitpattern to result of a folded multply.
+        A value which is similar in its bitpattern to result of a folded multiply.
     """
     # Extend to 128 bits and multiply.
     m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()

@@ -13,7 +13,7 @@
 
 # This is an example of how to run max-pipelines serve in a docker container.
 
-# Create a build image to download depedencies
+# Create a build image to download dependencies
 FROM ghcr.io/modular/magic:latest AS production
 
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git

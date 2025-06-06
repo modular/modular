@@ -1038,7 +1038,7 @@ struct BTileGenerator[
                 # a bit of trickieness going on here, this works because:
                 #   1. tile_k is the same for every thread (tile_n is not) since threads
                 #       don't currently partition on the K dimension
-                #   2. the n dimension of each thread's tile is gauranteed to be an
+                #   2. the n dimension of each thread's tile is guaranteed to be an
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
                 b_flat.data.offset(

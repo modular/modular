@@ -358,7 +358,7 @@ fn multistage_mma_q[
                     b_wtile_coord0, b_wtile_coord1
                 )
 
-                # prefecth scales into regs every (group_size) rows
+                # prefetch scales into regs every (group_size) rows
                 if (k_tile_id + 1) % (group_size // BK) == 0:
                     scales_smem_iter._incr()
                     scales_warp_tile = scales_smem_iter[].tile[
@@ -1071,7 +1071,7 @@ fn repack_Q4_0_for_sm8x[
             alias thd_layout = Layout.row_major(8, 4)
             # The first 2 Bytes is the scale for this Q4_0 block
             # GGUF pack elements 0-15 in the lower 4-bit of the 16 Bytes,
-            # and elments 16-31 in the higher 4-bit of the 16 Bytes.
+            # and elements 16-31 in the higher 4-bit of the 16 Bytes.
             #
             # This gets elements 0, 1, 8, 9, 16, 17, 24, 25 for
             # thread 0.

@@ -82,7 +82,7 @@ def test_error_cases():
         _ = atof(".")
 
     # TODO:
-    # This should actualy work and approximate to the closest float64
+    # This should actually work and approximate to the closest float64
     # but we don't support it yet. See the section
     # 11, "Processing long numbers quickly" in the paper
     # Number Parsing at a Gigabyte per Second by Daniel Lemire

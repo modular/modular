@@ -966,7 +966,7 @@ fn _buffer_load_store_lds_nowait[
     ],
     lds_offset: Int32,
 ):
-    """Loads four bytes from global memory ands writes them to shared memory.
+    """Loads four bytes from global memory and writes them to shared memory.
 
     Copies from global memory to shared memory (aka LDS) bypassing storing to
     register without waiting for the copy to finish. A call to wait_cnt_amd()
@@ -1019,7 +1019,7 @@ fn buffer_load_store_lds[
     ],
     lds_offset: Int32,
 ):
-    """Loads four bytes from global memory ands writes them to shared memory.
+    """Loads four bytes from global memory and writes them to shared memory.
 
     Copies from global memory to shared memory (aka LDS) bypassing storing to
     register.

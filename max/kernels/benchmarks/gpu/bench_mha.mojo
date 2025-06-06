@@ -108,7 +108,7 @@ fn run_mha[
     ctx.enqueue_copy(v_device_ptr, v_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, MutableAnyOrigin, DimList(Dim(), Dim(), num_heads, depth)
     ](

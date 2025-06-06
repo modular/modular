@@ -171,7 +171,7 @@ def main():
             )
             == True
         ):
-            print("Sucess!")
+            print("Success!")
         else:
             print("Failed!")
             print("GPU results: ", output_gpu_np)

@@ -985,7 +985,7 @@ fn _reduce_along_outer_dimension[
 
     # parallelize across slices of the input, where a slice is [reduce_dim, inner_dim]
     # the slice is composed of [reduce_dim, simd_width] chunks
-    # these chunks are reduced simaltaneously across the reduce_dim using simd instructions
+    # these chunks are reduced simultaneously across the reduce_dim using simd instructions
     # and accumulation
     var parallelism_size: Int = total_size // (reduce_dim_size * inner_dim)
 

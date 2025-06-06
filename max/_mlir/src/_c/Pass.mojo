@@ -102,7 +102,7 @@ fn mlirPassManagerDestroy(pass_manager: MlirPassManager) -> None:
     )
 
 
-# FIXEME(codegen): static function mlirPassManagerIsNull
+# FIXME(codegen): static function mlirPassManagerIsNull
 
 
 fn mlirPassManagerGetAsOpPassManager(

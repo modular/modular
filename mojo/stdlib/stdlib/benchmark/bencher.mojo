@@ -187,7 +187,7 @@ struct ThroughputMeasure(Copyable, Movable):
         """Gets a string representation of this `ThroughputMeasure`.
 
         Returns:
-            The string represntation.
+            The string representation.
         """
         return String(self.metric)
 
@@ -337,7 +337,7 @@ struct BenchConfig(Copyable, Movable):
         num_repetitions: Int = 1,
         flush_denormals: Bool = True,
     ) raises:
-        """Constructs and initializes Benchmark config object with default and inputed values.
+        """Constructs and initializes Benchmark config object with default and inputted values.
 
         Args:
             out_file: Output file to write results to.
@@ -1083,7 +1083,7 @@ struct Bench(Writable, Stringable):
             except e:
                 abort(String(e))
 
-        # Write the timeing labels
+        # Write the timing labels
         if self.config.verbose_timing:
             var labels = self.config.VERBOSE_TIMING_LABELS
             # skip the met label

@@ -129,7 +129,7 @@ def serve_pipeline(
         pipeline_task=pipeline_task,
     )
 
-    # Intialize and serve webserver.
+    # Initialize and serve webserver.
     app = fastapi_app(
         settings,
         pipeline_settings,

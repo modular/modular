@@ -498,7 +498,7 @@ def test_split():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
-    # escape secuences are accepted
+    # escape sequences are accepted
     var univ_sep_var = String(
         " ",
         "\t",

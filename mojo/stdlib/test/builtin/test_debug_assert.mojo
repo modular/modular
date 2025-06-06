@@ -35,7 +35,7 @@ def test_debug_assert():
 # CHECK-LABEL: test_debug_assert_multiple_args
 def test_debug_assert_multiple_args():
     print("== test_debug_assert_multiple_args")
-    debug_assert(True, "passing mutliple args: ", 42, ", ", 4.2)
+    debug_assert(True, "passing multiple args: ", 42, ", ", 4.2)
     # CHECK: is reached
     print("is reached")
 

@@ -247,7 +247,7 @@ class MultimodalKVCacheManager(KVCacheManager):
         assert "max_vision_seq_len" in kwargs, "max_vision_seq_len must be set"
         max_vision_seq_len = kwargs["max_vision_seq_len"]
 
-        # figure out the relative sizes of caches based on KV Cach settings
+        # figure out the relative sizes of caches based on KV Cache settings
         text_size_per_token = num_layers * max_seq_len
         vision_size_per_token = num_vision_layers * max_vision_seq_len
         text_to_vision_ratio = text_size_per_token / (

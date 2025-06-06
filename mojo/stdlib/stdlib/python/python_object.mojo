@@ -520,7 +520,7 @@ struct PythonObject(
         # Safety
 
         `type_obj_ptr` must be a Python type object created by
-        `PythonTypeBuilder`, whose underying storage type is the `PyMojoObject`
+        `PythonTypeBuilder`, whose underlying storage type is the `PyMojoObject`
         struct. Use of any other type object is invalid.
         """
 

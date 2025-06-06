@@ -78,7 +78,7 @@ class VisionEncoder(Layer):
         )
 
         # Positional Encodings
-        # map each position id to its corresponding embedding representing that posiiton
+        # map each position id to its corresponding embedding representing that position
         position_embedding = self.patch_positional_embedding(
             patch_embeds, position_ids
         )

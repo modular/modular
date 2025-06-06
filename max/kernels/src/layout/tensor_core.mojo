@@ -772,7 +772,7 @@ struct TensorCore[
         self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor,
-        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+        mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
 
@@ -801,7 +801,7 @@ struct TensorCore[
         self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor,
-        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+        mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
     ):
         constrained[
             self.supported_fp32 or self.supported_half or self.supported_fp8
@@ -877,8 +877,8 @@ struct TensorCore[
         self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor,
-        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
-        warp_tile_coord_n: UInt = 0,  # n coordiante of warp tile
+        mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
+        warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
         alias frag_type = fragments.element_type
         alias simd_size = simdwidthof[in_type]()
@@ -914,8 +914,8 @@ struct TensorCore[
         self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor,
-        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
-        warp_tile_coord_n: UInt = 0,  # n coordiante of warp tile
+        mma_tile_coord_k: UInt = 0,  # the k coordinate of mma tile
+        warp_tile_coord_n: UInt = 0,  # n coordinate of warp tile
     ):
         constrained[
             self.supported_fp32 or self.supported_half or self.supported_fp8
@@ -1253,7 +1253,7 @@ fn _load_matrix_frag[
     #
     # Left is for A since it match A's mma tile layout exactly. It's also for B
     # 16x8x16 when two 16x8 matrices are grouped in one load (using ldmatrix.trans).
-    # When B is *transposed*, we arrage 4 matrices in row-major so that mat0-1
+    # When B is *transposed*, we arrange 4 matrices in row-major so that mat0-1
     # contribute to one mma's fragment.
     # !!! Don't use column major and pass mat0, mat2's register to HMMA. This
     # hits undocumented register conflicts and is very slow !!!

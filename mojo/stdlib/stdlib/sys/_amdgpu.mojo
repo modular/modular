@@ -293,7 +293,7 @@ fn message_append_args(
 
 
 # ===-----------------------------------------------------------------------===#
-# Serivces - printf
+# Services - printf
 # ===-----------------------------------------------------------------------===#
 
 
@@ -383,7 +383,7 @@ fn fprintf_append_args(
     message. The remaining arguments are ignored. Behaviour is
     undefined if num_args is greater then seven.
 
-    If is_last is zero, the function returns a message desciptor that
+    If is_last is zero, the function returns a message descriptor that
     must be used by a subsequent call to any __ockl_fprintf*
     function. If is_last is non-zero, the function causes the current
     fprintf to be completed on the host-side, and returns the value
@@ -439,7 +439,7 @@ fn fprintf_append_string_n(
      The call to message_append_args() ensures that during
      transmission, the string is null-padded to a multiple of eight.
 
-     If is_last is zero, the function returns a message desciptor that
+     If is_last is zero, the function returns a message descriptor that
      must be used by a subsequent call to any __ockl_fprintf*
      function. If is_last is non-zero, the function causes the current
      fprintf to be completed on the host-side, and returns the value

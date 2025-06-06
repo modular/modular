@@ -1411,7 +1411,7 @@ Special thanks to our community contributors:
 
 - Added [`SIMD.from_bytes()`](/mojo/stdlib/builtin/simd/SIMD/#from_bytes) and
   [`SIMD.as_bytes()`](/mojo/stdlib/builtin/simd/SIMD/#as_bytes) to convert a
-  list of bytes to a list of scalars and vice versa, accepting the endianess as
+  list of bytes to a list of scalars and vice versa, accepting the endianness as
   an argument. Similar to Python `int.from_bytes()` and `int.to_bytes()`
   functions.
 
@@ -3087,7 +3087,7 @@ detailed information in the following sections:
     ```
 
     The algorithm requires $$O(N)$$ auxiliary memory. If extra memory allocation
-    fails, the program crashs.
+    fails, the program crashes.
 
   - `sort()` no longer takes `LegacyPointer` since that type is now removed.
 

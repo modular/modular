@@ -369,7 +369,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         (
             "NUM_THREADS*4 must be multiple of K9_BK to avoid quantization "
             "issues during GMEM->SMEM tiling (loading only parts of the "
-            "final row of Bs during each iteraion)"
+            "final row of Bs during each iteration)"
         ),
     ]()
     constrained[

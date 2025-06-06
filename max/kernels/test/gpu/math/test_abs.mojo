@@ -86,7 +86,7 @@ def test_abs():
         ]()
     )
     # Should be able to mask with 0x7fff7fff
-    # but instead it does low and high halfs sequentially. Like this
+    # but instead it does low and high halves sequentially. Like this
     # s_and_b32 s3, s2, 0x7fff
     # s_lshr_b32 s2, s2, 16
     # s_and_b32 s2, s2, 0x7fff

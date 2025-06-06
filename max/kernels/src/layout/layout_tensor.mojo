@@ -6511,7 +6511,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)
@@ -6569,7 +6569,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)

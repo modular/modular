@@ -346,7 +346,7 @@ fn flare_mla_decoding_dispatch[
     alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
     alias WM = BM
     alias WN = 16
-    # num warps in M and N, multipled by warp size.
+    # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
     alias accum_type = get_accum_type[q.type]()
@@ -842,7 +842,7 @@ fn mla_decoding_single_batch[
             nope_dim // BK,
         )
 
-        # Cacluate the last `rope_dim` part of Q @ K
+        # Calculate the last `rope_dim` part of Q @ K
         multistage_mma[
             BM,
             BN,
@@ -1920,7 +1920,7 @@ fn mla_prefill_single_batch[
         )
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, depth, axis=0](0, 0)
 
-        # here we set up varibles for k_rope tensor
+        # here we set up variables for k_rope tensor
         alias k_rope_gmem_layout = Layout(
             IntTuple(Int(BN), Int(cache_depth)),
             IntTuple(Int(cache_num_heads * cache_depth), 1),
@@ -2625,7 +2625,7 @@ fn mla_prefill_plan_kernel[
 
 
 # ===-----------------------------------------------------------------------===#
-# Helper fucntion that copies K cache to a contiguous buffer
+# Helper function that copies K cache to a contiguous buffer
 # ===-----------------------------------------------------------------------===#
 
 

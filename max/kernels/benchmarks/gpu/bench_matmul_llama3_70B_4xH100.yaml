@@ -17,7 +17,7 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
 params:
 
 # llama3-70B shapes for 4xH100 execution
-# This file is facillitate development before GTC and should be combined
+# This file is facilitate development before GTC and should be combined
 # with other configs in more general way afterwards.
 
 - $M: [8192, 4096, 512]

@@ -48,7 +48,7 @@ trait Indexer(Intable):
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
     types like `UInt` to not have to be converted to an `Int` first. This type
-    is implicitly convertable to an `Int`, so can be used anywhere an `Int` can
+    is implicitly convertible to an `Int`, so can be used anywhere an `Int` can
     e.g. for comparisons.
     """
 
@@ -360,10 +360,10 @@ struct Int(
     @always_inline("nodebug")
     @implicit
     fn __init__[I: ImplicitlyIntable](out self, value: I):
-        """Construct Int from implicitly convertable type.
+        """Construct Int from implicitly convertible type.
 
         Parameters:
-            I: The type that is implicitly convertable to an `Int`.
+            I: The type that is implicitly convertible to an `Int`.
 
         Args:
             value: The init value.

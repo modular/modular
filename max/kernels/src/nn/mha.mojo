@@ -507,7 +507,7 @@ fn flash_attention_dispatch[
             )
             alias WM = BM
             alias WN = 32
-            # num warps in M and N, multipled by warp size.
+            # num warps in M and N, multiplied by warp size.
             alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
             alias accum_type = get_accum_type[q.type]()
@@ -1093,7 +1093,7 @@ fn mha_single_batch[
     1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
       will need a separate reduction kernel at the end.
 
-    2 Frist bmm becomes gemv and second bmm becomes gevm.
+    2 First bmm becomes gemv and second bmm becomes gevm.
       TODO: use more optimized kernels for them
 
     """
@@ -1782,7 +1782,7 @@ fn mha_single_batch_pipelined[
     1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
       will need a separate reduction kernel at the end.
 
-    2 Frist bmm becomes gemv and second bmm becomes gevm.
+    2 First bmm becomes gemv and second bmm becomes gevm.
       TODO: use more optimized kernels for them
 
     """
@@ -3539,7 +3539,7 @@ fn mha_decoding_single_batch[
             exp_sum_ptr[q_head_idx] = row_sum
             qk_max_ptr[q_head_idx] = row_max
 
-    # Pack resutls in shared memory for wider simd width.
+    # Pack results in shared memory for wider simd width.
     var accum_smem_warp_ptr = (
         q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN
     )
@@ -4040,7 +4040,7 @@ fn mha_decoding_single_batch_pipelined[
             exp_sum_ptr[q_head_idx] = row_sum
             qk_max_ptr[q_head_idx] = row_max
 
-    # Pack resutls in shared memory for wider simd width.
+    # Pack results in shared memory for wider simd width.
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
         Layout.row_major(WM, WN),
