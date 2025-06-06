@@ -11,6 +11,7 @@ modular_py_library(
         # TODO: These are required for the llama3.1 model. Remove them if
         # possible.
         requirement("torch"),
+        requirement("torchvision"),
         requirement("transformers"),
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
