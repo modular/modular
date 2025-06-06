@@ -52,10 +52,9 @@ class AudioGenerationSchedulerConfig:
     # This is set to something very big as there are gaps in audio between
     # chunks.
     max_chunk_size: int = 1000
-    """The maximum number of audio chunks that can be in the decode batch."""
+    """The maximum number of tokens in a single audio chunk."""
 
-    # The audio decoder can only handle a batch size of 1.
-    max_decode_batch_size: int = 1
+    max_decode_batch_size: int = 8
     """The maximum number of requests that can be in the decode batch."""
 
 
