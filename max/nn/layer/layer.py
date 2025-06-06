@@ -21,19 +21,63 @@ from collections.abc import Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from itertools import islice
-from typing import Any, Callable, Union, get_args
+from typing import Any, Callable, Protocol, Union, get_args
 
 import numpy as np
 from max._core_types.driver import DLPackArray
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import Graph, Shape, ShapeLike, Type, Value, Weight
+from max.graph import (
+    DeviceRef,
+    Graph,
+    Shape,
+    ShapeLike,
+    ShardingStrategy,
+    Type,
+    Value,
+    Weight,
+)
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 
 from .._identity import IdentitySet
 
 DLPackCompatible = Union[DLPackArray, np.ndarray]
+
+
+class Shardable(Protocol):
+    """Protocol for objects that support sharding across multiple devices.
+
+    This protocol defines the interface that all shardable components
+    (like Linear layers and Weight objects) must implement to participate
+    in distributed computation.
+    """
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Gets the weight sharding strategy."""
+        ...
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the weight sharding strategy.
+
+        Args:
+            strategy: A ShardingStrategy that defines how to shard the weight.
+        """
+        ...
+
+    def shard(self, shard_idx: int, device: DeviceRef) -> Shardable:
+        """Creates a sharded view of this object for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded instance of this object.
+        """
+        ...
 
 
 class Layer:
