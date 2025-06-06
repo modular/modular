@@ -194,7 +194,7 @@ class Weight(TensorValue):
     _device: DeviceRef
     quantization_encoding: Optional[QuantizationEncoding]
     align: Optional[int]
-    sharding_strategy: Optional[_ShardingStrategyContainer]
+    _sharding_strategy: Optional[_ShardingStrategyContainer]
     shard_idx: Optional[int]
 
     def __new__(cls, *args, **kwargs):
@@ -220,7 +220,7 @@ class Weight(TensorValue):
         self._device = device
         self.quantization_encoding = quantization_encoding
         self.align = align
-        self.sharding_strategy = (
+        self._sharding_strategy = (
             _ShardingStrategyContainer(self, sharding_strategy)
             if sharding_strategy
             else None
@@ -256,10 +256,10 @@ class Weight(TensorValue):
 
     @cached_property
     def _mlir_value(self) -> _Value[mo.TensorType]:  # type: ignore[override]
-        if not self.sharding_strategy or self.shard_idx is None:
+        if not self._sharding_strategy or self.shard_idx is None:
             return _add_weight_to_graph(self)._mlir_value
-        host_weight = self.sharding_strategy.host_weight
-        tensor_value = self.sharding_strategy.shard_value(
+        host_weight = self._sharding_strategy.host_weight
+        tensor_value = self._sharding_strategy.shard_value(
             host_weight, self.shard_idx
         )
         tensor_value = tensor_value.to(self._device)
@@ -274,22 +274,27 @@ class Weight(TensorValue):
                 f"Weight({self.name}, {self.dtype}, {self.shape}{device_str})"
             )
 
-    def set_sharding_strategy(
-        self, sharding_strategy: ShardingStrategy
-    ) -> None:
-        """Set the weight sharding strategy.
+    @property
+    def sharding_strategy(self) -> Optional[ShardingStrategy]:
+        """Gets the weight sharding strategy."""
+        return (
+            self._sharding_strategy.shard_value
+            if self._sharding_strategy
+            else None
+        )
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the weight sharding strategy.
 
         Args:
-            sharding_strategy: A callable that takes the host weight and shard
-              index, and returns the sharded value.
+            strategy: A ShardingStrategy that defines how to shard the weight.
         """
         # Reset device to CPU to avoid implicit transfer behavior
         # from `force_initial_weight_on_host`.
         # TODO(GEX-2121): Remove this hack
         self._device = DeviceRef.CPU()
-        self.sharding_strategy = _ShardingStrategyContainer(
-            self, sharding_strategy
-        )
+        self._sharding_strategy = _ShardingStrategyContainer(self, strategy)
 
     def shard(self, shard_idx: int, device: DeviceRef) -> Weight:
         """Gets a specific shard from the Weight.
@@ -320,7 +325,12 @@ class Weight(TensorValue):
             quantization_encoding=self.quantization_encoding,
             align=self.align,
         )
-        weight.sharding_strategy = self.sharding_strategy
+
+        # Copy the sharding strategy container directly to preserve the original host_weight
+        # reference. Using the property setter would create a new container with this shard
+        # as the host_weight, causing infinite recursion when the shard tries to compute
+        # its shape by calling the sharding function on itself.
+        weight._sharding_strategy = self._sharding_strategy
         weight.shard_idx = shard_idx
         return weight
 
