@@ -1224,6 +1224,7 @@ class MoConvOp(max._core.Operation):
         dilations: max._core.Value[max._core.dialects.mo.TensorType],
         paddings: max._core.Value[max._core.dialects.mo.TensorType],
         num_groups: max._core.Value[max._core.dialects.mo.TensorType],
+        input_layout: max._core.dialects.builtin.StringAttr,
         filter_layout: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
@@ -1251,6 +1252,12 @@ class MoConvOp(max._core.Operation):
     def num_groups(
         self,
     ) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def input_layout(self) -> str: ...
+    @input_layout.setter
+    def input_layout(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def filter_layout(self) -> str: ...
     @filter_layout.setter
@@ -1346,6 +1353,7 @@ class MoConvTransposeOp(max._core.Operation):
         dilations: max._core.Value[max._core.dialects.mo.TensorType],
         paddings: max._core.Value[max._core.dialects.mo.TensorType],
         output_paddings: max._core.Value[max._core.dialects.mo.TensorType],
+        input_layout: max._core.dialects.builtin.StringAttr,
         filter_layout: max._core.dialects.builtin.StringAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
@@ -1373,6 +1381,12 @@ class MoConvTransposeOp(max._core.Operation):
     def output_paddings(
         self,
     ) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def input_layout(self) -> str: ...
+    @input_layout.setter
+    def input_layout(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def filter_layout(self) -> str: ...
     @filter_layout.setter
@@ -5446,6 +5460,7 @@ class ConvOp(max._core.Operation):
         dilations: max._core.dialects.mosh.ShapeAttr,
         paddings: max._core.dialects.mosh.ShapeAttr,
         num_groups: max._core.dialects.builtin.IntegerAttr,
+        input_layout: max._core.dialects.builtin.StringAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
@@ -5468,6 +5483,12 @@ class ConvOp(max._core.Operation):
     @num_groups.setter
     def num_groups(
         self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def input_layout(self) -> str: ...
+    @input_layout.setter
+    def input_layout(
+        self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
 
 class ConvTransposeOp(max._core.Operation):
@@ -5543,6 +5564,7 @@ class ConvTransposeOp(max._core.Operation):
         dilations: max._core.dialects.mosh.ShapeAttr,
         paddings: max._core.dialects.mosh.ShapeAttr,
         output_paddings: max._core.dialects.mosh.ShapeAttr,
+        input_layout: max._core.dialects.builtin.StringAttr,
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
@@ -5565,6 +5587,12 @@ class ConvTransposeOp(max._core.Operation):
     @output_paddings.setter
     def output_paddings(
         self, arg: max._core.dialects.mosh.ShapeAttr, /
+    ) -> None: ...
+    @property
+    def input_layout(self) -> str: ...
+    @input_layout.setter
+    def input_layout(
+        self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
 
 class DivOp(max._core.Operation):
