@@ -20,7 +20,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
-    Optional,
     Protocol,
     TypeVar,
     runtime_checkable,
@@ -30,7 +29,7 @@ if TYPE_CHECKING:
     import torch
 
 from .response import AudioGenerationResponse
-from .text_generation import SamplingParams, TokenGeneratorRequestMessage
+from .text_generation import SamplingParams
 
 
 @dataclass(frozen=True)
@@ -53,7 +52,7 @@ class AudioGenerationRequest:
     capabilities of the response generation.
     """
 
-    input: Optional[str] = None
+    input: str
     """The text to generate audio for. The maximum length is 4096 characters.
     """
 
@@ -62,11 +61,6 @@ class AudioGenerationRequest:
 
     audio_prompt_transcription: str = ""
     """The audio prompt transcription to use for audio generation."""
-
-    messages: Optional[list[TokenGeneratorRequestMessage]] = None
-    """The messages to use for audio generation. If provided, the `input`,
-    `audio_prompt_tokens`, and `audio_prompt_transcription` will be ignored.
-    """
 
     sampling_params: SamplingParams = SamplingParams()
     """Request sampling configuration options."""
