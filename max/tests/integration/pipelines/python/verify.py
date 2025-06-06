@@ -48,6 +48,9 @@ from model.utils.logging import CONSOLE
 from test_common.distance_metrics import kl_divergence_from_logits
 from test_common.evaluate import ModelOutput, TokenInfo, compare_values
 from test_common.numpy_encoder import NumpyDecoder
+from typing_extensions import TypeAlias
+
+ModelModality: TypeAlias = Literal["logit", "embedding"]
 
 # Shared defaults between CLI and verify function
 DEFAULT_EVAL_METRIC = ["tol"]
@@ -161,8 +164,8 @@ def main(
 class DiscrepancyReport:
     """Contains discrepancy metrics between model outputs."""
 
-    model_modality: Literal["logit", "embedding"]
-    """Type of model output modality being compared ('logit' or 'embedding')."""
+    model_modality: ModelModality
+    """Type of model output modality being compared."""
 
     mae_per_prompt: list[float]
     """Mean absolute error for each prompt."""
@@ -353,7 +356,7 @@ def compute_discrepancy_report(
         raise ValueError("The two lists must have the same length")
 
     mae_per_prompt, rmse_per_prompt, kl_div_per_prompt = [], [], []
-    model_modality: Optional[Literal["logit", "embedding"]] = None
+    model_modality: Optional[ModelModality] = None
     for result, reference in zip(results, references):
         verify_matching_prompts(result, reference)
         kl_div = None

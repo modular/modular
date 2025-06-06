@@ -23,7 +23,7 @@ from max.entrypoints.cli import DevicesOptionType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
-from verify import DiscrepancyReport, verify
+from verify import DiscrepancyReport, ModelModality, verify
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -79,26 +79,14 @@ def resolve_rlocation(rloc: str) -> Path:
 
 
 def verdict_sorting_key(
-    pipeline_verdict_tuple: tuple[str, VerificationVerdict],
-) -> tuple[str, int, str]:
-    """Returns a sorting tuple, ordered by modality, dtype, then alphabetically."""
-    pipeline_name, verdict = pipeline_verdict_tuple
+    model_name_and_verdict: tuple[str, VerificationVerdict],
+) -> tuple[int, str]:
+    """Sort key for model names, ordered by dtype, then alphabetically."""
+    model_name, _ = model_name_and_verdict
 
-    # Extract modality, defaulting to "N/A" if not available
-    modality = "N/A"
-    if verdict.discrepancy_report is not None:
-        modality = verdict.discrepancy_report.model_modality
-
-    # Prioritize logit first, N/A last, others alphabetically in between
-    if modality == "logit":
-        modality_key = "0_logit"
-    elif modality == "N/A":
-        modality_key = "2_N/A"
-    else:
-        modality_key = f"1_{modality}"
     # Determine dtype priority
     sort_order_by_dtype = ["float32", "bfloat16", "float8", "q4_k", "gptq"]
-    name_lower = pipeline_name.lower()
+    name_lower = model_name.lower()
 
     dtype_priority = len(sort_order_by_dtype)  # Default for unknown dtypes
     for i, dtype in enumerate(sort_order_by_dtype):
@@ -106,7 +94,7 @@ def verdict_sorting_key(
             dtype_priority = i
             break
 
-    return (modality_key, dtype_priority, name_lower)
+    return (dtype_priority, name_lower)
 
 
 def dump_results(
@@ -120,25 +108,56 @@ def dump_results(
     # Warning: The logits verification pipeline parses these results
     # using grep/awk.
     # Please verify that this doesn't break before changing the output format
-    to.write("| Status | Pipeline | Modality | KL Div | MAE |\n")
-    to.write("|:------:|:---------|:--------:|:------:|:----:|\n")
 
-    for pipeline, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
-        kl_div = "N/A"
-        mae = "N/A"
-        modality = "N/A"
+    # Remove the org name from the model name
+    verdicts = {x.split("/", 1)[-1]: v for x, v in verdicts.items()}
 
-        if verdict.discrepancy_report is not None:
-            modality = verdict.discrepancy_report.model_modality
+    any_logit, any_embedding, any_failed = False, False, False
+    logit: ModelModality = "logit"
+    embedding: ModelModality = "embedding"
+    for verdict in verdicts.values():
+        if verdict.discrepancy_report is None:
+            any_failed = True
+        elif verdict.discrepancy_report.model_modality == logit:
+            any_logit = True
+        elif verdict.discrepancy_report.model_modality == embedding:
+            any_embedding = True
+
+    if any_failed:
+        to.write("## Failed/Crashed Models\n\n")
+        to.write("| Status | Model |\n")
+        to.write("|:------:|:---------|\n")
+
+        for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
+            if verdict.discrepancy_report is not None:
+                continue
+            to.write(f"| {verdict.emoji} | {name} |\n")
+
+    if any_logit:
+        to.write("## LLMs\n\n")
+        to.write("| Status | Model | KL Div |\n")
+        to.write("|:------:|:---------|:------:|\n")
+
+        for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
+            if verdict.discrepancy_report is None:
+                continue
+            if verdict.discrepancy_report.model_modality != logit:
+                continue
+            kl = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
+            to.write(f"| {verdict.emoji} | {name} | {kl} |\n")
+
+    if any_embedding:
+        to.write("## Embedding Models\n\n")
+        to.write("| Status | Model | MAE |\n")
+        to.write("|:------:|:---------|:----:|\n")
+
+        for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
+            if verdict.discrepancy_report is None:
+                continue
+            if verdict.discrepancy_report.model_modality != embedding:
+                continue
             mae = f"{verdict.discrepancy_report.avg_mae:.2e}"
-
-            # Handle KL Div which may be None for non logits models
-            if verdict.discrepancy_report.avg_kl_div is not None:
-                kl_div = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
-
-        to.write(
-            f"| {verdict.emoji} | {pipeline} | {modality} | {kl_div} | {mae} |\n"
-        )
+            to.write(f"| {verdict.emoji} | {name} | {mae} |\n")
 
 
 @dataclass
@@ -413,7 +432,7 @@ PIPELINES = {
     # noisy for inaccurate models.
     # Generally speaking, these models should have absolute and relative
     # tolerances below ~5e-2.
-    "Llama-3-8B-Instruct-float32": PipelineDef(
+    "meta-llama/Meta-Llama-3-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -432,7 +451,7 @@ PIPELINES = {
             kl_div_threshold=3.0e-7,
         ),
     ),
-    "Llama-3.1-8B-Instruct-float32": PipelineDef(
+    "meta-llama/Llama-3.1-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -451,7 +470,7 @@ PIPELINES = {
             kl_div_threshold=1.0e-10,
         ),
     ),
-    "mpnet-float32": PipelineDef(
+    "sentence-transformers/all-mpnet-base-v2-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=lambda device_type,
         devices,
@@ -472,7 +491,7 @@ PIPELINES = {
             kl_div_threshold=1.0e-10,
         ),
     ),
-    "OLMo-1B-float32": PipelineDef(
+    "allenai/OLMo-1B-hf-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         run=lambda device_type,
         devices,
@@ -499,7 +518,7 @@ PIPELINES = {
     # and kl divergence.
     # Likely as cosine distance and kl divergence drop below ~1e-5, they should
     # be migrated to being a robust pipelines.
-    "Llama-3-8B-Instruct-q4_k": PipelineDef(
+    "bartowski/Meta-Llama-3-8B-Instruct-GGUF-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
         run=lambda device_type,
         devices,
@@ -519,7 +538,7 @@ PIPELINES = {
             kl_div_threshold=6.5,
         ),
     ),
-    "Llama-3-8B-Instruct-bfloat16": PipelineDef(
+    "meta-llama/Meta-Llama-3-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
@@ -535,7 +554,7 @@ PIPELINES = {
             kl_div_threshold=1.3e-1,
         ),
     ),
-    "Llama-3.1-8B-Instruct-q4_k": PipelineDef(
+    "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
         run=lambda device_type,
         devices,
@@ -555,7 +574,7 @@ PIPELINES = {
             kl_div_threshold=6.8,
         ),
     ),
-    "Llama-3.1-8B-Instruct-bfloat16": PipelineDef(
+    "meta-llama/Llama-3.1-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
@@ -571,7 +590,7 @@ PIPELINES = {
             kl_div_threshold=4.8e-3,
         ),
     ),
-    "Llama-3.1-8B-Instruct-float8-static": PipelineDef(
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # This does not require multigpu, but does require h100.
         tags=["h100-multi"],
@@ -595,7 +614,7 @@ PIPELINES = {
             kl_div_threshold=8.6e-2,
         ),
     ),
-    "Llama-3.1-8B-Instruct-float8-dynamic": PipelineDef(
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-float8-dynamic": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # This does not require multigpu, but does require h100.
         tags=["h100-multi"],
@@ -619,7 +638,7 @@ PIPELINES = {
             kl_div_threshold=3.9e-2,
         ),
     ),
-    "Llama-3.2-1B-bfloat16": PipelineDef(
+    "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         # Needs h100 for specific kernels.
         tags=["h100-multi"],
@@ -637,7 +656,7 @@ PIPELINES = {
             kl_div_threshold=2.5e-03,
         ),
     ),
-    "Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
+    "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
         run=lambda device_type,
@@ -655,7 +674,7 @@ PIPELINES = {
             kl_div_threshold=1.9e-3,
         ),
     ),
-    "Llama4-17B-Scout-Instruct-bfloat16": PipelineDef(
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
         run=lambda device_type,
@@ -671,12 +690,12 @@ PIPELINES = {
             ),
             pipeline="llama4-scout",
             encoding="bfloat16",
-            # TODO (MODELS-480): Debug Llama4 Accuracy.
+            # TODO (MODELS-480): Debug Llama-4 Accuracy.
             cos_dist_threshold=7.2e-1,
             kl_div_threshold=6.5,
         ),
     ),
-    "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
+    "mistralai/Mistral-Nemo-Instruct-2407-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -695,7 +714,7 @@ PIPELINES = {
             kl_div_threshold=2.7e-2,
         ),
     ),
-    "mistral-small-3.1-24b-instruct-bfloat16": PipelineDef(
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "h100-multi"],
         run=lambda device_type,
@@ -712,7 +731,7 @@ PIPELINES = {
             kl_div_threshold=2.6e-3,
         ),
     ),
-    "llama3-vision-bfloat16": PipelineDef(
+    "meta-llama/Llama-3.2-11B-Vision-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -731,7 +750,7 @@ PIPELINES = {
             kl_div_threshold=5.4e-3,
         ),
     ),
-    "InternVL3-8B-Instruct-bfloat16": PipelineDef(
+    "OpenGVLab/InternVL3-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
         run=lambda device_type,
@@ -749,7 +768,7 @@ PIPELINES = {
             kl_div_threshold=float("inf"),
         ),
     ),
-    "pixtral-bfloat16": PipelineDef(
+    "mistral-community/pixtral-12b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -767,7 +786,7 @@ PIPELINES = {
             kl_div_threshold=3.0e-3,
         ),
     ),
-    "Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
+    "Qwen/Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],  # TODO: Has much worse accuracy on AMD GPUs.
         run=lambda device_type,
@@ -784,7 +803,7 @@ PIPELINES = {
             kl_div_threshold=1.3e-1,
         ),
     ),
-    "Qwen3-8B-bfloat16": PipelineDef(
+    "Qwen/Qwen3-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
         run=lambda device_type,
@@ -801,7 +820,7 @@ PIPELINES = {
             kl_div_threshold=3.7e-3,
         ),
     ),
-    "EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
+    "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -820,7 +839,7 @@ PIPELINES = {
             kl_div_threshold=1.3e-2,
         ),
     ),
-    "Phi-3.5-mini-instruct-bfloat16": PipelineDef(
+    "microsoft/Phi-3.5-mini-instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
@@ -837,7 +856,7 @@ PIPELINES = {
             kl_div_threshold=1.1,
         ),
     ),
-    "Phi-4-bfloat16": PipelineDef(
+    "microsoft/phi-4-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type,
@@ -854,7 +873,7 @@ PIPELINES = {
             kl_div_threshold=6.9e-3,
         ),
     ),
-    "llama-gptq": PipelineDef(
+    "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
         run=lambda device_type,
@@ -872,7 +891,7 @@ PIPELINES = {
             kl_div_threshold=2.7e-3,
         ),
     ),
-    "llama-gptq-no-perm-idx": PipelineDef(
+    "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq-no-perm-idx": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
         run=lambda device_type,
@@ -891,7 +910,7 @@ PIPELINES = {
         ),
     ),
     # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
-    "deepseek-V2-lite-chat-bfloat16": PipelineDef(
+    "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],
         run=lambda device_type,
@@ -909,7 +928,7 @@ PIPELINES = {
             kl_div_threshold=1.8e-01,
         ),
     ),
-    "Gemma-3-1B-bfloat16": PipelineDef(
+    "google/gemma-3-1b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         run=lambda device_type,
         devices,
