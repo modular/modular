@@ -67,6 +67,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/serve/scheduler",
         "//SDK/lib/API/python/max/serve/schemas",
         "//SDK/lib/API/python/max/serve/telemetry",
+        "//SDK/lib/API/python/max/support",
         requirement("async-asgi-testclient"),
         requirement("fastapi"),
         requirement("gguf"),

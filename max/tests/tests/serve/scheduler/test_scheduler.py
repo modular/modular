@@ -17,8 +17,11 @@ from max.pipelines.core import (
     TextContext,
     msgpack_numpy_encoder,
 )
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
-from max.serve.scheduler import ZmqPullSocket, ZmqPushSocket
+from max.serve.queue.zmq_queue import (
+    ZmqPullSocket,
+    ZmqPushSocket,
+    generate_zmq_ipc_path,
+)
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
     SchedulerOutput,

@@ -30,16 +30,13 @@ from max.pipelines.core import (
     msgpack_numpy_encoder,
 )
 from max.serve.process_control import ProcessControl
-from max.serve.scheduler import ZmqPullSocket, ZmqPushSocket
+from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )
-
-
-def ceildiv(a, b):
-    return -(a // -b)
+from max.support.math import ceildiv
 
 
 def create_process_control() -> ProcessControl:
@@ -229,7 +226,7 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
             if not self.kv_manager.contains(context.cache_seq_id):
                 self.kv_manager.external_claim([context.cache_seq_id])
 
-        ctxs: list[InputContext] = list(batch.values())
+        ctxs: list[TextContext] = list(batch.values())
 
         self.kv_manager.fetch(ctxs, num_steps=num_steps)
 
