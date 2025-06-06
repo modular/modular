@@ -191,6 +191,28 @@ fn to_lowercase(s: StringSlice) -> String:
     return result^
 
 
+fn _to_lowercase_ascii(s: StringSlice) -> String:
+    """Returns a new string with all ASCII characters converted to lowercase.
+
+    Args:
+        s: Input string.
+
+    Returns:
+        A new string where ASCII letters have been converted to lowercase.
+    """
+    # TODO: use SIMD to speed this up
+    var result = String("0") * s.byte_length()
+    var result_ptr = result.unsafe_ptr_mut()
+    var s_ptr = s.unsafe_ptr()
+    for i in range(s.byte_length()):
+        var char = s_ptr[i]
+        if char >= Byte(ord("A")) and char <= Byte(ord("Z")):
+            result_ptr[i] = char + 32
+        else:
+            result_ptr[i] = char
+    return result^
+
+
 fn to_uppercase(s: StringSlice) -> String:
     """Returns a new string with all characters converted to uppercase.
 

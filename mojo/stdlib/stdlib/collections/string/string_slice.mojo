@@ -52,6 +52,7 @@ from collections.string._unicode import (
     is_lowercase,
     is_uppercase,
     to_lowercase,
+    _to_lowercase_ascii,
     to_uppercase,
 )
 from collections.string._utf8 import (
@@ -68,6 +69,7 @@ from os import PathLike, abort
 from sys import bitwidthof, is_compile_time, simdwidthof
 from sys.ffi import c_char
 from sys.intrinsics import likely, unlikely
+from algorithm.functional import vectorize
 
 from bit import count_leading_zeros, count_trailing_zeros
 from memory import Span, UnsafePointer, memcmp, memcpy, pack_bits
@@ -875,6 +877,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
+    @no_inline
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice` with the
@@ -892,6 +895,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
+    @no_inline
     @__unsafe_disable_nested_origin_exclusivity
     fn __eq__(self, rhs: StringSlice) -> Bool:
         """Verify if a `StringSlice` is equal to another `StringSlice`.
@@ -2105,6 +2109,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return len(self) > 0 and is_lowercase(self)
 
+    @no_inline
     fn lower(self) -> String:
         """Returns a copy of the string with all cased characters
         converted to lowercase.
@@ -2115,6 +2120,40 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         # TODO: the _unicode module does not support locale sensitive conversions yet.
         return to_lowercase(self)
+
+    @no_inline
+    fn _lower_ascii(self) -> String:
+        """Returns a copy of the string with all cased characters
+        converted to lowercase.
+
+        If the string is not ASCII, the behavior is undefined.
+
+        Returns:
+            A new string where cased letters have been converted to lowercase.
+        """
+
+        # TODO: the _unicode module does not support locale sensitive conversions yet.
+        return _to_lowercase_ascii(self)
+
+    @no_inline
+    fn is_ascii(self) -> Bool:
+        """Returns True if all characters in the string are ASCII.
+
+        Returns:
+            True if all characters are ASCII else False.
+        """
+        var ptr_to_self = self.unsafe_ptr()
+        var result = True
+
+        @parameter
+        fn closure[width: Int](i: Int):
+            result = (
+                result and (ptr_to_self.load[width=width](i) < 128).reduce_and()
+            )
+
+        vectorize[closure, simdwidthof[DType.uint8]()](self.byte_length())
+
+        return result
 
     fn upper(self) -> String:
         """Returns a copy of the string with all cased characters
