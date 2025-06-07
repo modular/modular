@@ -70,6 +70,18 @@ fn test_string_slice_layout() raises:
     assert_equal(second_word_ptr - base_ptr, sizeof[Int]())
 
 
+def test_constructors():
+    def some_func_immut(b: StringSlice[mut=False]):
+        assert_false(b.mut)
+
+    def some_func_mut(b: StringSlice[mut=True]):
+        assert_true(b.mut)
+
+    var a = String("123")
+    some_func_immut(a)
+    some_func_mut(StringSlice(a))
+
+
 fn test_string_literal_byte_span() raises:
     alias slc = "Hello".as_bytes()
 
@@ -1018,6 +1030,7 @@ def test_merge():
 
 def main():
     test_string_slice_layout()
+    test_constructors()
     test_string_literal_byte_span()
     test_string_byte_span()
     test_heap_string_from_string_slice()
