@@ -294,17 +294,17 @@ class BatchInfo:
 def create_batch_and_execute(
     scheduler: AudioGenerationScheduler,
 ) -> BatchInfo:
-    batch_to_execute = scheduler._create_batch_to_execute()
+    batch = scheduler._create_batch()
 
-    batch_size = batch_to_execute.batch_size
-    batch_type = batch_to_execute.batch_type
-    input_tokens = batch_to_execute.input_tokens
-    num_steps = batch_to_execute.num_steps
-    if batch_to_execute.batch_size == 0:
+    batch_size = batch.batch_size
+    batch_type = batch.batch_type
+    input_tokens = batch.input_tokens
+    num_steps = batch.num_steps
+    if batch.batch_size == 0:
         return BatchInfo.empty()
 
-    scheduler._schedule(batch_to_execute)
-    terminated_reqs = batch_to_execute.num_terminated
+    scheduler._schedule(batch)
+    terminated_reqs = batch.num_terminated
 
     assert isinstance(scheduler.pipeline, FakeAudioGeneratorPipeline)
 
