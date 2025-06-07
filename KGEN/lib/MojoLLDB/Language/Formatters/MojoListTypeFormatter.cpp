@@ -41,7 +41,7 @@ lldb::ChildCacheState MojoListSyntheticFrontEnd::Update() {
     return lldb::ChildCacheState::eRefetch;
 
   ValueObjectSP data = parsed->first;
-  start = data->GetPointerValue();
+  start = data->GetPointerValue().address;
   elementType = data->GetCompilerType().GetPointeeType();
   if (elementType.IsValid()) {
     auto exeCtxScope = ExecutionContext(m_backend.GetExecutionContextRef())
@@ -100,7 +100,7 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
   if (size == 0)
     return std::make_pair(dataPointer, size);
 
-  lldb::addr_t data = dataPointer->GetPointerValue();
+  lldb::addr_t data = dataPointer->GetPointerValue().address;
   if (!data || data == LLDB_INVALID_ADDRESS)
     return {};
 

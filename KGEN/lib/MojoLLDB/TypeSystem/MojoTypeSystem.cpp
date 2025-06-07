@@ -1203,7 +1203,8 @@ ConstString MojoTypeSystem::DeclContextGetName(void *opaqueDeclCtx) {
 // Dumping
 //===--------------------------------------------------------------------===//
 
-void MojoTypeSystem::Dump(llvm::raw_ostream &output) {
+void MojoTypeSystem::Dump(llvm::raw_ostream &output, llvm::StringRef filter) {
+  // FIXME: handle filtering
   impl->parserContext->getModule()->dump();
 }
 

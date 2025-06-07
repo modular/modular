@@ -88,7 +88,7 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
       return onError("decoding " + std::string(memberName));
 
     if (field->IsPointerType()) {
-      result = field->GetPointerValue();
+      result = field->GetPointerValue().address;
       if (result == LLDB_INVALID_ADDRESS)
         return onError("failed to load pointer value");
     }
