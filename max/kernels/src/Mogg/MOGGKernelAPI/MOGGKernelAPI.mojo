@@ -95,11 +95,16 @@ from nn.concat import _concat_cpu, concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
-from nn.conv_transpose import conv_transpose_shape, conv_transposed_cpu
+from nn.conv_transpose import (
+    conv_transpose_shape,
+    conv_transposed_cpu,
+    conv_transposed_gpu,
+)
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
+from nn.conv_utils import elementwise_simd_epilogue_type
 from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
@@ -5618,6 +5623,7 @@ struct ConvTranspose:
         input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
+        target: StaticString,
     ](
         output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
@@ -5626,15 +5632,12 @@ struct ConvTranspose:
         dilation: InputTensor[rank=1],
         paddings: InputTensor[rank=1],
         output_paddings: InputTensor[rank=1],
+        ctx: DeviceContextPtr,
     ) capturing raises:
         constrained[
             strides.dtype.is_integral()
             and dilation.dtype.is_integral()
             and output_paddings.dtype.is_integral()
-        ]()
-
-        constrained[
-            input_layout == "NHWC", "only NHWC input layout is supported"
         ]()
 
         if strides.size() != input.rank - 2:
@@ -5698,29 +5701,70 @@ struct ConvTranspose:
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        conv_transposed_cpu[
-            input.rank,
-            filter.rank,
-            input._static_shape,  # Input shape.
-            filter._static_shape,  # Filter shape.
-            output._static_shape,  # Output shape.
-            input.dtype,
-            filter.dtype,  # Filter dtype.
-            output.dtype,  # Output dtype.
-            filter_packed,
-            filter_is_cfrs,
-            lambdas_have_fusion,
-            output_fn,
-        ](
-            output_buf,
-            input_buf,
-            filter_buf,
-            stride_tuple,
-            dilation_tuple,
-            pad_d,
-            pad_h,
-            pad_w,
-        )
+        @parameter
+        if is_cpu[target]():
+            conv_transposed_cpu[
+                input.rank,
+                filter.rank,
+                input._static_shape,  # Input shape.
+                filter._static_shape,  # Filter shape.
+                output._static_shape,  # Output shape.
+                input.dtype,
+                filter.dtype,  # Filter dtype.
+                output.dtype,  # Output dtype.
+                filter_packed,
+                filter_is_cfrs,
+                lambdas_have_fusion,
+                output_fn,
+            ](
+                output_buf,
+                input_buf,
+                filter_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_d,
+                pad_h,
+                pad_w,
+            )
+        else:
+            constrained[
+                (input.rank == 4 and filter.rank == 4),
+                "only rank 4 tensor is supported on cuda gpu",
+            ]()
+            constrained[
+                filter_packed == False,
+                "only unpacked filter is supported on cuda gpu",
+            ]()
+
+            var cuda_ctx = ctx.get_device_context()
+            var pad_tuple = IndexList[input.rank - 2](0)
+
+            @parameter
+            if input.rank == 4:
+                pad_tuple[0] = pad_h[0]
+                pad_tuple[1] = pad_w[0]
+
+            conv_transposed_gpu[
+                input.rank,
+                filter.rank,
+                input._static_shape,
+                filter._static_shape,
+                output._static_shape,
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                elementwise_epilogue = OptionalReg[
+                    elementwise_simd_epilogue_type
+                ](output_fn) if lambdas_have_fusion else None,
+            ](
+                output_buf,
+                input_buf,
+                filter_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
+                cuda_ctx,
+            )
 
     @staticmethod
     fn shape[
