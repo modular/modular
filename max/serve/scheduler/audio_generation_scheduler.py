@@ -16,7 +16,7 @@ import logging
 import queue
 import time
 from collections import deque
-from typing import Any, cast
+from typing import cast
 
 import torch
 import zmq
@@ -48,6 +48,7 @@ def _log_metrics(
 ) -> None:
     batch_type = batch_to_execute.batch_type
     batch_size = batch_to_execute.batch_size
+    input_tokens = batch_to_execute.input_tokens
     terminated_reqs = batch_to_execute.num_terminated
     batch_creation_latency_str = to_human_readable_latency(
         batch_creation_time_s
@@ -58,6 +59,7 @@ def _log_metrics(
 
     logger.debug(
         f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
+        f"Input tokens: {input_tokens} | "
         f"Terminated: {terminated_reqs} reqs, "
         f"Pending: {num_pending_reqs} reqs | "
         f"Batch creation: {batch_creation_latency_str}, "
@@ -68,26 +70,21 @@ def _log_metrics(
 class AudioGenerationSchedulerOutput:
     def __init__(
         self,
-        batch_inputs: dict[str, TTSContext],
+        reqs: dict[str, TTSContext],
         num_steps: int,
         batch_type: BatchType,
     ):
-        self.batch_inputs = batch_inputs
+        self.reqs = reqs
         self.batch_type = batch_type
-        self.batch_size = len(batch_inputs)
+        self.batch_size = len(reqs)
         self.num_steps = num_steps
         self.input_tokens = sum(
-            context.active_length for context in batch_inputs.values()
+            context.active_length for context in reqs.values()
         )
-
-    @property
-    def num_terminated(self) -> int:
-        # this is the difference between the number of request in the batch before
-        # and after the batch was scheduled.
-        return self.batch_size - len(self.batch_inputs)
+        self.num_terminated = 0
 
     def __repr__(self) -> str:
-        return f"AudioGenerationSchedulerOutput(batch_type={self.batch_type}, batch_size={self.batch_size}, num_steps={self.num_steps})"
+        return f"AudioGenerationSchedulerOutput(batch_type={self.batch_type}, batch_size={self.batch_size}, num_steps={self.num_steps}, input_tokens={self.input_tokens})"
 
 
 class AudioGenerationScheduler(Scheduler):
@@ -153,25 +150,25 @@ class AudioGenerationScheduler(Scheduler):
     @traced
     def _handle_terminated_responses(
         self,
-        batch_executed: dict[str, Any],
-        batch_responses: dict[str, AudioGenerationResponse],
+        batch: AudioGenerationSchedulerOutput,
+        responses: dict[str, AudioGenerationResponse],
     ) -> None:
         """Task that handles responses"""
-        if not batch_responses:
+        if not responses:
             return
 
-        for req_id, response in batch_responses.items():
+        for req_id, response in batch.reqs.items():
             if not response.is_done:
                 continue
+
             # Release from cache
-            req_data = batch_executed[req_id]
+            req_data = batch.reqs[req_id]
             self.pipeline.release(req_data)
             self.available_cache_indices.add(req_data.cache_seq_id)
-            del batch_executed[req_id]
+            batch.num_terminated += 1
 
             # Remove from active batch
-            if req_id in self.decode_reqs:
-                del self.decode_reqs[req_id]
+            del self.decode_reqs[req_id]
 
     @traced
     def _handle_cancelled_requests(self) -> None:
@@ -190,15 +187,15 @@ class AudioGenerationScheduler(Scheduler):
     @traced
     def _stream_responses_to_frontend(
         self,
-        batch_responses: dict[str, AudioGenerationResponse],
+        responses: dict[str, AudioGenerationResponse],
     ) -> None:
-        if not batch_responses:
+        if not responses:
             return
 
         stop_stream = cast(AudioGeneratorOutput, STOP_STREAM)
         audio_responses: dict[str, AudioGeneratorOutput] = {}
         stop_responses: dict[str, AudioGeneratorOutput] = {}
-        for req_id, response in batch_responses.items():
+        for req_id, response in responses.items():
             if response.has_audio_data:
                 audio_data = torch.from_numpy(response.audio_data)
             else:
@@ -275,32 +272,30 @@ class AudioGenerationScheduler(Scheduler):
             batch_type=BatchType.ContextEncoding,
         )
 
-    def _create_batch_to_execute(self) -> AudioGenerationSchedulerOutput:
+    def _create_batch(self) -> AudioGenerationSchedulerOutput:
         self._retrieve_pending_requests()
         if self._should_schedule_ce():
             return self._create_ce_batch()
         return self._create_tg_batch()
 
-    def _schedule(self, sch_output: AudioGenerationSchedulerOutput) -> None:
-        assert sch_output.batch_size > 0
-
-        batch_to_execute = sch_output.batch_inputs
+    def _schedule(self, batch: AudioGenerationSchedulerOutput) -> None:
+        assert batch.batch_size > 0
 
         # execute the batch
-        with Trace(f"_schedule({sch_output})"):
-            batch_responses = self.pipeline.next_chunk(
-                batch_to_execute,
-                num_tokens=sch_output.num_steps,
+        with Trace(f"_schedule({batch})"):
+            responses = self.pipeline.next_chunk(
+                batch.reqs,
+                num_tokens=batch.num_steps,
             )
 
-        # remove terminated requests from the batch
-        self._handle_terminated_responses(batch_to_execute, batch_responses)
-
         # add the encoded requests to the continuous batch
-        self.decode_reqs.update(batch_to_execute)
+        self.decode_reqs.update(batch.reqs)
+
+        # remove terminated requests from the batch
+        self._handle_terminated_responses(batch, responses)
 
         # send the responses to the API process
-        self._stream_responses_to_frontend(batch_responses)
+        self._stream_responses_to_frontend(responses)
 
     def run(self) -> None:
         """The Scheduler loop that creates batches and schedules them on GPU"""
@@ -312,23 +307,23 @@ class AudioGenerationScheduler(Scheduler):
             try:
                 # Construct the batch to execute
                 t0 = time.monotonic()
-                batch_to_execute = self._create_batch_to_execute()
+                batch = self._create_batch()
                 t1 = time.monotonic()
                 batch_creation_time_s = t1 - t0
 
                 # If the batch is empty, skip
-                if batch_to_execute.batch_size == 0:
+                if batch.batch_size == 0:
                     continue
 
                 # Schedule the batch
                 t0 = time.monotonic()
-                self._schedule(batch_to_execute)
+                self._schedule(batch)
                 t1 = time.monotonic()
                 batch_execution_time_s = t1 - t0
 
                 # Log batch metrics
                 _log_metrics(
-                    batch_to_execute,
+                    batch,
                     len(self.pending_reqs),
                     batch_creation_time_s,
                     batch_execution_time_s,
