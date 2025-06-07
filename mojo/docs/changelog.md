@@ -327,3 +327,5 @@ Changes to Python-Mojo interoperability:
   unsigned `gt` and `le` comparisons.
 - [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
   handling `x or y` expressions with PythonObject.
+- [#4719](https://github.com/modular/modular/issues/4719) - `Dict.setdefault`
+  should not be marked with `raises`.
