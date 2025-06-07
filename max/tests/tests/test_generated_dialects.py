@@ -105,3 +105,128 @@ def test_arrayview_dead_array_reference(mlir_context):
     out = attr.value[0]
     del attr
     assert out == na
+
+
+def test_discardable_attributes(mlir_context):
+    loc = mlir.Location.current
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+
+    attrs = graph.discardable_attributes
+
+    # empty, even though graph has inherent attributes
+    assert not attrs
+    assert len(attrs) == 0
+    assert dict(attrs.items()) == {}
+
+    # __setitem__, __getitem__
+    attrs["foo"] = builtin.StringAttr("foo")
+    assert attrs
+    assert len(attrs) == 1
+    assert dict(attrs.items()) == {"foo": builtin.StringAttr("foo")}
+    assert attrs["foo"] == builtin.StringAttr("foo")
+    with pytest.raises(KeyError):
+        attrs["bar"]
+
+    signature = graph.signature
+    # Set an inherent attribute
+    # "signature" is inherent on `mo.GraphOp`
+    attrs["signature"] = builtin.StringAttr("foo")
+    assert "signature" in attrs
+    assert signature == graph.signature  # inherent attribute is still fine
+    assert attrs["signature"] == builtin.StringAttr("foo")
+    del attrs["signature"]
+
+    # __contains__
+    assert "foo" in attrs
+    assert "bar" not in attrs
+
+    # __iter__
+    assert list(attrs) == list(attrs.keys()) == ["foo"]
+
+    # __del__
+    del attrs["foo"]
+    assert not attrs
+    assert len(attrs) == 0
+    assert dict(attrs.items()) == {}
+
+
+def test_discardable_attrs__op_deleted(mlir_context):
+    loc = mlir.Location.current
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    attrs = graph.discardable_attributes
+    attrs["foo"] = builtin.StringAttr("foo")
+    del graph
+    del builder
+    del module
+    assert list(attrs) == ["foo"]
+
+
+def test_discardable_attrs__dict_deleted(mlir_context):
+    loc = mlir.Location.current
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    attrs = graph.discardable_attributes
+    attrs["foo"] = builtin.StringAttr("foo")
+    foo = attrs["foo"]
+
+    del attrs
+    del graph
+    del builder
+    del module
+    assert isinstance(foo, builtin.StringAttr)
+    assert foo.value == "foo"
+
+
+def test_discardable_attrs__attr_deleted(mlir_context):
+    loc = mlir.Location.current
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    attrs = graph.discardable_attributes
+    attrs["foo"] = builtin.StringAttr("foo")
+    foo = attrs["foo"]
+
+    del attrs["foo"]
+    assert "foo" not in attrs
+    assert isinstance(foo, builtin.StringAttr)
+    assert foo.value == "foo"
+
+
+def test_discardable_attrs__concurrent_modification(mlir_context):
+    loc = mlir.Location.current
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = builder.create(mo.GraphOp, loc)("hello", [], [])
+    attrs = graph.discardable_attributes
+
+    attrs["foo"] = builtin.StringAttr("foo")
+    attrs["bar"] = builtin.StringAttr("bar")
+
+    keys = iter(attrs)
+    items = iter(attrs.items())
+    values = iter(attrs.values())
+
+    keys2 = iter(attrs)
+    next(keys2)
+    items2 = iter(attrs.items())
+    next(items2)
+    values2 = iter(attrs.values())
+    next(values2)
+
+    del attrs["foo"]
+    del attrs["bar"]
+    assert not attrs
+
+    # just make sure these don't error, there's not a defined behavior
+    _ = list(keys)
+    _ = list(items)
+    _ = list(values)
+    _ = list(keys2)
+    _ = list(items2)
+    _ = list(values2)
