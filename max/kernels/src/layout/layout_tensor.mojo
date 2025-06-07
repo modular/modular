@@ -6835,8 +6835,6 @@ fn copy_local_to_dram[
             src.runtime_element_layout,
         )
 
-        alias dst_element_type = Element[dst.dtype, dst.linear_idx_type]
-
         alias element_stride = dst_fragments.element_layout.stride[1].value()
 
         @parameter
