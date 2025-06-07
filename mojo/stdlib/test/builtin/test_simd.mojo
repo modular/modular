@@ -117,6 +117,15 @@ def test_cast_init():
     )
 
 
+def test_init_from_index():
+    alias a = UInt.MAX
+    alias a_str = String(a)
+    assert_equal(a_str, String(UInt128(a)))
+    assert_equal(a_str, String(Int128(a)))
+    assert_equal(a_str, String(UInt256(a)))
+    assert_equal(a_str, String(Int256(a)))
+
+
 def test_simd_variadic():
     assert_equal(String(SIMD[DType.index, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
 
@@ -2009,6 +2018,7 @@ def main():
     test_from_bytes_as_bytes()
     test_iadd()
     test_indexing()
+    test_init_from_index()
     test_insert()
     test_interleave()
     test_issue_1625()
