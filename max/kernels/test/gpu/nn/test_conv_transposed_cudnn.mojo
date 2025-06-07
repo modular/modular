@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
 from nn.conv_transpose import conv_transpose_naive
-from nn.conv_transpose import conv_backward_data_cudnn
+from nn.conv_transpose import conv_transposed_cudnn
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -168,12 +168,10 @@ fn test_conv_transposed_cudnn[
     var padding_hw = Index(0, pad_val)
 
     # Invoke cuDNN helper.
-    conv_backward_data_cudnn[
-        filter_shape4d_nchw, input_shape4d_nchw, output_shape4d_nchw, type
-    ](
-        d_filter.buffer._unsafe_ptr(),  # w (filter)
-        d_input.buffer._unsafe_ptr(),  # dy (input grad)
-        d_output.buffer._unsafe_ptr(),  # dx (output)
+    conv_transposed_cudnn[type, type, type](
+        d_input.tensor,  # dy (input grad)
+        d_filter.tensor,  # w (filter)
+        d_output.tensor,  # dx (output)
         stride_hw,
         dilation_hw,
         padding_hw,

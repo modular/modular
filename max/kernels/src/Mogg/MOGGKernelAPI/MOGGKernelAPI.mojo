@@ -95,7 +95,7 @@ from nn.concat import _concat_cpu, concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
-from nn.conv_transpose import conv_transpose_shape, conv_transposed
+from nn.conv_transpose import conv_transpose_shape, conv_transposed_cpu
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
@@ -5698,7 +5698,7 @@ struct ConvTranspose:
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        conv_transposed[
+        conv_transposed_cpu[
             input.rank,
             filter.rank,
             input._static_shape,  # Input shape.
