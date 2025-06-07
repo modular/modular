@@ -157,6 +157,26 @@ what we publish.
   Bobyrev](https://github.com/kirillbobyrev) mitigate the found issues and add
   tests to ensure correctness going forward.
 
+- `List`, `InlineArray`, `Deque`, `LinkedList`, and `SIMD` types all support
+   construction via list literal syntax:
+
+```mojo
+var list: List[Int] = [1, 2, 3]
+var vec: SIMD[DType.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+var deque: Deque[Float64] = [1, 2.5]
+var llist: LinkedList[Int] = [1, 2, 3]
+var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
+```
+
+- `Dict` and `Set` support construction via dict literal and set literal syntax,
+   respectively:
+
+```mojo
+var dict1 = {String("foo"): 1, String("bar"): 2}
+var dict2 = {1: 4, 2: 7, 3: 18}
+var set = {1, 2, 3}
+```
+
 Changes to Python-Mojo interoperability:
 
 - Python objects are now constructible with list/set/dict literal syntax, e.g.:
