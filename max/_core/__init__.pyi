@@ -121,9 +121,6 @@ class OpBuilder:
         self, type: type[Op], location: Location
     ) -> Callable[..., Op]: ...
 
-class _LockedSymbolTableCollection:
-    pass
-
 class _BitVector:
     pass
 
