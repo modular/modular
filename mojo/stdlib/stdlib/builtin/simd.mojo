@@ -466,6 +466,150 @@ struct SIMD[dtype: DType, size: Int](
         else:
             self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
 
+    @doc_private
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Self._mlir_type, /):
+        """Initializes the SIMD vector with the underlying mlir value.
+
+        Args:
+            value: The input value.
+        """
+        self.value = value
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: IntLiteral, /):
+        """Initializes the SIMD vector with an integer.
+
+        The integer value is splatted across all the elements of the SIMD
+        vector.
+
+        Args:
+            value: The input value.
+        """
+        _simd_construction_checks[dtype, size]()
+        var si128_ = __mlir_attr[
+            `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
+        ]
+        var si128 = __mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<si128>`
+        ](si128_)
+        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si128)
+
+        @parameter
+        if size == 1:
+            self.value = rebind[Self._mlir_type](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
+
+    # TODO: should be "builtin" when constrained is replaced with 'requires'.
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: FloatLiteral, /):
+        """Initializes the SIMD vector with a float.
+
+        The value is splatted across all the elements of the SIMD
+        vector.
+
+        Args:
+            value: The input value.
+        """
+        _simd_construction_checks[dtype, size]()
+        constrained[
+            dtype.is_floating_point(), "the SIMD type must be floating point"
+        ]()
+        return __mlir_attr[
+            `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
+        ]
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self: SIMD[DType.bool, size], value: Bool, /):
+        """Initializes the SIMD vector with a bool value.
+
+        The bool value is splatted across all elements of the SIMD vector.
+
+        Args:
+            value: The bool value.
+        """
+        _simd_construction_checks[dtype, size]()
+        var s = __mlir_op.`pop.cast_from_builtin`[
+            _type = __mlir_type.`!pop.scalar<bool>`
+        ](value.value)
+        alias simd_bool = SIMD[DType.bool, size]._mlir_type
+
+        @parameter
+        if size == 1:
+            self = rebind[simd_bool](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[_type=simd_bool](s)
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Scalar[dtype], /):
+        """Constructs a SIMD vector by splatting a scalar value.
+
+        The input value is splatted across all elements of the SIMD vector.
+
+        Args:
+            value: The value to splat to the elements of the vector.
+        """
+        _simd_construction_checks[dtype, size]()
+        self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
+            value.value
+        )
+
+    @always_inline("nodebug")
+    fn __init__(out self, *elems: Scalar[dtype], __list_literal__: () = ()):
+        """Constructs a SIMD vector via a variadic list of elements.
+
+        The input values are assigned to the corresponding elements of the SIMD
+        vector.
+
+        Constraints:
+            The number of input values is equal to size of the SIMD vector.
+
+        Args:
+            elems: The variadic list of elements from which the SIMD vector is
+                   constructed.
+            __list_literal__: Tell Mojo to use this method for list literals.
+        """
+        _simd_construction_checks[dtype, size]()
+
+        # TODO: Make this a compile-time check when possible.
+        debug_assert(
+            size == len(elems),
+            (
+                "mismatch in the number of elements in the SIMD variadic"
+                " constructor"
+            ),
+        )
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        @parameter
+        for i in range(size):
+            self[i] = elems[i]
+
+    @staticmethod
+    fn from_bits[
+        int_dtype: DType, //
+    ](value: SIMD[int_dtype, size]) -> SIMD[dtype, size]:
+        """Initializes the SIMD vector from the bits of an integral SIMD vector.
+
+        Parameters:
+            int_dtype: The integral type of the input SIMD vector.
+
+        Args:
+            value: The SIMD vector to copy the bits from.
+
+        Returns:
+            The bitcast SIMD vector.
+        """
+        constrained[int_dtype.is_integral(), "the SIMD type must be integral"]()
+        return bitcast[dtype, size](value)
+
     @always_inline
     fn __init__[T: Floatable, //](out self: Float64, value: T, /):
         """Initialize a Float64 from a type conforming to Floatable.
@@ -522,151 +666,6 @@ struct SIMD[dtype: DType, size: Int](
             raise cpython.get_error()
 
         _ = float_obj
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: IntLiteral, /):
-        """Initializes the SIMD vector with an integer.
-
-        The integer value is splatted across all the elements of the SIMD
-        vector.
-
-        Args:
-            value: The input value.
-        """
-        _simd_construction_checks[dtype, size]()
-        var si128_ = __mlir_attr[
-            `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
-        ]
-        var si128 = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<si128>`
-        ](si128_)
-        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si128)
-
-        @parameter
-        if size == 1:
-            self.value = rebind[Self._mlir_type](s)
-        else:
-            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self: SIMD[DType.bool, size], value: Bool, /):
-        """Initializes the SIMD vector with a bool value.
-
-        The bool value is splatted across all elements of the SIMD vector.
-
-        Args:
-            value: The bool value.
-        """
-        _simd_construction_checks[dtype, size]()
-        var s = __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<bool>`
-        ](value.value)
-        alias simd_bool = SIMD[DType.bool, size]._mlir_type
-
-        @parameter
-        if size == 1:
-            self = rebind[simd_bool](s)
-        else:
-            self.value = __mlir_op.`pop.simd.splat`[_type=simd_bool](s)
-
-    @doc_private
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: Self._mlir_type, /):
-        """Initializes the SIMD vector with the underlying mlir value.
-
-        Args:
-            value: The input value.
-        """
-        _simd_construction_checks[dtype, size]()
-        self.value = value
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: Scalar[dtype], /):
-        """Constructs a SIMD vector by splatting a scalar value.
-
-        The input value is splatted across all elements of the SIMD vector.
-
-        Args:
-            value: The value to splat to the elements of the vector.
-        """
-        _simd_construction_checks[dtype, size]()
-        self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
-            value.value
-        )
-
-    @always_inline("nodebug")
-    fn __init__(out self, *elems: Scalar[dtype], __list_literal__: () = ()):
-        """Constructs a SIMD vector via a variadic list of elements.
-
-        The input values are assigned to the corresponding elements of the SIMD
-        vector.
-
-        Constraints:
-            The number of input values is equal to size of the SIMD vector.
-
-        Args:
-            elems: The variadic list of elements from which the SIMD vector is
-                   constructed.
-            __list_literal__: Tell Mojo to use this method for list literals.
-        """
-        _simd_construction_checks[dtype, size]()
-
-        # TODO: Make this a compile-time check when possible.
-        debug_assert(
-            size == len(elems),
-            (
-                "mismatch in the number of elements in the SIMD variadic"
-                " constructor"
-            ),
-        )
-
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
-
-        @parameter
-        for i in range(size):
-            self[i] = elems[i]
-
-    # TODO: should be "builtin" when constrained is replaced with 'requires'.
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: FloatLiteral, /):
-        """Initializes the SIMD vector with a float.
-
-        The value is splatted across all the elements of the SIMD
-        vector.
-
-        Args:
-            value: The input value.
-        """
-        _simd_construction_checks[dtype, size]()
-        constrained[
-            dtype.is_floating_point(), "the SIMD type must be floating point"
-        ]()
-        return __mlir_attr[
-            `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
-        ]
-
-    @staticmethod
-    fn from_bits[
-        int_dtype: DType, //
-    ](value: SIMD[int_dtype, size]) -> SIMD[dtype, size]:
-        """Initializes the SIMD vector from the bits of an integral SIMD vector.
-
-        Parameters:
-            int_dtype: The integral type of the input SIMD vector.
-
-        Args:
-            value: The SIMD vector to copy the bits from.
-
-        Returns:
-            The bitcast SIMD vector.
-        """
-        constrained[int_dtype.is_integral(), "the SIMD type must be integral"]()
-        return bitcast[dtype, size](value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
