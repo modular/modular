@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable
 
 import numpy as np
 from max.dtype import DType
@@ -44,7 +44,7 @@ from .kernels import (
     quantize_static_scaled_float8,
     swish_glu,
 )
-from .layer import Layer, Module
+from .layer import Layer, Module, Shardable
 
 
 class Float8ScaleGranularity(Enum):
@@ -162,7 +162,7 @@ class Float8Config:
         return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
 
 
-class Linear(Module):
+class Linear(Module, Shardable):
     """
     Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
@@ -281,25 +281,20 @@ class Linear(Module):
                 )
 
             weight_scale_shape: tuple[int, ...]
-            if (
-                float8_config.weight_scale.granularity
-                == Float8ScaleGranularity.ROWWISE
-            ):
+            weight_scale = float8_config.weight_scale
+            if weight_scale.is_rowwise:
                 weight_scale_shape = (int(self.weight.shape[0]), 1)
-            elif (
-                float8_config.weight_scale.granularity
-                == Float8ScaleGranularity.TENSOR
-            ):
-                weight_scale_shape = (1,)
+            elif weight_scale.is_tensor:
+                weight_scale_shape = ()
             else:
                 raise ValueError(
                     "only row-wise and tensor scaling are "
-                    f"supported currently, but got {float8_config.weight_scale.granularity}"
+                    f"supported currently, but got {weight_scale.granularity}"
                 )
 
             self.weight_scale = Weight(
                 name=f"{name}.weight_scale" if name else "weight_scale",
-                dtype=float8_config.weight_scale.dtype,
+                dtype=weight_scale.dtype,
                 # TODO: Pass a per-layer quantization type.
                 # For now since we only support row-wise
                 shape=weight_scale_shape,
@@ -307,8 +302,14 @@ class Linear(Module):
                 quantization_encoding=quantization_encoding,
             )
 
-    def set_sharding(self, strategy: ShardingStrategy) -> None:
-        """Sets the weight sharding for this linear layer.
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the weight sharding strategy."""
+        return self.weight.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the weight sharding strategy.
 
         Args:
             strategy: The strategy describing the weight sharding.
@@ -340,19 +341,61 @@ class Linear(Module):
                 else ShardingStrategy.replicate(strategy.num_devices)
             )
 
-    @property
-    def sharding_strategy(self) -> Optional[ShardingStrategy]:
-        """Get the weight sharding strategy."""
-        return self.weight.sharding_strategy
-
-    @sharding_strategy.setter
-    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the weight sharding strategy.
+    def shard(self, shard_idx: int, device: DeviceRef) -> Linear:
+        """Creates a sharded view of this Linear layer for a specific device.
 
         Args:
-            strategy: The strategy describing the weight sharding.
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded Linear instance.
         """
-        self.set_sharding(strategy)
+        if not self.weight.sharding_strategy:
+            raise ValueError(
+                "Linear layer cannot be sharded because no sharding strategy was provided."
+            )
+
+        # Calculate sharded dimensions.
+        out_dim = (
+            int(self.weight.shape[0])
+            // self.weight.sharding_strategy.num_devices
+            if self.weight.sharding_strategy.is_rowwise
+            else int(self.weight.shape[0])
+        )
+
+        # Create new Linear with same configuration.
+        sharded = Linear(
+            in_dim=int(self.weight.shape[1]),
+            out_dim=out_dim,
+            dtype=self.weight.dtype,
+            device=device,
+            has_bias=self.bias is not None,
+            float8_config=self.float8_config,
+            clip_weight=self.clip_weight,
+        )
+
+        # Replace the weights with sharded versions.
+        sharded.weight = self.weight.shard(shard_idx, device)
+
+        # Handle bias sharding
+        if self.bias is not None:
+            sharded.bias = self.bias.shard(shard_idx, device)
+
+        # Handle float8 scales.
+        if self.float8_config:
+            if self.input_scale is not None:
+                # Input scale is always shared (scalar), which should be
+                # checked upstream.
+                assert len(self.input_scale.shape) == 0
+                sharded.input_scale = self.input_scale
+
+            if self.weight_scale is not None:
+                sharded.weight_scale = self.weight_scale.shard(
+                    shard_idx, device
+                )
+
+        return sharded
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.

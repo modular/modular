@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
 """An opaque KV Cache optimized attention mechanism with Rope."""
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ from ..kv_cache import (
     PagedKVCacheCollection,
 )
 from ..layer import Module
-from ..linear import Float8Config, Float8ScaleGranularity, Linear
+from ..linear import Float8Config, Linear
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
     AttentionImpl,
@@ -229,45 +230,29 @@ class AttentionWithRope(Module):
                 device=self.devices[0],
             )
         else:
-            self.q_proj = Weight(
-                name="q_proj.weight",
+            self.q_proj = linear_cls(
+                in_dim=hidden_size,
+                out_dim=q_weight_dim,
                 dtype=dtype,
-                shape=[q_weight_dim, hidden_size],
                 device=self.devices[0],
+                has_bias=has_bias,
+                float8_config=float8_config,
             )
-            self.k_proj = Weight(
-                name="k_proj.weight",
+            self.k_proj = linear_cls(
+                in_dim=hidden_size,
+                out_dim=kv_weight_dim,
                 dtype=dtype,
-                shape=[kv_weight_dim, hidden_size],
                 device=self.devices[0],
+                has_bias=has_bias,
+                float8_config=float8_config,
             )
-            self.v_proj = Weight(
-                name="v_proj.weight",
+            self.v_proj = linear_cls(
+                in_dim=hidden_size,
+                out_dim=kv_weight_dim,
                 dtype=dtype,
-                shape=[kv_weight_dim, hidden_size],
                 device=self.devices[0],
-            )
-
-        if has_bias:
-            assert not stacked_qkv, "Bias is not supported with stacked qkv."
-
-            self.bias_q = Weight(
-                name="q_proj.bias",
-                dtype=dtype,
-                shape=[q_weight_dim],
-                device=self.devices[0],
-            )
-            self.bias_k = Weight(
-                name="k_proj.bias",
-                dtype=dtype,
-                shape=[kv_weight_dim],
-                device=self.devices[0],
-            )
-            self.bias_v = Weight(
-                name="v_proj.bias",
-                dtype=dtype,
-                shape=[kv_weight_dim],
-                device=self.devices[0],
+                has_bias=has_bias,
+                float8_config=float8_config,
             )
 
         self.o_proj = linear_cls(
@@ -278,84 +263,15 @@ class AttentionWithRope(Module):
             float8_config=float8_config,
         )
 
-        if float8_config:
-            if (
-                float8_config.input_scale.granularity
-                == Float8ScaleGranularity.TENSOR
-            ):
-                self.input_scale_q = Weight(
-                    name="q_proj.input_scale",
-                    dtype=float8_config.input_scale.dtype,
-                    shape=[1],
-                    device=self.devices[0],
-                )
-                self.input_scale_k = Weight(
-                    name="k_proj.input_scale",
-                    dtype=float8_config.input_scale.dtype,
-                    shape=[1],
-                    device=self.devices[0],
-                )
-                self.input_scale_v = Weight(
-                    name="v_proj.input_scale",
-                    dtype=float8_config.input_scale.dtype,
-                    shape=[1],
-                    device=self.devices[0],
-                )
-
-            if (
-                float8_config.weight_scale.granularity
-                == Float8ScaleGranularity.TENSOR
-            ):
-                self.weight_scale_q = Weight(
-                    name="q_proj.weight_scale",
-                    dtype=float8_config.weight_scale.dtype,
-                    shape=[1],
-                    device=self.devices[0],
-                )
-                self.weight_scale_k = Weight(
-                    name="k_proj.weight_scale",
-                    dtype=float8_config.weight_scale.dtype,
-                    shape=[1],
-                    device=self.devices[0],
-                )
-                self.weight_scale_v = Weight(
-                    name="v_proj.weight_scale",
-                    dtype=float8_config.weight_scale.dtype,
-                    shape=[1],
-                    device=self.devices[0],
-                )
-            elif (
-                float8_config.weight_scale.granularity
-                == Float8ScaleGranularity.ROWWISE
-            ):
-                self.weight_scale_q = Weight(
-                    name="q_proj.weight_scale",
-                    dtype=float8_config.weight_scale.dtype,
-                    shape=[self.q_proj.shape[0], 1],
-                    device=self.devices[0],
-                )
-                self.weight_scale_k = Weight(
-                    name="k_proj.weight_scale",
-                    dtype=float8_config.weight_scale.dtype,
-                    shape=[self.k_proj.shape[0], 1],
-                    device=self.devices[0],
-                )
-                self.weight_scale_v = Weight(
-                    name="v_proj.weight_scale",
-                    dtype=float8_config.weight_scale.dtype,
-                    shape=[self.v_proj.shape[0], 1],
-                    device=self.devices[0],
-                )
-
     @property
     def wqkv(self) -> TensorValue:
         """The concatenation of q, k, and v weight vectors."""
         if self.stacked_qkv:
             return self.qkv_proj
         else:
-            wq: TensorValue = self.q_proj
-            wk: TensorValue = self.k_proj
-            wv: TensorValue = self.v_proj
+            wq: TensorValue = self.q_proj.weight
+            wk: TensorValue = self.k_proj.weight
+            wv: TensorValue = self.v_proj.weight
             if self.clip_qkv:
                 wq = clamp(wq, min=-self.clip_qkv, max=self.clip_qkv)
                 wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
@@ -370,12 +286,14 @@ class AttentionWithRope(Module):
             # https://github.com/vllm-project/vllm/blob/9b1769dd9ad13a5688d1e2b1b5f00b07b3716969/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_w8a8_fp8.py#L35
             if (
                 self.float8_config
-                and self.float8_config.weight_scale.granularity
-                == Float8ScaleGranularity.TENSOR
+                and self.float8_config.weight_scale.is_tensor
+                and self.q_proj.weight_scale is not None
+                and self.k_proj.weight_scale is not None
+                and self.v_proj.weight_scale is not None
             ):
-                wq = wq * self.weight_scale_q
-                wk = wk * self.weight_scale_k
-                wv = wv * self.weight_scale_v
+                wq = wq * self.q_proj.weight_scale.to(wq.device)
+                wk = wk * self.k_proj.weight_scale.to(wk.device)
+                wv = wv * self.v_proj.weight_scale.to(wv.device)
 
             wqkv = ops.concat((wq, wk, wv))
             if self.float8_config and self.float8_config.is_static:
@@ -392,7 +310,16 @@ class AttentionWithRope(Module):
         if not self.has_bias:
             return None
 
-        return ops.concat((self.bias_q, self.bias_k, self.bias_v))
+        # This was already checked in the constructor.
+        assert not self.stacked_qkv
+
+        # Access bias, which should all exist since has_bias=True.
+        assert self.q_proj.bias is not None
+        assert self.k_proj.bias is not None
+        assert self.v_proj.bias is not None
+        return ops.concat(
+            (self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)
+        )
 
     @property
     def qkv_input_scale(self) -> TensorValue | None:
@@ -400,24 +327,54 @@ class AttentionWithRope(Module):
         if not self.float8_config or self.float8_config.is_dynamic:
             return None
 
+        # TODO(MODELS-595): Reuse AttentionWithRopeQKV for this.
+        if self.stacked_qkv:
+            raise NotImplementedError(
+                "QKV input scale not implemented for stacked_qkv=True"
+            )
+
+        assert self.q_proj.input_scale is not None
+        assert self.k_proj.input_scale is not None
+        assert self.v_proj.input_scale is not None
+
         return ops.max(
             ops.concat(
-                (self.input_scale_q, self.input_scale_k, self.input_scale_v)
+                (
+                    self.q_proj.input_scale.reshape((1,)),
+                    self.k_proj.input_scale.reshape((1,)),
+                    self.v_proj.input_scale.reshape((1,)),
+                )
             )
-        ).reshape([])
+        ).reshape(())
 
     @property
     def qkv_weight_scale(self) -> TensorValue:
         """The max of q, k, and v scale weight vectors."""
         assert self.float8_config
 
-        weight_scale = ops.concat(
-            (
-                self.weight_scale_q,
-                self.weight_scale_k,
-                self.weight_scale_v,
+        # TODO(MODELS-595): Reuse AttentionWithRopeQKV for this.
+        if self.stacked_qkv:
+            # TODO: Handle stacked QKV weight scale when implemented
+            raise NotImplementedError(
+                "QKV weight scale not implemented for stacked_qkv=True"
             )
-        )
+
+        assert self.q_proj.weight_scale is not None
+        assert self.k_proj.weight_scale is not None
+        assert self.v_proj.weight_scale is not None
+
+        q_scale: TensorValue = self.q_proj.weight_scale
+        k_scale: TensorValue = self.k_proj.weight_scale
+        v_scale: TensorValue = self.v_proj.weight_scale
+        if len(q_scale.shape) == 0:
+            q_scale = q_scale.reshape((1,))
+        if len(k_scale.shape) == 0:
+            k_scale = k_scale.reshape((1,))
+        if len(v_scale.shape) == 0:
+            v_scale = v_scale.reshape((1,))
+
+        weight_scale = ops.concat((q_scale, k_scale, v_scale))
+
         if self.float8_config.is_dynamic:
             # In the dynamic scaling case, return the weight scales directly.
             return weight_scale
@@ -463,8 +420,8 @@ class AttentionWithRope(Module):
                 kv_collection=kv_collection,
                 layer_idx=layer_idx,
                 n_heads=self.n_heads,
-                input_scale=x_scales,
-                weight_scale=weight_scale,
+                input_scale=x_scales.to(x.device),
+                weight_scale=weight_scale.to(x.device),
             )
         else:
             # Call into fused qkv ragged matmul.
@@ -596,7 +553,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         )
         self.devices = devices or [DeviceRef.CPU()]
 
-        self.q_proj = Weight(
+        self.q_proj_weight = Weight(
             name="q_proj.weight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
@@ -604,14 +561,14 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             device=self.devices[0],
         )
 
-        self.k_proj = Weight(
+        self.k_proj_weight = Weight(
             name="k_proj.weight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
             quantization_encoding=quantization_encoding,
             device=self.devices[0],
         )
-        self.v_proj = Weight(
+        self.v_proj_weight = Weight(
             name="v_proj.weight",
             dtype=DType.uint8,
             shape=(1, 1),  # Shape will be overridden at load_state_dict.
@@ -651,9 +608,9 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        assert self.q_proj.quantization_encoding is not None
-        assert self.k_proj.quantization_encoding is not None
-        assert self.v_proj.quantization_encoding is not None
+        assert self.q_proj_weight.quantization_encoding is not None
+        assert self.k_proj_weight.quantization_encoding is not None
+        assert self.v_proj_weight.quantization_encoding is not None
 
         # Call into unfused qkv ragged matmul.
         xq = unfused_qkv_ragged_matmul_gguf_quantized(
@@ -661,12 +618,12 @@ class GGUFQAttentionWithRope(AttentionWithRope):
             input=x,
             input_row_offsets=input_row_offsets,
             n_heads=self.n_heads,
-            q_weight=self.q_proj,
-            k_weight=self.k_proj,
-            v_weight=self.v_proj,
-            quantization_encoding_q=self.q_proj.quantization_encoding,
-            quantization_encoding_k=self.k_proj.quantization_encoding,
-            quantization_encoding_v=self.v_proj.quantization_encoding,
+            q_weight=self.q_proj_weight,
+            k_weight=self.k_proj_weight,
+            v_weight=self.v_proj_weight,
+            quantization_encoding_q=self.q_proj_weight.quantization_encoding,
+            quantization_encoding_k=self.k_proj_weight.quantization_encoding,
+            quantization_encoding_v=self.v_proj_weight.quantization_encoding,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
         )
@@ -933,7 +890,8 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
                 layer.q_proj = self.q_proj.shard(n, device)
                 layer.k_proj = self.k_proj.shard(n, device)
                 layer.v_proj = self.v_proj.shard(n, device)
-            layer.o_proj.weight = self.o_proj.weight.shard(n, device)
+
+            layer.o_proj = self.o_proj.shard(n, device)
             self.list_of_attentions.append(layer)
 
     def __call__(  # type: ignore[override]

@@ -14,6 +14,7 @@
 from .layer import (
     Layer,
     Module,
+    Shardable,
     add_layer_hook,
     clear_hooks,
     recursive_named_layers,
@@ -22,9 +23,10 @@ from .layer_list import LayerList
 
 __all__ = [
     "Layer",
+    "LayerList",
     "Module",
+    "Shardable",
     "add_layer_hook",
     "clear_hooks",
     "recursive_named_layers",
-    "LayerList",
 ]
