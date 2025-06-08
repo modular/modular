@@ -171,27 +171,47 @@ def fused_qkv_ragged_matmul_scaled_float8(
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
     if input.dtype != wqkv.dtype:
-        msg = (
+        raise ValueError(
             "expected input and wqkv to have the same dtype, but got"
             f" {input.dtype} and {wqkv.dtype}, respectively."
         )
-        raise ValueError(msg)
 
     input_rank_expected = 2
     if input.rank != input_rank_expected:
-        msg = f"expected input to have rank {input_rank_expected}, was {input.rank}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        )
 
     if input_row_offsets.dtype != DType.uint32:
-        msg = (
+        raise ValueError(
             "expected input_row_offsets to have dtype uint32, was"
             f" {input_row_offsets.dtype}"
         )
-        raise ValueError(msg)
 
     if layer_idx.dtype != DType.uint32:
-        msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    # Device check - all tensors must be on the same device
+    if not all(
+        t.device == input.device
+        for t in [wqkv, input_row_offsets, input_scale, weight_scale]
+    ):
+        raise ValueError(
+            f"expected all tensors to be on the same device as input ({input.device}), "
+            f"but got:\n"
+            f"  wqkv={wqkv.device}\n"
+            f"  input_row_offsets={input_row_offsets.device}\n"
+            f"  input_scale={input_scale.device}\n"
+            f"  weight_scale={weight_scale.device}"
+        )
+
+    # layer_idx must be a scalar on CPU as it's used for indexing
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            f"expected layer_idx to be on CPU device, but got {layer_idx.device}"
+        )
 
     # for per-tensor quantization, the scale is a scalar. We view it as a 1x1
     # rank-2 tensor so that we can use the same kernel for per-tensor and
