@@ -69,7 +69,6 @@ def test_pipeline_receives_sampling_params() -> None:
         repetition_penalty=1.05,
         enable_structured_output=False,
         enable_variable_logits=True,
-        do_penalties=False,
     )
 
     # Create test audio data.
@@ -134,7 +133,6 @@ def test_pipeline_receives_default_sampling_params() -> None:
     assert pipeline.received_sampling_params.repetition_penalty == 1.0
     assert pipeline.received_sampling_params.enable_structured_output is False
     assert pipeline.received_sampling_params.enable_variable_logits is False
-    assert pipeline.received_sampling_params.do_penalties is False
 
     # Verify the audio generation still works correctly.
     assert result.is_done is True
@@ -145,7 +143,7 @@ def test_multiple_requests_different_sampling_params():
     """Test that different requests with different SamplingParams are handled correctly."""
     params_list = [
         SamplingParams(top_k=1, temperature=0.1),
-        SamplingParams(top_k=10, temperature=1.0, do_penalties=True),
+        SamplingParams(top_k=10, temperature=1.0),
         SamplingParams(
             top_k=50, temperature=2.0, enable_structured_output=True
         ),
@@ -176,10 +174,6 @@ def test_multiple_requests_different_sampling_params():
         assert pipeline.received_sampling_params.top_k == params.top_k
         assert (
             pipeline.received_sampling_params.temperature == params.temperature
-        )
-        assert (
-            pipeline.received_sampling_params.do_penalties
-            == params.do_penalties
         )
         assert (
             pipeline.received_sampling_params.enable_structured_output
