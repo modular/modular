@@ -1,0 +1,230 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Tests for Linear layer in max.nn, focusing on sharding functionality."""
+
+from __future__ import annotations
+
+import pytest
+from max.dtype import DType
+from max.graph import (
+    DeviceRef,
+    Graph,
+    ShardingStrategy,
+    TensorType,
+)
+from max.nn.linear import (
+    Float8Config,
+    Float8InputScaleSpec,
+    Float8ScaleGranularity,
+    Float8ScaleOrigin,
+    Float8WeightScaleSpec,
+    Linear,
+)
+
+
+def test_linear_shard_basic():
+    """Test basic Linear.shard() functionality."""
+    # NOTE: calling weight.shape on a sharded weight requires a graph context,
+    # because the shape comes from the MLIR type.
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        linear = Linear(
+            in_dim=4096,
+            out_dim=1024,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+        )
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=4)
+
+        # Test sharding for each device.
+        for i in range(4):
+            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
+            assert tuple(int(d) for d in sharded.weight.shape) == (
+                256,
+                4096,
+            )  # 1024/4 = 256
+            assert sharded.device == DeviceRef.GPU(i)
+
+
+def test_linear_shard_with_bias():
+    """Test Linear.shard() with bias."""
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        linear = Linear(
+            in_dim=4096,
+            out_dim=1024,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+            has_bias=True,
+        )
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
+
+        sharded = linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
+        assert sharded.bias is not None
+        assert tuple(int(d) for d in sharded.bias.shape) == (
+            512,
+        )  # 1024/2 = 512
+        assert sharded.device == DeviceRef.GPU(0)
+
+
+def test_linear_shard_no_strategy_error():
+    """Test that sharding without strategy raises error."""
+    linear = Linear(
+        in_dim=100, out_dim=50, dtype=DType.float32, device=DeviceRef.GPU(0)
+    )
+
+    with pytest.raises(ValueError, match="no sharding strategy"):
+        linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
+
+
+def test_linear_shard_with_float8_tensor_scale():
+    """Test Linear.shard() with float8 tensor-wise scaling."""
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        float8_config = Float8Config(
+            weight_scale=Float8WeightScaleSpec(
+                dtype=DType.float32, granularity=Float8ScaleGranularity.TENSOR
+            ),
+            input_scale=Float8InputScaleSpec(
+                dtype=DType.float32,
+                granularity=Float8ScaleGranularity.TENSOR,
+                origin=Float8ScaleOrigin.STATIC,
+            ),
+            mlp_in_float8=set(),
+            attn_qkv_in_float8=set(),
+        )
+
+        linear = Linear(
+            in_dim=4096,
+            out_dim=1024,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+            float8_config=float8_config,
+        )
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
+
+        sharded = linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
+
+        # Check that input scale is shared (same object).
+        assert sharded.input_scale is linear.input_scale
+        if sharded.input_scale is not None:
+            assert len(sharded.input_scale.shape) == 0  # Scalar
+
+        # Check that weight scale exists and is scalar for tensor granularity.
+        assert sharded.weight_scale is not None
+        assert len(sharded.weight_scale.shape) == 0  # Scalar
+
+
+def test_linear_shard_with_float8_rowwise_scale():
+    """Test Linear.shard() with float8 row-wise scaling."""
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        float8_config = Float8Config(
+            weight_scale=Float8WeightScaleSpec(
+                dtype=DType.float32, granularity=Float8ScaleGranularity.ROWWISE
+            ),
+            input_scale=Float8InputScaleSpec(
+                dtype=DType.float32,
+                granularity=Float8ScaleGranularity.TENSOR,
+                origin=Float8ScaleOrigin.STATIC,
+            ),
+            mlp_in_float8=set(),
+            attn_qkv_in_float8=set(),
+        )
+
+        linear = Linear(
+            in_dim=4096,
+            out_dim=1024,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+            float8_config=float8_config,
+        )
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
+
+        sharded = linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
+
+        # Weight scale should be sharded for rowwise.
+        if sharded.weight_scale is not None:
+            assert tuple(int(d) for d in sharded.weight_scale.shape) == (
+                512,
+                1,
+            )  # 1024/2 = 512
+
+
+def test_linear_sharding_strategy_property():
+    """Test Linear sharding_strategy property getter/setter."""
+    linear = Linear(
+        in_dim=100, out_dim=50, dtype=DType.float32, device=DeviceRef.GPU(0)
+    )
+
+    # Test setting sharding strategy via property.
+    strategy = ShardingStrategy.rowwise(num_devices=2)
+    linear.sharding_strategy = strategy
+
+    # Verify the sharding strategy is set on weight.
+    assert linear.weight.sharding_strategy == strategy
+    assert linear.sharding_strategy == strategy
+
+
+def test_linear_sharding_preserves_config():
+    """Test that sharding preserves all Linear configuration."""
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.bfloat16, (1, 2048), device=DeviceRef.GPU(0))
+        ],
+    ):
+        float8_config = Float8Config(
+            weight_scale=Float8WeightScaleSpec(
+                dtype=DType.float32, granularity=Float8ScaleGranularity.TENSOR
+            ),
+            input_scale=Float8InputScaleSpec(
+                dtype=DType.float32,
+                granularity=Float8ScaleGranularity.TENSOR,
+                origin=Float8ScaleOrigin.STATIC,
+            ),
+            mlp_in_float8=set(),
+            attn_qkv_in_float8=set(),
+        )
+        linear = Linear(
+            in_dim=2048,
+            out_dim=512,
+            dtype=DType.bfloat16,
+            has_bias=True,
+            float8_config=float8_config,
+            clip_weight=0.5,
+            device=DeviceRef.GPU(0),
+        )
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
+
+        sharded = linear.shard(shard_idx=1, device=DeviceRef.GPU(1))
+
+        # Check core config is preserved.
+        assert tuple(int(d) for d in sharded.weight.shape) == (
+            256,
+            2048,
+        )  # 512/2
+        assert sharded.weight.dtype == DType.bfloat16
+        assert sharded.bias is not None
+        assert sharded.float8_config == float8_config
+        assert sharded.clip_weight == 0.5
+        assert sharded.device == DeviceRef.GPU(1)
