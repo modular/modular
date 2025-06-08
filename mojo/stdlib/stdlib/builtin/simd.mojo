@@ -676,9 +676,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             The value at position `idx`.
         """
-        return __mlir_op.`pop.simd.extractelement`[
-            _type = Scalar[dtype]._mlir_type
-        ](self.value, idx.value)
+        return __mlir_op.`pop.simd.extractelement`(self.value, idx.value)
 
     @always_inline("nodebug")
     fn __setitem__(mut self, idx: Int, val: Scalar[dtype]):
@@ -1630,16 +1628,16 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if dtype.is_unsigned() or dtype is DType.bool:
             return self
-        elif dtype.is_floating_point():
+        elif dtype.is_integral():
+            return (self < 0).select(-self, self)
+        else:
 
             @parameter
             if is_nvidia_gpu():
 
                 @parameter
                 if dtype.is_half_float():
-                    alias prefix = StaticString(
-                        "abs.bf16"
-                    ) if dtype is DType.bfloat16 else "abs.f16"
+                    alias prefix = "abs.bf16" if dtype is DType.bfloat16 else "abs.f16"
                     return _call_ptx_intrinsic[
                         scalar_instruction=prefix,
                         vector2_instruction = prefix + "x2",
@@ -1652,8 +1650,6 @@ struct SIMD[dtype: DType, size: Int](
 
             alias mask = FPUtils[dtype].exponent_mantissa_mask()
             return Self.from_bits(self.to_bits() & mask)
-        else:
-            return (self < 0).select(-self, self)
 
     @always_inline("nodebug")
     fn __round__(self) -> Self:
@@ -1690,7 +1686,7 @@ struct SIMD[dtype: DType, size: Int](
         if dtype.is_integral() or dtype is DType.bool:
             return self
 
-        var exp = SIMD[dtype, size](10) ** ndigits
+        var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
 
     fn __hash__(self) -> UInt:
@@ -1777,9 +1773,11 @@ struct SIMD[dtype: DType, size: Int](
         .
         """
 
+        alias Target = SIMD[target, size]
+
         @parameter
-        if dtype == target:
-            return rebind[SIMD[target, size]](self)
+        if dtype is target:
+            return rebind[Target](self)
 
         @parameter
         if is_nvidia_gpu():
@@ -1793,11 +1791,9 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if target in (DType.float8_e4m3fn, DType.float8_e5m2):
             # TODO(KERN-1488): use gpu (H100) instruction to convert from fp16 to fp8
-            return rebind[SIMD[target, size]](
+            return rebind[Target](
                 _convert_f32_to_float8[size=size, target=target](
-                    rebind[SIMD[DType.float32, size]](
-                        self.cast[DType.float32]()
-                    )
+                    self.cast[DType.float32]()
                 )
             )
 
@@ -1806,10 +1802,10 @@ struct SIMD[dtype: DType, size: Int](
             constrained[
                 target
                 in (
-                    DType.float64,
-                    DType.float32,
-                    DType.float16,
                     DType.bfloat16,
+                    DType.float16,
+                    DType.float32,
+                    DType.float64,
                 ),
                 (
                     String(
@@ -1825,17 +1821,9 @@ struct SIMD[dtype: DType, size: Int](
             ]()
 
             @parameter
-            if target in (DType.float32, DType.float64):
-                return _convert_float8_to_f32(
-                    rebind[SIMD[dtype, size]](self)
-                ).cast[target]()
-            elif target is DType.float16:
-                return _convert_float8_to_f16(
-                    rebind[SIMD[dtype, size]](self)
-                ).cast[target]()
-            return rebind[SIMD[target, size]](
-                self.cast[DType.float32]().cast[DType.bfloat16]()
-            )
+            if target is DType.float16:
+                return _convert_float8_to_f16(self).cast[target]()
+            return _convert_float8_to_f32(self).cast[target]()
 
         @parameter
         if has_neon() and (dtype is DType.bfloat16 or target is DType.bfloat16):
@@ -1844,11 +1832,9 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype is DType.bool:
-            return self.select(SIMD[target, size](1), SIMD[target, size](0))
-
-        @parameter
-        if target is DType.bool:
-            return rebind[SIMD[target, size]](self != 0)
+            return self.select[target](1, 0)
+        elif target is DType.bool:
+            return rebind[Target](self != 0)
 
         @parameter
         if dtype is DType.bfloat16 and (
@@ -1857,15 +1843,11 @@ struct SIMD[dtype: DType, size: Int](
             return _bfloat16_to_f32(
                 rebind[SIMD[DType.bfloat16, size]](self)
             ).cast[target]()
-
-        @parameter
-        if target is DType.bfloat16 and not _has_native_bf16_support():
-            return rebind[SIMD[target, size]](
-                _f32_to_bfloat16(self.cast[DType.float32]())
-            )
+        elif target is DType.bfloat16 and not _has_native_bf16_support():
+            return rebind[Target](_f32_to_bfloat16(self.cast[DType.float32]()))
 
         return __mlir_op.`pop.cast`[
-            _type = SIMD[target, size]._mlir_type, fast = __mlir_attr.unit
+            _type = Target._mlir_type, fast = __mlir_attr.unit
         ](self.value)
 
     @always_inline
@@ -2252,8 +2234,8 @@ struct SIMD[dtype: DType, size: Int](
         if (
             # TODO: Allow SSE3 when we have sys.has_sse3()
             (CompilationTarget.has_sse4() or sys.has_neon())
-            and Self.dtype == DType.uint8
-            and Self.size == 16
+            and dtype is DType.uint8
+            and size == 16
         ):
             # The instruction works with mask size of 16
             alias target_mask_size = 16
@@ -2263,35 +2245,25 @@ struct SIMD[dtype: DType, size: Int](
             @parameter
             if mask_size < target_mask_size:
                 # Make a bigger mask (x2) and retry
-                var new_mask = mask.join(SIMD[DType.uint8, mask_size]())
-                return self._dynamic_shuffle(new_mask).slice[mask_size]()
+                return self._dynamic_shuffle(mask.join({})).slice[mask_size]()
             elif mask_size == target_mask_size:
-                # The compiler isn't smart enough yet. It complains about parameter mismatch
-                # because it cannot narrow them. Let's help it a bit.
-                var indices_copy = rebind[SIMD[DType.uint8, 16]](mask)
-                var self_copy = rebind[SIMD[DType.uint8, 16]](self)
-                var result = _pshuf_or_tbl1(self_copy, indices_copy)
-                return rebind[SIMD[Self.dtype, mask_size]](result)
+                alias dt = SIMD[DType.uint8, target_mask_size]
+                var result = _pshuf_or_tbl1(rebind[dt](self), rebind[dt](mask))
+                return rebind[SIMD[dtype, mask_size]](result)
             elif mask_size > target_mask_size:
                 # We split it in two and call dynamic_shuffle twice.
-                var first_half_of_mask = mask.slice[mask_size // 2, offset=0]()
-                var second_half_of_mask = mask.slice[
-                    mask_size // 2, offset = mask_size // 2
-                ]()
-
-                var first_result = self._dynamic_shuffle(first_half_of_mask)
-                var second_result = self._dynamic_shuffle(second_half_of_mask)
-
-                var result = first_result.join(second_result)
-                # The compiler doesn't understand that if divide by 2 and then multiply by 2,
-                # we get the same value. So we need to help it a bit.
-                return rebind[SIMD[Self.dtype, mask_size]](result)
+                alias half_size = mask_size // 2
+                var fst_mask = mask.slice[half_size, offset=0]()
+                var snd_mask = mask.slice[half_size, offset=half_size]()
+                var fst = self._dynamic_shuffle(fst_mask)
+                var snd = self._dynamic_shuffle(snd_mask)
+                return rebind[SIMD[dtype, mask_size]](fst.join(snd))
 
         # Slow path, ~3x slower than pshuf for size 16
-        var result = SIMD[Self.dtype, mask_size]()
+        var result = SIMD[dtype, mask_size]()
 
         @parameter
-        for i in range(0, mask_size):
+        for i in range(mask_size):
             result[i] = self[Int(mask[i])]
         return result
 
@@ -2959,17 +2931,12 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         fn build_idx() -> IndexList[size]:
-            var values = IndexList[size]()
-            var idx = 0
+            var res = IndexList[size]()
+            for i in range(size):
+                res[i] = size - i - 1
+            return res
 
-            @parameter
-            for i in reversed(range(size)):
-                values[idx] = i
-                idx += 1
-            return values
-
-        alias idx = build_idx()
-        return self.shuffle[mask=idx]()
+        return self.shuffle[mask = build_idx()]()
 
 
 fn _pshuf_or_tbl1(
@@ -3191,9 +3158,7 @@ fn _convert_float8_to_f32[
 ](val: SIMD[dtype, size]) -> SIMD[DType.float32, size]:
     @parameter
     if _is_sm_9x_or_newer():
-        return _convert_float8_to_f16(rebind[SIMD[dtype, size]](val)).cast[
-            DType.float32
-        ]()
+        return _convert_float8_to_f16(val).cast[DType.float32]()
     else:
 
         @always_inline
@@ -3212,16 +3177,12 @@ fn _convert_float8_to_f32[
 fn _convert_float8_to_f16[
     dtype: DType,
     size: Int,
-](val: SIMD[dtype, size],) -> SIMD[DType.float16, size]:
+](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
     @parameter
     if _is_sm_9x_or_newer():
-        return __mlir_op.`pop.cast`[
-            _type = SIMD[DType.float16, size]._mlir_type
-        ](val.value)
+        return val.cast[DType.float16]()
     else:
-        return _convert_float8_to_f32(rebind[SIMD[dtype, size]](val)).cast[
-            DType.float16
-        ]()
+        return _convert_float8_to_f32(val).cast[DType.float16]()
 
 
 @always_inline
@@ -3229,12 +3190,10 @@ fn _convert_f32_to_float8[
     dtype: DType,
     target: DType,
     size: Int,
-](val: SIMD[dtype, size],) -> SIMD[target, size]:
+](val: SIMD[dtype, size]) -> SIMD[target, size]:
     @parameter
     if _is_sm_9x_or_newer():
-        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
-            val.value
-        )
+        return val.cast[target]()
     else:
 
         @always_inline
@@ -3616,7 +3575,7 @@ fn _write_scalar[
     W: Writer, //,
 ](mut writer: W, value: Scalar[dtype]):
     @parameter
-    if dtype == DType.bool:
+    if dtype is DType.bool:
         if value:
             writer.write("True")
         else:
