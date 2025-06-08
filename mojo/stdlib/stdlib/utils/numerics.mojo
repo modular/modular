@@ -539,10 +539,6 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f32>`,
         )
-    elif dtype is DType.tensor_float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<tf32>`,
-        )
     elif dtype is DType.float64:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f64>`,
@@ -641,10 +637,6 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f32>`,
         )
-    elif dtype is DType.tensor_float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<tf32>`,
-        )
     elif dtype is DType.float64:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f64>`,
@@ -689,10 +681,6 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
     elif dtype is DType.float32:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f32>`,
-        )
-    elif dtype is DType.tensor_float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<tf32>`,
         )
     elif dtype is DType.float64:
         return rebind[Scalar[dtype]](
