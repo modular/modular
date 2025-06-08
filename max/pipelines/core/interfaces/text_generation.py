@@ -123,9 +123,6 @@ class SamplingParams:
     their associated logit_offsets. This is needed to produce additional logits for echo and speculative
     decoding purposes."""
 
-    do_penalties: bool = False
-    """Whether to apply frequency and presence penalties to the model's output."""
-
     max_new_tokens: int | None = None
     """The maximum number of new tokens to generate in the response. If not set,
     the model may generate tokens until it reaches its internal limits or based
