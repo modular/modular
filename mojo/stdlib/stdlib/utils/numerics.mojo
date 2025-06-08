@@ -507,13 +507,9 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
     """
 
     @parameter
-    if dtype is DType.float8_e5m2:
+    if dtype is DType.float8_e3m4:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`,
-        )
-    elif dtype is DType.float8_e5m2fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e3m4>`,
         )
     elif dtype is DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
@@ -523,17 +519,29 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fnuz>`,
         )
-    elif dtype is DType.float16:
+    elif dtype is DType.float8_e5m2:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f16>`,
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`,
+        )
+    elif dtype is DType.float8_e5m2fnuz:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
         )
     elif dtype is DType.bfloat16:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
         )
+    elif dtype is DType.float16:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f16>`,
+        )
     elif dtype is DType.float32:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f32>`,
+        )
+    elif dtype is DType.tensor_float32:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<tf32>`,
         )
     elif dtype is DType.float64:
         return rebind[Scalar[dtype]](
@@ -621,25 +629,21 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`,
         )
-    elif dtype is DType.float8_e5m2fnuz:
+    elif dtype is DType.bfloat16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`,
-        )
-    elif dtype is DType.float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<bf16>`,
         )
     elif dtype is DType.float16:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f16>`,
         )
-    elif dtype is DType.bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<bf16>`,
-        )
     elif dtype is DType.float32:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f32>`,
+        )
+    elif dtype is DType.tensor_float32:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<tf32>`,
         )
     elif dtype is DType.float64:
         return rebind[Scalar[dtype]](
@@ -674,29 +678,21 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`,
         )
-    elif dtype is DType.float8_e5m2fnuz:
+    elif dtype is DType.bfloat16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2fnuz>`,
-        )
-    elif dtype is DType.float8_e4m3fn:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
-        )
-    elif dtype is DType.float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fnuz>`,
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<bf16>`,
         )
     elif dtype is DType.float16:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f16>`,
         )
-    elif dtype is DType.bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<bf16>`,
-        )
     elif dtype is DType.float32:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f32>`,
+        )
+    elif dtype is DType.tensor_float32:
+        return rebind[Scalar[dtype]](
+            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<tf32>`,
         )
     elif dtype is DType.float64:
         return rebind[Scalar[dtype]](
