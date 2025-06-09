@@ -242,7 +242,7 @@ fn _checked_tile_shape[
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         alias k_bytes = BK * sizeof[type]()
         constrained[
-            k_bytes == swizzle_mode.bytes(),
+            (k_bytes % swizzle_mode.bytes()) == 0,
             "K dim "
             + String(k_bytes)
             + " doesn't match "
