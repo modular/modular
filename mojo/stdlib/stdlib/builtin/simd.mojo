@@ -1630,26 +1630,25 @@ struct SIMD[dtype: DType, size: Int](
             return self
         elif dtype.is_integral():
             return (self < 0).select(-self, self)
-        else:
+
+        @parameter
+        if is_nvidia_gpu():
 
             @parameter
-            if is_nvidia_gpu():
+            if dtype.is_half_float():
+                alias prefix = "abs.bf16" if dtype is DType.bfloat16 else "abs.f16"
+                return _call_ptx_intrinsic[
+                    scalar_instruction=prefix,
+                    vector2_instruction = prefix + "x2",
+                    scalar_constraints="=h,h",
+                    vector_constraints="=r,r",
+                ](self)
+            return llvm_intrinsic["llvm.fabs", Self, has_side_effect=False](
+                self
+            )
 
-                @parameter
-                if dtype.is_half_float():
-                    alias prefix = "abs.bf16" if dtype is DType.bfloat16 else "abs.f16"
-                    return _call_ptx_intrinsic[
-                        scalar_instruction=prefix,
-                        vector2_instruction = prefix + "x2",
-                        scalar_constraints="=h,h",
-                        vector_constraints="=r,r",
-                    ](self)
-                return llvm_intrinsic["llvm.fabs", Self, has_side_effect=False](
-                    self
-                )
-
-            alias mask = FPUtils[dtype].exponent_mantissa_mask()
-            return Self.from_bits(self.to_bits() & mask)
+        alias mask = FPUtils[dtype].exponent_mantissa_mask()
+        return Self.from_bits(self.to_bits() & mask)
 
     @always_inline("nodebug")
     fn __round__(self) -> Self:
