@@ -30,3 +30,14 @@ from .types import (
     ObservableMoveOnly,
     g_dtor_count,
 )
+
+from .words import (
+    gen_word_pairs,
+    words_ar,
+    words_el,
+    words_en,
+    words_he,
+    words_lv,
+    words_pl,
+    words_ru,
+)

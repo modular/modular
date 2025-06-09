@@ -171,20 +171,45 @@ struct AHasher[key: U256](_Hasher):
             new_data: Value used for update.
         """
 
-        @parameter
-        if new_data.dtype.is_floating_point():
-            v64 = new_data.to_bits().cast[DType.uint64]()
-        else:
-            v64 = new_data.cast[DType.uint64]()
+        # number of rounds a single vector value will contribute to a hash
+        # values smaller than 8 bytes contribute only once
+        # values which are multiple of 8 bytes contribute multiple times
+        # e.g. int128 is 16 bytes long and evaluates to 2 rounds
+        alias rounds = new_data.dtype.sizeof() // 8 + (
+            new_data.dtype.sizeof() % 8 > 0
+        )
 
         @parameter
-        if v64.size == 1:
-            self._update(v64[0])
-        else:
+        if rounds == 1:
+            # vector values are not bigger than 8 bytes each
+            var u64: SIMD[DType.uint64, new_data.size]
 
             @parameter
-            for i in range(0, v64.size, 2):
-                self._large_update(U128(v64[i], v64[i + 1]))
+            if new_data.dtype.is_floating_point():
+                u64 = new_data.to_bits().cast[DType.uint64]()
+            else:
+                u64 = new_data.cast[DType.uint64]()
+
+            @parameter
+            if u64.size == 1:
+                self._update(u64[0])
+            else:
+
+                @parameter
+                for i in range(0, u64.size, 2):
+                    self._large_update(U128(u64[i], u64[i + 1]))
+        else:
+            # vector values will contribute to hash in multiple rounds
+            @parameter
+            for i in range(new_data.size):
+                var v = new_data[i]
+                constrained[v.dtype.sizeof() > 8 and v.dtype.is_integral()]()
+
+                @parameter
+                for r in range(0, rounds, 2):
+                    var u64_1 = (v >> (r * 64)).cast[DType.uint64]()
+                    var u64_2 = (v >> ((r + 1) * 64)).cast[DType.uint64]()
+                    self._large_update(U128(u64_1, u64_2))
 
     fn update[T: _HashableWithHasher](mut self, value: T):
         """Update the buffer value with new hashable value.
