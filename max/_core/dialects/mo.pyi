@@ -2840,6 +2840,7 @@ class CustomOp(max._core.Operation):
         symbol: max._core.dialects.builtin.StringAttr,
         function: max._core.dialects.builtin.StringAttr,
         device: max._core.dialects.m.DeviceRefAttr,
+        parameters: max._core.dialects.builtin.DictionaryAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
     ) -> None: ...
     @property
@@ -2858,6 +2859,12 @@ class CustomOp(max._core.Operation):
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
+    @property
+    def parameters(self) -> max._core.dialects.builtin.DictionaryAttr: ...
+    @parameters.setter
+    def parameters(
+        self, arg: max._core.dialects.builtin.DictionaryAttr, /
+    ) -> None: ...
     @property
     def output_param_decls(
         self,
