@@ -162,12 +162,10 @@ fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
     alias resolved_backend = _resolve_backend[backend]()
     alias _cublas_type = UnsafePointer[cublasContext]
-    alias _cublaslt_type = UnsafePointer[Context]
     alias _rocblas_type = _rocblas.Handle
     alias _hipblaslt_type = hipblasLtHandle_t
     alias type = Variant[
         Self._cublas_type,
-        Self._cublaslt_type,
         Self._rocblas_type,
         Self._hipblaslt_type,
     ]
@@ -175,13 +173,9 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 
     fn __init__(out self) raises:
         @parameter
-        if Self.resolved_backend is Backend.CUBLAS:
+        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             var handle = Self._cublas_type()
             check_cublas_error(cublasCreate(UnsafePointer(to=handle)))
-            self._handle = handle
-        elif Self.resolved_backend is Backend.CUBLASLT:
-            var handle = Self._cublaslt_type()
-            check_cublas_error(cublasLtCreate(UnsafePointer(to=handle)))
             self._handle = handle
         elif Self.resolved_backend is Backend.ROCBLAS:
             var handle = Self._rocblas_type()
@@ -207,13 +201,9 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
     @always_inline
     fn __exit__(mut self) raises:
         @parameter
-        if Self.resolved_backend is Backend.CUBLAS:
+        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             check_cublas_error(cublasDestroy(self._get_cublas()))
             self._handle = Self._cublas_type()
-            return
-        elif Self.resolved_backend is Backend.CUBLASLT:
-            check_cublas_error(cublasLtDestroy(self._get_cublaslt()))
-            self._handle = Self._cublaslt_type()
             return
         elif Self.resolved_backend is Backend.ROCBLAS:
             _rocblas.check_error(
@@ -230,10 +220,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 
     fn _is_null(self) -> Bool:
         @parameter
-        if Self.resolved_backend is Backend.CUBLAS:
+        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             return self._get_cublas() == Self._cublas_type()
-        elif Self.resolved_backend is Backend.CUBLASLT:
-            return self._get_cublaslt() == Self._cublaslt_type()
         elif Self.resolved_backend is Backend.ROCBLAS:
             return self._get_rocblas() == Self._rocblas_type()
         elif Self.resolved_backend is Backend.HIPBLASLT:
@@ -243,16 +231,10 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 
     fn _get_cublas(self) -> Self._cublas_type:
         constrained[
-            Self.resolved_backend is Backend.CUBLAS, "backend must be CUBLAS"
+            Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT),
+            "backend must be CUBLAS/CUBLASLT",
         ]()
         return self._handle[Self._cublas_type]
-
-    fn _get_cublaslt(self) -> Self._cublas_type:
-        constrained[
-            Self.resolved_backend is Backend.CUBLASLT,
-            "backend must be CUBLASLT",
-        ]()
-        return self._handle[Self._cublaslt_type]
 
     fn _get_rocblas(self) -> Self._rocblas_type:
         constrained[
@@ -283,21 +265,21 @@ alias _DEBUG_VENDOR_BLAS = False
 
 fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
     @parameter
-    if handle.resolved_backend is Backend.CUBLAS:
+    if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
         check_cublas_error(
             cublasSetStream(handle._get_cublas(), CUDA(ctx.stream()))
         )
 
         @parameter
         if _DEBUG_VENDOR_BLAS:
-            check_cublas_error(
-                cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
-            )
-    elif handle.resolved_backend is Backend.CUBLASLT:
 
-        @parameter
-        if _DEBUG_VENDOR_BLAS:
-            check_cublas_error(cublasLtLoggerSetLevel(5))
+            @parameter
+            if handle.resolved_backend is Backend.CUBLAS:
+                check_cublas_error(
+                    cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
+                )
+            else:
+                check_cublas_error(cublasLtLoggerSetLevel(5))
 
     elif handle.resolved_backend is Backend.ROCBLAS:
         _rocblas.check_error(
@@ -407,7 +389,7 @@ fn matmul[
     elif handle.resolved_backend is Backend.CUBLASLT:
         _cublasLt_matmul(
             ctx,
-            handle._get_cublaslt(),
+            handle._get_cublas().bitcast[Context](),
             c,
             a,
             b,
