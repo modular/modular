@@ -34,10 +34,8 @@ def _sdk_default_env() -> dict[str, str]:
 
     return {
         "MODULAR_MAX_CACHE_DIR": str(root / "share" / "max" / ".max_cache"),
-        "MODULAR_MAX_DRIVER_LIB": str(lib / "libDeviceDriver") + ext,
         "MODULAR_MAX_ENABLE_COMPILE_PROGRESS": "true",
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "true",
-        "MODULAR_MAX_ENGINE_LIB": str(lib / "libmodular-framework-common") + ext,
         "MODULAR_MAX_GRAPH_LIB": str(lib / "libmax") + ext,
         "MODULAR_MAX_PATH": str(root),
         "MODULAR_MAX_NAME": "MAX Platform",
