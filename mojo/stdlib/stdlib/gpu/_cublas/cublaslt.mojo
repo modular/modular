@@ -222,157 +222,157 @@ struct ClusterShape:
     alias SHAPE_AUTO = Self(0)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x1x1 = Self(1)
+    alias SHAPE_1x1x1 = Self(2)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x1x1 = Self(2)
+    alias SHAPE_2x1x1 = Self(3)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x1x1 = Self(3)
+    alias SHAPE_4x1x1 = Self(4)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x2x1 = Self(4)
+    alias SHAPE_1x2x1 = Self(5)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x2x1 = Self(5)
+    alias SHAPE_2x2x1 = Self(6)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x2x1 = Self(6)
+    alias SHAPE_4x2x1 = Self(7)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x4x1 = Self(7)
+    alias SHAPE_1x4x1 = Self(8)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x4x1 = Self(8)
+    alias SHAPE_2x4x1 = Self(9)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x4x1 = Self(9)
+    alias SHAPE_4x4x1 = Self(10)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_8x1x1 = Self(10)
+    alias SHAPE_8x1x1 = Self(11)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x8x1 = Self(11)
+    alias SHAPE_1x8x1 = Self(12)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_8x2x1 = Self(12)
+    alias SHAPE_8x2x1 = Self(13)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x8x1 = Self(13)
+    alias SHAPE_2x8x1 = Self(14)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_16x1x1 = Self(14)
+    alias SHAPE_16x1x1 = Self(15)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x16x1 = Self(15)
+    alias SHAPE_1x16x1 = Self(16)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x1x1 = Self(16)
+    alias SHAPE_3x1x1 = Self(17)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_5x1x1 = Self(17)
+    alias SHAPE_5x1x1 = Self(18)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_6x1x1 = Self(18)
+    alias SHAPE_6x1x1 = Self(19)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_7x1x1 = Self(19)
+    alias SHAPE_7x1x1 = Self(20)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_9x1x1 = Self(20)
+    alias SHAPE_9x1x1 = Self(21)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_10x1x1 = Self(21)
+    alias SHAPE_10x1x1 = Self(22)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_11x1x1 = Self(22)
+    alias SHAPE_11x1x1 = Self(23)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_12x1x1 = Self(23)
+    alias SHAPE_12x1x1 = Self(24)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_13x1x1 = Self(24)
+    alias SHAPE_13x1x1 = Self(25)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_14x1x1 = Self(25)
+    alias SHAPE_14x1x1 = Self(26)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_15x1x1 = Self(26)
+    alias SHAPE_15x1x1 = Self(27)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x2x1 = Self(27)
+    alias SHAPE_3x2x1 = Self(28)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_5x2x1 = Self(28)
+    alias SHAPE_5x2x1 = Self(29)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_6x2x1 = Self(29)
+    alias SHAPE_6x2x1 = Self(30)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_7x2x1 = Self(30)
+    alias SHAPE_7x2x1 = Self(31)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x3x1 = Self(31)
+    alias SHAPE_1x3x1 = Self(32)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x3x1 = Self(32)
+    alias SHAPE_2x3x1 = Self(33)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x3x1 = Self(33)
+    alias SHAPE_3x3x1 = Self(34)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_4x3x1 = Self(34)
+    alias SHAPE_4x3x1 = Self(35)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_5x3x1 = Self(35)
+    alias SHAPE_5x3x1 = Self(36)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x4x1 = Self(36)
+    alias SHAPE_3x4x1 = Self(37)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x5x1 = Self(37)
+    alias SHAPE_1x5x1 = Self(38)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x5x1 = Self(38)
+    alias SHAPE_2x5x1 = Self(39)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_3x5x1 = Self(39)
+    alias SHAPE_3x5x1 = Self(40)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x6x1 = Self(40)
+    alias SHAPE_1x6x1 = Self(41)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x6x1 = Self(41)
+    alias SHAPE_2x6x1 = Self(42)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x7x1 = Self(42)
+    alias SHAPE_1x7x1 = Self(43)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_2x7x1 = Self(43)
+    alias SHAPE_2x7x1 = Self(44)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x9x1 = Self(44)
+    alias SHAPE_1x9x1 = Self(45)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x10x1 = Self(45)
+    alias SHAPE_1x10x1 = Self(46)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x11x1 = Self(46)
+    alias SHAPE_1x11x1 = Self(47)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x12x1 = Self(47)
+    alias SHAPE_1x12x1 = Self(48)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x13x1 = Self(48)
+    alias SHAPE_1x13x1 = Self(49)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x14x1 = Self(49)
+    alias SHAPE_1x14x1 = Self(50)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_1x15x1 = Self(50)
+    alias SHAPE_1x15x1 = Self(51)
     """Let library pick cluster shape automatically.
     """
-    alias SHAPE_END = Self(51)
+    alias SHAPE_END = Self(52)
     """Let library pick cluster shape automatically.
     """
 
@@ -558,23 +558,23 @@ struct MatmulAlgorithmCapability:
 
     int32_t.
     """
-    alias CUSTOM_MEMORY_ORDER = Self(8)
+    alias CUSTOM_MEMORY_ORDER = Self(10)
     """whether algorithm supports custom (not COL or ROW memory order), see Order
 
     int32_t 0 means only COL and ROW memory order is allowed, non-zero means that algo might have different
     requirements;.
     """
-    alias POINTER_MODE_MASK = Self(9)
+    alias POINTER_MODE_MASK = Self(11)
     """bitmask enumerating pointer modes algorithm supports
 
     uint32_t, see PointerModeMask.
     """
-    alias EPILOGUE_MASK = Self(10)
+    alias EPILOGUE_MASK = Self(12)
     """bitmask enumerating kinds of postprocessing algorithm supports in the epilogue
 
     uint32_t, see Epilogue.
     """
-    alias STAGES_IDS = Self(11)
+    alias STAGES_IDS = Self(13)
     """stages ids possible to use, see Stages; if no stages ids are supported use
     STAGES_UNDEFINED
 
@@ -582,41 +582,41 @@ struct MatmulAlgorithmCapability:
 
     array of uint32_t.
     """
-    alias LD_NEGATIVE = Self(12)
+    alias LD_NEGATIVE = Self(14)
     """support for negative ld for all of the matrices
 
     int32_t 0 means no support, supported otherwise.
     """
-    alias NUMERICAL_IMPL_FLAGS = Self(13)
+    alias NUMERICAL_IMPL_FLAGS = Self(15)
     """details about algorithm's implementation that affect it's numerical behavior
 
     uint64_t, see cublasLtNumericalImplFlags_t.
     """
-    alias MIN_ALIGNMENT_A_BYTES = Self(14)
+    alias MIN_ALIGNMENT_A_BYTES = Self(16)
     """minimum alignment required for A matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias MIN_ALIGNMENT_B_BYTES = Self(15)
+    alias MIN_ALIGNMENT_B_BYTES = Self(17)
     """minimum alignment required for B matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias MIN_ALIGNMENT_C_BYTES = Self(16)
+    alias MIN_ALIGNMENT_C_BYTES = Self(18)
     """minimum alignment required for C matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias MIN_ALIGNMENT_D_BYTES = Self(17)
+    alias MIN_ALIGNMENT_D_BYTES = Self(19)
     """minimum alignment required for D matrix in bytes
     (required for buffer pointer, leading dimension, and possibly other strides defined for matrix memory order)
 
     uint32_t.
     """
-    alias ATOMIC_SYNC = Self(18)
+    alias ATOMIC_SYNC = Self(20)
     """EXPERIMENTAL: support for synchronization via atomic counters
 
     int32_t.
@@ -853,6 +853,18 @@ struct Search:
     alias RESERVED_05 = Self(5)
     """reserved for future use.
     """
+    alias RESERVED_06 = Self(6)
+    """reserved for future use.
+    """
+    alias RESERVED_07 = Self(7)
+    """reserved for future use.
+    """
+    alias RESERVED_08 = Self(8)
+    """reserved for future use.
+    """
+    alias RESERVED_09 = Self(9)
+    """reserved for future use.
+    """
 
     @implicit
     fn __init__(out self, value: Int):
@@ -878,6 +890,14 @@ struct Search:
             return "RESERVED_04"
         if self == Self.RESERVED_05:
             return "RESERVED_05"
+        if self == Self.RESERVED_06:
+            return "RESERVED_06"
+        if self == Self.RESERVED_07:
+            return "RESERVED_07"
+        if self == Self.RESERVED_08:
+            return "RESERVED_08"
+        if self == Self.RESERVED_09:
+            return "RESERVED_09"
         return abort[String]("invalid Search entry")
 
     fn __int__(self) raises -> Int:
@@ -901,10 +921,10 @@ struct ReductionScheme:
     alias COMPUTE_TYPE = ReductionScheme(2)
     """Intermediate results are stored in compute type in the workspace and reduced in a separate step.
     """
-    alias OUTPUT_TYPE = ReductionScheme(3)
+    alias OUTPUT_TYPE = ReductionScheme(4)
     """Intermediate results are stored in output type in the workspace and reduced in a separate step.
     """
-    alias MASK = ReductionScheme(4)
+    alias MASK = ReductionScheme(0x7)
     """Intermediate results are stored in output type in the workspace and reduced in a separate step.
     """
 
@@ -1079,14 +1099,14 @@ struct cublasLtMatmulDescAttributes_t:
     Bias case: const void *, default: NULL
     Bias gradient case: void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE = Self(9)
+    alias CUBLASLT_MATMUL_DESC_BIAS_BATCH_STRIDE = Self(10)
     """Batch stride for bias or bias gradient vector.
 
     Used together with CUBLASLT_MATMUL_DESC_BIAS_POINTER when matrix D's BATCH_COUNT > 1.
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER = Self(10)
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER = Self(11)
     """UnsafePointer for epilogue auxiliary buffer.
 
     - Output vector for ReLu bit-mask in forward pass when RELU_AUX
@@ -1109,7 +1129,7 @@ struct cublasLtMatmulDescAttributes_t:
     Forward pass: void *, default: NULL
     Backward pass: const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD = Self(11)
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_LD = Self(12)
     """Leading dimension for epilogue auxiliary buffer.
 
     - ReLu bit-mask matrix leading dimension in elements (i.e. bits)
@@ -1122,7 +1142,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE = Self(12)
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_BATCH_STRIDE = Self(13)
     """Batch stride for epilogue auxiliary buffer.
 
     - ReLu bit-mask matrix batch stride in elements (i.e. bits)
@@ -1135,7 +1155,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE = Self(13)
+    alias CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE = Self(14)
     """Batch stride for alpha vector.
 
     Used together with ALPHA_DEVICE_VECTOR_BETA_HOST when matrix D's
@@ -1144,13 +1164,13 @@ struct cublasLtMatmulDescAttributes_t:
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET = Self(14)
+    alias CUBLASLT_MATMUL_DESC_SM_COUNT_TARGET = Self(15)
     """Number of SMs to target for parallel execution. Optimizes heuristics for execution on a different number of SMs
     when user expects a concurrent stream to be using some of the device resources.
 
     int32_t, default: 0 - use the number reported by the device.
     """
-    alias CUBLASLT_MATMUL_DESC_A_SCALE_POINTER = Self(15)
+    alias CUBLASLT_MATMUL_DESC_A_SCALE_POINTER = Self(17)
     """Device pointer to the scale factor value that converts data in matrix A to the compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1162,7 +1182,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_B_SCALE_POINTER = Self(16)
+    alias CUBLASLT_MATMUL_DESC_B_SCALE_POINTER = Self(18)
     """Device pointer to the scale factor value to convert data in matrix B to compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1174,7 +1194,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_C_SCALE_POINTER = Self(17)
+    alias CUBLASLT_MATMUL_DESC_C_SCALE_POINTER = Self(19)
     """Device pointer to the scale factor value to convert data in matrix C to compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1186,7 +1206,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_D_SCALE_POINTER = Self(18)
+    alias CUBLASLT_MATMUL_DESC_D_SCALE_POINTER = Self(20)
     """Device pointer to the scale factor value to convert data in matrix D to compute data type range.
 
     The scaling factor value must have the same type as the compute type.
@@ -1198,7 +1218,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     const void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_AMAX_D_POINTER = Self(19)
+    alias CUBLASLT_MATMUL_DESC_AMAX_D_POINTER = Self(21)
     """Device pointer to the memory location that on completion will be set to the maximum of absolute values in the
     output matrix.
 
@@ -1209,7 +1229,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE = Self(20)
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE = Self(22)
     """Type of the data to be stored to the memory pointed to by CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
 
     If unset, the data type defaults to the type of elements of the output matrix with some exceptions, see details
@@ -1228,7 +1248,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     int32_t based on cudaDataType, default: -1.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER = Self(21)
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_POINTER = Self(23)
     """Device pointer to the scaling factor value to convert results from compute type data range to storage
     data range in the auxiliary matrix that is set via CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
 
@@ -1239,7 +1259,7 @@ struct cublasLtMatmulDescAttributes_t:
 
     void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER = Self(22)
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_AMAX_POINTER = Self(24)
     """Device pointer to the memory location that on completion will be set to the maximum of absolute values in the
     buffer that is set via CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
 
@@ -1250,14 +1270,14 @@ struct cublasLtMatmulDescAttributes_t:
 
     void *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_FAST_ACCUM = Self(23)
+    alias CUBLASLT_MATMUL_DESC_FAST_ACCUM = Self(25)
     """Flag for managing fp8 fast accumulation mode.
     When enabled, problem execution might be faster but at the cost of lower accuracy because intermediate results
     will not periodically be promoted to a higher precision.
 
     int8_t, default: 0 - fast accumulation mode is disabled.
     """
-    alias CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE = Self(24)
+    alias CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE = Self(26)
     """Type of bias or bias gradient vector in the device memory.
 
     Bias case: see BIAS.
@@ -1270,25 +1290,71 @@ struct cublasLtMatmulDescAttributes_t:
 
     int32_t based on cudaDataType, default: -1.
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS = Self(25)
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_ROWS = Self(27)
     """EXPERIMENTAL: Number of atomic synchronization chunks in the row dimension of the output matrix D.
 
     int32_t, default 0 (atomic synchronization disabled).
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS = Self(26)
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_NUM_CHUNKS_D_COLS = Self(28)
     """EXPERIMENTAL: Number of atomic synchronization chunks in the column dimension of the output matrix D.
 
     int32_t, default 0 (atomic synchronization disabled).
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER = Self(27)
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER = Self(29)
     """EXPERIMENTAL: UnsafePointer to a device array of input atomic counters consumed by a matmul.
 
     int32_t *, default: NULL.
     """
-    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER = Self(28)
+    alias CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER = Self(30)
     """EXPERIMENTAL: UnsafePointer to a device array of output atomic counters produced by a matmul.
 
     int32_t *, default: NULL.
+    """
+    alias CUBLASLT_MATMUL_DESC_A_SCALE_MODE = Self(31)
+    """Scaling mode that defines how the matrix scaling factor for matrix A is interpreted
+
+    int32_t, default: 0
+    """
+
+    alias CUBLASLT_MATMUL_DESC_B_SCALE_MODE = Self(32)
+    """Scaling mode that defines how the matrix scaling factor for matrix B is interpreted
+
+    int32_t, default: 0
+    """
+
+    alias CUBLASLT_MATMUL_DESC_C_SCALE_MODE = Self(33)
+    """Scaling mode that defines how the matrix scaling factor for matrix C is interpreted
+
+    int32_t, default: 0
+    """
+
+    alias CUBLASLT_MATMUL_DESC_D_SCALE_MODE = Self(34)
+    """Scaling mode that defines how the matrix scaling factor for matrix D is interpreted
+
+    int32_t, default: 0
+    """
+
+    alias CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE = Self(35)
+    """Scaling mode that defines how the matrix scaling factor for the auxiliary matrix is interpreted
+
+    int32_t, default: 0
+    """
+
+    alias CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER = Self(36)
+    """Device pointer to the scale factors that are used to convert data in matrix D to the compute data type range.
+
+    The scaling factor value type is defined by the scaling mode (see CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE)
+
+    If set for an unsupported matrix data, scale, scale mode, and compute type combination, calling cublasLtMatmul()
+    will return CUBLAS_INVALID_VALUE.
+
+    void *, default: NULL
+    """
+
+    alias CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE = Self(37)
+    """Scaling mode that defines how the output matrix scaling factor for matrix D is interpreted
+
+    int32_t, default: 0
     """
 
     @implicit
@@ -1361,6 +1427,20 @@ struct cublasLtMatmulDescAttributes_t:
             return "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_IN_COUNTERS_POINTER"
         if self == Self.CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER:
             return "CUBLASLT_MATMUL_DESC_ATOMIC_SYNC_OUT_COUNTERS_POINTER"
+        if self == Self.CUBLASLT_MATMUL_DESC_A_SCALE_MODE:
+            return "CUBLASLT_MATMUL_DESC_A_SCALE_MODE"
+        if self == Self.CUBLASLT_MATMUL_DESC_B_SCALE_MODE:
+            return "CUBLASLT_MATMUL_DESC_B_SCALE_MODE"
+        if self == Self.CUBLASLT_MATMUL_DESC_C_SCALE_MODE:
+            return "CUBLASLT_MATMUL_DESC_C_SCALE_MODE"
+        if self == Self.CUBLASLT_MATMUL_DESC_D_SCALE_MODE:
+            return "CUBLASLT_MATMUL_DESC_D_SCALE_MODE"
+        if self == Self.CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE:
+            return "CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_SCALE_MODE"
+        if self == Self.CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER:
+            return "CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER"
+        if self == Self.CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE:
+            return "CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE"
         return abort[String]("invalid cublasLtMatmulDescAttributes_t entry")
 
     fn __int__(self) raises -> Int:
@@ -1627,7 +1707,7 @@ struct Preference:
 
     uint64_t, default: 0 - no workspace allowed.
     """
-    alias REDUCTION_SCHEME_MASK = Self(2)
+    alias REDUCTION_SCHEME_MASK = Self(3)
     """Reduction scheme mask, see ReductionScheme. Filters heuristic result to only include algo configs that
     use one of the required modes.
 
@@ -1635,7 +1715,7 @@ struct Preference:
 
     uint32_t, default: MASK (allows all reduction schemes).
     """
-    alias MIN_ALIGNMENT_A_BYTES = Self(3)
+    alias MIN_ALIGNMENT_A_BYTES = Self(5)
     """Minimum buffer alignment for matrix A (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix A that is not as strictly aligned
@@ -1643,7 +1723,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MIN_ALIGNMENT_B_BYTES = Self(4)
+    alias MIN_ALIGNMENT_B_BYTES = Self(6)
     """Minimum buffer alignment for matrix B (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix B that is not as strictly aligned
@@ -1651,7 +1731,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MIN_ALIGNMENT_C_BYTES = Self(5)
+    alias MIN_ALIGNMENT_C_BYTES = Self(7)
     """Minimum buffer alignment for matrix C (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix C that is not as strictly aligned
@@ -1659,7 +1739,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MIN_ALIGNMENT_D_BYTES = Self(6)
+    alias MIN_ALIGNMENT_D_BYTES = Self(8)
     """Minimum buffer alignment for matrix D (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix D that is not as strictly aligned
@@ -1667,7 +1747,7 @@ struct Preference:
 
     uint32_t, default: 256.
     """
-    alias MAX_WAVES_COUNT = Self(7)
+    alias MAX_WAVES_COUNT = Self(9)
     """Maximum wave count.
 
     See cublasLtMatmulHeuristicResult_t::wavesCount.
@@ -1676,7 +1756,7 @@ struct Preference:
 
     float, default: 0.0f.
     """
-    alias IMPL_MASK = Self(8)
+    alias IMPL_MASK = Self(12)
     """Numerical implementation details mask, see cublasLtNumericalImplFlags_t. Filters heuristic result to only include
     algorithms that use the allowed implementations.
 
@@ -1954,6 +2034,54 @@ struct InnerShape:
 
 @fieldwise_init
 @register_passable("trivial")
+struct cublasLtMatmulMatrixScale_t:
+    """Scaling mode for per-matrix scaling."""
+
+    var _value: Int32
+    alias MATRIX_SCALE_SCALAR_32F = Self(0)
+    """
+    Scaling factors are single precision scalars applied to the whole tensor
+    """
+    alias MATRIX_SCALE_VEC16_UE4M3 = Self(1)
+    """
+    Scaling factors are tensors that contain a dedicated scaling factor stored as an 8-bit CUDA_R_8F_UE4M3 value for
+    each 16-element block in the innermost dimension of the corresponding data tensor
+    """
+    alias MATRIX_SCALE_VEC32_UE8M0 = Self(2)
+    """
+    Same as above, except that scaling factor tensor elements have type CUDA_R_8F_UE8M0 and the block size is 32
+    elements
+    """
+    alias MATRIX_SCALE_END = Self(3)
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) raises -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) raises -> Bool:
+        return not (self == other)
+
+    @no_inline
+    fn __str__(self) raises -> String:
+        if self == Self.MATRIX_SCALE_SCALAR_32F:
+            return "MATRIX_SCALE_SCALAR_32F"
+        if self == Self.MATRIX_SCALE_VEC16_UE4M3:
+            return "MATRIX_SCALE_VEC16_UE4M3"
+        if self == Self.MATRIX_SCALE_VEC32_UE8M0:
+            return "MATRIX_SCALE_VEC32_UE8M0"
+        if self == Self.MATRIX_SCALE_END:
+            return "MATRIX_SCALE_END"
+        return abort[String]("invalid MatmulMatrixScale entry")
+
+    fn __int__(self) raises -> Int:
+        return Int(self._value)
+
+
+@fieldwise_init
+@register_passable("trivial")
 struct LayoutAttribute:
     """Attributes of memory layout ."""
 
@@ -2192,13 +2320,14 @@ struct Stages:
     alias STAGES_8x4 = Self(26)
     alias STAGES_16x10 = Self(27)
     alias STAGES_8x5 = Self(28)
-    alias STAGES_8x3 = Self(29)
-    alias STAGES_8xAUTO = Self(30)
-    alias STAGES_16xAUTO = Self(31)
-    alias STAGES_32xAUTO = Self(32)
-    alias STAGES_64xAUTO = Self(33)
-    alias STAGES_128xAUTO = Self(34)
-    alias STAGES_END = Self(35)
+    alias STAGES_8x3 = Self(31)
+    alias STAGES_8xAUTO = Self(32)
+    alias STAGES_16xAUTO = Self(33)
+    alias STAGES_32xAUTO = Self(34)
+    alias STAGES_64xAUTO = Self(35)
+    alias STAGES_128xAUTO = Self(36)
+    alias STAGES_256xAUTO = Self(37)
+    alias STAGES_END = Self(38)
 
     @implicit
     fn __init__(out self, value: Int):
@@ -2282,6 +2411,8 @@ struct Stages:
             return "STAGES_64xAUTO"
         if self == Self.STAGES_128xAUTO:
             return "STAGES_128xAUTO"
+        if self == Self.STAGES_256xAUTO:
+            return "STAGES_256xAUTO"
         if self == Self.STAGES_END:
             return "STAGES_END"
         return abort[String]("invalid Stages entry")
@@ -2414,75 +2545,75 @@ struct Epilogue:
     ."""
 
     var _value: Int32
-    alias DEFAULT = Self(0)
+    alias DEFAULT = Self(1)
     """No special postprocessing, just scale and quantize results if necessary.
     """
-    alias RELU = Self(1)
+    alias RELU = Self(2)
     """ReLu, apply ReLu point-wise transform to the results (x:=max(x, 0)).
     """
-    alias RELU_AUX = Self(2)
+    alias RELU_AUX = Self(Self.RELU._value | 128)
     """ReLu, apply ReLu point-wise transform to the results (x:=max(x, 0)).
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias BIAS = Self(3)
+    alias BIAS = Self(4)
     """Bias, apply (broadcasted) Bias from bias vector. Bias vector length must match matrix D rows, it must be packed
     (stride between vector elements is 1). Bias vector is broadcasted to all columns and added before applying final
     postprocessing.
     """
-    alias RELU_BIAS = Self(4)
+    alias RELU_BIAS = Self(Self.RELU._value | Self.BIAS._value)
     """ReLu and Bias, apply Bias and then ReLu transform.
     """
-    alias RELU_AUX_BIAS = Self(5)
+    alias RELU_AUX_BIAS = Self(Self.RELU_AUX._value | Self.BIAS._value)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DRELU = Self(6)
+    alias DRELU = Self(8 | 128)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DRELU_BGRAD = Self(7)
+    alias DRELU_BGRAD = Self(Self.DRELU._value | 16)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias GELU = Self(8)
+    alias GELU = Self(32)
     """GELU, apply GELU point-wise transform to the results (x:=GELU(x)).
     """
-    alias GELU_AUX = Self(9)
+    alias GELU_AUX = Self(Self.GELU._value | 128)
     """GELU, apply GELU point-wise transform to the results (x:=GELU(x)).
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias GELU_BIAS = Self(10)
+    alias GELU_BIAS = Self(Self.GELU._value | Self.BIAS._value)
     """GELU and Bias, apply Bias and then GELU transform.
     """
-    alias GELU_AUX_BIAS = Self(11)
+    alias GELU_AUX_BIAS = Self(Self.GELU_AUX._value | Self.BIAS._value)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DGELU = Self(12)
+    alias DGELU = Self(64 | 128)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias DGELU_BGRAD = Self(13)
+    alias DGELU_BGRAD = Self(Self.DGELU._value | 16)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias BGRADA = Self(14)
+    alias BGRADA = Self(256)
     """Bias gradient based on the input matrix A.
 
     The bias size corresponds to the number of rows of the matrix D.
@@ -2491,7 +2622,7 @@ struct Epilogue:
     Stores Bias gradient in the auxiliary output
     (see CUBLASLT_MATMUL_DESC_BIAS_POINTER).
     """
-    alias BGRADB = Self(15)
+    alias BGRADB = Self(512)
     """Bias gradient based on the input matrix B.
 
     The bias size corresponds to the number of columns of the matrix D.
@@ -2589,15 +2720,15 @@ struct PointerModeMask:
     """Mask to define pointer mode capability ."""
 
     var _value: Int32
-    alias HOST = Self(0)
+    alias HOST = Self(1)
     """see HOST."""
-    alias DEVICE = Self(1)
+    alias DEVICE = Self(2)
     """see DEVICE."""
-    alias DEVICE_VECTOR = Self(2)
+    alias DEVICE_VECTOR = Self(4)
     """see DEVICE_VECTOR."""
-    alias ALPHA_DEVICE_VECTOR_BETA_ZERO = Self(3)
+    alias ALPHA_DEVICE_VECTOR_BETA_ZERO = Self(8)
     """see ALPHA_DEVICE_VECTOR_BETA_ZERO."""
-    alias ALPHA_DEVICE_VECTOR_BETA_HOST = Self(4)
+    alias ALPHA_DEVICE_VECTOR_BETA_HOST = Self(16)
     """see ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
     @implicit
@@ -2700,7 +2831,607 @@ struct Tile:
     alias TILE_128x96 = Self(33)
     alias TILE_32x256 = Self(34)
     alias TILE_256x32 = Self(35)
-    alias TILE_END = Self(36)
+    alias TILE_8x128 = Self(36)
+    alias TILE_8x192 = Self(37)
+    alias TILE_8x256 = Self(38)
+    alias TILE_8x320 = Self(39)
+    alias TILE_8x384 = Self(40)
+    alias TILE_8x448 = Self(41)
+    alias TILE_8x512 = Self(42)
+    alias TILE_8x576 = Self(43)
+    alias TILE_8x640 = Self(44)
+    alias TILE_8x704 = Self(45)
+    alias TILE_8x768 = Self(46)
+    alias TILE_16x64 = Self(47)
+    alias TILE_16x128 = Self(48)
+    alias TILE_16x192 = Self(49)
+    alias TILE_16x256 = Self(50)
+    alias TILE_16x320 = Self(51)
+    alias TILE_16x384 = Self(52)
+    alias TILE_16x448 = Self(53)
+    alias TILE_16x512 = Self(54)
+    alias TILE_16x576 = Self(55)
+    alias TILE_16x640 = Self(56)
+    alias TILE_16x704 = Self(57)
+    alias TILE_16x768 = Self(58)
+    alias TILE_24x64 = Self(59)
+    alias TILE_24x128 = Self(60)
+    alias TILE_24x192 = Self(61)
+    alias TILE_24x256 = Self(62)
+    alias TILE_24x320 = Self(63)
+    alias TILE_24x384 = Self(64)
+    alias TILE_24x448 = Self(65)
+    alias TILE_24x512 = Self(66)
+    alias TILE_24x576 = Self(67)
+    alias TILE_24x640 = Self(68)
+    alias TILE_24x704 = Self(69)
+    alias TILE_24x768 = Self(70)
+    alias TILE_32x192 = Self(71)
+    alias TILE_32x320 = Self(72)
+    alias TILE_32x384 = Self(73)
+    alias TILE_32x448 = Self(74)
+    alias TILE_32x512 = Self(75)
+    alias TILE_32x576 = Self(76)
+    alias TILE_32x640 = Self(77)
+    alias TILE_32x704 = Self(78)
+    alias TILE_32x768 = Self(79)
+    alias TILE_40x64 = Self(80)
+    alias TILE_40x128 = Self(81)
+    alias TILE_40x192 = Self(82)
+    alias TILE_40x256 = Self(83)
+    alias TILE_40x320 = Self(84)
+    alias TILE_40x384 = Self(85)
+    alias TILE_40x448 = Self(86)
+    alias TILE_40x512 = Self(87)
+    alias TILE_40x576 = Self(88)
+    alias TILE_40x640 = Self(89)
+    alias TILE_40x704 = Self(90)
+    alias TILE_40x768 = Self(91)
+    alias TILE_48x64 = Self(92)
+    alias TILE_48x128 = Self(93)
+    alias TILE_48x192 = Self(94)
+    alias TILE_48x256 = Self(95)
+    alias TILE_48x320 = Self(96)
+    alias TILE_48x384 = Self(97)
+    alias TILE_48x448 = Self(98)
+    alias TILE_48x512 = Self(99)
+    alias TILE_48x576 = Self(100)
+    alias TILE_48x640 = Self(101)
+    alias TILE_48x704 = Self(102)
+    alias TILE_48x768 = Self(103)
+    alias TILE_56x64 = Self(104)
+    alias TILE_56x128 = Self(105)
+    alias TILE_56x192 = Self(106)
+    alias TILE_56x256 = Self(107)
+    alias TILE_56x320 = Self(108)
+    alias TILE_56x384 = Self(109)
+    alias TILE_56x448 = Self(110)
+    alias TILE_56x512 = Self(111)
+    alias TILE_56x576 = Self(112)
+    alias TILE_56x640 = Self(113)
+    alias TILE_56x704 = Self(114)
+    alias TILE_56x768 = Self(115)
+    alias TILE_64x192 = Self(116)
+    alias TILE_64x320 = Self(117)
+    alias TILE_64x384 = Self(118)
+    alias TILE_64x448 = Self(119)
+    alias TILE_64x576 = Self(120)
+    alias TILE_64x640 = Self(121)
+    alias TILE_64x704 = Self(122)
+    alias TILE_64x768 = Self(123)
+    alias TILE_72x64 = Self(124)
+    alias TILE_72x128 = Self(125)
+    alias TILE_72x192 = Self(126)
+    alias TILE_72x256 = Self(127)
+    alias TILE_72x320 = Self(128)
+    alias TILE_72x384 = Self(129)
+    alias TILE_72x448 = Self(130)
+    alias TILE_72x512 = Self(131)
+    alias TILE_72x576 = Self(132)
+    alias TILE_72x640 = Self(133)
+    alias TILE_80x64 = Self(134)
+    alias TILE_80x128 = Self(135)
+    alias TILE_80x192 = Self(136)
+    alias TILE_80x256 = Self(137)
+    alias TILE_80x320 = Self(138)
+    alias TILE_80x384 = Self(139)
+    alias TILE_80x448 = Self(140)
+    alias TILE_80x512 = Self(141)
+    alias TILE_80x576 = Self(142)
+    alias TILE_88x64 = Self(143)
+    alias TILE_88x128 = Self(144)
+    alias TILE_88x192 = Self(145)
+    alias TILE_88x256 = Self(146)
+    alias TILE_88x320 = Self(147)
+    alias TILE_88x384 = Self(148)
+    alias TILE_88x448 = Self(149)
+    alias TILE_88x512 = Self(150)
+    alias TILE_96x192 = Self(151)
+    alias TILE_96x256 = Self(152)
+    alias TILE_96x320 = Self(153)
+    alias TILE_96x384 = Self(154)
+    alias TILE_96x448 = Self(155)
+    alias TILE_96x512 = Self(156)
+    alias TILE_104x64 = Self(157)
+    alias TILE_104x128 = Self(158)
+    alias TILE_104x192 = Self(159)
+    alias TILE_104x256 = Self(160)
+    alias TILE_104x320 = Self(161)
+    alias TILE_104x384 = Self(162)
+    alias TILE_104x448 = Self(163)
+    alias TILE_112x64 = Self(164)
+    alias TILE_112x128 = Self(165)
+    alias TILE_112x192 = Self(166)
+    alias TILE_112x256 = Self(167)
+    alias TILE_112x320 = Self(168)
+    alias TILE_112x384 = Self(169)
+    alias TILE_120x64 = Self(170)
+    alias TILE_120x128 = Self(171)
+    alias TILE_120x192 = Self(172)
+    alias TILE_120x256 = Self(173)
+    alias TILE_120x320 = Self(174)
+    alias TILE_120x384 = Self(175)
+    alias TILE_128x320 = Self(176)
+    alias TILE_128x384 = Self(177)
+    alias TILE_136x64 = Self(178)
+    alias TILE_136x128 = Self(179)
+    alias TILE_136x192 = Self(180)
+    alias TILE_136x256 = Self(181)
+    alias TILE_136x320 = Self(182)
+    alias TILE_144x64 = Self(183)
+    alias TILE_144x128 = Self(184)
+    alias TILE_144x192 = Self(185)
+    alias TILE_144x256 = Self(186)
+    alias TILE_144x320 = Self(187)
+    alias TILE_152x64 = Self(188)
+    alias TILE_152x128 = Self(189)
+    alias TILE_152x192 = Self(190)
+    alias TILE_152x256 = Self(191)
+    alias TILE_152x320 = Self(192)
+    alias TILE_160x64 = Self(193)
+    alias TILE_160x192 = Self(194)
+    alias TILE_160x256 = Self(195)
+    alias TILE_168x64 = Self(196)
+    alias TILE_168x128 = Self(197)
+    alias TILE_168x192 = Self(198)
+    alias TILE_168x256 = Self(199)
+    alias TILE_176x64 = Self(200)
+    alias TILE_176x128 = Self(201)
+    alias TILE_176x192 = Self(202)
+    alias TILE_176x256 = Self(203)
+    alias TILE_184x64 = Self(204)
+    alias TILE_184x128 = Self(205)
+    alias TILE_184x192 = Self(206)
+    alias TILE_184x256 = Self(207)
+    alias TILE_192x64 = Self(208)
+    alias TILE_192x192 = Self(209)
+    alias TILE_192x256 = Self(210)
+    alias TILE_200x64 = Self(211)
+    alias TILE_200x128 = Self(212)
+    alias TILE_200x192 = Self(213)
+    alias TILE_208x64 = Self(214)
+    alias TILE_208x128 = Self(215)
+    alias TILE_208x192 = Self(216)
+    alias TILE_216x64 = Self(217)
+    alias TILE_216x128 = Self(218)
+    alias TILE_216x192 = Self(219)
+    alias TILE_224x64 = Self(220)
+    alias TILE_224x128 = Self(221)
+    alias TILE_224x192 = Self(222)
+    alias TILE_232x64 = Self(223)
+    alias TILE_232x128 = Self(224)
+    alias TILE_232x192 = Self(225)
+    alias TILE_240x64 = Self(226)
+    alias TILE_240x128 = Self(227)
+    alias TILE_240x192 = Self(228)
+    alias TILE_248x64 = Self(229)
+    alias TILE_248x128 = Self(230)
+    alias TILE_248x192 = Self(231)
+    alias TILE_256x192 = Self(232)
+    alias TILE_264x64 = Self(233)
+    alias TILE_264x128 = Self(234)
+    alias TILE_272x64 = Self(235)
+    alias TILE_272x128 = Self(236)
+    alias TILE_280x64 = Self(237)
+    alias TILE_280x128 = Self(238)
+    alias TILE_288x64 = Self(239)
+    alias TILE_288x128 = Self(240)
+    alias TILE_296x64 = Self(241)
+    alias TILE_296x128 = Self(242)
+    alias TILE_304x64 = Self(243)
+    alias TILE_304x128 = Self(244)
+    alias TILE_312x64 = Self(245)
+    alias TILE_312x128 = Self(246)
+    alias TILE_320x64 = Self(247)
+    alias TILE_320x128 = Self(248)
+    alias TILE_328x64 = Self(249)
+    alias TILE_328x128 = Self(250)
+    alias TILE_336x64 = Self(251)
+    alias TILE_336x128 = Self(252)
+    alias TILE_344x64 = Self(253)
+    alias TILE_344x128 = Self(254)
+    alias TILE_352x64 = Self(255)
+    alias TILE_352x128 = Self(256)
+    alias TILE_360x64 = Self(257)
+    alias TILE_360x128 = Self(258)
+    alias TILE_368x64 = Self(259)
+    alias TILE_368x128 = Self(260)
+    alias TILE_376x64 = Self(261)
+    alias TILE_376x128 = Self(262)
+    alias TILE_384x64 = Self(263)
+    alias TILE_384x128 = Self(264)
+    alias TILE_392x64 = Self(265)
+    alias TILE_400x64 = Self(266)
+    alias TILE_408x64 = Self(267)
+    alias TILE_416x64 = Self(268)
+    alias TILE_424x64 = Self(269)
+    alias TILE_432x64 = Self(270)
+    alias TILE_440x64 = Self(271)
+    alias TILE_448x64 = Self(272)
+    alias TILE_456x64 = Self(273)
+    alias TILE_464x64 = Self(274)
+    alias TILE_472x64 = Self(275)
+    alias TILE_480x64 = Self(276)
+    alias TILE_488x64 = Self(277)
+    alias TILE_496x64 = Self(278)
+    alias TILE_504x64 = Self(279)
+    alias TILE_520x64 = Self(280)
+    alias TILE_528x64 = Self(281)
+    alias TILE_536x64 = Self(282)
+    alias TILE_544x64 = Self(283)
+    alias TILE_552x64 = Self(284)
+    alias TILE_560x64 = Self(285)
+    alias TILE_568x64 = Self(286)
+    alias TILE_576x64 = Self(287)
+    alias TILE_584x64 = Self(288)
+    alias TILE_592x64 = Self(289)
+    alias TILE_600x64 = Self(290)
+    alias TILE_608x64 = Self(291)
+    alias TILE_616x64 = Self(292)
+    alias TILE_624x64 = Self(293)
+    alias TILE_632x64 = Self(294)
+    alias TILE_640x64 = Self(295)
+    alias TILE_648x64 = Self(296)
+    alias TILE_656x64 = Self(297)
+    alias TILE_664x64 = Self(298)
+    alias TILE_672x64 = Self(299)
+    alias TILE_680x64 = Self(300)
+    alias TILE_688x64 = Self(301)
+    alias TILE_696x64 = Self(302)
+    alias TILE_704x64 = Self(303)
+    alias TILE_712x64 = Self(304)
+    alias TILE_720x64 = Self(305)
+    alias TILE_728x64 = Self(306)
+    alias TILE_736x64 = Self(307)
+    alias TILE_744x64 = Self(308)
+    alias TILE_752x64 = Self(309)
+    alias TILE_760x64 = Self(310)
+    alias TILE_768x64 = Self(311)
+    alias TILE_64x16 = Self(312)
+    alias TILE_64x24 = Self(313)
+    alias TILE_64x40 = Self(314)
+    alias TILE_64x48 = Self(315)
+    alias TILE_64x56 = Self(316)
+    alias TILE_64x72 = Self(317)
+    alias TILE_64x80 = Self(318)
+    alias TILE_64x88 = Self(319)
+    alias TILE_64x104 = Self(320)
+    alias TILE_64x112 = Self(321)
+    alias TILE_64x120 = Self(322)
+    alias TILE_64x136 = Self(323)
+    alias TILE_64x144 = Self(324)
+    alias TILE_64x152 = Self(325)
+    alias TILE_64x160 = Self(326)
+    alias TILE_64x168 = Self(327)
+    alias TILE_64x176 = Self(328)
+    alias TILE_64x184 = Self(329)
+    alias TILE_64x200 = Self(330)
+    alias TILE_64x208 = Self(331)
+    alias TILE_64x216 = Self(332)
+    alias TILE_64x224 = Self(333)
+    alias TILE_64x232 = Self(334)
+    alias TILE_64x240 = Self(335)
+    alias TILE_64x248 = Self(336)
+    alias TILE_64x264 = Self(337)
+    alias TILE_64x272 = Self(338)
+    alias TILE_64x280 = Self(339)
+    alias TILE_64x288 = Self(340)
+    alias TILE_64x296 = Self(341)
+    alias TILE_64x304 = Self(342)
+    alias TILE_64x312 = Self(343)
+    alias TILE_64x328 = Self(344)
+    alias TILE_64x336 = Self(345)
+    alias TILE_64x344 = Self(346)
+    alias TILE_64x352 = Self(347)
+    alias TILE_64x360 = Self(348)
+    alias TILE_64x368 = Self(349)
+    alias TILE_64x376 = Self(350)
+    alias TILE_64x392 = Self(351)
+    alias TILE_64x400 = Self(352)
+    alias TILE_64x408 = Self(353)
+    alias TILE_64x416 = Self(354)
+    alias TILE_64x424 = Self(355)
+    alias TILE_64x432 = Self(356)
+    alias TILE_64x440 = Self(357)
+    alias TILE_64x456 = Self(358)
+    alias TILE_64x464 = Self(359)
+    alias TILE_64x472 = Self(360)
+    alias TILE_64x480 = Self(361)
+    alias TILE_64x488 = Self(362)
+    alias TILE_64x496 = Self(363)
+    alias TILE_64x504 = Self(364)
+    alias TILE_64x520 = Self(365)
+    alias TILE_64x528 = Self(366)
+    alias TILE_64x536 = Self(367)
+    alias TILE_64x544 = Self(368)
+    alias TILE_64x552 = Self(369)
+    alias TILE_64x560 = Self(370)
+    alias TILE_64x568 = Self(371)
+    alias TILE_64x584 = Self(372)
+    alias TILE_64x592 = Self(373)
+    alias TILE_64x600 = Self(374)
+    alias TILE_64x608 = Self(375)
+    alias TILE_64x616 = Self(376)
+    alias TILE_64x624 = Self(377)
+    alias TILE_64x632 = Self(378)
+    alias TILE_64x648 = Self(379)
+    alias TILE_64x656 = Self(380)
+    alias TILE_64x664 = Self(381)
+    alias TILE_64x672 = Self(382)
+    alias TILE_64x680 = Self(383)
+    alias TILE_64x688 = Self(384)
+    alias TILE_64x696 = Self(385)
+    alias TILE_64x712 = Self(386)
+    alias TILE_64x720 = Self(387)
+    alias TILE_64x728 = Self(388)
+    alias TILE_64x736 = Self(389)
+    alias TILE_64x744 = Self(390)
+    alias TILE_64x752 = Self(391)
+    alias TILE_64x760 = Self(392)
+    alias TILE_128x8 = Self(393)
+    alias TILE_128x16 = Self(394)
+    alias TILE_128x24 = Self(395)
+    alias TILE_128x40 = Self(396)
+    alias TILE_128x48 = Self(397)
+    alias TILE_128x56 = Self(398)
+    alias TILE_128x72 = Self(399)
+    alias TILE_128x80 = Self(400)
+    alias TILE_128x88 = Self(401)
+    alias TILE_128x104 = Self(402)
+    alias TILE_128x112 = Self(403)
+    alias TILE_128x120 = Self(404)
+    alias TILE_128x136 = Self(405)
+    alias TILE_128x144 = Self(406)
+    alias TILE_128x152 = Self(407)
+    alias TILE_128x168 = Self(408)
+    alias TILE_128x176 = Self(409)
+    alias TILE_128x184 = Self(410)
+    alias TILE_128x200 = Self(411)
+    alias TILE_128x208 = Self(412)
+    alias TILE_128x216 = Self(413)
+    alias TILE_128x224 = Self(414)
+    alias TILE_128x232 = Self(415)
+    alias TILE_128x240 = Self(416)
+    alias TILE_128x248 = Self(417)
+    alias TILE_128x264 = Self(418)
+    alias TILE_128x272 = Self(419)
+    alias TILE_128x280 = Self(420)
+    alias TILE_128x288 = Self(421)
+    alias TILE_128x296 = Self(422)
+    alias TILE_128x304 = Self(423)
+    alias TILE_128x312 = Self(424)
+    alias TILE_128x328 = Self(425)
+    alias TILE_128x336 = Self(426)
+    alias TILE_128x344 = Self(427)
+    alias TILE_128x352 = Self(428)
+    alias TILE_128x360 = Self(429)
+    alias TILE_128x368 = Self(430)
+    alias TILE_128x376 = Self(431)
+    alias TILE_128x392 = Self(432)
+    alias TILE_128x400 = Self(433)
+    alias TILE_128x408 = Self(434)
+    alias TILE_128x416 = Self(435)
+    alias TILE_128x424 = Self(436)
+    alias TILE_128x432 = Self(437)
+    alias TILE_128x440 = Self(438)
+    alias TILE_128x448 = Self(439)
+    alias TILE_128x456 = Self(440)
+    alias TILE_128x464 = Self(441)
+    alias TILE_128x472 = Self(442)
+    alias TILE_128x480 = Self(443)
+    alias TILE_128x488 = Self(444)
+    alias TILE_128x496 = Self(445)
+    alias TILE_128x504 = Self(446)
+    alias TILE_128x512 = Self(447)
+    alias TILE_192x8 = Self(448)
+    alias TILE_192x16 = Self(449)
+    alias TILE_192x24 = Self(450)
+    alias TILE_192x32 = Self(451)
+    alias TILE_192x40 = Self(452)
+    alias TILE_192x48 = Self(453)
+    alias TILE_192x56 = Self(454)
+    alias TILE_192x72 = Self(455)
+    alias TILE_192x80 = Self(456)
+    alias TILE_192x88 = Self(457)
+    alias TILE_192x96 = Self(458)
+    alias TILE_192x104 = Self(459)
+    alias TILE_192x112 = Self(460)
+    alias TILE_192x120 = Self(461)
+    alias TILE_192x136 = Self(462)
+    alias TILE_192x144 = Self(463)
+    alias TILE_192x152 = Self(464)
+    alias TILE_192x160 = Self(465)
+    alias TILE_192x168 = Self(466)
+    alias TILE_192x176 = Self(467)
+    alias TILE_192x184 = Self(468)
+    alias TILE_192x200 = Self(469)
+    alias TILE_192x208 = Self(470)
+    alias TILE_192x216 = Self(471)
+    alias TILE_192x224 = Self(472)
+    alias TILE_192x232 = Self(473)
+    alias TILE_192x240 = Self(474)
+    alias TILE_192x248 = Self(475)
+    alias TILE_192x264 = Self(476)
+    alias TILE_192x272 = Self(477)
+    alias TILE_192x280 = Self(478)
+    alias TILE_192x288 = Self(479)
+    alias TILE_192x296 = Self(480)
+    alias TILE_192x304 = Self(481)
+    alias TILE_192x312 = Self(482)
+    alias TILE_192x320 = Self(483)
+    alias TILE_192x328 = Self(484)
+    alias TILE_192x336 = Self(485)
+    alias TILE_256x8 = Self(486)
+    alias TILE_256x16 = Self(487)
+    alias TILE_256x24 = Self(488)
+    alias TILE_256x40 = Self(489)
+    alias TILE_256x48 = Self(490)
+    alias TILE_256x56 = Self(491)
+    alias TILE_256x72 = Self(492)
+    alias TILE_256x80 = Self(493)
+    alias TILE_256x88 = Self(494)
+    alias TILE_256x96 = Self(495)
+    alias TILE_256x104 = Self(496)
+    alias TILE_256x112 = Self(497)
+    alias TILE_256x120 = Self(498)
+    alias TILE_256x136 = Self(499)
+    alias TILE_256x144 = Self(500)
+    alias TILE_256x152 = Self(501)
+    alias TILE_256x160 = Self(502)
+    alias TILE_256x168 = Self(503)
+    alias TILE_256x176 = Self(504)
+    alias TILE_256x184 = Self(505)
+    alias TILE_256x200 = Self(506)
+    alias TILE_256x208 = Self(507)
+    alias TILE_256x216 = Self(508)
+    alias TILE_256x224 = Self(509)
+    alias TILE_256x232 = Self(510)
+    alias TILE_256x240 = Self(511)
+    alias TILE_256x248 = Self(512)
+    alias TILE_256x256 = Self(513)
+    alias TILE_320x8 = Self(514)
+    alias TILE_320x16 = Self(515)
+    alias TILE_320x24 = Self(516)
+    alias TILE_320x32 = Self(517)
+    alias TILE_320x40 = Self(518)
+    alias TILE_320x48 = Self(519)
+    alias TILE_320x56 = Self(520)
+    alias TILE_320x72 = Self(521)
+    alias TILE_320x80 = Self(522)
+    alias TILE_320x88 = Self(523)
+    alias TILE_320x96 = Self(524)
+    alias TILE_320x104 = Self(525)
+    alias TILE_320x112 = Self(526)
+    alias TILE_320x120 = Self(527)
+    alias TILE_320x136 = Self(528)
+    alias TILE_320x144 = Self(529)
+    alias TILE_320x152 = Self(530)
+    alias TILE_320x160 = Self(531)
+    alias TILE_320x168 = Self(532)
+    alias TILE_320x176 = Self(533)
+    alias TILE_320x184 = Self(534)
+    alias TILE_320x192 = Self(535)
+    alias TILE_320x200 = Self(536)
+    alias TILE_384x8 = Self(537)
+    alias TILE_384x16 = Self(538)
+    alias TILE_384x24 = Self(539)
+    alias TILE_384x32 = Self(540)
+    alias TILE_384x40 = Self(541)
+    alias TILE_384x48 = Self(542)
+    alias TILE_384x56 = Self(543)
+    alias TILE_384x72 = Self(544)
+    alias TILE_384x80 = Self(545)
+    alias TILE_384x88 = Self(546)
+    alias TILE_384x96 = Self(547)
+    alias TILE_384x104 = Self(548)
+    alias TILE_384x112 = Self(549)
+    alias TILE_384x120 = Self(550)
+    alias TILE_384x136 = Self(551)
+    alias TILE_384x144 = Self(552)
+    alias TILE_384x152 = Self(553)
+    alias TILE_384x160 = Self(554)
+    alias TILE_384x168 = Self(555)
+    alias TILE_448x8 = Self(556)
+    alias TILE_448x16 = Self(557)
+    alias TILE_448x24 = Self(558)
+    alias TILE_448x32 = Self(559)
+    alias TILE_448x40 = Self(560)
+    alias TILE_448x48 = Self(561)
+    alias TILE_448x56 = Self(562)
+    alias TILE_448x72 = Self(563)
+    alias TILE_448x80 = Self(564)
+    alias TILE_448x88 = Self(565)
+    alias TILE_448x96 = Self(566)
+    alias TILE_448x104 = Self(567)
+    alias TILE_448x112 = Self(568)
+    alias TILE_448x120 = Self(569)
+    alias TILE_448x128 = Self(570)
+    alias TILE_448x136 = Self(571)
+    alias TILE_448x144 = Self(572)
+    alias TILE_512x8 = Self(573)
+    alias TILE_512x16 = Self(574)
+    alias TILE_512x24 = Self(575)
+    alias TILE_512x32 = Self(576)
+    alias TILE_512x40 = Self(577)
+    alias TILE_512x48 = Self(578)
+    alias TILE_512x56 = Self(579)
+    alias TILE_512x72 = Self(580)
+    alias TILE_512x80 = Self(581)
+    alias TILE_512x88 = Self(582)
+    alias TILE_512x96 = Self(583)
+    alias TILE_512x104 = Self(584)
+    alias TILE_512x112 = Self(585)
+    alias TILE_512x120 = Self(586)
+    alias TILE_512x128 = Self(587)
+    alias TILE_576x8 = Self(588)
+    alias TILE_576x16 = Self(589)
+    alias TILE_576x24 = Self(590)
+    alias TILE_576x32 = Self(591)
+    alias TILE_576x40 = Self(592)
+    alias TILE_576x48 = Self(593)
+    alias TILE_576x56 = Self(594)
+    alias TILE_576x72 = Self(595)
+    alias TILE_576x80 = Self(596)
+    alias TILE_576x88 = Self(597)
+    alias TILE_576x96 = Self(598)
+    alias TILE_576x104 = Self(599)
+    alias TILE_576x112 = Self(600)
+    alias TILE_640x8 = Self(601)
+    alias TILE_640x16 = Self(602)
+    alias TILE_640x24 = Self(603)
+    alias TILE_640x32 = Self(604)
+    alias TILE_640x40 = Self(605)
+    alias TILE_640x48 = Self(606)
+    alias TILE_640x56 = Self(607)
+    alias TILE_640x72 = Self(608)
+    alias TILE_640x80 = Self(609)
+    alias TILE_640x88 = Self(610)
+    alias TILE_640x96 = Self(611)
+    alias TILE_704x8 = Self(612)
+    alias TILE_704x16 = Self(613)
+    alias TILE_704x24 = Self(614)
+    alias TILE_704x32 = Self(615)
+    alias TILE_704x40 = Self(616)
+    alias TILE_704x48 = Self(617)
+    alias TILE_704x56 = Self(618)
+    alias TILE_704x72 = Self(619)
+    alias TILE_704x80 = Self(620)
+    alias TILE_704x88 = Self(621)
+    alias TILE_768x8 = Self(622)
+    alias TILE_768x16 = Self(623)
+    alias TILE_768x24 = Self(624)
+    alias TILE_768x32 = Self(625)
+    alias TILE_768x40 = Self(626)
+    alias TILE_768x48 = Self(627)
+    alias TILE_768x56 = Self(628)
+    alias TILE_768x72 = Self(629)
+    alias TILE_768x80 = Self(630)
+    alias TILE_256x512 = Self(631)
+    alias TILE_256x1024 = Self(632)
+    alias TILE_512x512 = Self(633)
+    alias TILE_512x1024 = Self(634)
+
+    alias TILE_END = Self(635)
 
     @implicit
     fn __init__(out self, value: Int):
