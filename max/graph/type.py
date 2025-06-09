@@ -941,7 +941,7 @@ class _OpaqueType(Type[mo.OpaqueType]):
             An ``mlir.Type`` in the specified Context.
         """
         return mo.OpaqueType(
-            builtin.StringAttr(self.name), metadata=builtin.DictionaryAttr([])
+            builtin.StringAttr(self.name), parameters=builtin.DictionaryAttr([])
         )
 
     @staticmethod
