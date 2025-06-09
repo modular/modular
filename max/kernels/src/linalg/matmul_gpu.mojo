@@ -1887,26 +1887,78 @@ fn _matmul_gpu[
             ](c, a, b, ctx)
             return
 
-    alias BLOCK_DIM = 16
-    ctx.enqueue_function[
-        matmul_kernel_naive[
-            c_type,
-            a_type,
-            b_type,
-            BLOCK_DIM,
-            transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-        ]
-    ](
-        c.data,
-        a.data,
-        b.data,
-        m,
-        n,
-        k,
-        grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-        block_dim=(BLOCK_DIM, BLOCK_DIM),
-    )
+    # compile time check to pass bro's req of only having support FP32, FP16 and BF16 for cublas wrapper
+    @parameter
+    if (
+        (
+            a_type is DType.float32
+            or a_type is DType.bfloat16
+            or a_type is DType.float16
+        )
+        and (
+            b_type is DType.float32
+            or b_type is DType.bfloat16
+            or b_type is DType.float16
+        )
+        and (
+            c_type is DType.float32
+            or c_type is DType.bfloat16
+            or c_type is DType.float16
+        )
+    ):
+        try:
+            return matmul_vendor[
+                use_tensor_core=use_tensor_core,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                config=config,
+                _trace_description=_trace_description,
+            ](c, a, b, ctx)
+        except:
+            alias BLOCK_DIM = 16
+            ctx.enqueue_function[
+                matmul_kernel_naive[
+                    c_type,
+                    a_type,
+                    b_type,
+                    BLOCK_DIM,
+                    transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                ]
+            ](
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            )
+            return
+    else:
+        # For unsupported types like FP8, directly use the naive implementation
+        alias BLOCK_DIM = 16
+        ctx.enqueue_function[
+            matmul_kernel_naive[
+                c_type,
+                a_type,
+                b_type,
+                BLOCK_DIM,
+                transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+            ]
+        ](
+            c.data,
+            a.data,
+            b.data,
+            m,
+            n,
+            k,
+            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
+        return
 
 
 @always_inline
