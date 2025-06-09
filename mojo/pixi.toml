@@ -16,4 +16,4 @@ lit = "*"
 max = "*"
 # FIXME: The float32 tests in builtin/test_format_float.mojo fail
 # with numpy 2.3.0, which changed formatting for some float types.
-numpy = "<=2.3.0"
+numpy = "<2.3.0"
