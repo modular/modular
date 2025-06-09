@@ -11,8 +11,9 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import ConvInputLayout, DeviceRef, Shape
+from ..type import ConvInputLayout, FilterLayout, Shape
 from ..value import TensorValue, TensorValueLike
+from .permute import permute
 
 
 def conv2d_transpose(
@@ -24,6 +25,7 @@ def conv2d_transpose(
     output_paddings: tuple[int, int] = (0, 0),
     bias: Optional[TensorValueLike] = None,
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
+    filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:
     """Computes the 2-D deconvolution of the input with the given filter,
     strides, dilations, paddings, and groups.
@@ -110,14 +112,14 @@ def conv2d_transpose(
         )
 
     # TODO(GEX-2043): Add support for GPU kernel for conv_transpose and remove manual transfers
-    original_device = x.type.device
-    x = x.to(DeviceRef.CPU())
-    filter = filter.to(DeviceRef.CPU())
+    # original_device = x.type.device
+    # x = x.to(DeviceRef.CPU())
+    # filter = filter.to(DeviceRef.CPU())
 
     out = Graph.current._add_op(
         rmo.conv_transpose,
         input=x,
-        filter=filter,
+        filter=filter._with_layout(filter_layout),
         strides=Shape(stride).to_mlir(),
         dilations=Shape(dilation).to_mlir(),
         paddings=Shape(padding).to_mlir(),
@@ -125,8 +127,14 @@ def conv2d_transpose(
         input_layout=input_layout.to_mlir(),
     )[0].tensor
 
-    out = out.to(original_device)
+    # out = out.to(original_device)
 
     if bias is not None:
-        return Graph.current._add_op(rmo.add, out, bias)[0].tensor
+        # Convert from NCHW to NHWC for bias broadcasting.
+        # TODO: There should be a better way without transpose.
+        out = permute(out, [0, 2, 3, 1])
+        out = Graph.current._add_op(rmo.add, out, bias)[0].tensor
+        # Convert back from NHWC to NCHW.
+        return permute(out, [0, 3, 1, 2])
+        # return Graph.current._add_op(rmo.add, out, bias)[0].tensor
     return out

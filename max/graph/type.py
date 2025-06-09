@@ -42,6 +42,7 @@ class FilterLayout(enum.Enum):
     QRSCF = "QRSCF"
     FCRS = "FCRS"
     FCQRS = "FCQRS"
+    CFRS = "CFRS"
 
     def to_mlir(self) -> mo.LayoutAttr:
         """Returns an mlir Attribute representing this Layout.
