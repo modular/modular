@@ -279,9 +279,9 @@ struct Task[type: AnyType, origins: OriginSet]:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TaskGroupContext:
+struct TaskGroupContext(Copyable, Movable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,

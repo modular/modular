@@ -29,8 +29,8 @@ alias blkcnt_t = Int64
 alias blksize_t = Int32
 
 
-@value
-struct _c_stat(Stringable, Writable):
+@fieldwise_init
+struct _c_stat(Stringable, Writable, Copyable, Movable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_mode: mode_t

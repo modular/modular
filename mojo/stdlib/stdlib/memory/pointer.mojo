@@ -26,9 +26,8 @@ from sys import is_nvidia_gpu
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct _GPUAddressSpace(EqualityComparable):
+struct _GPUAddressSpace(EqualityComparable, Copyable, Movable):
     var _value: Int
 
     # See https://docs.nvidia.com/cuda/nvvm-ir-spec/#address-space
@@ -157,7 +156,6 @@ struct _GPUAddressSpace(EqualityComparable):
         return self.value() != other.value()
 
 
-@value
 @register_passable("trivial")
 struct AddressSpace(
     EqualityComparable,
@@ -298,7 +296,6 @@ struct AddressSpace(
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct Pointer[
     mut: Bool, //,
