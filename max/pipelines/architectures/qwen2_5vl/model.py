@@ -350,7 +350,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         # Unset the context's pixel values so that subsequent next_token
         # calls reusing the same context won't run the vision encoder.
         for ctx in context_batch:
-            ctx.pixel_values = []
+            ctx.pixel_values = tuple()
             # TODO: Update other visual input related attributes too
 
         return Qwen2_5VLInputs(

@@ -394,7 +394,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
                 if not np.array_equal(self_val, other_val):
                     return False
             # Handle lists
-            elif isinstance(self_val, list):
+            elif isinstance(self_val, list) or isinstance(self_val, tuple):
                 if len(self_val) != len(other_val):
                     return False
                 for s, o in zip(self_val, other_val):
@@ -840,8 +840,8 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
 class TextAndVisionContext(TextContext):
     """A base class for model context, specifically for Vision model variants."""
 
-    pixel_values: Sequence[np.ndarray] = msgspec.field()
-    extra_model_args: dict[str, Any] = msgspec.field()
+    pixel_values: tuple[np.ndarray, ...] = msgspec.field(default_factory=tuple)
+    extra_model_args: dict[str, Any] = msgspec.field(default_factory=dict)
 
     def update(
         self,
