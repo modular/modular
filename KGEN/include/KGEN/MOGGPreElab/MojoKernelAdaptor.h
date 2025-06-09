@@ -195,6 +195,18 @@ struct MojoKernelOperandAdaptor {
     return fused;
   }
 
+  bool isTensorWithIOSpec(IOSpec spec) const {
+    if (!isTensorType())
+      return false;
+
+    bool match = false;
+    partial_visit<TensorOperandAdaptor, VariadicTensorOperandAdaptor,
+                  ListOfTensorOperandAdaptor>(
+        [&](auto &&obj) { match = (spec == obj.ioSpec); }, underlyingType);
+
+    return match;
+  }
+
   bool isMutableTensorType() const {
     if (!isTensorType())
       return false;
