@@ -34,13 +34,12 @@ from memory import UnsafePointer, bitcast
 
 fn _constrain_fp_type[dtype: DType]():
     constrained[
-        dtype.is_floating_point(), "dtype must be a floating point type"
+        dtype.is_floating_point(),
+        "dtype must be a floating point type",
     ]()
 
 
-struct FPUtils[
-    dtype: DType, *, _constraint: NoneType = _constrain_fp_type[dtype]()
-]:
+struct FPUtils[dtype: DType]:
     """Collection of utility functions for working with FP values.
 
     Constraints:
@@ -48,7 +47,6 @@ struct FPUtils[
 
     Parameters:
         dtype: The concrete FP dtype (FP32/FP64/etc).
-        _constraint: Implements the constraint. Do not pass explicitly.
     """
 
     alias integral_type = _integral_type_of[dtype]()
@@ -65,7 +63,7 @@ struct FPUtils[
         Returns:
             The mantissa width.
         """
-
+        _constrain_fp_type[dtype]()
         return bitwidthof[dtype]() - Self.exponent_width() - 1
 
     @staticmethod
@@ -79,6 +77,7 @@ struct FPUtils[
         Returns:
             The max exponent.
         """
+        _constrain_fp_type[dtype]()
 
         @parameter
         if dtype is DType.float8_e4m3fnuz:
@@ -101,6 +100,7 @@ struct FPUtils[
         Returns:
             The exponent width.
         """
+        _constrain_fp_type[dtype]()
 
         @parameter
         if dtype in (
@@ -124,6 +124,7 @@ struct FPUtils[
         Returns:
             The mantissa mask.
         """
+        _constrain_fp_type[dtype]()
         return (1 << Self.mantissa_width()) - 1
 
     @staticmethod
@@ -134,6 +135,7 @@ struct FPUtils[
         Returns:
             The exponent bias.
         """
+        _constrain_fp_type[dtype]()
 
         @parameter
         if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
@@ -151,6 +153,7 @@ struct FPUtils[
         Returns:
             The sign mask.
         """
+        _constrain_fp_type[dtype]()
         # convert to `Int` first to bypass overflow check
         return 1 << Int(Self.exponent_width() + Self.mantissa_width())
 
@@ -164,6 +167,7 @@ struct FPUtils[
         Returns:
             The exponent mask.
         """
+        _constrain_fp_type[dtype]()
         return ~(Self.sign_mask() | Self.mantissa_mask())
 
     @staticmethod
@@ -176,6 +180,7 @@ struct FPUtils[
         Returns:
             The exponent and mantissa mask.
         """
+        _constrain_fp_type[dtype]()
         return Self.exponent_mask() | Self.mantissa_mask()
 
     @staticmethod
@@ -192,6 +197,7 @@ struct FPUtils[
         Returns:
             The quiet NaN mask.
         """
+        _constrain_fp_type[dtype]()
         alias mantissa_width_val = Self.mantissa_width()
         return (1 << Self.exponent_width() - 1) << mantissa_width_val + (
             1 << (mantissa_width_val - 1)
@@ -208,6 +214,7 @@ struct FPUtils[
         Returns:
             An integer representation of the floating-point value.
         """
+        _constrain_fp_type[dtype]()
         return Int(bitcast[Self.integral_type, 1](value))
 
     @staticmethod
@@ -221,6 +228,7 @@ struct FPUtils[
         Returns:
             An integer representation of the floating-point value.
         """
+        _constrain_fp_type[dtype]()
         return bitcast[Self.uint_type, 1](value)
 
     @staticmethod
@@ -234,6 +242,7 @@ struct FPUtils[
         Returns:
             An floating-point representation of the Int.
         """
+        _constrain_fp_type[dtype]()
         return bitcast[dtype, 1](SIMD[Self.integral_type, 1](value))
 
     @staticmethod
@@ -247,6 +256,7 @@ struct FPUtils[
         Returns:
             Returns True if the sign is set and False otherwise.
         """
+        _constrain_fp_type[dtype]()
         return (Self.bitcast_to_integer(value) & Self.sign_mask()) != 0
 
     @staticmethod
@@ -261,6 +271,7 @@ struct FPUtils[
         Returns:
             Returns the floating point value with the sign set.
         """
+        _constrain_fp_type[dtype]()
         var bits = Self.bitcast_to_integer(value)
         var sign_bits = Self.sign_mask()
         bits &= ~sign_bits
@@ -279,6 +290,7 @@ struct FPUtils[
         Returns:
             Returns the exponent bits.
         """
+        _constrain_fp_type[dtype]()
         return (
             Self.bitcast_to_integer(value) & Self.exponent_mask()
         ) >> Self.mantissa_width()
@@ -295,6 +307,7 @@ struct FPUtils[
         Returns:
             The biased exponent as an Int.
         """
+        _constrain_fp_type[dtype]()
         return Int(
             Self.bitcast_to_uint(value) >> Self.mantissa_width()
             & ((1 << Self.exponent_width()) - 1)
@@ -312,6 +325,7 @@ struct FPUtils[
         Returns:
             Returns the floating-point value with the exponent bits set.
         """
+        _constrain_fp_type[dtype]()
         var bits = Self.bitcast_to_integer(value)
         bits &= ~Self.exponent_mask()
         bits |= (exponent << Self.mantissa_width()) & Self.exponent_mask()
@@ -328,6 +342,7 @@ struct FPUtils[
         Returns:
             The mantissa bits.
         """
+        _constrain_fp_type[dtype]()
         return Self.bitcast_to_integer(value) & Self.mantissa_mask()
 
     @staticmethod
@@ -341,6 +356,7 @@ struct FPUtils[
         Returns:
             The mantissa bits.
         """
+        _constrain_fp_type[dtype]()
         return Self.bitcast_to_uint(value) & Self.mantissa_mask()
 
     @staticmethod
@@ -355,6 +371,7 @@ struct FPUtils[
         Returns:
             Returns the floating-point value with the mantissa bits set.
         """
+        _constrain_fp_type[dtype]()
         var bits = Self.bitcast_to_integer(value)
         bits &= ~Self.mantissa_mask()
         bits |= mantissa & Self.mantissa_mask()
@@ -374,6 +391,7 @@ struct FPUtils[
         Returns:
             Returns the floating-point value.
         """
+        _constrain_fp_type[dtype]()
         var res: Scalar[dtype] = 0
         res = Self.set_sign(res, sign)
         res = Self.set_exponent(res, exponent)
