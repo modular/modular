@@ -746,8 +746,6 @@ struct SIMD[dtype: DType, size: Int](
             return (rebind[Self._Mask](self) & rebind[Self._Mask](rhs)).cast[
                 dtype
             ]()
-
-        constrained[dtype.is_numeric(), "the SIMD type must be numeric"]()
         return __mlir_op.`pop.mul`(self.value, rhs.value)
 
     @always_inline("nodebug")
@@ -1791,10 +1789,8 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if target in (DType.float8_e4m3fn, DType.float8_e5m2):
             # TODO(KERN-1488): use gpu (H100) instruction to convert from fp16 to fp8
-            return rebind[Target](
-                _convert_f32_to_float8[size=size, target=target](
-                    self.cast[DType.float32]()
-                )
+            return _convert_f32_to_float8[target=target, size=size](
+                self.cast[DType.float32]()
             )
 
         @parameter
@@ -2248,24 +2244,22 @@ struct SIMD[dtype: DType, size: Int](
                 return self._dynamic_shuffle(mask.join({})).slice[mask_size]()
             elif mask_size == target_mask_size:
                 alias dt = SIMD[DType.uint8, target_mask_size]
-                var result = _pshuf_or_tbl1(rebind[dt](self), rebind[dt](mask))
-                return rebind[SIMD[dtype, mask_size]](result)
+                var res = _pshuf_or_tbl1(rebind[dt](self), rebind[dt](mask))
+                return rebind[SIMD[dtype, mask_size]](res)
             elif mask_size > target_mask_size:
                 # We split it in two and call dynamic_shuffle twice.
-                alias half_size = mask_size // 2
-                var fst_mask = mask.slice[half_size, offset=0]()
-                var snd_mask = mask.slice[half_size, offset=half_size]()
+                var fst_mask, snd_mask = mask.split()
                 var fst = self._dynamic_shuffle(fst_mask)
                 var snd = self._dynamic_shuffle(snd_mask)
                 return rebind[SIMD[dtype, mask_size]](fst.join(snd))
 
         # Slow path, ~3x slower than pshuf for size 16
-        var result = SIMD[dtype, mask_size]()
+        var res = SIMD[dtype, mask_size]()
 
         @parameter
         for i in range(mask_size):
-            result[i] = self[Int(mask[i])]
-        return result
+            res[i] = self[Int(mask[i])]
+        return res
 
     @always_inline
     fn slice[
@@ -2297,12 +2291,12 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if offset % simdwidthof[dtype]():
-            var tmp = SIMD[dtype, output_width]()
+            var res = SIMD[dtype, output_width]()
 
             @parameter
             for i in range(output_width):
-                tmp[i] = self[i + offset]
-            return tmp
+                res[i] = self[i + offset]
+            return res
 
         return llvm_intrinsic[
             "llvm.vector.extract",
@@ -2401,32 +2395,23 @@ struct SIMD[dtype: DType, size: Int](
             has_side_effect=False,
         ](self, other)
 
-    alias _SIMDHalfType = SIMD[dtype, size // 2]
-
     @always_inline("nodebug")
-    fn split(
-        self,
-    ) -> Tuple[Self._SIMDHalfType, Self._SIMDHalfType]:
+    fn split(self) -> Tuple[SIMD[dtype, size // 2], SIMD[dtype, size // 2]]:
         """Splits the SIMD vector into 2 subvectors.
 
         Returns:
             A new vector `self_0:N/2, self_N/2:N`.
         """
-
         constrained[size > 1, "the simd width must be at least 2"]()
-
         alias half_size = size // 2
-        var lhs = rebind[Self._SIMDHalfType](self.slice[half_size, offset=0]())
-        var rhs = rebind[Self._SIMDHalfType](
-            self.slice[half_size, offset=half_size]()
-        )
-
-        return (lhs, rhs)
+        var l = self.slice[half_size]()
+        var r = self.slice[half_size, offset=half_size]()
+        return l, r
 
     @always_inline("nodebug")
     fn deinterleave(
         self,
-    ) -> (Self._SIMDHalfType, Self._SIMDHalfType):
+    ) -> Tuple[SIMD[dtype, size // 2], SIMD[dtype, size // 2]]:
         """Constructs two vectors by deinterleaving the even and odd lanes of
         the vector.
 
@@ -2442,20 +2427,14 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 2:
-            return (
-                rebind[Self._SIMDHalfType](self[0]),
-                rebind[Self._SIMDHalfType](self[1]),
-            )
+            return self[0], self[1]
 
         var res = llvm_intrinsic[
             "llvm.vector.deinterleave2",
-            _RegisterPackType[Self._SIMDHalfType, Self._SIMDHalfType],
+            _RegisterPackType[SIMD[dtype, size // 2], SIMD[dtype, size // 2]],
             has_side_effect=False,
         ](self)
-        return (
-            rebind[Self._SIMDHalfType](res[0]),
-            rebind[Self._SIMDHalfType](res[1]),
-        )
+        return res[0], res[1]
 
     # ===------------------------------------------------------------------=== #
     # Reduce operations
@@ -2673,7 +2652,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 1:
-            return rebind[SIMD[dtype, size_out]](self)
+            return self[0]
 
         return llvm_intrinsic[
             "llvm.vector.reduce.and",
