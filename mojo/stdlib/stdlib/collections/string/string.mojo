@@ -422,8 +422,15 @@ struct String(
 
     @no_inline
     fn __init__[
-        *Ts: Writable
-    ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
+        *Ts: Writable,
+        O1: ImmutableOrigin = StaticConstantOrigin,
+        O2: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        out self,
+        *args: *Ts,
+        sep: StringSlice[O1] = rebind[StringSlice[O1]](StaticString()),
+        end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString()),
+    ):
         """
         Construct a string by concatenating a sequence of Writable arguments.
 
@@ -435,6 +442,8 @@ struct String(
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
+            O1: The immutable origin of the separator.
+            O2: The immutable origin of the end string.
 
         Examples:
 
@@ -459,17 +468,17 @@ struct String(
         end.write_to(buffer)
         buffer.flush()
 
-    # TODO(MOCO-1791): Default arguments and param inference aren't powerful
-    # to declare sep/end as StringSlice.
     @staticmethod
     @no_inline
     fn __init__[
-        *Ts: Writable
+        *Ts: Writable,
+        O1: ImmutableOrigin = StaticConstantOrigin,
+        O2: ImmutableOrigin = StaticConstantOrigin,
     ](
         out self,
         args: VariadicPack[_, _, Writable, *Ts],
-        sep: StaticString = "",
-        end: StaticString = "",
+        sep: StringSlice[O1] = rebind[StringSlice[O1]](StaticString()),
+        end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString()),
     ):
         """
         Construct a string by passing a variadic pack.
@@ -482,6 +491,8 @@ struct String(
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
+            O1: The immutable origin of the separator.
+            O2: The immutable origin of the end string.
 
         Examples:
 
@@ -653,8 +664,14 @@ struct String(
     @staticmethod
     @no_inline
     fn write[
-        *Ts: Writable
-    ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
+        *Ts: Writable,
+        O1: ImmutableOrigin = StaticConstantOrigin,
+        O2: ImmutableOrigin = StaticConstantOrigin,
+    ](
+        *args: *Ts,
+        sep: StringSlice[O1] = rebind[StringSlice[O1]](StaticString()),
+        end: StringSlice[O2] = rebind[StringSlice[O2]](StaticString()),
+    ) -> Self:
         """Construct a string by concatenating a sequence of Writable arguments.
 
         Args:
@@ -665,6 +682,8 @@ struct String(
         Parameters:
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
+            O1: The immutable origin of the separator.
+            O2: The immutable origin of the end string.
 
         Returns:
             A string formed by formatting the argument sequence.
@@ -1052,10 +1071,7 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
-        )
-        return String(elems, sep=sep)
+        return String(elems, sep=self.as_string_slice())
 
     fn join[
         T: Copyable & Movable & Writable, //, buffer_size: Int = 4096
