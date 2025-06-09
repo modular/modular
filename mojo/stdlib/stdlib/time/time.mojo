@@ -58,9 +58,9 @@ alias _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 alias _WINDOWS_LARGE_INTEGER = Int64
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CTimeSpec(Stringable, Writable):
+struct _CTimeSpec(Stringable, Writable, Copyable, Movable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -84,9 +84,9 @@ struct _CTimeSpec(Stringable, Writable):
         writer.write(self.as_nanoseconds(), "ns")
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _FILETIME:
+struct _FILETIME(Copyable, Movable):
     var dw_low_date_time: UInt32
     var dw_high_date_time: UInt32
 

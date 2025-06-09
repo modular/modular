@@ -41,7 +41,7 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TraceCategory(EqualityComparable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
@@ -119,9 +119,8 @@ struct TraceCategory(EqualityComparable, Intable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct TraceLevel(EqualityComparable):
+struct TraceLevel(EqualityComparable, Copyable, Movable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     alias ALWAYS = Self(0)
@@ -354,13 +353,13 @@ fn trace_arg(name: String, buf: NDBuffer) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 struct Trace[
     level: TraceLevel,
     *,
     category: TraceCategory = TraceCategory.MAX,
     target: Optional[StaticString] = None,
-]:
+](Copyable, Movable):
     """An object representing a specific trace.
 
     This struct provides functionality for creating and managing trace events

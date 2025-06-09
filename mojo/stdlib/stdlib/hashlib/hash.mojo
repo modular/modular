@@ -54,7 +54,7 @@ trait Hashable:
     common hash map implementations.
 
     ```mojo
-    @value
+    @fieldwise_init
     struct Foo(Hashable):
         fn __hash__(self) -> UInt:
             return 4  # chosen by fair random dice roll

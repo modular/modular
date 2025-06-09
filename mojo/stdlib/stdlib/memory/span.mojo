@@ -27,7 +27,7 @@ from memory import Pointer, UnsafePointer
 from memory.unsafe_pointer import _default_alignment
 
 
-@value
+@fieldwise_init
 struct _SpanIter[
     mut: Bool, //,
     T: Copyable & Movable,
@@ -35,7 +35,7 @@ struct _SpanIter[
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[T](),
-]:
+](Copyable, Movable):
     """Iterator for Span.
 
     Parameters:
@@ -78,7 +78,7 @@ struct _SpanIter[
             return self.index
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,

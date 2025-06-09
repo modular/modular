@@ -42,9 +42,9 @@ from .constants import (
 from .parsing_integers import to_integer
 
 
-@value
+@fieldwise_init
 @register_passable
-struct UInt128Decomposed:
+struct UInt128Decomposed(Copyable, Movable):
     var high: UInt64
     var low: UInt64
 
