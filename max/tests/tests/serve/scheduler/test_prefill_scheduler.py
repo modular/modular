@@ -83,7 +83,6 @@ def scheduler_config():
     return PrefillSchedulerConfig(
         max_batch_size_ce=16,
         target_tokens_per_batch_ce=128,
-        batch_timeout=None,
         enable_chunked_prefill=True,
     )
 

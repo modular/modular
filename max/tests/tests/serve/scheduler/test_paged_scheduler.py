@@ -161,7 +161,6 @@ def create_paged_scheduler(
     max_forward_steps_tg=10,
     target_tokens_per_batch_tg=None,
     target_tokens_per_batch_ce=8192,
-    batch_timeout=None,
     enable_prefix_caching=False,
     enable_in_flight_batching=False,
     enable_chunked_prefill=True,
@@ -185,7 +184,6 @@ def create_paged_scheduler(
         max_batch_size_ce=max_batch_size,
         max_forward_steps_ce=1,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        batch_timeout=batch_timeout,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
     )

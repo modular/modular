@@ -27,7 +27,7 @@ async def test_model_worker_propagates_exception() -> None:
         async with start_model_worker(
             EchoTokenGenerator,
             TokenGeneratorSchedulerConfig.continuous_heterogenous(
-                tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
+                tg_batch_size=1, ce_batch_size=1
             ),
             settings=settings,
             metric_client=NoopClient(),
@@ -62,7 +62,7 @@ async def test_model_worker_propagates_construction_exception() -> None:
         async with start_model_worker(
             MockInvalidTokenGenerator,
             TokenGeneratorSchedulerConfig.continuous_heterogenous(
-                tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
+                tg_batch_size=1, ce_batch_size=1
             ),
             settings=settings,
             metric_client=NoopClient(),
@@ -92,7 +92,7 @@ async def test_model_worker_start_timeout() -> None:
         async with start_model_worker(
             MockSlowTokenGenerator,
             TokenGeneratorSchedulerConfig.continuous_heterogenous(
-                tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
+                tg_batch_size=1, ce_batch_size=1
             ),
             settings=settings,
             metric_client=NoopClient(),

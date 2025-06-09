@@ -77,7 +77,6 @@ def scheduler_config():
         max_batch_size_ce=4,
         max_forward_steps_ce=8,
         target_tokens_per_batch_ce=32,
-        batch_timeout=0.1,
     )
 
 
@@ -136,67 +135,6 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx):
     )
     request_push_socket.put(("req1", create_mock_request(cache_seq_id=None)))
     time.sleep(1)
-    assert not scheduler._should_schedule_ce()
-
-
-def test_should_schedule_ce_empty_batch(scheduler, zmq_ctx):
-    # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[
-        tuple[str, Union[TextContext, TextAndVisionContext]]
-    ](
-        zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    request_push_socket.put_nowait(
-        ("req1", create_mock_request(cache_seq_id=None))
-    )
-    time.sleep(1)
-    assert not scheduler.request_q.empty()
-    scheduler.ce_batch_start_time = (
-        time.monotonic() - scheduler.scheduler_config.batch_timeout - 0.1
-    )
-    assert scheduler._should_schedule_ce()
-
-
-def test_should_schedule_ce_timeout(scheduler, zmq_ctx):
-    # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[
-        tuple[str, Union[TextContext, TextAndVisionContext]]
-    ](
-        zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    request_push_socket.put_nowait(
-        ("req1", create_mock_request(cache_seq_id=None))
-    )
-    time.sleep(1)
-    scheduler.active_batch = {"existing": Mock()}
-    scheduler.ce_batch_start_time = (
-        time.monotonic() - scheduler.scheduler_config.batch_timeout - 0.1
-    )
-    assert scheduler._should_schedule_ce()
-
-
-def test_should_schedule_ce_timeout_not_reached(scheduler, zmq_ctx):
-    # Create a push socket to send data.
-    request_push_socket = ZmqPushSocket[
-        tuple[str, Union[TextContext, TextAndVisionContext]]
-    ](
-        zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-
-    request_push_socket.put_nowait(
-        ("req1", create_mock_request(cache_seq_id=None))
-    )
-    time.sleep(1)
-    scheduler.active_batch = {"existing": Mock()}
-    scheduler.ce_batch_start_time = time.monotonic()
     assert not scheduler._should_schedule_ce()
 
 
@@ -334,7 +272,6 @@ def test_schedule_ce(scheduler, zmq_ctx):
 
     scheduler._schedule_ce(sch_output)
 
-    assert scheduler.ce_batch_start_time is None
     assert "req1" in scheduler.active_batch
     scheduler.pipeline.next_token.assert_called_once_with(
         batch_to_execute,
