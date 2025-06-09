@@ -12,11 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
+import json
 import logging
+import os
 import queue
 import time
 from collections import deque
-from typing import cast
+from typing import Any, cast
 
 import torch
 import zmq
@@ -39,32 +41,72 @@ from .text_generation_scheduler import BatchType, TokenGenerationSchedulerConfig
 
 logger = logging.getLogger("max.serve")
 
+MAX_SERVE_TTS_BATCH_INFO_FILENAME: str | None = os.environ.get(
+    "MAX_SERVE_TTS_BATCH_INFO_FILENAME", None
+)
 
-def _log_metrics(
-    batch_to_execute: AudioGenerationSchedulerOutput,
-    num_pending_reqs: int,
-    batch_creation_time_s: float,
-    batch_execution_time_s: float,
-) -> None:
-    batch_type = batch_to_execute.batch_type
-    batch_size = batch_to_execute.batch_size
-    input_tokens = batch_to_execute.input_tokens
-    terminated_reqs = batch_to_execute.num_terminated
-    batch_creation_latency_str = to_human_readable_latency(
-        batch_creation_time_s
-    )
-    batch_execution_latency_str = to_human_readable_latency(
-        batch_execution_time_s
-    )
 
-    logger.debug(
-        f"Executed {batch_type.concise_name()} batch with {batch_size} reqs | "
-        f"Input tokens: {input_tokens} | "
-        f"Terminated: {terminated_reqs} reqs, "
-        f"Pending: {num_pending_reqs} reqs | "
-        f"Batch creation: {batch_creation_latency_str}, "
-        f"Execution: {batch_execution_latency_str}"
-    )
+class SchedulerLogger:
+    def __init__(self, path: str | None):
+        self.path = path
+        # open a file and overwrite it
+        self.f = None
+        if self.path is not None:
+            try:
+                self.f = open(self.path, "w")
+            except Exception as e:
+                logger.error(f"Failed to open file {self.path}: {e}")
+                self.f = None
+        self.logs: list[Any] = []
+        if self.f is not None:
+            logger.info(f"Dumping scheduler logs to {self.path}")
+
+    def log(
+        self,
+        batch: AudioGenerationSchedulerOutput,
+        num_pending_reqs: int,
+        batch_creation_time_s: float,
+        batch_execution_time_s: float,
+    ) -> None:
+        batch_type = batch.batch_type.concise_name()
+        batch_creation_latency_str = to_human_readable_latency(
+            batch_creation_time_s
+        )
+        batch_execution_latency_str = to_human_readable_latency(
+            batch_execution_time_s
+        )
+
+        logger.debug(
+            f"Executed {batch_type} batch with {batch.batch_size} reqs | "
+            f"Num steps: {batch.num_steps} | "
+            f"Input tokens: {batch.input_tokens} | "
+            f"Terminated: {batch.num_terminated} reqs, "
+            f"Pending: {num_pending_reqs} reqs | "
+            f"Batch creation: {batch_creation_latency_str}, "
+            f"Execution: {batch_execution_latency_str}"
+        )
+
+        if self.f is not None:
+            batch_info = {
+                "start_timestamp": batch.start_time - batch_creation_time_s,
+                "end_timestamp": time.time(),
+                "batch_type": batch_type,
+                "batch_size": batch.batch_size,
+                "num_steps": batch.num_steps,
+                "input_tokens": batch.input_tokens,
+                "terminated_reqs": batch.num_terminated,
+                "num_pending_reqs": num_pending_reqs,
+                "batch_creation_latency_s": batch_creation_time_s,
+                "batch_execution_latency_s": batch_execution_time_s,
+                "requests": batch.req_info,
+            }
+
+            self.logs.append(batch_info)
+
+    def __del__(self) -> None:
+        if self.f is not None:
+            self.f.write(json.dumps(self.logs, indent=2) + "\n")
+            self.f.close()
 
 
 class AudioGenerationSchedulerOutput:
@@ -74,6 +116,7 @@ class AudioGenerationSchedulerOutput:
         num_steps: int,
         batch_type: BatchType,
     ):
+        self.start_time = time.time()
         self.reqs = reqs
         self.batch_type = batch_type
         self.batch_size = len(reqs)
@@ -81,6 +124,19 @@ class AudioGenerationSchedulerOutput:
         self.input_tokens = sum(
             context.active_length for context in reqs.values()
         )
+        if MAX_SERVE_TTS_BATCH_INFO_FILENAME is not None:
+            # Store request info prior to executing batch
+            self.req_info = [
+                {
+                    "arrival_time": req_data._arrival_time,
+                    "req_id": req_id,
+                    "start_idx": req_data.start_idx,
+                    "end_idx": req_data.end_idx,
+                    "input_tokens": req_data.active_length,
+                }
+                for req_id, req_data in reqs.items()
+            ]
+
         self.num_terminated = 0
 
     def __repr__(self) -> str:
@@ -135,6 +191,10 @@ class AudioGenerationScheduler(Scheduler):
 
         if self.scheduler_config.batch_timeout is not None:
             logger.warning("Batch timeout is not supported with TTS Scheduler")
+
+        self.batch_info_logger = SchedulerLogger(
+            path=MAX_SERVE_TTS_BATCH_INFO_FILENAME
+        )
 
         # TODO health check
 
@@ -322,7 +382,7 @@ class AudioGenerationScheduler(Scheduler):
                 batch_execution_time_s = t1 - t0
 
                 # Log batch metrics
-                _log_metrics(
+                self.batch_info_logger.log(
                     batch,
                     len(self.pending_reqs),
                     batch_creation_time_s,

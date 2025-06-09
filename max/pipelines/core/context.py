@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Sequence
 from typing import Any, Optional, Protocol, runtime_checkable
 
@@ -892,6 +893,7 @@ class TTSContext(TextContext):
     )
     _decoded_index: int = msgspec.field(default=0)
     _block_counter: int = msgspec.field(default=0)
+    _arrival_time: float = msgspec.field(default_factory=lambda: time.time())
 
     @property
     def speech_tokens(self) -> np.ndarray:
