@@ -201,8 +201,6 @@ fn tma_umma_kernel_ss[
         tma_mbar[0].wait(tma_phase)
         tma_phase ^= 1
 
-        barrier()
-
         if elect_one_thread:
             adesc = adesc_base
             bdesc = bdesc_base
@@ -374,17 +372,25 @@ fn tma_umma_kernel_ts[
     var c_tmem: UInt32 = tmem_addr
     var a_tmem: UInt32 = tmem_addr + mma_shape[1]  # * 4
 
-    alias b_canonical_layout = tile_to_descriptor[b_type, b_smem_layout]()
-    alias bSBO = b_canonical_layout[0].stride[1].value() * sizeof[b_type]()
-    alias bLBO = b_canonical_layout[1].stride[1].value() * sizeof[b_type]()
+    alias b_canonical_layout = tile_to_descriptor[
+        b_type, b_smem_layout, is_k_major=transpose_b
+    ]()
+    alias b_stride01 = b_canonical_layout[0].stride[1].value()
+    alias b_stride11 = b_canonical_layout[1].stride[1].value()
+    alias b_k_stride = b_stride11 * 2 * sizeof[b_type]()
+    alias bSBO = (b_stride01 if transpose_b else b_stride11) * sizeof[b_type]()
+    alias bLBO = (b_stride11 if transpose_b else b_stride01) * sizeof[b_type]()
 
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
+        b_smem_tile.ptr
+    )
 
     idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
         a_type,
         b_type,
         Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        transpose_b=transpose_b,
     ]()
 
     warp_id = thread_idx.x // WARP_SIZE
@@ -444,12 +450,13 @@ fn tma_umma_kernel_ts[
 
         if elect_one_thread:
             alias atmem_kstride = mma_shape[2] // 2  # * sizeof[a_type]()
+            bdesc = bdesc_base
             if i == 0:
                 mma[c_scale=0](a_tmem, bdesc, c_tmem, idesc)
 
                 @parameter
                 for j in range(1, BK // mma_shape[2]):
-                    bdesc += mma_shape[2] * sizeof[b_type]()
+                    bdesc += b_k_stride
                     mma[c_scale=1](
                         a_tmem + j * atmem_kstride, bdesc, c_tmem, idesc
                     )
@@ -460,7 +467,7 @@ fn tma_umma_kernel_ts[
                     mma[c_scale=1](
                         a_tmem + j * atmem_kstride, bdesc, c_tmem, idesc
                     )
-                    bdesc += mma_shape[2] * sizeof[b_type]()
+                    bdesc += b_k_stride
 
             mma_arrive(mma_mbar)
 
@@ -484,25 +491,40 @@ fn tma_umma_kernel_ts[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    c_gmem_warp_tile = c.tile[mma_shape[0] // 4, mma_shape[1]](warp_id, 0)
-    c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
-        Layout.row_major(8, 4)
-    ](get_lane_id())
-    alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
-    alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
+    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     @parameter
-    for n_vec in range(num_vecs_n):
+    for m_mma in range(num_m_mmas):
 
         @parameter
-        for m_vec in range(num_vecs_m):
-            alias i_vec = n_vec * num_vecs_m + m_vec
+        for n_mma in range(num_n_mmas):
+            alias mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_frag[m_vec, n_vec] = rebind[c_gmem_frag.element_type](
-                SIMD[accum_type, 2](
-                    c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
-                ).cast[c_type]()
+            c_gmem_warp_tile = ctile.tile[mma_shape[0] // 4, mma_shape[1]](
+                4 * m_mma + warp_id, n_mma
             )
+
+            c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+                Layout.row_major(8, 4)
+            ](lane_id())
+
+            alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
+            alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
+
+            @parameter
+            for n_vec in range(num_vecs_n):
+
+                @parameter
+                for m_vec in range(num_vecs_m):
+                    alias i_vec = n_vec * num_vecs_m + m_vec
+
+                    c_gmem_frag[m_vec, n_vec] = rebind[
+                        c_gmem_frag.element_type
+                    ](
+                        SIMD[accum_type, 2](
+                            c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
+                        ).cast[c_type]()
+                    )
 
 
 def test_tma_umma[
@@ -629,7 +651,7 @@ def test_tma_umma[
             b_tma_op,
             c.device_tensor(),
             K // BK,
-            grid_dim=(1, 1),
+            grid_dim=(N // BN, M // BM),
             block_dim=(128),
         )
 
@@ -868,13 +890,14 @@ def main():
                     transpose_b=transpose_b,
                 ](ctx)
 
-        test_tma_umma[
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            Index(64, 128, 64),
-            Index(64, 128, 64),
-            Index(64, 128, 16),
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            a_smem=False,
-        ](ctx)
+                test_tma_umma[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    Index(64 * size_scale, 128 * size_scale, 64 * size_scale),
+                    Index(64, 128, 64),
+                    Index(64, 128, 16),
+                    b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                    transpose_b=transpose_b,
+                    a_smem=False,
+                ](ctx)
