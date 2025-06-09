@@ -12,6 +12,7 @@ from .. import dtype_promotion
 from ..graph import Graph
 from ..type import DeviceRef, DimLike, TensorType
 from ..value import TensorValue, TensorValueLike
+from .constant import constant
 from .nonzero import nonzero
 
 
@@ -19,7 +20,7 @@ def scatter(
     input: TensorValueLike,
     updates: TensorValueLike,
     indices: TensorValueLike,
-    axis: TensorValueLike = -1,
+    axis: int = -1,
 ) -> TensorValue:
     """
     Creates a new symbolic tensor where the updates are written to input according to indices.
@@ -35,18 +36,31 @@ def scatter(
     """
 
     input = TensorValue(input)
+
+    if not (-input.rank <= axis < input.rank):
+        raise ValueError(
+            f"Invalid axis value {axis}. Axis must be in range [-{input.rank}, {input.rank - 1}]"
+        )
+
     updates = TensorValue(updates)
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype '{input.dtype}' and updates dtype '{updates.dtype}' must match."
+        )
+
     indices = TensorValue(indices)
-    axis = dtype_promotion._promote_to_strong(
-        axis, DType.int64, DeviceRef.CPU()
-    )
+    if indices.dtype not in [DType.int32, DType.int64]:
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
+        )
+
+    axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
     # TODO(GEX-2197): Support scatter on GPU
     old_device = input.device
     input = input.to(DeviceRef.CPU())
     updates = updates.to(DeviceRef.CPU())
     indices = indices.to(DeviceRef.CPU())
-    axis = axis.to(DeviceRef.CPU())
 
     return Graph.current._add_op(
         rmo.mo_scatter,
@@ -54,7 +68,7 @@ def scatter(
         input,
         updates,
         indices,
-        axis,
+        axis_constant,
     )[0].tensor.to(old_device)
 
 

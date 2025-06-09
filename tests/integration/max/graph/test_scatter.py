@@ -47,7 +47,6 @@ def test_scatter(
         indices = ops.constant(
             np.array(indices), DType.int32, device=device_ref
         )
-        axis = ops.constant(axis, DType.int32, device=DeviceRef.CPU())
         out = ops.scatter(input_val, updates, indices, axis)
         graph.output(out)
 
