@@ -209,6 +209,9 @@ class AttentionWithRope(Module):
                 "`clip_qkv` not yet supported when `stack_qkv=True`."
             )
 
+        if stacked_qkv and has_bias:
+            raise ValueError("Bias is not supported with stacked qkv.")
+
         if not self.kv_params.cache_strategy.uses_opaque():
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy, not supported"
