@@ -16,6 +16,7 @@ from typing import Union
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph.type import ConvInputLayout, FilterLayout
 
 from .layer import Module
 
@@ -187,14 +188,15 @@ class ConvTranspose1d(Module):
         weight: TensorValue = self.weight
 
         if self.permute:
+            # Use Pyotorch and CuDNN layout.
             # Reshape (batch_size, in_channels, length) to [batch_size, in_channels, height=1, length].
             x = ops.unsqueeze(x, 2)
             # Reshape (in_channels, out_channels, kernel_length) to [in_channels, out_channels, kernel_height=1, kernel_length,].
             weight = ops.unsqueeze(self.weight, 2)
-            # [batch_size, in_channels, height=1, length] to (batch_size, height, length, in_channels)
-            x = ops.permute(x, [0, 2, 3, 1])
-            # (in_channels, out_channels, kernel_height, kernel_length) to [kernel_height=1, kernel_length, out_channels, in_channels]
-            weight = ops.permute(weight, [2, 3, 1, 0])
+            # # [batch_size, in_channels, height=1, length] to (batch_size, height, length, in_channels)
+            # x = ops.permute(x, [0, 2, 3, 1])
+            # # (in_channels, out_channels, kernel_height, kernel_length) to [kernel_height=1, kernel_length, out_channels, in_channels]
+            # weight = ops.permute(weight, [2, 3, 1, 0])
         else:
             # Reshape (batch_size, length, in_channels) to [batch_size, height=1, length, in_channels].
             x = ops.unsqueeze(x, 1)
@@ -209,11 +211,17 @@ class ConvTranspose1d(Module):
             padding=self.padding,
             output_paddings=self.output_padding,
             bias=self.bias,
+            input_layout=ConvInputLayout.NCHW
+            if self.permute
+            else ConvInputLayout.NHWC,
+            filter_layout=FilterLayout.CFRS
+            if self.permute
+            else FilterLayout.RSCF,
         )
 
         if self.permute:
-            # permute output from [batch_size, height=1, new_length, out_channels] to (batch_size, out_channels, height=1, new_length).
-            res = ops.permute(res, [0, 3, 1, 2])
+            # # permute output from [batch_size, height=1, new_length, out_channels] to (batch_size, out_channels, height=1, new_length).
+            # res = ops.permute(res, [0, 3, 1, 2])
             # Reshape  (batch_size, out_channels, height=1, new_length). to [batch_size, out_channels, new_length].
             res = ops.squeeze(res, 2)
         else:
