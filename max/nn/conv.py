@@ -22,6 +22,203 @@ from max.graph.type import FilterLayout
 from .layer import Layer, Module
 
 
+class Conv2D(Module):
+    """A 2D convolution over an input signal composed of several input
+    planes.
+
+    Example:
+        .. code-block:: python
+
+            conv = nn.Conv2D(
+                kernel_size=3,
+                in_channels=64,
+                out_channels=128,
+                dtype=DType.float32,
+                stride=1,
+                padding=0,
+                has_bias=False,
+                name="conv2d_weight",
+                device=DeviceRef.GPU(),
+            )
+    """
+
+    device: Union[DeviceRef, None]
+    """The device where matrix operations are performed."""
+
+    filter: Weight
+    """The weight matrix stored on CPU with shape (height, width, in_channels / num_groups, out_channels).
+    Model init moves the weight to :obj:`device`."""
+
+    stride: tuple[int, int]
+    """Controls the stride for the cross-correlation."""
+
+    padding: tuple[int, int, int, int]
+    """Controls the amount of padding applied before and after the input for height and width dimensions."""
+
+    dilation: tuple[int, int]
+    """Controls the dilation rate."""
+
+    num_groups: int
+    """Number of blocked connections from input channels to output channels."""
+
+    bias: Union[Weight, None] = None
+    """The optional bias vector stored on CPU with shape (out_channels,).
+    Model init moves the bias to :obj:`device` if present."""
+
+    permute: bool = False
+    """bool controls whether self.filter is permuted from PyTorch order to max order.
+    PyTorch order is: (out_channels, in_channels / num_groups, height, width)
+    Max API order: (height, width, in_channels / num_groups, out_channels)."""
+
+    def __init__(
+        self,
+        kernel_size: Union[int, tuple[int, int]],
+        in_channels: int,
+        out_channels: int,
+        dtype: DType,
+        stride: Union[int, tuple[int, int]] = 1,
+        padding: Union[int, tuple[int, int], tuple[int, int, int, int]] = 0,
+        dilation: Union[int, tuple[int, int]] = 1,
+        num_groups: int = 1,
+        device: Union[DeviceRef, None] = None,
+        has_bias: bool = False,
+        permute: bool = False,
+        name: Union[str, None] = None,
+    ) -> None:
+        """Initializes the Conv2D layer with weights and optional bias.
+
+        Args:
+            kernel_size: Size of the convolving kernel. Can be a single int or tuple (height, width).
+            in_channels: Number of channels in the input image.
+            out_channels: Number of channels produced by the convolution.
+            dtype: The data type for both weights and bias.
+            stride: Stride of the convolution. Default: 1
+            padding: Padding added to input. Can be int or tuple (pad_top, pad_bottom, pad_left, pad_right). Default: 0
+            dilation: Spacing between kernel elements. Default: 1
+            num_groups: Number of blocked connections from input channels to output channels. Default: 1
+            device: The target device for computation.
+                Weights remain on CPU until moved during computation.
+            name: Base name for weights (appended with ``.weight`` and
+                ``.bias`` if applicable).
+            has_bias: When :obj:`True`, adds a bias vector to the layer.
+                Defaults to :obj:`False`.
+            permute: When :obj:`True`, permutes weights from PyTorch format to Max format.
+                Defaults to :obj:`False`.
+        """
+        super().__init__()
+
+        self.device = device
+        self.permute = permute
+
+        # Handle kernel_size as int or tuple
+        if isinstance(kernel_size, int):
+            kernel_height = kernel_width = kernel_size
+        else:
+            kernel_height, kernel_width = kernel_size
+
+        self.filter = Weight(
+            name=f"{name}.weight" if name else "weight",
+            dtype=dtype,
+            shape=(
+                [
+                    out_channels,
+                    in_channels // num_groups,
+                    kernel_height,
+                    kernel_width,
+                ]
+                if self.permute
+                else [
+                    kernel_height,
+                    kernel_width,
+                    in_channels // num_groups,
+                    out_channels,
+                ]
+            ),
+            device=self.device or DeviceRef.CPU(),
+        )
+
+        if has_bias:
+            self.bias = Weight(
+                name=f"{name}.bias" if name else "bias",
+                dtype=dtype,
+                shape=(out_channels,),
+                device=self.device or DeviceRef.CPU(),
+            )
+
+        # Convert scalar parameters to tuples as needed
+        self.stride = (stride, stride) if isinstance(stride, int) else stride
+
+        if isinstance(padding, int):
+            padding = (padding, padding, padding, padding)
+        elif len(padding) == 2:
+            # Convert (pad_h, pad_w) to (pad_top, pad_bottom, pad_left, pad_right)
+            pad_h, pad_w = padding
+            padding = (pad_h, pad_h, pad_w, pad_w)
+        self.padding = padding
+
+        if isinstance(dilation, int):
+            dilation = (dilation, dilation)
+        self.dilation = dilation
+
+        self.num_groups = num_groups
+
+        if (
+            isinstance(self.filter, Weight)
+            and self.filter.quantization_encoding is not None
+        ):
+            raise ValueError("Conv2D not implemented with weight quantization.")
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Apply 2D convolution to input `x`. Permutes pytorch weights to match max API if permute=True.
+
+        Args:
+            x: a tensor of shape [batch_size, height, width, in_channels]
+            if self.permute, then input is of shape: [batch_size, in_channels, height, width]
+            and will be permuted to match max's expected input shape.
+
+        Returns:
+            a tensor of shape [batch_size, new_height, new_width, out_channels]
+            if self.permute, then output shape will be [batch_size, out_channels, new_height, new_width]
+        """
+        weight: TensorValue = self.filter
+
+        is_nvidia_gpu = (
+            isinstance(self.device, DeviceRef)
+            and self.device.is_gpu()
+            and md.accelerator_api() == "cuda"
+        )
+
+        if self.permute:
+            # Input: [batch_size, in_channels, height, width] -> [batch_size, height, width, in_channels]
+            x = ops.permute(x, [0, 2, 3, 1])
+
+            # GPU supports FCRS but CPU doesn't. On CPU, permute from
+            # FCRS to RSCF format.
+            if not is_nvidia_gpu:
+                # Permute weight from [out_channels, in_channels // num_groups, height, width]
+                # to [height, width, in_channels // num_groups, out_channels] (RSCF)
+                weight = ops.permute(weight, [2, 3, 1, 0])
+
+        output = ops.conv2d(
+            x,
+            weight,
+            self.stride,
+            self.dilation,
+            self.padding,
+            self.num_groups,
+            self.bias,
+            filter_layout=FilterLayout.FCRS
+            if (self.permute and is_nvidia_gpu)
+            else FilterLayout.RSCF,
+        )
+
+        if self.permute:
+            # Output: [batch_size, new_height, new_width, out_channels] -> [batch_size, out_channels, new_height, new_width]
+            output = ops.permute(output, [0, 3, 1, 2])
+
+        return output
+
+
 @dataclass
 class Conv2DV1(Layer):
     """A 2D convolution over an input signal composed of several input
