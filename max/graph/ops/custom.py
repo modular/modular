@@ -13,7 +13,7 @@ from max import mlir
 from max._core import graph as _graph
 from max._core.dialects import builtin
 from max.dtype import DType
-from max.mlir import BoolAttr, IndexType, IntegerAttr, StringAttr
+from max.mlir import BoolAttr, DictAttr, IndexType, IntegerAttr, StringAttr
 from max.mlir.dialects import mo
 
 from ..graph import Graph
@@ -82,12 +82,15 @@ def custom(
     )
 
     if parameters is not None:
-        for name, param in parameters.items():
-            custom_op.attributes[name] = _parameter_attribute(
-                param, graph._context
-            )
+        custom_op.parameters = DictAttr.get(
+            {
+                name: _parameter_attribute(param, graph._context)
+                for name, param in parameters.items()
+            },
+            graph._context,
+        )
 
-    custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
+    custom_op.device = mlir.Attribute._CAPICreate(
         device.to_mlir()._CAPIPtr  # type: ignore
     )
 
@@ -147,12 +150,15 @@ def inplace_custom(
     graph._update_chain(out_chain)
 
     if parameters is not None:
-        for name, param in parameters.items():
-            custom_op.attributes[name] = _parameter_attribute(
-                param, graph._context
-            )
+        custom_op.parameters = DictAttr.get(
+            {
+                name: _parameter_attribute(param, graph._context)
+                for name, param in parameters.items()
+            },
+            graph._context,
+        )
 
-    custom_op.attributes["device"] = mlir.Attribute._CAPICreate(
+    custom_op.device = mlir.Attribute._CAPICreate(
         device.to_mlir()._CAPIPtr  # type: ignore
     )
 
