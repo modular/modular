@@ -1963,7 +1963,7 @@ struct SIMD[dtype: DType, size: Int](
             value = byte_swap(value)
 
         var ptr = UnsafePointer(to=value)
-        var array = InlineArray[Byte, dtype.sizeof()](fill=0)
+        var array = InlineArray[Byte, dtype.sizeof()](uninitialized=True)
         memcpy(array.unsafe_ptr(), ptr.bitcast[Byte](), dtype.sizeof())
         return array^
 
@@ -2061,19 +2061,18 @@ struct SIMD[dtype: DType, size: Int](
                 __get_mvalue_as_litref(array)
             )
 
-            var array_ptr = UnsafePointer(to=array)
+            var ptr = UnsafePointer(to=array)
 
             @parameter
-            for idx in range(output_size):
-                alias val = mask[idx]
+            for i in range(output_size):
+                alias idx = mask[i]
                 constrained[
-                    0 <= val < 2 * size,
+                    0 <= idx < 2 * size,
                     "invalid index in the shuffle operation",
                 ]()
-                var ptr = __mlir_op.`pop.array.gep`(
-                    array_ptr.address, idx.value
+                __mlir_op.`pop.store`(
+                    idx, __mlir_op.`pop.array.gep`(ptr.address, i.value)
                 )
-                __mlir_op.`pop.store`(val, ptr)
 
             return array
 
@@ -2339,12 +2338,12 @@ struct SIMD[dtype: DType, size: Int](
         # where val is a value to align the offset to the simdwidth.
         @parameter
         if offset % simdwidthof[dtype]():
-            var tmp = self
+            var res = self
 
             @parameter
             for i in range(input_width):
-                tmp[i + offset] = value[i]
-            return tmp
+                res[i + offset] = value[i]
+            return res
 
         return llvm_intrinsic[
             "llvm.vector.insert", Self, has_side_effect=False
@@ -2520,16 +2519,6 @@ struct SIMD[dtype: DType, size: Int](
             return self.reduce[max[dtype=dtype], size_out]()
 
         @parameter
-        if dtype.is_floating_point():
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.fmax",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
-
-        @parameter
         if dtype.is_unsigned():
             return rebind[SIMD[dtype, size_out]](
                 llvm_intrinsic[
@@ -2538,11 +2527,22 @@ struct SIMD[dtype: DType, size: Int](
                     has_side_effect=False,
                 ](self)
             )
-        return rebind[SIMD[dtype, size_out]](
-            llvm_intrinsic[
-                "llvm.vector.reduce.smax", Scalar[dtype], has_side_effect=False
-            ](self)
-        )
+        elif dtype.is_integral():
+            return rebind[SIMD[dtype, size_out]](
+                llvm_intrinsic[
+                    "llvm.vector.reduce.smax",
+                    Scalar[dtype],
+                    has_side_effect=False,
+                ](self)
+            )
+        else:
+            return rebind[SIMD[dtype, size_out]](
+                llvm_intrinsic[
+                    "llvm.vector.reduce.fmax",
+                    Scalar[dtype],
+                    has_side_effect=False,
+                ](self)
+            )
 
     @always_inline("nodebug")
     fn reduce_min[size_out: Int = 1](self) -> SIMD[dtype, size_out]:
@@ -2568,16 +2568,6 @@ struct SIMD[dtype: DType, size: Int](
             return self.reduce[min[dtype=dtype], size_out]()
 
         @parameter
-        if dtype.is_floating_point():
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.fmin",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
-
-        @parameter
         if dtype.is_unsigned():
             return rebind[SIMD[dtype, size_out]](
                 llvm_intrinsic[
@@ -2586,11 +2576,22 @@ struct SIMD[dtype: DType, size: Int](
                     has_side_effect=False,
                 ](self)
             )
-        return rebind[SIMD[dtype, size_out]](
-            llvm_intrinsic[
-                "llvm.vector.reduce.smin", Scalar[dtype], has_side_effect=False
-            ](self)
-        )
+        elif dtype.is_integral():
+            return rebind[SIMD[dtype, size_out]](
+                llvm_intrinsic[
+                    "llvm.vector.reduce.smin",
+                    Scalar[dtype],
+                    has_side_effect=False,
+                ](self)
+            )
+        else:
+            return rebind[SIMD[dtype, size_out]](
+                llvm_intrinsic[
+                    "llvm.vector.reduce.fmin",
+                    Scalar[dtype],
+                    has_side_effect=False,
+                ](self)
+            )
 
     @always_inline
     fn reduce_add[size_out: Int = 1](self) -> SIMD[dtype, size_out]:
@@ -2688,7 +2689,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 1:
-            return rebind[SIMD[dtype, size_out]](self)
+            return self[0]
 
         return llvm_intrinsic[
             "llvm.vector.reduce.or",
@@ -2706,14 +2707,15 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             Count of set bits across all elements of the vector.
         """
+        constrained[
+            dtype.is_integral() or dtype is DType.bool,
+            "Expected either integral or bool type",
+        ]()
 
         @parameter
         if dtype is DType.bool:
             return Int(self.cast[DType.uint8]().reduce_add())
         else:
-            constrained[
-                dtype.is_integral(), "Expected either integral or bool type"
-            ]()
             return Int(pop_count(self).reduce_add())
 
     # ===------------------------------------------------------------------=== #
@@ -2723,17 +2725,17 @@ struct SIMD[dtype: DType, size: Int](
     # TODO (7748): always_inline required to WAR LLVM codegen bug
     @always_inline("nodebug")
     fn select[
-        result_dtype: DType
+        dtype: DType
     ](
         self,
-        true_case: SIMD[result_dtype, size],
-        false_case: SIMD[result_dtype, size],
-    ) -> SIMD[result_dtype, size]:
+        true_case: SIMD[dtype, size],
+        false_case: SIMD[dtype, size],
+    ) -> SIMD[dtype, size]:
         """Selects the values of the `true_case` or the `false_case` based on
         the current boolean values of the SIMD vector.
 
         Parameters:
-            result_dtype: The element type of the input and output SIMD vectors.
+            dtype: The element type of the input and output SIMD vectors.
 
         Args:
             true_case: The values selected if the positional value is True.
@@ -2746,7 +2748,7 @@ struct SIMD[dtype: DType, size: Int](
             A new vector of the form
             `[true_case[i] if elem else false_case[i] for i, elem in enumerate(self)]`.
         """
-        constrained[dtype is DType.bool, "the simd type must be bool"]()
+        constrained[Self.dtype is DType.bool, "the simd type must be bool"]()
         return __mlir_op.`pop.simd.select`(
             rebind[Self._Mask](self).value,
             true_case.value,
@@ -2850,11 +2852,9 @@ struct SIMD[dtype: DType, size: Int](
         elif shift == size:
             return 0
 
-        alias zero_simd = Self()
-
         return llvm_intrinsic[
             "llvm.vector.splice", Self, has_side_effect=False
-        ](self, zero_simd, Int32(shift))
+        ](self, Self(), Int32(shift))
 
     @always_inline
     fn shift_right[shift: Int](self) -> Self:
@@ -2890,11 +2890,9 @@ struct SIMD[dtype: DType, size: Int](
         elif shift == size:
             return 0
 
-        alias zero_simd = Self()
-
         return llvm_intrinsic[
             "llvm.vector.splice", Self, has_side_effect=False
-        ](zero_simd, self, Int32(-shift))
+        ](Self(), self, Int32(-shift))
 
     fn reversed(self) -> Self:
         """Reverses the SIMD vector by indexes.
@@ -2909,57 +2907,47 @@ struct SIMD[dtype: DType, size: Int](
         .
         """
 
-        fn build_idx() -> IndexList[size]:
+        fn indices() -> IndexList[size]:
             var res = IndexList[size]()
             for i in range(size):
                 res[i] = size - i - 1
             return res
 
-        return self.shuffle[mask = build_idx()]()
+        return self.shuffle[mask = indices()]()
 
 
-fn _pshuf_or_tbl1(
-    lookup_table: SIMD[DType.uint8, 16], indices: SIMD[DType.uint8, 16]
-) -> SIMD[DType.uint8, 16]:
+alias U8x16 = SIMD[DType.uint8, 16]
+
+
+fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
     @parameter
-    if (
-        CompilationTarget.has_sse4()
-    ):  # TODO: Allow SSE3 when we have sys.has_sse3()
+    if CompilationTarget.has_sse4():
         return _pshuf(lookup_table, indices)
     elif sys.has_neon():
         return _tbl1(lookup_table, indices)
     else:
         # TODO: Change the error message when we allow SSE3
         constrained[False, "To call _pshuf_or_tbl1() you need sse4 or neon."]()
-        # Can never happen. TODO: Remove later when the compiler detects it.
-        return SIMD[DType.uint8, 16]()
+        return {}
 
 
-fn _pshuf(
-    lookup_table: SIMD[DType.uint8, 16], indices: SIMD[DType.uint8, 16]
-) -> SIMD[DType.uint8, 16]:
+fn _pshuf(lookup_table: U8x16, indices: U8x16) -> U8x16:
     """Shuffle operation using the SSSE3 `pshuf` instruction.
 
     See https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm_shuffle_epi8&ig_expand=6003
     """
-    return sys.llvm_intrinsic[
-        "llvm.x86.ssse3.pshuf.b.128",
-        SIMD[DType.uint8, 16],
-        has_side_effect=False,
+    return llvm_intrinsic[
+        "llvm.x86.ssse3.pshuf.b.128", U8x16, has_side_effect=False
     ](lookup_table, indices)
 
 
-fn _tbl1(
-    lookup_table: SIMD[DType.uint8, 16], indices: SIMD[DType.uint8, 16]
-) -> SIMD[DType.uint8, 16]:
+fn _tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
     """Shuffle operation using the aarch64 `tbl1` instruction.
 
     See https://community.arm.com/arm-community-blogs/b/architectures-and-processors-blog/posts/coding-for-neon---part-5-rearranging-vectors
     """
-    return sys.llvm_intrinsic[
-        "llvm.aarch64.neon.tbl1",
-        SIMD[DType.uint8, 16],
-        has_side_effect=False,
+    return llvm_intrinsic[
+        "llvm.aarch64.neon.tbl1", U8x16, has_side_effect=False
     ](lookup_table, indices)
 
 
