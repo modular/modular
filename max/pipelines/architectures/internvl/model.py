@@ -23,7 +23,12 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
-from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
+from max.graph.weights import (
+    SafetensorWeights,
+    WeightData,
+    Weights,
+    WeightsAdapter,
+)
 from max.nn import ReturnLogits, Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -46,6 +51,7 @@ from transformers import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
+from .weight_adapters import convert_internvl_language_model_state_dict
 
 logger = logging.getLogger("max.pipelines")
 
@@ -198,6 +204,26 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             devices=devices,
         )
 
+    def _get_state_dict(
+        self,
+        weights: Weights,
+        adapter: WeightsAdapter,
+    ) -> dict[str, WeightData]:
+        """Get processed state dict for language model loading.
+
+        Args:
+            weights: Raw InternVL checkpoint weights
+            adapter: Weight adapter for name mapping (required)
+
+        Returns:
+            Processed state dict ready for DistributedLlama3.load_state_dict()
+        """
+        return adapter(
+            dict(weights.items()),
+            huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
+        )
+
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled InternVL models into the MAX Engine session.
 
@@ -218,8 +244,12 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 "InternVL currently only supports safetensors weights"
             )
 
+        # Get processed state dict for language model.
+        state_dict = self._get_state_dict(
+            self.weights, convert_internvl_language_model_state_dict
+        )
+
         # Generate InternVL config from HuggingFace config
-        state_dict = {key: value.data() for key, value in self.weights.items()}
         internvl_config = InternVLConfig.generate(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
@@ -243,7 +273,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Build and compile language model
         logger.info("Building and compiling language model...")
         before = time.perf_counter()
-        language_graph = self._build_language_graph(internvl_config)
+        language_graph = self._build_language_graph(internvl_config, state_dict)
         language_model = session.load(
             language_graph, weights_registry=self.weights.allocated_weights
         )
@@ -333,7 +363,9 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         ]
         return kv_caches_per_dev
 
-    def _build_language_graph(self, config: InternVLConfig) -> Graph:
+    def _build_language_graph(
+        self, config: InternVLConfig, state_dict: dict[str, WeightData]
+    ) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
         # Initialize graph with input types.
         with Graph(
