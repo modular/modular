@@ -338,6 +338,9 @@ fn _output_fusion_hook_impl[
 # ===----------------------------------------------------------------------=== #
 
 
+@register_internal(
+    "rebuild_mix_precision_static_tensor_specs_with_output_lambda"
+)
 @no_inline
 fn rebuild_mix_precision_static_tensor_specs_with_output_lambda[
     func_type: AnyTrivialRegType, //,
