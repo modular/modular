@@ -48,7 +48,6 @@ def serve_pipeline(
     pipeline_config: PipelineConfig,
     performance_fake: str = "none",
     profile: bool = False,
-    batch_timeout: float = 0.0,
     model_name: Union[str, None] = None,
     failure_percentage: Optional[int] = None,
     experimental_enable_kvcache_agent: bool = False,
@@ -114,7 +113,6 @@ def serve_pipeline(
     batch_config = batch_config_from_pipeline_config(
         pipeline_config=pipeline_config,
         pipeline_task=pipeline_task,
-        batch_timeout=batch_timeout,
     )
 
     # If explicit model name is not provided, set to model_path.

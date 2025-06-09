@@ -327,7 +327,6 @@ def get_target_ce_batch_tokens(pipeline_config: PipelineConfig) -> int:
 def batch_config_from_pipeline_config(
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
-    batch_timeout: float = 0.0,
 ) -> TokenGeneratorSchedulerConfig:
     assert pipeline_config.max_batch_size is not None
     if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -351,7 +350,6 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
-            ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
@@ -365,7 +363,6 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
-            ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,

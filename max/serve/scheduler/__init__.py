@@ -77,7 +77,6 @@ def load_scheduler(
             max_batch_size_ce=config.max_batch_size_ce,
             max_forward_steps_ce=config.max_forward_steps_ce,
             target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
-            batch_timeout=config.batch_timeout,
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_in_flight_batching=config.enable_in_flight_batching,
         )
@@ -105,7 +104,6 @@ def load_scheduler(
             max_batch_size_ce=config.max_batch_size_ce,
             max_forward_steps_ce=config.max_forward_steps_ce,
             target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
-            batch_timeout=config.batch_timeout,
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_in_flight_batching=config.enable_in_flight_batching,
         )
@@ -129,7 +127,6 @@ def load_scheduler(
             pc=pc,
             max_batch_size_ce=config.max_batch_size_ce,
             target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
-            batch_timeout=config.batch_timeout,
             enable_chunked_prefill=config.enable_chunked_prefill,
             dispatcher_client=dispatcher_client,
         )

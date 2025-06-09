@@ -189,9 +189,6 @@ class AudioGenerationScheduler(Scheduler):
                 "Chunked prefill is not supported with TTS Scheduler"
             )
 
-        if self.scheduler_config.batch_timeout is not None:
-            logger.warning("Batch timeout is not supported with TTS Scheduler")
-
         self.batch_info_logger = SchedulerLogger(
             path=MAX_SERVE_TTS_BATCH_INFO_FILENAME
         )

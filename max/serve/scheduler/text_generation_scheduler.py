@@ -76,9 +76,6 @@ class TokenGenerationSchedulerConfig:
     target_tokens_per_batch_ce: Optional[int]
     """The target total number of tokens to encode in the context encoding batch."""
 
-    batch_timeout: Optional[float]
-    """The maximum amount of time to wait before creating a context encoding batch."""
-
     enable_chunked_prefill: bool = True
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
     each batch contains exactly `target_tokens_per_batch_ce` tokens."""
@@ -196,7 +193,6 @@ class TokenGenerationScheduler(Scheduler):
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_tg)
         )
-        self.ce_batch_start_time: Optional[float] = None
 
         # Optional reference to the paged kv cache manager.
         # Note that the paged manager is shared with the model worker thread.
@@ -212,10 +208,6 @@ class TokenGenerationScheduler(Scheduler):
         if self.request_q.empty():
             return False
 
-        # At this point there are incoming requests, we start the batch timer if not yet
-        if self.ce_batch_start_time is None:
-            self.ce_batch_start_time = time.monotonic()
-
         # If TG batch is full then no reason to schedule CE
         if len(self.active_batch) >= self.scheduler_config.max_batch_size_tg:
             return False
@@ -229,25 +221,6 @@ class TokenGenerationScheduler(Scheduler):
             self.paged_manager is not None
             and self.paged_manager.free_blocks_pct < 0.1
         ):
-            return False
-
-        # If batch timeout is set
-        if self.scheduler_config.batch_timeout:
-            # If batch timeout is reached then schedule CE
-            if (
-                self.ce_batch_start_time is not None
-                and time.monotonic()
-                >= self.ce_batch_start_time
-                + self.scheduler_config.batch_timeout
-            ):
-                return True
-            messages_needed = self.scheduler_config.max_batch_size_tg - len(
-                self.active_batch
-            )
-            if self.request_q.qsize() >= messages_needed:
-                # If there are enough request to fill the TG batch then schedule CE
-                return True
-            # If not enough requests then hold off the CE and continue with TG
             return False
 
         return True
@@ -802,9 +775,6 @@ class TokenGenerationScheduler(Scheduler):
     def _schedule_ce(self, sch_output: SchedulerOutput):
         batch_to_execute = sch_output.batch_inputs
 
-        # we about to execute the batch, reset the CE batch timer
-        self.ce_batch_start_time = None
-
         # execute the batch
         batch_responses = self.pipeline.next_token(
             batch_to_execute,
@@ -860,7 +830,6 @@ def load_text_generation_scheduler(
     max_batch_size_ce: int,
     max_forward_steps_ce: int,
     target_tokens_per_batch_ce: Optional[int],
-    batch_timeout: Optional[float],
     enable_chunked_prefill: bool = True,
     enable_in_flight_batching: bool = False,
 ) -> TokenGenerationScheduler:
@@ -872,7 +841,6 @@ def load_text_generation_scheduler(
         max_batch_size_ce=max_batch_size_ce,
         max_forward_steps_ce=max_forward_steps_ce,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        batch_timeout=batch_timeout,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
     )

@@ -131,12 +131,6 @@ def common_server_options(func):
         help="Fake the engine performance (for benchmarking)",
     )
     @click.option(
-        "--batch-timeout",
-        type=float,
-        default=0.0,
-        help="Custom timeout for any particular batch.",
-    )
-    @click.option(
         "--model-name",
         type=str,
         help="Deprecated, please use `model_path` instead. Optional model alias for serving the model.",
@@ -181,7 +175,6 @@ def common_server_options(func):
 def cli_serve(
     profile_serve: bool,
     performance_fake: str,
-    batch_timeout: float,
     model_name: str | None,
     sim_failure: int,
     experimental_enable_kvcache_agent: bool,
@@ -221,7 +214,6 @@ def cli_serve(
         pipeline_config=pipeline_config,
         profile=profile_serve,
         performance_fake=performance_fake,
-        batch_timeout=batch_timeout,
         model_name=model_name,
         failure_percentage=failure_percentage,
         experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
