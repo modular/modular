@@ -110,6 +110,7 @@ class DistributedLlama3(DistributedTransformer):
                         rope=rope,
                         linear_cls=linear_cls,
                         devices=config.devices,
+                        has_bias=config.attention_bias,
                         # Only pass the float8 config if this attention layer is quantized.
                         float8_config=(
                             fp8_cfg

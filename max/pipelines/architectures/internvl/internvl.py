@@ -14,50 +14,22 @@
 
 from __future__ import annotations
 
-from max.dtype import DType
-from max.graph import BufferValue, TensorValue, ops
+from max.graph import TensorValue, ops
 from max.nn import Module
+from max.pipelines.architectures.llama3.distributed_llama import (
+    DistributedLlama3,
+)
 
 from .model_config import InternVLConfig
 
 
-class InternVLLanguageModel(Module):
-    """The InternVL language model for text generation with image embeddings."""
+class InternVLLanguageModel(DistributedLlama3):
+    """The InternVL language model for text generation with image embeddings.
 
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        # TODO: Initialize language model components
-
-    def __call__(
-        self,
-        input_ids: TensorValue,
-        input_row_offsets: TensorValue,
-        kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
-        signal_buffers: list[BufferValue],
-    ) -> tuple[TensorValue, ...]:
-        """Process text with image embeddings to generate logits.
-
-        Args:
-            input_ids: Input token IDs.
-            input_row_offsets: Row offsets for ragged tensors.
-            kv_cache_inputs: KV cache inputs.
-            signal_buffers: Device synchronization buffers.
-
-        Returns:
-            Model outputs (logits).
-        """
-        # TODO: Implement language model forward pass
-        # 1. Embed input tokens
-        # 2. Merge image embeddings with text embeddings
-        # 3. Process through transformer layers
-        # 4. Return logits
-        return tuple(
-            ops.constant(0.0, DType.float32, device).broadcast_to(
-                shape=(input_row_offsets.shape[0] - 1, self.config.vocab_size)
-            )
-            for device in self.config.devices
-        )
+    The model is actually Qwen 2, which in turn has the same architecture as
+    Llama 3, but with `attention_bias=True`.
+    That config is handled at the callsite in the InternVLPipelineModel.
+    """
 
 
 class InternVLVisionModel(Module):
@@ -82,8 +54,10 @@ class InternVLVisionModel(Module):
         # 2. Apply multimodal projector
         # 3. Return image embeddings
         return tuple(
-            ops.constant(0.0, self.config.dtype, device).broadcast_to(
+            ops.constant(
+                0.0, self.config.llm_config.dtype, device
+            ).broadcast_to(
                 shape=(pixel_values.shape[0], self.config.vision_hidden_size)
             )
-            for device in self.config.devices
+            for device in self.config.llm_config.devices
         )
