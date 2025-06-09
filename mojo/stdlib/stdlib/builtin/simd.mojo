@@ -1100,8 +1100,8 @@ struct SIMD[dtype: DType, size: Int](
             The `~self` value.
         """
         constrained[
-            dtype is DType.bool or dtype.is_integral(),
-            "must be an bool or integral type",
+            dtype.is_integral() or dtype is DType.bool,
+            "must be an integral or bool type",
         ]()
 
         @parameter
@@ -1976,7 +1976,7 @@ struct SIMD[dtype: DType, size: Int](
         ]()
 
         @parameter
-        if dtype is DType.bool or dtype.is_integral():
+        if dtype.is_integral() or dtype is DType.bool:
             return self
         elif has_neon() and dtype is DType.bfloat16:
             # TODO(KERN-228): support BF16 on neon systems.
@@ -2076,9 +2076,8 @@ struct SIMD[dtype: DType, size: Int](
 
             return array
 
-        alias length = variadic_len[*mask]()
         constrained[
-            output_size == length,
+            output_size == variadic_len[*mask](),
             "size of the mask must match the output SIMD size",
         ]()
         return __mlir_op.`pop.simd.shuffle`[
@@ -2280,7 +2279,7 @@ struct SIMD[dtype: DType, size: Int](
             `self[offset:offset+output_width]`.
         """
         constrained[
-            0 < output_width + offset <= size,
+            0 <= offset < output_width + offset <= size,
             "output width must be a positive integer less than simd size",
         ]()
 
@@ -2320,7 +2319,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         alias input_width = value.size
         constrained[
-            0 < input_width + offset <= size,
+            0 <= offset < input_width + offset <= size,
             "insertion position must not exceed the size of the vector",
         ]()
 
@@ -2350,7 +2349,7 @@ struct SIMD[dtype: DType, size: Int](
         ](self, value, Int64(offset))
 
     @always_inline("nodebug")
-    fn join(self, other: Self, out result: SIMD[dtype, 2 * size]):
+    fn join(self, other: Self) -> SIMD[dtype, 2 * size]:
         """Concatenates the two vectors together.
 
         Args:
@@ -2360,18 +2359,13 @@ struct SIMD[dtype: DType, size: Int](
             A new vector `self_0, self_1, ..., self_n, other_0, ..., other_n`.
         """
 
-        @always_inline
-        @parameter
-        fn build_indices() -> StaticTuple[Int, 2 * size]:
-            var indices = StaticTuple[Int, 2 * size](0)
+        fn indices() -> StaticTuple[Int, 2 * size]:
+            var res = StaticTuple[Int, 2 * size](0)
+            for i in range(len(res)):
+                res[i] = i
+            return res
 
-            @parameter
-            for i in range(2 * size):
-                indices[i] = i
-
-            return indices
-
-        return self._shuffle_list[2 * size, build_indices()](other)
+        return self._shuffle_list[2 * size, indices()](other)
 
     @always_inline("nodebug")
     fn interleave(self, other: Self) -> SIMD[dtype, 2 * size]:
@@ -2386,7 +2380,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == 1:
-            return SIMD[dtype, 2 * size](self[0], other[0])
+            return [self[0], other[0]]
 
         return llvm_intrinsic[
             "llvm.vector.interleave2",
@@ -2403,9 +2397,9 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[size > 1, "the simd width must be at least 2"]()
         alias half_size = size // 2
-        var l = self.slice[half_size]()
-        var r = self.slice[half_size, offset=half_size]()
-        return l, r
+        var se = self.slice[half_size]()
+        var lf = self.slice[half_size, offset=half_size]()
+        return se, lf
 
     @always_inline("nodebug")
     fn deinterleave(
@@ -3322,9 +3316,7 @@ fn _bfloat16_to_f32_scalar(
     @parameter
     if is_nvidia_gpu():
         return inlined_assembly[
-            StaticString(
-                "cvt.f32.bf16 $0, $1;"
-            ) if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",
+            "cvt.f32.bf16 $0, $1;" if _is_sm_9x_or_newer() else "mov.b32 $0, {0, $1};",
             Float32,
             constraints="=f,h",
             has_side_effect=False,
