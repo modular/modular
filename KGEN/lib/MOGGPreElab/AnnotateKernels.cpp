@@ -802,16 +802,6 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
   func->setDiscardableAttr(kMOGGNumDPSOutputs,
                            builder.getIndexAttr(numOutputs));
 
-  // Set mogg.buffer_args
-  SmallVector<Attribute> mutableIdxs;
-  for (auto [idx, spec] : ioSpecs) {
-    if (spec == IOSpec::MutableInputTensor) {
-      mutableIdxs.push_back(builder.getIndexAttr(idx - numOutputs));
-    }
-  }
-  if (!mutableIdxs.empty())
-    func->setAttr(kMOGGBufferArgs, builder.getArrayAttr(mutableIdxs));
-
   // Collect indices of arguments that are marked as fusable via their IOSpec
   // and add them to the kMOGGFusableArgs attribute
   SmallVector<Attribute> fusableIdxs;
