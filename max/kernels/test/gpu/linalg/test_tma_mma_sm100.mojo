@@ -67,13 +67,14 @@ fn tma_umma_kernel_ss[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    a_smem: Bool = True,
+    num_threads: UInt = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
+    constrained[num_threads == 128 or num_threads == 256]()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
@@ -114,7 +115,7 @@ fn tma_umma_kernel_ss[
         1, UInt32, address_space = AddressSpace.SHARED, alignment=16
     ]()
 
-    alias c_frag_size = MMA_M * MMA_N // 128
+    alias c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
@@ -155,6 +156,11 @@ fn tma_umma_kernel_ss[
     barrier()
 
     tmem_addr = ptr_tmem_addr[0]
+
+    @parameter
+    if num_threads > 128:
+        if thread_idx.x >= 128:
+            tmem_addr += 1 << 20  # offset for lane 16
 
     alias a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
     alias b_canonical_layout = tile_to_descriptor[
@@ -240,7 +246,12 @@ fn tma_umma_kernel_ss[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
+    alias num_warps = num_threads // WARP_SIZE
     warp_id = thread_idx.x // WARP_SIZE
+
+    @parameter
+    if num_threads > 128:
+        warp_id = 2 * (warp_id % 4) + warp_id // 4
 
     ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
@@ -251,7 +262,7 @@ fn tma_umma_kernel_ss[
         for n_mma in range(num_n_mmas):
             alias mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[mma_shape[0] // 4, mma_shape[1]](
+            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id, n_mma
             )
 
@@ -298,11 +309,15 @@ fn tma_umma_kernel_ts[
     c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
     num_iters: UInt,
 ):
+    constrained[num_threads == 128 or num_threads == 256]()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
-    alias num_m_mmas = BM // mma_shape[0]
-    alias num_n_mmas = BN // mma_shape[1]
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
+    alias num_m_mmas = BM // MMA_M
+    alias num_n_mmas = BN // MMA_N
 
     constrained[
         num_m_mmas == 1 and num_n_mmas == 1,
@@ -330,7 +345,7 @@ fn tma_umma_kernel_ts[
         1, UInt32, address_space = AddressSpace.SHARED, alignment=16
     ]()
 
-    alias c_frag_size = mma_shape[0] * mma_shape[1] // 128
+    alias c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
@@ -369,8 +384,13 @@ fn tma_umma_kernel_ts[
     barrier()
 
     var tmem_addr = ptr_tmem_addr[0]
+
+    @parameter
+    if num_threads > 128:
+        if thread_idx.x >= 128:
+            tmem_addr += 1 << 20  # offset for lane 16
     var c_tmem: UInt32 = tmem_addr
-    var a_tmem: UInt32 = tmem_addr + mma_shape[1]  # * 4
+    var a_tmem: UInt32 = tmem_addr + MMA_N
 
     alias b_canonical_layout = tile_to_descriptor[
         b_type, b_smem_layout, is_k_major=transpose_b
@@ -393,7 +413,12 @@ fn tma_umma_kernel_ts[
         transpose_b=transpose_b,
     ]()
 
+    alias num_warps = num_threads // WARP_SIZE
     warp_id = thread_idx.x // WARP_SIZE
+
+    @parameter
+    if num_threads > 128:
+        warp_id = 2 * (warp_id % 4) + warp_id // 4
 
     alias a_frag_size = BM * BK * sizeof[a_type]() // 4 // num_threads
     var a_frag = SIMD[DType.uint32, a_frag_size]()
@@ -402,7 +427,7 @@ fn tma_umma_kernel_ts[
         # Load A from global memory to registers.
         # Each thread loads 32 values
         a_gmem_tile = a.tile[BM, BK](block_idx.y, i)
-        a_gmem_warp_tile = a_gmem_tile.tile[BM // 4, BK](warp_id, 0)
+        a_gmem_warp_tile = a_gmem_tile.tile[BM // num_warps, BK](warp_id, 0)
         # Vectorize by 4 for 16x256 load, each thread loads multiple vector
         # of size 2x4B=4xBF16
         a_gmem_frag = a_gmem_warp_tile.vectorize[1, 4]().distribute[
@@ -479,7 +504,7 @@ fn tma_umma_kernel_ts[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = mma_shape[1] // 8,
+        repeat = BN // 8,
         type=accum_type,
         pack=False,
         width=c_frag_size,
@@ -500,7 +525,7 @@ fn tma_umma_kernel_ts[
         for n_mma in range(num_n_mmas):
             alias mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[mma_shape[0] // 4, mma_shape[1]](
+            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id, n_mma
             )
 
@@ -602,6 +627,8 @@ def test_tma_umma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
+    alias block_dim = 2 * MMA_M
+
     @parameter
     if a_smem:
         alias kernel = tma_umma_kernel_ss[
@@ -619,7 +646,7 @@ def test_tma_umma[
             cluster_shape=cluster_shape,
             a_swizzle=a_swizzle,
             b_swizzle=b_swizzle,
-            a_smem=a_smem,
+            num_threads=block_dim,
         ]
         ctx.enqueue_function[kernel](
             a_tma_op,
@@ -627,7 +654,7 @@ def test_tma_umma[
             c.device_tensor(),
             K // BK,
             grid_dim=(N // BN, M // BM),
-            block_dim=(128),
+            block_dim=(block_dim),
         )
 
     else:
@@ -643,7 +670,7 @@ def test_tma_umma[
             mma_shape,
             transpose_b=transpose_b,
             b_swizzle=b_swizzle,
-            num_threads=128,
+            num_threads=block_dim,
         ]
 
         ctx.enqueue_function[kernel](
@@ -652,7 +679,7 @@ def test_tma_umma[
             c.device_tensor(),
             K // BK,
             grid_dim=(N // BN, M // BM),
-            block_dim=(128),
+            block_dim=(block_dim),
         )
 
     vendor_blas.matmul(
@@ -874,30 +901,42 @@ def main():
     with DeviceContext() as ctx:
 
         @parameter
-        for size_scale in range(1, 3):
+        for mma_size_scale in range(0, 2):
+            alias MMA_M = 64 * (1 + mma_size_scale)
 
             @parameter
-            for transpose_b in range(0, 2):
-                test_tma_umma[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    Index(64 * size_scale, 128 * size_scale, 64 * size_scale),
-                    Index(64, 128, 64),
-                    Index(64, 128, 16),
-                    a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                    b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                    transpose_b=transpose_b,
-                ](ctx)
+            for size_scale in range(1, 3):
 
-                test_tma_umma[
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    Index(64 * size_scale, 128 * size_scale, 64 * size_scale),
-                    Index(64, 128, 64),
-                    Index(64, 128, 16),
-                    b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-                    transpose_b=transpose_b,
-                    a_smem=False,
-                ](ctx)
+                @parameter
+                for transpose_b in range(0, 2):
+                    test_tma_umma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        Index(
+                            MMA_M * size_scale,
+                            128 * size_scale,
+                            64 * size_scale,
+                        ),
+                        Index(MMA_M, 128, 64),
+                        Index(MMA_M, 128, 16),
+                        a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        transpose_b=transpose_b,
+                    ](ctx)
+
+                    test_tma_umma[
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        DType.bfloat16,
+                        Index(
+                            MMA_M * size_scale,
+                            128 * size_scale,
+                            64 * size_scale,
+                        ),
+                        Index(MMA_M, 128, 64),
+                        Index(MMA_M, 128, 16),
+                        b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                        transpose_b=transpose_b,
+                        a_smem=False,
+                    ](ctx)
