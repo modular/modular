@@ -192,6 +192,15 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             "gpu": ["bfloat16"],
         }
 
+    @property
+    def inputs(self) -> list[TextGenerationRequest]:
+        """Input requests for InternVL."""
+        return (
+            test_data.DEFAULT_MULTIMODAL
+            + test_data.DEFAULT_TEXT_ONLY
+            + test_data.PIXTRAL_REQUESTS
+        )
+
     def create_max_pipeline(
         self, *, encoding: str, device_specs: list[driver.DeviceSpec]
     ) -> MaxPipelineAndTokenizer:
