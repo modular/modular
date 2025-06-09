@@ -1085,10 +1085,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     else:
         barrier()
 
+    var warp_id = get_warp_id()
     if warp_group_idx == 0:
         alias num_regs = 24 if num_consumer <= 2 else 32
         warpgroup_reg_dealloc[num_regs]()
-        if warp_group_thread_idx == 0 and lane_predicate:
+        if warp_id == 0 and lane_predicate:
             var write_pipeline_states = PipelineState[pipeline_stages]()
 
             var m_coord = block_idx_swizzle[1] * BM
@@ -1386,10 +1387,11 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     else:
         barrier()
 
+    var warp_id = get_warp_id()
     if warp_group_idx == 0:
         alias num_regs = 24 if num_consumer <= 2 else 32
         warpgroup_reg_dealloc[num_regs]()
-        if warp_group_thread_idx == 0 and lane_predicate:
+        if warp_id == 0 and lane_predicate:
             var write_pipeline_states = PipelineState[pipeline_stages]()
 
             while work_info.is_valid():
