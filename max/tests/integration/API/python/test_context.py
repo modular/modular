@@ -433,6 +433,58 @@ def test_context_tuple_serializable():
     assert msgpack_decoded == original_tuple
 
 
+def test_text_and_vision_context_serializable():
+    # Test that we can encode a sample TextAndVisionContext with Pickle
+    original_context = TextAndVisionContext(
+        prompt="sampling params test prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        pixel_values=(np.array([10, 11, 12, 13, 14]),),
+    )
+
+    pickle_encoded = pickle.dumps(original_context)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert isinstance(pickle_decoded, TextAndVisionContext)
+    assert pickle_decoded == original_context
+
+    # Test that we can encode a sample TextAndVisionContext with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(
+        Union[TextContext, TextAndVisionContext]
+    )
+    msgpack_encoded = serialize(original_context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert msgpack_decoded == original_context
+
+
+def test_text_and_vision_context_tuple_serializable():
+    # Test that we can encode a tuple of (str, TextAndVisionContext) with Pickle
+    original_context = TextAndVisionContext(
+        prompt="sampling params test prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        pixel_values=(np.array([10, 11, 12, 13, 14]),),
+    )
+    original_tuple = ("test_key", original_context)
+
+    pickle_encoded = pickle.dumps(original_tuple)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert pickle_decoded == original_tuple
+
+    # Test that we can encode a tuple of (str, TextAndVisionContext) with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(
+        tuple[str, Union[TextContext, TextAndVisionContext]]
+    )
+    msgpack_encoded = serialize(original_tuple)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert msgpack_decoded == original_tuple
+
+
 def test_tts_context_msgpack_serialization_and_speech_tokens():
     """Tests that TTSContext can be serialized/deserialized with msgpack and that _speech_tokens can be written to after deserialization."""
     # Create a TTSContext with some audio prompt tokens
