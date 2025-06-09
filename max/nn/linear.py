@@ -586,7 +586,7 @@ class ColumnParallelLinear(Linear):
             self.distributed_linear_layers[i](x[i])
             for i in range(self.num_devices)
         ]
-        return ops.allgather(linear_outs, dim=-1)
+        return ops.allgather(linear_outs, axis=-1)
 
 
 def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:

@@ -8983,10 +8983,10 @@ struct DistributedAllGather:
         """
         alias num_devices = inputs.size
         constrained[
-            outputs.size == num_devices,
+            outputs.size == num_devices * num_devices,
             (
-                "expected allgather input and output buffers to all"
-                " have the same number of elements (devices)"
+                "expected allgather output buffers to have num_devices *"
+                " num_devices elements for variadic output"
             ),
         ]()
 
@@ -9004,11 +9004,11 @@ struct DistributedAllGather:
             in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         var out_bufs = InlineArray[
-            NDBuffer[dtype, rank, MutableAnyOrigin], num_devices
+            NDBuffer[dtype, rank, MutableAnyOrigin], num_devices * num_devices
         ](NDBuffer[dtype, rank, MutableAnyOrigin]())
 
         @parameter
-        for i in range(num_devices):
+        for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
         allgather[ngpus=num_devices](in_bufs, out_bufs, dev_ctxs)
 
