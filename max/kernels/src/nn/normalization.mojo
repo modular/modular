@@ -1503,6 +1503,9 @@ fn group_norm_gpu[
             ](
                 output_rs,
                 epsilon,
+                num_groups,
+                channels_per_group,
+                spatial,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(),
@@ -1519,6 +1522,9 @@ fn group_norm_gpu[
         ](
             output_rs,
             epsilon,
+            num_groups,
+            channels_per_group,
+            spatial,
             grid_dim=grid_dim,
             block_dim=block_dim,
             attributes=pdl_launch_attributes(),
