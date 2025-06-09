@@ -12,28 +12,30 @@ from collections.abc import Iterable
 from max.mlir.dialects import mo
 
 from ..graph import Graph  # noqa
-from ..type import Shape, TensorType
+from ..type import TensorType
 from ..value import TensorValue
 from .concat import concat
 
 
-def allgather(inputs: Iterable[TensorValue], dim: int = 0) -> list[TensorValue]:
+def allgather(
+    inputs: Iterable[TensorValue], axis: int = 0
+) -> list[TensorValue]:
     """Collective allgather operation.
 
     This op is a collective op which takes in tensors from different devices and
     outputs tensors on different devices.
     In particular, this operation will gather the inputs across different
-    devices and concatenates them along the 0th dimension.
+    devices and concatenates them along the specified dimension.
     The result is then broadcasted back to the same devices that the inputs
     came from.
 
     Args:
         inputs: The input tensors to gather.
-        dim: Dimension to concatenate the input tensors. Defaults to 0.
+        axis: Dimension to concatenate the input tensors. Defaults to 0.
 
     Returns:
         An iterable outputs which all hold the gathered output. Each output
-        is a rank-1 array.
+        tensor contains the concatenation of all inputs along the specified dimension.
     """
     # Convert `inputs` to list since we'll iterate over it multiple times.
     inputs = list(inputs)
@@ -42,66 +44,83 @@ def allgather(inputs: Iterable[TensorValue], dim: int = 0) -> list[TensorValue]:
 
     shape = inputs[0].shape
     dtype = inputs[0].dtype
-    if not all(input.shape == shape for input in inputs[1:]):
-        msg = (
-            "allgather operation must have the same shape across all"
+    # Check that all inputs have the same rank and are compatible for concatenation
+    if not all(input.shape.rank == shape.rank for input in inputs[1:]):
+        raise ValueError(
+            "allgather operation must have the same rank across all"
             " input tensors."
         )
-        raise ValueError(msg)
     if not all(input.dtype == dtype for input in inputs[1:]):
         all_dtypes = ", ".join([str(x.dtype) for x in inputs])
-        msg = (
+        raise ValueError(
             "allgather operation must have the same dtype across all"
             f" input tensors. Got: {all_dtypes}"
         )
-        raise ValueError(msg)
     if not all(input.device for input in inputs[1:]):
-        msg = (
+        raise ValueError(
             "allgather operation inputs must have an explicit device. "
             f"Got: {inputs}"
         )
-        raise ValueError(msg)
 
     devices = []
     for input in inputs:
         if input.device in devices:
             all_devices = ", ".join([str(x.device) for x in inputs])
-            msg = (
+            raise ValueError(
                 "allgather operation must have unique devices across its input "
                 f"tensors. Got: {all_devices}"
             )
-            raise ValueError(msg)
         devices.append(input.device)
 
-    if not -shape.rank <= dim < shape.rank:
-        raise IndexError(f"Dimension out of range {shape.rank}, {dim=}")
-    if dim < 0:
-        dim += shape.rank
+    if not -shape.rank <= axis < shape.rank:
+        raise IndexError(f"Dimension out of range {shape.rank}, {axis=}")
+    if axis < 0:
+        axis += shape.rank
 
-    output_shape = Shape(shape)
+    # Check that all dimensions except the concatenation dimension are the same.
+    for i, input in enumerate(inputs[1:], 1):
+        for d in range(shape.rank):
+            if d != axis and input.shape[d] != shape[d]:
+                raise ValueError(
+                    f"allgather operation inputs must have the same shape in all "
+                    f"dimensions except the concatenation dimension. Input 0 has "
+                    f"shape {shape}, but input {i} has shape {input.shape}. "
+                    f"Mismatch at dimension {d}."
+                )
+
     num_devices = len(inputs)
-    output_shape[0] = shape[0] * num_devices
-    output_types = [
-        TensorType(dtype, output_shape, device=x.device).to_mlir()
-        for x in inputs
-    ]
+
+    # Prepare output types - one per input per device.
+    output_types = []
+    for device_idx in range(num_devices):
+        for input_idx in range(num_devices):
+            output_types.append(
+                TensorType(
+                    dtype,
+                    inputs[input_idx].shape,
+                    device=inputs[device_idx].device,
+                ).to_mlir()
+            )
+
+    # Stage the allgather op.
     results = Graph.current._add_op(
         mo.distributed_allgather,
         output_types,
         inputs,
     )
-    outputs = [res.tensor for res in results]
 
-    if dim == 0:
-        return outputs
+    # Convert results to TensorValues.
+    all_outputs = [res.tensor for res in results]
 
-    # Slice the output tensors and re-concatenate along the desired dim.
-    reconcatenated_outputs = []
-    for output in outputs:
-        # Can't use ops.chunk because the 0th dimension might be dynamic.
-        chunked_outputs = [
-            output[i * shape[0] : (i + 1) * shape[0], ...]
-            for i in range(num_devices)
-        ]
-        reconcatenated_outputs.append(concat(chunked_outputs, axis=dim))
-    return reconcatenated_outputs
+    # Concatenate outputs for each device.
+    concatenated_outputs = []
+    for device_idx in range(num_devices):
+        device_outputs = []
+        for input_idx in range(num_devices):
+            output_idx = device_idx * num_devices + input_idx
+            device_outputs.append(all_outputs[output_idx])
+
+        result = concat(device_outputs, axis=axis)
+        concatenated_outputs.append(result)
+
+    return concatenated_outputs

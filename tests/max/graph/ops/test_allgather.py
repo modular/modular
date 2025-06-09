@@ -57,7 +57,7 @@ def test_allgather_rep_device() -> None:
 
 
 def test_allgather_wrong_shape() -> None:
-    """Test wrong shape error for allgather."""
+    """Test wrong shape error for allgather when non-concat dimensions don't match."""
     devices = [
         DeviceRef.GPU(id=0),
         DeviceRef.GPU(id=1),
@@ -68,8 +68,8 @@ def test_allgather_wrong_shape() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "allgather operation must have the same shape across all input"
-            " tensors."
+            "allgather operation inputs must have the same shape in all"
+            " dimensions except the concatenation dimension"
         ),
     ):
         with Graph(
@@ -99,6 +99,45 @@ def test_allgather_wrong_shape() -> None:
             )
 
 
+def test_allgather_uneven_shapes() -> None:
+    """Test allgather with uneven shapes along concatenation dimension."""
+    devices = [
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
+    ]
+
+    # Test with uneven shapes along dimension 0.
+    with Graph(
+        "allgather_uneven",
+        input_types=[
+            TensorType(
+                dtype=DType.float32, shape=[37919, 4096], device=devices[0]
+            ),
+            TensorType(
+                dtype=DType.float32, shape=[37919, 4096], device=devices[1]
+            ),
+            TensorType(
+                dtype=DType.float32, shape=[37918, 4096], device=devices[2]
+            ),
+            TensorType(
+                dtype=DType.float32, shape=[37918, 4096], device=devices[3]
+            ),
+        ],
+    ) as graph:
+        allgather_outputs = ops.allgather(v.tensor for v in graph.inputs)
+
+        # Check output shapes - should be sum of input shapes along axis 0.
+        expected_dim0 = 37919 + 37919 + 37918 + 37918  # 151674
+        for output in allgather_outputs:
+            assert len(output.shape) == 2
+            assert int(output.shape[0]) == expected_dim0
+            assert int(output.shape[1]) == 4096
+
+        graph.output(*allgather_outputs)
+
+
 def test_allgather_bad_dim() -> None:
     """Test wrong shape error for allgather."""
     devices = [
@@ -118,10 +157,10 @@ def test_allgather_bad_dim() -> None:
         ],
     ) as graph:
         with pytest.raises(IndexError, match="Dimension out of range"):
-            _ = ops.allgather((v.tensor for v in graph.inputs), dim=-3)
+            _ = ops.allgather((v.tensor for v in graph.inputs), axis=-3)
 
         with pytest.raises(IndexError, match="Dimension out of range"):
-            _ = ops.allgather((v.tensor for v in graph.inputs), dim=-5)
+            _ = ops.allgather((v.tensor for v in graph.inputs), axis=-5)
 
 
 def test_allgather_basic() -> None:
@@ -156,7 +195,7 @@ def test_allgather_basic() -> None:
 
 
 def test_allgather_nonzero_dim() -> None:
-    """Test allgather with non-default dim concatenation."""
+    """Test allgather with non-default axis concatenation."""
     devices = [
         DeviceRef.GPU(id=0),
         DeviceRef.GPU(id=1),
@@ -173,17 +212,63 @@ def test_allgather_nonzero_dim() -> None:
             TensorType(dtype=DType.float32, shape=[6, 5, 4], device=devices[3]),
         ],
     ) as graph:
-        outputs = ops.allgather((v.tensor for v in graph.inputs), dim=-2)
+        outputs = ops.allgather((v.tensor for v in graph.inputs), axis=-2)
         for output in outputs:
             assert output.shape == Shape((6, 20, 4))
 
-        outputs_dim_1 = ops.allgather((v.tensor for v in graph.inputs), dim=1)
+        outputs_dim_1 = ops.allgather((v.tensor for v in graph.inputs), axis=1)
         for output in outputs_dim_1:
             assert output.shape == Shape((6, 20, 4))
 
-        outputs_dim_2 = ops.allgather((v.tensor for v in graph.inputs), dim=2)
+        outputs_dim_2 = ops.allgather((v.tensor for v in graph.inputs), axis=2)
         for output in outputs_dim_2:
             assert output.shape == Shape((6, 5, 16))
+
+
+def test_allgather_nonzero_dim_uneven() -> None:
+    """Test allgather with non-default axis concatenation and uneven shapes."""
+    devices = [
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
+    ]
+
+    # Test with uneven shapes along dimension 1.
+    with Graph(
+        "allgather_uneven_dim1",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=[6, 5, 4], device=devices[0]),
+            TensorType(dtype=DType.float32, shape=[6, 5, 4], device=devices[1]),
+            TensorType(dtype=DType.float32, shape=[6, 4, 4], device=devices[2]),
+            TensorType(dtype=DType.float32, shape=[6, 4, 4], device=devices[3]),
+        ],
+    ) as graph:
+        outputs = ops.allgather((v.tensor for v in graph.inputs), axis=1)
+        for output in outputs:
+            assert output.shape == Shape((6, 18, 4))  # 5+5+4+4=18
+
+        graph.output(*outputs)
+
+    # Test with uneven shapes along dimension 2.
+    with Graph(
+        "allgather_uneven_dim2",
+        input_types=[
+            TensorType(
+                dtype=DType.float32, shape=[6, 5, 10], device=devices[0]
+            ),
+            TensorType(
+                dtype=DType.float32, shape=[6, 5, 10], device=devices[1]
+            ),
+            TensorType(dtype=DType.float32, shape=[6, 5, 9], device=devices[2]),
+            TensorType(dtype=DType.float32, shape=[6, 5, 9], device=devices[3]),
+        ],
+    ) as graph:
+        outputs = ops.allgather((v.tensor for v in graph.inputs), axis=2)
+        for output in outputs:
+            assert output.shape == Shape((6, 5, 38))  # 10+10+9+9=38
+
+        graph.output(*outputs)
 
 
 def test_allgather_noop() -> None:

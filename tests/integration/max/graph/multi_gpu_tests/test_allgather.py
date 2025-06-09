@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
@@ -25,7 +27,7 @@ M = 512
 N = 1024
 
 
-def allgather_graph(devices, dim) -> Graph:
+def allgather_graph(devices: Iterable[DeviceRef], axis: int) -> Graph:
     with Graph(
         "allgather",
         input_types=[
@@ -36,22 +38,22 @@ def allgather_graph(devices, dim) -> Graph:
         for input in graph.inputs:
             assert isinstance(input, TensorValue)
         allgather_outputs = ops.allgather(
-            (v.tensor for v in graph.inputs), dim=dim
+            (v.tensor for v in graph.inputs), axis=axis
         )
         graph.output(*allgather_outputs)
         return graph
 
 
-@pytest.mark.parametrize("num_gpus, dim", [(1, 0), (2, 0), (4, 0)])
-def test_allgather_execution(num_gpus: int, dim: int) -> None:
-    """Tests multi-device allgather execution."""
+@pytest.mark.parametrize("num_gpus, axis", [(1, 0), (2, 0), (4, 0)])
+def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
+    """Tests multi-device allgather execution with equal shapes."""
 
     if num_gpus > accelerator_count():
         pytest.skip(
             f"Not enough GPUs to run allgather test with {num_gpus} GPUs."
         )
     graph = allgather_graph(
-        [DeviceRef.GPU(id=id) for id in range(num_gpus)], dim
+        [DeviceRef.GPU(id=id) for id in range(num_gpus)], axis
     )
     host = CPU()
     devices = [Accelerator(n) for n in range(num_gpus)]
@@ -79,9 +81,77 @@ def test_allgather_execution(num_gpus: int, dim: int) -> None:
 
     outputs = compiled.execute(*tensor_inputs)
 
-    expected_output = np.concatenate(numpy_inputs, axis=dim)
+    expected_output = np.concatenate(numpy_inputs, axis=axis)
 
     for n, output in enumerate(outputs):
         assert isinstance(output, Tensor)
         assert output.device == devices[n]
+        assert np.array_equal(output.to(host).to_numpy(), expected_output)
+
+
+@pytest.mark.parametrize(
+    "shapes, axis",
+    [
+        (
+            [(512, 1024), (512, 1024), (511, 1024), (511, 1024)],
+            0,
+        ),  # Uneven first dim
+        ([(1025, 512), (1024, 512)], 0),  # 2 GPUs with uneven shapes
+        (
+            [(512, 256), (512, 256), (512, 255), (512, 255)],
+            1,
+        ),  # Uneven second dim
+    ],
+)
+def test_allgather_execution_uneven(
+    shapes: list[tuple[int, int]], axis: int
+) -> None:
+    """Tests multi-device allgather execution with uneven shapes."""
+
+    num_gpus = len(shapes)
+    if num_gpus > accelerator_count():
+        pytest.skip(
+            f"Not enough GPUs to run allgather test with {num_gpus} GPUs."
+        )
+
+    # Create graph with different input shapes
+    devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    with Graph(
+        "allgather_uneven",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=shape, device=device)
+            for shape, device in zip(shapes, devices)
+        ],
+    ) as graph:
+        allgather_outputs = ops.allgather(
+            (v.tensor for v in graph.inputs), axis=axis
+        )
+        graph.output(*allgather_outputs)
+
+    host = CPU()
+    accel_devices = [Accelerator(n) for n in range(num_gpus)]
+
+    session = InferenceSession(devices=[host, *accel_devices])
+    compiled = session.load(graph)
+
+    # Set up input values
+    numpy_inputs = []
+    tensor_inputs = []
+    offset = 0
+    for i, shape in enumerate(shapes):
+        size = int(np.prod(shape))
+        arr = np.arange(size).reshape(shape) + offset
+        numpy_inputs.append(arr.astype(np.float32))
+        tensor_inputs.append(
+            Tensor.from_numpy(arr.astype(np.float32)).to(accel_devices[i])
+        )
+        offset += size
+
+    outputs = compiled.execute(*tensor_inputs)
+
+    expected_output = np.concatenate(numpy_inputs, axis=axis)
+
+    for n, output in enumerate(outputs):
+        assert isinstance(output, Tensor)
+        assert output.device == accel_devices[n]
         assert np.equal(output.to(host).to_numpy(), expected_output).all()
