@@ -41,13 +41,37 @@ modular_py_test(
     name = "nn_gpu_tests",
     srcs = glob(
         ["*_gpu.py"],
-        exclude = ["*_distributed_gpu.py"],
+        exclude = [
+            "*_distributed_gpu.py",
+            "test_conv_transpose_gpu.py",
+        ],
     ) + ["conftest.py"],
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],
     tags = ["gpu"],
     deps = [
         ":shared_conv_impl",
+        "//SDK/integration-test/API/python/graph:modular_graph_test",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/serve",
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "nn_nvidia_gpu_tests",
+    srcs = ["test_conv_transpose_gpu.py"],
+    gpu_constraints = ["//:nvidia_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
         "//SDK/integration-test/API/python/graph:modular_graph_test",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
