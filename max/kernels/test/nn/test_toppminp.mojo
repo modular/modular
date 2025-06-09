@@ -16,8 +16,7 @@ from random import random_float64
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout, RuntimeLayout
 from memory import UnsafePointer
 from nn.softmax import softmax
 from nn.toppminp import min_p_sampling, top_p_sampling
@@ -70,27 +69,25 @@ fn time_kernel[
 
 
 @parameter
-fn fill_random[
-    rank: Int, dtype: DType
-](mut buffer: NDBuffer[mut=True, dtype, rank]):
+fn fill_random[dtype: DType](mut buffer: LayoutTensor[mut=True, dtype, **_]):
     alias min_val = -1e6
     alias max_val = 1e6
-    var total_elements = buffer.num_elements()
+    var total_elements = buffer.size()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.data[i] = random_value.cast[dtype]()
+        buffer.ptr[i] = random_value.cast[dtype]()
 
 
 @parameter
-fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[mut=True, type, rank]):
-    iota(buf.data, buf.get_shape().flattened_length())
+fn fill_iota[type: DType](mut buf: LayoutTensor[mut=True, type, **_]):
+    iota(buf.ptr, buf.size())
 
 
 fn test_is_sorted_descending[
-    type: DType, rank: Int
-](mut buf: NDBuffer[type, rank], vocab_size: Int) -> Bool:
-    constrained[rank == 2, "rank must be 2"]()
-    var batch_size = buf.num_elements() // vocab_size
+    type: DType
+](mut buf: LayoutTensor[type, **_], vocab_size: Int) -> Bool:
+    constrained[buf.rank == 2, "rank must be 2"]()
+    var batch_size = buf.size() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
 
     # Initialize all flags to True
@@ -103,16 +100,16 @@ fn test_is_sorted_descending[
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
             for i in range(vocab_size - 1):
-                if buf.data[offset + i] < buf.data[offset + i + 1]:
+                if buf.ptr[offset + i] < buf.ptr[offset + i + 1]:
                     print(
                         "[",
                         batch_id,
                         "][",
                         i,
                         "]: ",
-                        buf.data[offset + i],
+                        buf.ptr[offset + i],
                         " < ",
-                        buf.data[offset + i + 1],
+                        buf.ptr[offset + i + 1],
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -155,8 +152,8 @@ fn print_test_case(test_case: TestCase):
 
 
 fn test_case_sampling[
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[type: DType] (
+        mut LayoutTensor[mut=True, type, **_]
     ) capturing -> None,
 ](test_case: TestCase) raises:
     print_test_case(test_case)
@@ -175,22 +172,33 @@ fn test_case_sampling[
     var in_logits_ptr = UnsafePointer[Scalar[type]].alloc(
         batch_size * vocab_size
     )
-    var in_logits = NDBuffer[type, rank](
-        in_logits_ptr, DimList(batch_size, vocab_size)
+    var in_logits = LayoutTensor[type, Layout.row_major[rank]()](
+        in_logits_ptr,
+        RuntimeLayout[Layout.row_major[rank]()].row_major(
+            IndexList[rank](batch_size, vocab_size)
+        ),
     )
     var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
         batch_size * 1
     )
-    var token_ids = NDBuffer[out_idx_type, rank](
-        token_ids_ptr, DimList(batch_size, 1)
+    var token_ids = LayoutTensor[out_idx_type, Layout.row_major[1]()](
+        token_ids_ptr,
+        RuntimeLayout[Layout.row_major[1]()].row_major(
+            IndexList[1](batch_size)
+        ),
     )
     var p_thresholds_ptr = UnsafePointer[Scalar[type]].alloc(batch_size)
-    var p_thresholds = NDBuffer[type, 1](p_thresholds_ptr, DimList(batch_size))
+    var p_thresholds = LayoutTensor[type, Layout.row_major[1]()](
+        p_thresholds_ptr,
+        RuntimeLayout[Layout.row_major[1]()].row_major(
+            IndexList[1](batch_size)
+        ),
+    )
 
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.data[i] = p_threshold
+        p_thresholds.ptr[i] = p_threshold
 
     @parameter
     if DEBUG_BENCH:
@@ -256,8 +264,8 @@ fn test_case_sampling[
 fn test_toppminp[
     type: DType,
     out_idx_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[type: DType] (
+        mut LayoutTensor[mut=True, type, **_]
     ) capturing -> None,
 ]() raises:
     alias test_case1 = TestCase[type, out_idx_type, _is_top_p=True](
@@ -280,8 +288,8 @@ fn test_toppminp[
 
 fn test_all_out_idx_types[
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[type: DType] (
+        mut LayoutTensor[mut=True, type, **_]
     ) capturing -> None,
 ]() raises:
     test_toppminp[type, DType.int32, fill_fn]()
@@ -290,8 +298,8 @@ fn test_all_out_idx_types[
 
 
 fn test_all_types[
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[type: DType] (
+        mut LayoutTensor[mut=True, type, **_]
     ) capturing -> None,
 ]() raises:
     print("\n=== Testing Float32 ===")

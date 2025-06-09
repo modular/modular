@@ -14,8 +14,13 @@
 from collections import OptionalReg
 from collections.string import StaticString
 from math import align_down, ceildiv
-from sys.info import simdwidthof
-from nn.conv import check_cudnn_error
+from sys import alignof, simdwidthof
+from nn.conv import (
+    check_cudnn_error,
+    CuDNNConvMeta,
+    _get_cudnn_meta,
+)
+from .conv_utils import elementwise_simd_epilogue_type
 
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
@@ -51,6 +56,7 @@ from gpu._cudnn.infer import (
 )
 
 from algorithm import (
+    elementwise,
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
@@ -321,7 +327,7 @@ fn conv_transpose_shape[
 fn get_num_partitions[
     micro_kernel_height: Int, micro_kernel_f_size: Int
 ](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
-    """Partition the worload in (batch&group, C, F, H) dimensions.
+    """Partition the workload in (batch&group, C, F, H) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
     """
@@ -1350,7 +1356,7 @@ fn pack_filter(
 # ===----------------------------------------------------------------------=== #
 
 
-fn conv_transposed[
+fn conv_transposed_cpu[
     input_rank: Int,
     filter_rank: Int,
     input_shape: DimList,
@@ -1450,7 +1456,7 @@ fn conv_transposed[
             @always_inline
             @parameter
             fn body[width: Int](idx: Int):
-                # Cooridates of the current index.
+                # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
@@ -1488,93 +1494,135 @@ fn conv_transposed[
 # ===----------------------------------------------------------------------=== #
 
 
-fn conv_backward_data_cudnn[
-    filter_dim: DimList,
-    diff_dim: DimList,
-    grad_dim: DimList,
-    data_type: DType,
+fn conv_transposed_gpu[
+    input_rank: Int,
+    filter_rank: Int,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    elementwise_epilogue: OptionalReg[elementwise_simd_epilogue_type] = None,
 ](
-    filter: UnsafePointer[Scalar[data_type]],  # w
-    diff: UnsafePointer[Scalar[data_type]],  # dy
-    grad: UnsafePointer[Scalar[data_type]],  # dx (output)
+    output: NDBuffer[mut=True, output_type, input_rank, _, output_shape],
+    input: NDBuffer[input_type, input_rank, _, input_shape],
+    filter: NDBuffer[mut=True, filter_type, filter_rank, _, filter_shape],
+    stride: IndexList[input_rank - 2],
+    dilation: IndexList[input_rank - 2],
+    padding: IndexList[input_rank - 2],
+    ctx: DeviceContext,
+) raises:
+    @parameter
+    if elementwise_epilogue:
+        alias epilogue = elementwise_epilogue.value()
+
+        var output_tmp_data = ctx.enqueue_create_buffer[output_type](
+            output.num_elements()
+        )
+
+        var output_tmp = output
+        output_tmp.data = output_tmp_data.unsafe_ptr()
+
+        conv_transposed_cudnn[input_type, filter_type, output_type,](
+            rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+            rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+            rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](output_tmp),
+            rebind[IndexList[2]](stride),
+            rebind[IndexList[2]](dilation),
+            rebind[IndexList[2]](padding),
+            ctx,
+        )
+
+        @parameter
+        @__copy_capture(output_tmp)
+        @always_inline
+        fn epilogue_wrapper[_width: Int, _rank: Int](coords: IndexList[_rank]):
+            alias alignment = alignof[SIMD[output_type, _width]]()
+            vec = output_tmp.load[width=_width, alignment=alignment](
+                rebind[IndexList[4]](coords)
+            )
+            epilogue(coords, vec)
+
+        elementwise[epilogue_wrapper, simdwidthof[output_type](), target="gpu"](
+            output.dynamic_shape, ctx
+        )
+
+        _ = output_tmp_data^
+
+    else:
+        conv_transposed_cudnn[input_type, filter_type, output_type,](
+            rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+            rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+            rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](output),
+            rebind[IndexList[2]](stride),
+            rebind[IndexList[2]](dilation),
+            rebind[IndexList[2]](padding),
+            ctx,
+        )
+
+
+fn conv_transposed_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, *_, **_],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, *_, **_],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, *_, **_],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
     ctx: DeviceContext,
 ) raises:
-    """
-    Thin wrapper around `cudnnConvolutionBackwardData` for a 2-D NHWC layout.
-
-    Arguments mirror `conv_cudnn` for ease of use:
-      • `filter`  -> pointer to RSCK filter (interpreted as K,C,H,W in NCHW).
-      • `diff`    -> pointer to output gradient (dy) in NHWC order.
-      • `grad`    -> pointer to input gradient buffer (dx) in NHWC order.
-      • `stride`/`dilation`/`padding` -> spatial parameters (H,W order).
-      • `ctx`     -> device context that provides the CUDA stream.
-    """
-
-    var cudnn_handle = UnsafePointer[cudnnContext]()
-    check_cudnn_error(cudnnCreate(UnsafePointer(to=cudnn_handle)))
+    var cudnn_handle = _get_cudnn_meta(ctx)
 
     # basically, vibes are that a cuda handle is the gateway to using cudnn
     # we want all the work from that handle to be done on a separate stream
-    # than the main stream, otherwise, everyhting goes on main stream and
+    # than the main stream, otherwise, everything goes on main stream and
     # slows down the whole thing. binding handle to stream unclocks parallelism, and now
-    # 2 handles , wth 2 separate functions, can work at same time.
-    check_cudnn_error(cudnnSetStream(cudnn_handle, CUDA(ctx.stream())))
+    # 2 handles , with 2 separate functions, can work at same time.
 
     # ---------------- Tensor / filter descriptors -------------------------
-    var filter_desc = UnsafePointer[cudnnFilterStruct]()
-    check_cudnn_error(
-        cudnnCreateFilterDescriptor(UnsafePointer(to=filter_desc))
-    )
     check_cudnn_error(
         cudnnSetFilter4dDescriptor(
-            filter_desc,
+            cudnn_handle[].ptr_filter_desc,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-            filter_dim.get[0](),  # K (out channels)
-            filter_dim.get[1](),  # C (in channels)
-            filter_dim.get[2](),  # H (kernel height)
-            filter_dim.get[3](),  # W (kernel width)
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,  # cudnn documentation correction: cudnnSetFilter4dDescriptor() takes CKRS, not KCRS
+            filter.dim[0](),  # C (out channels)
+            filter.dim[1](),  # K (in channels)
+            filter.dim[2](),  # R (kernel height)
+            filter.dim[3](),  # S (kernel width)
         )
     )
 
-    var dy_desc = UnsafePointer[cudnnTensorStruct]()
-    check_cudnn_error(cudnnCreateTensorDescriptor(UnsafePointer(to=dy_desc)))
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            dy_desc,
+            cudnn_handle[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            diff_dim.get[0](),  # N
-            diff_dim.get[1](),  # C_in
-            diff_dim.get[2](),  # H_out
-            diff_dim.get[3](),  # W_out
+            input.dim[0](),  # N
+            input.dim[1](),  # C_in
+            input.dim[2](),  # H_in
+            input.dim[3](),  # W_in
         )
     )
 
-    var dx_desc = UnsafePointer[cudnnTensorStruct]()
-    check_cudnn_error(cudnnCreateTensorDescriptor(UnsafePointer(to=dx_desc)))
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            dx_desc,
+            cudnn_handle[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             cudnnDataType_t.CUDNN_DATA_FLOAT,
-            grad_dim.get[0](),  # N
-            grad_dim.get[1](),  # C_out
-            grad_dim.get[2](),  # H
-            grad_dim.get[3](),  # W
+            output.dim[0](),  # N
+            output.dim[1](),  # C_out
+            output.dim[2](),  # H_out
+            output.dim[3](),  # W_out
         )
     )
 
-    var conv_desc = UnsafePointer[cudnnConvolutionStruct]()
-    check_cudnn_error(
-        cudnnCreateConvolutionDescriptor(UnsafePointer(to=conv_desc))
-    )
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
-            conv_desc,
+            cudnn_handle[].ptr_conv_desc,
             padding[0],
             padding[1],
             stride[0],
@@ -1598,27 +1646,22 @@ fn conv_backward_data_cudnn[
 
     check_cudnn_error(
         cudnnConvolutionBackwardData(
-            cudnn_handle,
+            cudnn_handle[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
-            filter_desc,
-            filter.bitcast[NoneType](),
-            dy_desc,
-            diff.bitcast[NoneType](),
-            conv_desc,
+            cudnn_handle[].ptr_filter_desc,
+            rebind[UnsafePointer[NoneType]](filter.data.bitcast[NoneType]()),
+            cudnn_handle[].ptr_input_desc,
+            rebind[UnsafePointer[NoneType]](input.data.bitcast[NoneType]()),
+            cudnn_handle[].ptr_conv_desc,
             algo,
-            workspace_ptr.bitcast[NoneType](),
-            workspace_bytes,
+            UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
+            0,
             UnsafePointer(to=beta).bitcast[NoneType](),
-            dx_desc,
-            grad.bitcast[NoneType](),
+            cudnn_handle[].ptr_output_desc,
+            rebind[UnsafePointer[NoneType]](output.data.bitcast[NoneType]()),
         )
     )
 
     # ---------------- Cleanup ---------------------------------------------
     if workspace_ptr:
         workspace_ptr.free()
-    check_cudnn_error(cudnnDestroyTensorDescriptor(dx_desc))
-    check_cudnn_error(cudnnDestroyConvolutionDescriptor(conv_desc))
-    check_cudnn_error(cudnnDestroyTensorDescriptor(dy_desc))
-    check_cudnn_error(cudnnDestroyFilterDescriptor(filter_desc))
-    check_cudnn_error(cudnnDestroy(cudnn_handle))

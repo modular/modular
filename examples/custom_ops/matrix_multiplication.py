@@ -61,6 +61,7 @@ def matrix_multiplication(
         # via compile-time parameterization.
         output = ops.custom(
             name="matrix_multiplication",
+            device=DeviceRef.from_device(device),
             values=[a_value, b_value],
             out_types=[
                 TensorType(

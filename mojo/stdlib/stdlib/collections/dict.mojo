@@ -557,7 +557,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             The new dictionary.
         """
         var my_dict = Dict[K, V]()
-        for ref key in keys:
+        for key in keys:
             my_dict[key] = value
         return my_dict
 
@@ -723,7 +723,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         result += "{"
 
         var i = 0
-        for ref key_value in self.items():
+        for key_value in self.items():
             result += repr(key_value.key) + ": " + repr(key_value.value)
             if i < len(self) - 1:
                 result += ", "
@@ -774,9 +774,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             present, otherwise an empty Optional.
         """
         var hash = hash(key)
-        var found: Bool
-        var index: Int
-        found, _, index = self._find_index(hash, key)
+        var found, _, index = self._find_index(hash, key)
 
         if found:
             ref entry = self._entries[index]
@@ -841,10 +839,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             "KeyError" if the key was not present in the dictionary.
         """
         var hash = hash(key)
-        var found: Bool
-        var slot: UInt64
-        var index: Int
-        found, slot, index = self._find_index(hash, key)
+        var found, slot, index = self._find_index(hash, key)
         if found:
             self._set_index(slot, Self.REMOVED)
             ref entry = self._entries[index]
@@ -874,7 +869,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         var key = Optional[K](None)
         var val = Optional[V](None)
 
-        for ref item in reversed(self.items()):
+        for item in reversed(self.items()):
             key = Optional(item.key)
             val = Optional(item.value)
             break
@@ -934,7 +929,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         Notes:
             The argument must be positional only.
         """
-        for ref entry in other.items():
+        for entry in other.items():
             self[entry.key] = entry.value
 
     fn clear(mut self):
@@ -982,10 +977,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         @parameter
         if not safe_context:
             self._maybe_resize()
-        var found: Bool
-        var slot: UInt64
-        var index: Int
-        found, slot, index = self._find_index(entry.hash, entry.key)
+        var found, slot, index = self._find_index(entry.hash, entry.key)
 
         self._entries[index] = entry^
         if not found:
@@ -1270,7 +1262,7 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         my_dict["a"] = 1
         my_dict["b"] = 2
 
-        for ref e in my_dict.items():
+        for e in my_dict.items():
             print(e.key, e.value)
         ```
 

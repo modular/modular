@@ -16,7 +16,6 @@ The module includes the `ConstantMemoryMapping` struct which represents a mappin
 constant memory that can be used for efficient data transfer between host and GPU device.
 """
 
-from collections.string import StaticString
 
 from memory import UnsafePointer
 

@@ -15,14 +15,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from max.pipelines.lib import PipelineRole
-
-if TYPE_CHECKING:
-    from max.serve.scheduler.audio_generation_scheduler import (
-        AudioGenerationSchedulerConfig,
-    )
 
 
 @dataclass(frozen=True)
@@ -69,9 +64,6 @@ class TokenGeneratorSchedulerConfig:
     token_generation: BatchQueueConfig
     context_encoding: Optional[BatchQueueConfig] = None
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
-    audio_generator_scheduler_config: Optional[
-        AudioGenerationSchedulerConfig
-    ] = None
 
     @property
     def max_batch_size_tg(self) -> int:
@@ -158,7 +150,7 @@ class TokenGeneratorSchedulerConfig:
         enable_in_flight_batching: bool = False,
         pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
     ) -> TokenGeneratorSchedulerConfig:
-        """The continuous-hetrogenous config creates 2 queues.
+        """The continuous-heterogenous config creates 2 queues.
         Context-encoding is done via dynamic batching.
         Token-generation is done via continuous batching.
         """

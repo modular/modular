@@ -450,7 +450,7 @@ struct PagedKVCache[
             "KVCache head_dim_idx is out of range",
         )
 
-        lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
+        var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
         debug_assert[assert_write_mode](
             tok_in_block_idx < self.blocks.dim[1](),

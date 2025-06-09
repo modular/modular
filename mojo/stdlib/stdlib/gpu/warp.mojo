@@ -31,7 +31,6 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-from collections.string import StringSlice
 from sys import bitwidthof, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
@@ -86,7 +85,7 @@ fn _shuffle[
         var val_bitcast = bitcast[
             new_type = DType.uint32, new_width = simd_width * 2
         ](val)
-        val_half1, val_half2 = val_bitcast.deinterleave()
+        var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val_half1, offset
         )
@@ -149,7 +148,7 @@ fn _shuffle_amd_helper[
         var val_bitcast = bitcast[
             new_type = DType.uint32, new_width = simd_width * 2
         ](val)
-        val_half1, val_half2 = val_bitcast.deinterleave()
+        var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
         var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
         var result = shuffle1.interleave(shuffle2)

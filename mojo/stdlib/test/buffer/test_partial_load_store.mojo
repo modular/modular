@@ -40,7 +40,7 @@ fn test_partial_load_store():
     )
 
     for idx in range(total_buffer_size):
-        # Fill read_bufer with 0->15
+        # Fill read_buffer with 0->15
         read_buffer[idx] = idx
         # Fill write_buffer with 0
         write_buffer[idx] = 0

@@ -197,7 +197,7 @@ def test_unsafepointer_aligned_alloc():
     assert_equal(ptr_uint64_3 % alignment_3, 0)
 
 
-# Test that `UnsafePointer.alloc()` no longer artifically extends the lifetime
+# Test that `UnsafePointer.alloc()` no longer artificially extends the lifetime
 # of every local variable in methods where its used.
 def test_unsafepointer_alloc_origin():
     # -----------------------------------------
@@ -206,7 +206,7 @@ def test_unsafepointer_alloc_origin():
 
     var did_del_1 = False
 
-    # Allocate pointer with MutableAnyOrgin.
+    # Allocate pointer with MutableAnyOrigin.
     var ptr_1 = (
         UnsafePointer[Int].alloc(1).origin_cast[origin=MutableAnyOrigin]()
     )

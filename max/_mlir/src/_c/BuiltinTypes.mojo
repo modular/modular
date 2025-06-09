@@ -736,7 +736,7 @@ fn mlirMemRefTypeGetStridesAndOffset(
 
 
 fn mlirUnrankedMemrefGetMemorySpace(type: MlirType) -> MlirAttribute:
-    """Returns the memory spcae of the given Unranked MemRef type."""
+    """Returns the memory space of the given Unranked MemRef type."""
     return MLIR_func["mlirUnrankedMemrefGetMemorySpace", MlirAttribute](type)
 
 

@@ -207,7 +207,7 @@ struct MHATileSummary:
     fn _index_to_coords_default[
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
-        # Frist dim, offset in prompt length
+        # First dim, offset in prompt length
         #
         # The goal is to keep kv in l2 cache.
         # As kv is constant with prompt_tile_idx,

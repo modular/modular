@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -39,10 +39,6 @@ class AudioGenerationRequest:
     the request throughout its lifecycle, facilitating debugging and tracking.
     """
 
-    input: str
-    """The text to generate audio for. The maximum length is 4096 characters.
-    """
-
     index: int
     """The sequence order of this request within a batch. This is useful for
     maintaining the order of requests when processing multiple requests
@@ -56,37 +52,22 @@ class AudioGenerationRequest:
     capabilities of the response generation.
     """
 
-    max_new_tokens: int | None = None
-    """
-    The maximum number of new tokens to generate in the response. If not set,
-    the model may generate tokens until it reaches its internal limits or based
-    on other stopping criteria.
+    input: str
+    """The text to generate audio for. The maximum length is 4096 characters.
     """
 
-    ignore_eos: bool = False
-    """
-    If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
-    stop string is hit.
-    """
+    audio_prompt_tokens: list[int] = field(default_factory=list)
+    """The prompt speech IDs to use for audio generation."""
 
-    voice: str | None = None
-    """The voice to use for audio generation.
-    """
-
-    stop: list[str] | None = None
-    """Optional list of stop expressions that will cause generation to stop when encountered."""
-
-    stop_token_ids: list[int] | None = None
-    """Optional list of token IDs that will cause generation to stop when encountered."""
-
-    detokenize: bool = True
-    """Whether to detokenize the output tokens into text."""
-
-    seed: int | None = None
-    """The seed to use for the random number generator."""
+    audio_prompt_transcription: str = ""
+    """The audio prompt transcription to use for audio generation."""
 
     sampling_params: SamplingParams = SamplingParams()
     """Request sampling configuration options."""
+
+    _assistant_message_override: str | None = None
+    """(ONLY FOR BENCHMARKING PURPOSES) An assistant message that replaces the
+    speech token pattern."""
 
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")

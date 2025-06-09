@@ -151,6 +151,7 @@ class FetchPagedKVCacheCollection:
         return PagedKVCacheCollection(
             ops.custom(
                 "mo.kv_collection_ctor.paged",
+                device=blocks.device,
                 values=[blocks, cache_lengths, lookup_table, is_cache_empty],
                 out_types=[PagedKVCacheCollectionType()],
                 parameters={

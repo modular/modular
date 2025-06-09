@@ -16,15 +16,17 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, Optional, TypeVar, cast
+from typing import Any, Generic, Optional, TypeVar, Union, cast
 
 import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
-    InputContext,
+    TextAndVisionContext,
+    TextContext,
     TextGenerationResponse,
     TextResponse,
     TokenGenerator,
+    msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Trace, traced
@@ -144,7 +146,9 @@ class GenericSchedulerOutput(Generic[T]):
         )
 
 
-class SchedulerOutput(GenericSchedulerOutput[InputContext]):
+class SchedulerOutput(
+    GenericSchedulerOutput[Union[TextContext, TextAndVisionContext]]
+):
     pass
 
 
@@ -167,18 +171,28 @@ class TokenGenerationScheduler(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        self.request_q = ZmqPullSocket[tuple[str, InputContext]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=request_zmq_endpoint
+        self.request_q = ZmqPullSocket[
+            tuple[str, Union[TextContext, TextAndVisionContext]]
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=request_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(
+                tuple[str, Union[TextContext, TextAndVisionContext]],
+            ),
         )
         self.response_q = ZmqPushSocket[list[dict[str, TextResponse]]](
             zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
         )
         self.cancel_q = ZmqPullSocket[list[str]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=cancel_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(list[str]),
         )
 
         # Initialize Scheduler state.
-        self.active_batch: dict[str, InputContext] = {}
+        self.active_batch: dict[
+            str, Union[TextContext, TextAndVisionContext]
+        ] = {}
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_tg)
         )
@@ -240,7 +254,9 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def _maybe_chunk_prefill_request(
-        self, data: InputContext, tot_input_tokens: int
+        self,
+        data: Union[TextContext, TextAndVisionContext],
+        tot_input_tokens: int,
     ) -> int:
         """Chunks a prefill request if it exceeds the target tokens per batch."""
         if not (
@@ -277,7 +293,7 @@ class TokenGenerationScheduler(Scheduler):
             self.scheduler_config.max_batch_size_tg - len(self.active_batch),
         )
 
-        ce_batch: dict[str, InputContext] = {}
+        ce_batch: dict[str, Union[TextContext, TextAndVisionContext]] = {}
         tot_input_tokens = 0
         tot_cached_tokens = 0
 
@@ -355,7 +371,9 @@ class TokenGenerationScheduler(Scheduler):
         )
 
     @traced
-    def _return_to_request_queue(self, req_id: Any, data: InputContext):
+    def _return_to_request_queue(
+        self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
+    ):
         """Resets a request and returns it to the request queue"""
         self.available_cache_indices.add(data.cache_seq_id)
         self.pipeline.release(data)
@@ -363,7 +381,9 @@ class TokenGenerationScheduler(Scheduler):
         self.request_q.put_front_nowait((req_id, data))
 
     @traced
-    def _preempt_request(self, req_id: Any, data: InputContext):
+    def _preempt_request(
+        self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
+    ):
         """Preempts the most recently received request from active batch"""
         self._return_to_request_queue(req_id, data)
         # Limit logging about preemptions to at most once per second

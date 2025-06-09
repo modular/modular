@@ -62,7 +62,7 @@ fn load_matrix_a[
         SIMD vector containing 4 TF32 values loaded from matrix A in the required order.
 
     Constraints:
-        The tile demensions must be m=16, n=8, k=8.
+        The tile dimensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -108,7 +108,7 @@ fn load_matrix_a[
         SIMD vector containing 4 FP16 values loaded from matrix A in the required order.
 
     Constraints:
-        The tile demensions must be m=16, n=8, k=8.
+        The tile dimensions must be m=16, n=8, k=8.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()

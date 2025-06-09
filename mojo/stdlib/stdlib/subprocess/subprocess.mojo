@@ -14,7 +14,6 @@
 
 
 import sys._libc as libc
-from collections.string import StringSlice
 from sys import external_call
 from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char

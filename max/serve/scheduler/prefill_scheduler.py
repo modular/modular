@@ -16,14 +16,14 @@ import queue
 import tempfile
 import uuid
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import zmq
 from max.nn.kv_cache import (
     KVTransferEngine,
     PagedKVCacheManager,
 )
-from max.pipelines.core import InputContext, TokenGenerator
+from max.pipelines.core import TextAndVisionContext, TextContext, TokenGenerator
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
@@ -73,7 +73,9 @@ class PrefillScheduler(Scheduler):
 
         # Initialize Scheduler state.
         self.pending_transfers: dict[str, tuple[str, list[int]]] = {}
-        self.active_batch: dict[str, InputContext] = {}
+        self.active_batch: dict[
+            str, Union[TextAndVisionContext, TextContext]
+        ] = {}
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_ce)
         )
@@ -134,7 +136,7 @@ class PrefillScheduler(Scheduler):
         self.request_id_to_reply_context[message.id] = reply_context
 
     def send_prefill_complete_response(
-        self, request_id: str, data: InputContext
+        self, request_id: str, data: Union[TextAndVisionContext, TextContext]
     ) -> None:
         if request_id not in self.request_id_to_reply_context:
             logger.error(
@@ -174,7 +176,7 @@ class PrefillScheduler(Scheduler):
 
         Args:
             req_id: The ID of the request to return
-            data: The InputContext containing the request data
+            data: The Union[TextAndVisionContext, TextContext] containing the request data
         """
         self.pipeline.release(prefill_request.context)
         prefill_request.context.reset()
@@ -290,7 +292,7 @@ class PrefillScheduler(Scheduler):
             # Reset this - This is a workaround until we successfully transfer the KV Cache.
             input_context.bump_token_indices(start_idx=-input_context.start_idx)
             # TODO: E2EOPT-231
-            input_context._completion_start_idx -= 1  # type: ignore
+            input_context._completion_start_idx -= 1
             self.send_prefill_complete_response(req_id, input_context)
 
     def run(self) -> None:

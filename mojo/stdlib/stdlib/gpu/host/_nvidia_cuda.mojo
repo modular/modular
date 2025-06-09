@@ -230,7 +230,7 @@ fn create_tma_descriptor[
 ) raises -> TMADescriptor:
     """Create a tensor map descriptor object representing tiled memory region.
     """
-    # Enforces host-side aligment
+    # Enforces host-side alignment
     var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
     var tensor_map_ptr = UnsafePointer(to=tma_descriptor).bitcast[NoneType]()
 

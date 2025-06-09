@@ -31,7 +31,7 @@ that run on both GPUs and CPUs that run on different hardware architectures. It
 includes GPU kernels written in Mojo for algorithms such as top-k, matrix
 multiplication, fused attention, and more.
 
-## [Compiling and running Mojo functions on a GPU](gpu_functions/)
+## [GPU functions written in Mojo](mojo/gpu-functions/)
 
 In addition to placing custom Mojo functions within a computational graph, Mojo
 can handle direct compilation and dispatch of GPU functions. This is a

@@ -889,7 +889,7 @@ fn _apply_zero_point_correction[
                     # Note: The ARM64 backend fuses `smull` with an int32 add to
                     # form `smlal` instructions. Also, the element broadcast is
                     # fused to with the instruction to generate the form
-                    # `smlal r, a, b[lane]`. The instrinsic `vmlal_lane_s16` uses
+                    # `smlal r, a, b[lane]`. The intrinsic `vmlal_lane_s16` uses
                     # the same IR pattern to emit this instruction.
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",

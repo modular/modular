@@ -583,7 +583,7 @@ def test_sublayout():
     )
 
 
-# CEHCK-LABEL: test_crd2idx
+# CHECK-LABEL: test_crd2idx
 def test_crd2idx():
     print("== test_crd2idx")
     alias l_4x4_row_major = Layout.row_major(4, 4)
@@ -608,7 +608,7 @@ def test_crd2idx():
         print(i, l_4x4_row_major.idx2crd(i), l_4x4_col_major.idx2crd(i))
 
 
-# CEHCK-LABEL: test_expand_modes_alike
+# CHECK-LABEL: test_expand_modes_alike
 def test_expand_modes_alike():
     print("== test_expand_modes_alike")
     alias layout_0 = Layout(

@@ -44,6 +44,7 @@ class RMSNormV1(Layer):
     def __call__(self, x: TensorValue) -> TensorValue:
         return ops.custom(
             "rms_norm",
+            x.device,
             [
                 x,
                 TensorValue(self.weight).cast(x.dtype),
@@ -92,6 +93,7 @@ class RMSNorm(Module):
 
         return ops.custom(
             "rms_norm",
+            x.device,
             [
                 x,
                 weight,
@@ -110,8 +112,8 @@ class DistributedRMSNorm(RMSNorm):
         super().__init__(*args, **kwargs)
         self.num_devices = len(devices)
 
-        self.weight.set_sharding_strategy(
-            ShardingStrategy.replicate(self.num_devices)
+        self.weight.sharding_strategy = ShardingStrategy.replicate(
+            self.num_devices
         )
         # Create a separate RMS layer for each device.
         self.rms_norms = []

@@ -218,14 +218,14 @@ class DistributedMoE(MoE):
             row_size = int(weight.shape[0]) // self.num_devices
             return weight[i * row_size : (i + 1) * row_size, :]
 
-        self.shared_expert_gate_proj.set_sharding(
+        self.shared_expert_gate_proj.sharding_strategy = (
             ShardingStrategy.rowwise(self.num_devices)
         )
-        self.shared_expert_down_proj.set_sharding(
+        self.shared_expert_down_proj.sharding_strategy = (
             ShardingStrategy.columnwise(self.num_devices)
         )
-        self.shared_expert_up_proj.set_sharding(
-            ShardingStrategy.rowwise(self.num_devices)
+        self.shared_expert_up_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.num_devices
         )
 
         # Sharding strategies for the routed experts' weights. The key differences are:
@@ -252,15 +252,17 @@ class DistributedMoE(MoE):
             ]
             return ops.concat((sharded_gate_proj, sharded_up_proj), axis=2)
 
-        self.down_proj.set_sharding_strategy(
-            ShardingStrategy(self.num_devices, down_sharding_strategy)
+        self.down_proj.sharding_strategy = ShardingStrategy(
+            self.num_devices, down_sharding_strategy
         )
-        self.gate_up_proj.set_sharding_strategy(
-            ShardingStrategy(self.num_devices, gate_up_sharding_strategy)
+        self.gate_up_proj.sharding_strategy = ShardingStrategy(
+            self.num_devices, gate_up_sharding_strategy
         )
 
         # we clone the router weights for each device
-        self.router.set_sharding(ShardingStrategy.replicate(self.num_devices))
+        self.router.sharding_strategy = ShardingStrategy.replicate(
+            self.num_devices
+        )
 
         # Create a separate MoE layer for each device.
         kwargs = kwargs.copy()

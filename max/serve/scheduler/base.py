@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Union
 
-from max.pipelines.core import InputContext
+from max.pipelines.core import TextAndVisionContext, TextContext
 
 
 class Scheduler(ABC):
@@ -69,7 +70,7 @@ class PrefillRequest:
     """
 
     id: str
-    context: InputContext
+    context: Union[TextContext, TextAndVisionContext]
     transfer_engine_name: str
     block_ids: list[int]
 
@@ -87,4 +88,4 @@ class PrefillResponse:
     """
 
     id: str
-    context: InputContext
+    context: Union[TextContext, TextAndVisionContext]

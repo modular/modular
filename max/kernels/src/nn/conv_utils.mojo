@@ -665,7 +665,7 @@ fn get_micro_kernel_shape[
                 # There are in total 16 named simd registers, the viable micro kernels
                 # are (6, 2) and (4, 3).
 
-                # The heuristic searchs the micro kernel shape leading to the
+                # The heuristic searches the micro kernel shape leading to the
                 # least remainder. The following values will be overwritten since
                 # the residual is at most 2 * WO * F.
                 var min_num_residual = 3 * WO_val * F_val
@@ -760,7 +760,7 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
 fn get_conv_num_partitions[
     micro_kernel_w: Int, micro_kernel_f: Int
 ](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
-    """Partition the worload in (batch, C, F, HOWO) dimensions.
+    """Partition the workload in (batch, C, F, HOWO) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
     """

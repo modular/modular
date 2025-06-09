@@ -1004,7 +1004,7 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
                 coalesce(layout[0], False).stride,
             )
 
-        # Coalesce each mode and concat the results to perserve rank.
+        # Coalesce each mode and concat the results to preserve rank.
         var shapes = IntTuple()
         var strides = IntTuple()
         for mode in layout:

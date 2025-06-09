@@ -760,7 +760,7 @@ struct MMASmemDescriptor:
       53-60   |   8  | fixed, 0
       61-63   |   3  | Swizzle mode
 
-    - Start address, LBO, SBO ingnores 4 LSBs.
+    - Start address, LBO, SBO ignores 4 LSBs.
 
     See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tcgen05-shared-memory-desc-layout
 

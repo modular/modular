@@ -30,6 +30,7 @@ from typing import (
 )
 
 import numpy as np
+import numpy.typing as npt
 import torch
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
@@ -759,22 +760,73 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )
 
     @traced
+    def _build_min_tokens_masks(
+        self,
+        batch: list[T],
+        num_steps: int,
+    ) -> list[Tensor] | None:
+        """Build a mask of the min tokens for the batch."""
+        if not self._pipeline_config.sampling_config.enable_min_tokens:
+            for context in batch:
+                if context.min_tokens > 0:
+                    logger.warning(
+                        "min_tokens is provided in the request, but the model was not configured with enable_min_tokens=True, ignoring"
+                    )
+            return None
+
+        min_tokens_masks: list[npt.NDArray[np.int32]] = []
+        min_tokens_masks = batch[0].get_min_token_logit_mask(num_steps)
+
+        for bs in range(1, len(batch)):
+            new_min_tokens_masks = batch[bs].get_min_token_logit_mask(num_steps)
+            for i in range(num_steps):
+                new_min_tokens_masks[i][:, 0] += bs
+                min_tokens_masks[i] = np.concatenate(
+                    (min_tokens_masks[i], new_min_tokens_masks[i])
+                )
+
+        min_tokens_masks_max = [
+            Tensor.from_dlpack(mask).to(self._devices[0])
+            for mask in min_tokens_masks
+        ]
+        return min_tokens_masks_max
+
+    @traced
     def sample_logits(
         self,
         logits: Tensor,
         prev_tokens: Tensor,
+        top_k: Tensor,
+        max_k: Tensor,
+        temperature: Tensor,
+        top_p: Tensor,
+        seed: Tensor,
         *,
         logit_offsets: Optional[Tensor] = None,
         bitmask: Optional[Tensor] = None,
         frequency_data: Optional[Sequence[FrequencyData]] = None,
+        min_tokens_mask: Optional[Tensor] = None,
     ) -> tuple[Tensor, Tensor]:
         base_inputs = [logits, prev_tokens]
         opt_inputs = [logit_offsets, bitmask]
+
+        base_inputs = [
+            logits,
+            prev_tokens,
+            top_k,
+            max_k,
+            temperature,
+            top_p,
+            seed,
+        ]
 
         # Add frequency data if provided
         if frequency_data:
             for freq_data in frequency_data:
                 opt_inputs.extend([freq_data.data, freq_data.offsets])
+
+        if min_tokens_mask:
+            opt_inputs.append(min_tokens_mask)
 
         graph_inputs = base_inputs + [
             tensor for tensor in opt_inputs if tensor is not None
@@ -819,6 +871,36 @@ class TextGenerationPipeline(TokenGenerator[T]):
             device=self._devices[0],
         )
 
+        temperature = Tensor.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.temperature
+                    for context in context_batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(self._devices[0])
+        top_k_np = np.array(
+            [context.sampling_params.top_k for context in context_batch],
+            dtype=np.int64,
+        )
+        top_k = Tensor.from_numpy(top_k_np).to(self._devices[0])
+        max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
+        max_k = Tensor.from_numpy(max_k_np)
+
+        top_p = Tensor.from_numpy(
+            np.array(
+                [context.sampling_params.top_p for context in context_batch],
+                dtype=np.float32,
+            )
+        ).to(self._devices[0])
+        seed = Tensor.from_numpy(
+            np.array(
+                [context.sampling_params.seed for context in context_batch],
+                dtype=np.uint64,
+            )
+        ).to(self._devices[0])
+
         if self._pipeline_config.sampling_config.do_penalties:
             frequency_data = []
 
@@ -840,6 +922,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 )
         else:
             frequency_data = None
+
+        min_tokens_masks = self._build_min_tokens_masks(
+            context_batch, num_steps
+        )
 
         curr_step_inputs = model_inputs
         batch_log_probabilities = []
@@ -869,9 +955,17 @@ class TextGenerationPipeline(TokenGenerator[T]):
             new_tokens, new_generated_tokens = self.sample_logits(
                 model_outputs.logits,
                 generated_tokens,
+                top_k,
+                max_k,
+                temperature,
+                top_p,
+                seed,
                 logit_offsets=model_outputs.logit_offsets,
                 bitmask=bitmask,
                 frequency_data=frequency_data,
+                min_tokens_mask=min_tokens_masks[i]
+                if min_tokens_masks
+                else None,
             )
 
             assert isinstance(new_tokens, Tensor)

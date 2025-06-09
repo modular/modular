@@ -191,7 +191,7 @@ fn _supported_mma_shape[
 
 
 # Core matrix dimensions
-# Each core matix has 8 rows and 16 bytes per row.
+# Each core matrix has 8 rows and 16 bytes per row.
 alias _CM_NUM_ROWS = 8
 alias _CM_ROW_BYTES = 16
 alias _CM_ROW_BITS = 128
@@ -541,7 +541,7 @@ fn _wgmma_descriptor[
             + String(layout),
         ]()
 
-        # Ingore 4 LSB.
+        # Ignore 4 LSB.
         alias SBO = (stride01 * sizeof[type]()) >> 4
         alias LBO = (stride11 * sizeof[type]()) >> 4
 

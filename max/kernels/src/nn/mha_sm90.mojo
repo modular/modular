@@ -1197,30 +1197,19 @@ fn _apply_mask[
                         elif mask_t.apply_log2e_after_mask:
                             p *= log2e
 
-                        @parameter
-                        if masked:
-                            var bound: IndexList[2, element_type = DType.uint32]
+                        var bound: IndexList[2, element_type = DType.uint32]
 
-                            @parameter
-                            if decoding:
-                                bound = IndexList[
-                                    2, element_type = DType.uint32
-                                ](
-                                    Int(position.num_keys),
-                                    Int(
-                                        min(
-                                            BN + kv_tile_start_row,
-                                            position.num_keys,
-                                        )
-                                    ),
-                                )
-                            else:
-                                bound = IndexList[
-                                    2, element_type = DType.uint32
-                                ](
-                                    Int(position.seq_len),
-                                    Int(position.num_keys),
-                                )
+                        @parameter
+                        if decoding:
+                            bound = IndexList[2, element_type = DType.uint32](
+                                Int(position.num_keys),
+                                Int(
+                                    min(
+                                        BN + kv_tile_start_row,
+                                        position.num_keys,
+                                    )
+                                ),
+                            )
                             p = _kernel_mask(
                                 IndexList[2, element_type = DType.uint32](
                                     Int(score_row), Int(score_col)
@@ -1228,6 +1217,21 @@ fn _apply_mask[
                                 bound,
                                 p,
                             )
+                        else:
+                            if BN + kv_tile_start_row > position.num_keys:
+                                bound = IndexList[
+                                    2, element_type = DType.uint32
+                                ](
+                                    Int(position.seq_len),
+                                    Int(position.num_keys),
+                                )
+                                p = _kernel_mask(
+                                    IndexList[2, element_type = DType.uint32](
+                                        Int(score_row), Int(score_col)
+                                    ),
+                                    bound,
+                                    p,
+                                )
                         p_reg_tile._set[idx=idx](p)
 
     @parameter
@@ -1284,7 +1288,7 @@ fn _mha_sm90[
     1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
       will need a separate reduction kernel at the end.
 
-    2 Frist bmm becomes gemv and second bmm becomes gevm.
+    2 First bmm becomes gemv and second bmm becomes gevm.
       TODO: use more optimized kernels for them
 
     """

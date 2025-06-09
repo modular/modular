@@ -2053,7 +2053,7 @@ fn _flare_mla_decode_kv_cache_ragged[
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
@@ -2212,7 +2212,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
         cache_offsets: The start position of each K entry in the PagedKVCacheCollection.
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).

@@ -50,11 +50,9 @@ Note that the following features from Python's `str.format()` are
 - Accessing an indexed value from the argument (for example, `"{1[0]}"`).
 - Format specifiers for controlling output format (width, precision, and so on).
 
-Example:
+Examples:
 
 ```mojo
-from collections.string import String
-
 # Basic formatting
 var s1 = String("Hello {0}!").format("World")  # Hello World!
 
@@ -90,7 +88,7 @@ from utils import Variant
 # NOTE(#3765): an interesting idea would be to allow custom start and end
 # characters for formatting (passed as parameters to Formatter), this would be
 # useful for people developing custom templating engines as it would allow
-# detemining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
+# determining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
@@ -219,7 +217,7 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
             )
 
         var auto_arg_index = 0
-        for ref e in entries:
+        for e in entries:
             debug_assert(offset < fmt_len, "offset >= fmt_src.byte_length()")
             res += _build_slice(ptr, offset, e.first_curly)
             e._format_entry[len_pos_args](res, args, auto_arg_index)

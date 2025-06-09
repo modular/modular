@@ -133,6 +133,7 @@ class FetchContinuousBatchingKVCacheCollection:
         return ContinuousBatchingKVCacheCollection(
             ops.custom(
                 "mo.kv_collection_ctor.continuous_batching",
+                device=blocks.device,
                 values=[
                     blocks,
                     cache_lengths,

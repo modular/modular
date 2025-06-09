@@ -46,11 +46,7 @@ fn test_os_query() raises:
 
 
 def test_os_version():
-    var major = 0
-    var minor = 0
-    var patch = 0
-
-    major, minor, patch = _macos_version()
+    var major, minor, patch = _macos_version()
 
     assert_true(major >= 12)
     assert_true(minor >= 0)

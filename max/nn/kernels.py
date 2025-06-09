@@ -15,8 +15,6 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from dataclasses import dataclass
-from enum import Enum
 from typing import Optional
 
 import numpy as np
@@ -34,12 +32,41 @@ from max.graph import (
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 
+from .attention.mask_config import (
+    AttentionMaskVariant,
+    MHAMaskConfig,
+    MHAMaskVariant,
+    PositionalEncodingVariant,
+)
 from .kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheCollection,
 )
+
+_MHA_MASK_CONFIG_DICT = {
+    MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.CAUSAL_ALIBI_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.ALIBI_POS,
+    ),
+    MHAMaskVariant.NULL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.NULL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: MHAMaskConfig(
+        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
+        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    ),
+}
 
 
 def fused_qkv_ragged_matmul(
@@ -109,6 +136,7 @@ def fused_qkv_ragged_matmul(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=values,
         out_types=[
             TensorType(
@@ -186,6 +214,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -277,6 +306,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     return ops.inplace_custom(
         name=f"mo.unfused_qkv_matmul.ragged.{cache_strategy_str}.gguf_quantized",
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -347,7 +377,7 @@ def fused_qkv_ragged_matmul_quantized(
     # share the same scale. If `has_zp` is `True`, there is also a group-wise zero
     # point that need to be subtracted from the quantized weights.
     # Since the new extensibility API doesn't currently support `bool` type parameters,
-    # we pass `has_zp` as an interger (`has_zp_int`).
+    # we pass `has_zp` as an integer (`has_zp_int`).
     # For GPTQ, `has_zp_int` will always be 0.
     parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
@@ -360,6 +390,7 @@ def fused_qkv_ragged_matmul_quantized(
         perm_idx = perm_idx.to(input.type.device or DeviceRef.CPU())
         wqkv = ops.custom(
             "GPTQ_gpu_repack_b4_g128_desc_act",
+            wqkv.device,
             list((wqkv, perm_idx)),
             out_types=[
                 TensorType(
@@ -372,6 +403,7 @@ def fused_qkv_ragged_matmul_quantized(
     else:
         wqkv = ops.custom(
             "GPTQ_gpu_repack_b4_g128",
+            wqkv.device,
             list((wqkv,)),
             out_types=[
                 TensorType(
@@ -399,6 +431,7 @@ def fused_qkv_ragged_matmul_quantized(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=args,
         out_types=[
             TensorType(
@@ -452,6 +485,7 @@ def fused_qkv_matmul(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[input, wqkv, kv_collection, layer_idx],
         out_types=[
             TensorType(
@@ -520,6 +554,7 @@ def matmul_kv_cache_ragged(
 
     ops.inplace_custom(
         name=op_name,
+        device=hidden_states.device,
         values=[
             hidden_states,
             input_row_offsets,
@@ -584,6 +619,7 @@ def matmul_k_cache_ragged(
 
     ops.inplace_custom(
         name=op_name,
+        device=hidden_states.device,
         values=[
             hidden_states,
             input_row_offsets,
@@ -655,6 +691,7 @@ def fused_qk_ragged_rope(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[input, input_row_offsets, kv_collection, freqs_cis, layer_idx],
         out_types=[
             TensorType(
@@ -711,6 +748,7 @@ def fused_qk_rope(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[input, kv_collection, freqs_cis_2d, layer_idx],
         out_types=[
             TensorType(
@@ -766,6 +804,7 @@ def flash_attention(
     }
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             kv_collection,
@@ -832,6 +871,7 @@ def flash_attention_with_causal_mask(
     }
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             kv_collection,
@@ -849,116 +889,30 @@ def flash_attention_with_causal_mask(
     )[0].tensor
 
 
-@dataclass
-class MHAMaskConfig:
-    attention_mask_variant: AttentionMaskVariant
-    positional_encoding_variant: PositionalEncodingVariant
-
-
-class AttentionMaskVariant(str, Enum):
-    NULL_MASK = "null"
-    CAUSAL_MASK = "causal"
-    TENSOR_MASK = "tensor_mask"
-    CHUNKED_CAUSAL_MASK = "chunked_causal"
-    SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal"
-
-
-class PositionalEncodingVariant(str, Enum):
-    NO_POS = "no_pos"
-    ALIBI_POS = "alibi_pos"
-
-
-class MHAMaskVariant(str, Enum):
-    CAUSAL_MASK = 0
-    CAUSAL_ALIBI_MASK = 1
-    NULL_MASK = 2
-    CHUNKED_CAUSAL_MASK = 3
-    SLIDING_WINDOW_CAUSAL_MASK = 4
-
-
-_MHA_MASK_CONFIG_DICT = {
-    MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.CAUSAL_ALIBI_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.ALIBI_POS,
-    ),
-    MHAMaskVariant.NULL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.NULL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-}
-
-
-def causal_flash_attention_gpu(
-    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
-) -> TensorValue:
-    """Computes causal flash attention using GPU-optimized kernel.
-    Args:
-        q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
-        k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
-        v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
-        scale: Scaling factor for attention scores
-    """
-    if q.dtype != k.dtype or q.dtype != v.dtype:
-        msg = (
-            "q, k, v must have matching dtypes. Got "
-            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
-        )
-        raise ValueError(msg)
-
-    expected_rank = 4
-    for name, tensor in [("q", q), ("k", k), ("v", v)]:
-        if tensor.rank != expected_rank:
-            msg = f"{name} must be rank {expected_rank}, got {tensor.rank}"
-            raise ValueError(msg)
-
-    # Validate head dimension matches across all inputs
-    head_dim = q.shape[-1]
-    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
-        msg = (
-            "All inputs must have same head_dim. Got "
-            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
-        )
-        raise ValueError(msg)
-
-    return ops.custom(
-        "causal_flash_attention_gpu",
-        values=[
-            q,
-            k,
-            v,
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
-        out_types=[
-            TensorType(
-                dtype=q.dtype,
-                shape=q.shape,
-                device=q.device,
-            )
-        ],
-    )[0].tensor
-
-
-def null_mask_flash_attention_gpu(
-    q: TensorValue, k: TensorValue, v: TensorValue, scale: float
+def flash_attention_gpu(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    local_window_size: int = -1,
+    valid_length: Optional[TensorValue] = None,
 ) -> TensorValue:
     """Computes flash attention using GPU-optimized kernel.
+
     Args:
         q: Query tensor of shape [batch, seq_len, num_heads, head_dim]
         k: Key tensor of shape [batch, seq_len, num_heads, head_dim]
         v: Value tensor of shape [batch, seq_len, num_heads, head_dim]
+        mask_variant: The mask variant to use for attention
         scale: Scaling factor for attention scores
+        local_window_size: Local window size for sliding window attention
+        valid_length: Optional tensor of shape [batch] with dtype uint32.
+            When provided, uses the padded kernel variant that respects
+            the valid sequence lengths for each batch element.
+
+    Returns:
+        Output tensor of shape [batch, seq_len, num_heads, head_dim]
     """
     if q.dtype != k.dtype or q.dtype != v.dtype:
         msg = (
@@ -982,14 +936,45 @@ def null_mask_flash_attention_gpu(
         )
         raise ValueError(msg)
 
+    # Validate valid_length if provided
+    if valid_length is not None:
+        if valid_length.dtype != DType.uint32:
+            msg = (
+                f"valid_length must have dtype uint32, got {valid_length.dtype}"
+            )
+            raise ValueError(msg)
+
+        if valid_length.rank != 1:
+            msg = f"valid_length must be rank 1, got {valid_length.rank}"
+            raise ValueError(msg)
+
+        if valid_length.shape[0] != q.shape[0]:
+            msg = (
+                f"valid_length batch size ({valid_length.shape[0]}) must match "
+                f"q batch size ({q.shape[0]})"
+            )
+            raise ValueError(msg)
+
+    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters: dict[str, int | str | DType] = {}
+    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
+    parameters["score_mod_str"] = (
+        mha_mask_config.positional_encoding_variant.value
+    )
+    parameters["local_window_size"] = local_window_size
+
+    op_name = "mo.mha.no_cache"
+    values = [q, k, v]
+    if valid_length is not None:
+        op_name = "mo.mha.padded.no_cache"
+        values.append(valid_length)
+    values.append(
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU())
+    )
+
     return ops.custom(
-        "no_mask_flash_attention_gpu",
-        values=[
-            q,
-            k,
-            v,
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
+        op_name,
+        values=values,
         out_types=[
             TensorType(
                 dtype=q.dtype,
@@ -997,6 +982,8 @@ def null_mask_flash_attention_gpu(
                 device=q.device,
             )
         ],
+        parameters=parameters,
+        device=q.device,
     )[0].tensor
 
 
@@ -1070,6 +1057,7 @@ def flash_attention_ragged(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -1148,6 +1136,7 @@ def flare_mla_decode_ragged(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -1275,6 +1264,7 @@ def flare_mla_prefill_ragged(
 
     results = ops.inplace_custom(
         op_name,
+        device=input.device,
         values=input_values,
         out_types=[
             TensorType(
@@ -1348,6 +1338,7 @@ def flare_mla_prefill_plan(
 
     results = ops.inplace_custom(
         "mo.mla.prefill.ragged.plan",
+        device=input_row_offsets.device,
         values=[
             input_row_offsets,
             kv_collection,
@@ -1421,6 +1412,7 @@ def flare_mla_decompress_k_cache(
 
     results = ops.inplace_custom(
         "mo.mla.decompress.k.cache.ragged.paged",
+        device=buffer_row_offsets_1d.device,
         values=[
             buffer_row_offsets_1d,
             cache_offsets_1d,
@@ -1453,6 +1445,7 @@ def kv_cache_get_max_seq_len(
     """This kernel returns the maximum sequence length."""
     return ops.inplace_custom(
         "mo.kv_cache.get_max_seq_len.paged",
+        device=DeviceRef.CPU(),
         values=[kv_collection],
         out_types=[
             TensorType(
@@ -1537,6 +1530,7 @@ def cross_attention_ragged(
 
     return ops.inplace_custom(
         op_name,
+        device=input.device,
         values=[
             input,
             input_row_offsets,
@@ -1556,7 +1550,6 @@ def cross_attention_ragged(
             )
         ],
         parameters=parameters,
-        device=input.device,
     )[0].tensor
 
 
@@ -1601,6 +1594,7 @@ def swish_glu(
 
     return ops.custom(
         "swishGLU",
+        device=a.device,
         values=[a, b0, b1],
         out_types=[
             TensorType(
@@ -1675,6 +1669,7 @@ def rms_norm_key_cache(
 
     ops.inplace_custom(
         op_name,
+        device=input_row_offsets.device,
         values=[
             kv_collection,
             gamma,
@@ -1712,6 +1707,7 @@ def moe_create_indices(
 
     results = ops.custom(
         "mo.moe.create.indices",
+        device=topk_ids.device,
         values=[
             topk_ids,
         ],
@@ -1790,6 +1786,7 @@ def grouped_matmul_ragged(
 
     output = ops.custom(
         "mo.grouped.matmul.ragged",
+        device=hidden_states.device,
         values=[
             hidden_states,
             weight,
@@ -1833,6 +1830,7 @@ def quantize_static_scaled_float8(
 
     return ops.custom(
         "mo.quantize_static_scaled_float8",
+        device=x.device,
         values=[x, scale.reshape([])],
         parameters={"scale_is_inverted": scale_is_inverted},
         out_types=[
@@ -1881,6 +1879,7 @@ def quantize_dynamic_scaled_float8(
 
     result = ops.custom(
         "mo.quantize_dynamic_scaled_float8",
+        device=input.device,
         values=[
             input,
             ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
@@ -1951,6 +1950,7 @@ def dynamic_scaled_matmul(
 
     result = ops.custom(
         "mo.matmul_dynamic_scaled_fp8",
+        device=a.device,
         values=[a, b, a_scales, b_scales],
         out_types=[
             TensorType(
@@ -1959,7 +1959,6 @@ def dynamic_scaled_matmul(
                 device=a.device,
             )
         ],
-        device=a.device,
     )[0].tensor
 
     return result
@@ -2009,6 +2008,7 @@ def matmul_static_scaled_float8(
 
     return ops.custom(
         "mo.matmul_static_scaled_float8",
+        device=input.device,
         values=[
             input,
             weight,
@@ -2076,6 +2076,7 @@ def merge_ragged_tensors(
 
     results = ops.custom(
         "mo.merge_ragged_tensors",
+        device=a.device,
         values=[a, a_row_offsets, b, b_row_offsets],
         out_types=[
             TensorType(
@@ -2138,6 +2139,7 @@ def apply_penalties_to_logits(
 
     ops.inplace_custom(
         "sampler.apply_penalties",
+        device=logits_buffer.device,
         values=[
             logits_buffer,
             frequency_data,
@@ -2158,7 +2160,6 @@ def apply_penalties_to_logits(
                 device=DeviceRef.CPU(),
             ),
         ],
-        device=logits_buffer.device,
     )
 
 
@@ -2190,12 +2191,12 @@ def update_frequency_data(
 
     ops.inplace_custom(
         "sampler.update_frequency_data",
+        device=frequency_data.device,
         values=[
             frequency_data,
             frequency_offsets,
             tokens,
         ],
-        device=tokens.device,
     )
 
 
@@ -2220,30 +2221,34 @@ def scatter_set_constant(
 
     ops.inplace_custom(
         "mo.scatter_set_constant",
+        device=data.device,
         values=[
             data,
             indices,
             ops.constant(fill_val, data.dtype, device=DeviceRef.CPU()),
         ],
-        device=data.device,
     )
 
 
 def topk_fused_sampling(
     logits: TensorValue,
-    top_k: int,
-    temperature: float,
+    top_k: TensorValueLike,
     *,
-    top_p: float = 1.0,
-    seed: int = 0,
+    temperature: TensorValueLike = 1.0,
+    max_k: Optional[TensorValueLike] = None,
+    top_p: TensorValueLike = 1.0,
+    seed: TensorValueLike = 0,
 ) -> TensorValue:
     """Performs top-k sampling with temperature scaling.
 
     Args:
         logits: Input logits tensor of shape [batch_size, vocab_size].
-        top_k: Number of top tokens to consider for sampling.
+        top_k: Number of top tokens to consider for sampling. Can be a scalar
+            (which will be expanded to batch_size) or a tensor of shape [batch_size].
         temperature: Temperature for scaling logits before sampling.
-        seed: Seed for the random number generator.
+        max_k: Maximum value of k across the batch. Required when top_k is a tensor.
+        top_p: Top-p (nucleus) sampling threshold. Can be a scalar or tensor.
+        seed: Seed for the random number generator. Can be a scalar or tensor.
     Returns:
         Sampled tokens tensor of shape [batch_size, 1].
 
@@ -2251,29 +2256,80 @@ def topk_fused_sampling(
         ValueError: If input validation fails.
     """
 
-    if top_k <= 0:
-        raise ValueError(f"expected top_k to be positive, got {top_k}")
+    batch_size = logits.shape[0]
+    device = logits.device
+    max_k_tensor = max_k
 
-    if temperature <= 0:
-        raise ValueError(
-            f"expected temperature to be positive, got {temperature}"
+    if isinstance(top_k, int):
+        max_k_tensor = ops.constant(
+            top_k, dtype=DType.int64, device=DeviceRef.CPU()
         )
+        top_k_tensor = ops.broadcast_to(
+            ops.constant(top_k, dtype=DType.int64, device=device), [batch_size]
+        )
+    else:
+        top_k_tensor = TensorValue(top_k)
+        if max_k_tensor is None:
+            raise ValueError(
+                "max_k must be explicitly set when top_k is a tensor"
+            )
+        if top_k_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"top_k tensor shape {top_k_tensor.shape} does not match batch_size {batch_size}"
+            )
+        max_k_tensor = TensorValue(max_k_tensor)
 
-    if top_p <= 0 or top_p > 1:
-        raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
+    if isinstance(temperature, float):
+        temperature_tensor = ops.broadcast_to(
+            ops.constant(temperature, dtype=DType.float32, device=device),
+            [batch_size],
+        )
+    else:
+        temperature_tensor = TensorValue(temperature)
+        if temperature_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"temperature tensor shape {temperature_tensor.shape} does not match batch_size {batch_size}"
+            )
+
+    # Handle top_p parameter - can be scalar or tensor
+    if isinstance(top_p, (float, int)):
+        if top_p <= 0 or top_p > 1:
+            raise ValueError(f"expected top_p to be in (0, 1], got {top_p}")
+        top_p_tensor = ops.broadcast_to(
+            ops.constant(top_p, dtype=DType.float32, device=device),
+            [batch_size],
+        )
+    else:
+        top_p_tensor = TensorValue(top_p)
+        if top_p_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"top_p tensor shape {top_p_tensor.shape} does not match batch_size {batch_size}"
+            )
+
+    # Handle seed parameter - can be scalar or tensor
+    if isinstance(seed, int):
+        seed_tensor = ops.broadcast_to(
+            ops.constant(seed, dtype=DType.uint64, device=device),
+            [batch_size],
+        )
+    else:
+        seed_tensor = TensorValue(seed)
+        if seed_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"seed tensor shape {seed_tensor.shape} does not match batch_size {batch_size}"
+            )
 
     batch_shape = logits.shape[:-1]
-    device = logits.device
 
     return ops.custom(
         "sampler.fused_token_sampling",
+        device=logits.device,
         values=[
-            ops.constant(top_k, dtype=DType.int64, device=DeviceRef.CPU()),
-            ops.constant(
-                temperature, dtype=DType.float32, device=DeviceRef.CPU()
-            ),
-            ops.constant(top_p, dtype=DType.float32, device=DeviceRef.CPU()),
-            ops.constant(seed, dtype=DType.uint64, device=DeviceRef.CPU()),
+            top_k_tensor,
+            max_k_tensor,
+            temperature_tensor,
+            top_p_tensor,
+            seed_tensor,
             logits,
         ],
         out_types=[

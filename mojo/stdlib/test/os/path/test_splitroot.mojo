@@ -24,7 +24,7 @@ def _splitroot_test(
     expected_root: String,
     expected_tail: String,
 ):
-    drive, root, tail = splitroot(path)
+    var drive, root, tail = splitroot(path)
     assert_equal(drive, expected_drive)
     assert_equal(root, expected_root)
     assert_equal(tail, expected_tail)

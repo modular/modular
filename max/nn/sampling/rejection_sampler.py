@@ -26,7 +26,7 @@ class RejectionSampler(nn.Module):
         device: DeviceRef,
         top_k: int = 1,
         top_p: float = 1,
-        temperature: float = 1,
+        temperature: float = 1.0,
         seed: int = 0,
         eps: float = 1e-5,
     ):
@@ -130,6 +130,7 @@ class RejectionSampler(nn.Module):
         sampled_target_tokens = topk_fused_sampling(
             logits=ops.gather(target_logits, rejected_offsets, axis=0),
             top_k=self.top_k,
+            max_k=self.top_k,
             temperature=self.temperature,
             top_p=self.top_p,
             seed=self.seed,

@@ -22,7 +22,7 @@ fn test_no_alloca_fill():
     print("== test_no_alloca_fill")
 
     fn layout_tensor_kernel(
-        outout: LayoutTensor[
+        output: LayoutTensor[
             DType.float32,
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
             MutableAnyOrigin,
@@ -38,7 +38,7 @@ fn test_no_alloca_fill():
             .fill(0)
         )
 
-        outout.tile[4, 4](i, j).copy_from(reg_tile)
+        output.tile[4, 4](i, j).copy_from(reg_tile)
 
     # CHECK-NOT: alloca float, i64 16, align 4
     print(

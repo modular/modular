@@ -55,8 +55,11 @@ from .infer import (
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_CUDNN_CNN_INFER_LIBRARY_PATHS = List[Path](
-    "libcudnn_cnn_infer.so.8",
-    "/usr/lib/x86_64-linux-gnu/libcudnn_cnn_infer.so.8",
+    "libcudnn.so",
+    "libcudnn.so.9",
+    "libcudnn.so.8",
+    "/usr/lib/x86_64-linux-gnu/libcudnn.so.9",
+    "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
 )
 
 alias CUDA_CUDNN_CNN_INFER_LIBRARY = _Global[

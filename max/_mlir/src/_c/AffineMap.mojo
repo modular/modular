@@ -62,7 +62,7 @@ fn mlirAffineMapGetContext(affine_map: MlirAffineMap) -> MlirContext:
     return MLIR_func["mlirAffineMapGetContext", MlirContext](affine_map)
 
 
-# FIXEME(codegen): static function mlirAffineMapIsNull
+# FIXME(codegen): static function mlirAffineMapIsNull
 
 
 fn mlirAffineMapEqual(a1: MlirAffineMap, a2: MlirAffineMap) -> Bool:

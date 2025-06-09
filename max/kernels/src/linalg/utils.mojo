@@ -333,7 +333,7 @@ fn get_matmul_prefetch_b_distance_k() -> Int:
 
 
 # Min task size. This is copied from MLAS.
-# TODO: Replase this magic number with a heuristic based on arch.
+# TODO: Replace this magic number with a heuristic based on arch.
 fn get_min_task_size() -> Int:
     return 65536
 
@@ -743,7 +743,7 @@ fn apply_epilogue[
             for j in range(num_copies):
                 alias src_idx = src_offset + src.element_layout(j)
                 alias dst_idx = dst_offset + dst_element_layout(j)
-                # C matrix dimension. For 2D simd tile, element_layout perserves
+                # C matrix dimension. For 2D simd tile, element_layout preserves
                 # the matrix dimension, layout doesn't.
                 alias N = dst_element_layout.stride[0].value()
 

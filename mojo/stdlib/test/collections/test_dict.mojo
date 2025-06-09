@@ -45,7 +45,7 @@ def test_dict_fromkeys():
 
     assert_equal(len(dict), len(expected_dict))
 
-    for ref k_v in expected_dict.items():
+    for k_v in expected_dict.items():
         var k = k_v.key
         var v = k_v.value
         assert_true(k in dict)
@@ -63,7 +63,7 @@ def test_dict_fromkeys_optional():
 
     assert_equal(len(dict), len(expected_dict))
 
-    for ref k_v in expected_dict.items():
+    for k_v in expected_dict.items():
         var k = k_v.key
         var v = k_v.value
         assert_true(k in dict)
@@ -488,7 +488,7 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
     assert_equal(kwargs["dessert"], 9)
 
     var keys = String()
-    for ref key in kwargs.keys():
+    for key in kwargs.keys():
         keys += key
     assert_equal(keys, "fruitdessert")
 
@@ -511,7 +511,7 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
 
     keys = String()
     sum = 0
-    for ref entry in kwargs.items():
+    for entry in kwargs.items():
         keys += entry.key
         sum += entry.value
     assert_equal(keys, "dessertsalad")
@@ -634,7 +634,7 @@ def is_equal[
 ](a: Dict[K, V], b: Dict[K, V]) -> Bool:
     if len(a) != len(b):
         return False
-    for ref k in a.keys():
+    for k in a.keys():
         if a[k] != b[k]:
             return False
     return True

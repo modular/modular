@@ -565,9 +565,6 @@ class AudioGenerationConfig(PipelineConfig):
     audio_decoder: str = ""
     """The name of the audio decoder model architecture."""
 
-    audio_prompt_speakers: str = ""
-    """The path to the audio prompt speakers file."""
-
     audio_decoder_weights: str = ""
     """The path to the audio decoder weights file."""
 
@@ -612,7 +609,6 @@ class AudioGenerationConfig(PipelineConfig):
     def __init__(
         self,
         audio_decoder: str,
-        audio_prompt_speakers: str = "",
         audio_decoder_weights: str = "",
         block_sizes: list[int] | None = None,
         buffer: int = 0,
@@ -633,7 +629,6 @@ class AudioGenerationConfig(PipelineConfig):
             )
 
         self.audio_decoder = audio_decoder
-        self.audio_prompt_speakers = audio_prompt_speakers
         self.audio_decoder_weights = audio_decoder_weights
         self.block_sizes = block_sizes
         self.buffer = buffer
@@ -644,6 +639,14 @@ class AudioGenerationConfig(PipelineConfig):
         )
         self._run_model_test_mode = run_model_test_mode
 
+        minimum_max_num_steps = 1024
+        if self.max_num_steps < minimum_max_num_steps:
+            logger.warning(
+                f"max-num-steps of {self.max_num_steps} is less than {minimum_max_num_steps},"
+                f" which is not recommended for audio generation. Overriding to {minimum_max_num_steps}."
+            )
+            self.max_num_steps = minimum_max_num_steps
+
     @classmethod
     def from_flags(
         cls, audio_flags: dict[str, str], **config_flags: Any
@@ -653,7 +656,6 @@ class AudioGenerationConfig(PipelineConfig):
             raise ValueError(
                 "When running the audio generation task, --audio-decoder must be specified"
             )
-        audio_prompt_speakers = audio_flags.pop("audio_prompt_speakers", "")
         audio_decoder_weights = audio_flags.pop("audio_decoder_weights", "")
 
         # Configuration for audio generation streaming.
@@ -690,7 +692,6 @@ class AudioGenerationConfig(PipelineConfig):
 
         return cls(
             audio_decoder=audio_decoder,
-            audio_prompt_speakers=audio_prompt_speakers,
             audio_decoder_weights=audio_decoder_weights,
             block_sizes=block_sizes,
             buffer=buffer,

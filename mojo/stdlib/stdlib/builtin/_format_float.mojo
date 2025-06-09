@@ -30,7 +30,6 @@ from sys.info import sizeof
 from builtin.io import _printf
 from memory import Span, bitcast
 
-from utils import StaticTuple
 from utils.numerics import FPUtils, isinf, isnan
 
 
@@ -73,7 +72,7 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias cache_bits = 64 if Self.CarrierDType == DType.uint32 else 128
     alias min_k = -31 if Self.CarrierDType == DType.uint32 else -292
     alias max_k = 46 if Self.CarrierDType == DType.uint32 else 326
-    alias divide_magic_number = StaticTuple[UInt32, 2](6554, 656)
+    alias divide_magic_number = InlineArray[UInt32, 2](6554, 656)
     alias n_max = (
         (Scalar[Self.CarrierDType](2) << Self.sig_bits) + 1
     ) // 3 + 1 * 20
@@ -160,7 +159,7 @@ fn _write_float[
         # overhead here compared to snprintf.
         var orig_sig = sig
         var abs_exp = abs(exp)
-        var digits = StaticTuple[Byte, 21]()
+        var digits = InlineArray[Byte, 21](uninitialized=True)
         var idx = 0
         while sig > 0:
             digits[idx] = (sig % 10).cast[DType.uint8]()
@@ -191,7 +190,7 @@ fn _write_float[
             # Pad exponent with a 0 if less than two digits
             if exp < 10:
                 writer.write("0")
-            var exp_digits = StaticTuple[Byte, 10]()
+            var exp_digits = InlineArray[Byte, 10](uninitialized=True)
             var exp_idx = 0
             while exp > 0:
                 exp_digits[exp_idx] = exp % 10
@@ -615,7 +614,7 @@ fn _umul96_lower64(x: UInt32, y: UInt64) -> UInt64:
 fn _check_divisibility_and_divide_by_pow10[
     CarrierDType: DType, //,
     carrier_bits: Int,
-    divide_magic_number: StaticTuple[UInt32, 2],
+    divide_magic_number: InlineArray[UInt32, 2],
 ](mut n: Scalar[CarrierDType], N: Int) -> Bool:
     # Make sure the computation for max_n does not overflow.
     debug_assert(N + 1 <= _floor_log10_pow2(carrier_bits))
@@ -762,7 +761,7 @@ fn _is_left_endpoint_integer_shorter_interval[
 
 
 # fmt: off
-alias cache_f32 = StaticTuple[UInt64, 78](
+alias cache_f32 = InlineArray[UInt64, 78](
     0x81CEB32C4B43FCF5, 0xA2425FF75E14FC32,
     0xCAD2F7F5359A3B3F, 0xFD87B5F28300CA0E,
     0x9E74D1B791E07E49, 0xC612062576589DDB,
@@ -805,7 +804,7 @@ alias cache_f32 = StaticTuple[UInt64, 78](
 )
 # fmt: on
 
-alias cache_f64 = StaticTuple[_UInt128, 619](
+alias cache_f64 = InlineArray[_UInt128, 619](
     _UInt128(0xFF77B1FCBEBCDC4F, 0x25E8E89C13BB0F7B),
     _UInt128(0x9FAACF3DF73609B1, 0x77B191618C54E9AD),
     _UInt128(0xC795830D75038C1D, 0xD59DF5B9EF6A2418),
@@ -1427,7 +1426,7 @@ alias cache_f64 = StaticTuple[_UInt128, 619](
     _UInt128(0xF70867153AA2DB38, 0xB8CBEE4FC66D1EA8),
 )
 
-alias float8_e5m2_to_str = StaticTuple[StaticString, 256](
+alias float8_e5m2_to_str = InlineArray[StaticString, 256](
     "0.0",
     "1.52587890625e-05",
     "3.0517578125e-05",
@@ -1686,7 +1685,7 @@ alias float8_e5m2_to_str = StaticTuple[StaticString, 256](
     "nan",
 )
 
-alias float8_e4m3fn_to_str = StaticTuple[StaticString, 256](
+alias float8_e4m3fn_to_str = InlineArray[StaticString, 256](
     "0.0",
     "0.001953125",
     "0.00390625",
@@ -1945,7 +1944,7 @@ alias float8_e4m3fn_to_str = StaticTuple[StaticString, 256](
     "nan",
 )
 
-alias float8_e5m2fnuz_to_str = StaticTuple[StaticString, 256](
+alias float8_e5m2fnuz_to_str = InlineArray[StaticString, 256](
     "0.0",
     "7.62939453125e-06",
     "1.52587890625e-05",
@@ -2204,7 +2203,7 @@ alias float8_e5m2fnuz_to_str = StaticTuple[StaticString, 256](
     "-57344.0",
 )
 
-alias float8_e4m3fnuz_to_str = StaticTuple[StaticString, 256](
+alias float8_e4m3fnuz_to_str = InlineArray[StaticString, 256](
     "0.0",
     "0.0009765625",
     "0.001953125",

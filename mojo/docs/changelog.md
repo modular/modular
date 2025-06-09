@@ -37,11 +37,15 @@ what we publish.
   - `Mogg` directory which contains registration of kernels with the Graph
     Compiler
 
-### Language changes
+### Language Enhancements
 
 - `var` declarations in functions now support more flexible "patterns", allowing
   multiple values to be declared at once, e.g. `var a, b = 4, 5` and
   `var a, b : Int, Float64`.
+
+- Mojo now supports Python-style type patterns within function bodies without
+  needing the use of the `var` keyword, e.g.: `x = 4; y: UInt8 = 5` implicitly
+  declares `x` as type `Int`, but implicitly declares `y` with type `UInt8`.
 
 - Mojo now supports 'ref' patterns that bind a stored LValue into a named
   declaration, extending the argument convention into local function scope.
@@ -98,11 +102,10 @@ what we publish.
   standard library `List[Elt]` type.  The `ListLiteral` type has been removed
   from the standard library.
 
-- `VariadicList`, `VariadicListMem`, and `VariadicPack` moved to the new
-  [`variadics`](/mojo/stdlib/builtin/variadics/) module.
-
 - Dictionary and set literals now work and default to creating instances of the
   `Dict` and `Set` types in the collections library.
+
+### Language changes
 
 - Implicit trait conformance is deprecated. Each instance of implicit
   conformance results in a warning, but compilation still goes through. Soon it
@@ -110,40 +113,9 @@ what we publish.
   conformance should either declare conformances explicitly or, if appropriate,
   replace empty, non-load-bearing traits with trait compositions.
 
-- `for` loops in a `def` now use function-scoped variables to provide
-  Python-like behavior, e.g.
-
-  ```mojo
-  def main():
-    i = 0 # needed because Mojo doesn't know range(2) is non-empty.
-    for i in range(2):
-      print(i)
-    print(i)
-  ```
-
-  now prints 0, 1, 1.
-
-  This also means that weird things like this are errors:
-
-  ```mojo
-  def main():
-    for i in range(2): ...
-    for i in ["foo", "bar"]: ...
-  ```
-
-  Because "i" will have contradictory types in the different loops. `fn`'s
-  automatically scope variables like this, but you can tell Mojo to scope the
-  variable in a def by using the `var` keyword:
-
-  ```mojo
-  def main():
-    for var i in range(2): ...       # This i is scoped to this loop
-    for var i in ["foo", "bar"]: ... # This i is scoped to this loop
-  ```
-
-- Mojo now supports Python-style type patterns within function bodies without
-  needing the use of the `var` keyword, e.g.: `x = 4; y: UInt8 = 5` implicitly
-  declares `x` as type `Int`, but implicitly declares `y` with type `UInt8`.
+- Mojo doesn't allow the use of `out` or `mut` as an argument name any longer.
+  Previously you could use `fn x(out: Int)`, but this causes ambiguity with
+  function types. Please use names like `output` instead.
 
 - `def` arguments are no longer implicitly mutable. If you would like to have a
    locally mutable argument, declare it `owned` explicitly.
@@ -185,6 +157,26 @@ what we publish.
   Bobyrev](https://github.com/kirillbobyrev) mitigate the found issues and add
   tests to ensure correctness going forward.
 
+- `List`, `InlineArray`, `Deque`, `LinkedList`, and `SIMD` types all support
+   construction via list literal syntax:
+
+```mojo
+var list: List[Int] = [1, 2, 3]
+var vec: SIMD[DType.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+var deque: Deque[Float64] = [1, 2.5]
+var llist: LinkedList[Int] = [1, 2, 3]
+var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
+```
+
+- `Dict` and `Set` support construction via dict literal and set literal syntax,
+   respectively:
+
+```mojo
+var dict1 = {String("foo"): 1, String("bar"): 2}
+var dict2 = {1: 4, 2: 7, 3: 18}
+var set = {1, 2, 3}
+```
+
 Changes to Python-Mojo interoperability:
 
 - Python objects are now constructible with list/set/dict literal syntax, e.g.:
@@ -198,7 +190,7 @@ Changes to Python-Mojo interoperability:
 - Since virtually any operation on a `PythonObject` can raise, the
   `PythonObject` struct no longer implements the `Indexer` and `Intable` traits.
   Instead, it now conforms to `IntableRaising`, and users should convert
-  explictly to builtin types and handle exceptions as needed. In particular, the
+  explicitly to builtin types and handle exceptions as needed. In particular, the
   `PythonObject.__int__` method now returns a Python `int` instead of a mojo
   `Int`, so users must explicitly convert to a mojo `Int` if they need one (and
   must handle the exception if the conversion fails, e.g. due to overflow).
@@ -298,6 +290,9 @@ Changes to Python-Mojo interoperability:
   4608](https://github.com/modular/modular/pull/4608) by
   [@soraros](https://github.com/soraros).
 
+- `VariadicList`, `VariadicListMem`, and `VariadicPack` moved to the new
+  [`variadics`](/mojo/stdlib/builtin/variadics/) module.
+
 ### Tooling changes
 
 - Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
@@ -329,6 +324,6 @@ Changes to Python-Mojo interoperability:
 - [#4684](https://github.com/modular/modular/issues/4684) - Failure inferring
   type of initializer list from field of struct.
 - [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
-  unsigned `gt` and `le` comparisions.
+  unsigned `gt` and `le` comparisons.
 - [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
   handling `x or y` expressions with PythonObject.

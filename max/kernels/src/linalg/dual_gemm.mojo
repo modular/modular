@@ -464,7 +464,7 @@ fn multistage_dual_gemm_kernel[
     b0: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
     b1: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
 ):
-    # Hold on adding fp16 because it counld have differnet precisions than bf16.
+    # Hold on adding fp16 because it could have different precisions than bf16.
     constrained[
         a_type in (DType.float32, DType.bfloat16, DType.float16)
         and a_type == b_type,

@@ -72,7 +72,7 @@ class ProcessControl:
 
     In addition to the explicit signalling between parent & process, the
     process itself can be alive or dead. It is useful to list the possible
-    combinations of singal and process-liveness:
+    combinations of signal and process-liveness:
         alive: Is the process running?
         started: Has user code signaled that it has started?
         completed: Has user code signaled that it is completed?
@@ -80,7 +80,7 @@ class ProcessControl:
         N N Y - should never happen
         N Y N - process started, but is now dead
         N Y Y - process started, completed, and is now dead
-        Y N N - proces started, but no user code signaled anything
+        Y N N - process started, but no user code signaled anything
         Y N Y - should never happen
         Y Y N - process is actively working
         Y Y Y - process has completed, is still alive, but *ought* exit soon

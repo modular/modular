@@ -17,7 +17,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import zmq
-from max.pipelines.core import EmbeddingsGenerator, InputContext
+from max.pipelines.core import (
+    EmbeddingsGenerator,
+    TextContext,
+)
 from max.profiler import traced
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
@@ -52,7 +55,7 @@ class EmbeddingsScheduler(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        self.request_q = ZmqPullSocket[tuple[str, InputContext]](
+        self.request_q = ZmqPullSocket[tuple[str, TextContext]](
             zmq_ctx=zmq_ctx, zmq_endpoint=request_zmq_endpoint
         )
         self.response_q = ZmqPushSocket[Any](

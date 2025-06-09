@@ -24,14 +24,17 @@ from typing import Generic, Optional, TypeVar
 
 import sentinel
 import zmq
-from max.pipelines.core import InputContext
+from max.pipelines.core import (
+    InputContext,
+    msgpack_numpy_encoder,
+)
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
 ReqId = TypeVar("ReqId")
-ReqInput = TypeVar("ReqInput")
+ReqInput = TypeVar("ReqInput", bound=InputContext)
 ReqOutput = TypeVar("ReqOutput")
 
 """The sentinel used to indicate a queue is finished."""
@@ -59,14 +62,14 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.context = context
 
         # Create Queues
-        self.request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-            zmq_ctx, request_zmq_endpoint
+        self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
+            zmq_ctx, request_zmq_endpoint, serialize=msgpack_numpy_encoder()
         )
         self.response_pull_socket = ZmqPullSocket[list[dict[ReqId, ReqOutput]]](
             zmq_ctx, response_zmq_endpoint
         )
         self.cancel_push_socket = ZmqPushSocket[list[str]](
-            zmq_ctx, cancel_zmq_endpoint
+            zmq_ctx, cancel_zmq_endpoint, serialize=msgpack_numpy_encoder()
         )
 
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}

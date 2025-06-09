@@ -183,7 +183,7 @@ fn test_unary_scalar():
     print(tensor_4x4)
 
 
-# CHECK-LABLE: test_binary_same_rank
+# CHECK-LABEL: test_binary_same_rank
 fn test_binary_same_rank():
     print("== test_binary_same_rank")
     var tensor_4x5_storage = InlineArray[Float32, 4 * 5](uninitialized=True)

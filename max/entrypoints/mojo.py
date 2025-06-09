@@ -11,39 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import logging
 import os
 import subprocess
 import sys
-from pathlib import Path
 from typing import Any
+
+from ._package_root import get_package_root
 
 
 # fmt: off
 def _sdk_default_env() -> dict[str, str]:
-    # max/entrypoints/mojo.py -> max
-    pypi_root = Path(__file__).parent.parent
-    # .magic/envs/default/lib/python3.12/site-packages/max/entrypoints/mojo.py ->
-    # .magic/envs/default/
-    conda_root = Path(__file__).parent.parent.parent.parent.parent.parent
+    root = get_package_root()
 
-    # NOTE:
-    #   MAX is currently available in two formats: as a set of Conda packages,
-    #   and as a monolithic Pip wheel. This is a best-effort heuristic to guess
-    #   which way MAX was installed, because that will change where we look to
-    #   resolve the locations of the various important assets in MAX.
-    if (pypi_root / "lib" / "liborc_rt.a").exists():
-        logging.debug("Located MAX SDK assets assuming MAX PyPi package layout")
-        root = pypi_root
-    elif (conda_root / "lib" / "liborc_rt.a").exists():
-        logging.debug("Located MAX SDK assets assuming MAX Conda package layout")
-        root = conda_root
-    elif "BAZEL_WORKSPACE" in os.environ:
-        # We're running in a Modular internal Bazel test, so let Bazel handle
-        # the environment variables.
+    # Running in Bazel
+    if not root:
         return {}
-    else:
-        raise RuntimeError("Unable to locate MAX SDK library assets root directory.")
 
     bin = root / "bin"
     lib = root / "lib"
@@ -91,9 +73,9 @@ def _sdk_default_env() -> dict[str, str]:
         "MODULAR_MOJO_MAX_REPL_ENTRY_POINT": str(lib / "mojo-repl-entry-point"),
         "MODULAR_MOJO_MAX_LLD_PATH": str(bin / "lld"),
         "MODULAR_MOJO_MAX_SYSTEM_LIBS": (
-            "-lm,-lz,-lcurses"
+            "-lm"
             if sys.platform == "darwin"
-            else "-lrt,-ldl,-lpthread,-lm,-lz,-ltinfo"
+            else "-lrt,-ldl,-lpthread,-lm"
         ),
         "MODULAR_MOJO_MAX_TEST_EXECUTOR_PATH": str(lib / "mojo-test-executor"),
 

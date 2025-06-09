@@ -433,7 +433,7 @@ fn _concat_small[
     @parameter
     @always_inline
     fn concat_lambda[simd_width: Int, rank: Int](out_index: IndexList[rank]):
-        # Concating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
+        # Concatenating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
         # [:, 60, :] so when the target dim is:
         #   0 >= target_dim < 10: We are loading from first input.
         #   10 >= target_dim < 20: We are loading from second input.

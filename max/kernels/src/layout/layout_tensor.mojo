@@ -163,9 +163,7 @@ fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
     Returns:
         The number of elements in the slice for the specified dimension.
     """
-    var start: Int
-    var end: Int
-    start, end, _ = slc.indices(Int(layout.shape[dim]))
+    var start, end, _ = slc.indices(Int(layout.shape[dim]))
     return end - start
 
 
@@ -6513,7 +6511,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)
@@ -6571,7 +6569,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)
@@ -6836,8 +6834,6 @@ fn copy_local_to_dram[
             src.ptr.offset(src_idx),
             src.runtime_element_layout,
         )
-
-        alias dst_element_type = Element[dst.dtype, dst.linear_idx_type]
 
         alias element_stride = dst_fragments.element_layout.stride[1].value()
 

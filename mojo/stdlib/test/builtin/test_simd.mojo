@@ -70,6 +70,17 @@ def test_cast():
         )
 
 
+def test_list_literal_ctor():
+    var s: SIMD[DType.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+    assert_equal(s[0], 1)
+    assert_equal(s[4], 5)
+    assert_equal(s[7], 8)
+
+    var s2: SIMD[DType.bool, 2] = [True, False]
+    assert_true(s2[0])
+    assert_false(s2[1])
+
+
 def test_cast_init():
     # Basic casting preserves value within range
     assert_equal(Int8(UInt8(127)), Int8(127))
@@ -104,6 +115,15 @@ def test_cast_init():
     assert_equal(
         SIMD[DType.float64, 4](Float32(21.5)), SIMD[DType.float64, 4](21.5)
     )
+
+
+def test_init_from_index():
+    alias a = UInt.MAX
+    alias a_str = String(a)
+    assert_equal(a_str, String(UInt128(a)))
+    assert_equal(a_str, String(Int128(a)))
+    assert_equal(a_str, String(UInt256(a)))
+    assert_equal(a_str, String(Int256(a)))
 
 
 def test_simd_variadic():
@@ -1986,6 +2006,7 @@ def main():
     test_add()
     test_cast()
     test_cast_init()
+    test_list_literal_ctor()
     test_ceil()
     test_convert_simd_to_string()
     test_simd_repr()
@@ -1997,6 +2018,7 @@ def main():
     test_from_bytes_as_bytes()
     test_iadd()
     test_indexing()
+    test_init_from_index()
     test_insert()
     test_interleave()
     test_issue_1625()
@@ -2041,4 +2063,4 @@ def main():
     test_large_int_types()
     test_is_power_of_two_simd()
     test_comptime()
-    # TODO: add tests for __and__, __or__, anc comparison operators
+    # TODO: add tests for __and__, __or__, and comparison operators

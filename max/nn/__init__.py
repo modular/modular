@@ -28,7 +28,6 @@ from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv1DV1, Conv2DV1, Conv3D, Conv3DV1
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
-from .kernels import MHAMaskVariant
 from .layer import Layer, LayerList, Module
 from .linear import (
     MLP,
@@ -76,6 +75,7 @@ __all__ = [
     "AttentionWithRopeQKV",
     "AttentionWithRope",
     "RaggedAttention",
+    "clamp",
     "Conv1DV1",
     "Conv2DV1",
     "Conv3DV1",
@@ -110,7 +110,6 @@ __all__ = [
     "LinearScalingParams",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
-    "MHAMaskVariant",
     "MLPV1",
     "MLP",
     "Module",
@@ -123,4 +122,5 @@ __all__ = [
     "Signals",
     "Transformer",
     "TransformerBlock",
+    "VocabParallelEmbedding",
 ]

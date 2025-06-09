@@ -56,6 +56,7 @@ def create_mandelbrot_graph(
         # need to provide inputs as a list as well as expected output types.
         result = ops.custom(
             name="mandelbrot",
+            device=device,
             values=[
                 ops.constant(
                     min_x, dtype=DType.float32, device=DeviceRef.CPU()

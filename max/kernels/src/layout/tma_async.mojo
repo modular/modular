@@ -58,13 +58,14 @@ from gpu.sync import (
     cp_async_bulk_wait_group,
     mbarrier_arrive,
     mbarrier_arrive_expect_tx_shared,
+    mbarrier_arrive_expect_tx_relaxed,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
 from layout import IntTuple, Layout, LayoutTensor
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import _GPUAddressSpace
-
+from gpu.intrinsics import Scope
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
 
@@ -195,6 +196,24 @@ struct SharedMemBarrier(Copyable, Movable):
         """
         mbarrier_arrive_expect_tx_shared(self.unsafe_ptr(), bytes)
 
+    @always_inline
+    fn expect_bytes_relaxed(
+        ref [AddressSpace.SHARED]self, bytes: Int32
+    ) -> UInt64:
+        """Configure the barrier to expect a specific number of bytes to be transferred.
+
+        Used with TMA operations to indicate the expected size of data transfer.
+        The barrier will be satisfied when the specified number of bytes has been
+        transferred, enabling efficient coordination of memory operations.
+
+        Args:
+            bytes: Number of bytes expected to be transferred.
+
+        Returns:
+            The state.
+        """
+        return mbarrier_arrive_expect_tx_relaxed(self.unsafe_ptr(), bytes)
+
     @always_inline("nodebug")
     fn wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
@@ -222,6 +241,96 @@ struct SharedMemBarrier(Copyable, Movable):
             bra LAB_WAIT;
             DONE:
         }"""
+        inlined_assembly[asm, NoneType, constraints="r,r"](
+            Int32(Int(self.unsafe_ptr())), phase
+        )
+
+    @always_inline("nodebug")
+    fn wait_acquire[
+        scope: Scope
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+        """Acquire and wait until the barrier is satisfied.
+
+        Blocks the calling thread until the barrier is satisfied, either by
+        the expected number of threads arriving or the expected data transfer
+        completing. This method implements an efficient spin-wait mechanism
+        optimized for GPU execution.
+
+        Parameters:
+            scope: The scope of the barrier.
+
+        Args:
+            phase: The phase value to check against. Defaults to 0.
+
+        Note:
+            Minimizes thread divergence during synchronization by using
+            hardware-accelerated barrier instructions.
+        """
+        # Based on cccl
+        # https://github.com/NVIDIA/cccl/blob/ba510b38e01dac5ab9b5faad9b9b1701d60d9980/libcudacxx/include/cuda/__ptx/instructions/generated/mbarrier_try_wait_parity.h#L94
+
+        constrained[
+            scope == Scope.CLUSTER or scope == Scope.BLOCK,
+            "wait_acquire is only supported for cluster or block/CTA scope.",
+        ]()
+
+        alias asm = (
+            """{
+            .reg .pred P1;
+            LAB_WAIT:
+            mbarrier.try_wait.parity.acquire."""
+            + scope.mnemonic()
+            + """.shared::cta.b64 P1, [$0], $1;
+            @P1 bra DONE;
+            bra LAB_WAIT;
+            DONE:
+            }"""
+        )
+        inlined_assembly[asm, NoneType, constraints="r,r"](
+            Int32(Int(self.unsafe_ptr())), phase
+        )
+
+    @always_inline("nodebug")
+    fn wait_relaxed[
+        scope: Scope
+    ](ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
+        """Wait until the barrier is satisfied with relaxed ordering.
+
+        Blocks the calling thread until the barrier is satisfied, either by
+        the expected number of threads arriving or the expected data transfer
+        completing. This method implements an efficient spin-wait mechanism
+        optimized for GPU execution.
+
+        Parameters:
+            scope: The scope of the barrier.
+
+        Args:
+            phase: The phase value to check against. Defaults to 0.
+
+        Note:
+            Minimizes thread divergence during synchronization by using
+            hardware-accelerated barrier instructions.
+        """
+        # Based on cccl
+        # https://github.com/NVIDIA/cccl/blob/ba510b38e01dac5ab9b5faad9b9b1701d60d9980/libcudacxx/include/cuda/__ptx/instructions/generated/mbarrier_try_wait_parity.h#L104
+
+        constrained[
+            scope == Scope.CLUSTER or scope == Scope.BLOCK,
+            "wait_relaxed is only supported for cluster or block/CTA scope.",
+        ]()
+
+        alias asm = (
+            """{
+            .reg .pred P1;
+            LAB_WAIT:
+            mbarrier.try_wait.parity.relaxed."""
+            + scope.mnemonic()
+            + """.shared::cta.b64 P1, [$0], $1;
+            @P1 bra DONE;
+            bra LAB_WAIT;
+            DONE:
+            }"""
+        )
         inlined_assembly[asm, NoneType, constraints="r,r"](
             Int32(Int(self.unsafe_ptr())), phase
         )

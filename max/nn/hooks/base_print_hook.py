@@ -81,6 +81,8 @@ class BasePrintHook(ABC):
             for info in self._known_layers.values():
                 info.call_count = 0
 
+        self.write_keys_file()
+
     def __call__(self, layer, args, kwargs, outputs):
         """Print all TensorValues."""
         if layer not in self._known_layers:
@@ -123,6 +125,7 @@ class BasePrintHook(ABC):
                 f"Was not able to write outputs from {debug_name} (output type"
                 f" was {type(outputs)})"
             )
+        self.write_keys_file()
 
     def print_and_record(self, name: str, value: Any) -> bool:
         """Runs self.print_value and records the tensor if printed."""
@@ -131,7 +134,18 @@ class BasePrintHook(ABC):
             if self._current_step not in self._recorded_prints:
                 self._recorded_prints[self._current_step] = []
             self._recorded_prints[self._current_step].append(name)
+
         return print_success
+
+    def write_keys_file(self):
+        """Write the list of tensor file names, in the order of execution, to tensor_names.txt ."""
+
+        if self.export_path and self._current_step in self._recorded_prints:
+            keys_file = os.path.join(self.export_path, "tensor_names.txt")
+
+            with open(keys_file, "w") as f:
+                for name in self._recorded_prints[self._current_step]:
+                    f.write(f"{name}\n")
 
     @abstractmethod
     def print_value(self, name: str, value: Any) -> bool:

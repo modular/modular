@@ -109,7 +109,7 @@ struct TileScheduler[
         if schedule == MatmulSchedule.TILE2D:
             constrained[
                 _check_cluster(cluster, raster_dim),
-                "Only support block cluster in along raster dimention.",
+                "Only support block cluster in along raster dimension.",
             ]()
 
         self.prob_shape = prob_shape
@@ -201,7 +201,7 @@ struct TileScheduler[
 
 
 fn _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
-    """Check if block cluster is along the raster dimention."""
+    """Check if block cluster is along the raster dimension."""
 
     @parameter
     for i in range(3):

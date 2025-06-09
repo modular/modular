@@ -258,17 +258,6 @@ struct RuntimeLayout[
             A `RuntimeLayout` with row-major stride ordering.
         """
 
-        constrained[
-            shape.element_type == element_type,
-            String(
-                "Element type mismatch, shape has element type",
-                shape.element_type,
-                "but layout has element type",
-                element_type,
-                sep=" ",
-            ),
-        ]()
-
         var stride = IndexList[rank, element_type=linear_idx_type]()
         var c_stride = 1
         stride[rank - 1] = c_stride
@@ -278,7 +267,7 @@ struct RuntimeLayout[
             var dim = shape[i + 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return __type_of(result)(shape, stride)
+        return __type_of(result)(shape.cast[element_type](), stride)
 
     @staticmethod
     fn col_major[
@@ -306,17 +295,6 @@ struct RuntimeLayout[
             A `RuntimeLayout` with column-major stride ordering.
         """
 
-        constrained[
-            shape.element_type == element_type,
-            String(
-                "Element type mismatch, shape has element type",
-                shape.element_type,
-                "but layout has element type",
-                element_type,
-                sep=" ",
-            ),
-        ]()
-
         var stride = IndexList[rank, element_type=linear_idx_type]()
         var c_stride = 1
         stride[0] = c_stride
@@ -326,7 +304,7 @@ struct RuntimeLayout[
             var dim = shape[i - 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return __type_of(result)(shape, stride)
+        return __type_of(result)(shape.cast[element_type](), stride)
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):

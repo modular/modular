@@ -29,7 +29,7 @@ from sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x
 from sys.param_env import env_get_bool
-
+from gpu.intrinsics import Scope
 from memory import UnsafePointer
 from memory.pointer import AddressSpace
 
@@ -527,6 +527,85 @@ fn mbarrier_arrive_expect_tx_shared[
                 " on AMD GPUs."
             ),
         ]()
+
+
+@always_inline("nodebug")
+fn mbarrier_arrive_expect_tx_relaxed[
+    type: AnyType,  # The type of the memory barrier
+    scope: Scope = Scope.BLOCK,
+    space: Scope = Scope.BLOCK,
+](
+    addr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_],
+    tx_count: Int32,
+) -> UInt64:
+    """Configure a shared memory barrier to expect additional async transactions.
+
+    Updates the current phase of the memory barrier to track completion of
+    additional asynchronous transactions. Only supported on NVIDIA GPUs.
+
+    Parameters:
+        type: The type of the memory barrier.
+        scope: The scope of the memory barrier.
+        space: The space of the memory barrier.
+
+    Args:
+        addr: Pointer to the shared memory barrier.
+        tx_count: Number of expected transactions to track.
+
+    Returns:
+        The state.
+    """
+
+    constrained[
+        scope == Scope.BLOCK or scope == Scope.CLUSTER,
+        (
+            "mbarrier_arrive_expect_tx_relaxed scope is only supported for"
+            " cluster or block/CTA scope."
+        ),
+    ]()
+
+    constrained[
+        space == Scope.BLOCK or space == Scope.CLUSTER,
+        (
+            "mbarrier_arrive_expect_tx_relaxed space is only supported for"
+            " cluster or block/CTA scope."
+        ),
+    ]()
+
+    @parameter
+    if space == Scope.CLUSTER:
+        constrained[
+            scope == Scope.CLUSTER,
+            (
+                "mbarrier_arrive_expect_tx_relaxed scope and space must be the"
+                " same if space is cluster."
+            ),
+        ]()
+
+    @parameter
+    if is_nvidia_gpu():
+        alias asm = (
+            """mbarrier.arrive.expect_tx.relaxed."""
+            + scope.mnemonic()
+            + """.shared::"""
+            + space.mnemonic()
+            + """.b64 $0, [$1], $2;"""
+        )
+        return inlined_assembly[
+            asm,
+            UInt64,
+            constraints="=l,r,r",
+            has_side_effect=True,
+        ](addr, tx_count)
+    else:
+        constrained[
+            False,
+            (
+                "The mbarrier_arrive_expect_tx_shared function is not supported"
+                " on AMD GPUs."
+            ),
+        ]()
+    return 0
 
 
 @always_inline("nodebug")

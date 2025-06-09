@@ -20,8 +20,8 @@ from typing import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
-    MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,

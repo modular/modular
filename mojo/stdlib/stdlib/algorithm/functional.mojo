@@ -19,7 +19,7 @@ from algorithm import map
 ```
 """
 
-from collections.string.string_slice import StaticString, get_static_string
+from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from os import abort
 from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
@@ -1212,7 +1212,7 @@ fn elementwise[
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1247,7 +1247,7 @@ fn elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1284,7 +1284,7 @@ fn elementwise[
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1319,7 +1319,7 @@ fn elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1351,7 +1351,7 @@ fn elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 

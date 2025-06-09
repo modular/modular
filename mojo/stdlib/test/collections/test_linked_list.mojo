@@ -35,6 +35,22 @@ def test_construction():
     assert_equal(l2[2], 3)
 
 
+def test_linkedlist_literal():
+    var l: LinkedList[Int] = [1, 2, 3]
+    assert_equal(3, len(l))
+    assert_equal(1, l[0])
+    assert_equal(2, l[1])
+    assert_equal(3, l[2])
+
+    var l2: LinkedList[Float64] = [1, 2.5]
+    assert_equal(2, len(l2))
+    assert_equal(1.0, l2[0])
+    assert_equal(2.5, l2[1])
+
+    var l3: LinkedList[Int] = []
+    assert_equal(0, len(l3))
+
+
 def test_append():
     var l1 = LinkedList[Int]()
     l1.append(1)
@@ -579,6 +595,7 @@ def test_iter():
 
 def main():
     test_construction()
+    test_linkedlist_literal()
     test_append()
     test_prepend()
     test_copy()

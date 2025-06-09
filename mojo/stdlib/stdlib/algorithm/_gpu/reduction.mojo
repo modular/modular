@@ -155,15 +155,7 @@ fn block_reduce[
 
     @parameter
     for i in range(num_reductions):
-
-        @always_inline
-        @parameter
-        fn reduce_wrapper[
-            type: DType, width: Int
-        ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
-            return reduce_fn[type, width, i](lhs, rhs)
-
-        result[i] = result_packed[i].reduce[reduce_wrapper]()
+        result[i] = result_packed[i].reduce[reduce_fn[type, reduction_idx=i]]()
 
     return result
 

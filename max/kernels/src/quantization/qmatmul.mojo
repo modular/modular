@@ -333,8 +333,8 @@ fn _scale_and_accumulate[
         for col in range(tile_n):
             var dot = c_int32[row, col]
 
-            # Withtout VNNI on x86 the 2-wide 8-bit to 16-bit dot
-            # product was calculed in process_group_packed.
+            # Without VNNI on x86 the 2-wide 8-bit to 16-bit dot
+            # product was calculated in process_group_packed.
             # Now complete the 4-wide 8-bit to 32-bit dot product.
             @parameter
             if has_avx2() and not has_vnni():

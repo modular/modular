@@ -61,7 +61,7 @@ fn mlirIntegerSetGetContext(set: MlirIntegerSet) -> MlirContext:
     return MLIR_func["mlirIntegerSetGetContext", MlirContext](set)
 
 
-# FIXEME(codegen): static function mlirIntegerSetIsNull
+# FIXME(codegen): static function mlirIntegerSetIsNull
 
 
 fn mlirIntegerSetEqual(s1: MlirIntegerSet, s2: MlirIntegerSet) -> Bool:

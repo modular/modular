@@ -48,7 +48,7 @@ fn overlap_matmul_allreduce_test[
     # The matmul is sharded in K dim. The original matmul before sharding is M x N x (K x ngpus).
     # The results of shape M x N is allreduced over ngpus.
 
-    # To overlap, we partition in M dimension. The matmul can overlapp with the allreduce
+    # To overlap, we partition in M dimension. The matmul can overlap with the allreduce
     # for previous partition.
     #      matmul part 0
     #      matmul part 1 | allreduce partition 0

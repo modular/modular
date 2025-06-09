@@ -350,7 +350,7 @@ def makedirs[
       mode: The mode to create the directory with.
       exist_ok: Ignore error if `True` and path exists (default `False`).
     """
-    head, tail = split(path)
+    var head, tail = split(path)
     if not tail:
         head, tail = split(head)
     if head and tail and not os.path.exists(head):
@@ -406,7 +406,7 @@ def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
       path: The path to the directory.
     """
     rmdir(path)
-    head, tail = os.path.split(path)
+    var head, tail = os.path.split(path)
     if not tail:
         head, tail = os.path.split(head)
     while head and tail:

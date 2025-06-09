@@ -10,7 +10,6 @@ modular_py_binary(
         "//conditions:default": [],
     }),
     use_sitecustomize = True,
-    uses_mojo_extension = True,
     deps = [
         "//SDK/lib/API/python/max/_mojo",
     ],

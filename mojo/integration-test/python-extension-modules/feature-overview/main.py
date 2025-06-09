@@ -85,7 +85,7 @@ class TestMojoPythonInterop(unittest.TestCase):
         person.change_name("John Doe")
         self.assertEqual(person.name(), "John Doe")
 
-        # Test that an error is raised if passing any arguments to the initalizer
+        # Test that an error is raised if passing any arguments to the initializer
         with self.assertRaises(ValueError) as cm:
             person = feature_overview.Person("John")
 
@@ -104,7 +104,7 @@ class TestMojoPythonInterop(unittest.TestCase):
         exception raised during construction, Python will not call its
         __del__ method."""
 
-        # Test that an error is raised if passing any arguments to the initalizer
+        # Test that an error is raised if passing any arguments to the initializer
         with self.assertRaises(ValueError) as cm:
             result = feature_overview.FailToInitialize("illegal argument")
 

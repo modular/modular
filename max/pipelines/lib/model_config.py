@@ -116,7 +116,7 @@ class MAXModelConfig(MAXModelConfigBase):
     # it also sets and updates other fields which may not be determined /
     # initialized in the default factory.
     # Realistically, this shouldn't become a problem in the long term once we
-    # instantiate these MAXConfigs with probably DAG depedency flows in our
+    # instantiate these MAXConfigs with probably DAG dependency flows in our
     # larger config refactor.
     def resolve(self) -> None:
         """Validates and resolves the config.
@@ -397,7 +397,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     logger.debug(msg)
                     self.quantization_encoding = encoding
                 else:
-                    msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explictly."
+                    msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
                     raise ValueError(msg)
         elif not self.quantization_encoding:
             # Check if the repo only has one quantization_encoding.

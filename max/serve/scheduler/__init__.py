@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from typing import Optional
-
 import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
@@ -25,12 +23,8 @@ from max.pipelines.lib import PipelineRole
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.process_control import ProcessControl
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
-from .audio_generation_scheduler import (
-    AudioGenerationScheduler,
-    AudioGenerationSchedulerConfig,
-)
+from .audio_generation_scheduler import AudioGenerationScheduler
 from .base import Scheduler
 from .config import TokenGeneratorSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
@@ -48,7 +42,6 @@ __all__ = [
     "EmbeddingsScheduler",
     "EmbeddingsSchedulerConfig",
     "AudioGenerationScheduler",
-    "AudioGenerationSchedulerConfig",
 ]
 
 
@@ -88,15 +81,10 @@ def load_scheduler(
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_in_flight_batching=config.enable_in_flight_batching,
         )
-        if config.audio_generator_scheduler_config is not None:
-            audio_generation_config = config.audio_generator_scheduler_config
-        else:
-            audio_generation_config = AudioGenerationSchedulerConfig()
 
         return AudioGenerationScheduler(
             process_control=pc,
             scheduler_config=token_gen_config,
-            audio_generation_config=audio_generation_config,
             pipeline=pipeline,
             request_zmq_endpoint=settings.request_zmq_endpoint,
             response_zmq_endpoint=settings.response_zmq_endpoint,

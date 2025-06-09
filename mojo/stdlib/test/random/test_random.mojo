@@ -141,13 +141,13 @@ def test_shuffle():
     shuffle(b)
     assert_equal(len(a), len(b))
     assert_true(a != b)
-    for var i in range(len(b)):
+    for i in range(len(b)):
         assert_true(b[i] in a)
 
     shuffle(d)
     assert_equal(len(c), len(d))
     assert_true(c != d)
-    for var i in range(len(d)):
+    for i in range(len(d)):
         assert_true(d[i] in c)
 
     var e = L_i(21)
@@ -160,19 +160,19 @@ def test_shuffle():
     alias L_l = List[List[Int]]
     var g = L_l()
     var h = L_l()
-    for var i in range(10):
+    for i in range(10):
         g.append(L_i(i, i + 1, i + 3))
         h.append(L_i(i, i + 1, i + 3))
     shuffle(g)
     # TODO: Uncomment when possible
     # assert_true(g != h)
     assert_equal(len(g), len(h))
-    for var i in range(10):
+    for i in range(10):
         # Currently, the below does not compile.
         # assert_true(g.__contains__(L_i(i, i + 1, i + 3)))
         var target: List[Int] = L_i(i, i + 1, i + 3)
         var found = False
-        for var j in range(len(g)):
+        for j in range(len(g)):
             if g[j] == target:
                 found = True
                 break
@@ -181,14 +181,14 @@ def test_shuffle():
     alias L_l_s = List[List[String]]
     var i = L_l_s()
     var j = L_l_s()
-    for var x in range(10):
+    for x in range(10):
         i.append(L_s(String(x), String(x + 1), String(x + 3)))
         j.append(L_s(String(x), String(x + 1), String(x + 3)))
     shuffle(i)
     # TODO: Uncomment when possible
     # assert_true(g != h)
     assert_equal(len(i), len(j))
-    for var x in range(10):
+    for x in range(10):
         var target: List[String] = L_s(String(x), String(x + 1), String(x + 3))
         var found = False
         for y in range(len(i)):
@@ -203,7 +203,7 @@ def test_shuffle():
     # high probability.
     var l = L_i()
     var m = L_i()
-    for var i in range(1000):
+    for i in range(1000):
         l.append(i)
         m.append(i)
     shuffle(l)

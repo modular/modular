@@ -254,7 +254,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # Load rejection sampler
         self._rejection_sampler = target_session.load(
             rejection_sampler(
-                top_k=self.pipeline_config.sampling_config.top_k,
                 device=DeviceRef.from_device(self.target_devices[0]),
             )
         )
@@ -380,15 +379,46 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     @traced
     def sample_draft_logits(
         self,
+        batch: list[T],
         model_outputs: ModelOutputs,
         prev_tokens: Tensor,
         prev_logits: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        graph_inputs = [model_outputs.logits, prev_tokens, prev_logits]
+        top_k_np = np.array(
+            [context.sampling_params.top_k for context in batch],
+            dtype=np.int64,
+        )
+        top_k = Tensor.from_numpy(top_k_np).to(self.draft_devices[0])
+        max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
+        max_k = Tensor.from_numpy(max_k_np)
+        temperature_np = np.array(
+            [context.sampling_params.temperature for context in batch],
+            dtype=np.float32,
+        )
+        temperature = Tensor.from_numpy(temperature_np).to(
+            self.draft_devices[0]
+        )
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in batch],
+            dtype=np.float32,
+        )
+        top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
+        seed_np = np.array(
+            [context.sampling_params.seed for context in batch],
+            dtype=np.uint64,
+        )
+        seed = Tensor.from_numpy(seed_np).to(self.draft_devices[0])
 
-        if model_outputs.logit_offsets:
-            graph_inputs.append(model_outputs.logit_offsets)
-
+        graph_inputs = [
+            model_outputs.logits,
+            prev_tokens,
+            top_k,
+            max_k,
+            temperature,
+            top_p,
+            seed,
+            prev_logits,
+        ]
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
         assert isinstance(a, Tensor)
         assert isinstance(b, Tensor)
@@ -432,6 +462,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
                 self.sample_draft_logits(
+                    batch,
                     model_outputs,
                     generated_tokens,
                     generated_logits,

@@ -323,8 +323,9 @@ Salem, Oregon
 
 The Mojo collection iterators all return
 [references](/mojo/manual/values/lifetimes#working-with-references), which
-are copied into the loop variable. To avoid making a copy, add the `ref`
-keyword in front of the loop variable to create a reference binding.
+are captured immutably into the loop variable. If you'd like to get a reference
+to a mutable element, add the `ref` keyword in front of the loop variable to
+create a reference binding that matches the element reference.
 
 This can be useful if you want to mutate the value in the collection:
 

@@ -61,7 +61,7 @@ struct Set[T: KeyElement](
         # TODO: Reserve space in this set. Also, take the elements as 'owned'
         # and transfer them into the set to eliminate copyability.
         self._data = Dict[T, NoneType]()
-        for ref t in ts:
+        for t in ts:
             self.add(t)
 
     # TODO: Should take the list owned so we can transfer the elements out.
@@ -73,7 +73,7 @@ struct Set[T: KeyElement](
             elements: A vector of elements to add to the set.
         """
         self = Self()
-        for ref e in elements:
+        for e in elements:
             self.add(e)
 
     fn __copyinit__(out self, other: Self):
@@ -110,7 +110,7 @@ struct Set[T: KeyElement](
         """
         if len(self) != len(other):
             return False
-        for ref e in self:
+        for e in self:
             if e not in other:
                 return False
         return True
@@ -290,7 +290,7 @@ struct Set[T: KeyElement](
         var hash_value = 0
         # Hash combination needs to be commutative so iteration order
         # doesn't impact the hash value.
-        for ref e in self:
+        for e in self:
             hash_value ^= hash(e)
         return hash_value
 
@@ -337,7 +337,7 @@ struct Set[T: KeyElement](
         """
         writer.write("{")
         var written = 0
-        for ref item in self:
+        for item in self:
             writer.write(repr(item))
             if written < len(self) - 1:
                 writer.write(", ")
@@ -407,7 +407,7 @@ struct Set[T: KeyElement](
             this set or the `other` set.
         """
         var result = self
-        for ref o in other:
+        for o in other:
             result.add(o)
 
         return result^
@@ -423,7 +423,7 @@ struct Set[T: KeyElement](
             this set and the `other` set.
         """
         var result = Set[T]()
-        for ref v in self:
+        for v in self:
             if v in other:
                 result.add(v)
 
@@ -440,7 +440,7 @@ struct Set[T: KeyElement](
             the `other` set.
         """
         var result = Set[T]()
-        for ref e in self:
+        for e in self:
             if e not in other:
                 result.add(e)
         return result^
@@ -454,7 +454,7 @@ struct Set[T: KeyElement](
         Args:
             other: Another Set instance to union with this one.
         """
-        for ref e in other:
+        for e in other:
             self.add(e)
 
     fn intersection_update(mut self, other: Self):
@@ -479,7 +479,7 @@ struct Set[T: KeyElement](
         Args:
             other: Another Set instance to subtract from this one.
         """
-        for ref o in other:
+        for o in other:
             try:
                 self.remove(o)
             except:
@@ -497,7 +497,7 @@ struct Set[T: KeyElement](
         if len(self) > len(other):
             return False
 
-        for ref element in self:
+        for element in self:
             if element not in other:
                 return False
 
@@ -512,7 +512,7 @@ struct Set[T: KeyElement](
         Returns:
             True if this set is disjoint with the `other` set, False otherwise.
         """
-        for ref element in self:
+        for element in self:
             if element in other:
                 return False
 
@@ -530,7 +530,7 @@ struct Set[T: KeyElement](
         if len(self) < len(other):
             return False
 
-        for ref element in other:
+        for element in other:
             if element not in self:
                 return False
 
@@ -547,11 +547,11 @@ struct Set[T: KeyElement](
         """
         var result = Set[T]()
 
-        for ref element in self:
+        for element in self:
             if element not in other:
                 result.add(element)
 
-        for ref element in other:
+        for element in other:
             if element not in self:
                 result.add(element)
 

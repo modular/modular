@@ -325,7 +325,7 @@ fn gather[
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
-            # assumes that indices are layed out in row major order
+            # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
@@ -424,7 +424,7 @@ fn gather[
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
-            # assumes that indices are layed out in row major order
+            # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
@@ -1182,7 +1182,7 @@ fn scatter_elements[
 
     if indices.shape() != updates.shape():
         raise Error(
-            "inidices and updates shape in scatter_elements must be the same"
+            "indices and updates shape in scatter_elements must be the same"
         )
 
     if not (-rank <= _axis < rank):

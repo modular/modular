@@ -208,7 +208,7 @@ fn mlirContextEqual(ctx1: MlirContext, ctx2: MlirContext) -> Bool:
     return MLIR_func["mlirContextEqual", Bool](ctx1, ctx2)
 
 
-# FIXEME(codegen): static function mlirContextIsNull
+# FIXME(codegen): static function mlirContextIsNull
 
 
 fn mlirContextDestroy(context: MlirContext) -> None:
@@ -312,7 +312,7 @@ fn mlirDialectGetContext(dialect: MlirDialect) -> MlirContext:
     return MLIR_func["mlirDialectGetContext", MlirContext](dialect)
 
 
-# FIXEME(codegen): static function mlirDialectIsNull
+# FIXME(codegen): static function mlirDialectIsNull
 
 
 fn mlirDialectEqual(dialect1: MlirDialect, dialect2: MlirDialect) -> Bool:
@@ -389,7 +389,7 @@ fn mlirDialectRegistryCreate() -> MlirDialectRegistry:
     return MLIR_func["mlirDialectRegistryCreate", MlirDialectRegistry]()
 
 
-# FIXEME(codegen): static function mlirDialectRegistryIsNull
+# FIXME(codegen): static function mlirDialectRegistryIsNull
 
 
 fn mlirDialectRegistryDestroy(registry: MlirDialectRegistry) -> None:
@@ -463,7 +463,7 @@ fn mlirLocationGetContext(location: MlirLocation) -> MlirContext:
     return MLIR_func["mlirLocationGetContext", MlirContext](location)
 
 
-# FIXEME(codegen): static function mlirLocationIsNull
+# FIXME(codegen): static function mlirLocationIsNull
 
 
 fn mlirLocationEqual(l1: MlirLocation, l2: MlirLocation) -> Bool:
@@ -509,7 +509,7 @@ fn mlirModuleGetBody(module: MlirModule) -> MlirBlock:
     return MLIR_func["mlirModuleGetBody", MlirBlock](module)
 
 
-# FIXEME(codegen): static function mlirModuleIsNull
+# FIXME(codegen): static function mlirModuleIsNull
 
 
 fn mlirModuleDestroy(module: MlirModule) -> None:
@@ -836,7 +836,7 @@ fn mlirOperationRemoveFromParent(op: MlirOperation) -> None:
     return MLIR_func["mlirOperationRemoveFromParent", NoneType._mlir_type](op)
 
 
-# FIXEME(codegen): static function mlirOperationIsNull
+# FIXME(codegen): static function mlirOperationIsNull
 
 
 fn mlirOperationEqual(op: MlirOperation, other: MlirOperation) -> Bool:
@@ -1224,7 +1224,7 @@ fn mlirRegionDestroy(region: MlirRegion) -> None:
     return MLIR_func["mlirRegionDestroy", NoneType._mlir_type](region)
 
 
-# FIXEME(codegen): static function mlirRegionIsNull
+# FIXME(codegen): static function mlirRegionIsNull
 
 
 fn mlirRegionEqual(region: MlirRegion, other: MlirRegion) -> Bool:
@@ -1319,7 +1319,7 @@ fn mlirBlockDetach(block: MlirBlock) -> None:
     return MLIR_func["mlirBlockDetach", NoneType._mlir_type](block)
 
 
-# FIXEME(codegen): static function mlirBlockIsNull
+# FIXME(codegen): static function mlirBlockIsNull
 
 
 fn mlirBlockEqual(block: MlirBlock, other: MlirBlock) -> Bool:
@@ -1447,7 +1447,7 @@ fn mlirBlockPrint[W: Writer](mut writer: W, block: MlirBlock):
 #  Value API.
 # ===----------------------------------------------------------------------===//
 
-# FIXEME(codegen): static function mlirValueIsNull
+# FIXME(codegen): static function mlirValueIsNull
 
 
 fn mlirValueEqual(value1: MlirValue, value2: MlirValue) -> Bool:
@@ -1606,7 +1606,7 @@ fn mlirTypeGetDialect(type: MlirType) -> MlirDialect:
     return MLIR_func["mlirTypeGetDialect", MlirDialect](type)
 
 
-# FIXEME(codegen): static function mlirTypeIsNull
+# FIXME(codegen): static function mlirTypeIsNull
 
 
 fn mlirTypeEqual(t1: MlirType, t2: MlirType) -> Bool:
@@ -1662,7 +1662,7 @@ fn mlirAttributeGetDialect(attribute: MlirAttribute) -> MlirDialect:
     return MLIR_func["mlirAttributeGetDialect", MlirDialect](attribute)
 
 
-# FIXEME(codegen): static function mlirAttributeIsNull
+# FIXME(codegen): static function mlirAttributeIsNull
 
 
 fn mlirAttributeEqual(a1: MlirAttribute, a2: MlirAttribute) -> Bool:
@@ -1744,7 +1744,7 @@ fn mlirSymbolTableCreate(operation: MlirOperation) -> MlirSymbolTable:
     return MLIR_func["mlirSymbolTableCreate", MlirSymbolTable](operation)
 
 
-# FIXEME(codegen): static function mlirSymbolTableIsNull
+# FIXME(codegen): static function mlirSymbolTableIsNull
 
 
 fn mlirSymbolTableDestroy(symbol_table: MlirSymbolTable) -> None:

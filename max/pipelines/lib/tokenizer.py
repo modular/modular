@@ -314,8 +314,8 @@ class TextTokenizer(
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
         max_new_tokens = None
-        if request.max_new_tokens is not None:
-            max_new_tokens = request.max_new_tokens
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
         elif self.max_new_tokens != -1:
             max_new_tokens = self.max_new_tokens
 
@@ -334,7 +334,7 @@ class TextTokenizer(
         eos_token_ids = self._default_eos_token_ids
         eos_sequences = list()
 
-        if request.ignore_eos:
+        if request.sampling_params.ignore_eos:
             eos_token_ids = set()
         elif request.sampling_params.stop_token_ids:
             eos_token_ids.update(request.sampling_params.stop_token_ids)
@@ -579,8 +579,8 @@ class TextAndVisionTokenizer(
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
         max_new_tokens = None
-        if request.max_new_tokens is not None:
-            max_new_tokens = request.max_new_tokens
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
         elif self.max_new_tokens != -1:
             max_new_tokens = self.max_new_tokens
 
@@ -621,7 +621,7 @@ class TextAndVisionTokenizer(
             else None
         )
 
-        if request.ignore_eos:
+        if request.sampling_params.ignore_eos:
             eos_token_ids = set()
         else:
             eos_token_ids = self._default_eos_token_ids

@@ -17,6 +17,8 @@ def _get_amd_constraint(blob):
         series = value["Card Series"]
         if "MI300X" in series:
             return "@//:mi300x_gpu"
+        if "MI325" in series:
+            return "@//:mi325_gpu"
         if "AMD Radeon Graphics" in series:
             return "@//:radeon_gpu"
 
@@ -113,7 +115,7 @@ def _impl(rctx):
     rctx.file("BUILD.bazel", """
 platform(
     name = "modular_host_platform",
-    parents = ["@local_config_platform//:host"],
+    parents = ["@platforms//host"],
     visibility = ["//visibility:public"],
     constraint_values = [{constraints}],
     exec_properties = {{

@@ -36,6 +36,7 @@ from math import (
 from random import randn, seed
 from sys import bitwidthof, external_call, llvm_intrinsic
 from sys.info import simdwidthof, sizeof
+from sys.intrinsics import _type_is_eq
 
 import compiler_internal as compiler
 
@@ -94,11 +95,16 @@ from nn.concat import _concat_cpu, concat, fused_concat
 from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
-from nn.conv_transpose import conv_transpose_shape, conv_transposed
+from nn.conv_transpose import (
+    conv_transpose_shape,
+    conv_transposed_cpu,
+    conv_transposed_gpu,
+)
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
+from nn.conv_utils import elementwise_simd_epilogue_type
 from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
@@ -159,8 +165,9 @@ from nn.kv_cache_ragged import (
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
 from nn.mha import flash_attention
-from nn.mha_mask import CausalMask, MaskName, NullMask
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
+from nn.mha_mask import MHAMask
+from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
+from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
@@ -2798,7 +2805,7 @@ struct StaticReshape:
     fn get_view_strides[
         out_rank: Int,
     ](out_shape: DimList) -> DimList:
-        # reshape is a bit special as we assume the input is always contigous.
+        # reshape is a bit special as we assume the input is always contiguous.
         # So it will be the same with the output.
         var new_strides = StaticTuple[Dim, out_rank]()
 
@@ -4356,7 +4363,9 @@ struct BottomK:
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
+            managed_tensor_slice_to_ndbuffer(input),
+            Int(k),
+            Int(axis),
         )
 
 
@@ -4396,7 +4405,9 @@ struct TopK:
         sorted: Scalar[DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input), Int(k), Int(axis)
+            managed_tensor_slice_to_ndbuffer(input),
+            Int(k),
+            Int(axis),
         )
 
 
@@ -4406,7 +4417,7 @@ struct TopK:
 
 
 @compiler.register("mo.non_maximum_suppression")
-struct NonMaximumSupression:
+struct NonMaximumSuppression:
     @staticmethod
     fn execute[
         dtype: DType
@@ -5199,7 +5210,7 @@ fn to_managed_tensor_slice_list[
         raw_list_ptr, data_ptrs.unsafe_ptr(), dim_values.unsafe_ptr()
     )
 
-    # TODO: revist the use of unknown here
+    # TODO: revisit the use of unknown here
     # Create output list
     var out_list = List[
         ManagedTensorSlice[
@@ -5422,6 +5433,7 @@ struct SplitOutputShapeHelper:
 struct Conv:
     @staticmethod
     fn execute[
+        input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
         static_strides: DimList,
@@ -5451,6 +5463,10 @@ struct Conv:
         constrained[
             strides.dtype.is_integral() and dilation.dtype.is_integral(),
             "stride and dilation must have integral type",
+        ]()
+
+        constrained[
+            input_layout == "NHWC", "only NHWC input layout is supported"
         ]()
 
         if strides.size() != input.rank - 2:
@@ -5604,8 +5620,10 @@ struct Conv:
 struct ConvTranspose:
     @staticmethod
     fn execute[
+        input_layout: StaticString,
         filter_layout: StaticString,
         lambdas_have_fusion: Bool,
+        target: StaticString,
     ](
         output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
@@ -5614,6 +5632,7 @@ struct ConvTranspose:
         dilation: InputTensor[rank=1],
         paddings: InputTensor[rank=1],
         output_paddings: InputTensor[rank=1],
+        ctx: DeviceContextPtr,
     ) capturing raises:
         constrained[
             strides.dtype.is_integral()
@@ -5682,29 +5701,70 @@ struct ConvTranspose:
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        conv_transposed[
-            input.rank,
-            filter.rank,
-            input._static_shape,  # Input shape.
-            filter._static_shape,  # Filter shape.
-            output._static_shape,  # Output shape.
-            input.dtype,
-            filter.dtype,  # Filter dtype.
-            output.dtype,  # Output dtype.
-            filter_packed,
-            filter_is_cfrs,
-            lambdas_have_fusion,
-            output_fn,
-        ](
-            output_buf,
-            input_buf,
-            filter_buf,
-            stride_tuple,
-            dilation_tuple,
-            pad_d,
-            pad_h,
-            pad_w,
-        )
+        @parameter
+        if is_cpu[target]():
+            conv_transposed_cpu[
+                input.rank,
+                filter.rank,
+                input._static_shape,  # Input shape.
+                filter._static_shape,  # Filter shape.
+                output._static_shape,  # Output shape.
+                input.dtype,
+                filter.dtype,  # Filter dtype.
+                output.dtype,  # Output dtype.
+                filter_packed,
+                filter_is_cfrs,
+                lambdas_have_fusion,
+                output_fn,
+            ](
+                output_buf,
+                input_buf,
+                filter_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_d,
+                pad_h,
+                pad_w,
+            )
+        else:
+            constrained[
+                (input.rank == 4 and filter.rank == 4),
+                "only rank 4 tensor is supported on cuda gpu",
+            ]()
+            constrained[
+                filter_packed == False,
+                "only unpacked filter is supported on cuda gpu",
+            ]()
+
+            var cuda_ctx = ctx.get_device_context()
+            var pad_tuple = IndexList[input.rank - 2](0)
+
+            @parameter
+            if input.rank == 4:
+                pad_tuple[0] = pad_h[0]
+                pad_tuple[1] = pad_w[0]
+
+            conv_transposed_gpu[
+                input.rank,
+                filter.rank,
+                input._static_shape,
+                filter._static_shape,
+                output._static_shape,
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                elementwise_epilogue = OptionalReg[
+                    elementwise_simd_epilogue_type
+                ](output_fn) if lambdas_have_fusion else None,
+            ](
+                output_buf,
+                input_buf,
+                filter_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
+                cuda_ctx,
+            )
 
     @staticmethod
     fn shape[
@@ -5924,11 +5984,15 @@ struct MaskedFlashAttentionGPU:
         )
 
 
-@compiler.register("causal_flash_attention_gpu")
-struct CausalFlashAttentionGPU:
+@compiler.register("mo.mha.no_cache")
+struct FlashAttentionGPU:
     @staticmethod
     fn execute[
-        target: StaticString, rank: Int
+        rank: Int, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
         q: InputTensor[rank=rank],
@@ -5937,7 +6001,7 @@ struct CausalFlashAttentionGPU:
         scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
-        """`causal_flash_attention_gpu` is a hand-fused operator which does
+        """`mo.mha.no_cache` is a hand-fused operator which does
         something analogous to the following list of operations.
 
         **Step 0:
@@ -5954,10 +6018,7 @@ struct CausalFlashAttentionGPU:
 
         **Step 3:
         # Normalize and apply masking
-        attentionMatrixNorm = attentionMatrix * scale
-
-        # Note attention_mask is HSS and auto-broadcasts
-        attentionMatrixNormMasked = attentionMatrixNorm + attention_mask
+        attentionMatrixNormMasked = mask_functor(attentionMatrix * scale)
 
         **Step 4:
         # Apply softmax and reproject result
@@ -5987,67 +6048,57 @@ struct CausalFlashAttentionGPU:
         var k_buffer = managed_tensor_slice_to_ndbuffer(k)
         var v_buffer = managed_tensor_slice_to_ndbuffer(v)
 
-        flash_attention(
-            output_buffer,
-            q_buffer,
-            k_buffer,
-            v_buffer,
-            CausalMask(),
-            IdentityScoreMod(),
-            scale,
-            ctx[],
-        )
+        alias num_kv_heads = k_buffer.shape.get[
+            2
+        ]() if k_buffer.shape.has_value[2]() else -1
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        fn _dispatch_flash_attention[
+            mask_t: MHAMask, score_mod_t: ScoreModTrait
+        ](mask: mask_t, score_mod: score_mod_t) raises:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+
+            flash_attention[use_score_mod=use_score_mod](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                mask,
+                score_mod,
+                scale,
+                ctx[],
+            )
+
+        dispatch_mask_and_score_mod[
+            mask_str,
+            score_mod_str,
+            _dispatch_flash_attention,
+            local_window_size,
+            num_kv_heads,
+        ]()
 
 
-@compiler.register("no_mask_flash_attention_gpu")
-struct NoMaskFlashAttentionGPU:
+@compiler.register("mo.mha.padded.no_cache")
+struct PaddedFlashAttentionGPU:
     @staticmethod
     fn execute[
-        target: StaticString, rank: Int
+        rank: Int, //,
+        target: StaticString,
+        mask_str: StaticString,
+        score_mod_str: StaticString,
+        local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
         q: InputTensor[rank=rank],
         k: InputTensor[rank=rank],
         v: InputTensor[rank=rank],
-        scale: Scalar[dtype = DType.float32],
+        valid_length: InputTensor[dtype = DType.uint32, rank=1],
+        scale: Float32,
         ctx: DeviceContextPtr,
     ) raises:
-        """`no_mask_flash_attention_gpu` is a hand-fused operator which does
-        something analogous to the following list of operations.
-
-        **Step 0:
-        Transpose:
-        query_processed = transpose(query) # BSHD --> BHSD
-        key_processed = transpose(key)     # BSHD --> BHDS
-        value_processed = transpose(value) # BSHD --> BHSD
-
-        **Step 1:
-        attentionMatrix = query_processed @ key_processed
-
-        **Step 2:
-        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
-
-        **Step 3:
-        # Apply softmax and reproject result
-        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
-        answer = attentionMatrixSoftMax @ value_processed
-        answer = transpose(answer) # BHSD --> BSHD
-
-        Compared to the CPU patterns the notable differences are:
-        1. The transposes are part of the kernel itself
-
-        Finally, this pattern supports grouped attention patterns. That is if we
-        have G groups, then let h = H / G. Key and value are allowed to be BShD
-        in these scenarios. Both key and value must be BShD if one is. If this is
-        true the following is equivalently run before Step 0:
-
-        ** Step -1:
-        key = concat(key, ...) # concat BShD --> BSHD
-        value = concat(value, ...) # concat BShD --> BSHD
-
-        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
-        by Tri Dao et al.
-        """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
         var output_buffer = managed_tensor_slice_to_ndbuffer(output)
@@ -6055,16 +6106,48 @@ struct NoMaskFlashAttentionGPU:
         var k_buffer = managed_tensor_slice_to_ndbuffer(k)
         var v_buffer = managed_tensor_slice_to_ndbuffer(v)
 
-        flash_attention(
-            output_buffer,
-            q_buffer,
-            k_buffer,
-            v_buffer,
-            NullMask(),
-            IdentityScoreMod(),
-            scale,
-            ctx[],
-        )
+        alias valid_length_t = ManagedTensorSlice[
+            IOUnknown,
+            static_spec = StaticTensorSpec[DType.uint32, 1].create_unknown(),
+        ]
+        _valid_length = rebind[valid_length_t](valid_length)
+
+        alias num_kv_heads = k_buffer.shape.get[
+            2
+        ]() if k_buffer.shape.has_value[2]() else -1
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        fn _dispatch_flash_attention[
+            mask_t: MHAMask, score_mod_t: ScoreModTrait
+        ](mask: mask_t, score_mod: score_mod_t) raises:
+            alias use_score_mod = not _type_is_eq[
+                score_mod_t, IdentityScoreMod
+            ]()
+
+            flash_attention[
+                use_score_mod=use_score_mod,
+                _use_valid_length=True,
+                _padded_ndbuffer=True,
+            ](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                mask,
+                score_mod,
+                scale,
+                ctx[],
+                valid_length=OptionalReg[valid_length_t](_valid_length),
+            )
+
+        dispatch_mask_and_score_mod[
+            mask_str,
+            score_mod_str,
+            _dispatch_flash_attention,
+            local_window_size,
+            num_kv_heads,
+        ]()
 
 
 @compiler.register("no_mask_flash_attention_cpu")
@@ -7136,7 +7219,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
     because the graph compiler doesn't know about the dependency between these
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
-    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
     """
     generic_fused_qk_rope_bshd_continuous_batch[
         interleaved=interleaved, target=target
@@ -8564,10 +8647,11 @@ struct Struct_fused_token_sampling:
         _trace_name: StaticString,
     ](
         out_idxs: OutputTensor[dtype=out_idx_type, rank=rank],
-        K: Scalar,
-        temperature: Scalar[dtype],
-        top_p: Scalar[dtype],
-        seed: UInt64,
+        K: InputTensor[dtype = DType.int64, rank=1],
+        max_k: Scalar,
+        temperature: InputTensor[dtype = DType.float32, rank=1],
+        top_p: InputTensor[dtype = DType.float32, rank=1],
+        seed: InputTensor[dtype = DType.uint64, rank=1],
         input: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
@@ -8575,6 +8659,18 @@ struct Struct_fused_token_sampling:
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_idxs_buf = managed_tensor_slice_to_ndbuffer(out_idxs)
+        var K_buf = OptionalReg[NDBuffer[DType.int64, 1, MutableAnyOrigin]](
+            managed_tensor_slice_to_ndbuffer(K)
+        )
+        var temperature_buf = OptionalReg[
+            NDBuffer[DType.float32, 1, MutableAnyOrigin]
+        ](managed_tensor_slice_to_ndbuffer(temperature))
+        var top_p_buf = OptionalReg[
+            NDBuffer[DType.float32, 1, MutableAnyOrigin]
+        ](managed_tensor_slice_to_ndbuffer(top_p))
+        var seed_buf = OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]](
+            managed_tensor_slice_to_ndbuffer(seed)
+        )
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
@@ -8582,7 +8678,7 @@ struct Struct_fused_token_sampling:
                 # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
                 # However, switching to just using our topk_fused_sampling leads to a -37% perf
                 # drop in q4_k benchmarking for llama 3.
-                if K == 1:
+                if max_k == 1:
                     argmax(
                         input.to_layout_tensor(),
                         rank - 1,
@@ -8590,18 +8686,25 @@ struct Struct_fused_token_sampling:
                     )
                     return
                 _fused_token_sampling_cpu(
-                    Int(K), input_buf, out_idxs_buf, temperature, top_p, seed
+                    Int(max_k),
+                    input_buf,
+                    out_idxs_buf,
+                    k=K_buf,
+                    temperature=temperature_buf,
+                    top_p=top_p_buf,
+                    seed=seed_buf,
                 )
             else:
                 var cuda_ctx = ctx.get_device_context()
                 _fused_token_sampling_gpu(
                     cuda_ctx,
-                    Int(K),
+                    Int(max_k),
                     input_buf,
                     out_idxs_buf,
-                    temperature=temperature,
-                    top_p=top_p,
-                    seed=seed,
+                    k=K_buf,
+                    temperature=temperature_buf,
+                    top_p=top_p_buf,
+                    seed=seed_buf,
                 )
 
 
@@ -8627,12 +8730,18 @@ struct Struct_min_p_sampling:
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_token_ids_buf = managed_tensor_slice_to_ndbuffer(out_token_ids)
         var min_ps_buf = NDBuffer[dtype, 1, _, 1, 1](UnsafePointer(to=min_p))
+        var min_ps_tensor = LayoutTensor[dtype, Layout.row_major(1)](
+            UnsafePointer(to=min_p)
+        )
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if is_cpu[target]():
                 min_p_sampling_cpu(
-                    min_ps_buf, input_buf, out_token_ids_buf, temperature
+                    min_ps_tensor,
+                    input.to_layout_tensor(),
+                    out_token_ids.to_layout_tensor(),
+                    temperature,
                 )
             else:
                 var cuda_ctx = ctx.get_device_context()

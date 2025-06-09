@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
@@ -107,7 +106,7 @@ fn cublasLtMatrixTransformDescCreate(
     """Create new matrix transform operation descriptor.
 
     \retval     CUBLAS_STATUS_ALLOC_FAILED  if memory could not be allocated
-    \retval     CUBLAS_STATUS_SUCCESS       if desciptor was created successfully
+    \retval     CUBLAS_STATUS_SUCCESS       if descriptor was created successfully
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescCreate",
@@ -148,7 +147,7 @@ struct Order:
     32-wide group of columns. E.g. if matrix has 33 columns and 1 row, ld must be at least (32 * 8) * 1 = 256.
     """
     alias COL32_2R_4R4 = Self(4)
-    """Column-major ordered tiles of composite tiles with total 32 columns ands 32 rows.
+    """Column-major ordered tiles of composite tiles with total 32 columns and 32 rows.
     Element offset within the tile is calculated as (((row%8)/2*4+row/8)*2+row%2)*32+col.
 
     Leading dimension is the stride (in elements) to the beginning of the first 32 column x 32 row tile for the next
@@ -584,7 +583,7 @@ struct MatmulAlgorithmCapability:
     array of uint32_t.
     """
     alias LD_NEGATIVE = Self(12)
-    """support for nagative ld for all of the matrices
+    """support for negative ld for all of the matrices
 
     int32_t 0 means no support, supported otherwise.
     """
@@ -2570,7 +2569,7 @@ fn cublasLtMatrixLayoutCreate(
     """Create new matrix layout descriptor.
 
     \retval     CUBLAS_STATUS_ALLOC_FAILED  if memory could not be allocated
-    \retval     CUBLAS_STATUS_SUCCESS       if desciptor was created successfully
+    \retval     CUBLAS_STATUS_SUCCESS       if descriptor was created successfully
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutCreate",
@@ -2644,7 +2643,7 @@ fn cublasLtMatmulDescCreate(
     """Create new matmul operation descriptor.
 
     \retval     CUBLAS_STATUS_ALLOC_FAILED  if memory could not be allocated
-    \retval     CUBLAS_STATUS_SUCCESS       if desciptor was created successfully
+    \retval     CUBLAS_STATUS_SUCCESS       if descriptor was created successfully
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescCreate",
@@ -2807,7 +2806,7 @@ fn cublasLtMatmulPreferenceCreate(
     """Create new matmul heuristic search preference descriptor.
 
     \retval     CUBLAS_STATUS_ALLOC_FAILED  if memory could not be allocated
-    \retval     CUBLAS_STATUS_SUCCESS       if desciptor was created successfully
+    \retval     CUBLAS_STATUS_SUCCESS       if descriptor was created successfully
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceCreate",

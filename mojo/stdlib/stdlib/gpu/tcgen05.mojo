@@ -144,7 +144,7 @@ fn tcgen05_ld[
         repeat: The repeat factor.
         type: The data type to load.
         pack: Whether to pack two 16-bit chunks of adjacent columns into a single 32-bit register.
-        width: The nubmer elements in the result vector.
+        width: The number elements in the result vector.
 
     Args:
         tmem_addr: The address of the tensor memory to load from.
