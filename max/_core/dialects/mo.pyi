@@ -132,15 +132,26 @@ class OpaqueType(max._core.Type):
       ```
     """
 
+    @overload
+    def __init__(
+        self, symbol: max._core.dialects.builtin.StringAttr
+    ) -> None: ...
+    @overload
     def __init__(
         self,
         symbol: max._core.dialects.builtin.StringAttr,
-        metadata: max._core.dialects.builtin.DictionaryAttr,
+        parameters: max._core.dialects.builtin.DictionaryAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        symbol: max._core.dialects.builtin.StringAttr,
+        parameters: max._core.dialects.builtin.DictionaryAttr,
     ) -> None: ...
     @property
     def symbol(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
-    def metadata(self) -> max._core.dialects.builtin.DictionaryAttr | None: ...
+    def parameters(self) -> max._core.dialects.builtin.DictionaryAttr: ...
 
 class ScalarType(max._core.Type):
     """This type represents scalars."""
