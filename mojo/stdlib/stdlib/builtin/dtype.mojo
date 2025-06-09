@@ -37,6 +37,7 @@ struct DType(
     Stringable,
     Writable,
     _HashableWithHasher,
+    KeyElement,
 ):
     """Represents DType and provides methods for working with it."""
 

@@ -53,7 +53,7 @@ def test_assert_messages():
 
 
 @fieldwise_init
-struct DummyStruct:
+struct DummyStruct(EqualityComparable, Stringable):
     var value: Int
 
     fn __eq__(self, other: Self) -> Bool:

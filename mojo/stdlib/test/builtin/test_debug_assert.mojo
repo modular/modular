@@ -49,7 +49,7 @@ def test_debug_assert_writable():
 
 
 @fieldwise_init
-struct WritableOnly:
+struct WritableOnly(Writable):
     var message: String
 
     fn write_to[W: Writer](self, mut writer: W):

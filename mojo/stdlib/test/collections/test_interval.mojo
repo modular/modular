@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.interval import Interval, IntervalTree
+from collections.interval import Interval, IntervalTree, IntervalElement
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
@@ -113,7 +113,9 @@ def test_interval():
     assert_false(Bool(Interval(0, 0)))
 
 
-struct MyType:
+struct MyType(
+    Copyable, Movable, Stringable, Comparable, Floatable, IntervalElement
+):
     var value: Float64
 
     fn __init__(out self):

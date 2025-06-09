@@ -78,7 +78,7 @@ fn _get_dylib_function[
 
 
 @value
-struct DriverVersion:
+struct DriverVersion(StringableRaising):
     var _value: List[String]
 
     @implicit

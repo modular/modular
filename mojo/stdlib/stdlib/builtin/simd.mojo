@@ -76,6 +76,7 @@ from builtin.device_passable import DevicePassable
 from builtin.dtype import _uint_type_of_width
 from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
+from builtin.math import Powable
 from documentation import doc_private
 from memory import Span, UnsafePointer, bitcast, memcpy
 from python import PythonConvertible, PythonObject, Python
@@ -268,11 +269,13 @@ struct SIMD[dtype: DType, size: Int](
     Hashable,
     _HashableWithHasher,
     Indexer,
+    Powable,
     PythonConvertible,
     Representable,
     Roundable,
     Sized,
     Stringable,
+    Truncable,
     Writable,
 ):
     """Represents a small vector that is backed by a hardware vector element.

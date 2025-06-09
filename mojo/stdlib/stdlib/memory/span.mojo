@@ -87,7 +87,7 @@ struct Span[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[T](),
-](ExplicitlyCopyable, Copyable, Movable, Sized):
+](ExplicitlyCopyable, Copyable, Movable, Sized, Boolable):
     """A non-owning view of contiguous data.
 
     Parameters:

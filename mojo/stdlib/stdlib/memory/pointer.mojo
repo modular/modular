@@ -165,6 +165,7 @@ struct AddressSpace(
     Writable,
     Copyable,
     Movable,
+    Intable,
 ):
     """Address space of the pointer."""
 

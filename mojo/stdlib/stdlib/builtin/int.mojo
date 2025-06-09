@@ -19,9 +19,10 @@ from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
+from collections.interval import IntervalElement
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from hashlib.hash import _hash_simd
-from math import CeilDivable
+from math import CeilDivable, Ceilable, Floorable, Truncable
 from sys import bitwidthof
 
 from builtin.device_passable import DevicePassable
@@ -215,6 +216,11 @@ struct Int(
     Copyable,
     Movable,
     Comparable,
+    Ceilable,
+    Floorable,
+    Truncable,
+    Writable,
+    IntervalElement,
     DevicePassable,
     ExplicitlyCopyable,
     Hashable,
@@ -227,7 +233,6 @@ struct Int(
     Representable,
     Roundable,
     Stringable,
-    Writable,
     ConvertibleFromPython,
 ):
     """This type represents an integer value."""

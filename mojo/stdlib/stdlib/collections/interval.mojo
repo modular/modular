@@ -78,7 +78,16 @@ trait IntervalElement(
         ...
 
 
-struct Interval[T: IntervalElement](Copyable, Movable, Boolable, Writable):
+struct Interval[T: IntervalElement](
+    Copyable,
+    Movable,
+    Boolable,
+    Writable,
+    Sized,
+    Stringable,
+    Representable,
+    EqualityComparable,
+):
     """A half-open interval [start, end) that represents a range of values.
 
     The interval includes the start value but excludes the end value.

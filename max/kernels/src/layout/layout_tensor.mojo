@@ -14,6 +14,7 @@
 """
 from collections import Optional, OptionalReg
 from math import align_up, ceildiv, exp
+from math.math import _Expable
 from sys import (
     alignof,
     bitwidthof,
@@ -284,7 +285,7 @@ struct LayoutTensor[
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
-](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable):
+](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable, _Expable):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 

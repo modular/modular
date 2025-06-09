@@ -19,7 +19,6 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-
 from utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
@@ -28,7 +27,14 @@ from utils import IndexList, StaticTuple
 
 
 @register_passable("trivial")
-struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable, Indexer):
+struct Dim(
+    Intable,
+    Stringable,
+    Writable,
+    ImplicitlyBoolable,
+    Indexer,
+    EqualityComparable,
+):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value

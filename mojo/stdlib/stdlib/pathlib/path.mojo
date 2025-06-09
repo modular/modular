@@ -70,6 +70,8 @@ struct Path(
     Copyable,
     Movable,
     ExplicitlyCopyable,
+    EqualityComparable,
+    Hashable,
     PathLike,
     KeyElement,
     _HashableWithHasher,
