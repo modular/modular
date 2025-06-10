@@ -30,9 +30,9 @@ from max.pipelines.core import (
 )
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
-from max.serve.scheduler import (
-    AudioGenerationScheduler,
-    TokenGenerationSchedulerConfig,
+from max.serve.scheduler import AudioGenerationScheduler
+from max.serve.scheduler.audio_generation_scheduler import (
+    AudioGenerationSchedulerConfig,
 )
 from max.serve.scheduler.text_generation_scheduler import BatchType
 
@@ -162,6 +162,10 @@ def create_paged_scheduler(
     enable_prefix_caching=False,
     enable_in_flight_batching=False,
     enable_kvcache_swapping_to_host=False,
+    max_queue_size_tg=None,
+    min_batch_size_tg=0,
+    ce_delay_ms=0.0,
+    enable_prioritize_first_decode=False,
 ) -> AudioGenerationScheduler:
     # Create a paged manager that has one slot
     paged_manager = create_paged_manager(
@@ -173,7 +177,7 @@ def create_paged_scheduler(
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
     )
 
-    scheduler_config = TokenGenerationSchedulerConfig(
+    scheduler_config = AudioGenerationSchedulerConfig(
         max_batch_size_tg=max_batch_size,
         max_forward_steps_tg=max_forward_steps_tg,
         target_tokens_per_batch_tg=target_tokens_per_batch_tg,
@@ -181,6 +185,10 @@ def create_paged_scheduler(
         max_forward_steps_ce=1,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         enable_in_flight_batching=enable_in_flight_batching,
+        max_queue_size_tg=max_queue_size_tg,
+        min_batch_size_tg=min_batch_size_tg,
+        ce_delay_ms=ce_delay_ms,
+        enable_prioritize_first_decode=enable_prioritize_first_decode,
     )
     token_pipeline = FakeAudioGeneratorPipeline(paged_manager)
     scheduler = AudioGenerationScheduler(
@@ -474,8 +482,9 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
     assert len(actual) == len(expected) and actual == expected
 
 
+@pytest.mark.parametrize("enable_prioritize_first_decode", [True, False])
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384(
-    zmq_ctx,
+    zmq_ctx, enable_prioritize_first_decode
 ):
     num_prompts = 100
     prompt_len = 500
@@ -487,8 +496,8 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
         response_zmq_endpoint=response_zmq_endpoint(),
         request_zmq_endpoint=request_zmq_endpoint(),
         cancel_zmq_endpoint=cancel_zmq_endpoint(),
-        enable_in_flight_batching=False,
         enable_prefix_caching=True,
+        enable_prioritize_first_decode=enable_prioritize_first_decode,
     )
 
     push_socket = ZmqPushSocket[tuple[str, TTSContext]](
@@ -519,19 +528,30 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
         )
     time.sleep(1)
 
-    # We predict approx 384 tokens to be cache hit.
-    # This means we encode 500 - 384 = 116 tokens per CE batch.
-    # Hence, we will schedule approx 8192 / 116 = 70.62 CE req per batch.
-    # This is rounded up to 71 due to chunked prefill.
-    expected = [
-        # batch_type, batch_size, terminated, num_steps, input_tokens
-        BatchInfo(CE, 17, 0, 1, 8500),
-        BatchInfo(CE, 71, 0, 1, 8236),
-        BatchInfo(CE, 12, 0, 1, 1392),
-        BatchInfo(TG, 100, 0, 10, 100),
-        BatchInfo(TG, 100, 100, 10, 100),
-        BatchInfo(TG, 0, 0, 0, 0),
-    ]
+    if enable_prioritize_first_decode:
+        # As you can see, the TG batch that follows each CE batch has exactly
+        # the same number of requests.
+        expected = [
+            # batch_type, batch_size, terminated, num_steps, input_tokens
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(TG, 17, 0, 10, 17),
+            BatchInfo(CE, 71, 0, 1, 8236),
+            BatchInfo(TG, 71, 0, 10, 71),
+            BatchInfo(CE, 12, 0, 1, 1392),
+            BatchInfo(TG, 12, 0, 10, 12),
+            BatchInfo(TG, 100, 100, 10, 100),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    else:
+        expected = [
+            # batch_type, batch_size, terminated, num_steps, input_tokens
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 71, 0, 1, 8236),
+            BatchInfo(CE, 12, 0, 1, 1392),
+            BatchInfo(TG, 100, 0, 10, 100),
+            BatchInfo(TG, 100, 100, 10, 100),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
     actual = run_until_completion(scheduler)
     assert len(actual) == len(expected) and actual == expected
 
