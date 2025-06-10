@@ -630,7 +630,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return Self(unsafe_from_utf8=self._slice)
 
     @implicit
-    fn __init__[  # TODO: no reason for this to force immutability.
+    fn __init__[
         origin: ImmutableOrigin, //
     ](out self: StringSlice[origin], ref [origin]value: String):
         """Construct an immutable StringSlice.
@@ -642,6 +642,19 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             value: The string value.
         """
         self = value.as_string_slice()
+
+    fn __init__[
+        origin: MutableOrigin, //
+    ](out self: StringSlice[origin], ref [origin]value: String):
+        """Construct a mutable StringSlice.
+
+        Parameters:
+            origin: The mutable origin.
+
+        Args:
+            value: The string value.
+        """
+        self = value.as_string_slice_mut()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
