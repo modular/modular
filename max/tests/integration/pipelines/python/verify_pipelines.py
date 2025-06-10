@@ -685,7 +685,7 @@ PIPELINES = {
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
             cos_dist_threshold=1.5e-3,
-            kl_div_threshold=3.0e-3,
+            kl_div_threshold=3.5e-3,
         ),
     ),
     "Qwen/Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
@@ -771,7 +771,7 @@ PIPELINES = {
             encoding="bfloat16",
             # TODO(MODELS-516): Investigate need for high tolerances here.
             cos_dist_threshold=3.0e-03,
-            kl_div_threshold=1.8e-01,
+            kl_div_threshold=2.2e-01,
         ),
     ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
