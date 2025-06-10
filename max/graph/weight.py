@@ -24,6 +24,24 @@ from .value import TensorValue, Value
 DLPackCompatible = Union[DLPackArray, npt.NDArray]
 
 
+def _compute_shard_range(
+    shard_dim: int, shard_idx: int, num_devices: int
+) -> tuple[int, int]:
+    base_size, remainder = divmod(shard_dim, num_devices)
+
+    # Give first 'remainder' devices an extra column/row.
+    if shard_idx < remainder:
+        start = shard_idx * (base_size + 1)
+        end = start + base_size + 1
+    else:
+        start = (
+            remainder * (base_size + 1) + (shard_idx - remainder) * base_size
+        )
+        end = start + base_size
+
+    return start, end
+
+
 def col_sharding_strategy(
     weight: Weight, i: int, num_devices: int
 ) -> TensorValue:
@@ -38,8 +56,11 @@ def col_sharding_strategy(
         A :obj:`TensorValue` representing the sharded portion of the weight
         for the i-th device.
     """
-    col_size = int(weight.shape[1]) // num_devices
-    return weight[:, i * col_size : (i + 1) * col_size]
+    start, end = _compute_shard_range(
+        shard_dim=int(weight.shape[1]), shard_idx=i, num_devices=num_devices
+    )
+
+    return weight[:, start:end]
 
 
 def row_sharding_strategy(
@@ -56,8 +77,11 @@ def row_sharding_strategy(
         A :obj:`TensorValue` representing the sharded portion of the weight
         for the i-th device.
     """
-    row_size = int(weight.shape[0]) // num_devices
-    return weight[i * row_size : (i + 1) * row_size]
+    start, end = _compute_shard_range(
+        shard_dim=int(weight.shape[0]), shard_idx=i, num_devices=num_devices
+    )
+
+    return weight[start:end]
 
 
 def replicate_sharding_strategy(
