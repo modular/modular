@@ -7,7 +7,7 @@
 import asyncio
 import tempfile
 import threading
-from typing import cast
+from typing import Union, cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -120,7 +120,7 @@ def prefill_dispatcher_factory(prefill_address, decode_address):
             default_destination_address=decode_address,
         ),
     )
-    return DispatcherFactory(config)
+    return DispatcherFactory[Union[PrefillResponse, PrefillRequest]](config)
 
 
 @pytest.fixture
@@ -133,7 +133,7 @@ def decode_dispatcher_factory(prefill_address, decode_address):
             default_destination_address=prefill_address,
         ),
     )
-    return DispatcherFactory(config)
+    return DispatcherFactory[Union[PrefillRequest, PrefillResponse]](config)
 
 
 async def setup_scheduler(
