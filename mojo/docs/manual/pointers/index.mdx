@@ -268,5 +268,32 @@ types will do the job. Here are some use cases where you might want to use an
   use`UnsafePointer` to pass a buffer full of data to or from an external
   library.
 
-For more information, see [Unsafe
-pointers](/mojo/manual/pointers/unsafe-pointers).
+## Pointer Summary
+- Pointer is a safe pointer that points to a single value that it doesn't own.
+	- construct a Pointer to an existing value by calling the constructor with the to keyword argument:
+```python
+      ptr = Pointer(to=some_value)
+```
+- OwnedPointer
+	OwnedPointer is a smart pointer that points to a single value, and maintains exclusive ownership of that value.
+	- Implicitly allocates memory when you initialize the pointer with a value.
+	- Explicitly copyable, but explicitly copying an OwnedPointer copies the stored value into a new OwnedPointer.
+	- The OwnedPointer allocates memory and moves or copies the value into the reserved memory.
+
+```python
+      o_ptr = OwnedPointer(some_big_struct)
+```
+- ArcPointer
+	ArcPointer is a reference-counted smart pointer that points to an owned value with ownership potentially shared with other instances of it.
+	- Implicitly allocates memory when you initialize the pointer with a value.
+```python
+      attributesDict: Dict[String, String] = {}
+      attributes = ArcPointer(attributesDict)
+```
+- UnsafePointer
+	UnsafePointer points to one or more consecutive memory locations, and can refer to uninitialized memory.
+	- Provides unsafe methods for initializing and destroying instances of the stored type. 
+	- The user is responsible for managing the lifecycle of stored values.
+	- It's analogous to a raw pointer in the C and C++ programming languages
+
+For more information, see [Unsafe pointers](/mojo/manual/pointers/unsafe-pointers).
