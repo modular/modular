@@ -15,7 +15,6 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn import OptimizedRotaryEmbedding
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheManager,
@@ -24,6 +23,7 @@ from max.nn.kv_cache import (
     PagedKVCacheManager,
     load_kv_manager,
 )
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.gemma3.layers.attention import (
     _Gemma3Attention as MaxGemma3Attention,
@@ -179,7 +179,7 @@ def generate_max_outputs(
     session = InferenceSession(devices=[Accelerator(0)])
 
     attention = MaxGemma3Attention(
-        rope_global=OptimizedRotaryEmbedding(
+        rope_global=Llama3RotaryEmbedding(
             text_config.hidden_size,
             text_config.num_attention_heads,
             text_config.rope_theta,
@@ -188,7 +188,7 @@ def generate_max_outputs(
             head_dim=text_config.head_dim,
             device=device_ref,
         ),
-        rope_local=OptimizedRotaryEmbedding(
+        rope_local=Llama3RotaryEmbedding(
             text_config.hidden_size,
             text_config.num_attention_heads,
             text_config.rope_local_base_freq,
