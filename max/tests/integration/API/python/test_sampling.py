@@ -290,6 +290,11 @@ def test_apply_penalties_to_logits(session: InferenceSession):
         device=device_ref,
     )
 
+    penalty_type = TensorType(DType.float32, ["batch_size"], device=device_ref)
+    freq_penalty_type = penalty_type
+    presence_penalty_type = penalty_type
+    repetition_penalty_type = penalty_type
+
     prompt_lens = np.random.randint(10, 20, [BATCH_SIZE])
     prompt_tokens = [
         np.random.randint(0, VOCAB_SIZE, [prompt_len])
@@ -324,11 +329,17 @@ def test_apply_penalties_to_logits(session: InferenceSession):
             logits_in_type,
             compressed_frequency_data_type,
             frequency_offsets_type,
+            freq_penalty_type,
+            presence_penalty_type,
+            repetition_penalty_type,
         ),
     ) as graph:
         logits = graph.inputs[0].buffer
         compressed_frequency_data = graph.inputs[1].tensor
         frequency_offsets = graph.inputs[2].tensor
+        freq_penalty = graph.inputs[3].tensor
+        presence_penalty = graph.inputs[4].tensor
+        repetition_penalty = graph.inputs[5].tensor
 
         ops.inplace_custom(
             "sampler.apply_penalties",
@@ -336,19 +347,9 @@ def test_apply_penalties_to_logits(session: InferenceSession):
                 logits,
                 compressed_frequency_data,
                 frequency_offsets,
-                ops.constant(
-                    FREQ_PENALTY_SCALAR, DType.float32, device=DeviceRef.CPU()
-                ),
-                ops.constant(
-                    PRESENCE_PENALTY_SCALAR,
-                    DType.float32,
-                    device=DeviceRef.CPU(),
-                ),
-                ops.constant(
-                    REPETITION_PENALTY_SCALAR,
-                    DType.float32,
-                    device=DeviceRef.CPU(),
-                ),
+                freq_penalty,
+                presence_penalty,
+                repetition_penalty,
             ],
             device=device_ref,
         )
@@ -361,6 +362,15 @@ def test_apply_penalties_to_logits(session: InferenceSession):
         Tensor.from_dlpack(logits_np).to(device),
         Tensor.from_dlpack(compressed_frequency_data_np).to(device),
         Tensor.from_dlpack(frequency_offsets_np).to(device),
+        Tensor.from_numpy(
+            np.array([FREQ_PENALTY_SCALAR] * BATCH_SIZE, dtype=np.float32)
+        ).to(device),
+        Tensor.from_numpy(
+            np.array([PRESENCE_PENALTY_SCALAR] * BATCH_SIZE, dtype=np.float32)
+        ).to(device),
+        Tensor.from_numpy(
+            np.array([REPETITION_PENALTY_SCALAR] * BATCH_SIZE, dtype=np.float32)
+        ).to(device),
     )[0]
 
     max_result = torch.from_dlpack(logits_out)
