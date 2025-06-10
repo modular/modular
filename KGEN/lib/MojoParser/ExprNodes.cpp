@@ -724,6 +724,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     switch (dest.patternDeclKind) {
     default:
       assert(0 && "unhandled pattern decl kind");
+      [[fallthrough]];
     case PatternDeclKind::kRef:
       declKind = VarDeclKind::Ref;
       break;
