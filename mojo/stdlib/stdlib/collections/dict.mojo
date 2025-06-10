@@ -941,7 +941,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
 
     fn setdefault(
         mut self, key: K, owned default: V
-    ) -> ref [self._find_ref(key)] V:
+    ) -> ref [self._entries[0].value().value] V:
         """Get a value from the dictionary by key, or set it to a default if it
         doesn't exist.
 
