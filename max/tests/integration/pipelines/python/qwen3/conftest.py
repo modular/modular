@@ -98,12 +98,22 @@ def attention_weights(text_config: Qwen3Config) -> dict[str, torch.Tensor]:
     # K_NORM_STD: 1.858506
     # ==================================================
 
-    O_PROJ_STD = 0.031565
+    # Qwen/Qwen3-32B checkpoint
+    # ==================================================
+    # Q_PROJ_STD: 0.018800
+    # K_PROJ_STD: 0.023036
+    # V_PROJ_STD: 0.024043
+    # O_PROJ_STD: 0.022142
+    # Q_NORM_STD: 0.474626
+    # K_NORM_STD: 0.832018
+    # ==================================================
+
+    O_PROJ_STD = 0.035518
     K_PROJ_STD = 0.031698
-    Q_PROJ_STD = 0.035518
-    V_PROJ_STD = 0.034377
-    K_NORM_STD = 1.858506
-    Q_NORM_STD = 0.788619
+    Q_PROJ_STD = 0.034377
+    V_PROJ_STD = 0.031565
+    K_NORM_STD = 0.788619
+    Q_NORM_STD = 1.858506
 
     q_dim = text_config.head_dim * text_config.num_attention_heads
     kv_dim = text_config.head_dim * text_config.num_key_value_heads

@@ -41,15 +41,14 @@ from transformers.models.qwen3.modeling_qwen3 import (
     Qwen3RotaryEmbedding,
 )
 
-# Max position embeddings for Qwen3-1.7B
-# https://huggingface.co/Qwen/Qwen3-1.7B/blob/main/config.json
-MAX_SEQ_LEN = 40960
+MAX_SEQ_LEN = 1024
 
 
 @pytest.fixture
 def input_tensor(text_config: Qwen3Config) -> torch.Tensor:
     torch.manual_seed(42)
-    # 2048 per Qwen3-1.7B Hidden Size in config.json
+    # https://huggingface.co/Qwen/Qwen3-32B/blob/main/config.json
+    # 2048 per Qwen3-1.7B Hidden Size in config.json (5120 if you want to test the 32B attention)
     return torch.randn(1, 11, 2048).to(torch.bfloat16).to("cuda")
 
 
@@ -189,7 +188,9 @@ def generate_max_outputs(
             huggingface_config=text_config
         ),
         devices=[device],
-        available_cache_memory=30 * 1024 * 1024,
+        available_cache_memory=30
+        * 1024
+        * 1024,  # Use 32 instead of 30 for 32B model attention test
         page_size=kv_cache_config.kv_cache_page_size,
         session=session,
     )

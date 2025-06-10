@@ -626,6 +626,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "qwen3-32b": GenericOracle(
+        model_path="Qwen/Qwen3-32B",
+        config_params={"max_length": 512, "max_batch_size": 1},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "qwen3-30b-a3b": GenericOracle(
         model_path="Qwen/Qwen3-30B-A3B",
         config_params={"max_length": 512},
