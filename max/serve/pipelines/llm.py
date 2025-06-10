@@ -401,7 +401,6 @@ def batch_config_from_pipeline_config(
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
 
-# TODO: Implement this
 class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     """Base class for LLM audio generation pipelines."""
 
