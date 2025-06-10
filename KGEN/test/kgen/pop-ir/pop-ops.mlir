@@ -405,6 +405,20 @@ kgen.generator @simd_bitcast(%arg0: !pop.simd<4, f32>, %arg1: !pop.simd<4, f64>)
   kgen.return %3 : !pop.simd<4, f32>
 }
 
+// CHECK-LABEL: @bitcast_simd_from_bool
+kgen.generator @bitcast_simd_from_bool(%a: !pop.simd<32, bool>) {
+  // CHECK: pop.bitcast %arg0 : !pop.simd<32, bool> to !pop.scalar<f32>
+  %0 = pop.bitcast %a : !pop.simd<32, bool> to !pop.simd<1, f32>
+  kgen.return
+}
+
+// CHECK-LABEL: @bitcast_simd_to_bool
+kgen.generator @bitcast_simd_to_bool(%a: !pop.simd<1, f32>) {
+  // CHECK: pop.bitcast %arg0 : !pop.scalar<f32> to !pop.simd<32, bool>
+  %0 = pop.bitcast %a : !pop.simd<1, f32> to !pop.simd<32, bool>
+  kgen.return
+}
+
 // CHECK-LABEL: @bitcast_parametric
 kgen.generator @bitcast_parametric<size1, size2, type1: dtype, type2: dtype>(
   %arg0: !pop.simd<size1, type1>, %arg1: !pop.simd<size2, f32>,

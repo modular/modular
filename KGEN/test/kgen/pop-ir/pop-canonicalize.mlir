@@ -743,6 +743,16 @@ kgen.func @bitcast_index() -> (!pop.simd<2, ui64>, !pop.simd<2, index>,
                                !pop.simd<2, index>, !pop.simd<2, f64>
 }
 
+// CHECK-LABEL: @bitcast_from_bool
+kgen.func @bitcast_from_bool() -> (!pop.scalar<ui1>) {
+  // CHECK-NEXT: %[[TRUE:.*]] = kgen.param.constant: scalar<bool> = <true>
+  %true = kgen.param.constant: scalar<bool> = <true>
+  // CHECK-NEXT: %[[RESULT:.*]] = pop.bitcast %[[TRUE]] : !pop.scalar<bool> to !pop.scalar<ui1>
+  %0 = pop.bitcast %true : !pop.scalar<bool> to !pop.scalar<ui1>
+  // CHECK-NEXT: return %[[RESULT]]
+  kgen.return %0 : !pop.scalar<ui1>
+}
+
 // CHECK-LABEL: @pointer_bitcast
 kgen.func @pointer_bitcast() -> !kgen.pointer<si32> {
   // CHECK-NEXT: pointer<si32> = <0>
