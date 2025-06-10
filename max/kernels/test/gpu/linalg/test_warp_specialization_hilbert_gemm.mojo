@@ -221,7 +221,7 @@ def main():
 
         @parameter
         if ctx.device_info is H100:
-            alias M = 352366
+            alias M = 8192
             alias N = 6144
             alias K = 4096
             test_warp_specialize_gemm[

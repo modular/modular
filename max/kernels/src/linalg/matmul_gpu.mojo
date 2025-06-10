@@ -510,9 +510,9 @@ fn _matmul_gpu[
         if env_get_bool["AUTOTUNING_MODE", False]():
             if env_get_bool["H100_SPECIFIC", False]():
                 alias NUM_PIPELINE_STAGES = env_get_int[
-                    "TUNE_NUM_PIPELINE_STAGES", 6
+                    "TUNE_NUM_PIPELINE_STAGES", 4
                 ]()
-                alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 2]()
+                alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
                 alias WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
                 alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
                 alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
@@ -542,8 +542,8 @@ fn _matmul_gpu[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                     elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     config=H100_FP8_TUNING_CONFIG,
-                    grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
-                    schedule=SCHEDULE_TYPE,
+                    grid_shape = Index(128, 1),
+                    schedule = MatmulSchedule.DS_SCHEDULER,
                 ](
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
@@ -555,12 +555,479 @@ fn _matmul_gpu[
                 )
                 return
 
+        alias static_M = c_shape.get[0]()
         alias static_N = c_shape.get[1]()
         alias static_K = a_shape.get[1]()
 
-        # llama-8B-FP8 gemm shapes
+        # llama-405B-FP8 gemm shapes
         @parameter
-        if (
+        if static_N == 16384 and static_K == 2048:
+            if m <= 64:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(64, 128, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=8,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.DS_SCHEDULER,
+                    grid_shape = Index(128, 1),
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            elif m <= 1024:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            else:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(2, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    grid_shape = Index(8, H100.sm_count // 8),
+                    schedule = MatmulSchedule.TILE2D,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+
+        elif static_N == 2304 and static_K == 16384:
+            if m <= 64:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 48, 32),
+                ](
+                    block_tile_shape=Index(64, 48, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=8,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.DS_SCHEDULER,
+                    grid_shape = Index(128, 1),
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            elif m <= 128:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 48, 32),
+                ](
+                    block_tile_shape=Index(64, 48, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=8,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.DS_SCHEDULER,
+                    grid_shape = Index(128, 1),
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            elif m <= 256:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 96, 32),
+                ](
+                    block_tile_shape=Index(64, 96, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.DS_SCHEDULER,
+                    grid_shape = Index(128, 1),
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            elif m <= 512:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 144, 32),
+                ](
+                    block_tile_shape=Index(128, 144, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.DS_SCHEDULER,
+                    grid_shape = Index(128, 1),
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            elif m <= 1024:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            else:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(2, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    # grid_shape = Index(8, H100.sm_count // 8),
+                    schedule = MatmulSchedule.TILE2D,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+
+        elif static_N == 13312 and static_K == 16384:
+            if m <= 64:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(64, 128, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=8,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.DS_SCHEDULER,
+                    grid_shape = Index(128, 1),
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            elif m <= 1024:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            else:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(2, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    grid_shape = Index(8, H100.sm_count // 8),
+                    schedule = MatmulSchedule.TILE2D,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+
+        elif static_N == 16384 and static_K == 6656:
+            if m <= 64:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(64, 128, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=8,
+                    num_consumer=1,
+                    partitioned_multicast=False,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    schedule = MatmulSchedule.DS_SCHEDULER,
+                    grid_shape = Index(128, 1),
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            elif m <= 1024:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(1, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+            else:
+                alias config = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 128, 32),
+                ](
+                    block_tile_shape=Index(128, 128, 128),
+                    cluster_shape=Index(2, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=True,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=config,
+                    grid_shape = Index(8, H100.sm_count // 8),
+                    schedule = MatmulSchedule.TILE2D,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    m,
+                    n,
+                    k,
+                    ctx,
+                )
+                return
+
+        # llama-8B-FP8 gemm shapes
+        elif (
             (static_N == 6144 and static_K == 4096)
             or (static_N == 4096 and static_K == 4096)
             or (static_N == 28672 and static_K == 4096)
@@ -869,6 +1336,8 @@ fn _matmul_gpu[
                         elementwise_lambda_fn=elementwise_lambda_fn,
                         elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                         config=config,
+                        schedule = MatmulSchedule.DS_SCHEDULER,
+                        grid_shape = Index(128, 1),
                     ](
                         rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),

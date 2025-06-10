@@ -1229,6 +1229,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     c_smem_layout: Layout,
     cluster_shape: StaticTuple[Int32, 3],
     grid_shape: IndexList[2],
+    schedule: MatmulSchedule,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
@@ -1259,6 +1260,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     alias CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
 
     alias K = b_layout.shape[1].value()
+    alias N = b_layout.shape[0].value()
+    alias M = a_layout.shape[0].value()
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
     alias BK = block_tile_shape[2]
@@ -1268,7 +1271,9 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     alias simd_size = simdwidthof[c_type]()
 
-    var scheduler = TileScheduler[block_tile_shape, grid_shape](problem_shape)
+    var scheduler = TileScheduler[
+        Index(M, N, K), block_tile_shape, grid_shape, schedule=schedule
+    ](problem_shape)
 
     constrained[
         not partitioned_multicast
@@ -1930,8 +1935,24 @@ fn warp_specialize_gemm_with_multicasting[
         "Either the epilogue lambda or the compute lambda can be used",
     ]()
 
+    constrained[
+        BM > 64 or (BM == 64 and config.num_consumer == 1),
+        "Only support 1 consumer for BM=64",
+    ]()
+
     @parameter
-    if grid_shape:
+    if schedule == MatmulSchedule.DS_SCHEDULER:
+        constrained[
+            grid_shape is not None,
+            "Grid shape must be provided for DS scheduler",
+        ]()
+        alias ds_grid_shape = grid_shape.value()
+        constrained[
+            ds_grid_shape[0] <= H100.sm_count and ds_grid_shape[1] == 1,
+            "Deepseek scheduler only accepts grid shape with 1 column",
+        ]()
+
+    elif grid_shape:
         constrained[
             _is_valid_grid_shape[grid_shape.value(), config.cluster_shape](
                 ceildiv(N_static, BN)
@@ -2047,6 +2068,7 @@ fn warp_specialize_gemm_with_multicasting[
             c_swizzle=c_swizzle,
             cluster_shape=cluster_shape,
             grid_shape=grid_shape_adjusted,
+            schedule=schedule,
             transpose_b=True,
             num_threads=num_threads,
             pipeline_stages = config.num_pipeline_stages,
