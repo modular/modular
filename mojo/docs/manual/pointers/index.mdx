@@ -155,7 +155,7 @@ pointers.)
 You can construct a `Pointer` to an existing value by calling the constructor
 with the `to` keyword argument:
 
-```python
+```mojo
 ptr = Pointer(to=some_value)
 ```
 
@@ -172,7 +172,7 @@ underlying data. An `OwnedPointer` points to a single item, which is passed in
 when you initialize the `OwnedPointer`. The `OwnedPointer` allocates memory and
 moves or copies the value into the reserved memory.
 
-```python
+```mojo
 o_ptr = OwnedPointer(some_big_struct)
 ```
 
@@ -196,7 +196,7 @@ smart pointer, ideal for shared resources where the last owner for a given value
 may not be clear. Like an `OwnedPointer`, it points to a single value, and it
 allocates memory when you initialize the `ArcPointer` with a value:
 
-```python
+```mojo
 attributesDict: Dict[String, String] = {}
 attributes = ArcPointer(attributesDict)
 ```
@@ -212,7 +212,7 @@ example, in the following code snippet `SharedDict` uses an `ArcPointer` to
 store a dictionary. Copying an instance of `SharedDict` only copies the
 `ArcPointer`, not the dictionary, which is shared between all of the copies.
 
-```python
+```mojo
 from memory import ArcPointer
 
 struct SharedDict:
