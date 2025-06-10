@@ -728,6 +728,12 @@ class SameInputOutputShapesParameterization(Protocol):
         /,
     ) -> None: ...
 
+class SameVariadicOperandSizeInterface(Protocol):
+    """
+    Interface that represent MO Ops that take multiple variadics, all with the same size.
+    Wrapper around the builtin `SameVariadicOperandSize` that can't be checked in C++.
+    """
+
 class ScatterLike(Protocol):
     """
     Interface for modeling Scatter-like operations (i.e., regular Scatter
