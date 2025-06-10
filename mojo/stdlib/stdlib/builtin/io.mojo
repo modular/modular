@@ -36,8 +36,7 @@ from sys.intrinsics import _type_is_eq
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
 from memory import UnsafePointer, bitcast, memcpy
-
-from utils import write_args, write_buffered
+from utils.write import _WriteBufferHeap, _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #
 #  _file_handle
@@ -385,24 +384,53 @@ fn print[
     """
 
     if is_compile_time():
-        write_buffered(file, values, sep=sep, end=end)
-    else:
+        var buffer = _WriteBufferStack(file)
+        alias length = values.__len__()
 
         @parameter
-        if is_amd_gpu():
-            write_buffered[buffer_size=512](file, values, sep=sep, end=end)
-        elif is_nvidia_gpu():
-            write_buffered[use_heap=True](file, values, sep=sep, end=end)
-        else:
-            write_buffered(file, values, sep=sep, end=end)
+        for i in range(length):
+            values[i].write_to(buffer)
+            if i < length - 1:
+                sep.write_to(buffer)
 
-    if is_compile_time():
+        end.write_to(buffer)
+        buffer.flush()
         if flush:
             _flush(file=file)
     else:
-        # Isn't this weird
+
         @parameter
-        if not is_gpu():
+        if is_gpu():
+            var buffer = _WriteBufferHeap()
+            alias length = values.__len__()
+
+            @parameter
+            for i in range(length):
+                values[i].write_to(buffer)
+                if i < length - 1:
+                    sep.write_to(buffer)
+
+            end.write_to(buffer)
+            buffer.data[buffer.pos] = 0
+            file.write_bytes(
+                Span[Byte, ImmutableAnyOrigin](
+                    ptr=buffer.data, length=buffer.pos + 1
+                )
+            )
+
+        else:
+            var buffer = _WriteBufferStack(file)
+            alias length = values.__len__()
+
+            @parameter
+            for i in range(length):
+                values[i].write_to(buffer)
+
+                if i < length - 1:
+                    sep.write_to(buffer)
+
+            end.write_to(buffer)
+            buffer.flush()
             if flush:
                 _flush(file=file)
 

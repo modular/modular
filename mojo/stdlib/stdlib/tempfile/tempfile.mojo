@@ -24,8 +24,7 @@ import sys
 from pathlib import Path
 
 from memory import Span
-
-from utils import write_buffered
+from utils.write import _WriteBufferStack
 
 alias TMP_MAX = 10_000
 
@@ -415,7 +414,13 @@ struct NamedTemporaryFile:
             args: Sequence of arguments to write to this Writer.
         """
         var file = FileDescriptor(self._file_handle._get_raw_fd())
-        write_buffered(file, args)
+        var buffer = _WriteBufferStack(file)
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(buffer)
+
+        buffer.flush()
 
     @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]):

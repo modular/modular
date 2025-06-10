@@ -22,8 +22,7 @@ from sys.ffi import c_char
 
 from memory import UnsafePointer, memcpy
 from memory.memory import _free
-
-from utils.write import write_buffered
+from utils.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
 # Error
@@ -124,7 +123,13 @@ struct Error(
                 `Writable`.
         """
         var output = String()
-        write_buffered(output, args, sep=sep, end=end)
+        var buffer = _WriteBufferStack(output)
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(buffer)
+
+        buffer.flush()
         self = Error(output)
 
     fn copy(self) -> Self:

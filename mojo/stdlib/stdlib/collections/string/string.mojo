@@ -100,9 +100,9 @@ from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcpy, memset
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
-from utils import IndexList, Variant, Writable, Writer, write_args
-from utils.write import write_buffered
+from utils import IndexList, Variant, Writable, Writer
 from utils._select import _select_register_value as select
+from utils.write import _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #
 # String Implementation Details
@@ -445,10 +445,20 @@ struct String(
         var string = String(1, 2.0, "three", sep=", ")
         print(string) # "1, 2.0, three"
         ```
-        .
         """
         self = String()
-        write_buffered(self, args, sep=sep, end=end)
+        var buffer = _WriteBufferStack(self)
+        alias length = args.__len__()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(buffer)
+
+            if i < length - 1:
+                sep.write_to(buffer)
+
+        end.write_to(buffer)
+        buffer.flush()
 
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
     # to declare sep/end as StringSlice.
@@ -489,7 +499,18 @@ struct String(
         .
         """
         self = String()
-        write_buffered(self, args, sep=sep, end=end)
+        var buffer = _WriteBufferStack(self)
+        alias length = args.__len__()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(buffer)
+
+            if i < length - 1:
+                sep.write_to(buffer)
+
+        end.write_to(buffer)
+        buffer.flush()
 
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
@@ -659,25 +680,21 @@ struct String(
 
         This is used only when reusing the `write_to` method for
         `__str__` in order to avoid an endless loop recalling
-        the constructor:
-
-        ```mojo
-        fn write_to[W: Writer](self, mut writer: W):
-            writer.write_bytes(self.as_bytes())
-
-        fn __str__(self) -> String:
-            return String.write(self)
-        ```
-
-        Otherwise you can use the `String` constructor directly without calling
-        the `String.write` static method:
-
-        ```mojo
-        var msg = String("my message", 42, 42.2, True)
-        ```
+        the constructor.
         """
         var string = String()
-        write_buffered(string, args, sep=sep, end=end)
+        var buffer = _WriteBufferStack(string)
+        alias length = args.__len__()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(buffer)
+
+            if i < length - 1:
+                sep.write_to(buffer)
+
+        end.write_to(buffer)
+        buffer.flush()
         return string^
 
     # ===------------------------------------------------------------------=== #

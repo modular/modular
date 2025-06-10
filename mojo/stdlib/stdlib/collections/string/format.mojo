@@ -387,8 +387,12 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
                     return True
                 manual_indexing_count += 1
             except e:
-                alias unexp = "Not the expected error from atol"
-                debug_assert("not convertible to integer" in String(e), unexp)
+
+                @parameter
+                fn check_string() -> Bool:
+                    return "not convertible to integer" in String(e)
+
+                debug_assert[check_string]("Not the expected error from atol")
                 # field is a keyword for **kwargs:
                 # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
                 # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})

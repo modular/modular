@@ -312,7 +312,37 @@ Changes to Python-Mojo interoperability:
 ### ❌ Removed
 
 - `VariadicPack.each` and `VariadicPack.each_idx` methods have been removed.
-  Use the `@parameter for` language construct to achieve this now.
+  Use the `@parameter for` language construct to achieve this now. The
+  `write_buffered` and `write_args` functions have also been removed, to improve
+  compile speed and reduce register pressure on GPU, you should now unroll the
+  variadic pack at each call site:
+  
+  Unbuffered:
+
+  ```mojo
+  fn write[*Ts: Writable](mut self, *args: *Ts):
+      var string = String()
+
+      @parameter
+      for i in range(args.__len__()):
+          args[i].write_to(string)
+  ```
+
+  Buffered:
+
+  ```mojo
+  from utils.write import _WriteBufferStack
+
+  fn write[*Ts: Writable](mut self, *args: *Ts):
+      var string = String()
+      var buffer = _WriteBufferStack(string)
+
+      @parameter
+      for i in range(args.__len__()):
+          args[i].write_to(buffer)
+
+      buffer.flush()
+  ```
 
 ### 🛠️ Fixed
 

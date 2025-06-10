@@ -447,9 +447,11 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
             The result.
         """
 
-        debug_assert(
-            self.check_symbol(String(name)), String("symbol not found: ") + name
-        )
+        @parameter
+        fn _check_symbol() -> Bool:
+            return self.check_symbol(String(name))
+
+        debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
         return self.get_function[fn (__type_of(v)) -> return_type](
             String(name)

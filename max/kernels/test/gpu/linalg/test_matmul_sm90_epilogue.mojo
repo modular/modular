@@ -159,24 +159,20 @@ def test_warp_specialize_gemm_with_multicasting[
 
     debug_assert(
         (ceildiv(M, BM) % (CLUSTER_M)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. M",
-            "(M // BM=",
-            String(M // BM),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M),
-        ),
+        "Number of blocks on M axis should be multiple of cluster dim. M",
+        "(M // BM=",
+        M // BM,
+        ") CLUSTER SIZE:",
+        CLUSTER_M,
     )
 
     debug_assert(
         (ceildiv(N, BN) % (CLUSTER_N)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. N",
-            "N // BN=(",
-            String(N // BN),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N),
-        ),
+        "Number of blocks on M axis should be multiple of cluster dim. N",
+        "N // BN=(",
+        N // BN,
+        ") CLUSTER SIZE:",
+        CLUSTER_N,
     )
 
     var c_tensor = c_device.tensor
