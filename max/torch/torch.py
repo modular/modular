@@ -9,10 +9,11 @@ from __future__ import annotations
 import inspect
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, cast
 
 from max import mlir
 from max._core import Type as _Type
+from max._core.dialects import builtin, kgen
 from max.driver import Accelerator, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import Model
@@ -182,7 +183,7 @@ class CustomOp:
         return self.library._kernel_library
 
     @property
-    def kernel(self) -> mlir.Operation:
+    def kernel(self) -> kgen.GeneratorOp:
         analysis = self.kernel_library._analysis
         return analysis.kernel(self.name)
 
@@ -288,16 +289,17 @@ def custom_op_graph(
     return graph
 
 
-def get_strings(attr: mlir.Attribute) -> list[str]:
-    as_array = mlir.ArrayAttr(attr)
-    return [mlir.StringAttr(s).value for s in as_array]
+def get_strings(array_attr: builtin.ArrayAttr) -> list[str]:
+    return [cast(builtin.StringAttr, s).value for s in array_attr.value]
 
 
-def num_outputs(op: mlir.Operation) -> int:
-    return mlir.IntegerAttr(op.attributes["mogg.num_dps_outputs"]).value
+def num_outputs(op: kgen.GeneratorOp) -> int:
+    return cast(
+        builtin.IntegerAttr, op.discardable_attributes["mogg.num_dps_outputs"]
+    ).value
 
 
-def op_signature(op: mlir.Operation) -> inspect.Signature:
+def op_signature(op: kgen.GeneratorOp) -> inspect.Signature:
     """Compute the Python-level signature of the provided custom op.
 
     The computed signature is derived from the KGEN-level annotations on the
@@ -320,8 +322,12 @@ def op_signature(op: mlir.Operation) -> inspect.Signature:
 
     # TODO(GEX-2223): Expose more of MojoLibraryAnalysis so we don't need to
     # hard code MLIR attributes.
-    io_specs = get_strings(op.attributes["mogg.args_io_specs"])
-    arg_names = get_strings(op.attributes["mogg.arg_src_names"])
+    io_specs = get_strings(
+        cast(builtin.ArrayAttr, op.discardable_attributes["mogg.args_io_specs"])
+    )
+    arg_names = get_strings(
+        cast(builtin.ArrayAttr, op.discardable_attributes["mogg.arg_src_names"])
+    )
     input_specs = io_specs[num_dps_outputs:]
     nargs = len(input_specs)
     args = [
