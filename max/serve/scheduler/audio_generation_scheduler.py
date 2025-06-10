@@ -120,15 +120,17 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.max_queue_size_tg = max_queue_size_tg
+        self.max_queue_size_tg = (
+            max_queue_size_tg
+            if max_queue_size_tg is not None
+            else self.max_batch_size_tg
+        )
         self.min_batch_size_tg = min_batch_size_tg
         self.ce_delay_ms = ce_delay_ms
         self.enable_prioritize_first_decode = enable_prioritize_first_decode
 
         if self.max_queue_size_tg is not None:
-            logger.warning(
-                "`max-queue-size-tg` flag is not yet supported with TTS Scheduler"
-            )
+            logger.warning("Using experimental `max-queue-size-tg` feature")
         if self.min_batch_size_tg != 0:
             logger.warning(
                 "`min-batch-size-tg` flag is not yet supported with TTS Scheduler"
@@ -214,7 +216,7 @@ class AudioGenerationScheduler(Scheduler):
         self.pending_reqs: deque[tuple[str, TTSContext]] = deque()
         self.decode_reqs: dict[str, TTSContext] = {}
         self.available_cache_indices = set(
-            range(self.scheduler_config.max_batch_size_tg)
+            range(self.scheduler_config.max_queue_size_tg)
         )
         self.paged_manager = paged_manager
 
@@ -322,16 +324,27 @@ class AudioGenerationScheduler(Scheduler):
     def _create_tg_batch(self) -> AudioGenerationSchedulerOutput:
         num_steps = self.scheduler_config.max_forward_steps_tg
 
+        candidate_reqs: dict[str, TTSContext] = {}
         if (
             self.scheduler_config.enable_prioritize_first_decode
             and self.prev_ce_batch is not None
         ):
-            candidate_reqs: dict[str, TTSContext] = {}
             for req_id, req_data in self.prev_ce_batch.reqs.items():
+                if (
+                    len(candidate_reqs)
+                    == self.scheduler_config.max_batch_size_tg
+                ):
+                    break
                 if req_id in self.decode_reqs:
                     candidate_reqs[req_id] = req_data
         else:
-            candidate_reqs = self.decode_reqs.copy()
+            for req_id, req_data in self.decode_reqs.items():
+                if (
+                    len(candidate_reqs)
+                    == self.scheduler_config.max_batch_size_tg
+                ):
+                    break
+                candidate_reqs[req_id] = req_data
 
         for req_data in candidate_reqs.values():
             num_available_steps = req_data.compute_num_available_steps(
@@ -350,8 +363,8 @@ class AudioGenerationScheduler(Scheduler):
 
     def _create_ce_batch(self) -> AudioGenerationSchedulerOutput:
         ce_batch: dict[str, TTSContext] = {}
-        max_ce_batch_size = self.scheduler_config.max_batch_size_ce
-        max_tg_batch_size = self.scheduler_config.max_batch_size_tg
+        max_batch_size_ce = self.scheduler_config.max_batch_size_ce
+        max_queue_size_tg = self.scheduler_config.max_queue_size_tg
         max_input_len = (
             self.scheduler_config.target_tokens_per_batch_ce or float("inf")
         )
@@ -367,8 +380,8 @@ class AudioGenerationScheduler(Scheduler):
 
         while (
             self.pending_reqs
-            and (len(ce_batch) < max_ce_batch_size)
-            and (len(ce_batch) + len(self.decode_reqs) < max_tg_batch_size)
+            and (len(ce_batch) < max_batch_size_ce)
+            and (len(ce_batch) + len(self.decode_reqs) < max_queue_size_tg)
             and (input_len < max_input_len)
         ):
             req_id, req_data = self.pending_reqs.popleft()
