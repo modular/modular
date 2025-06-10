@@ -4,7 +4,7 @@
 **Date:** June 3, 2025
 **Status:** Proposed
 
-***
+---
 
 ### Abstract
 
@@ -17,7 +17,7 @@ significant performance gains in critical scenarios, reduce API fragmentation
 compared to numerous distinct `unsafe_` prefixed functions, and potentially
 improve code maintainability.
 
-***
+---
 
 ### 1. Motivation for this Proposal
 
@@ -38,7 +38,7 @@ We need a mechanism that:
 2.  Clearly signals the associated risks and responsibilities to the developer.
 3.  Minimizes API surface bloat.
 
-***
+---
 
 ### 2. Proposed Solution: Unsafe Assumption Parameters
 
@@ -67,7 +67,7 @@ The `unsafe_` prefix serves as a contract: if the developer sets
 violated, the behavior is undefined. The default values ensure that calls
 without these explicit parameters retain current safe behavior.
 
-***
+---
 
 ### 3. Benefits
 
@@ -87,7 +87,7 @@ without these explicit parameters retain current safe behavior.
         parts of the logic can be shared, with only the assumption-specific
         sections varying based on compile-time parameters.
 
-***
+---
 
 ### 4. Concrete Examples
 - *Please note that these are merely examples, and that this pattern could be
@@ -156,7 +156,7 @@ Mojo's List type already suffers from fragmentation.
     boilerplate code that would have to be duplicated between `.XXX()` and
     `.unsafe_XXX()`.
 
-***
+---
 
 ### 5. Safety Considerations
 
@@ -173,7 +173,7 @@ It's important that the `unsafe_` nature of these parameters is understood:
     situations where developers can rigorously verify and guarantee the
     assumptions.
 
-***
+---
 
 ### 6. Conclusion
 
