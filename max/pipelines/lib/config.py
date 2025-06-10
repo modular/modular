@@ -73,6 +73,35 @@ class PipelineConfig(MAXConfig):
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
 
+    max_queue_size_tg: Optional[int] = None
+    """Maximum number of requests in decode queue. By default, this is max-batch-size."""
+
+    min_batch_size_tg: int = 0
+    """Specifies a soft floor on the decode batch size.
+
+    If the TG batch size is larger than this value, the scheduler will continue to
+    run TG batches. If it falls below, the scheduler will prioritize CE. Note that
+    this is NOT a strict minimum!
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
+    ce_delay_ms: float = 0.0
+    """Duration of scheduler sleep prior to starting a prefill batch.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
+    enable_prioritize_first_decode: bool = False
+    """When enabled, the scheduler will always run a TG batch immediately after a CE batch,
+    with the same requests. This may be useful for decreasing time-to-first-chunk latency.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
     enable_chunked_prefill: bool = True
     """Enable chunked prefill to split context encoding requests into multiple chunks
     based on 'target_num_new_tokens'."""

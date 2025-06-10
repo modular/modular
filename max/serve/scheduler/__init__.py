@@ -24,23 +24,23 @@ from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
 from max.serve.process_control import ProcessControl
 
-from .audio_generation_scheduler import AudioGenerationScheduler
+from .audio_generation_scheduler import (
+    AudioGenerationScheduler,
+    AudioGenerationSchedulerConfig,
+)
 from .base import Scheduler
 from .config import TokenGeneratorSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .prefill_scheduler import load_prefill_scheduler
-from .text_generation_scheduler import (
-    TokenGenerationSchedulerConfig,
-    load_text_generation_scheduler,
-)
+from .text_generation_scheduler import load_text_generation_scheduler
 
 __all__ = [
     "Scheduler",
     "load_scheduler",
-    "TokenGeneratorSchedulerConfig",
     "EmbeddingsScheduler",
     "EmbeddingsSchedulerConfig",
+    "TokenGeneratorSchedulerConfig",
     "AudioGenerationScheduler",
 ]
 
@@ -70,7 +70,12 @@ def load_scheduler(
         assert isinstance(pipeline, AudioGenerator)
         paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
         assert isinstance(paged_manager, PagedKVCacheManager)
-        token_gen_config = TokenGenerationSchedulerConfig(
+
+        assert config.min_batch_size_tg is not None
+        assert config.ce_delay_ms is not None
+        assert config.enable_prioritize_first_decode is not None
+
+        token_gen_config = AudioGenerationSchedulerConfig(
             max_batch_size_tg=config.max_batch_size_tg,
             max_forward_steps_tg=config.max_forward_steps_tg,
             target_tokens_per_batch_tg=config.target_tokens_per_batch_tg,
@@ -79,6 +84,10 @@ def load_scheduler(
             target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_in_flight_batching=config.enable_in_flight_batching,
+            max_queue_size_tg=config.max_queue_size_tg,
+            min_batch_size_tg=config.min_batch_size_tg,
+            ce_delay_ms=config.ce_delay_ms,
+            enable_prioritize_first_decode=config.enable_prioritize_first_decode,
         )
 
         return AudioGenerationScheduler(

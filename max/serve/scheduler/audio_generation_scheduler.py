@@ -109,6 +109,40 @@ class SchedulerLogger:
             self.f.close()
 
 
+class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
+    def __init__(
+        self,
+        max_queue_size_tg: int | None,
+        min_batch_size_tg: int,
+        ce_delay_ms: float,
+        enable_prioritize_first_decode: bool,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.max_queue_size_tg = max_queue_size_tg
+        self.min_batch_size_tg = min_batch_size_tg
+        self.ce_delay_ms = ce_delay_ms
+        self.enable_prioritize_first_decode = enable_prioritize_first_decode
+
+        if self.max_queue_size_tg is not None:
+            logger.warning(
+                "`max-queue-size-tg` flag is not yet supported with TTS Scheduler"
+            )
+        if self.min_batch_size_tg != 0:
+            logger.warning(
+                "`min-batch-size-tg` flag is not yet supported with TTS Scheduler"
+            )
+        if self.ce_delay_ms != 0.0:
+            logger.warning(
+                "`ce-delay-ms` flag is not yet supported with TTS Scheduler"
+            )
+        if self.enable_prioritize_first_decode:
+            logger.info(
+                "Using experimental `enable-prioritize-first-decode` feature"
+            )
+
+
 class AudioGenerationSchedulerOutput:
     def __init__(
         self,
@@ -147,7 +181,7 @@ class AudioGenerationScheduler(Scheduler):
     def __init__(
         self,
         process_control: ProcessControl,
-        scheduler_config: TokenGenerationSchedulerConfig,
+        scheduler_config: AudioGenerationSchedulerConfig,
         pipeline: AudioGenerator,
         *,
         request_zmq_endpoint: str,
@@ -192,6 +226,10 @@ class AudioGenerationScheduler(Scheduler):
         self.batch_info_logger = SchedulerLogger(
             path=MAX_SERVE_TTS_BATCH_INFO_FILENAME
         )
+
+        # The previous CE batch that was scheduled.
+        # This is used when `enable_prioritize_first_decode=True`.
+        self.prev_ce_batch: None | AudioGenerationSchedulerOutput = None
 
         # TODO health check
 
@@ -274,11 +312,28 @@ class AudioGenerationScheduler(Scheduler):
             return False
         if len(self.pending_reqs) == 0:
             return False
+        if (
+            self.scheduler_config.enable_prioritize_first_decode
+            and self.prev_ce_batch is not None
+        ):
+            return False
         return True
 
     def _create_tg_batch(self) -> AudioGenerationSchedulerOutput:
         num_steps = self.scheduler_config.max_forward_steps_tg
-        for req_data in self.decode_reqs.values():
+
+        if (
+            self.scheduler_config.enable_prioritize_first_decode
+            and self.prev_ce_batch is not None
+        ):
+            candidate_reqs: dict[str, TTSContext] = {}
+            for req_id, req_data in self.prev_ce_batch.reqs.items():
+                if req_id in self.decode_reqs:
+                    candidate_reqs[req_id] = req_data
+        else:
+            candidate_reqs = self.decode_reqs.copy()
+
+        for req_data in candidate_reqs.values():
             num_available_steps = req_data.compute_num_available_steps(
                 self.paged_manager.max_seq_len
             )
@@ -288,7 +343,7 @@ class AudioGenerationScheduler(Scheduler):
                 raise RuntimeError("Ran out of KV cache")
 
         return AudioGenerationSchedulerOutput(
-            self.decode_reqs.copy(),
+            candidate_reqs,
             num_steps=num_steps,
             batch_type=BatchType.TokenGeneration,
         )
@@ -354,6 +409,12 @@ class AudioGenerationScheduler(Scheduler):
         # send the responses to the API process
         self._stream_responses_to_frontend(responses)
 
+        # Update the previous CE batch
+        if batch.batch_type == BatchType.ContextEncoding:
+            self.prev_ce_batch = batch
+        else:
+            self.prev_ce_batch = None
+
     def run(self) -> None:
         """The Scheduler loop that creates batches and schedules them on GPU"""
         i = 0
@@ -391,6 +452,6 @@ class AudioGenerationScheduler(Scheduler):
                     self._handle_cancelled_requests()
 
             except Exception as e:
-                logger.exception("An error occurred during scheduling ")
+                logger.exception("An error occurred during scheduling")
                 # TODO try to recover
                 raise e

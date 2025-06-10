@@ -368,6 +368,10 @@ def batch_config_from_pipeline_config(
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
+            max_queue_size_tg=pipeline_config.max_queue_size_tg,
+            min_batch_size_tg=pipeline_config.min_batch_size_tg,
+            ce_delay_ms=pipeline_config.ce_delay_ms,
+            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
         )
     else:
         raise ValueError(
