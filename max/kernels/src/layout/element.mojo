@@ -141,7 +141,7 @@ struct Element[
             element_data: The SIMD data to initialize the element with.
         """
         self.element_data = element_data
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
 
     fn __init__(
         out self,

@@ -81,18 +81,16 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
     @always_inline("nodebug")
     fn __add__(
-        self,
-        rhs: StringLiteral,
-        out result: StringLiteral[
-            __mlir_attr[
-                `#pop.string_concat<`,
-                self.value,
-                `,`,
-                rhs.value,
-                `> : !kgen.string`,
-            ]
-        ],
-    ):
+        self, rhs: StringLiteral
+    ) -> StringLiteral[
+        __mlir_attr[
+            `#pop.string_concat<`,
+            self.value,
+            `,`,
+            rhs.value,
+            `> : !kgen.string`,
+        ]
+    ]:
         """Concatenate two string literals.
 
         Args:
@@ -101,7 +99,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             The concatenated string.
         """
-        result = __type_of(result)()
+        return {}
 
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.

@@ -424,9 +424,9 @@ struct _IntervalNode[
         self.interval = interval
         self.max_end = interval.end
         self.data = data
-        self.left = left.value() if left else __type_of(self.left)()
-        self.right = right.value() if right else __type_of(self.right)()
-        self.parent = parent.value() if parent else __type_of(self.parent)()
+        self.left = left.or_else({})
+        self.right = right.or_else({})
+        self.parent = parent.or_else({})
         self._is_red = is_red
 
     fn __copyinit__(out self, existing: Self, /):
@@ -548,7 +548,7 @@ struct IntervalTree[
 
     fn __init__(out self):
         """Initializes an empty IntervalTree."""
-        self._root = __type_of(self._root)()
+        self._root = {}
         self._len = 0
 
     fn _left_rotate(

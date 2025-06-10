@@ -133,10 +133,8 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 # before overload resolution.
 @always_inline("builtin")
 fn ceildiv(
-    numerator: IntLiteral,
-    denominator: IntLiteral,
-    out result: __type_of(numerator.__ceildiv__(denominator)),
-):
+    numerator: IntLiteral, denominator: IntLiteral
+) -> __type_of(numerator.__ceildiv__(denominator)):
     """Return the rounded-up result of dividing numerator by denominator.
 
     Args:
@@ -146,7 +144,7 @@ fn ceildiv(
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    result = __type_of(result)()
+    return {}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1648,9 +1646,9 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 
-    alias nan_val = __type_of(x)(nan[x.dtype]())
-    alias inf_val = __type_of(x)(inf[x.dtype]())
-    alias neg_inf_val = __type_of(x)(-inf[x.dtype]())
+    alias nan_val = nan[x.dtype]()
+    alias inf_val = inf[x.dtype]()
+    alias neg_inf_val = -inf[x.dtype]()
 
     var is_neg = x < 0
     var x_abs = abs(x)
