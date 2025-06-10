@@ -398,7 +398,13 @@ class AudioGenerationScheduler(Scheduler):
         enable_prioritize_first_decode = (
             self.scheduler_config.enable_prioritize_first_decode
         )
+        ce_delay_ms = self.scheduler_config.ce_delay_ms
+
         while True:
+            # Sleep for a bit to allow more requests to arrive
+            if ce_delay_ms > 0.0:
+                time.sleep(ce_delay_ms / 1000.0)
+
             # Run at least one CE batch
             ce_batch = self._create_ce_batch()
             yield ce_batch
@@ -437,6 +443,7 @@ class AudioGenerationScheduler(Scheduler):
             try:
                 # Construct the batch to execute
                 t0 = time.monotonic()
+                self._retrieve_pending_requests()
                 batch = next(batch_generator)
                 t1 = time.monotonic()
                 batch_creation_time_s = t1 - t0
