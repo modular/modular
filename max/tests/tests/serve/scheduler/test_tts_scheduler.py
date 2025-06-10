@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import tempfile
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from queue import Queue
 from unittest.mock import Mock
@@ -33,6 +34,7 @@ from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler import AudioGenerationScheduler
 from max.serve.scheduler.audio_generation_scheduler import (
     AudioGenerationSchedulerConfig,
+    AudioGenerationSchedulerOutput,
 )
 from max.serve.scheduler.text_generation_scheduler import BatchType
 
@@ -163,7 +165,7 @@ def create_paged_scheduler(
     enable_in_flight_batching=False,
     enable_kvcache_swapping_to_host=False,
     max_queue_size_tg=None,
-    min_batch_size_tg=0,
+    min_batch_size_tg=None,
     ce_delay_ms=0.0,
     enable_prioritize_first_decode=False,
 ) -> AudioGenerationScheduler:
@@ -299,8 +301,9 @@ class BatchInfo:
 
 def create_batch_and_execute(
     scheduler: AudioGenerationScheduler,
+    batch_generator: Generator[AudioGenerationSchedulerOutput, None, None],
 ) -> BatchInfo:
-    batch = scheduler._create_batch()
+    batch = next(batch_generator)
 
     batch_size = batch.batch_size
     batch_type = batch.batch_type
@@ -337,8 +340,26 @@ def run_until_completion(
     else:
         batch_infos = output_list
 
+    def create_batch_generator_non_empty(
+        batch_generator: Generator[AudioGenerationSchedulerOutput, None, None],
+    ) -> Generator[AudioGenerationSchedulerOutput, None, None]:
+        """Generator that discards empty batches"""
+        empty_count = 0
+        for batch in batch_generator:
+            if batch.batch_size > 0:
+                empty_count = 0
+                yield batch
+            else:
+                empty_count += 1
+                # If we seen 10 empty batches in a row, we are done
+                if empty_count > 10:
+                    yield batch
+
+    batch_generator = create_batch_generator_non_empty(
+        scheduler._create_batch_generator()
+    )
     for _ in range(max_num_iters):
-        batch_info = create_batch_and_execute(scheduler)
+        batch_info = create_batch_and_execute(scheduler, batch_generator)
         batch_infos.append(batch_info)
         if batch_info.batch_size == 0:
             break
@@ -556,7 +577,15 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     assert len(actual) == len(expected) and actual == expected
 
 
-@pytest.mark.parametrize("max_queue_size_tg", [None, 999])
+@pytest.mark.parametrize(
+    "max_queue_size_tg",
+    [
+        # Defaults to max_batch_size
+        None,
+        # Infinite queue size
+        999,
+    ],
+)
 def test_paged_scheduler_max_queue_size_tg(
     zmq_ctx,
     max_queue_size_tg,
@@ -570,7 +599,6 @@ def test_paged_scheduler_max_queue_size_tg(
         response_zmq_endpoint=response_zmq_endpoint(),
         request_zmq_endpoint=request_zmq_endpoint(),
         cancel_zmq_endpoint=cancel_zmq_endpoint(),
-        # infinite queue size
         max_batch_size=32,
         max_queue_size_tg=max_queue_size_tg,
     )
@@ -647,7 +675,154 @@ def test_paged_scheduler_max_queue_size_tg(
             BatchInfo(TG, 0, 0, 0, 0),
         ]
     actual = run_until_completion(scheduler)
-    print(actual)
+    assert len(actual) == len(expected) and actual == expected
+
+
+@pytest.mark.parametrize(
+    "min_batch_size_tg, max_batch_size, max_queue_size_tg",
+    [
+        (None, 50, None),
+        (50, 50, 50),
+        (25, 50, 999),
+        (50, 50, 999),
+        (75, 50, 999),
+        (999, 50, 999),
+    ],
+)
+def test_paged_scheduler_tg_batching(
+    zmq_ctx,
+    min_batch_size_tg,
+    max_batch_size,
+    max_queue_size_tg,
+):
+    num_prompts = 128
+    prompt_len = 500
+    output_tokens = 16
+
+    scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        response_zmq_endpoint=response_zmq_endpoint(),
+        request_zmq_endpoint=request_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
+        min_batch_size_tg=min_batch_size_tg,
+        max_batch_size=max_batch_size,
+        max_queue_size_tg=max_queue_size_tg,
+        target_tokens_per_batch_ce=16384,
+    )
+
+    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
+    )
+
+    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+        zmq_ctx, scheduler.response_q.zmq_endpoint
+    )
+
+    _ = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        scheduler.cancel_q.zmq_endpoint,
+    )
+
+    # set seed for reproducibility
+    np.random.seed(42)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            push_socket,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+    time.sleep(1)
+
+    key = (min_batch_size_tg, max_batch_size, max_queue_size_tg)
+    if key == (None, 50, None) or key == (50, 50, 50):
+        # Run CE util we reach exactly 50 requests on decode queue
+        expected = [
+            # batch_type, batch_size, terminated, num_steps, input_tokens
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            # 50/50 requests encoded! Time for TG
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(CE, 28, 0, 1, 14000),
+            BatchInfo(TG, 28, 0, 10, 28),
+            BatchInfo(TG, 28, 28, 10, 28),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    elif key == (25, 50, 999):
+        # Run CE until we reach at least 25 requests on decode queue
+        expected = [
+            BatchInfo(CE, 33, 0, 1, 16500),
+            # 33/25 requests! Time for TG
+            BatchInfo(TG, 33, 0, 10, 33),
+            BatchInfo(TG, 33, 33, 10, 33),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(TG, 33, 0, 10, 33),
+            BatchInfo(TG, 33, 33, 10, 33),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(TG, 33, 0, 10, 33),
+            BatchInfo(TG, 33, 33, 10, 33),
+            BatchInfo(CE, 29, 0, 1, 14500),
+            BatchInfo(TG, 29, 0, 10, 29),
+            BatchInfo(TG, 29, 29, 10, 29),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    elif key == (50, 50, 999):
+        # Run CE until we reach at least 50 requests on decode queue
+        expected = [
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            # 66/50 requests encoded! Time for TG
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 29, 0, 1, 14500),
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(TG, 28, 0, 10, 28),
+            BatchInfo(TG, 28, 28, 10, 28),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    elif key == (75, 50, 999):
+        # Run CE until we reach at least 75 requests on decode queue
+        expected = [
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            # 99/75 requests encoded! Time for TG
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(CE, 29, 0, 1, 14500),
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(TG, 28, 0, 10, 28),
+            BatchInfo(TG, 28, 28, 10, 28),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    elif key == (999, 50, 999):
+        # Super aggressively prioritize CE
+        expected = [
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 33, 0, 1, 16500),
+            BatchInfo(CE, 29, 0, 1, 14500),
+            # Encoded all of the requests! Time for TG
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(TG, 50, 0, 10, 50),
+            BatchInfo(TG, 50, 50, 10, 50),
+            BatchInfo(TG, 28, 0, 10, 28),
+            BatchInfo(TG, 28, 28, 10, 28),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+
+    actual = run_until_completion(scheduler)
     assert len(actual) == len(expected) and actual == expected
 
 
@@ -672,9 +847,9 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
         serialize=msgpack_numpy_encoder(),
     )
 
-    response_pull_socket = ZmqPullSocket[
-        list[dict[str, AudioGenerationResponse]]
-    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
+    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+        zmq_ctx, scheduler.response_q.zmq_endpoint
+    )
 
     _ = ZmqPullSocket[list[str]](zmq_ctx, scheduler.cancel_q.zmq_endpoint)
 
