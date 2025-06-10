@@ -36,18 +36,6 @@ from utils.numerics import FPUtils, isinf, isnan
 
 @fieldwise_init
 @register_passable("trivial")
-struct _UInt128:
-    var high: UInt64
-    var low: UInt64
-
-    fn __iadd__(mut self, n: UInt64):
-        var sum = (self.low + n) & UInt64.MAX
-        self.high += 1 if sum < self.low else 0
-        self.low = sum
-
-
-@fieldwise_init
-@register_passable("trivial")
 struct _MulParity:
     var parity: Bool
     var is_integer: Bool
@@ -372,12 +360,12 @@ fn _compute_endpoint[
         var cache = cache_f64[cache_index]
         if left_endpoint:
             return (
-                (cache.high - (cache.high >> (sig_bits + 2)))
+                (_uint128_high(cache) - (_uint128_high(cache) >> (sig_bits + 2)))
                 >> (total_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
         else:
             return (
-                (cache.high + (cache.high >> (sig_bits + 1)))
+                (_uint128_high(cache) + (_uint128_high(cache) >> (sig_bits + 1)))
                 >> (total_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
     else:
@@ -573,9 +561,9 @@ fn _umul192_lower128(x: UInt64, y: UInt128) -> UInt128:
     """Get lower 128-bits of multiplication of a 64-bit unsigned integer and a
     128-bit unsigned integer.
     """
-    var high = x * y.high
-    var high_low = _umul128(x, y.low)
-    return _uint64_to_uint128((high + high_low.high) & UInt64.MAX, high_low.low)
+    var high = x * _uint128_high(y)
+    var high_low = _umul128(x, _uint128_low(y))
+    return _uint64_to_uint128((high + _uint128_high(high_low)) & UInt64.MAX, _uint128_high(high_low))
 
 
 fn _compute_mul_parity[
@@ -587,10 +575,10 @@ fn _compute_mul_parity[
             two_f.cast[DType.uint64](), cache_f64[cache_index]
         )
         return _MulParity(
-            ((r.high >> (64 - beta)) & 1) != 0,
+            ((_uint128_high(r) >> (64 - beta)) & 1) != 0,
             (
-                ((r.high << beta) & UInt64(0xFFFFFFFFFFFFFFFF))
-                | (r.low >> (64 - beta))
+                ((_uint128_high(r) << beta) & UInt64(0xFFFFFFFFFFFFFFFF))
+                | (_uint128_low(r) >> (64 - beta))
             )
             == 0,
         )
@@ -655,7 +643,7 @@ fn _compute_mul[
 ](u: Scalar[CarrierDType], cache_index: Int) -> _MulResult[CarrierDType]:
     if CarrierDType is DType.uint64:
         var r = _umul192_upper128(u, cache_f64[cache_index])
-        return _MulResult[CarrierDType](r.high.cast[CarrierDType](), r.low == 0)
+        return _MulResult[CarrierDType](_uint128_high(r).cast[CarrierDType](), _uint128_low(r) == 0)
     else:
         var cache_value = cache_f32[cache_index]
         var r = _umul96_upper64(u, cache_value)
@@ -669,7 +657,7 @@ fn _compute_delta[
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
     if CarrierDType is DType.uint64:
         var cache = cache_f64[cache_index]
-        return (cache.high >> (total_bits - 1 - beta)).cast[CarrierDType]()
+        return (_uint128_high(cache) >> (total_bits - 1 - beta)).cast[CarrierDType]()
     else:
         var cache = cache_f32[cache_index]
         return (cache >> (cache_bits - 1 - beta)).cast[CarrierDType]()
@@ -678,8 +666,8 @@ fn _compute_delta[
 fn _umul192_upper128[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
-    var r = _umul128(x, y.high)
-    r += _umul128_upper64(x, y.low).cast[DType.uint64]()
+    var r = _umul128(x, _uint128_high(y))
+    r += _umul128_upper64(x, _uint128_low(y)).cast[DType.uint64]()
     return r
 
 
@@ -726,7 +714,7 @@ fn _compute_round_up_for_shorter_interval_case[
         var cache = cache_f64[cache_index]
         return (
             (
-                (cache.high >> (total_bits - sig_bits - 2 - beta)).cast[
+                (_uint128_high(cache) >> (total_bits - sig_bits - 2 - beta)).cast[
                     CarrierDType
                 ]()
             )
