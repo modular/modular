@@ -71,18 +71,18 @@ without these explicit parameters retain current safe behavior.
 
 ### 3. Benefits
 
-* **Significant Performance Gains**: Allows bypassing checks (e.g., UTF-8
+- **Significant Performance Gains**: Allows bypassing checks (e.g., UTF-8
     validation) or using hardware-specific optimizations (e.g., aligned SIMD
     instructions) that are not possible in general-purpose code.
-* **Reduced API Fragmentation**: Instead of `foo()`, `unsafe_foo_ascii()`,
+- **Reduced API Fragmentation**: Instead of `foo()`, `unsafe_foo_ascii()`,
     and `unsafe_foo_assume_capacity()`, we can have a single `foo()` with
     `unsafe_assume_ascii` and `unsafe_assume_capacity` parameters. This keeps
     the API surface cleaner and more focused.
-* **Improved Code Maintainability**:
-    * Consolidates related logic within a single function definition, making it
+- **Improved Code Maintainability**:
+    - Consolidates related logic within a single function definition, making it
         easier to understand the relationship between the general case and
         optimized variants.
-    * Reduces boilerplate that might arise from creating many separate, largely
+    - Reduces boilerplate that might arise from creating many separate, largely
         similar `unsafe_` functions. Common setup, teardown, or non-optimized
         parts of the logic can be shared, with only the assumption-specific
         sections varying based on compile-time parameters.
@@ -98,7 +98,7 @@ without these explicit parameters retain current safe behavior.
 Many text processing tasks, such as parsing structured data like JSON or
 specific log formats, may operate on inputs known to be ASCII.
 
-* **Proposed Parameterization**:
+- **Proposed Parameterization**:
 
     ```mojo
     fn parse_json_ish_text[
@@ -118,7 +118,7 @@ specific log formats, may operate on inputs known to be ASCII.
             # ...
     ```
 
-* **Benefit**: For ASCII-guaranteed inputs, this can dramatically speed up
+- **Benefit**: For ASCII-guaranteed inputs, this can dramatically speed up
     parsing and processing by removing complex UTF-8 handling. Mojo's string
     type also allows for other string assumptions like `unsafe_assume_static`,
     `unsafe_assume_inline`, or `unsafe_assume_heap` could similarly allow
@@ -127,7 +127,7 @@ specific log formats, may operate on inputs known to be ASCII.
 #### Example 2: List Operations - `unsafe_assume_capacity` & `unsafe_assume_in_bounds`
 Mojo's List type already suffers from fragmentation.
 
-* **Proposed Parameterization**:
+- **Proposed Parameterization**:
 
     ```mojo
     fn append[assume_capacity: Bool = False](mut self, item: T):
@@ -152,7 +152,7 @@ Mojo's List type already suffers from fragmentation.
             # ...
     ```
 
-* **Benefit**: Decreases fragmentation, simplifies the API, and reduces
+- **Benefit**: Decreases fragmentation, simplifies the API, and reduces
     boilerplate code that would have to be duplicated between `.XXX()` and
     `.unsafe_XXX()`.
 
@@ -162,14 +162,14 @@ Mojo's List type already suffers from fragmentation.
 
 It's important that the `unsafe_` nature of these parameters is understood:
 
-* **User Responsibility**: If a developer provides an assumption (e.g.,
+- **User Responsibility**: If a developer provides an assumption (e.g.,
     `unsafe_assume_capacity = True`) but the underlying condition is not met,
     the behavior is **undefined**. This can lead to incorrect results, crashes,
     or security vulnerabilities.
-* **Clear Signal**: The `unsafe_` prefix on the parameter name is the explicit
+- **Clear Signal**: The `unsafe_` prefix on the parameter name is the explicit
     warning. Documentation must clearly state the invariants the caller must
     uphold for each such parameter.
-* **Opt-In Complexity**: This feature is intended for performance-critical
+- **Opt-In Complexity**: This feature is intended for performance-critical
     situations where developers can rigorously verify and guarantee the
     assumptions.
 
