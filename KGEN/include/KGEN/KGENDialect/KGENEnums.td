@@ -252,6 +252,8 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Escaping", 4, "escaping">,
   /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.
   I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
+  /// Temporary effect to distinguish a closure under construction from current implementation.
+  I16BitEnumAttrCaseBit<"Unified", 6, "unified">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;

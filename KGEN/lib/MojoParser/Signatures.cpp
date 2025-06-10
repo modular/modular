@@ -912,6 +912,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
     } else if (spelling == "escaping") {
       handleEffect(&FnEffects::isEscaping, &FnEffects::setEscaping);
+    } else if (spelling == "unified") {
+      handleEffect(&FnEffects::isUnified, &FnEffects::setUnified);
     } else {
       // If this isn't a known effect, then it could be an error like a missing
       // colon at the end of a function declaration.  If so, emit a nice error
