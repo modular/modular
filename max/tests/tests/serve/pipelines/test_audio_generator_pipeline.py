@@ -20,7 +20,7 @@ class MockAudioGeneratorPipeline(AudioGeneratorPipeline):
 
     def __init__(self, mock_chunks: list[AudioGeneratorOutput]):
         # Skip the parent constructor that requires real dependencies such as
-        # `PipelineAudioTokenizer`.
+        # `PipelineTokenizer`.
         self.model_name = "test-model"
         self.logger = Mock()
         self.debug_logging = False
