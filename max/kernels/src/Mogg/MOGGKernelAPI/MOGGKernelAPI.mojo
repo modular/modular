@@ -8745,9 +8745,9 @@ struct Struct_sampler_apply_penalties:
         logits: MutableInputTensor[dtype=logit_type, rank=rank],
         compressed_frequency_data: InputTensor[dtype = DType.int32, rank=2],
         frequency_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        frequency_penalty: Scalar[penalty_type],
-        presence_penalty: Scalar[penalty_type],
-        repetition_penalty: Scalar[penalty_type],
+        frequency_penalty: InputTensor[dtype=penalty_type, rank=1],
+        presence_penalty: InputTensor[dtype=penalty_type, rank=1],
+        repetition_penalty: InputTensor[dtype=penalty_type, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
@@ -8757,9 +8757,9 @@ struct Struct_sampler_apply_penalties:
                 logits.to_layout_tensor(),
                 compressed_frequency_data.to_layout_tensor(),
                 frequency_offsets.to_layout_tensor(),
-                frequency_penalty,
-                presence_penalty,
-                repetition_penalty,
+                frequency_penalty.to_layout_tensor(),
+                presence_penalty.to_layout_tensor(),
+                repetition_penalty.to_layout_tensor(),
                 ctx,
             )
 

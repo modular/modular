@@ -91,10 +91,7 @@ def _sampling_input_types(
         inputs["bitmask"] = bitmask_type
 
     # If we have frequency or presence penalties enabled
-    if (
-        sampling_config.frequency_penalty != 0
-        or sampling_config.presence_penalty != 0
-    ):
+    if sampling_config.do_penalties:
         penalty_freq_data_type = BufferType(
             DType.int32, ["unique_tokens", 2], device=device
         )
@@ -105,8 +102,6 @@ def _sampling_input_types(
         )
         inputs["penalty_freq_offsets"] = penalty_freq_offsets_type
 
-    # If we have repetition penalty enabled
-    if sampling_config.repetition_penalty != 1:
         repetition_freq_data_type = BufferType(
             DType.int32, ["unique_tokens_2", 2], device=device
         )
@@ -115,6 +110,10 @@ def _sampling_input_types(
             DType.uint32, ["batch_add_1"], device=device
         )
         inputs["repetition_freq_offsets"] = repetition_freq_offsets_type
+        penalty_type = TensorType(DType.float32, ["batch"], device=device)
+        inputs["frequency_penalty"] = penalty_type
+        inputs["presence_penalty"] = penalty_type
+        inputs["repetition_penalty"] = penalty_type
 
     # If we have min_tokens enabled
     if sampling_config.enable_min_tokens:
@@ -141,41 +140,36 @@ def token_sampler(
         # quite brittle.
         logits_buffer = graph.inputs[list(_input_dict).index("logits")].buffer
         if sampling_config.do_penalties:
-            if (
-                sampling_config.frequency_penalty != 0
-                or sampling_config.presence_penalty != 0
-            ):
-                penalty_freq_data = graph.inputs[
-                    list(_input_dict).index("penalty_freq_data")
-                ].buffer
+            penalty_freq_data = graph.inputs[
+                list(_input_dict).index("penalty_freq_data")
+            ].buffer
 
-                penalty_freq_offsets = graph.inputs[
-                    list(_input_dict).index("penalty_freq_offsets")
-                ].tensor
+            penalty_freq_offsets = graph.inputs[
+                list(_input_dict).index("penalty_freq_offsets")
+            ].tensor
 
-                apply_penalties_to_logits(
-                    logits_buffer,
-                    ops.buffer_load(penalty_freq_data),
-                    penalty_freq_offsets,
-                    frequency_penalty=sampling_config.frequency_penalty,
-                    presence_penalty=sampling_config.presence_penalty,
-                )
+            repetition_freq_data = graph.inputs[
+                list(_input_dict).index("repetition_freq_data")
+            ].buffer
 
-            if sampling_config.repetition_penalty != 1:
-                repetition_freq_data = graph.inputs[
-                    list(_input_dict).index("repetition_freq_data")
-                ].buffer
+            repetition_freq_offsets = graph.inputs[
+                list(_input_dict).index("repetition_freq_offsets")
+            ].tensor
 
-                repetition_freq_offsets = graph.inputs[
-                    list(_input_dict).index("repetition_freq_offsets")
-                ].tensor
+            apply_penalties_to_logits(
+                logits_buffer,
+                ops.buffer_load(penalty_freq_data),
+                penalty_freq_offsets,
+                frequency_penalty=sampling_config.frequency_penalty,
+                presence_penalty=sampling_config.presence_penalty,
+            )
 
-                apply_penalties_to_logits(
-                    logits_buffer,
-                    ops.buffer_load(repetition_freq_data),
-                    repetition_freq_offsets,
-                    repetition_penalty=sampling_config.repetition_penalty,
-                )
+            apply_penalties_to_logits(
+                logits_buffer,
+                ops.buffer_load(repetition_freq_data),
+                repetition_freq_offsets,
+                repetition_penalty=sampling_config.repetition_penalty,
+            )
 
         if sampling_config.enable_min_tokens:
             min_tokens_mask = graph.inputs[
