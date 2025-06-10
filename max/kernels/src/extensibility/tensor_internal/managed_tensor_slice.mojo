@@ -344,16 +344,16 @@ fn _output_fusion_hook_impl[
 @no_inline
 fn rebuild_mix_precision_static_tensor_specs_with_output_lambda[
     func_type: AnyTrivialRegType, //,
-    dst_type: DType,
+    src_rank: Int,
+    src_shape: DimList,
     src_type: DType,
-    rank: Int,
 ](
-    spec: StaticTensorSpec[dst_type, rank],
+    spec: StaticTensorSpec,
     out_lambda: func_type,
-    out result: StaticTensorSpec[src_type, rank],
+    out result: StaticTensorSpec[src_type, src_rank],
 ):
-    return StaticTensorSpec[src_type, rank](
-        shape=spec.shape,
+    return StaticTensorSpec[src_type, src_rank](
+        shape=src_shape,
         strides=spec.strides,
         alignment=spec.alignment,
         address_space=spec.address_space,
@@ -369,28 +369,32 @@ fn rebuild_mix_precision_static_tensor_specs_with_output_lambda[
 @no_inline
 fn _mixed_precision_output_fusion_hook_impl[
     mut: Bool, //,
-    dst_type: DType,  # The DType after casting.
-    src_type: DType,  # The DType before casting.
+    # DType and rank after casting/view fusion.
     rank: Int,
+    dst_type: DType,
+    # DType and shape before casting/view fusion.
+    src_rank: Int,
+    src_shape: DimList,
+    src_type: DType,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[dst_type, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> StaticTensorSpec[src_type, rank]:
+) -> StaticTensorSpec[src_type, src_rank]:
     @always_inline
     @parameter
     fn _output_lambda[
         _w: Int, _elem_align: Int = 1
-    ](i: IndexList[rank], v: SIMD[src_type, _w]):
+    ](i: IndexList[src_rank], v: SIMD[src_type, _w]):
         # .... compiler-generated-code insert here!
         simd_store_into_managed_tensor_slice[
             simd_width=_w,
             element_alignment=_elem_align,
-        ](tensor, i, rebind[SIMD[dst_type, _w]](v))
+        ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_type, _w]](v))
 
     return _extract_tensor_spec[
         rebuild_mix_precision_static_tensor_specs_with_output_lambda[
-            dst_type, src_type, rank
+            src_rank, src_shape, src_type
         ](
             static_spec,
             _output_lambda,
