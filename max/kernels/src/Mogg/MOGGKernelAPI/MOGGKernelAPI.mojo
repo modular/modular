@@ -560,16 +560,6 @@ fn _to_managed_tensor_slice_index_list_shape[
     ](data, shape_tuple, stride_tuple)
 
 
-# Extract a value from a shape.
-@register_internal("get_scalar_from_ndbuffer")
-@always_inline
-fn get_scalar_from_ndbuffer[
-    dtype: DType
-](tensor: NDBuffer[dtype, 1, MutableAnyOrigin]) -> Scalar[dtype]:
-    # Assumes that tensor is on the host!
-    return tensor[0]
-
-
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
@@ -644,19 +634,6 @@ fn rebuild_static_tensor_specs_with_output_compute_lambda[
 # ===-----------------------------------------------------------------------===#
 # Helpers
 # ===-----------------------------------------------------------------------===#
-
-
-# Used by the graph compiler -- which right now does not support static spec
-@register_internal("managed_tensor_slice_to_ndbuffer")
-@always_inline
-fn managed_tensor_slice_to_ndbuffer_primitive[
-    dtype: DType, rank: Int, //
-](tensor: ManagedTensorSlice[dtype=dtype, rank=rank]) -> NDBuffer[
-    dtype, rank, MutableAnyOrigin
-]:
-    return NDBuffer[dtype, rank, MutableAnyOrigin](
-        tensor._ptr, tensor._spec.shape, tensor._runtime_strides
-    )
 
 
 @always_inline
