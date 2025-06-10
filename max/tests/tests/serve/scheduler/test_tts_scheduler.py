@@ -556,6 +556,101 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
     assert len(actual) == len(expected) and actual == expected
 
 
+@pytest.mark.parametrize("max_queue_size_tg", [None, 999])
+def test_paged_scheduler_max_queue_size_tg(
+    zmq_ctx,
+    max_queue_size_tg,
+):
+    num_prompts = 100
+    prompt_len = 500
+    output_tokens = 16
+
+    scheduler = create_paged_scheduler(
+        zmq_ctx=zmq_ctx,
+        response_zmq_endpoint=response_zmq_endpoint(),
+        request_zmq_endpoint=request_zmq_endpoint(),
+        cancel_zmq_endpoint=cancel_zmq_endpoint(),
+        # infinite queue size
+        max_batch_size=32,
+        max_queue_size_tg=max_queue_size_tg,
+    )
+
+    push_socket = ZmqPushSocket[tuple[str, TTSContext]](
+        zmq_ctx,
+        scheduler.request_q.zmq_endpoint,
+        serialize=msgpack_numpy_encoder(),
+    )
+
+    _ = ZmqPullSocket[list[dict[str, AudioGenerationResponse]]](
+        zmq_ctx, scheduler.response_q.zmq_endpoint
+    )
+
+    _ = ZmqPullSocket[list[str]](
+        zmq_ctx,
+        scheduler.cancel_q.zmq_endpoint,
+    )
+
+    # set seed for reproducibility
+    np.random.seed(42)
+
+    for _ in range(num_prompts):
+        enqueue_request(
+            push_socket,
+            prompt_len=prompt_len,
+            max_seq_len=prompt_len + output_tokens,
+        )
+    time.sleep(1)
+
+    if max_queue_size_tg is None:
+        # Notice that max_queue_size_tg defaults to max_batch_size_tg. This causes
+        # CE batch size to be limited if it causes the resultant number of decode
+        # requests to exceed 32.
+        expected = [
+            # batch_type, batch_size, terminated, num_steps, input_tokens
+            BatchInfo(CE, 17, 0, 1, 8500),
+            # CE batch size is limited to 15 here!
+            BatchInfo(CE, 15, 0, 1, 7500),
+            BatchInfo(TG, 32, 0, 10, 32),
+            BatchInfo(TG, 32, 32, 10, 32),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 15, 0, 1, 7500),
+            BatchInfo(TG, 32, 0, 10, 32),
+            BatchInfo(TG, 32, 32, 10, 32),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 15, 0, 1, 7500),
+            BatchInfo(TG, 32, 0, 10, 32),
+            BatchInfo(TG, 32, 32, 10, 32),
+            BatchInfo(CE, 4, 0, 1, 2000),
+            BatchInfo(TG, 4, 0, 10, 4),
+            BatchInfo(TG, 4, 4, 10, 4),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    else:
+        # CE batch sizes are not limited as max_queue_size_tg is very large!
+        # Notice that we don't run TG until all CE is done!
+        expected = [
+            # batch_type, batch_size, terminated, num_steps, input_tokens
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 17, 0, 1, 8500),
+            BatchInfo(CE, 15, 0, 1, 7500),
+            BatchInfo(TG, 32, 0, 10, 32),
+            BatchInfo(TG, 32, 32, 10, 32),
+            BatchInfo(TG, 32, 0, 10, 32),
+            BatchInfo(TG, 32, 32, 10, 32),
+            BatchInfo(TG, 32, 0, 10, 32),
+            BatchInfo(TG, 32, 32, 10, 32),
+            BatchInfo(TG, 4, 0, 10, 4),
+            BatchInfo(TG, 4, 4, 10, 4),
+            BatchInfo(TG, 0, 0, 0, 0),
+        ]
+    actual = run_until_completion(scheduler)
+    print(actual)
+    assert len(actual) == len(expected) and actual == expected
+
+
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching(
     zmq_ctx,
 ):
