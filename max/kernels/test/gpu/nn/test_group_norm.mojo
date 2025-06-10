@@ -150,6 +150,11 @@ def main():
         # Larger, but still small enough for warp tiling
         run_group_norm_gpu[DType.float32](ctx, Index(2, 32, 2, 2), num_groups=8)
 
+        # SIMD aligned with group boundary, but not aligned with channel boundary
+        run_group_norm_gpu[DType.float32](
+            ctx, Index(2, 32, 1, 10), num_groups=8
+        )
+
         # === Block Kernel Dispatch (too wide for warp or not divisible by SIMD width) ===
 
         # Large column count (too wide for warp)

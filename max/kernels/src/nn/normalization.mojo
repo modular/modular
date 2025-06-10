@@ -1308,13 +1308,17 @@ fn group_norm_gpu_warp_tiling[
         if idx + simd_width <= group_size:
             var g = row % num_groups
             var c_base = g * channels_per_group
-            var offset = idx // spatial
-            var c = c_base + offset
-            var gamma_val = gamma_fn[1](Index(c))
-            var beta_val = beta_fn[1](Index(c))
-            var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
-                accum_type
-            ]() + beta_val.cast[accum_type]()
+            var norm_val = SIMD[accum_type, simd_width]()
+            for i in range(Int(simd_width)):
+                var offset = (idx + i) // spatial
+                var c = c_base + offset
+                var gamma_val = gamma_fn[1](Index(c))
+                var beta_val = beta_fn[1](Index(c))
+                norm_val[i] = (
+                    vec_data[i] - row_mean
+                ) * norm_factor * gamma_val.cast[accum_type]() + beta_val.cast[
+                    accum_type
+                ]()
 
             output.store[alignment=align](
                 Index(row, idx), norm_val.cast[type]()
@@ -1386,17 +1390,20 @@ fn group_norm_gpu_block[
 
                 var g = row % num_groups
                 var c_base = g * channels_per_group
-                var offset_c = offset // spatial
-                var c = c_base + offset_c
 
-                var gamma_val = gamma_fn[1](Index(c))
-                var beta_val = beta_fn[1](Index(c))
-
-                var norm_val = (
-                    vec_data - row_mean
-                ) * norm_factor * gamma_val.cast[accum_type]() + beta_val.cast[
-                    accum_type
-                ]()
+                var norm_val = SIMD[accum_type, simd_width]()
+                for i in range(Int(simd_width)):
+                    var offset_c = (offset + i) // spatial
+                    var c = c_base + offset_c
+                    var gamma_val = gamma_fn[1](Index(c))
+                    var beta_val = beta_fn[1](Index(c))
+                    norm_val[i] = (
+                        vec_data[i] - row_mean
+                    ) * norm_factor * gamma_val.cast[
+                        accum_type
+                    ]() + beta_val.cast[
+                        accum_type
+                    ]()
 
                 output.store[alignment=align](
                     Index(row, offset), norm_val.cast[type]()
