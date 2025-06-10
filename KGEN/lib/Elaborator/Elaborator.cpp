@@ -256,6 +256,13 @@ static ElaborationState processParamDeclareOp(ImplNode *inode,
 //===----------------------------------------------------------------------===//
 
 static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
+  if (!op.getInput()) {
+    // FIXME MOCO-2053: This should be an error.
+    // This rebind op was removed, but is still traversed due to flaw in
+    // ParameterUseDefGraph's collect function.
+    // open-source/max/mojo/stdlib/test/runtime/test_locks.mojo
+    return ElaborationState::advance();
+  }
   Type outType;
   HANDLE_EVALUATOR_CONC(outType, inode, op.getLoc(), op.getType());
   Type inType;
