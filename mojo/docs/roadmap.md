@@ -207,10 +207,9 @@ surprising or unexpected. This section of the document describes a variety of
 expect all of these to be resolved in time, but in the meantime, they are
 documented here.
 
-### No list or dict comprehensions
+### List / dict / set comprehensions
 
-Mojo does not yet support Python list or dictionary comprehension expressions,
-like `[x for x in range(10)]`.
+Supported since Mojo 25.4 (see the `Types → List` docs for examples).
 
 ### No `lambda` syntax
 
