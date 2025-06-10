@@ -260,7 +260,10 @@ class PrefillScheduler(Scheduler):
             # If its chunked, add it back to the start of the request queue.
             self.preempted_prefill.put(
                 PrefillRequest(
-                    last_request_id, last_request, remote_name, dst_idx
+                    id=last_request_id,
+                    context=last_request,
+                    transfer_engine_name=remote_name,
+                    block_ids=dst_idx,
                 )
             )
         else:

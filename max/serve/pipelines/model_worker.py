@@ -141,6 +141,7 @@ class ModelWorker:
             )
 
             if scheduler.needs_dispatcher_client():
+                # Create a dispatcher client
                 logger.debug(
                     "Scheduler needs dispatcher client, starting dispatcher client"
                 )

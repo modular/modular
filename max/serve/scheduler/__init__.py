@@ -28,7 +28,7 @@ from .audio_generation_scheduler import (
     AudioGenerationScheduler,
     AudioGenerationSchedulerConfig,
 )
-from .base import Scheduler
+from .base import PrefillRequest, PrefillResponse, Scheduler
 from .config import TokenGeneratorSchedulerConfig
 from .decode_scheduler import load_decode_scheduler
 from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
@@ -42,6 +42,9 @@ __all__ = [
     "EmbeddingsSchedulerConfig",
     "TokenGeneratorSchedulerConfig",
     "AudioGenerationScheduler",
+    "AudioGenerationSchedulerConfig",
+    "PrefillRequest",
+    "PrefillResponse",
 ]
 
 
