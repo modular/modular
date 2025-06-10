@@ -15,6 +15,7 @@
 
 from buffer import NDBuffer
 from compiler_internal.directives import StaticTensorSpec
+from tensor_internal.io_spec import IO
 from tensor_internal.managed_tensor_slice import ManagedTensorSlice
 
 
@@ -31,6 +32,7 @@ fn managed_tensor_slice_to_ndbuffer[
     address_space = spec.address_space,
     exclusive = spec.exclusive,
 ]:
+    constrained[not tensor.io_spec.input == IO.FusedInput]()
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
     return NDBuffer[
         spec.dtype,
