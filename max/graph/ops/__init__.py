@@ -23,6 +23,8 @@ and
 
 from __future__ import annotations
 
+# Import types for type annotations
+from ..value import TensorValue, TensorValueLike
 from . import allreduce, random
 from .allgather import allgather
 from .argsort import argsort
