@@ -3141,7 +3141,10 @@ fn _convert_float8_to_f16[
 ](val: SIMD[dtype, size]) -> SIMD[DType.float16, size]:
     @parameter
     if _is_sm_9x_or_newer():
-        return val.cast[DType.float16]()
+        # do not call `SIMD.cast` here; the inliner will diverge
+        return __mlir_op.`pop.cast`[
+            _type = SIMD[DType.float16, size]._mlir_type
+        ](val.value)
     else:
         return _convert_float8_to_f32(val).cast[DType.float16]()
 
@@ -3154,7 +3157,10 @@ fn _convert_f32_to_float8[
 ](val: SIMD[dtype, size]) -> SIMD[target, size]:
     @parameter
     if _is_sm_9x_or_newer():
-        return val.cast[target]()
+        # do not call `SIMD.cast` here; the inliner will diverge
+        return __mlir_op.`pop.cast`[_type = SIMD[target, size]._mlir_type](
+            val.value
+        )
     else:
 
         @always_inline
