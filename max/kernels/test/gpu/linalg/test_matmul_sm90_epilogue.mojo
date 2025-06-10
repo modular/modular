@@ -137,8 +137,8 @@ def test_warp_specialize_gemm_with_multicasting[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
     ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
-    alias block_tile_shape = Index(128, wgmma_n, 64)
-    alias wgmma_shape = Index(64, wgmma_n, 16)
+    alias block_tile_shape = Index(128, wgmma_n, 128 // sizeof[a_type]())
+    alias wgmma_shape = Index(64, wgmma_n, 32 // sizeof[a_type]())
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -195,7 +195,7 @@ def test_warp_specialize_gemm_with_multicasting[
         )
 
     alias matmul_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b, mma_shape = Index(64, wgmma_n, 16)
+        a_type, b_type, c_type, transpose_b, mma_shape=wgmma_shape
     ](
         block_tile_shape=block_tile_shape,
         cluster_shape=cluster_shape,
@@ -512,3 +512,23 @@ def main():
                 partitioned_multicast=False,
                 schedule = MatmulSchedule.TILE2D,
             ](ctx, dynamic(1024), static[wgmma_n * 6](), static[128]())
+
+        # FP32-TF32
+        test_warp_specialize_gemm_with_multicasting[
+            128,
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            Index(1, 1, 1),
+            num_consumer=2,
+        ](ctx, dynamic(277), static[2560](), static[128]())
+        test_warp_specialize_gemm_with_multicasting[
+            256,
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            Index(2, 2, 1),
+            num_consumer=2,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.TILE2D,
+        ](ctx, dynamic(1024), static[256 * 6](), static[128]())

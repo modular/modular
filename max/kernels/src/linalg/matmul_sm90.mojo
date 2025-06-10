@@ -1916,7 +1916,7 @@ fn warp_specialize_gemm_with_multicasting[
 
     constrained[
         (a_type == b_type is DType.float8_e4m3fn)
-        or (a_type == b_type is DType.bfloat16),
+        or (a_type == b_type and a_type in (DType.bfloat16, DType.float32)),
         "Unsupported input dtype",
     ]()
 

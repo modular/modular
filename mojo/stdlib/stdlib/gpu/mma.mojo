@@ -1003,12 +1003,16 @@ fn wgmma_async[
     alias layout_a_value = _get_kgen_string[layout_a]()
     alias layout_b_value = _get_kgen_string[layout_b]()
 
+    # tensor core will interpret fp32 as tf32
+    alias a_type_value = __mlir_attr.tf32 if a_type is DType.float32 else a_type.__mlir_type()
+    alias b_type_value = __mlir_attr.tf32 if b_type is DType.float32 else b_type.__mlir_type()
+
     var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
         shape_m = m.value,
         shape_n = n.value,
         shape_k = k.value,
-        type_a = a_type.__mlir_type(),
-        type_b = b_type.__mlir_type(),
+        type_a=a_type_value,
+        type_b=b_type_value,
         type_c = c_dtype.__mlir_type(),
         layout_a=layout_a_value,
         layout_b=layout_b_value,
