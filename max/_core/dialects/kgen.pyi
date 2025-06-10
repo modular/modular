@@ -1459,6 +1459,8 @@ class FnEffects(enum.Enum):
 
     refresult = 32
 
+    unified = 64
+
 class InlineLevel(enum.Enum):
     automatic = 0
 
