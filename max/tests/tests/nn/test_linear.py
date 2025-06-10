@@ -120,14 +120,19 @@ def test_linear_shard_with_float8_tensor_scale():
 
         sharded = linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
 
+        # Assert non-null for MyPy.
+        assert sharded.input_scale is not None
         # Check that input scale is shared (same object).
         assert sharded.input_scale is linear.input_scale
-        if sharded.input_scale is not None:
-            assert len(sharded.input_scale.shape) == 0  # Scalar
+        assert len(sharded.input_scale.shape) == 0  # Scalar
+        # Check that input_scale and weight_scale are on CPU, which is the
+        # convention for scalars.
+        assert sharded.input_scale.device == DeviceRef.CPU()
 
         # Check that weight scale exists and is scalar for tensor granularity.
         assert sharded.weight_scale is not None
         assert len(sharded.weight_scale.shape) == 0  # Scalar
+        assert sharded.weight_scale.device == DeviceRef.CPU()
 
 
 def test_linear_shard_with_float8_rowwise_scale():
