@@ -26,7 +26,10 @@ from max.nn import (
     Module,
 )
 from max.nn.kv_cache import FetchPagedKVCacheCollection
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
+from max.nn.rotary_embedding import (
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+)
 
 from .layers.attention import _Gemma3Attention as Gemma3Attention
 from .layers.rms_norm import Gemma3RMSNorm
@@ -89,7 +92,19 @@ class Gemma3TextModel(Module):
             "Only single-device configuration is supported."
         )
 
-        rope_global = OptimizedRotaryEmbedding(
+        # Use Llama3RotaryEmbedding for both cases (with and without scaling)
+        scaling_params = (
+            Llama3RopeScalingParams(
+                factor=config.rope_scaling.factor,
+                low_freq_factor=1.0,  # No special scaling for low frequencies
+                high_freq_factor=1.0,  # No special scaling for high frequencies
+                orig_max_position=config.max_position_embeddings,
+            )
+            if config.rope_scaling is not None
+            else None
+        )
+
+        rope_global = Llama3RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_theta,
@@ -97,9 +112,11 @@ class Gemma3TextModel(Module):
             device=config.devices[0],
             head_dim=config.head_dim,
             interleaved=False,
+            scaling_params=scaling_params,
         )
 
-        rope_local = OptimizedRotaryEmbedding(
+        # rope_local doesn't use scaling
+        rope_local = Llama3RotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             theta=config.rope_local_base_freq,
@@ -107,6 +124,7 @@ class Gemma3TextModel(Module):
             device=config.devices[0],
             head_dim=config.head_dim,
             interleaved=False,
+            scaling_params=None,  # No scaling
         )
 
         self.embed_tokens = ScaledWordEmbedding(

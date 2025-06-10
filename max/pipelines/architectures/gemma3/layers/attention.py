@@ -34,7 +34,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 
@@ -44,8 +44,8 @@ class _Gemma3Attention(Module):
     def __init__(
         self,
         *,
-        rope_global: OptimizedRotaryEmbedding,
-        rope_local: OptimizedRotaryEmbedding,
+        rope_global: Llama3RotaryEmbedding,
+        rope_local: Llama3RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
