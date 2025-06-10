@@ -27,7 +27,6 @@ from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
-    PipelineAudioTokenizer,
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
@@ -411,7 +410,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineAudioTokenizer,
+        tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
     ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)

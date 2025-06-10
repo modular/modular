@@ -24,7 +24,6 @@ from typing import Union
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from max.pipelines.core import (
-    PipelineAudioTokenizer,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
@@ -133,9 +132,6 @@ async def lifespan(
             elif (
                 serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
             ):
-                assert isinstance(
-                    serving_settings.tokenizer, PipelineAudioTokenizer
-                )
                 pipeline = AudioGeneratorPipeline(
                     model_name=serving_settings.model_name,
                     tokenizer=serving_settings.tokenizer,
