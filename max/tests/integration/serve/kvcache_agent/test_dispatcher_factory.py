@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
-from typing import Any
+from typing import Any, Union
 
 import pytest
 import zmq
@@ -30,7 +30,7 @@ async def test_dispatcher_factory_dynamic_zmq():
                 instance_id="test_factory",
             ),
         )
-        factory = DispatcherFactory(config)
+        factory = DispatcherFactory[int](config)
 
         # Test creating server and client
         zmq_ctx = zmq.Context()
@@ -62,7 +62,9 @@ async def test_end_to_end_communication_with_config():
             ),
         )
 
-        server_factory = DispatcherFactory(server_config)
+        server_factory = DispatcherFactory[dict[str, Union[int, str]]](
+            server_config
+        )
         server_dispatcher = server_factory.create_service(zmq_ctx)
         server_client = server_factory.create_client(zmq_ctx)
 
@@ -75,7 +77,9 @@ async def test_end_to_end_communication_with_config():
             ),
         )
 
-        client_factory = DispatcherFactory(client_config)
+        client_factory = DispatcherFactory[dict[str, Union[int, str]]](
+            client_config
+        )
         client_dispatcher = client_factory.create_service(zmq_ctx)
         client_app = client_factory.create_client(zmq_ctx)
 

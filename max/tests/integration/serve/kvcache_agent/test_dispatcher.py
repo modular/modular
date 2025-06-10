@@ -6,7 +6,7 @@
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Union
 
 import pytest
 import zmq
@@ -44,8 +44,12 @@ async def test_dispatcher_client_to_service_communication():
         )
 
         # Create factories
-        client_factory = DispatcherFactory(client_config)
-        server_factory = DispatcherFactory(server_config)
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
+        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            server_config
+        )
 
         # Create dispatcher services and clients using factories
         client_dispatcher_service = client_factory.create_service(zmq_ctx)
@@ -146,8 +150,12 @@ async def test_dispatcher_request_reply_pattern():
         )
 
         # Create factories
-        instance_a_factory = DispatcherFactory(instance_a_config)
-        instance_b_factory = DispatcherFactory(instance_b_config)
+        instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            instance_a_config
+        )
+        instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            instance_b_config
+        )
 
         # Create dispatcher services and clients using factories
         instance_a_dispatcher = instance_a_factory.create_service(zmq_ctx)
@@ -236,7 +244,9 @@ async def test_multiple_clients_one_server_dispatcher():
                 instance_id="server",
             ),
         )
-        server_factory = DispatcherFactory(server_config)
+        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            server_config
+        )
         server_dispatcher = server_factory.create_service(zmq_ctx)
         server_app = server_factory.create_client(zmq_ctx)
 
@@ -256,7 +266,9 @@ async def test_multiple_clients_one_server_dispatcher():
                     instance_id=f"client_{i}",
                 ),
             )
-            client_factory = DispatcherFactory(client_config)
+            client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+                client_config
+            )
             client_dispatcher = client_factory.create_service(zmq_ctx)
             client_app = client_factory.create_client(zmq_ctx)
 
@@ -380,8 +392,12 @@ async def test_composable_handlers():
         )
 
         # Create factories
-        instance_a_factory = DispatcherFactory(instance_a_config)
-        instance_b_factory = DispatcherFactory(instance_b_config)
+        instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            instance_a_config
+        )
+        instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            instance_b_config
+        )
 
         # Create dispatcher services and clients using factories
         instance_a_dispatcher = instance_a_factory.create_service(zmq_ctx)
@@ -510,8 +526,12 @@ async def test_error_handling_and_resilience():
         )
 
         # Create factories
-        server_factory = DispatcherFactory(server_config)
-        client_factory = DispatcherFactory(client_config)
+        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            server_config
+        )
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
 
         # Create dispatcher services and clients using factories
         server_dispatcher = server_factory.create_service(zmq_ctx)
@@ -629,8 +649,12 @@ async def test_high_throughput_performance():
         )
 
         # Create factories
-        server_factory = DispatcherFactory(server_config)
-        client_factory = DispatcherFactory(client_config)
+        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            server_config
+        )
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
 
         # Create dispatcher services and clients using factories
         server_dispatcher = server_factory.create_service(zmq_ctx)
@@ -739,7 +763,9 @@ async def test_connection_failure_recovery():
         )
 
         # Create factory
-        client_factory = DispatcherFactory(client_config)
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
 
         # Create dispatcher service and client using factory
         client_dispatcher = client_factory.create_service(zmq_ctx)
@@ -801,8 +827,12 @@ async def test_handler_exception_isolation():
         )
 
         # Create factories
-        server_factory = DispatcherFactory(server_config)
-        client_factory = DispatcherFactory(client_config)
+        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            server_config
+        )
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
 
         # Create dispatcher services and clients using factories
         server_dispatcher = server_factory.create_service(zmq_ctx)
@@ -925,8 +955,12 @@ async def test_no_handler_registered():
         )
 
         # Create factories
-        server_factory = DispatcherFactory(server_config)
-        client_factory = DispatcherFactory(client_config)
+        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            server_config
+        )
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
 
         # Create dispatcher services and clients using factories
         server_dispatcher = server_factory.create_service(zmq_ctx)
@@ -998,7 +1032,9 @@ async def test_invalid_destination_address():
         )
 
         # Create factory
-        client_factory = DispatcherFactory(client_config)
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
 
         # Create dispatcher service and client using factory
         client_dispatcher = client_factory.create_service(zmq_ctx)
@@ -1061,7 +1097,9 @@ async def test_duplicate_handler_registration():
         )
 
         # Create factory
-        client_factory = DispatcherFactory(client_config)
+        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
+            client_config
+        )
 
         # Create client
         client_app = client_factory.create_client(zmq_ctx)

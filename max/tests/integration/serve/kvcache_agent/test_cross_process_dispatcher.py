@@ -7,7 +7,7 @@
 import asyncio
 import multiprocessing
 import time
-from typing import Any
+from typing import Any, Union
 
 import pytest
 import zmq
@@ -124,8 +124,12 @@ async def test_single_request_reply():
     )
 
     # Create factories
-    instance_a_factory = DispatcherFactory(instance_a_config)
-    instance_b_factory = DispatcherFactory(instance_b_config)
+    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_a_config
+    )
+    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_b_config
+    )
 
     # Create process controls
     pc_a = ProcessControl(mp_context, "instance_a")
@@ -286,8 +290,12 @@ async def test_multiple_request_reply():
     )
 
     # Create factories
-    instance_a_factory = DispatcherFactory(instance_a_config)
-    instance_b_factory = DispatcherFactory(instance_b_config)
+    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_a_config
+    )
+    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_b_config
+    )
 
     # Create process controls
     pc_a = ProcessControl(mp_context, "instance_a")
@@ -460,8 +468,12 @@ async def test_bidirectional_communication():
     )
 
     # Create factories
-    instance_a_factory = DispatcherFactory(instance_a_config)
-    instance_b_factory = DispatcherFactory(instance_b_config)
+    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_a_config
+    )
+    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_b_config
+    )
 
     # Create process controls
     pc_a = ProcessControl(mp_context, "instance_a")
@@ -654,8 +666,12 @@ async def test_high_throughput_cross_process():
     )
 
     # Create factories
-    instance_a_factory = DispatcherFactory(instance_a_config)
-    instance_b_factory = DispatcherFactory(instance_b_config)
+    instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_a_config
+    )
+    instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
+        instance_b_config
+    )
 
     # Create process controls
     pc_a = ProcessControl(mp_context, "instance_a")
