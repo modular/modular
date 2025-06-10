@@ -369,7 +369,7 @@ struct ClockType(EqualityComparable):
 
 @value
 @register_passable("trivial")
-struct _DeviceImpl:
+struct _DeviceImpl(Defaultable):
     var handle: UnsafePointer[NoneType]
 
     @always_inline

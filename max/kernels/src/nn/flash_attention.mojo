@@ -492,7 +492,7 @@ struct _FlashAttentionConfig[
     rank: Int,
     simd_width: Int,
     output_static_shape: DimList,
-]:
+](Defaultable):
     var block_m: Int
     var qk_block_n: Int
     var o_block_n: Int

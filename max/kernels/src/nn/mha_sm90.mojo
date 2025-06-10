@@ -113,7 +113,7 @@ trait OptionallyStaticInt(Intable):
 # That is, if we have a static int, no argument should be passed.
 @value
 @register_passable("trivial")
-struct StaticInt[value: Int](OptionallyStaticInt):
+struct StaticInt[value: Int](OptionallyStaticInt, Defaultable):
     alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
 
     @always_inline("nodebug")
@@ -171,7 +171,7 @@ trait MHAPartitionScheme:
 
 @value
 @register_passable("trivial")
-struct NoPartition[dtype: DType](MHAPartitionScheme):
+struct NoPartition[dtype: DType](MHAPartitionScheme, Defaultable):
     alias do_partition: Bool = False
     alias accum_dtype: DType = dtype
 

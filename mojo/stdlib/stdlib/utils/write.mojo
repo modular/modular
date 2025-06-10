@@ -251,7 +251,7 @@ struct _WriteBufferHeap(Writer):
             args[i].write_to(self)
 
 
-struct _TotalWritableBytes(Writer):
+struct _TotalWritableBytes(Writer, Defaultable):
     var size: Int
 
     fn __init__(out self):

@@ -168,7 +168,7 @@ struct hipblasLtMatmulDescAttributes_t:
 
 
 @register_passable("trivial")
-struct hipblasLtMatmulAlgo_t:
+struct hipblasLtMatmulAlgo_t(Defaultable):
     var data: StaticTuple[UInt8, 16]
     var maxWorkspaceBytes: Int
 
@@ -178,7 +178,7 @@ struct hipblasLtMatmulAlgo_t:
 
 
 @register_passable("trivial")
-struct hipblasLtMatmulHeuristicResult_t:
+struct hipblasLtMatmulHeuristicResult_t(Defaultable):
     var algo: hipblasLtMatmulAlgo_t
     var workspaceSize: Int
     var state: Status

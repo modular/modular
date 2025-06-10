@@ -284,7 +284,7 @@ fn _py_finalize(lib: DLHandle):
 
 
 @fieldwise_init
-struct PyMethodDef(Copyable, Movable):
+struct PyMethodDef(Copyable, Movable, Defaultable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -443,7 +443,9 @@ struct PyType_Slot(Copyable, Movable):
 
 
 @fieldwise_init
-struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
+struct PyObject(
+    Stringable, Representable, Writable, Copyable, Movable, Defaultable
+):
     """All object types are extensions of this type. This is a type which
     contains the information Python needs to treat a pointer to an object as an
     object. In a normal “release” build, it contains only the object's reference
@@ -503,7 +505,7 @@ struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
 
 
 # Mojo doesn't have macros, so we define it here for ease.
-struct PyModuleDef_Base(Stringable, Representable, Writable):
+struct PyModuleDef_Base(Stringable, Representable, Writable, Defaultable):
     """PyModuleDef_Base.
 
     Notes:
@@ -755,7 +757,7 @@ alias PyLong_FromSsize_t = ExternalFunction[
 
 
 @fieldwise_init
-struct CPython(Copyable, Movable):
+struct CPython(Copyable, Movable, Defaultable):
     """Handle to the CPython interpreter present in the current process."""
 
     # ===-------------------------------------------------------------------===#

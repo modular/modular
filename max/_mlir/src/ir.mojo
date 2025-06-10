@@ -64,7 +64,7 @@ trait DialectAttribute:
         ...
 
 
-struct DialectRegistry:
+struct DialectRegistry(Defaultable):
     alias cType = _c.IR.MlirDialectRegistry
     var c: Self.cType
 
@@ -114,7 +114,7 @@ struct DialectHandle(Copyable, Movable):
 
 @value
 @register_passable("trivial")
-struct Context:
+struct Context(Defaultable):
     alias cType = _c.IR.MlirContext
     var c: Self.cType
 
@@ -319,7 +319,7 @@ struct Module(Stringable, Writable):
 
 # Helper class with a bunch of implicit conversions for things that go on
 # Operations.
-struct _OpBuilderList[T: Copyable & Movable]:
+struct _OpBuilderList[T: Copyable & Movable](Defaultable):
     var elements: List[T]
 
     fn __init__(out self):
@@ -816,7 +816,7 @@ struct Block(Copyable, Movable, Stringable, Writable):
 
 @value
 @register_passable("trivial")
-struct Region(Copyable, Movable):
+struct Region(Copyable, Movable, Defaultable):
     alias cType = _c.IR.MlirRegion
     var c: Self.cType
 

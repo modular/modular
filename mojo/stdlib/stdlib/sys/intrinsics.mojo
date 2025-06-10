@@ -364,7 +364,7 @@ struct PrefetchCache:
 
 
 @register_passable("trivial")
-struct PrefetchOptions:
+struct PrefetchOptions(Defaultable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -1069,7 +1069,7 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
 
 
 @register_passable("trivial")
-struct _ThreadIdx:
+struct _ThreadIdx(Defaultable):
     """ThreadIdx provides static methods for getting the x/y/z coordinates of
     a thread within a block."""
 
@@ -1109,7 +1109,7 @@ alias thread_idx = _ThreadIdx()
 
 
 @register_passable("trivial")
-struct _BlockIdx:
+struct _BlockIdx(Defaultable):
     """BlockIdx provides static methods for getting the x/y/z coordinates of
     a block within a grid."""
 
@@ -1158,7 +1158,7 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
 
 
 @register_passable("trivial")
-struct _BlockDim:
+struct _BlockDim(Defaultable):
     """BlockDim provides static methods for getting the x/y/z dimension of a
     block."""
 
@@ -1209,7 +1209,7 @@ alias block_dim = _BlockDim()
 
 
 @register_passable("trivial")
-struct _GridDim:
+struct _GridDim(Defaultable):
     """GridDim provides static methods for getting the x/y/z dimension of a
     grid."""
 
@@ -1260,7 +1260,7 @@ alias grid_dim = _GridDim()
 
 
 @register_passable("trivial")
-struct _GridIdx:
+struct _GridIdx(Defaultable):
     """GlobalIdx provides static methods for getting the x/y/z global offset of
     the kernel launch."""
 
@@ -1292,7 +1292,7 @@ alias global_idx = _GridIdx()
 
 
 @register_passable("trivial")
-struct _ClusterDim:
+struct _ClusterDim(Defaultable):
     """ClusterDim provides static methods for getting the x/y/z dimension of a
     Cluster."""
 
@@ -1327,7 +1327,7 @@ alias cluster_dim = _ClusterDim()
 
 
 @register_passable("trivial")
-struct _ClusterIdx:
+struct _ClusterIdx(Defaultable):
     """_ClusterIdx provides static methods for getting the x/y/z coordinates of
     a cluster within a grid."""
 
@@ -1367,7 +1367,7 @@ alias cluster_idx = _ClusterIdx()
 
 
 @register_passable("trivial")
-struct _Cluster_BlockIdx:
+struct _Cluster_BlockIdx(Defaultable):
     """_Cluster_BlockIdx provides static methods for getting the x/y/z coordinates of
     a threadblock within a cluster."""
 

@@ -44,6 +44,7 @@ struct UInt(
     Representable,
     Stringable,
     Writable,
+    Defaultable,
 ):
     """This type represents an unsigned integer.
 

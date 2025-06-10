@@ -335,7 +335,7 @@ struct _DictIndex(Movable):
 
 
 struct Dict[K: KeyElement, V: Copyable & Movable](
-    Sized, Copyable, Movable, ExplicitlyCopyable, Boolable
+    Sized, Copyable, Movable, ExplicitlyCopyable, Boolable, Defaultable
 ):
     """A container that stores key-value pairs.
 
@@ -1062,7 +1062,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
 
 
 struct OwnedKwargsDict[V: Copyable & Movable](
-    Sized, Copyable, Movable, ExplicitlyCopyable
+    Sized, Copyable, Movable, ExplicitlyCopyable, Defaultable
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 

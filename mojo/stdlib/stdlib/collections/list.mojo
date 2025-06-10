@@ -83,6 +83,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
     Movable,
     ExplicitlyCopyable,
     Sized,
+    Defaultable,
 ):
     """The `List` type is a dynamically-allocated list.
 

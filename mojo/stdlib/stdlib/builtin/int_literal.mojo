@@ -25,6 +25,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Indexer,
     Stringable,
     Truncable,
+    Defaultable,
 ):
     """This type represents a static integer literal value with
     infinite precision.  This type is a compile-time construct which stores its

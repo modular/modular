@@ -101,7 +101,7 @@ struct InterpolationMode:
 
 @value
 @register_passable("trivial")
-struct Interpolator[mode: InterpolationMode]:
+struct Interpolator[mode: InterpolationMode](Defaultable):
     var cubic_coeff: Float32
 
     @always_inline

@@ -513,7 +513,7 @@ fn reorder_padding[rank: Int](pad: DimList) -> DimList:
         )
 
 
-struct ConvInfoStatic[rank: Int]:
+struct ConvInfoStatic[rank: Int](Defaultable):
     var pad: DimList
     var stride: DimList
     var dilation: DimList

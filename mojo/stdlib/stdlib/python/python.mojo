@@ -43,7 +43,7 @@ fn _init_python_global() -> _PythonGlobal:
     return _PythonGlobal()
 
 
-struct _PythonGlobal(Movable):
+struct _PythonGlobal(Movable, Defaultable):
     var cpython: CPython
 
     fn __init__(out self):
@@ -70,7 +70,7 @@ fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
     return Pointer(to=ptr2[])
 
 
-struct Python:
+struct Python(Defaultable):
     """Provides methods that help you use Python code in Mojo."""
 
     var _impl: Pointer[CPython, StaticConstantOrigin]

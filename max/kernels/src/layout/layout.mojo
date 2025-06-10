@@ -313,6 +313,7 @@ struct Layout(
     Writable,
     Movable,
     EqualityComparable,
+    Defaultable,
 ):
     """Represents a memory layout for multi-dimensional data.
 
