@@ -177,6 +177,10 @@ var dict2 = {1: 4, 2: 7, 3: 18}
 var set = {1, 2, 3}
 ```
 
+- The `compile` module now provides the `get_type_name` utility to get the fully
+  qualified name of a type. For example, `compile.get_type_name[Int]()` returns
+  `"stdlib.builtin.int.Int"`.
+
 Changes to Python-Mojo interoperability:
 
 - Python objects are now constructible with list/set/dict literal syntax, e.g.:

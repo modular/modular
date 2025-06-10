@@ -35,4 +35,4 @@ Example:
 """
 
 from .compile import Info, compile_info
-from .reflection import get_linkage_name
+from .reflection import get_linkage_name, get_type_name
