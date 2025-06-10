@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 import pytest
-from max import mlir
+from max._core.dialects import kgen
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -27,7 +27,7 @@ def test_kernel_library(counter_mojopkg, kernel_verification_ops_path):
         kernels.add_path(counter_mojopkg)
 
         assert "make_counter" in kernels
-        assert isinstance(kernels["make_counter"], mlir.Operation)
+        assert isinstance(kernels["make_counter"], kgen.GeneratorOp)
         assert "my_add" not in kernels
 
         with pytest.raises(ValueError) as err:
@@ -37,7 +37,7 @@ def test_kernel_library(counter_mojopkg, kernel_verification_ops_path):
         kernels.add_path(kernel_verification_ops_path)
         assert "make_counter" in kernels
         assert "my_add" in kernels
-        assert isinstance(kernels["my_add"], mlir.Operation)
+        assert isinstance(kernels["my_add"], kgen.GeneratorOp)
 
 
 def test_undefined_kernel(kernel_verification_ops_path: Path) -> None:
