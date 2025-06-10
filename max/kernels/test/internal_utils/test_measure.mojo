@@ -69,20 +69,17 @@ fn test_kl_div() raises:
     alias out_dtype = DType.float64
     alias len = 10
 
-    var a = UnsafePointer[Scalar[dtype]].alloc(len)
-    var b = UnsafePointer[Scalar[dtype]].alloc(len)
+    var a = InlineArray[Scalar[dtype], len](uninitialized=True)
+    var b = InlineArray[Scalar[dtype], len](uninitialized=True)
     for i in range(len):
-        a.store(i, Scalar[dtype](0.01 * i))
-        b.store(i, Scalar[dtype](0.1 * i))
+        a[i] = Scalar[dtype](0.01 * i)
+        b[i] = Scalar[dtype](0.1 * i)
 
-    var aa = kl_div[out_type=out_dtype](a, a, len)
-    var ab = kl_div[out_type=out_dtype](a, b, len)
+    var aa = kl_div[out_type=out_dtype](a.unsafe_ptr(), a.unsafe_ptr(), len)
+    var ab = kl_div[out_type=out_dtype](a.unsafe_ptr(), b.unsafe_ptr(), len)
     assert_almost_equal(0.0, aa)
     # exact value computed using Mathematica
     assert_almost_equal(3.013836708152679, ab)
-
-    a.free()
-    b.free()
 
 
 def main():
