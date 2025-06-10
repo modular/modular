@@ -17,6 +17,7 @@ modular_py_library(
         ":distance_metrics",
         ":evaluate",
         ":evaluate_embeddings",
+        ":github_utils",
         ":graph_utils",
         ":mocks",
         ":ndarray_from_tensor_type",
@@ -91,6 +92,12 @@ modular_py_library(
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/pipelines",
     ],
+)
+
+modular_py_library(
+    name = "github_utils",
+    srcs = ["github_utils.py"],
+    imports = [".."],
 )
 
 modular_py_library(

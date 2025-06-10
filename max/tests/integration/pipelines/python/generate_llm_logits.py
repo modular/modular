@@ -43,6 +43,7 @@ from test_common import (
     torch_utils,
 )
 from test_common.evaluate import ModelOutput
+from test_common.github_utils import github_log_group
 from test_common.torch_utils import TextGenerationRequest
 from typing_extensions import ParamSpec
 
@@ -874,77 +875,83 @@ def generate_llm_logits(
             )
             raise ValueError(msg)
 
-    if framework_name == "max":
-        max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(
-            encoding=encoding_name,
-            device_specs=device_specs,
-        )
-        if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
-            results = evaluate.run_model(
-                max_pipeline_and_tokenizer.model,
-                max_pipeline_and_tokenizer.tokenizer,
-                requests=pipeline_oracle.inputs,
-                print_outputs=True,
-                batch_size=max_batch_size,
-                reference=reference,
+    title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name}"
+    with github_log_group(title):
+        if framework_name == "max":
+            max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(
+                encoding=encoding_name,
+                device_specs=device_specs,
             )
-        elif (
-            pipeline_oracle.task
-            == interfaces.PipelineTask.EMBEDDINGS_GENERATION
-        ):
-            assert isinstance(
-                max_pipeline_and_tokenizer.generator,
-                pipelines.EmbeddingsPipeline,
-            )
-            results = evaluate_embeddings.encode(
-                max_pipeline_and_tokenizer.generator,
-                max_pipeline_and_tokenizer.tokenizer,
-                prompts=(inp.prompt for inp in pipeline_oracle.inputs),
-                batch_size=max_batch_size,
-            )
-        else:
-            raise ValueError(
-                f"Evaluating task {pipeline_oracle.task} is not supported."
-            )
-    elif framework_name == "torch":
-        torch_device: torch.device
-        if device_specs[0].device_type == "cpu":
-            torch_device = torch.device("cpu")
-        elif device_specs[0].device_type == "gpu":
-            torch_device = torch.device("cuda:0")
+            print(f"Running {pipeline_name} model on MAX")
+            if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
+                results = evaluate.run_model(
+                    max_pipeline_and_tokenizer.model,
+                    max_pipeline_and_tokenizer.tokenizer,
+                    requests=pipeline_oracle.inputs,
+                    print_outputs=True,
+                    batch_size=max_batch_size,
+                    reference=reference,
+                )
+            elif (
+                pipeline_oracle.task
+                == interfaces.PipelineTask.EMBEDDINGS_GENERATION
+            ):
+                assert isinstance(
+                    max_pipeline_and_tokenizer.generator,
+                    pipelines.EmbeddingsPipeline,
+                )
+                results = evaluate_embeddings.encode(
+                    max_pipeline_and_tokenizer.generator,
+                    max_pipeline_and_tokenizer.tokenizer,
+                    prompts=(inp.prompt for inp in pipeline_oracle.inputs),
+                    batch_size=max_batch_size,
+                )
+            else:
+                raise ValueError(
+                    f"Evaluating task {pipeline_oracle.task} is not supported."
+                )
+        elif framework_name == "torch":
+            print(f"Running {pipeline_name} model on Torch")
+            torch_device: torch.device
+            if device_specs[0].device_type == "cpu":
+                torch_device = torch.device("cpu")
+            elif device_specs[0].device_type == "gpu":
+                torch_device = torch.device("cuda:0")
 
-        # For multi-gpu, use auto to handle mapping automatically.
-        if len(device_specs) > 1:
-            device = "auto"
-        else:
-            device = torch_device
+            # For multi-gpu, use auto to handle mapping automatically.
+            if len(device_specs) > 1:
+                device = "auto"
+            else:
+                device = torch_device
 
-        torch_pipeline_and_tokenizer = pipeline_oracle.create_torch_pipeline(
-            encoding=encoding_name, device=device
-        )
-        if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
-            results = pipeline_oracle.run_torch_text_generation(
-                torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
-                device=torch_device,
+            torch_pipeline_and_tokenizer = (
+                pipeline_oracle.create_torch_pipeline(
+                    encoding=encoding_name, device=device
+                )
             )
-        elif (
-            pipeline_oracle.task
-            == interfaces.PipelineTask.EMBEDDINGS_GENERATION
-        ):
-            results = torch_utils.run_embeddings_generation(
-                model=torch_pipeline_and_tokenizer.model,
-                data_processor=torch_pipeline_and_tokenizer.data_processor,
-                device=torch_device,
-                prompts=(inp.prompt for inp in pipeline_oracle.inputs),
-            )
+            if pipeline_oracle.task == interfaces.PipelineTask.TEXT_GENERATION:
+                results = pipeline_oracle.run_torch_text_generation(
+                    torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
+                    device=torch_device,
+                )
+            elif (
+                pipeline_oracle.task
+                == interfaces.PipelineTask.EMBEDDINGS_GENERATION
+            ):
+                results = torch_utils.run_embeddings_generation(
+                    model=torch_pipeline_and_tokenizer.model,
+                    data_processor=torch_pipeline_and_tokenizer.data_processor,
+                    device=torch_device,
+                    prompts=(inp.prompt for inp in pipeline_oracle.inputs),
+                )
+            else:
+                raise ValueError(
+                    f"Evaluating task {pipeline_oracle.task} is not supported."
+                )
         else:
-            raise ValueError(
-                f"Evaluating task {pipeline_oracle.task} is not supported."
+            raise NotImplementedError(
+                f"Framework {framework_name!r} not implemented"
             )
-    else:
-        raise NotImplementedError(
-            f"Framework {framework_name!r} not implemented"
-        )
 
     if print_output:
         print(f"Framework:    {framework_name}")

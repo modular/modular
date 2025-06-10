@@ -866,6 +866,7 @@ def main(
                 continue
             if not tag_filter.satisfied_by(pipeline_def.tags):
                 continue
+            start_time = time.time()
             print(f"\n===== Running {pipeline_name} =====", flush=True)
             verdicts[pipeline_name] = pipeline_def.run_protected(
                 device_type,
@@ -873,7 +874,11 @@ def main(
                 find_tolerances,
                 print_suggested_tolerances,
             )
-            print(f"===== Finished {pipeline_name} =====", flush=True)
+            duration = f"{time.time() - start_time:.0f}s"
+            print(
+                f"\n===== Finished {pipeline_name} ({duration}) =====",
+                flush=True,
+            )
     else:
         if pipeline not in PIPELINES:
             raise click.ClickException(f"Unknown pipeline {pipeline!r}")
