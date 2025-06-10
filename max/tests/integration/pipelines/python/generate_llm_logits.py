@@ -856,14 +856,6 @@ def generate_llm_logits(
 
     """
 
-    # For the small float8 models, run on single gpu even on the h100-multi node.
-    # They are just kicked off on the h100 node cause they need h100 to run float8.
-    if pipeline_name in [
-        "llama3.1-8b-float8-static",
-        "llama3.1-8b-float8-dynamic",
-    ]:
-        device_specs = device_specs[:1]
-
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
 
