@@ -124,7 +124,7 @@ def dump_results(
             any_embedding = True
 
     if any_failed:
-        to.write("## Failed/Crashed Models\n\n")
+        to.write("\n\n## Failed/Crashed Models\n")
         to.write("| Status | Model |\n")
         to.write("|:------:|:---------|\n")
 
@@ -134,7 +134,7 @@ def dump_results(
             to.write(f"| {verdict.emoji} | {name} |\n")
 
     if any_logit:
-        to.write("## LLMs\n\n")
+        to.write("\n\n## LLMs\n")
         to.write("| Status | Model | KL Div |\n")
         to.write("|:------:|:---------|:------:|\n")
 
@@ -147,7 +147,7 @@ def dump_results(
             to.write(f"| {verdict.emoji} | {name} | {kl} |\n")
 
     if any_embedding:
-        to.write("## Embedding Models\n\n")
+        to.write("\n\n## Embedding Models\n")
         to.write("| Status | Model | MAE |\n")
         to.write("|:------:|:---------|:----:|\n")
 
@@ -207,7 +207,7 @@ class TagFilterParamType(click.ParamType):
         return TagFilter(must_have=required, must_not_have=forbidden)
 
 
-def generate_llm_logits_nonretrying(
+def generate_llm_logits_with_optional_retry(
     *,
     framework: str,
     device: str,
@@ -215,58 +215,35 @@ def generate_llm_logits_nonretrying(
     encoding: str,
     output_path: Path,
     reference: list[ModelOutput] | None = None,
+    retry_on_flake: bool = True,
 ) -> None:
-    """Run :generate_llm_logits to generate logits for a model.
+    """Generate logits with optional retry capability.
 
-    Do not retry on flake.
+    If retry_on_flake is True, will retry once after 60 seconds on Flake exception.
     """
     parsed_device = DevicesOptionType.parse_from_str(device)
     device_specs = DevicesOptionType.device_specs(parsed_device)
 
-    run_in_isolated_process(
-        functools.partial(
-            generate_llm_logits,
-            framework_name=framework,
-            device_specs=device_specs,
-            pipeline_name=pipeline,
-            encoding_name=encoding,
-            output_path=output_path,
-            print_output=False,
-            reference=reference,
-        ),
-        timeout=600,
-    )
-
-
-def generate_llm_logits_with_retry(
-    *,
-    framework: str,
-    device: str,
-    pipeline: str,
-    encoding: str,
-    output_path: Path,
-    reference: list[ModelOutput] | None = None,
-) -> None:
-    """Generate logits with retry capability.
-
-    This function calls generate_llm_logits_nonretrying and implements
-    a simple retry mechanism that will attempt the operation again after
-    a 60-second delay if a Flake exception occurs.
-    """
-
     def attempt() -> None:
-        generate_llm_logits_nonretrying(
-            framework=framework,
-            device=device,
-            pipeline=pipeline,
-            encoding=encoding,
-            output_path=output_path,
-            reference=reference,
+        run_in_isolated_process(
+            functools.partial(
+                generate_llm_logits,
+                framework_name=framework,
+                device_specs=device_specs,
+                pipeline_name=pipeline,
+                encoding_name=encoding,
+                output_path=output_path,
+                print_output=False,
+                reference=reference,
+            ),
+            timeout=600,
         )
 
     try:
         attempt()
     except Flake:
+        if not retry_on_flake:
+            raise
         print(
             "Generating LLM logits flaked.... waiting a minute and "
             "trying again.",
@@ -317,7 +294,7 @@ def run_llm_verification(
         torch_golden_path = Path(
             f"/tmp/goldens_torch_{device_type.value}_{pipeline}_{encoding}.json"
         )
-        generate_llm_logits_with_retry(
+        generate_llm_logits_with_optional_retry(
             framework="torch",
             device=devices,
             pipeline=pipeline,
@@ -341,7 +318,7 @@ def run_llm_verification(
     max_golden_path = Path(
         f"/tmp/goldens_max_{device_type.value}_{pipeline}_{encoding}.json"
     )
-    generate_llm_logits_with_retry(
+    generate_llm_logits_with_optional_retry(
         framework="max",
         device=devices,
         pipeline=pipeline,
@@ -389,7 +366,6 @@ def run_llm_verification(
         return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
-# TODO(akirchhoff): Make this kw_only when we drop support for Python 3.9.
 @dataclass
 class PipelineDef:
     """Definition of the requirements and method of running a pipeline.
@@ -425,6 +401,58 @@ class PipelineDef:
             return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
+# Helper function to create pipeline runner
+def _make_pipeline_runner(
+    *,
+    pipeline: str,
+    encoding: str,
+    pregenerated_torch_goldens_rlocation: Optional[str] = None,
+    absolute_tolerance: Optional[float] = None,
+    relative_tolerance: Optional[float] = None,
+    cos_dist_threshold: Optional[float] = None,
+    kl_div_threshold: Optional[float] = None,
+) -> Callable[[DeviceKind, str, bool, bool], VerificationVerdict]:
+    """
+    Build and return a small closure that executes `run_llm_verification`
+    for a single model configuration.
+
+    Args:
+        pipeline: Name of the model / pipeline to verify.
+        encoding: Weight / activation dtype (e.g. "float32", "bfloat16").
+        pregenerated_torch_goldens_rlocation: Runfiles-relative path to a
+            JSON file with cached Torch reference outputs.  If provided,
+            it is resolved via `resolve_rlocation`; otherwise Torch
+            outputs are generated on the fly.
+        absolute_tolerance: Per-token element-wise absolute tolerance (atol).
+        relative_tolerance: Per-token element-wise relative tolerance (rtol).
+        cos_dist_threshold: Per-token cosine-distance threshold
+            (not element-wise).
+        kl_div_threshold: Per-token KL-divergence threshold
+            (not element-wise).
+
+    Returns:
+        A callable that runs the verification and yields a `VerificationVerdict`.
+    """
+    return (
+        lambda device_type,
+        devices,
+        find_tolerances,
+        print_suggested_tolerances: run_llm_verification(
+            device_type=device_type,
+            devices=devices,
+            find_tolerances=find_tolerances,
+            print_suggested_tolerances=print_suggested_tolerances,
+            pipeline=pipeline,
+            encoding=encoding,
+            pregenerated_torch_goldens_rlocation=pregenerated_torch_goldens_rlocation,
+            absolute_tolerance=absolute_tolerance,
+            relative_tolerance=relative_tolerance,
+            cos_dist_threshold=cos_dist_threshold,
+            kl_div_threshold=kl_div_threshold,
+        )
+    )
+
+
 PIPELINES = {
     # ========== Robust Pipelines ==========
     # The models here are considered robust. They are tested with all metrics.
@@ -435,14 +463,7 @@ PIPELINES = {
     "meta-llama/Meta-Llama-3-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3-8b",
             encoding="float32",
             absolute_tolerance=2.9e-2,
@@ -454,14 +475,7 @@ PIPELINES = {
     "meta-llama/Llama-3.1-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3.1-8b",
             encoding="float32",
             absolute_tolerance=2.1e-02,
@@ -472,14 +486,7 @@ PIPELINES = {
     ),
     "sentence-transformers/all-mpnet-base-v2-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="mpnet",
             encoding="float32",
             pregenerated_torch_goldens_rlocation="torch_mpnet_golden/torch_mpnet_float32_golden.json",
@@ -493,14 +500,7 @@ PIPELINES = {
     ),
     "allenai/OLMo-1B-hf-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="olmo",
             encoding="float32",
             # On CPU, olmo passes with atol set to `5e-4`
@@ -520,14 +520,7 @@ PIPELINES = {
     # be migrated to being a robust pipelines.
     "bartowski/Meta-Llama-3-8B-Instruct-GGUF-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3-8b",
             encoding="q4_k",
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
@@ -540,14 +533,7 @@ PIPELINES = {
     ),
     "meta-llama/Meta-Llama-3-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3-8b",
             encoding="bfloat16",
             cos_dist_threshold=3.7e-2,
@@ -556,14 +542,7 @@ PIPELINES = {
     ),
     "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF-q4_k": PipelineDef(
         compatible_with=[DeviceKind.CPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3.1-8b",
             encoding="q4_k",
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
@@ -576,14 +555,7 @@ PIPELINES = {
     ),
     "meta-llama/Llama-3.1-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3.1-8b",
             encoding="bfloat16",
             cos_dist_threshold=2.6e-4,
@@ -594,14 +566,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         # This does not require multigpu, but does require h100.
         tags=["h100-multi"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3.1-8b-float8-static",
             encoding="float8_e4m3fn",
             # This model does not run with torch and transformers.
@@ -618,14 +583,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         # This does not require multigpu, but does require h100.
         tags=["h100-multi"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3.1-8b-float8-dynamic",
             encoding="float8_e4m3fn",
             # This model does not run with torch and transformers.
@@ -642,14 +600,7 @@ PIPELINES = {
         compatible_with=[DeviceKind.GPU],
         # Needs h100 for specific kernels.
         tags=["h100-multi"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3.2-1b",
             encoding="bfloat16",
             cos_dist_threshold=9.5e-04,
@@ -659,14 +610,7 @@ PIPELINES = {
     "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3.3-70b",
             encoding="bfloat16",
             # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
@@ -677,19 +621,12 @@ PIPELINES = {
     "meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
+            pipeline="llama4-scout",
+            encoding="bfloat16",
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama4_golden/torch_llama4_scout_bfloat16_golden.json"
             ),
-            pipeline="llama4-scout",
-            encoding="bfloat16",
             # TODO (MODELS-480): Debug Llama-4 Accuracy.
             cos_dist_threshold=7.2e-1,
             kl_div_threshold=6.5,
@@ -698,14 +635,7 @@ PIPELINES = {
     "mistralai/Mistral-Nemo-Instruct-2407-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="mistral",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json",
@@ -717,14 +647,7 @@ PIPELINES = {
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "h100-multi"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="mistral3",
             encoding="bfloat16",
             cos_dist_threshold=6.3e-4,
@@ -734,14 +657,7 @@ PIPELINES = {
     "meta-llama/Llama-3.2-11B-Vision-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama3-vision",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
@@ -753,14 +669,7 @@ PIPELINES = {
     "OpenGVLab/InternVL3-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="internvl",
             encoding="bfloat16",
             # TODO(MODELS-565): Implement InternVL.
@@ -771,14 +680,7 @@ PIPELINES = {
     "mistral-community/pixtral-12b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="pixtral",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
@@ -789,14 +691,7 @@ PIPELINES = {
     "Qwen/Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],  # TODO: Has much worse accuracy on AMD GPUs.
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="qwen",
             encoding="bfloat16",
             cos_dist_threshold=2.7e-3,
@@ -806,14 +701,7 @@ PIPELINES = {
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="qwen3",
             encoding="bfloat16",
             cos_dist_threshold=4.6e-4,
@@ -823,14 +711,7 @@ PIPELINES = {
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="exaone",
             encoding="float32",
             # TODO: Accuracy is much better on AMD.
@@ -841,14 +722,7 @@ PIPELINES = {
     ),
     "microsoft/Phi-3.5-mini-instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="phi-3.5-mini",
             encoding="bfloat16",
             # TODO(MODELS-458): This model seems broken based on the thresholds
@@ -859,14 +733,7 @@ PIPELINES = {
     "microsoft/phi-4-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="phi-4",
             encoding="bfloat16",
             cos_dist_threshold=9.8e-5,
@@ -876,17 +743,10 @@ PIPELINES = {
     "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
-            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
+        run=_make_pipeline_runner(
             pipeline="llama-gptq",
             encoding="gptq",
+            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq_golden.json",
             cos_dist_threshold=3.3e-4,
             kl_div_threshold=2.7e-3,
         ),
@@ -894,17 +754,10 @@ PIPELINES = {
     "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq-no-perm-idx": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["nvidia-only"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="llama-gptq-no-perm-idx",
-            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
             encoding="gptq",
+            pregenerated_torch_goldens_rlocation="torch_llama-gptq_golden/torch_llama-gptq-no-perm-idx_golden.json",
             cos_dist_threshold=3.6e-4,
             kl_div_threshold=1.4e-3,
         ),
@@ -913,14 +766,7 @@ PIPELINES = {
     "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big", "nvidia-only"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="deepseek-v2-lite",
             encoding="bfloat16",
             # TODO(MODELS-516): Investigate need for high tolerances here.
@@ -930,14 +776,7 @@ PIPELINES = {
     ),
     "google/gemma-3-1b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="gemma3-1b",
             encoding="bfloat16",
             cos_dist_threshold=9.9e-04,
