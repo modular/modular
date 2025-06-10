@@ -41,13 +41,11 @@ from sys.ffi import OpaquePointer
 from memory import UnsafePointer, bitcast, memcpy
 
 
-trait KeyElement(Copyable, Movable, Hashable, EqualityComparable):
-    """A trait composition for types which implement all requirements of
-    dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
-    and EqualityComparable for a hash map. Until we have references
-    they must also be copyable."""
-
-    pass
+alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
+"""A trait composition for types which implement all requirements of
+dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
+and EqualityComparable for a hash map. Until we have references
+they must also be copyable."""
 
 
 @fieldwise_init
