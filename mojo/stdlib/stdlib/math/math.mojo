@@ -894,16 +894,17 @@ fn copysign[
     Returns:
         Copies the sign from sign to magnitude.
     """
+    constrained[dtype.is_numeric(), "operands must be a numeric type"]()
 
     @parameter
-    if dtype.is_integral():
+    if dtype.is_unsigned():
+        return magnitude
+    elif dtype.is_integral():
         var mag_abs = abs(magnitude)
-        return (sign > 0).select(mag_abs, -mag_abs)
-    else:
-        constrained[dtype.is_numeric(), "operands must be a numeric type"]()
-        return llvm_intrinsic[
-            "llvm.copysign", SIMD[dtype, width], has_side_effect=False
-        ](magnitude, sign)
+        return (sign < 0).select(-mag_abs, mag_abs)
+    return llvm_intrinsic[
+        "llvm.copysign", SIMD[dtype, width], has_side_effect=False
+    ](magnitude, sign)
 
 
 # ===----------------------------------------------------------------------=== #
