@@ -93,3 +93,25 @@ kgen.func @f_reference() {
    %1 = kgen.call_indirect %0(%idx0) : (index) capturing -> index
    kgen.return %1: index
  }
+
+// -----
+
+// CHECK-LABEL: kgen.func @test_correctly_handle_pure_ops_callee(%arg0: !pop.array<2, scalar<index>>)
+kgen.func @test_correctly_handle_pure_ops_callee(%arg0: !pop.array<2, scalar<index>>, %arg1: !pop.scalar<index>, %arg2: index) {
+  %0 = pop.array.get %arg0[1] : !pop.array<2, scalar<index>>
+  %1 = pop.cast_to_builtin %0 : !pop.scalar<index> to index
+  %stack = pop.stack_allocation 1 x index marked
+  pop.store %1, %stack : !kgen.pointer<index>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !pop.scalar<index>) {
+kgen.func @test_correctly_handle_pure_ops(%arg0: index, %arg1: !pop.scalar<index>) {
+  %0 = index.add %arg0, %arg0
+  %1 = index.add %0, %arg0
+  %3 = pop.cast_from_builtin %1 : index to !pop.scalar<index>
+  %2 = index.add %1, %0
+  %4 = pop.array.create [%3, %arg1] : !pop.array<2, scalar<index>>
+  kgen.call @test_correctly_handle_pure_ops_callee(%4, %arg1, %2) : (!pop.array<2, scalar<index>>, !pop.scalar<index>, index) -> ()
+  kgen.return
+}
