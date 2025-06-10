@@ -922,7 +922,8 @@ OpFoldResult BitcastOp::fold(FoldAdaptor adaptor) {
   if (!dtype || !inputDType || !getType().getResolvedSize() ||
       getInput().getType().getResolvedSize() != getType().getResolvedSize())
     return {};
-  if (dtype->isBool()) // Modeling bool bitcast requires packing.
+  if (inputDType->isBool() ||
+      dtype->isBool()) // Modeling bool bitcast requires packing.
     return {};
 
   TargetInfoAttr target = lookupTargetInfo(*this);

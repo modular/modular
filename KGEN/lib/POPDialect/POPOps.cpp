@@ -102,16 +102,13 @@ LogicalResult BitcastOp::verify() {
       return success();
   }
 
-  if (inputDType->isBool() || outputDType->isBool()) {
-    if (*inputSize == outputDTypeWidth * *outputSize ||
-        *outputSize == inputDTypeWidth * *inputSize) {
-      return success();
-    }
-  } else {
-    // If the sizes do not match, then we cannot cast.
-    if (inputDTypeWidth * *inputSize == outputDTypeWidth * *outputSize)
-      return success();
-  }
+  if (inputDType->isBool())
+    return success(*inputSize == outputDTypeWidth * *outputSize);
+  if (outputDType->isBool())
+    return success(*outputSize == inputDTypeWidth * *inputSize);
+  // If the sizes do not match, then we cannot cast.
+  if (inputDTypeWidth * *inputSize == outputDTypeWidth * *outputSize)
+    return success();
   return emitOpError("input type ") << inputType << " and result type "
                                     << outputType << " are cast incompatible";
 }
