@@ -459,6 +459,32 @@ def test_text_and_vision_context_serializable():
     assert msgpack_decoded == original_context
 
 
+def test_text_and_vision_context_serializable_empty_pixel_values():
+    # Test that we can encode a sample TextAndVisionContext with Pickle
+    original_context = TextAndVisionContext(
+        prompt="sampling params test prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        pixel_values=tuple(),
+    )
+
+    pickle_encoded = pickle.dumps(original_context)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert isinstance(pickle_decoded, TextAndVisionContext)
+    assert pickle_decoded == original_context
+
+    # Test that we can encode a sample TextAndVisionContext with MsgPack
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(
+        Union[TextContext, TextAndVisionContext]
+    )
+    msgpack_encoded = serialize(original_context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert msgpack_decoded == original_context
+
+
 def test_text_and_vision_context_tuple_serializable():
     # Test that we can encode a tuple of (str, TextAndVisionContext) with Pickle
     original_context = TextAndVisionContext(
