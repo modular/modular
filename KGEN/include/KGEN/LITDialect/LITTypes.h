@@ -192,6 +192,7 @@ public:
   bool isCapturing() { return getFnEffects().isCapturing(); }
   bool isEscaping() { return getFnEffects().isEscaping(); }
   bool isRefResult() { return getFnEffects().isRefResult(); }
+  bool isUnified() { return getFnEffects().isUnified(); }
 
   /// Return the convention for the specified value argument.
   ArgConvention getArgConvention(size_t inputNo) {

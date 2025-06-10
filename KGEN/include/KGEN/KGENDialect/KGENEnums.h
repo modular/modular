@@ -71,6 +71,7 @@ public:
   bool isCapturing() const { return get(Impl::Capturing); }
   bool isEscaping() const { return get(Impl::Escaping); }
   bool isRefResult() const { return get(Impl::RefResult); }
+  bool isUnified() const { return get(Impl::Unified); }
 
   FnEffects setThrows(bool throws = true) { return set(Impl::Throws, throws); }
   FnEffects setAsync(bool async = true) { return set(Impl::Async, async); }
@@ -83,6 +84,7 @@ public:
   FnEffects setRefResult(bool value = true) {
     return set(Impl::RefResult, value);
   }
+  FnEffects setUnified(bool value = true) { return set(Impl::Unified, value); }
 
   bool operator==(FnEffects rhs) const { return getImpl() == rhs.getImpl(); }
   bool operator!=(FnEffects rhs) const { return getImpl() != rhs.getImpl(); }

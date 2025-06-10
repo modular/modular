@@ -1290,6 +1290,14 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return success();
   }
 
+  if (signature.isUnified()) {
+    // TODO: actually implement.
+    decl.getIfOperation()->erase();
+    decl.setIRValue(nullptr);
+    shared.deleteDecl(decl);
+    return success();
+  }
+
   // If the function doesn't actually capture anything, don't demote it to a
   // runtime value.
   if (!signature.isEscaping() && captures.empty()) {
