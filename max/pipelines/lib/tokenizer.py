@@ -604,6 +604,9 @@ class TextAndVisionTokenizer(
                 )
             elif torch.is_tensor(pixel_values):
                 pixel_values = (pixel_values.numpy(),)
+            elif isinstance(pixel_values, np.ndarray):
+                pixel_values = (pixel_values,)
+
             if "aspect_ratio_ids" in processed_inputs:
                 extra_model_args["aspect_ratio_ids"] = (
                     processed_inputs.aspect_ratio_ids
@@ -613,7 +616,7 @@ class TextAndVisionTokenizer(
                     processed_inputs.aspect_ratio_mask
                 )
         else:
-            pixel_values = ()
+            pixel_values = tuple()
 
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))
