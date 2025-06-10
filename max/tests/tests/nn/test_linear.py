@@ -228,3 +228,50 @@ def test_linear_sharding_preserves_config():
         assert sharded.float8_config == float8_config
         assert sharded.clip_weight == 0.5
         assert sharded.device == DeviceRef.GPU(1)
+
+
+def test_linear_shard_non_divisible_output_dim():
+    """Test Linear.shard() with output dimension not divisible by num_devices.
+
+    This test verifies that Linear layer sharding handles cases where the output
+    dimension (e.g., vocab_size) is not evenly divisible by the number of devices.
+    For example, InternVL's Qwen2 language model has vocab_size=151674, which is
+    not divisible by 4.
+    """
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        linear = Linear(
+            in_dim=4096,
+            out_dim=151674,  # Not divisible by 4
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+        )
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=4)
+
+        # Expected distribution of rows across devices
+        # 151674 / 4 = 37918.5
+        # Device 0, 1: 37919 rows each (base + 1)
+        # Device 2, 3: 37918 rows each (base)
+        expected_rows = [37919, 37919, 37918, 37918]
+
+        total_rows = 0
+        for i in range(4):
+            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
+            actual_rows = int(sharded.weight.shape[0])
+
+            assert actual_rows == expected_rows[i], (
+                f"Device {i} should have {expected_rows[i]} rows, "
+                f"but got {actual_rows}"
+            )
+            assert int(sharded.weight.shape[1]) == 4096
+
+            total_rows += actual_rows
+
+        # Verify all rows are accounted for
+        assert total_rows == 151674, (
+            f"Total rows across all shards should be 151674, but got {total_rows}"
+        )
