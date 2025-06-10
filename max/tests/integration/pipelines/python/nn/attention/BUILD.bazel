@@ -24,6 +24,9 @@ modular_py_test(
 modular_py_test(
     name = "attention_gpu_tests",
     srcs = glob(["*_gpu.py"]) + ["conftest.py"],
+    exec_properties = {
+        "resources:gpu-memory": "12",
+    },
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     deps = [
