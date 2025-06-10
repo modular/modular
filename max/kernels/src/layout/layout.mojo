@@ -251,8 +251,8 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
     return Layout(shape, stride)
 
 
-@value
-struct _LayoutIter[origin: ImmutableOrigin]:
+@fieldwise_init
+struct _LayoutIter[origin: ImmutableOrigin](Copyable, Movable):
     """Iterator for traversing Layout dimensions.
 
     This internal iterator allows traversing the dimensions of a Layout object,

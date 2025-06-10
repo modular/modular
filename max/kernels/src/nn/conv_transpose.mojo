@@ -392,7 +392,7 @@ fn get_partition(
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct ConvTransposedPacked[
     input_mut: Bool,
     filter_mut: Bool, //,
@@ -410,7 +410,7 @@ struct ConvTransposedPacked[
     output_type: DType,
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-]:
+](Copyable, Movable):
     var output: NDBuffer[output_type, output_rank, output_origin, output_shape]
     var input: NDBuffer[input_type, input_rank, input_origin, input_shape]
     var filter: NDBuffer[filter_type, filter_rank, filter_origin, filter_shape]

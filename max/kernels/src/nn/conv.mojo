@@ -90,12 +90,12 @@ from .conv_utils import (
 from .shapes import get_sliding_window_out_dim
 
 
-@value
+@fieldwise_init
 struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-]:
+](Copyable, Movable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
@@ -352,7 +352,7 @@ fn _reduce_output[
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct ConvDirectNHWC[
     input_mut: Bool,
     filter_mut: Bool, //,
@@ -371,7 +371,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-]:
+](Copyable, Movable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -3107,9 +3107,8 @@ fn check_cudnn_error(stat: cudnnStatus_t):
         print(stat)
 
 
-@value
 @register_passable
-struct CuDNNConvMeta:
+struct CuDNNConvMeta(Copyable, Movable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]

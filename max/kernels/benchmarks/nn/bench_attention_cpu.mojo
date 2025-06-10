@@ -24,8 +24,8 @@ from utils import IndexList
 from utils.index import Index
 
 
-@value
-struct AttentionSpec(Stringable):
+@fieldwise_init
+struct AttentionSpec(Stringable, Copyable, Movable):
     var batch_size: Int
     var seq_len: Int
     var kv_seq_len: Int

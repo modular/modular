@@ -303,9 +303,9 @@ fn matmul_kernel_naive[
         c[Index(x, y)] = accum.cast[c_type]()
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct AMDSchedulerTuning:
+struct AMDSchedulerTuning(Copyable, Movable):
     var block_shape: IndexList[2]
     var tuning_values: IndexList[3]
 

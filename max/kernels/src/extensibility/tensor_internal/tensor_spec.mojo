@@ -26,9 +26,9 @@ from memory import UnsafePointer
 from utils import IndexList, product
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct RuntimeTensorSpec[type: DType, rank: Int]:
+struct RuntimeTensorSpec[type: DType, rank: Int](Copyable, Movable):
     var shape: IndexList[rank]
 
     fn __getitem__(self, idx: Int) -> Int:

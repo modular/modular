@@ -107,8 +107,8 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
     _ = output_tensor
 
 
-@value
-struct ScatterSpec(Stringable):
+@fieldwise_init
+struct ScatterSpec(Stringable, Copyable, Movable):
     var axis: Int
     var m1: Int
     var m2: Int

@@ -26,10 +26,9 @@ from tensor_internal import InputTensor, OutputTensor
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
-
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TopKElement[T: DType](Copyable & GreaterThanComparable):
+struct TopKElement[T: DType](Copyable & GreaterThanComparable & Movable):
     """Stores the value with it's index."""
 
     var idx: Int32

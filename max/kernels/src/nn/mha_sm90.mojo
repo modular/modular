@@ -111,7 +111,6 @@ trait OptionallyStaticInt(Intable):
 
 # These are used to avoid generating code for passing unused values to kernels.
 # That is, if we have a static int, no argument should be passed.
-@value
 @register_passable("trivial")
 struct StaticInt[value: Int](OptionallyStaticInt):
     alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
@@ -129,7 +128,6 @@ struct StaticInt[value: Int](OptionallyStaticInt):
         return UInt32(Self.value)
 
 
-@value
 @register_passable("trivial")
 struct DynamicInt(OptionallyStaticInt):
     var value: UInt32
@@ -169,9 +167,8 @@ trait MHAPartitionScheme:
         ...
 
 
-@value
 @register_passable("trivial")
-struct NoPartition[dtype: DType](MHAPartitionScheme):
+struct NoPartition[dtype: DType](MHAPartitionScheme, Copyable, Movable):
     alias do_partition: Bool = False
     alias accum_dtype: DType = dtype
 
@@ -190,9 +187,8 @@ struct NoPartition[dtype: DType](MHAPartitionScheme):
         return UnsafePointer[Scalar[Self.accum_dtype]]()
 
 
-@value
 @register_passable("trivial")
-struct SplitKPartition[dtype: DType](MHAPartitionScheme):
+struct SplitKPartition[dtype: DType](MHAPartitionScheme, Copyable, Movable):
     alias do_partition: Bool = True
     alias accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
@@ -669,11 +665,10 @@ fn mha_sm90_dispatch[
         _ = schedule
 
 
-@value
 @register_passable("trivial")
 struct MHAPosition[
     BM: Int, BN: Int, depth: Int, num_heads: Int, group: Int, decoding: Bool
-]:
+](Copyable, Movable):
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == num_heads`.

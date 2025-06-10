@@ -125,9 +125,8 @@ fn vectorize_distribute_layout[
     return append_layout(vlayout[0], dlayout)
 
 
-@value
 @register_passable
-struct WaveFrontSummary:
+struct WaveFrontSummary(Copyable, Movable):
     var total_wavefronts: Int
     var expected_wavefronts: Int
 

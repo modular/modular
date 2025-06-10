@@ -33,12 +33,11 @@ alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 # Note: The reason we want per-dim mask is because vectorized `non-scalar`
 # elements are n-d, and it can be OOB only with respect to a specific axis.
 #
-@value
 struct TileMask[
     rank: Int,
     element_size: IndexList[rank] = IndexList[rank](1),
     element_stride: IndexList[rank] = IndexList[rank](1),
-]:
+](Copyable, Movable):
     var max_dim: IndexList[rank]
     var offset: IndexList[rank]
 
@@ -319,7 +318,6 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 
 # Stores the layout of the vectorized buffer element.
 #
-@value
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
     Copyable,
     Movable,

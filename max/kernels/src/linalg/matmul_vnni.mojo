@@ -32,8 +32,8 @@ from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the VNNI microkernel.
-@value
-struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
+@fieldwise_init
+struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
     # Parameters for global reference.
 
     @always_inline

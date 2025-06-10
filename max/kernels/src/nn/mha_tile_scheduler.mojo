@@ -36,9 +36,9 @@ from tensor_internal import ManagedTensorSlice
 from utils.index import Index, IndexList
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Stringable, Writable):
+struct WorkInfo(Stringable, Writable, Copyable, Movable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -73,9 +73,8 @@ struct WorkInfo(Stringable, Writable):
         )
 
 
-@value
 @register_passable("trivial")
-struct SeqInfo:
+struct SeqInfo(Copyable, Movable):
     var seq_len: UInt32
     var start_of_seq: UInt32
     var prompt_offset: UInt32
@@ -119,9 +118,9 @@ struct SeqInfo:
             return SeqInfo(seq_len, 0, work)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MHASchedulerSynchronization:
+struct MHASchedulerSynchronization(Copyable, Movable):
     var _value: Int32
 
     alias NONE = Self(0)  # use for TMA
@@ -167,9 +166,8 @@ struct MHATileState:
         return self.is_valid(self.idx)
 
 
-@value
 @register_passable("trivial")
-struct MHATileSummary:
+struct MHATileSummary(Copyable, Movable):
     # Number of sequences in batch.
     var batch_size: UInt32
     # Maximum num tiles.
@@ -395,9 +393,9 @@ trait MHATileScheduler:
         ...
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MHASchedule:
+struct MHASchedule(Copyable, Movable):
     var _value: Int32
 
     alias DEFAULT = Self(0)
@@ -417,12 +415,11 @@ struct MHASchedule:
 # ===----------------------------------------------------------------------=== #
 
 
-@value
 @register_passable("trivial")
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
-](MHATileScheduler):
+](MHATileScheduler, Copyable, Movable):
     alias may_advance: Bool = False
     alias mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
@@ -486,7 +483,6 @@ struct TransientScheduler[
         )
 
 
-@value
 @register_passable("trivial")
 struct TileScheduler[
     tile_shape: UInt32,
@@ -494,7 +490,7 @@ struct TileScheduler[
     /,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](MHATileScheduler):
+](MHATileScheduler, Copyable, Movable):
     alias may_advance: Bool = True
     alias mha_schedule: MHASchedule = schedule
 
@@ -570,7 +566,6 @@ struct TileScheduler[
         )
 
 
-@value
 @register_passable("trivial")
 struct QueuedTileScheduler[
     tile_shape: UInt32,
@@ -579,7 +574,7 @@ struct QueuedTileScheduler[
     decoding: Bool,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](MHATileScheduler):
+](MHATileScheduler, Copyable, Movable):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
     If `decoding == True`, then `num_heads` is `kv_num_heads`.

@@ -148,9 +148,9 @@ struct MlirValue:
     var ptr: UnsafePointer[NoneType]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MlirNamedAttribute:
+struct MlirNamedAttribute(Copyable, Movable):
     """Named MLIR attribute.
 
     A named attribute is essentially a (name, attribute) pair where the name is
@@ -1164,9 +1164,9 @@ fn mlirOperationMoveBefore(op: MlirOperation, other: MlirOperation) -> None:
     return MLIR_func["mlirOperationMoveBefore", NoneType._mlir_type](op, other)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MlirWalkResult:
+struct MlirWalkResult(Copyable, Movable):
     """Operation walk result."""
 
     var value: Int8
@@ -1177,9 +1177,9 @@ alias MlirWalkResultInterrupt = MlirWalkResult(1)
 alias MlirWalkResultSkip = MlirWalkResult(2)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MlirWalkOrder:
+struct MlirWalkOrder(Copyable, Movable):
     """Traversal order for operation walk."""
 
     var value: Int8

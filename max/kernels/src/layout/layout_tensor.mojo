@@ -5416,9 +5416,8 @@ fn stack_allocation_like[
     return __type_of(result).stack_allocation()
 
 
-@value
 @register_passable("trivial")
-struct ThreadScope:
+struct ThreadScope(Copyable, Movable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,

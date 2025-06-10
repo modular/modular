@@ -22,8 +22,7 @@ from memory import UnsafePointer, memcpy
 from utils import IndexList, StaticTuple
 
 
-@value
-struct CoordinateTransformationMode:
+struct CoordinateTransformationMode(Copyable, Movable):
     var value: Int
     alias HalfPixel = CoordinateTransformationMode(0)
     alias AlignCorners = CoordinateTransformationMode(1)
@@ -71,8 +70,7 @@ fn coord_transform[
         return 0
 
 
-@value
-struct RoundMode:
+struct RoundMode(Copyable, Movable):
     var value: Int
     alias HalfDown = RoundMode(0)
     alias HalfUp = RoundMode(1)
@@ -89,8 +87,8 @@ struct RoundMode:
         return self.value == other.value
 
 
-@value
-struct InterpolationMode:
+@fieldwise_init
+struct InterpolationMode(Copyable, Movable):
     var value: Int
     alias Linear = InterpolationMode(0)
 
@@ -99,9 +97,8 @@ struct InterpolationMode:
         return self.value == other.value
 
 
-@value
 @register_passable("trivial")
-struct Interpolator[mode: InterpolationMode]:
+struct Interpolator[mode: InterpolationMode](Copyable, Movable):
     var cubic_coeff: Float32
 
     @always_inline
