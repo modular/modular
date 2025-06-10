@@ -281,7 +281,7 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
       // argument to the called function turns out live.
       RetOrArg arg = createArg(calleeNode->func, use.getOperandNumber());
       Liveness result = markIfNotLive(arg, maybeLiveUses);
-      if (worklist.empty())
+      if (result == Live || worklist.empty())
         return result;
     }
 
