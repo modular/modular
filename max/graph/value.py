@@ -828,6 +828,9 @@ class TensorValue(Value[mo.TensorType]):
     def __rxor__(self, lhs: TensorValueLike) -> TensorValue:
         return ops.logical_xor(lhs, self)
 
+    def __invert__(self) -> TensorValue:
+        return ops.logical_not(self)
+
 
 Numeric = Union[int, float, np.integer, np.floating, np.ndarray]
 StrongTensorValueLike = Union[_Value[mo.TensorType], TensorValue, Shape, Dim]
