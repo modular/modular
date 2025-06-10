@@ -76,12 +76,12 @@ class PipelineConfig(MAXConfig):
     max_queue_size_tg: Optional[int] = None
     """Maximum number of requests in decode queue. By default, this is max-batch-size."""
 
-    min_batch_size_tg: int = 0
+    min_batch_size_tg: Optional[int] = None
     """Specifies a soft floor on the decode batch size.
 
     If the TG batch size is larger than this value, the scheduler will continue to
     run TG batches. If it falls below, the scheduler will prioritize CE. Note that
-    this is NOT a strict minimum!
+    this is NOT a strict minimum! By default, this is max-queue-size-tg.
 
     This is an experimental flag solely for the TTS scheduler. Do not use unless
     you know what you are doing.

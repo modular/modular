@@ -74,7 +74,6 @@ def load_scheduler(
         paged_manager = pipeline.speech_lm_pipeline._pipeline_model.kv_manager  # type: ignore
         assert isinstance(paged_manager, PagedKVCacheManager)
 
-        assert config.min_batch_size_tg is not None
         assert config.ce_delay_ms is not None
         assert config.enable_prioritize_first_decode is not None
 
