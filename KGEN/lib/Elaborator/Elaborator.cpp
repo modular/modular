@@ -986,7 +986,7 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
+  item.onComplete = [this, resultBool, debug = config.elaborateDebugInfo](
                         ImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
@@ -999,8 +999,11 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
     Block &block = op->getRegion(!resultBool).front();
 
     // First update the locations if necessary
-    if (debug && failed(concretizeLocsInScope(block, node)))
-      return failure();
+    if (debug) {
+      std::lock_guard<std::mutex> guard(debugInfoMutex);
+      if (failed(concretizeLocsInScope(block, node)))
+        return failure();
+    }
 
     Operation *terminator = block.getTerminator();
     op->getBlock()->getOperations().splice(iter, block.getOperations());
@@ -1133,12 +1136,15 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   while (isa<ParamApplyOp>(*elseBegin))
     elseBegin++;
 
-  auto onElseComplete = [debug = config.elaborateDebugInfo, begin = &*elseBegin,
-                         yield, op,
+  auto onElseComplete = [this, debug = config.elaborateDebugInfo,
+                         begin = &*elseBegin, yield, op,
                          parent](ImplNode *node) mutable -> LogicalResult {
-    if (debug && failed(concretizeLocsInScope(
-                     {begin->getIterator(), yield->getIterator()}, node)))
-      return failure();
+    if (debug) {
+      std::lock_guard<std::mutex> guard(debugInfoMutex);
+      if (failed(concretizeLocsInScope(
+              {begin->getIterator(), yield->getIterator()}, node)))
+        return failure();
+    }
     // Erase the terminator when elaboration of the else region is done.
     yield.erase();
     recursivelyEraseFromNestedScopes(parent, op);
@@ -1162,11 +1168,14 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   // Upon completion of elaboration of each such generated loop, replace the
   // `kgen.param.for` terminators with the appropriate HLCF ones.
   auto makeCompletion =
-      [debug = config.elaborateDebugInfo,
+      [this, debug = config.elaborateDebugInfo,
        outerLabel](Region &region) -> std::function<LogicalResult(ImplNode *)> {
-    return [debug, &region, outerLabel](ImplNode *node) -> LogicalResult {
-      if (debug && failed(concretizeLocsInScope(region.front(), node)))
-        return failure();
+    return [this, debug, &region, outerLabel](ImplNode *node) -> LogicalResult {
+      if (debug) {
+        std::lock_guard<std::mutex> guard(debugInfoMutex);
+        if (failed(concretizeLocsInScope(region.front(), node)))
+          return failure();
+      }
 
       // Replace the `kgen.param.for` terminators with the HLCF equivalent.
       region.walk([&](Operation *op) {
@@ -1643,7 +1652,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // ops and block arguments. We do this after the worklist is processed, to
     // ensure that all parameter computation is completed, e.g. we have
     // processed all kgen.param.decl ops.
-    onComplete = [](ImplNode *inode) -> LogicalResult {
+    onComplete = [this](ImplNode *inode) -> LogicalResult {
+      std::lock_guard<std::mutex> guard(debugInfoMutex);
       if (failed(concretizeLocOf(*inode->inst, inode)))
         return failure();
       if (failed(concretizeLocsInScope(inode->inst.getBodyRegion().front(),
