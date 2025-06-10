@@ -391,8 +391,13 @@ class Linear(Module, Shardable):
                 sharded.input_scale = self.input_scale
 
             if self.weight_scale is not None:
-                sharded.weight_scale = self.weight_scale.shard(
-                    shard_idx, device
+                # Share a reference to the original weight scale if scalar, and
+                # shard if on device.
+                # This is because scalars are always on CPU by convention.
+                sharded.weight_scale = (
+                    self.weight_scale
+                    if len(self.weight_scale.shape) == 0
+                    else self.weight_scale.shard(shard_idx, device)
                 )
 
         return sharded
@@ -1126,36 +1131,9 @@ class DistributedMLP(MLP):
         for n, device in enumerate(self.devices):
             layer = MLP(*args, **kwargs)
 
-            layer.gate_proj.device = device
-            layer.gate_proj.weight = self.gate_proj.weight.shard(n, device)
-
-            layer.down_proj.device = device
-            layer.down_proj.weight = self.down_proj.weight.shard(n, device)
-
-            layer.up_proj.device = device
-            layer.up_proj.weight = self.up_proj.weight.shard(n, device)
-
-            if self.float8_config:
-                if self.gate_proj.weight_scale and (
-                    len(self.gate_proj.weight_scale.shape) == 2
-                ):
-                    layer.gate_proj.weight_scale = (
-                        self.gate_proj.weight_scale.shard(n, device)
-                    )
-
-                if self.down_proj.weight_scale and (
-                    len(self.down_proj.weight_scale.shape) == 2
-                ):
-                    layer.down_proj.weight_scale = (
-                        self.down_proj.weight_scale.shard(n, device)
-                    )
-
-                if self.up_proj.weight_scale and (
-                    len(self.up_proj.weight_scale.shape) == 2
-                ):
-                    layer.up_proj.weight_scale = (
-                        self.up_proj.weight_scale.shard(n, device)
-                    )
+            layer.gate_proj = self.gate_proj.shard(n, device)
+            layer.down_proj = self.down_proj.shard(n, device)
+            layer.up_proj = self.up_proj.shard(n, device)
 
             self.list_of_mlps.append(layer)
 
