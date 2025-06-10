@@ -162,6 +162,9 @@ def main():
             ctx, Index(1, 64, 1, 64), num_groups=8
         )
 
+        # Non-multiple of simd_width → scalar fallback block path
+        run_group_norm_gpu[DType.float32](ctx, Index(2, 33, 1, 1), num_groups=1)
+
         # === Invalid Case: cols < simd_width → triggers safety assertion ===
 
         # Misaligned shape

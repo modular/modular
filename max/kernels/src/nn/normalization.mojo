@@ -1348,6 +1348,10 @@ fn group_norm_gpu_block[
     var row_count = Scalar[accum_type]()
 
     with PDL():
+        var thread_mean = Scalar[accum_type]()
+        var thread_m2 = Scalar[accum_type]()
+        var thread_count = Scalar[accum_type]()
+
         for x in range(ceildiv(group_size // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < group_size:
@@ -1355,24 +1359,20 @@ fn group_norm_gpu_block[
                     accum_type
                 ]()
 
-                var thread_mean = Scalar[accum_type]()
-                var thread_m2 = Scalar[accum_type]()
-                var thread_count = Scalar[accum_type]()
-
                 @parameter
                 for i in range(Int(simd_width)):
                     welford_update(
                         vec_data[i], thread_mean, thread_m2, thread_count
                     )
 
-                welford_block_all_reduce(
-                    thread_mean,
-                    thread_m2,
-                    thread_count,
-                    row_mean,
-                    row_m2,
-                    row_count,
-                )
+        welford_block_all_reduce(
+            thread_mean,
+            thread_m2,
+            thread_count,
+            row_mean,
+            row_m2,
+            row_count,
+        )
 
         var row_var = row_m2 / row_count
         var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
