@@ -56,6 +56,7 @@ modular_py_test(
         requirement("transformers"),
         requirement("hypothesis"),
         requirement("gguf"),
+        requirement("torchvision"),
         requirement("pytest-asyncio"),
     ],
 )
