@@ -88,6 +88,8 @@ class TokenGeneratorRequestMessage(TypedDict):
 
 @dataclass(frozen=True)
 class SamplingParams:
+    """Request Specific Sampling Parameters that are only known at run time."""
+
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
@@ -113,15 +115,6 @@ class SamplingParams:
     """The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens
     that have already appeared in the generated text at least once by dividing the logits by the
     repetition penalty."""
-
-    enable_structured_output: bool = False
-    """Enable structured generation/guided decoding for the server. This allows the user to pass a json
-    schema in the response_format field, which the LLM will adhere to."""
-
-    enable_variable_logits: bool = False
-    """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
-    their associated logit_offsets. This is needed to produce additional logits for echo and speculative
-    decoding purposes."""
 
     max_new_tokens: int | None = None
     """The maximum number of new tokens to generate in the response. If not set,
@@ -155,6 +148,8 @@ class SamplingParams:
             raise ValueError(
                 "We currently do not handle explicit min_p and top_k at the same time."
             )
+        if self.repetition_penalty <= 0:
+            raise ValueError("repetition_penalty must be greater than 0.")
 
 
 @dataclass(frozen=True)

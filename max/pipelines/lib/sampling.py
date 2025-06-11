@@ -156,19 +156,29 @@ def token_sampler(
                 list(_input_dict).index("repetition_freq_offsets")
             ].tensor
 
+            frequency_penalty = graph.inputs[
+                list(_input_dict).index("frequency_penalty")
+            ].tensor
+            presence_penalty = graph.inputs[
+                list(_input_dict).index("presence_penalty")
+            ].tensor
+            repetition_penalty = graph.inputs[
+                list(_input_dict).index("repetition_penalty")
+            ].tensor
+
             apply_penalties_to_logits(
                 logits_buffer,
                 ops.buffer_load(penalty_freq_data),
                 penalty_freq_offsets,
-                frequency_penalty=sampling_config.frequency_penalty,
-                presence_penalty=sampling_config.presence_penalty,
+                frequency_penalty=frequency_penalty,
+                presence_penalty=presence_penalty,
             )
 
             apply_penalties_to_logits(
                 logits_buffer,
                 ops.buffer_load(repetition_freq_data),
                 repetition_freq_offsets,
-                repetition_penalty=sampling_config.repetition_penalty,
+                repetition_penalty=repetition_penalty,
             )
 
         if sampling_config.enable_min_tokens:
@@ -230,22 +240,17 @@ def token_sampler(
 
         # Update frequency data for penalties that are actually enabled
         if sampling_config.do_penalties:
-            if (
-                sampling_config.frequency_penalty != 0
-                or sampling_config.presence_penalty != 0
-            ):
-                update_frequency_data(
-                    penalty_freq_data,
-                    penalty_freq_offsets,
-                    ops.squeeze(tokens, axis=1),
-                )
+            update_frequency_data(
+                penalty_freq_data,
+                penalty_freq_offsets,
+                ops.squeeze(tokens, axis=1),
+            )
 
-            if sampling_config.repetition_penalty != 1:
-                update_frequency_data(
-                    repetition_freq_data,
-                    repetition_freq_offsets,
-                    ops.squeeze(tokens, axis=1),
-                )
+            update_frequency_data(
+                repetition_freq_data,
+                repetition_freq_offsets,
+                ops.squeeze(tokens, axis=1),
+            )
         # Concat tokens to previous tokens.
         all_tokens = ops.concat([prev_tokens, tokens], -1)
 
