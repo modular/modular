@@ -66,7 +66,7 @@ struct _OwnedStringRef(Boolable):
         return self.length != 0
 
 
-struct FileHandle(Writer):
+struct FileHandle(Writer, Movable):
     """File handle to an opened file."""
 
     var handle: OpaquePointer
