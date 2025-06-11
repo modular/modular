@@ -20,6 +20,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
+    Optional,
     Protocol,
     TypeVar,
     runtime_checkable,
@@ -52,7 +53,7 @@ class AudioGenerationRequest:
     capabilities of the response generation.
     """
 
-    input: str
+    input: Optional[str] = None
     """The text to generate audio for. The maximum length is 4096 characters.
     """
 
@@ -68,6 +69,15 @@ class AudioGenerationRequest:
     _assistant_message_override: str | None = None
     """(ONLY FOR BENCHMARKING PURPOSES) An assistant message that replaces the
     speech token pattern."""
+
+    token_ids: Optional[list[int]] = field(default=None)
+    """Optionally provide a preprocessed list of token ids to pass as input directly into the model.
+    This replaces automatically generating TokenGeneratorRequestMessages given the input, audio prompt tokens,
+    audio prompt transcription fields."""
+
+    def __post_init__(self) -> None:
+        if self.token_ids is None and input is None:
+            raise RuntimeError("either token_ids or input must be provided.")
 
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
