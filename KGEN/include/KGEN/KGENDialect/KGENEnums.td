@@ -21,7 +21,7 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// Fully associative variadic expressions.
   I32EnumAttrCase<"Add", 0, "add">,
   I32EnumAttrCase<"Mul", 1, "mul">,
-  I32EnumAttrCase<"MulNuw", 2, "mul_nuw">,
+  I32EnumAttrCase<"MulNoWrap", 2, "mul_no_wrap">,
   I32EnumAttrCase<"And", 3, "and">,
   I32EnumAttrCase<"Or",  4, "or">,
   I32EnumAttrCase<"Xor", 5, "xor">,
