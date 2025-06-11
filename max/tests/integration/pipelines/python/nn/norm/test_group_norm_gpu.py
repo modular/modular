@@ -10,16 +10,12 @@ import pytest
 import torch
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import (
-    DeviceRef,
-    Graph,
-    TensorType,
-)
+from max.graph import DeviceRef, Graph, TensorType
 from max.nn import GroupNorm
 
 
 def max_group_norm(
-    session: InferenceSession,
+    gpu_session: InferenceSession,
     input_tensor: torch.Tensor,
     num_groups: int,
     num_channels: int,
@@ -28,7 +24,7 @@ def max_group_norm(
     weight: torch.Tensor | None = None,
     bias: torch.Tensor | None = None,
 ):
-    device_ref = DeviceRef.CPU()
+    device_ref = DeviceRef.GPU()
     with Graph(
         "group_norm",
         input_types=(
@@ -41,9 +37,9 @@ def max_group_norm(
     if affine:
         assert weight is not None and bias is not None
         state_dict = {"weight": weight, "bias": bias}
-        model = session.load(graph, weights_registry=state_dict)
+        model = gpu_session.load(graph, weights_registry=state_dict)
     else:
-        model = session.load(graph)
+        model = gpu_session.load(graph)
     model_out = model(input_tensor)
     return torch.from_dlpack(model_out[0])
 
@@ -58,10 +54,13 @@ def torch_group_norm(
     bias=None,
 ):
     layer = torch.nn.GroupNorm(num_groups, num_channels, eps, affine)
+    layer = layer.to(input_tensor.device)
+
     if affine:
         assert weight is not None and bias is not None
-        layer.weight.data = weight
-        layer.bias.data = bias
+        layer.weight.data.copy_(weight.to(input_tensor.device))
+        layer.bias.data.copy_(bias.to(input_tensor.device))
+
     return layer(input_tensor)
 
 
@@ -76,7 +75,10 @@ def torch_group_norm(
     ],
 )
 def test_group_norm(
-    session: InferenceSession, num_channels: int, num_groups: int, affine: bool
+    gpu_session: InferenceSession,
+    num_channels: int,
+    num_groups: int,
+    affine: bool,
 ) -> None:
     """Test group normalization with different configurations.
 
@@ -91,7 +93,7 @@ def test_group_norm(
     input_tensor = torch.randn(
         (5, num_channels, 15),
         dtype=torch.float32,
-    )
+    ).to("cuda")
 
     # Create weight and bias if using affine transform
     weight = torch.randn(num_channels) if affine else None
@@ -107,8 +109,9 @@ def test_group_norm(
         weight=weight,
         bias=bias,
     )
+
     max_out = max_group_norm(
-        session,
+        gpu_session,
         input_tensor,
         num_groups=num_groups,
         num_channels=num_channels,
@@ -132,7 +135,8 @@ def test_group_norm_invalid_input_shapes():
         input_types=(TensorType(DType.float32, [10], DeviceRef.GPU()),),
     ) as graph:
         with pytest.raises(
-            ValueError, match="Expected input tensor with >=2 dimensions"
+            ValueError,
+            match="Expected input tensor with >=2 dimensions, got shape",
         ):
             _ = GroupNorm(5, 10)(graph.inputs[0].tensor)
 
