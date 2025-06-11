@@ -1938,30 +1938,10 @@ parseOptionalInheritanceList(ParserBase &p, ASTDecl &declScope, ASTDecl &decl,
       return success();
     }
 
-    auto symbols = traitType.getSymbols();
-
-    // If the user explicitly inherited a trait that is already provided
-    // elsewhere, provide a warning.
-    if (symbols.size() == 1) {
-      auto symbol = symbols.front();
-      if (auto it = inheritedFrom->find(symbol); it != inheritedFrom->end()) {
-        auto [cur, curLoc] = it->second;
-        InflightDiag diag = shared.emitWarning(loc, "'")
-                            << declName << "' already inherits from "
-                            << ASTType(TraitType::get(symbol));
-        if (cur == symbol)
-          diag.attachNote(curLoc) << "previously inherited here";
-        else
-          diag.attachNote(curLoc) << "inherited through "
-                                  << ASTType(TraitType::get(cur)) << " here";
-        return success();
-      }
-    }
-
     // Successively flatten the parent list so we always have all the parents
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
-    for (SymbolRefAttr symbol : symbols) {
+    for (SymbolRefAttr symbol : traitType.getSymbols()) {
       // If this symbol is already a parent, skip it.
       if (inheritedFrom->contains(symbol))
         continue;

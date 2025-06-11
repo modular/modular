@@ -56,15 +56,3 @@ fn main_use():
     # expected-error @below {{invalid call to 'use12Direct': could not deduce parameter 'T' of callee 'use12Direct'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'Struct4' does not conform to trait 'Trait1 & Trait2'}}
     use12Direct(s4)
-
-# expected-warning @below {{'Struct123' already inherits from 'Trait2'}}
-# expected-note @below {{previously inherited here}}
-struct Struct123(Traits12, Traits23, Trait2):
-    fn f1(self):
-        pass
-
-    fn f2(self):
-        pass
-
-    fn f3(self):
-        pass
