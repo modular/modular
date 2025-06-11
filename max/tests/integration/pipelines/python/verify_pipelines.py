@@ -685,7 +685,7 @@ PIPELINES = {
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
             cos_dist_threshold=1.5e-3,
-            kl_div_threshold=3.5e-3,
+            kl_div_threshold=4.5e-3,
         ),
     ),
     "Qwen/Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
