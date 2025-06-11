@@ -43,6 +43,9 @@ class RMSNormKeyCacheModel:
     rms_norm_cols: Optional[int] = None
     """Number of columns in the RMSNorm operation."""
 
+    per_head_norm: bool = True
+    """Whether to normalize separately for each head."""
+
     def __call__(
         self,
         gamma: TensorValue,
@@ -66,6 +69,7 @@ class RMSNormKeyCacheModel:
             input_row_offsets=input_row_offsets,
             rms_norm_cols=self.rms_norm_cols,
             weight_offset=0.0,
+            per_head_norm=self.per_head_norm,
         )
 
 
@@ -386,3 +390,102 @@ def test_rms_norm_key_cache_dtype_mismatch(
                 *kv_manager.input_symbols()[0],
             ],
         )
+
+
+def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
+    """Test RMS normalization applied per token (across all heads) rather than per head."""
+    seq_lens = [5, 3]
+    batch_size = 2
+    max_seq_len = 16
+    n_kv_heads = 4
+    head_dim = 64
+
+    kv_params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        cache_strategy=KVCacheStrategy.CONTINUOUS,
+    )
+    kv_manager = ContinuousBatchingKVCacheManager(
+        kv_params,
+        max_batch_size=batch_size,
+        max_seq_len=max_seq_len,
+        num_layers=1,
+        devices=[CPU()],
+        session=session,
+    )
+    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+
+    # For per token normalization, gamma has shape [n_kv_heads * head_dim]
+    # This means normalization is applied across all heads for each token
+    total_features = n_kv_heads * head_dim
+    gamma_type = TensorType(
+        DType.float32, shape=[total_features], device=DeviceRef.CPU()
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["batch_size_plus_1"], device=DeviceRef.CPU()
+    )
+
+    # Stage the graph with per_head_norm=False for per token normalization
+    graph = Graph(
+        "rms_norm_key_cache_per_token",
+        forward=RMSNormKeyCacheModel(
+            fetch_layer,
+            kv_params,
+            layer_idx=0,
+            total_seq_len=sum(seq_lens),
+            per_head_norm=False,  # This enables per token normalization
+        ),
+        input_types=[
+            gamma_type,
+            input_row_offsets_type,
+            *kv_manager.input_symbols()[0],
+        ],
+    )
+
+    # Compile and init the model
+    model = session.load(graph)
+
+    # Claim seq_ids in cache
+    seq_ids = kv_manager.claim(n=batch_size)
+
+    batch = [
+        create_text_context(s, np.empty(seq_lens[i]))
+        for i, s in enumerate(seq_ids)
+    ]
+    fetch_args = kv_manager.fetch(batch)[0]
+
+    # First set KV blocks to all ones so that RMSNorm changes them.
+    kv_blocks = fetch_args[0]
+    all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
+
+    # Create new KVCacheInputs with updated first element
+    fetch_args = RaggedKVCacheInputs(
+        Tensor.from_numpy(all_ones.copy()), *fetch_args[1:]
+    )
+
+    # Create gamma weights for per token normalization
+    gamma = np.random.randn(total_features).astype(np.float32)
+    input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
+
+    # Run the model
+    model(gamma, input_row_offsets, *fetch_args)
+
+    # Verify that normalization was applied per token (across all heads)
+    kv_block = fetch_args[0].to_numpy()
+
+    # For per token norm, verify that normalization was applied consistently
+    # across all heads for each token by checking that the output has expected properties
+    total_seq_len = sum(seq_lens)
+    for token_idx in range(total_seq_len):
+        batch_idx = 0 if token_idx < seq_lens[0] else 1
+        local_token_idx = (
+            token_idx if token_idx < seq_lens[0] else token_idx - seq_lens[0]
+        )
+
+        # since we set all ones, the output should be the same as the gamma
+        token_values = kv_block[
+            batch_idx, 0, 0, local_token_idx, :, :
+        ].flatten()
+
+        assert np.isclose(token_values, gamma, rtol=1e-05).all()
