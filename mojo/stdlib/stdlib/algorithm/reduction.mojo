@@ -293,7 +293,11 @@ fn _reduce_3D[
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing [_] -> SIMD[acc_type, width],
     reduce_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> Scalar[type],
-](src: NDBuffer, dst: NDBuffer[mut=True, **_], init: Scalar[dst.type]) raises:
+](
+    src: NDBuffer[mut=False, *_, **_],
+    dst: NDBuffer[mut=True, *_, **_],
+    init: Scalar[dst.type],
+) raises:
     """Performs a reduction across axis 1 of a 3D input buffer."""
 
     alias simd_width = simdwidthof[dst.type]()
