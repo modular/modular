@@ -11,7 +11,7 @@ modular_py_binary(
     }),
     use_sitecustomize = True,
     deps = [
-        "//SDK/lib/API/python/max/_mojo",
+        "//SDK/lib/API/python/max/mojo",
     ],
 )
 

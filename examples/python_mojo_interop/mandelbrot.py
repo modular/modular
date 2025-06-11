@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# The Mojo importer module will handle compilation of the Mojo files.
-import max._mojo.mojo_importer  # noqa
 import sys
+
+# The Mojo importer module will handle compilation of the Mojo files.
+import max.mojo.importer  # noqa
 
 sys.path.insert(0, "")
 
