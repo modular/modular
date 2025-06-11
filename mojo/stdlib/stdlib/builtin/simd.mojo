@@ -292,7 +292,7 @@ struct SIMD[dtype: DType, size: Int](
         size: The size of the SIMD vector.
     """
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):

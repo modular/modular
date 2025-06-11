@@ -237,7 +237,7 @@ struct Int(
 ):
     """This type represents an integer value."""
 
-    alias device_type: AnyTrivialRegType = Self
+    alias device_type: AnyType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):

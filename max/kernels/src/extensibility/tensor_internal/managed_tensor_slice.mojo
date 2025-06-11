@@ -511,7 +511,7 @@ struct ManagedTensorSlice[
     """
 
     # `trait DevicePassable` implementation
-    alias device_type: AnyTrivialRegType = LayoutTensor[
+    alias device_type: AnyType = LayoutTensor[
         dtype, static_spec.to_layout(), MutableAnyOrigin
     ]
 
