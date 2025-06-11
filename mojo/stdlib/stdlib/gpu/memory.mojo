@@ -26,6 +26,7 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
+from collections.string import StaticString
 from collections.optional import OptionalReg
 from collections.string.string_slice import _get_kgen_string, get_static_string
 from sys import (
@@ -1297,7 +1298,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             )
         else:
             inlined_assembly[
-                tma_asm + " [$0], [$1, {$4, $5}], [$2], $3, $6;",
+                tma_asm + " [$0], [$1, {$4, $5}], [$2], $3;",
                 NoneType,
                 constraints="r,l,r,h,r,r",
             ](
@@ -1323,7 +1324,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             )
         else:
             inlined_assembly[
-                tma_asm + " [$0], [$1, {$4}], [$2], $3, $5;",
+                tma_asm + " [$0], [$1, {$4}], [$2], $3;",
                 NoneType,
                 constraints="r,l,r,h,r",
             ](

@@ -579,7 +579,9 @@ struct TMATensorTile[
         prefetch_tma_descriptor(desc_ptr)
 
     @always_inline
-    fn async_copy(
+    fn async_copy[
+        cta_group: Int = 1
+    ](
         self,
         dst: LayoutTensor[
             dtype, _, address_space = AddressSpace.SHARED, *_, **_
@@ -593,6 +595,11 @@ struct TMATensorTile[
         This method initiates a hardware-accelerated asynchronous transfer of data from global memory
         to the specified destination in shared memory. The transfer is tracked by the provided memory
         barrier.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
 
         Args:
             dst: The destination tensor in shared memory where data will be copied.
@@ -633,7 +640,7 @@ struct TMATensorTile[
             for j in range(num_copies_dim1):
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
 
-                cp_async_bulk_tensor_shared_cluster_global(
+                cp_async_bulk_tensor_shared_cluster_global[cta_group=cta_group](
                     dst.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
@@ -714,7 +721,9 @@ struct TMATensorTile[
                     )
 
     @always_inline
-    fn async_multicast_load(
+    fn async_multicast_load[
+        cta_group: Int = 1
+    ](
         self,
         dst: LayoutTensor[
             dtype, _, address_space = AddressSpace.SHARED, *_, **_
@@ -729,6 +738,11 @@ struct TMATensorTile[
         This method initiates a hardware-accelerated asynchronous transfer of data from global memory
         to multiple destination locations in shared memory across different CTAs (Cooperative Thread Arrays)
         as specified by the multicast mask.
+
+        Parameters:
+            cta_group: Int
+                If the TMA is issued with cta_group == 2, only the leader CTA needs
+                to be notified upon completion.
 
         Args:
             dst: LayoutTensor
@@ -763,7 +777,9 @@ struct TMATensorTile[
             for j in range(num_copies_dim1):
                 alias copy_offset = (i * num_copies_dim1 + j) * copy_size
 
-                cp_async_bulk_tensor_shared_cluster_global_multicast(
+                cp_async_bulk_tensor_shared_cluster_global_multicast[
+                    cta_group=cta_group
+                ](
                     dst.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
