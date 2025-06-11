@@ -41,7 +41,7 @@ similar GPGPU frameworks.
 These examples show how to compile and run Mojo functions, from simple to
 complex, on an available GPU, without using a MAX graph.
 
-## [Using Mojo from Python](python_mojo_interop/)
+## [Using Mojo from Python](mojo/python-interop/)
 
 To enable progressive introduction of Mojo into an existing Python codebase,
 Mojo modules and functions can be referenced as if they were native Python
