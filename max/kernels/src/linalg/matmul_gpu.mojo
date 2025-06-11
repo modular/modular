@@ -41,7 +41,7 @@ from gpu import (
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, B200, B100, DEFAULT_GPU, H100
+from gpu.host.info import A100, B200, B100, H100
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
 from layout._ndbuffer_stub import (
@@ -474,7 +474,7 @@ fn _matmul_gpu[
     # fmt: on
 
     @parameter
-    if DEFAULT_GPU > H100:
+    if ctx.device_info > H100:
         return _matmul_sm100[
             c_type,
             a_type,
