@@ -311,6 +311,6 @@ Changes to Python-Mojo interoperability:
 - [#4684](https://github.com/modular/modular/issues/4684) - Failure inferring
   type of initializer list from field of struct.
 - [#4688](https://github.com/modular/modular/issues/4668) - Incorrect result for
-  unsigned `gt` and `le` comparisions.
+  unsigned `gt` and `le` comparisons.
 - [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
   handling `x or y` expressions with PythonObject.

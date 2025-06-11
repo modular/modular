@@ -1789,7 +1789,7 @@ struct String(
             return
         self._realloc_mutable(new_capacity)
 
-    # This is called whne the string is known to be indirect.  This checks to
+    # This is called when the string is known to be indirect.  This checks to
     # make sure the indirect representation is uniquely owned and mutable,
     # copying if necessary.
     fn _make_unique_mutable(mut self):

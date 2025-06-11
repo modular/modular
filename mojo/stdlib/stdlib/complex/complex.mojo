@@ -91,7 +91,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         """
 
         # TODO(MSTDL-700):
-        #   Add a Writer.reserve() method, to afford writer implementions
+        #   Add a Writer.reserve() method, to afford writer implementations
         #   to request reservation of additional space from `Writer`
         #   implementations that support that. Then use the logic below to
         #   call that method here.

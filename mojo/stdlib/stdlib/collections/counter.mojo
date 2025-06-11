@@ -428,7 +428,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
         return result^
 
     fn __neg__(self) -> Self:
-        """Substract from an empty Counter. Strips positive and zero counts,
+        """Subtract from an empty Counter. Strips positive and zero counts,
         and flips the sign on negative counts.
 
         Returns:

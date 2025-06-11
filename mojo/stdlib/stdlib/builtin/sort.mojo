@@ -60,7 +60,7 @@ fn _insertion_sort[
         array[j] = value
 
 
-# put everything thats "<" to the left of pivot
+# put everything that's "<" to the left of pivot
 @always_inline
 fn _quicksort_partition_right[
     T: Copyable & Movable,
@@ -89,7 +89,7 @@ fn _quicksort_partition_right[
         right -= 1
 
 
-# put everything thats "<=" to the left of pivot
+# put everything that's "<=" to the left of pivot
 @always_inline
 fn _quicksort_partition_left[
     T: Copyable & Movable,
