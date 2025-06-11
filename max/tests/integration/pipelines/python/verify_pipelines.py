@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import enum
 import functools
+import json
 import os
 import sys
 import time
@@ -38,7 +40,7 @@ class DeviceKind(enum.Enum):
     GPU = "gpu"
 
 
-class VerificationStatus(enum.Enum):
+class VerificationStatus(str, enum.Enum):
     OK = "ok"
     INVALID = "invalid"
     ERROR = "error"
@@ -95,6 +97,35 @@ def verdict_sorting_key(
             break
 
     return (dtype_priority, name_lower)
+
+
+def save_verdicts_to_json(
+    verdicts: dict[str, VerificationVerdict], filepath: Path
+) -> None:
+    """Save verdicts to JSON file."""
+    verdicts_dict = {k: dataclasses.asdict(v) for k, v in verdicts.items()}
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    with open(filepath, "w") as f:
+        json.dump(verdicts_dict, f, indent=2)
+
+
+def load_verdicts_from_json(filepath: Path) -> dict[str, VerificationVerdict]:
+    """Load verdicts from JSON file."""
+    try:
+        with open(filepath) as f:
+            data = json.load(f)
+        return {
+            k: VerificationVerdict(
+                status=VerificationStatus(v["status"]),
+                discrepancy_report=DiscrepancyReport(**v["discrepancy_report"])
+                if v.get("discrepancy_report")
+                else None,
+            )
+            for k, v in data.items()
+        }
+    except Exception as e:
+        print(f"Error loading verdicts from JSON: {e}", file=sys.stderr)
+        return {}
 
 
 def dump_results(
@@ -809,6 +840,16 @@ PIPELINES = {
     type=click.File("w"),
     help="Output the coverage report to the specified file",
 )
+@click.option(
+    "--store-verdicts-json",
+    type=click.Path(path_type=Path),
+    help="Store verdicts in JSON format to the specified file",
+)
+@click.option(
+    "--load-verdicts-json",
+    type=click.Path(path_type=Path),
+    help="Load previous verdicts from JSON file to compare changes",
+)
 @click.option("--devices", "devices_str", help="Devices to run pipeline on")
 @click.option("--pipeline", help="Run only a specified pipeline")
 @click.option(
@@ -838,6 +879,8 @@ PIPELINES = {
 )
 def main(
     report: Optional[TextIO],
+    store_verdicts_json: Optional[Path],
+    load_verdicts_json: Optional[Path],
     devices_str: Optional[str],
     pipeline: Optional[str],
     tag_filter: TagFilter,
@@ -896,6 +939,15 @@ def main(
 
     if report:
         dump_results(verdicts, to=report)
+
+    if store_verdicts_json:
+        save_verdicts_to_json(verdicts, store_verdicts_json)
+
+    if load_verdicts_json:
+        previous_verdicts = load_verdicts_from_json(load_verdicts_json)
+        if previous_verdicts:
+            # TODO: Implement logic
+            pass
 
     print()
     print("-" * 40)
