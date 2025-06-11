@@ -83,30 +83,26 @@ class ConvTranspose1d(Module):
         permute: bool = False,
         name: Union[str, None] = None,
     ) -> None:
-        """Initializes the Conv3D layer with weights and optional bias.
+        """Initializes the ConvTranspose1d layer with weights and optional bias.
 
         Args:
-            depth: kernel_size[0]
-            height: kernel_size[1]
-            width: kernel_size[2]
-            in_channels: number of channels in the input image.
-            out_channels: dimensionality of the output.
-            dtype: The data type for both weights and bias.
+            length: The length of the convolution kernel
+            in_channels: Number of channels in the input image
+            out_channels: Number of channels produced by the convolution
+            dtype: The data type for weights and bias
             stride: Stride of the convolution. Default: 1
-            padding:  Padding added to all six sides of the input. Default: 0
+            padding: Padding added to input. Default: 0
             dilation: Spacing between kernel elements. Default: 1
-            num_groups:  Number of blocked connections from input channels to output channels. Default: 1.
-            device: The target device for computation.
-                Weights remain on CPU until moved during computation.
-            name: Base name for weights (appended with ``.weight`` and
-                ``.bias`` if applicable).
-            has_bias: When :obj:`True`, adds a bias vector to the layer.
-                Defaults to :obj:`False`.
+            output_padding: Additional size added to output shape. Default: 0
+            device: The target device for computation
+            has_bias: When True, adds a bias vector. Default: False
+            permute: Whether to permute weights between PyTorch and MAX format
+            name: Base name for weights
         """
         super().__init__()
 
+        self.kernel_length = length
         self.device = device
-
         self.permute = permute
 
         if self.permute:

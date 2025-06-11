@@ -16,7 +16,7 @@ the same basic problem.
 In dynamically-typed languages like Python, you don't need to explicitly declare
 that two classes are similar. This is easiest to show by example:
 
-```python
+```python title="🐍 Python"
 class Duck:
     def quack(self):
         print("Quack.")
@@ -46,7 +46,7 @@ Mojo functions require you to
 specify the type of each argument. If you wanted to write this example in Mojo
 *without* traits, you'd need to write a function overload for each input type.
 
-```mojo
+```mojo title="🔥 Mojo"
 @value
 struct Duck:
     fn quack(self):

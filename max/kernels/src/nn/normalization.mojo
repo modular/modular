@@ -1308,13 +1308,17 @@ fn group_norm_gpu_warp_tiling[
         if idx + simd_width <= group_size:
             var g = row % num_groups
             var c_base = g * channels_per_group
-            var offset = idx // spatial
-            var c = c_base + offset
-            var gamma_val = gamma_fn[1](Index(c))
-            var beta_val = beta_fn[1](Index(c))
-            var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
-                accum_type
-            ]() + beta_val.cast[accum_type]()
+            var norm_val = SIMD[accum_type, simd_width]()
+            for i in range(Int(simd_width)):
+                var offset = (idx + i) // spatial
+                var c = c_base + offset
+                var gamma_val = gamma_fn[1](Index(c))
+                var beta_val = beta_fn[1](Index(c))
+                norm_val[i] = (
+                    vec_data[i] - row_mean
+                ) * norm_factor * gamma_val.cast[accum_type]() + beta_val.cast[
+                    accum_type
+                ]()
 
             output.store[alignment=align](
                 Index(row, idx), norm_val.cast[type]()
@@ -1348,6 +1352,10 @@ fn group_norm_gpu_block[
     var row_count = Scalar[accum_type]()
 
     with PDL():
+        var thread_mean = Scalar[accum_type]()
+        var thread_m2 = Scalar[accum_type]()
+        var thread_count = Scalar[accum_type]()
+
         for x in range(ceildiv(group_size // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < group_size:
@@ -1355,24 +1363,20 @@ fn group_norm_gpu_block[
                     accum_type
                 ]()
 
-                var thread_mean = Scalar[accum_type]()
-                var thread_m2 = Scalar[accum_type]()
-                var thread_count = Scalar[accum_type]()
-
                 @parameter
                 for i in range(Int(simd_width)):
                     welford_update(
                         vec_data[i], thread_mean, thread_m2, thread_count
                     )
 
-                welford_block_all_reduce(
-                    thread_mean,
-                    thread_m2,
-                    thread_count,
-                    row_mean,
-                    row_m2,
-                    row_count,
-                )
+        welford_block_all_reduce(
+            thread_mean,
+            thread_m2,
+            thread_count,
+            row_mean,
+            row_m2,
+            row_count,
+        )
 
         var row_var = row_m2 / row_count
         var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
@@ -1386,17 +1390,20 @@ fn group_norm_gpu_block[
 
                 var g = row % num_groups
                 var c_base = g * channels_per_group
-                var offset_c = offset // spatial
-                var c = c_base + offset_c
 
-                var gamma_val = gamma_fn[1](Index(c))
-                var beta_val = beta_fn[1](Index(c))
-
-                var norm_val = (
-                    vec_data - row_mean
-                ) * norm_factor * gamma_val.cast[accum_type]() + beta_val.cast[
-                    accum_type
-                ]()
+                var norm_val = SIMD[accum_type, simd_width]()
+                for i in range(Int(simd_width)):
+                    var offset_c = (offset + i) // spatial
+                    var c = c_base + offset_c
+                    var gamma_val = gamma_fn[1](Index(c))
+                    var beta_val = beta_fn[1](Index(c))
+                    norm_val[i] = (
+                        vec_data[i] - row_mean
+                    ) * norm_factor * gamma_val.cast[
+                        accum_type
+                    ]() + beta_val.cast[
+                        accum_type
+                    ]()
 
                 output.store[alignment=align](
                     Index(row, offset), norm_val.cast[type]()
@@ -1439,17 +1446,28 @@ fn group_norm_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) capturing -> SIMD[type, simd_width]:
-        var inner_volume = shape[2] * shape[3]
-
         var n = row // num_groups
         var g = row % num_groups
-        var c = g * channels_per_group + (col // inner_volume)
-        var hw = col % inner_volume
-        var h = hw // shape[3]
-        var w = hw % shape[3]
+        var c = g * channels_per_group
 
-        var indices = IndexList[4](n, c, h, w)
-        return input_fn[simd_width, 4](indices)
+        var indices = IndexList[rank]()  # placeholder to satisfy compiler
+
+        @parameter
+        if rank == 4:
+            var inner_volume = shape[2] * shape[3]
+            c += col // inner_volume
+            var hw = col % inner_volume
+            var h = hw // shape[3]
+            var w = hw % shape[3]
+            indices = IndexList[rank](n, c, h, w)
+
+        elif rank == 3:
+            var inner_volume = shape[2]
+            c += col // inner_volume
+            var l = col % inner_volume
+            indices = IndexList[rank](n, c, l)
+
+        return input_fn[simd_width, rank](indices)
 
     alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     if num_cols < simd_width:
@@ -1549,7 +1567,9 @@ fn group_norm[
     output: NDBuffer[mut=True, type, rank, *_],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[rank >= 2, "group_norm requires input rank >= 2"]()
+    constrained[
+        rank > 2 and rank < 5, "group_norm requires input rank of 3 or 4"
+    ]()
     constrained[
         is_gpu[target](), "group_norm only supports GPU targets at this point"
     ]()

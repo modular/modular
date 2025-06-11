@@ -1102,9 +1102,7 @@ fn _matmul_kv_cache_ragged[
     if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
-    _matmul_kv_cache_ragged_impl[
-        target=target, assert_write_mode=WRITE_MODE_REG
-    ](
+    _matmul_kv_cache_ragged_impl[target=target](
         hidden_state,
         input_row_offsets,
         weight,
@@ -1120,7 +1118,6 @@ fn _matmul_kv_cache_ragged_impl[
     cache_t: KVCacheT, //,
     *,
     target: StaticString,
-    assert_write_mode: WRITE_MODE,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1202,12 +1199,8 @@ fn _matmul_kv_cache_ragged_impl[
         )
 
     # Cast to a register passable type so the function closure works on GPU.
-    k_cache_reg = rebind[
-        ContinuousBatchingKVCache[type, kv_params, assert_write_mode]
-    ](k_cache)
-    v_cache_reg = rebind[
-        ContinuousBatchingKVCache[type, kv_params, assert_write_mode]
-    ](v_cache)
+    k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](k_cache)
+    v_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](v_cache)
 
     @parameter
     @__copy_capture(k_cache_reg, v_cache_reg)

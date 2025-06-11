@@ -32,11 +32,14 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Generic, Optional
 
 import zmq
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
-from max.serve.kvcache_agent.dispatcher_service import DispatcherService
+from max.serve.kvcache_agent.dispatcher_service import (
+    DispatcherMessagePayload,
+    DispatcherService,
+)
 from max.serve.kvcache_agent.dispatcher_transport import (
     DispatcherTransport,
     DynamicZmqTransport,
@@ -114,7 +117,7 @@ class DispatcherConfig:
     )
 
 
-class DispatcherFactory:
+class DispatcherFactory(Generic[DispatcherMessagePayload]):
     """
     Simple factory for creating dispatcher servers and clients.
 
@@ -130,7 +133,9 @@ class DispatcherFactory:
         self._service_to_client = generate_zmq_ipc_path()
         self._client_to_service = generate_zmq_ipc_path()
 
-    def create_service(self, zmq_ctx: zmq.Context) -> DispatcherService:
+    def create_service(
+        self, zmq_ctx: zmq.Context
+    ) -> DispatcherService[DispatcherMessagePayload]:
         """
         Create a dispatcher service using the provided ZMQ context.
         """
@@ -139,18 +144,20 @@ class DispatcherFactory:
             config=self._config.transport_config,
             zmq_ctx=zmq_ctx,
         )
-        return DispatcherService(
+        return DispatcherService[DispatcherMessagePayload](
             zmq_ctx=zmq_ctx,
             send_endpoint=self._service_to_client,
             recv_endpoint=self._client_to_service,
             transport=transport,
         )
 
-    def create_client(self, zmq_ctx: zmq.Context) -> DispatcherClient:
+    def create_client(
+        self, zmq_ctx: zmq.Context
+    ) -> DispatcherClient[DispatcherMessagePayload]:
         """
         Create a dispatcher client using the provided ZMQ context.
         """
-        return DispatcherClient(
+        return DispatcherClient[DispatcherMessagePayload](
             zmq_ctx=zmq_ctx,
             send_endpoint=self._client_to_service,
             recv_endpoint=self._service_to_client,

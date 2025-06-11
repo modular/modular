@@ -14,14 +14,18 @@
 from __future__ import annotations
 
 import logging
+import pickle
 import queue
 import threading
 import time
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, Callable, Generic, Optional, cast
 
 import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
-from max.serve.kvcache_agent.dispatcher_service import DispatcherMessage
+from max.serve.kvcache_agent.dispatcher_service import (
+    DispatcherMessage,
+    DispatcherMessagePayload,
+)
 from max.serve.queue.zmq_queue import (
     ZmqPullSocket,
     ZmqPushSocket,
@@ -30,10 +34,8 @@ from max.serve.queue.zmq_queue import (
 
 logger = logging.getLogger(__name__)
 
-DispatcherMessagePayload = TypeVar("DispatcherMessagePayload")
 
-
-class DispatcherClient:
+class DispatcherClient(Generic[DispatcherMessagePayload]):
     """
     Client for communicating with dispatcher service.
 
@@ -46,14 +48,20 @@ class DispatcherClient:
         zmq_ctx: zmq.Context,
         send_endpoint: str,
         recv_endpoint: str,
+        serialize: Callable[[Any], bytes] = pickle.dumps,
+        deserialize: Callable[[Any], Any] = pickle.loads,
     ) -> None:
         """Initialize dispatcher client with ZMQ sockets for communication."""
-        self.pull_socket = ZmqPullSocket[DispatcherMessage](
-            zmq_ctx, recv_endpoint
+        self.pull_socket = ZmqPullSocket[
+            DispatcherMessage[DispatcherMessagePayload]
+        ](
+            zmq_ctx,
+            recv_endpoint,
+            deserialize=deserialize,
         )
-        self.push_socket = ZmqPushSocket[DispatcherMessage](
-            zmq_ctx, send_endpoint
-        )
+        self.push_socket = ZmqPushSocket[
+            DispatcherMessage[DispatcherMessagePayload]
+        ](zmq_ctx, send_endpoint, serialize=serialize)
 
         # Request handlers
         self._request_handlers: dict[
@@ -183,7 +191,9 @@ class DispatcherClient:
 
         try:
             dispatcher_message = DispatcherMessage(
-                message_type, payload, destination_address=destination_address
+                message_type=message_type,
+                payload=payload,
+                destination_address=destination_address,
             )
             self.push_socket.put_nowait(dispatcher_message)
             logger.debug(
@@ -201,7 +211,9 @@ class DispatcherClient:
         """Send a reply message using the provided reply context."""
         try:
             dispatcher_message = DispatcherMessage(
-                message_type, payload, reply_context=reply_context
+                message_type=message_type,
+                payload=payload,
+                reply_context=reply_context,
             )
             self.push_socket.put_nowait(dispatcher_message)
             logger.debug(f"Sent reply: {message_type}")

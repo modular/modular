@@ -27,7 +27,6 @@ from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
-    PipelineAudioTokenizer,
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
@@ -368,6 +367,10 @@ def batch_config_from_pipeline_config(
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
+            max_queue_size_tg=pipeline_config.max_queue_size_tg,
+            min_batch_size_tg=pipeline_config.min_batch_size_tg,
+            ce_delay_ms=pipeline_config.ce_delay_ms,
+            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
         )
     else:
         raise ValueError(
@@ -401,14 +404,13 @@ def batch_config_from_pipeline_config(
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
 
-# TODO: Implement this
 class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     """Base class for LLM audio generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineAudioTokenizer,
+        tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
     ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)

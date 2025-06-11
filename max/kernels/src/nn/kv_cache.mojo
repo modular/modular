@@ -927,12 +927,9 @@ def print_kv_cache_paged_generic_cpu[
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[
-        type, kv_params, page_size, assert_write_mode
-    ],
+    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
@@ -1056,12 +1053,9 @@ def print_kv_cache_paged_generic_gpu[
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[
-        type, kv_params, page_size, assert_write_mode
-    ],
+    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,

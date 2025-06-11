@@ -34,10 +34,8 @@ with open("my_file.txt", "r") as f:
 from os import PathLike, abort
 from sys import external_call, sizeof
 from sys.ffi import OpaquePointer
-
 from memory import AddressSpace, Span, UnsafePointer
-
-from utils import write_buffered
+from utils.write import _WriteBufferStack
 
 
 # This type is used to pass into CompilerRT functions.  It is an owning
@@ -68,7 +66,8 @@ struct _OwnedStringRef(Boolable, Defaultable):
         return self.length != 0
 
 
-struct FileHandle(Writer, Defaultable):
+
+struct FileHandle(Writer, Movable, Defaultable):
     """File handle to an opened file."""
 
     var handle: OpaquePointer
@@ -424,7 +423,13 @@ struct FileHandle(Writer, Defaultable):
             args: Sequence of arguments to write to this Writer.
         """
         var file = FileDescriptor(self._get_raw_fd())
-        write_buffered(file, args)
+        var buffer = _WriteBufferStack(file)
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(buffer)
+
+        buffer.flush()
 
     fn _write[
         address_space: AddressSpace

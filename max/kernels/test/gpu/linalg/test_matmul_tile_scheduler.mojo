@@ -22,7 +22,9 @@ fn test_kernel():
     problem_shape = Index(12, 12, 20)
 
     scheduler = TileScheduler[
-        tile_shape = Index(4, 4, 4), grid_shape = Index(2, 2)
+        problem_shape = Index(12, 12, 20),
+        tile_shape = Index(4, 4, 4),
+        grid_shape = Index(2, 2),
     ](problem_shape)
 
     num_output_tiles = scheduler.num_output_tiles()

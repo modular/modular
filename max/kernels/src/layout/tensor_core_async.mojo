@@ -177,7 +177,9 @@ fn _supported_mma_shape[
     # (https://mlir.llvm.org/docs/Dialects/NVVMDialect/#nvvmwgmmamma_async-nvvmwgmmammaasyncop).
     @parameter
     if mma_shape[0] == 64 and mma_shape[2] == 8:
-        return mma_shape[1] in (8,)
+        return (
+            mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
+        )
     elif mma_shape[0] == 64 and mma_shape[2] == 16:
         return (
             mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256

@@ -559,6 +559,7 @@ def main():
         ](ctx)
 
         print("test_tma_replace_global_dim_in_smem_descriptor")
+        print(" - SWIZZLE_NONE")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(16, 8),
@@ -577,6 +578,7 @@ def main():
             ctx,
             Index(0, 9, 16, 25, 29),
         )
+        print(" - SWIZZLE_32B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(29, 16),
@@ -586,6 +588,7 @@ def main():
             ctx,
             Index(0, 9, 16, 25, 29),
         )
+        print(" - SWIZZLE_64B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(29, 32),
@@ -595,6 +598,7 @@ def main():
             ctx,
             Index(0, 9, 16, 25, 29),
         )
+        print(" - SWIZZLE_128B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(15, 64),

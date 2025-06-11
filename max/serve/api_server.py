@@ -19,11 +19,11 @@ import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
+from typing import Union
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from max.pipelines.core import (
-    PipelineAudioTokenizer,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
@@ -41,7 +41,11 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler import TokenGeneratorSchedulerConfig
+from max.serve.scheduler import (
+    PrefillRequest,
+    PrefillResponse,
+    TokenGeneratorSchedulerConfig,
+)
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
 from uvicorn import Config
@@ -86,7 +90,9 @@ async def lifespan(
     try:
         async with AsyncExitStack() as exit_stack:
             # create dispatcher factory
-            dispatcher_factory = DispatcherFactory(settings.dispatcher_config)
+            dispatcher_factory = DispatcherFactory[
+                Union[PrefillRequest, PrefillResponse]
+            ](settings.dispatcher_config)
 
             if settings.experimental_enable_kvcache_agent:
                 logger.info("Starting KV Cache Agent...")
@@ -126,9 +132,6 @@ async def lifespan(
             elif (
                 serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
             ):
-                assert isinstance(
-                    serving_settings.tokenizer, PipelineAudioTokenizer
-                )
                 pipeline = AudioGeneratorPipeline(
                     model_name=serving_settings.model_name,
                     tokenizer=serving_settings.tokenizer,

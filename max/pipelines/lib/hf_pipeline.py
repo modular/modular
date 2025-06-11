@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING, Optional, cast
 
 import numpy as np
@@ -119,12 +118,6 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
             dtype=self._dtype,
             device=self._torch_device,
         )
-
-        # TODO(deep): Implement sampling and remove this warning
-        if self._pipeline_config.sampling_config.top_k > 1:
-            warnings.warn(
-                "Only argmax sampling is currently implemented, and the top_k config will be ignored",
-            )
 
     def next_token(
         self, batch: dict[str, TextContext], num_steps: int

@@ -20,6 +20,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
+    Optional,
     Protocol,
     TypeVar,
     runtime_checkable,
@@ -52,7 +53,7 @@ class AudioGenerationRequest:
     capabilities of the response generation.
     """
 
-    input: str
+    input: Optional[str] = None
     """The text to generate audio for. The maximum length is 4096 characters.
     """
 
@@ -69,6 +70,15 @@ class AudioGenerationRequest:
     """(ONLY FOR BENCHMARKING PURPOSES) An assistant message that replaces the
     speech token pattern."""
 
+    token_ids: Optional[list[int]] = field(default=None)
+    """Optionally provide a preprocessed list of token ids to pass as input directly into the model.
+    This replaces automatically generating TokenGeneratorRequestMessages given the input, audio prompt tokens,
+    audio prompt transcription fields."""
+
+    def __post_init__(self) -> None:
+        if self.token_ids is None and input is None:
+            raise RuntimeError("either token_ids or input must be provided.")
+
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
@@ -82,98 +92,6 @@ class AudioGeneratorOutput:
     audio_data: torch.Tensor
     metadata: dict[str, Any]
     is_done: bool
-
-
-@runtime_checkable
-class PipelineAudioTokenizer(
-    Generic[AudioGeneratorContext, TokenizerEncoded], Protocol
-):
-    """Interface for LLM tokenizers."""
-
-    @property
-    def eos(self) -> int:
-        """The end of sequence token for this tokenizer."""
-        ...
-
-    @property
-    def expects_content_wrapping(self) -> bool:
-        """If true, this tokenizer expects messages to have a `content` property.
-
-        Text messages are formatted as:
-
-        .. code-block:: json
-
-            { "type": "text", "content": "text content" }
-
-        instead of the OpenAI spec:
-
-        .. code-block:: json
-
-            { "type": "text", "text": "text content" }
-
-        NOTE: Multimodal messages omit the `content` property.
-        Both :obj:`image_urls` and :obj:`image` content parts are converted to:
-
-        .. code-block:: json
-
-            { "type": "image" }
-
-        Their content is provided as byte arrays through the top-level property
-        on the request object, i.e., :obj:`TokenGeneratorRequest.images`.
-        """
-        ...
-
-    async def new_context(
-        self, request: AudioGenerationRequest
-    ) -> AudioGeneratorContext:
-        """Creates a new context from a request object. This is sent to the
-        worker process once and then cached locally.
-
-        Args:
-            request (AudioGenerationRequest): Incoming request.
-
-        Returns:
-            AudioGeneratorContext: Initialized context.
-        """
-        ...
-
-    async def encode(
-        self,
-        prompt: str,
-        add_special_tokens: bool,
-    ) -> TokenizerEncoded:
-        """Encodes text prompts as tokens.
-
-        Args:
-            prompt (str): Un-encoded prompt text.
-            add_special_tokens (bool): Whether to add special tokens to the
-                prompt.
-
-        Returns:
-            TokenizerEncoded: Encoded tokens.
-
-        Raises:
-            ValueError: If the prompt exceeds the configured maximum length.
-        """
-        ...
-
-    async def decode(
-        self,
-        context: AudioGeneratorContext,
-        encoded: TokenizerEncoded,
-        **kwargs,
-    ) -> str:
-        """Decodes response tokens to text.
-
-        Args:
-            context (AudioGeneratorContext): Current generation context.
-            encoded (TokenizerEncoded): Encoded response tokens.
-            kwargs (Any): Additional keyword arguments.
-
-        Returns:
-            str: Un-encoded response text.
-        """
-        ...
 
 
 @runtime_checkable

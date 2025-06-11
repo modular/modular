@@ -21,9 +21,10 @@ _EXTRA_CONSTRAINTS = {
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
     "test_vendor_blas.mojo": ["//:nvidia_gpu"],
-    "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],
     "test_warp_specialization_gemm_with_cluster.mojo": ["//:h100_gpu"],
-    "test_warp_specialization_gemm_correctness.mojo": ["//:h100_gpu"],
+    "test_warp_specialization_hilbert_gemm.mojo": ["//:h100_gpu"],
+    "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],
+    "test_deepseek_scheduler.mojo": ["//:h100_gpu"],
 }
 
 _FILECHECK_TESTS = [
@@ -55,6 +56,7 @@ _FILECHECK_TESTS = [
         name = src + ".test",
         size = "large",
         srcs = [src],
+        enable_assertions = not src in "test_warp_specialization_gemm.mojo",
         tags = ["gpu"] + (
             ["manual"] if src in "test_multistage_gemm_fp8.mojo" else []  #  TODO: KERN-1480 Fix and remove this tag
         ),

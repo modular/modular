@@ -883,7 +883,14 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
 
         self.list_of_attentions = []
         kwargs = kwargs.copy()
+        if kwargs["num_attention_heads"] % len(self.devices) != 0:
+            # TODO(MODELS-601): Support non-divisible numbers of attention heads.
+            raise ValueError(
+                f"Number of attention heads ({kwargs['num_attention_heads']}) "
+                f"must be divisible by the number of devices ({len(self.devices)})"
+            )
         kwargs["num_attention_heads"] //= len(self.devices)
+
         for n, device in enumerate(self.devices):
             kwargs["devices"] = [device]
             layer = AttentionWithRope(**kwargs)

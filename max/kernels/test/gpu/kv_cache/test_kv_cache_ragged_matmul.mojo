@@ -133,11 +133,9 @@ def execute_matmul_kv_cache_ragged[
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias num_blocks = 32
 
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
-        type, kv_params, WRITE_MODE_MEM
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         len(prompt_lens) == len(cache_sizes),
         (
             "mismatch between cache_sizes and prompt_lens, both should be"
@@ -147,7 +145,7 @@ def execute_matmul_kv_cache_ragged[
 
     batch_size = len(prompt_lens)
 
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test (",
         batch_size,
@@ -244,9 +242,7 @@ def execute_matmul_kv_cache_ragged[
     v_cache_host = kv_collection_host.get_value_cache(layer_idx)
 
     # Execute test.
-    _matmul_kv_cache_ragged_impl[
-        target="gpu", assert_write_mode=WRITE_MODE_MEM
-    ](
+    _matmul_kv_cache_ragged_impl[target="gpu"](
         hidden_state_ragged_device.tensor,
         input_row_offsets_device.tensor,
         weight_device.tensor,
@@ -335,9 +331,7 @@ def execute_matmul_k_cache_ragged[
 
     alias num_paged_blocks = 32
     alias page_size = 512
-    alias CollectionType = PagedKVCacheCollection[
-        type, kv_params, page_size, WRITE_MODE_MEM
-    ]
+    alias CollectionType = PagedKVCacheCollection[type, kv_params, page_size]
     var batch_size = len(prompt_lens)
     debug_assert(
         len(prompt_lens) == len(cache_sizes),
@@ -848,9 +842,7 @@ def execute_cont_batch_fused_qkv_matmul[
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias num_blocks = 32
 
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
-        type, kv_params, WRITE_MODE_MEM
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
     debug_assert(
         len(prompt_lens) == len(cache_sizes),

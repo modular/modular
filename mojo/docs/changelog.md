@@ -177,6 +177,10 @@ var dict2 = {1: 4, 2: 7, 3: 18}
 var set = {1, 2, 3}
 ```
 
+- The `compile` module now provides the `get_type_name` utility to get the fully
+  qualified name of a type. For example, `compile.get_type_name[Int]()` returns
+  `"stdlib.builtin.int.Int"`.
+
 Changes to Python-Mojo interoperability:
 
 - Python objects are now constructible with list/set/dict literal syntax, e.g.:
@@ -308,7 +312,37 @@ Changes to Python-Mojo interoperability:
 ### ❌ Removed
 
 - `VariadicPack.each` and `VariadicPack.each_idx` methods have been removed.
-  Use the `@parameter for` language construct to achieve this now.
+  Use the `@parameter for` language construct to achieve this now. The
+  `write_buffered` and `write_args` functions have also been removed, to improve
+  compile speed and reduce register pressure on GPU, you should now unroll the
+  variadic pack at each call site:
+  
+  Unbuffered:
+
+  ```mojo
+  fn write[*Ts: Writable](mut self, *args: *Ts):
+      var string = String()
+
+      @parameter
+      for i in range(args.__len__()):
+          args[i].write_to(string)
+  ```
+
+  Buffered:
+
+  ```mojo
+  from utils.write import _WriteBufferStack
+
+  fn write[*Ts: Writable](mut self, *args: *Ts):
+      var string = String()
+      var buffer = _WriteBufferStack(string)
+
+      @parameter
+      for i in range(args.__len__()):
+          args[i].write_to(buffer)
+
+      buffer.flush()
+  ```
 
 ### 🛠️ Fixed
 
@@ -327,3 +361,5 @@ Changes to Python-Mojo interoperability:
   unsigned `gt` and `le` comparisons.
 - [#4694](https://github.com/modular/modular/issues/4694) - Compiler error
   handling `x or y` expressions with PythonObject.
+- [#4719](https://github.com/modular/modular/issues/4719) - `Dict.setdefault`
+  should not be marked with `raises`.

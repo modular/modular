@@ -20,7 +20,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
 # Install mojo import hook
-import max._mojo.mojo_importer  # noqa: F401
+import max.mojo.importer  # noqa: F401
 import mojo_module  # type: ignore
 
 print(mojo_module.factorial(5))

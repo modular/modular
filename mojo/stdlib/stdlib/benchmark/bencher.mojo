@@ -991,19 +991,26 @@ struct Bench(Writable, Stringable):
                 f.write(self)
             self.config.format = orig_format
 
-    fn pad(self, width: Int, string: String) -> String:
+    fn pad[
+        pad_str: StaticString = " "
+    ](self, width: Int, string: String) -> String:
         """Pads a string to a given width.
 
         Args:
             width: The width to pad the string to.
             string: The string to pad.
 
+        Parameters:
+            pad_str: The length 1 string to use for the padding.
+
         Returns:
             A string padded to the given width.
         """
+        constrained[len(pad_str) == 1, "pad_str must be length 1."]()
+
         if self.config.format == Format.csv:
             return ""
-        return " " * (width - len(string))
+        return pad_str * (width - len(string))
 
     fn __str__(self) -> String:
         """Returns a string representation of the benchmark results.
@@ -1059,10 +1066,6 @@ struct Bench(Writable, Stringable):
         var first_sep = (
             "| " if self.config.format == Format.table else StaticString("")
         )
-        var line_sep = "-" * total_width
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
         writer.write(first_sep, BENCH_LABEL, self.pad(name_width, BENCH_LABEL))
         writer.write(sep, MET_LABEL, self.pad(timing_widths[0], MET_LABEL))
@@ -1071,7 +1074,7 @@ struct Bench(Writable, Stringable):
         # Return early if no runs were benchmarked
         if len(self.info_vec) == 0:
             if self.config.format == Format.table:
-                writer.write(" |\n", line_sep, "\nNo benchmarks recorded...")
+                writer.write("No benchmarks recorded...")
             writer.write("\n")
             return
 
@@ -1091,8 +1094,31 @@ struct Bench(Writable, Stringable):
                 writer.write(sep, labels[i])
                 writer.write(self.pad(timing_widths[i + 1], labels[i]))
 
+        # Write the sep line between the header and the data in MD format.
         if self.config.format == Format.table:
-            writer.write(" |\n", line_sep)
+            writer.write(" |\n| ")  # , line_sep)
+            # name, met, iters
+            writer.write(self.pad["-"](name_width, ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](timing_widths[0], ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](iters_width, ""))
+
+            for name in metrics:
+                writer.write(sep)
+                try:
+                    writer.write(self.pad["-"](metrics[name].max_width, ""))
+                except e:
+                    abort(String(e))
+
+            if self.config.verbose_timing:
+                var labels = self.config.VERBOSE_TIMING_LABELS
+                # skip the met label
+                for i in range(len(labels)):
+                    writer.write(sep)
+                    writer.write(self.pad["-"](timing_widths[i + 1], ""))
+            writer.write(" |")
+
         writer.write("\n")
 
         # Loop through the runs and write out the table rows
@@ -1145,9 +1171,6 @@ struct Bench(Writable, Stringable):
                 writer.write(" |")
 
             writer.write("\n")
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)

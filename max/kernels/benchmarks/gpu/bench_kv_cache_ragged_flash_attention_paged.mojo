@@ -104,13 +104,11 @@ def execute_kv_cache_ragged_flash_attention[
 
     debug_assert(
         batch_size < num_pages,
-        String(
-            "batch_size passed to unit test (",
-            batch_size,
-            ") is larger than configured num_pages (",
-            num_pages,
-            ")",
-        ),
+        "batch_size passed to unit test (",
+        batch_size,
+        ") is larger than configured num_pages (",
+        num_pages,
+        ")",
     )
 
     var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](

@@ -19,12 +19,11 @@ from typing import Optional
 from max.pipelines.lib import PipelineRole
 
 
+# TODO(E2EOPT-309) Delete this entire file!
 @dataclass(frozen=True)
 class BatchQueueConfig:
     size: int
-
-    timeout: float = 0.0
-    """How long to wait (in seconds) if a queue is empty."""
+    """Maximum number of requests in a batch."""
 
     max_forward_steps: int = 1
     """Maximum number of forwards steps to schedule at a time."""
@@ -63,6 +62,11 @@ class TokenGeneratorSchedulerConfig:
     token_generation: BatchQueueConfig
     context_encoding: Optional[BatchQueueConfig] = None
     pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode
+
+    max_queue_size_tg: int | None = None
+    min_batch_size_tg: int | None = None
+    ce_delay_ms: float | None = None
+    enable_prioritize_first_decode: bool | None = None
 
     @property
     def max_batch_size_tg(self) -> int:
@@ -135,6 +139,10 @@ class TokenGeneratorSchedulerConfig:
         enable_chunked_prefill: bool = True,
         enable_in_flight_batching: bool = False,
         pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
+        max_queue_size_tg: int | None = None,
+        min_batch_size_tg: int | None = None,
+        ce_delay_ms: float | None = None,
+        enable_prioritize_first_decode: bool | None = None,
     ) -> TokenGeneratorSchedulerConfig:
         """The continuous-heterogenous config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -154,6 +162,10 @@ class TokenGeneratorSchedulerConfig:
             context_encoding=context_encoding_config,
             token_generation=token_generation_config,
             pipeline_role=pipeline_role,
+            min_batch_size_tg=min_batch_size_tg,
+            ce_delay_ms=ce_delay_ms,
+            enable_prioritize_first_decode=enable_prioritize_first_decode,
+            max_queue_size_tg=max_queue_size_tg,
         )
         return config
 
@@ -167,6 +179,10 @@ class TokenGeneratorSchedulerConfig:
         enable_chunked_prefill: bool = True,
         enable_in_flight_batching: bool = False,
         pipeline_role: PipelineRole = PipelineRole.PrefillAndDecode,
+        max_queue_size_tg: int | None = None,
+        min_batch_size_tg: int | None = None,
+        ce_delay_ms: float | None = None,
+        enable_prioritize_first_decode: bool | None = None,
     ) -> TokenGeneratorSchedulerConfig:
         """The paged config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -182,4 +198,8 @@ class TokenGeneratorSchedulerConfig:
             enable_chunked_prefill=enable_chunked_prefill,
             enable_in_flight_batching=enable_in_flight_batching,
             pipeline_role=pipeline_role,
+            max_queue_size_tg=max_queue_size_tg,
+            min_batch_size_tg=min_batch_size_tg,
+            ce_delay_ms=ce_delay_ms,
+            enable_prioritize_first_decode=enable_prioritize_first_decode,
         )

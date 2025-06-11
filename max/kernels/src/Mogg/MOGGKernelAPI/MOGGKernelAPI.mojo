@@ -178,6 +178,8 @@ from nn.rand_uniform import random_uniform
 from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
+
+from nn.bicubic import resize_bicubic
 from nn.roi_align import roi_align_nhwc
 from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.slice import (
@@ -560,16 +562,6 @@ fn _to_managed_tensor_slice_index_list_shape[
     ](data, shape_tuple, stride_tuple)
 
 
-# Extract a value from a shape.
-@register_internal("get_scalar_from_ndbuffer")
-@always_inline
-fn get_scalar_from_ndbuffer[
-    dtype: DType
-](tensor: NDBuffer[dtype, 1, MutableAnyOrigin]) -> Scalar[dtype]:
-    # Assumes that tensor is on the host!
-    return tensor[0]
-
-
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
@@ -644,19 +636,6 @@ fn rebuild_static_tensor_specs_with_output_compute_lambda[
 # ===-----------------------------------------------------------------------===#
 # Helpers
 # ===-----------------------------------------------------------------------===#
-
-
-# Used by the graph compiler -- which right now does not support static spec
-@register_internal("managed_tensor_slice_to_ndbuffer")
-@always_inline
-fn managed_tensor_slice_to_ndbuffer_primitive[
-    dtype: DType, rank: Int, //
-](tensor: ManagedTensorSlice[dtype=dtype, rank=rank]) -> NDBuffer[
-    dtype, rank, MutableAnyOrigin
-]:
-    return NDBuffer[dtype, rank, MutableAnyOrigin](
-        tensor._ptr, tensor._spec.shape, tensor._runtime_strides
-    )
 
 
 @always_inline
@@ -4733,6 +4712,39 @@ struct ResizeLinear:
         return shape
 
 
+@compiler.register("mo.resize.bicubic")
+struct ResizeBicubic:
+    @staticmethod
+    fn execute[
+        coordinate_transform_mode: Int,
+        rank: Int,
+        dtype: DType,
+        target: StaticString, //,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],
+        size: InputTensor[rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        # Get input and output dimensions from tensors
+        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_buffer = managed_tensor_slice_to_ndbuffer(input)
+
+        resize_bicubic[target](output_buffer, input_buffer, ctx)
+
+    @staticmethod
+    fn shape[
+        rank: Int
+    ](input: InputTensor[rank=rank], size: InputTensor[rank=1]) -> IndexList[
+        rank
+    ]:
+        var shape = IndexList[rank]()
+        for i in range(rank):
+            shape[i] = Int(size[i])
+
+        return shape
+
+
 # ===-----------------------------------------------------------------------===#
 # ROI align kernels
 # ===-----------------------------------------------------------------------===#
@@ -8386,12 +8398,9 @@ fn print_kv_cache_paged_generic_kernel_api[
     target: StaticString,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: InputTensor[dtype = DType.uint32, rank=1],
-    kv_collection: PagedKVCacheCollection[
-        dtype, kv_params, page_size, assert_write_mode
-    ],
+    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: InputTensor[dtype = DType.bool, rank=1],
     context: DeviceContextPtr,
@@ -8768,9 +8777,9 @@ struct Struct_sampler_apply_penalties:
         logits: MutableInputTensor[dtype=logit_type, rank=rank],
         compressed_frequency_data: InputTensor[dtype = DType.int32, rank=2],
         frequency_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        frequency_penalty: Scalar[penalty_type],
-        presence_penalty: Scalar[penalty_type],
-        repetition_penalty: Scalar[penalty_type],
+        frequency_penalty: InputTensor[dtype=penalty_type, rank=1],
+        presence_penalty: InputTensor[dtype=penalty_type, rank=1],
+        repetition_penalty: InputTensor[dtype=penalty_type, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[is_valid_target[target](), "not a valid target"]()
@@ -8780,9 +8789,9 @@ struct Struct_sampler_apply_penalties:
                 logits.to_layout_tensor(),
                 compressed_frequency_data.to_layout_tensor(),
                 frequency_offsets.to_layout_tensor(),
-                frequency_penalty,
-                presence_penalty,
-                repetition_penalty,
+                frequency_penalty.to_layout_tensor(),
+                presence_penalty.to_layout_tensor(),
+                repetition_penalty.to_layout_tensor(),
                 ctx,
             )
 

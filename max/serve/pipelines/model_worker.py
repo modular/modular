@@ -90,7 +90,7 @@ class ModelWorker:
     async def run(
         pc: ProcessControl,
         model_factory: PipelinesFactory,
-        pipeline_config: TokenGeneratorSchedulerConfig,
+        scheduler_config: TokenGeneratorSchedulerConfig,
         settings: Settings,
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
@@ -105,7 +105,7 @@ class ModelWorker:
         Args:
             pc: Process control for managing worker lifecycle
             model_factory: Factory function to create the model pipeline
-            pipeline_config: Configuration for the token generation pipeline
+            scheduler_config: Configuration for the token generation pipeline
             settings: Global server settings
             metric_client_factory: Factory function to create metric client
             dispatcher_factory: Factory for creating dispatcher client instances
@@ -136,11 +136,12 @@ class ModelWorker:
                 pipeline,
                 zmq_ctx,
                 settings,
-                pipeline_config,
+                scheduler_config,
                 dispatcher_client,
             )
 
             if scheduler.needs_dispatcher_client():
+                # Create a dispatcher client
                 logger.debug(
                     "Scheduler needs dispatcher client, starting dispatcher client"
                 )
@@ -163,7 +164,7 @@ class ModelWorker:
     def __call__(
         pc: ProcessControl,
         model_factory: PipelinesFactory,
-        pipeline_config: TokenGeneratorSchedulerConfig,
+        scheduler_config: TokenGeneratorSchedulerConfig,
         settings: Settings,
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
@@ -179,7 +180,7 @@ class ModelWorker:
         Args:
             pc: Process control for managing worker lifecycle
             model_factory: Factory for creating model pipeline instances
-            pipeline_config: Configuration for the token generation pipeline
+            scheduler_config: Configuration for the token generation pipeline
             settings: Global server settings
             metric_client_factory: Factory for creating metric client instances
             dispatcher_factory: Factory for creating dispatcher client instances
@@ -191,7 +192,7 @@ class ModelWorker:
                 ModelWorker.run(
                     pc,
                     model_factory,
-                    pipeline_config,
+                    scheduler_config,
                     settings,
                     metric_client_factory,
                     dispatcher_factory,

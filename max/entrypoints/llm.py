@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Awaitable, Sequence
 from queue import Queue
 from threading import Thread
-from typing import Callable, Optional, TypeVar, cast
+from typing import Callable, Optional, TypeVar, Union, cast
 
 import tqdm
 from max.pipelines.core import SamplingParams
@@ -37,6 +37,7 @@ from max.serve.pipelines.llm import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
+from max.serve.scheduler import PrefillRequest, PrefillResponse
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -154,7 +155,9 @@ async def _async_worker(
     )
     batch_config = batch_config_from_pipeline_config(pipeline_config)
     model_name = pipeline_config.model_config.model_path
-    dispatcher_factory = DispatcherFactory(settings.dispatcher_config)
+    dispatcher_factory = DispatcherFactory[
+        Union[PrefillRequest, PrefillResponse]
+    ](settings.dispatcher_config)
 
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues

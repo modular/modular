@@ -178,11 +178,12 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
         """Initialize a dynamic library handle to all global symbols in the
         current process.
 
-        On POXIX-compatible operating systems, this performs
-        `dlopen(nullptr, flags)`.
-
         Args:
             flags: The flags to load the dynamic library.
+
+        Notes:
+            On POSIX-compatible operating systems, this performs
+            `dlopen(nullptr, flags)`.
         """
         self = Self._dlopen(UnsafePointer[c_char](), flags)
 
@@ -446,9 +447,11 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
             The result.
         """
 
-        debug_assert(
-            self.check_symbol(String(name)), String("symbol not found: ") + name
-        )
+        @parameter
+        fn _check_symbol() -> Bool:
+            return self.check_symbol(String(name))
+
+        debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
         return self.get_function[fn (__type_of(v)) -> return_type](
             String(name)

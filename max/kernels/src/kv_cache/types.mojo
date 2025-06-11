@@ -188,7 +188,6 @@ trait KVCacheT(Copyable, Movable):
 struct ContinuousBatchingKVCache[
     type_: DType,
     kv_params_: KVCacheStaticParams,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](KVCacheT):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer model.
 
@@ -230,14 +229,14 @@ struct ContinuousBatchingKVCache[
     fn _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[4]:
-        debug_assert[assert_write_mode](
+        debug_assert(
             head_idx < Self.kv_params.num_heads, "KVCache head_idx out of range"
         )
-        debug_assert[assert_write_mode](
+        debug_assert(
             head_dim_idx < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
-        debug_assert[assert_write_mode](
+        debug_assert(
             tok_idx < self.blocks.dim[1](),
             "KVCache tok_idx out of range",
         )
@@ -256,11 +255,11 @@ struct ContinuousBatchingKVCache[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        debug_assert[assert_write_mode](
+        debug_assert(
             blocks.dim[2]() == Int(Self.kv_params.num_heads),
             "blocks.dim[2]() must be equal to kv_params.num_heads",
         )
-        debug_assert[assert_write_mode](
+        debug_assert(
             blocks.dim[3]() == Int(Self.kv_params.head_size),
             "blocks.dim[3]() must be equal to kv_params.head_size",
         )
@@ -281,7 +280,7 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
-        debug_assert[assert_write_mode](
+        debug_assert(
             batch_idx < self._batch_size(), "KVCache batch_idx is out of bounds"
         )
         return Int(self.cache_lengths[batch_idx][0])
@@ -292,7 +291,7 @@ struct ContinuousBatchingKVCache[
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
         Self.type, width
     ]:
-        debug_assert[assert_write_mode](
+        debug_assert(
             bs < self._batch_size(),
             "KVCache::load batch_size out of range",
         )
@@ -312,7 +311,7 @@ struct ContinuousBatchingKVCache[
         head_dim_idx: Int,
         val: SIMD[Self.type, *_],
     ):
-        debug_assert[assert_write_mode](
+        debug_assert(
             bs < self._batch_size(),
             "KVCache::store batch_size out of range",
         )
@@ -361,7 +360,6 @@ struct PagedKVCache[
     type_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](KVCacheT):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
@@ -403,15 +401,15 @@ struct PagedKVCache[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        debug_assert[assert_write_mode](
+        debug_assert(
             blocks.dim[1]() == page_size,
             "blocks.dim[1]() must be equal to page_size",
         )
-        debug_assert[assert_write_mode](
+        debug_assert(
             blocks.dim[2]() == Int(Self.kv_params.num_heads),
             "blocks.dim[2]() must be equal to kv_params.num_heads",
         )
-        debug_assert[assert_write_mode](
+        debug_assert(
             blocks.dim[3]() == Int(Self.kv_params.head_size),
             "blocks.dim[3]() must be equal to kv_params.head_size",
         )
@@ -439,28 +437,26 @@ struct PagedKVCache[
     fn _get_idx(
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[4]:
-        debug_assert[assert_write_mode](
+        debug_assert(
             head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
         )
-        debug_assert[assert_write_mode](
+        debug_assert(
             head_dim_idx < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
 
         var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
-        debug_assert[assert_write_mode](
+        debug_assert(
             tok_in_block_idx < self.blocks.dim[1](),
             "KVCache tok_idx out of range",
         )
 
-        debug_assert[assert_write_mode](
-            bs < len(self.cache_lengths), "batch_idx is oob"
-        )
-        debug_assert[assert_write_mode](
+        debug_assert(bs < len(self.cache_lengths), "batch_idx is oob")
+        debug_assert(
             lut_block_index < self.page_size,
             "block_idx is OOB. Attempted to access block index ",
             lut_block_index,
@@ -555,7 +551,6 @@ trait KVCollectionT(Copyable, Movable):
 struct ContinuousBatchingKVCacheCollection[
     type_: DType,
     kv_params_: KVCacheStaticParams,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](KVCollectionT):
     """This is a "view" of the cache for the given sequences
     in the batch.
@@ -568,9 +563,7 @@ struct ContinuousBatchingKVCacheCollection[
     alias name_str = "continuous_batching"
     alias type = type_
     alias kv_params = kv_params_
-    alias CacheType = ContinuousBatchingKVCache[
-        Self.type, Self.kv_params, Self.assert_write_mode
-    ]
+    alias CacheType = ContinuousBatchingKVCache[Self.type, Self.kv_params]
 
     # Shape is [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size].
     alias blocks_shape = DimList(
@@ -652,14 +645,11 @@ struct PagedKVCacheCollection[
     type_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](KVCollectionT):
     alias name_str = "paged"
     alias type = type_
     alias kv_params = kv_params_
-    alias CacheType = PagedKVCache[
-        Self.type, Self.kv_params, page_size, Self.assert_write_mode
-    ]
+    alias CacheType = PagedKVCache[Self.type, Self.kv_params, page_size]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
     alias blocks_shape = DimList(

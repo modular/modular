@@ -90,26 +90,46 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         )
 
         if self._pipeline_config.sampling_config.do_penalties:
-            frequency_data = []
+            frequency_data = [
+                self._build_token_frequency_csr(context_batch, num_steps),
+                self._build_token_frequency_csr(
+                    context_batch, num_steps, include_prompt=True
+                ),
+            ]
 
-            # Only build penalty frequency data if frequency or presence penalties are actually used
-            if (
-                self._pipeline_config.sampling_config.frequency_penalty != 0
-                or self._pipeline_config.sampling_config.presence_penalty != 0
-            ):
-                frequency_data.append(
-                    self._build_token_frequency_csr(context_batch, num_steps)
+            frequency_penalty = Tensor.from_numpy(
+                np.array(
+                    [
+                        context.sampling_params.frequency_penalty
+                        for context in context_batch
+                    ],
+                    dtype=np.float32,
                 )
+            ).to(self._devices[0])
+            presence_penalty = Tensor.from_numpy(
+                np.array(
+                    [
+                        context.sampling_params.presence_penalty
+                        for context in context_batch
+                    ],
+                    dtype=np.float32,
+                )
+            ).to(self._devices[0])
+            repetition_penalty = Tensor.from_numpy(
+                np.array(
+                    [
+                        context.sampling_params.repetition_penalty
+                        for context in context_batch
+                    ],
+                    dtype=np.float32,
+                )
+            ).to(self._devices[0])
 
-            # Only build repetition frequency data if repetition penalty is actually used
-            if self._pipeline_config.sampling_config.repetition_penalty != 1:
-                frequency_data.append(
-                    self._build_token_frequency_csr(
-                        context_batch, num_steps, include_prompt=True
-                    )
-                )
         else:
             frequency_data = None
+            frequency_penalty = None
+            presence_penalty = None
+            repetition_penalty = None
 
         min_tokens_masks = self._build_min_tokens_masks(
             context_batch, num_steps
@@ -188,6 +208,9 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 min_tokens_mask=min_tokens_masks[i]
                 if min_tokens_masks
                 else None,
+                frequency_penalty=frequency_penalty,
+                presence_penalty=presence_penalty,
+                repetition_penalty=repetition_penalty,
             )
 
             assert isinstance(new_tokens, Tensor)

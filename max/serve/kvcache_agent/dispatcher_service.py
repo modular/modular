@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import pickle
 import queue
 import uuid
-from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Generic, Optional, TypeVar
 
+import msgspec
 import zmq
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_transport import (
@@ -30,9 +31,16 @@ from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger(__name__)
 
+DispatcherMessagePayload = TypeVar("DispatcherMessagePayload")
 
-@dataclass
-class DispatcherMessage:
+
+class DispatcherMessage(
+    msgspec.Struct,
+    Generic[DispatcherMessagePayload],
+    tag=True,
+    kw_only=True,
+    omit_defaults=True,
+):
     """
     Message envelope for communication with the dispatcher service.
 
@@ -41,12 +49,12 @@ class DispatcherMessage:
     """
 
     message_type: MessageType
-    payload: Any
+    payload: DispatcherMessagePayload
     destination_address: Optional[str] = None
     reply_context: Optional[ReplyContext] = None
 
 
-class DispatcherService:
+class DispatcherService(Generic[DispatcherMessagePayload]):
     """
     Dispatcher service that bridges local client communication with remote transport.
 
@@ -60,15 +68,25 @@ class DispatcherService:
         send_endpoint: str,
         recv_endpoint: str,
         transport: DispatcherTransport,
+        serialize: Callable[[Any], bytes] = pickle.dumps,
+        deserialize: Callable[[Any], Any] = pickle.loads,
     ):
         """Initialize dispatcher service with local sockets and remote transport."""
         self.transport = transport
 
-        self.local_pull_socket = ZmqPullSocket[DispatcherMessage](
-            zmq_ctx, recv_endpoint
+        self.local_pull_socket = ZmqPullSocket[
+            DispatcherMessage[DispatcherMessagePayload]
+        ](
+            zmq_ctx,
+            recv_endpoint,
+            deserialize=deserialize,
         )
-        self.local_push_socket = ZmqPushSocket[DispatcherMessage](
-            zmq_ctx, send_endpoint
+        self.local_push_socket = ZmqPushSocket[
+            DispatcherMessage[DispatcherMessagePayload]
+        ](
+            zmq_ctx,
+            send_endpoint,
+            serialize=serialize,
         )
 
         self._running = False

@@ -447,6 +447,7 @@ class Conv1D(Module):
                 device=self.device or DeviceRef.CPU(),
             )
 
+        self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
         self.dilation = dilation

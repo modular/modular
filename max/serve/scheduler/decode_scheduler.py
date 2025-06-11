@@ -90,7 +90,8 @@ class DecodeScheduler(Scheduler):
             ),
         )
         self.response_push_socket = ZmqPushSocket[tuple[str, TextResponse]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=response_zmq_endpoint,
         )
         self.cancel_pull_socket = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
