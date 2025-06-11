@@ -3163,7 +3163,7 @@ struct LayoutTensor[
                     runtime_layout.shape.value[i] = shape_i
 
             return (
-                {self.ptr.offset(offset), runtime_layout},
+                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3189,7 +3189,7 @@ struct LayoutTensor[
                 runtime_layout.shape.value[i] = shape_i
 
             return (
-                {self.ptr.offset(offset), runtime_layout},
+                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3921,18 +3921,20 @@ struct LayoutTensor[
             @parameter
             if ret_tensor_type.masked:
                 return (
-                    {
+                    __type_of(ret_tensor_type)(
                         self.ptr.offset(Int(swizzled_offset)),
                         ret_tensor_type.RuntimeLayout(
                             runtime_shape, runtime_stride
                         ),
-                    },
+                    ),
                     offset_coords,
                     swizzled_offset,
                 )
             else:
                 return (
-                    {self.ptr.offset(Int(swizzled_offset))},
+                    __type_of(ret_tensor_type)(
+                        self.ptr.offset(Int(swizzled_offset)),
+                    ),
                     offset_coords,
                     swizzled_offset,
                 )
@@ -3990,24 +3992,24 @@ struct LayoutTensor[
             @parameter
             if self.element_layout.all_dims_known():
                 return (
-                    {
+                    __type_of(ret_tensor_type)(
                         self.ptr.offset(Int(swizzled_offset)),
                         ret_tensor_type.RuntimeLayout(
                             runtime_shape, runtime_stride
                         ),
-                    },
+                    ),
                     offset_coords,
                     swizzled_offset,
                 )
             else:
                 return (
-                    {
+                    __type_of(ret_tensor_type)(
                         self.ptr.offset(Int(swizzled_offset)),
                         ret_tensor_type.RuntimeLayout(
                             runtime_shape, runtime_stride
                         ),
                         self.runtime_element_layout,
-                    },
+                    ),
                     offset_coords,
                     swizzled_offset,
                 )
@@ -7983,7 +7985,10 @@ struct LayoutTensorIter[
             output parameter.
         """
         # TODO: Use deref `[]` to be consistent with mojo feature.
-        return {self.ptr + Int(self.offset), self.runtime_layout}
+        return {
+            self.ptr + Int(self.offset),
+            rebind[self.RuntimeLayout](self.runtime_layout),
+        }
 
     @always_inline
     fn __getitem__(
@@ -8009,7 +8014,7 @@ struct LayoutTensorIter[
         return self.get()
 
     @always_inline
-    fn _clip_shape(self) -> self.RuntimeLayout:
+    fn _clip_shape(self) -> __type_of(self.runtime_layout):
         """Clip the shape based on dimension bounds.
 
         Internal method that adjusts the shape of the layout tensor based on
