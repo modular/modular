@@ -109,22 +109,59 @@ class SupportedArchitecture:
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ):
-        """Initializes a model architecture supported by MAX pipelines.
+        """Represents a model architecture configuration for MAX pipelines.
 
-        New architectures should be registered into the :obj:`PipelineRegistry`.
+        This class defines all the necessary components and settings required to
+        support a specific model architecture within the MAX pipeline system.
+        Each `SupportedArchitecture` instance encapsulates the model implementation,
+        tokenizer, supported encodings, and other architecture-specific configuration.
 
-        args:
-            name: Architecture name.
-            example_repo_ids: Hugging Face `repo_id` which runs this architecture.
-            default_encoding: Default encoding for the model.
-            supported_encodings: Alternate encodings supported.
-            pipeline_model: :obj:`PipelineModel` class that defines the model graph
-                and execution.
-            task: Which pipeline task should the model run with.
-            tokenizer: Tokenizer used to preprocess model inputs.
-            default_weights_format: The weights format used in `pipeline_model`.
-            weight_converters: A dictionary of weight loaders to use if the
-                input checkpoint has a different format than the default.
+        New architectures should be registered into the :obj:`PipelineRegistry`
+        using the :obj:`~PipelineRegistry.register()` method.
+
+        .. code-block:: python
+
+            my_architecture = SupportedArchitecture(
+                name="MyModelForCausalLM",  # Must match your Hugging Face model class name
+                example_repo_ids=[
+                    "your-org/your-model-name",  # Add example model repository IDs
+                ],
+                default_encoding=SupportedEncoding.q4_k,
+                supported_encodings={
+                    SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
+                    SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+                    # Add other encodings your model supports
+                },
+                pipeline_model=MyModel,
+                tokenizer=TextTokenizer,
+                default_weights_format=WeightsFormat.safetensors,
+                multi_gpu_supported=True,  # Set based on your implementation capabilities
+                weight_adapters={
+                    WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+                    # Add other weight formats if needed
+                },
+                task=PipelineTask.TEXT_GENERATION,
+            )
+
+        Args:
+            name: The name of the model architecture that must match the Hugging Face
+                model class name.
+            example_repo_ids: A list of Hugging Face repository IDs that use this
+                architecture for testing and validation purposes.
+            default_encoding: The default quantization encoding to use when no
+                specific encoding is requested.
+            supported_encodings: A dictionary mapping supported quantization encodings
+                to their compatible KV cache strategies.
+            pipeline_model: The `PipelineModel` class that defines the model graph
+                structure and execution logic.
+            task: The pipeline task type that this architecture supports.
+            tokenizer: A callable that returns a `PipelineTokenizer` instance for
+                preprocessing model inputs.
+            default_weights_format: The weights format expected by the `pipeline_model`.
+            multi_gpu_supported: Whether the architecture supports multi-GPU execution.
+            rope_type: The type of RoPE (Rotary Position Embedding) used by the model.
+            weight_adapters: A dictionary of weight format adapters for converting
+                checkpoints from different formats to the default format.
         """
         self.name = name
         self.example_repo_ids = example_repo_ids
