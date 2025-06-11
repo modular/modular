@@ -65,6 +65,7 @@ from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
 from .reshape import reshape
+from .resize import InterpolationMode, resize
 from .scatter import masked_scatter, scatter
 from .shape_to_tensor import shape_to_tensor
 from .slice_tensor import slice_tensor
