@@ -135,6 +135,9 @@ def dump_results(
 
     if any_logit:
         to.write("\n\n## LLMs\n")
+        to.write(
+            "NOTE: KL Div here is the average over each prompt. _Not_ the max used for pass/fail checks."
+        )
         to.write("| Status | Model | KL Div |\n")
         to.write("|:------:|:---------|:------:|\n")
 
