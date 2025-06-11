@@ -8350,7 +8350,12 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool, //,
+        target: StaticString,
     ](
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
@@ -8365,7 +8370,9 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_continuous_batching[
-            target=target, multiply_before_cast=True
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
         ](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
@@ -8386,7 +8393,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         dtype: DType,
         num_heads: Int,
         head_dim: Int,
-        page_size: Int, //,
+        page_size: Int,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool, //,
         target: StaticString,
     ](
         kv_collection: PagedKVCacheCollection[
@@ -8403,7 +8412,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_paged[
-            target=target, multiply_before_cast=True
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
         ](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),

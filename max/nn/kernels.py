@@ -1636,14 +1636,23 @@ def rms_norm_key_cache(
     input_row_offsets: TensorValue,
     weight_offset: float | np.floating,
     rms_norm_cols: Optional[int] = None,
+    multiply_before_cast: bool = True,
+    per_head_norm: bool = True,
 ) -> None:
-    """Computes RMSNorm on the _new_ entries in the KVCache.
+    """This function applies RMSNorm to the _new_ entries in the KVCache.
 
-    This function applies RMSNorm to either all dimensions or a subset of
-    dimensions in each head of the key cache. The size of the gamma tensor
-    determines how many dimensions will be normalized. If gamma's size doesn't
-    match head_dim, rms_norm_cols must be explicitly specified to confirm the
-    intention to normalize only a subset of dimensions.
+    When per_head_norm=True (default), RMSNorm is applied separately to each head.
+    In this mode, gamma should have size [head_dim] and normalization occurs
+    across the head_dim dimensions within each head.
+
+    When per_head_norm=False, RMSNorm is applied per token across all heads.
+    In this mode, gamma should have size [n_kv_heads * head_dim] and normalization
+    occurs across all dimensions for each token.
+
+    The size of the gamma tensor determines how many dimensions will be normalized.
+    If gamma's size doesn't match the expected size based on per_head_norm setting,
+    rms_norm_cols must be explicitly specified to confirm the intention to normalize
+    only a subset of dimensions.
 
     Currently, the KVCacheT class itself isn't aware of the new cache entries
     until cache length increment, which happens after model forward.
@@ -1663,7 +1672,7 @@ def rms_norm_key_cache(
         msg = f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         raise ValueError(msg)
 
-    if gamma.shape[0] != kv_params.head_dim:
+    if gamma.shape[0] != kv_params.head_dim and per_head_norm:
         if rms_norm_cols is None:
             msg = (
                 "Size of gamma doesn't match head_dim. Please pass rms_norm_cols "
@@ -1679,9 +1688,11 @@ def rms_norm_key_cache(
         msg = f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
         raise TypeError(msg)
 
-    parameters: dict[str, int | str | DType] = {
+    parameters: dict[str, int | str | DType | bool] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
+        "multiply_before_cast": multiply_before_cast,
+        "per_head_norm": per_head_norm,
     }
     if kv_params.cache_strategy == KVCacheStrategy.PAGED:
         assert kv_params.page_size is not None
