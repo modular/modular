@@ -1482,7 +1482,7 @@ class POC(enum.Enum):
 
     mul = 1
 
-    mul_nuw = 2
+    mul_no_wrap = 2
 
     and_ = 3
 
