@@ -17,11 +17,11 @@ from sys import external_call, simdwidthof
 from sys.info import _current_target
 
 from algorithm import elementwise
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
+from layout import LayoutTensor, Layout, RuntimeTuple, UNKNOWN_VALUE
+from layout.int_tuple import fill_like
 from memory import memcpy
 
 from utils import IndexList, StaticTuple
@@ -34,23 +34,31 @@ from utils.index import product
 
 fn split[
     type: DType,
-    rank: Int,
     num_outputs: Int,
     target: StaticString,
     trace_description: StaticString,
+    outputs_origin: MutableOrigin,
+    outputs_layout: Layout,
 ](
-    input: NDBuffer[type, rank],
+    input: LayoutTensor[type, **_],
     axis: Int,
-    outputs: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], num_outputs],
+    outputs: StaticTuple[
+        LayoutTensor[type, outputs_layout, outputs_origin], num_outputs
+    ],
     ctx: DeviceContext,
 ) raises:
+    constrained[
+        input.rank == outputs[0].rank,
+        "Input and outputs must have the same rank.",
+    ]()
+
     # check inputs have same rank and same dims except for axis dim
     @parameter
     for i in range(num_outputs):
 
         @parameter
-        for j in range(rank):
-            if j != axis and outputs[0].dim(j) != outputs[i].dim(j):
+        for j in range(input.rank):
+            if j != axis and outputs[0].dim[j]() != outputs[i].dim[j]():
                 raise Error(
                     "all split outputs must have the same dimensions in the"
                     " non-split axes"
@@ -60,7 +68,7 @@ fn split[
 
     @parameter
     for i in range(num_outputs):
-        output_sizes[i] = outputs[i].get_shape()[axis]
+        output_sizes[i] = outputs[i].dim(axis)
 
     @__copy_capture(output_sizes)
     @parameter
@@ -92,15 +100,24 @@ fn split[
             else:
                 output_coords[i] = input_coords[i]
 
-        var value = input.load[width=width](input_coords)
+        var idx = input.runtime_layout(
+            RuntimeTuple[fill_like(input.layout.shape, UNKNOWN_VALUE)](
+                input_coords
+            )
+        )
 
-        # Hack to get around current shortcomings with origins.
-        rebind[NDBuffer[type, rank, MutableAnyOrigin]](
-            outputs[output_idx]
-        ).store(output_coords, value)
+        var value = input.ptr.load[width=width](idx)
+
+        var output_ptr_idx = outputs[output_idx].runtime_layout(
+            RuntimeTuple[
+                fill_like(outputs[output_idx].layout.shape, UNKNOWN_VALUE)
+            ](output_coords)
+        )
+
+        outputs[output_idx].ptr.store(output_ptr_idx, value)
 
     # Can vectorize only if not splitting over last dim.
-    if axis != rank - 1:
+    if axis != input.rank - 1:
         alias compile_target = _current_target() if is_cpu[
             target
         ]() else _get_gpu_target()
@@ -111,11 +128,11 @@ fn split[
             target_simd_width,
             target=target,
             _trace_description=trace_description,
-        ](input.get_shape(), ctx)
+        ](input.runtime_layout.shape.value, ctx)
     else:
         elementwise[
             elementwise_fn_wrapper,
             1,
             target=target,
             _trace_description=trace_description,
-        ](input.get_shape(), ctx)
+        ](input.runtime_layout.shape.value, ctx)

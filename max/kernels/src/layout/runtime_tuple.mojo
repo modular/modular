@@ -569,7 +569,14 @@ fn crd2idx[
         constrained[
             shape_t.is_tuple()
             and (len(crd_t) == len(shape_t) == len(stride_t)),
-            "Inputs should have same rank",
+            String(
+                "Inputs should have same rank but got crd_t: ",
+                len(crd_t),
+                " shape_t: ",
+                len(shape_t),
+                " stride_t: ",
+                len(stride_t),
+            ),
         ]()
         var r: Scalar[out_type] = 0
         alias size = min(min(len(crd_t), len(shape_t)), len(stride_t))

@@ -62,7 +62,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout.layout_tensor import Layout, LayoutTensor
+from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
@@ -5426,17 +5426,23 @@ struct Split:
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var output_bufs = StaticTuple[
-            NDBuffer[dtype, rank, MutableAnyOrigin], output.size
+            LayoutTensor[dtype, Layout.row_major[rank](), MutableAnyOrigin],
+            output.size,
         ]()
 
         @parameter
         for i in range(output.size):
-            output_bufs[i] = managed_tensor_slice_to_ndbuffer(output[i])
+            var output_tensor = LayoutTensor[dtype, Layout.row_major[rank]()](
+                output[i].unsafe_ptr(),
+                RuntimeLayout[Layout.row_major[rank]()].row_major(
+                    output[i].to_layout_tensor().runtime_layout.shape.value,
+                ),
+            )
+            output_bufs[i] = output_tensor
 
-        split[dtype, rank, target=target, trace_description=_trace_name](
-            input_buf,
+        split[dtype, target=target, trace_description=_trace_name](
+            input.to_layout_tensor(),
             normalize_neg_index(Int(axis), rank),
             output_bufs,
             ctx.get_device_context(),
