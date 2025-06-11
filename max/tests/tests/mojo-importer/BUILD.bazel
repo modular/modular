@@ -20,6 +20,6 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/lib/API/python/max/_mojo",
+        "//SDK/lib/API/python/max/mojo",
     ],
 )
