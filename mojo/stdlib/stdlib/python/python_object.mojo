@@ -359,7 +359,7 @@ struct PythonObject(
             self.py_object = cpython.PyFloat_FromDouble(fp_val)
 
     @implicit
-    fn __init__(out self, value: StringLiteral):
+    fn __init__(out self, value: StringLiteral) raises:
         """Initialize the object from a string literal.
 
         Args:
@@ -368,7 +368,7 @@ struct PythonObject(
         self = PythonObject(value.as_string_slice())
 
     @implicit
-    fn __init__(out self, value: String):
+    fn __init__(out self, value: String) raises:
         """Initialize the object from a string.
 
         Args:
@@ -377,14 +377,19 @@ struct PythonObject(
         self = PythonObject(value.as_string_slice())
 
     @implicit
-    fn __init__(out self, string: StringSlice):
+    fn __init__(out self, string: StringSlice) raises:
         """Initialize the object from a string.
 
         Args:
             string: The string value.
+
+        Raises:
+            If the string is not valid UTF-8.
         """
         cpython = Python().cpython()
         self.py_object = cpython.PyUnicode_DecodeUTF8(string)
+        if not self.py_object:
+            raise cpython.get_error()
 
     @implicit
     fn __init__(out self, slice: Slice):

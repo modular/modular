@@ -18,7 +18,7 @@ from sys.info import sizeof
 from compile.reflection import get_type_name
 
 from memory import UnsafePointer
-from python import Python, PythonConvertible, PythonObject
+from python import Python, PythonObject
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
@@ -278,7 +278,11 @@ fn _tp_repr_wrapper[
 
     var repr_str: String = repr(self_ptr[])
 
-    return PythonObject(string=repr_str).steal_data()
+    # NOTE: it is possible that `repr` returns an invalid UTF-8 string, so we
+    # let Python decode it (which will return a null pointer and set an error
+    # if it is invalid).
+    cpython = Python().cpython()
+    return cpython.PyUnicode_DecodeUTF8(repr_str)
 
 
 # ===-----------------------------------------------------------------------===#
