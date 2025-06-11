@@ -791,14 +791,7 @@ PIPELINES = {
     "google/gemma-3-12b-it-float16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],
-        run=lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+        run=_make_pipeline_runner(
             pipeline="gemma3-multimodal",
             encoding="bfloat16",
             absolute_tolerance=7.3,
