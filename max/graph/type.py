@@ -220,7 +220,7 @@ class Dim:
         return Dim(lhs) + self
 
     def __mul__(self, rhs: DimLike) -> Dim:
-        return AlgebraicDim.apply(kgen.POC.mul_nuw, self, rhs)
+        return AlgebraicDim.apply(kgen.POC.mul_no_wrap, self, rhs)
 
     # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
     def __rmul__(self, lhs: DimLike) -> Dim:  # type: ignore
@@ -416,7 +416,7 @@ class AlgebraicDim(Dim):
         # For the opcodes we support in the graph api, print with python math.
         opcodes = {
             kgen.POC.add: "+",
-            kgen.POC.mul_nuw: "*",
+            kgen.POC.mul_no_wrap: "*",
             kgen.POC.div: "//",
         }
         opcode = self.attr.opcode
