@@ -867,7 +867,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         debug_assert(span.step.or_else(1) == 1, "Slice step must be 1")
         return Self(unsafe_from_utf8=self._slice[span])
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:

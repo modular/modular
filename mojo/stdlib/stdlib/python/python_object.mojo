@@ -39,11 +39,14 @@ trait PythonConvertible:
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert a value to a PythonObject.
 
         Returns:
             A PythonObject representing the value.
+
+        Raises:
+            If the conversion to a PythonObject failed.
         """
         ...
 
@@ -394,7 +397,7 @@ struct PythonObject(
     @always_inline
     fn __init__[
         *Ts: PythonConvertible & Copyable
-    ](out self, owned *values: *Ts, __list_literal__: ()):
+    ](out self, owned *values: *Ts, __list_literal__: ()) raises:
         """Construct an Python list of objects.
 
         Parameters:
@@ -1407,7 +1410,7 @@ struct PythonObject(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:

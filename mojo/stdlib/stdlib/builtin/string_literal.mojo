@@ -188,7 +188,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:

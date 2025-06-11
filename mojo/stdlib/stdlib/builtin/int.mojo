@@ -1173,7 +1173,7 @@ struct Int(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
