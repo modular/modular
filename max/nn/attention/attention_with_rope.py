@@ -855,11 +855,64 @@ def distribute_value(
 
 
 class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        *,
+        rope: OptimizedRotaryEmbedding,
+        num_attention_heads: int,
+        num_key_value_heads: int,
+        hidden_size: int,
+        kv_params: KVCacheParams,
+        devices: list[DeviceRef] | None = None,
+        dtype: DType = DType.float32,
+        linear_cls: Callable[..., Linear] = Linear,
+        stacked_qkv: bool = False,
+        scale: float | None = None,
+        has_bias: bool = False,
+        float8_config: Float8Config | None = None,
+        clip_qkv: float | None = None,
+    ) -> None:
+        """Initializes the distributed attention layer.
+
+        Args:
+            rope: The rope layer to borrow the freqs_cis value from.
+            num_attention_heads: The number of attention heads.
+            num_key_value_heads: Number of key/value heads.
+            hidden_size: The dimension of the hidden states.
+            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            devices: Device to place the weights and run the computation. Must
+                provide at least 2 devices for distributed attention.
+            dtype: DType of the QKV and output projection weights.
+            linear_cls: Linear class to use for the outputs dense layer.
+            stacked_qkv: Whether the weights are stacked together.
+            scale: Value used to scale the results of the attention output.
+            has_bias: Whether to use an attention bias.
+            float8_config: Float8 configuration for quantization.
+            clip_qkv: If provided, the QKV weights are clamped between
+                `[-clip_qkv, clip_qkv]`.
+        """
+        super().__init__(
+            rope=rope,
+            num_attention_heads=num_attention_heads,
+            num_key_value_heads=num_key_value_heads,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            devices=devices,
+            dtype=dtype,
+            linear_cls=linear_cls,
+            stacked_qkv=stacked_qkv,
+            scale=scale,
+            has_bias=has_bias,
+            float8_config=float8_config,
+            clip_qkv=clip_qkv,
+        )
         if not self.devices or len(self.devices) < 2:
             raise ValueError(
                 f"Must provide at least 2 devices to `DistributedAttentionWithRope`, got {self.devices}"
+            )
+        if DeviceRef.CPU() in self.devices:
+            raise ValueError(
+                "DistributedAttentionWithRope does not support CPU devices"
             )
         # Shard weights into separate AttentionWithRope layers.
         num_devices = len(self.devices)
@@ -882,18 +935,32 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         self.o_proj.sharding_strategy = ShardingStrategy.columnwise(num_devices)
 
         self.list_of_attentions = []
-        kwargs = kwargs.copy()
-        if kwargs["num_attention_heads"] % len(self.devices) != 0:
+
+        if num_attention_heads % len(self.devices) != 0:
             # TODO(MODELS-601): Support non-divisible numbers of attention heads.
             raise ValueError(
-                f"Number of attention heads ({kwargs['num_attention_heads']}) "
+                f"Number of attention heads ({num_attention_heads}) "
                 f"must be divisible by the number of devices ({len(self.devices)})"
             )
-        kwargs["num_attention_heads"] //= len(self.devices)
+
+        sharded_num_heads = num_attention_heads // len(self.devices)
 
         for n, device in enumerate(self.devices):
-            kwargs["devices"] = [device]
-            layer = AttentionWithRope(**kwargs)
+            layer = AttentionWithRope(
+                rope=rope,
+                num_attention_heads=sharded_num_heads,
+                num_key_value_heads=num_key_value_heads,
+                hidden_size=hidden_size,
+                kv_params=kv_params,
+                devices=[device],
+                dtype=dtype,
+                linear_cls=linear_cls,
+                stacked_qkv=stacked_qkv,
+                scale=scale,
+                has_bias=has_bias,
+                float8_config=float8_config,
+                clip_qkv=clip_qkv,
+            )
             if self.stacked_qkv:
                 layer.qkv_proj = self.qkv_proj.shard(n, device)
             else:
@@ -914,9 +981,17 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         ],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
-        assert self.devices
-        assert len(input_row_offsets) == len(self.devices)
-        assert all(isinstance(x, TensorValue) for x in input_row_offsets)
+        if not self.devices:
+            raise ValueError("devices cannot be None or empty")
+        if len(input_row_offsets) != len(self.devices):
+            raise ValueError(
+                f"Expected {len(self.devices)} input_row_offsets, got {len(input_row_offsets)}"
+            )
+        if not all(isinstance(x, TensorValue) for x in input_row_offsets):
+            raise TypeError(
+                "All elements in input_row_offsets must be TensorValue instances"
+            )
+
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
