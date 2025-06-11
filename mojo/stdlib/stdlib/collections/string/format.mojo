@@ -212,9 +212,7 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice[p.origin](
-                ptr=p.origin_cast[mut=False]() + start, length=end - start
-            )
+            return StringSlice(ptr=p + start, length=end - start)
 
         var auto_arg_index = 0
         for e in entries:
@@ -331,9 +329,7 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice[p.origin](
-                ptr=p.origin_cast[mut=False]() + start, length=end - start
-            )
+            return StringSlice(ptr=p + start, length=end - start)
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
         var field_ptr = field.unsafe_ptr()

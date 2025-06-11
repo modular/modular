@@ -545,7 +545,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self = StaticString(lit.value)
 
     @always_inline("builtin")
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin]):
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, origin, **_]):
         """Construct a new `StringSlice` from a sequence of UTF-8 encoded bytes.
 
         Args:
@@ -562,14 +562,24 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         # debug_assert(
         #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
         # )
-        self._slice = unsafe_from_utf8
+        self._slice = Span[Byte, origin](
+            ptr=unsafe_from_utf8.unsafe_ptr()
+            .address_space_cast[Span[Byte, origin].address_space]()
+            .static_alignment_cast[Span[Byte, origin].alignment](),
+            length=unsafe_from_utf8.__len__(),
+        )
 
-    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[Byte]):
-        """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to null-terminated UTF-8
-        encoded bytes.
+    fn __init__(
+        out self,
+        *,
+        unsafe_from_utf8_ptr: UnsafePointer[Byte, mut=mut, origin=origin, **_],
+    ):
+        """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
+        null-terminated UTF-8 encoded bytes.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated
+                bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST point to data that is valid for
@@ -578,18 +588,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
 
-        var byte_slice = Span[Byte, origin](
+        var byte_slice = Span(
             ptr=unsafe_from_utf8_ptr,
             length=_unsafe_strlen(unsafe_from_utf8_ptr),
         )
         self = Self(unsafe_from_utf8=byte_slice)
 
-    fn __init__(out self, *, unsafe_from_utf8_ptr: UnsafePointer[c_char]):
-        """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing to null-terminated UTF-8
-        encoded bytes.
+    fn __init__(
+        out self,
+        *,
+        unsafe_from_utf8_ptr: UnsafePointer[
+            c_char, mut=mut, origin=origin, **_
+        ],
+    ):
+        """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
+        to null-terminated UTF-8 encoded bytes.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[c_char]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: An `UnsafePointer[c_char]` of null-terminated
+                bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -602,7 +619,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     fn __init__(
         out self,
         *,
-        ptr: UnsafePointer[Byte, mut=mut, origin=origin],
+        ptr: UnsafePointer[Byte, mut=mut, origin=origin, **_],
         length: UInt,
     ):
         """Construct a `StringSlice` from a pointer to a sequence of UTF-8
@@ -618,7 +635,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             - `ptr` must point to data that is live for the duration of
                 `origin`.
         """
-        self = Self(unsafe_from_utf8=Span[Byte, origin](ptr=ptr, length=length))
+        self = Self(unsafe_from_utf8=Span(ptr=ptr, length=length))
 
     @always_inline
     fn copy(self) -> Self:
@@ -2343,16 +2360,17 @@ fn _to_string_list[O: Origin](items: List[Span[Byte, O]]) -> List[String]:
 
 
 @always_inline
-fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
-    """
-    Get the length of a null-terminated string from a pointer.
-    Note: the length does NOT include the null terminator.
+fn _unsafe_strlen(ptr: UnsafePointer[Byte, mut=False, **_]) -> Int:
+    """Get the length of a null-terminated string from a pointer.
 
     Args:
         ptr: The null-terminated pointer to the string.
 
     Returns:
         The length of the null terminated string without the null terminator.
+
+    Notes:
+        The length does NOT include the null terminator.
     """
     var len = 0
     while ptr[len]:
@@ -2364,8 +2382,10 @@ fn _unsafe_strlen(owned ptr: UnsafePointer[Byte]) -> Int:
 fn _memchr[
     dtype: DType, //
 ](
-    source: UnsafePointer[Scalar[dtype]], char: Scalar[dtype], len: Int
-) -> UnsafePointer[Scalar[dtype]]:
+    source: UnsafePointer[Scalar[dtype], mut=False, **_],
+    char: Scalar[dtype],
+    len: Int,
+) -> __type_of(source):
     if is_compile_time() or len < simdwidthof[dtype]():
         return _memchr_simple(source, char, len)
     else:
@@ -2376,22 +2396,26 @@ fn _memchr[
 fn _memchr_simple[
     dtype: DType, //
 ](
-    source: UnsafePointer[Scalar[dtype]], char: Scalar[dtype], len: Int
-) -> UnsafePointer[Scalar[dtype]]:
+    source: UnsafePointer[Scalar[dtype], mut=False, **_],
+    char: Scalar[dtype],
+    len: Int,
+) -> __type_of(source):
     for i in range(len):
         if source[i] == char:
             return source + i
-    return UnsafePointer[Scalar[dtype]]()
+    return {}
 
 
 @always_inline
 fn _memchr_impl[
     dtype: DType, //
 ](
-    source: UnsafePointer[Scalar[dtype]], char: Scalar[dtype], len: Int
-) -> UnsafePointer[Scalar[dtype]]:
+    source: UnsafePointer[Scalar[dtype], mut=False, **_],
+    char: Scalar[dtype],
+    len: Int,
+) -> __type_of(source):
     if not len:
-        return UnsafePointer[Scalar[dtype]]()
+        return {}
     alias bool_mask_width = simdwidthof[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
     var vectorized_end = align_down(len, bool_mask_width)
@@ -2405,22 +2429,26 @@ fn _memchr_impl[
     for i in range(vectorized_end, len):
         if source[i] == char:
             return source + i
-    return UnsafePointer[Scalar[dtype]]()
+    return {}
 
 
 @always_inline
 fn _memmem[
-    dtype: DType, //
+    dtype: DType, address_space: AddressSpace, //
 ](
-    haystack: UnsafePointer[Scalar[dtype]],
+    haystack: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     haystack_len: Int,
-    needle: UnsafePointer[Scalar[dtype]],
+    needle: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     needle_len: Int,
-) -> UnsafePointer[Scalar[dtype]]:
+) -> __type_of(haystack):
     if not needle_len:
         return haystack
     if needle_len > haystack_len:
-        return UnsafePointer[Scalar[dtype]]()
+        return {}
     if needle_len == 1:
         return _memchr(haystack, needle[0], haystack_len)
 
@@ -2432,13 +2460,17 @@ fn _memmem[
 
 @always_inline
 fn _memmem_impl_simple[
-    dtype: DType, //
+    dtype: DType, address_space: AddressSpace, //
 ](
-    haystack: UnsafePointer[Scalar[dtype]],
+    haystack: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     haystack_len: Int,
-    needle: UnsafePointer[Scalar[dtype]],
+    needle: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     needle_len: Int,
-) -> UnsafePointer[Scalar[dtype]]:
+) -> __type_of(haystack):
     for i in range(haystack_len - needle_len + 1):
         if haystack[i] != needle[0]:
             continue
@@ -2446,18 +2478,22 @@ fn _memmem_impl_simple[
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
             return haystack + i
 
-    return UnsafePointer[Scalar[dtype]]()
+    return {}
 
 
 @always_inline
 fn _memmem_impl[
-    dtype: DType, //
+    dtype: DType, address_space: AddressSpace, //
 ](
-    haystack: UnsafePointer[Scalar[dtype]],
+    haystack: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     haystack_len: Int,
-    needle: UnsafePointer[Scalar[dtype]],
+    needle: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     needle_len: Int,
-) -> UnsafePointer[Scalar[dtype]]:
+) -> __type_of(haystack):
     alias bool_mask_width = simdwidthof[DType.bool]()
     var vectorized_end = align_down(
         haystack_len - needle_len + 1, bool_mask_width
@@ -2493,36 +2529,42 @@ fn _memmem_impl[
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
             return haystack + i
 
-    return UnsafePointer[Scalar[dtype]]()
+    return {}
 
 
 @always_inline
 fn _memrchr[
     dtype: DType
 ](
-    source: UnsafePointer[Scalar[dtype]], char: Scalar[dtype], len: Int
-) -> UnsafePointer[Scalar[dtype]]:
+    source: UnsafePointer[Scalar[dtype], mut=False, **_],
+    char: Scalar[dtype],
+    len: Int,
+) -> __type_of(source):
     if not len:
-        return UnsafePointer[Scalar[dtype]]()
+        return {}
     for i in reversed(range(len)):
         if source[i] == char:
             return source + i
-    return UnsafePointer[Scalar[dtype]]()
+    return {}
 
 
 @always_inline
 fn _memrmem[
-    dtype: DType
+    dtype: DType, address_space: AddressSpace
 ](
-    haystack: UnsafePointer[Scalar[dtype]],
+    haystack: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     haystack_len: Int,
-    needle: UnsafePointer[Scalar[dtype]],
+    needle: UnsafePointer[
+        Scalar[dtype], address_space=address_space, mut=False, **_
+    ],
     needle_len: Int,
-) -> UnsafePointer[Scalar[dtype]]:
+) -> __type_of(haystack):
     if not needle_len:
         return haystack
     if needle_len > haystack_len:
-        return UnsafePointer[Scalar[dtype]]()
+        return {}
     if needle_len == 1:
         return _memrchr[dtype](haystack, needle[0], haystack_len)
     for i in reversed(range(haystack_len - needle_len + 1)):
@@ -2530,7 +2572,7 @@ fn _memrmem[
             continue
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
             return haystack + i
-    return UnsafePointer[Scalar[dtype]]()
+    return {}
 
 
 fn _split[
