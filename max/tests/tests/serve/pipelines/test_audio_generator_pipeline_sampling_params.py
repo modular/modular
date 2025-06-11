@@ -60,6 +60,7 @@ def create_test_request_with_sampling_params(
 
 def test_pipeline_receives_sampling_params() -> None:
     """Test that AudioGeneratorPipeline receives SamplingParams from request."""
+
     # Create custom sampling params.
     custom_params = SamplingParams(
         top_k=15,
@@ -67,8 +68,6 @@ def test_pipeline_receives_sampling_params() -> None:
         frequency_penalty=0.6,
         presence_penalty=0.8,
         repetition_penalty=1.05,
-        enable_structured_output=False,
-        enable_variable_logits=True,
     )
 
     # Create test audio data.
@@ -127,12 +126,18 @@ def test_pipeline_receives_default_sampling_params() -> None:
     # Verify the pipeline received default sampling_params.
     assert isinstance(pipeline.received_sampling_params, SamplingParams)
     assert pipeline.received_sampling_params.top_k == 1
+    assert pipeline.received_sampling_params.top_p == 1
+    assert pipeline.received_sampling_params.min_p == 0.0
     assert pipeline.received_sampling_params.temperature == 1
     assert pipeline.received_sampling_params.frequency_penalty == 0.0
     assert pipeline.received_sampling_params.presence_penalty == 0.0
     assert pipeline.received_sampling_params.repetition_penalty == 1.0
-    assert pipeline.received_sampling_params.enable_structured_output is False
-    assert pipeline.received_sampling_params.enable_variable_logits is False
+    assert pipeline.received_sampling_params.min_new_tokens == 0
+    assert pipeline.received_sampling_params.ignore_eos is False
+    assert pipeline.received_sampling_params.stop is None
+    assert pipeline.received_sampling_params.stop_token_ids is None
+    assert pipeline.received_sampling_params.detokenize is True
+    assert pipeline.received_sampling_params.seed == 0
 
     # Verify the audio generation still works correctly.
     assert result.is_done is True
@@ -145,7 +150,8 @@ def test_multiple_requests_different_sampling_params():
         SamplingParams(top_k=1, temperature=0.1),
         SamplingParams(top_k=10, temperature=1.0),
         SamplingParams(
-            top_k=50, temperature=2.0, enable_structured_output=True
+            top_k=50,
+            temperature=2.0,
         ),
     ]
 
@@ -174,10 +180,6 @@ def test_multiple_requests_different_sampling_params():
         assert pipeline.received_sampling_params.top_k == params.top_k
         assert (
             pipeline.received_sampling_params.temperature == params.temperature
-        )
-        assert (
-            pipeline.received_sampling_params.enable_structured_output
-            == params.enable_structured_output
         )
 
         # Verify the audio generation still works
