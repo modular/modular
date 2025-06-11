@@ -1716,26 +1716,49 @@ static Attribute simplifyAssocOp(
   return operands.size() == 1 ? operands[0] : Attribute();
 }
 
+struct DecomposedAddend {
+  POC opcode;
+  TypedAttr nonConstant;
+  IntegerAttr constant;
+};
+
 /// Analyze an operand to an add.  If it is a multiplication by a constant (e.g.
 /// `(a*b*42)` then split it into the non-constant and the constant portions
 /// (e.g. `a*b` and `42`).  Otherwise return the operand as the first value and
 /// null as the second (standin for "multiplication by 1").
-static std::pair<TypedAttr, TypedAttr> decomposeAddend(TypedAttr operand) {
+static DecomposedAddend decomposeAddend(TypedAttr operand) {
   auto mul = dyn_cast<ParamOperatorAttr>(operand);
-  // NOTE we are basically converting the "looser" MulNuw with undef behavior
-  // back to the tighter Mul with defined behavior on overflow. This allows us
-  // to fold things like `add(mul(X, 2), mul_nuw(X, -1))`
   if (mul && llvm::is_contained({POC::MulNuw, POC::Mul}, mul.getOpcode())) {
     if (auto cst = dyn_cast<IntegerAttr>(mul.getOperands().back())) {
-      auto nonCst =
-          ParamOperatorAttr::get(POC::Mul, mul.getOperands().drop_back());
-      return {nonCst, cst};
+      auto nonCst = ParamOperatorAttr::get(mul.getOpcode(),
+                                           mul.getOperands().drop_back());
+      return {mul.getOpcode(), nonCst, cst};
     }
   }
-  return {operand, TypedAttr()};
+
+  auto opcode = mul ? mul.getOpcode() : POC::Mul;
+  return {opcode, operand, IntegerAttr()};
 }
 
-static Attribute getOneOfType(Type type) { return IntegerAttr::get(type, 1); }
+/// Infer the preferred multiplication opcode from two decomposed addends.
+/// The goal is to avoid accidentally converting MulNuw to the more strict
+/// Mul when Mul is not present in the original expression.
+static POC inferOpcode(const DecomposedAddend &lhs,
+                       const DecomposedAddend &rhs) {
+  if (lhs.constant && rhs.constant) {
+    if (lhs.opcode == POC::Mul || rhs.opcode == POC::Mul)
+      return POC::Mul;
+    return POC::MulNuw;
+  }
+
+  if (lhs.constant)
+    return lhs.opcode;
+  if (rhs.constant)
+    return rhs.opcode;
+  return KGEN::POC::Mul;
+}
+
+static IntegerAttr getOneOfType(Type type) { return IntegerAttr::get(type, 1); }
 
 static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
   if (auto result = simplifyAssocOp(
@@ -1745,7 +1768,7 @@ static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
 
   // Canonicalize the add by splitting all addends into their variable and
   // constant factors.
-  SmallVector<std::pair<TypedAttr, TypedAttr>> decomposedOperands;
+  SmallVector<DecomposedAddend> decomposedOperands;
   llvm::SmallDenseSet<TypedAttr> nonConstantParts;
   for (auto &op : operands) {
     decomposedOperands.push_back(decomposeAddend(op));
@@ -1754,30 +1777,37 @@ static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
     // uses of the same value, then we can fold them together with a multiply.
     // This handles things like `(a+b+a)` => `(a*2 + b)` and `(a*2 + b + a)` =>
     // `(a*3 + b)`.
-    if (!nonConstantParts.insert(decomposedOperands.back().first).second) {
+    if (!nonConstantParts.insert(decomposedOperands.back().nonConstant)
+             .second) {
       // The thing we multiply will be the common expression.
-      TypedAttr mulOperand = decomposedOperands.back().first;
+      TypedAttr mulOperand = decomposedOperands.back().nonConstant;
 
       // Find the index of the first occurrence.
       size_t i = 0;
-      while (decomposedOperands[i].first != mulOperand)
+      while (decomposedOperands[i].nonConstant != mulOperand)
         ++i;
+
       // Remove both occurrences from the operand list.
       operands.erase(operands.begin() + (&op - &operands[0]));
       operands.erase(operands.begin() + i);
 
       auto type = mulOperand.getType();
-      auto c1 = decomposedOperands[i].second,
-           c2 = decomposedOperands.back().second;
+      auto c1 = decomposedOperands[i].constant,
+           c2 = decomposedOperands.back().constant;
+
       // Fill in missing constant multiplicands with 1.
       if (!c1)
-        c1 = cast<TypedAttr>(getOneOfType(type));
+        c1 = getOneOfType(type);
       if (!c2)
-        c2 = cast<TypedAttr>(getOneOfType(type));
+        c2 = getOneOfType(type);
+
+      auto opcode =
+          inferOpcode(decomposedOperands[i], decomposedOperands.back());
+
       // Re-add the "a"*(c1+c2) expression to the operand list and
       // re-canonicalize.
       auto constant = ParamOperatorAttr::get(POC::Add, c1, c2);
-      auto mulCst = ParamOperatorAttr::get(POC::Mul, mulOperand, constant);
+      auto mulCst = ParamOperatorAttr::get(opcode, mulOperand, constant);
       operands.push_back(mulCst);
       return ParamOperatorAttr::get(POC::Add, operands);
     }
@@ -2087,8 +2117,7 @@ struct DivOperandInfo {
 
     operands.push_back(constTerm);
     for (auto [operand, occurrences] : symOccurrences)
-      for (size_t i = 0; i < occurrences; i++)
-        operands.push_back(operand);
+      operands.append(occurrences, operand);
 
     if (operands.size() == 1) {
       // Implies `constant` only term

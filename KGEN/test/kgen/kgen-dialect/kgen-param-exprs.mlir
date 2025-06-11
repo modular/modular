@@ -159,6 +159,9 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <p2>
   %42 = kgen.param.constant = <add(mul(p2, 2), mul_nuw(p2, -1))>
 
+  // CHECK: = kgen.param.constant = <add(mul_nuw(p1, 37919), -37919)>
+  kgen.param.constant = <mul_nuw(add(p1, -1), 37919)>
+
   kgen.param.declare args: variadic<si32> = <[1, 2]>
   // CHECK: constant: si32 = <variadic_get(:variadic<si32> args, 2)>
   kgen.param.constant: si32 = <variadic_get(:variadic<si32> args, 2)>
