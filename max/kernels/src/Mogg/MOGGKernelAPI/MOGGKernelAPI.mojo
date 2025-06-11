@@ -170,7 +170,7 @@ from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.normalization import layer_norm, rms_norm
+from nn.normalization import group_norm, layer_norm, rms_norm
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
@@ -4299,6 +4299,65 @@ struct RMSNorm:
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("group_norm")
+struct GroupNorm:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: FusedInputTensor[dtype=dtype, rank=rank],
+        gamma: FusedInputTensor[dtype=dtype, rank=1],
+        beta: FusedInputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return gamma._lambda_load[width=width](coords)
+
+        @parameter
+        @always_inline
+        fn beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return beta._lambda_load[width=width](coords)
+
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
+            shape=input.shape(),
+            epsilon=epsilon,
+            groups=num_groups,
+            output=output_buf,
+            ctx=ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        beta: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
     ) -> IndexList[rank]:
         return input.shape()
 
