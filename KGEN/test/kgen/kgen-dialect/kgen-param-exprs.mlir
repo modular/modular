@@ -147,20 +147,20 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <apply(:(index) -> index fn, p1)>
   %38 = kgen.param.constant = <apply(:(index) -> index fn, p1)>
 
-  // CHECK: = kgen.param.constant = <add(mul_nuw(p2, p2), p1, 42)>
-  %39 = kgen.param.constant = <add(p1, 42, mul_nuw(p2, p2))>
+  // CHECK: = kgen.param.constant = <add(mul_no_wrap(p2, p2), p1, 42)>
+  %39 = kgen.param.constant = <add(p1, 42, mul_no_wrap(p2, p2))>
 
-  // CHECK: = kgen.param.constant = <mul_nuw(mul(p2, 2), p1, 42)>
-  %40 = kgen.param.constant = <mul_nuw(p1, 42, add(p2, p2))>
+  // CHECK: = kgen.param.constant = <mul_no_wrap(mul(p2, 2), p1, 42)>
+  %40 = kgen.param.constant = <mul_no_wrap(p1, 42, add(p2, p2))>
 
   // CHECK: = kgen.param.constant = <p1>
-  %41 = kgen.param.constant = <add(p1, p2, mul_nuw(p2, -1))>
+  %41 = kgen.param.constant = <add(p1, p2, mul_no_wrap(p2, -1))>
 
   // CHECK: = kgen.param.constant = <p2>
-  %42 = kgen.param.constant = <add(mul(p2, 2), mul_nuw(p2, -1))>
+  %42 = kgen.param.constant = <add(mul(p2, 2), mul_no_wrap(p2, -1))>
 
-  // CHECK: = kgen.param.constant = <add(mul_nuw(p1, 37919), -37919)>
-  kgen.param.constant = <mul_nuw(add(p1, -1), 37919)>
+  // CHECK: = kgen.param.constant = <add(mul_no_wrap(p1, 37919), -37919)>
+  kgen.param.constant = <mul_no_wrap(add(p1, -1), 37919)>
 
   kgen.param.declare args: variadic<si32> = <[1, 2]>
   // CHECK: constant: si32 = <variadic_get(:variadic<si32> args, 2)>
@@ -234,7 +234,7 @@ kgen.generator @fixed_width_integers<p1: i32, p2: i32>() {
   %4 = kgen.param.constant: i1 = <lt(:i32 p2, p1)>
 
   // CHECK-NEXT: constant: i32 = <1>
-  %5 = kgen.param.constant: i32 = <div(mul_nuw(p1, p2), mul_nuw(p1, p2))>
+  %5 = kgen.param.constant: i32 = <div(mul_no_wrap(p1, p2), mul_no_wrap(p1, p2))>
 
   // Division by 0 is undefined behavior.
   // CHECK-NEXT: constant: i32 = <div(12, 0)>
@@ -388,31 +388,31 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = kgen.param.constant = <div(mul(p1, p1, p2, 3), mul(p1, p1, 3))>
   kgen.param.constant = <div(mul(p1, p1, p2, 3), mul(p1, p1, 3))>
 
-  // CHECK: = kgen.param.constant = <mul_nuw(p2, 3)>
-  kgen.param.constant = <div(mul_nuw(p1, p1, p2, 3), mul_nuw(p1, p1))>
+  // CHECK: = kgen.param.constant = <mul_no_wrap(p2, 3)>
+  kgen.param.constant = <div(mul_no_wrap(p1, p1, p2, 3), mul_no_wrap(p1, p1))>
 
-  // CHECK: = kgen.param.constant = <div(mul_nuw(p1, 3), p2)>
-  kgen.param.constant = <div(mul_nuw(p1, p1, p2, 3), mul_nuw(p1, p2, p2))>
+  // CHECK: = kgen.param.constant = <div(mul_no_wrap(p1, 3), p2)>
+  kgen.param.constant = <div(mul_no_wrap(p1, p1, p2, 3), mul_no_wrap(p1, p2, p2))>
 
   // CHECK: = kgen.param.constant = <p1>
-  kgen.param.constant = <div(mul_nuw(p1, p2), p2)>
+  kgen.param.constant = <div(mul_no_wrap(p1, p2), p2)>
 
-  // CHECK: = kgen.param.constant = <mul_nuw(p1, 40)>
-  kgen.param.constant = <div(mul_nuw(p1, 200000), 5000)>
+  // CHECK: = kgen.param.constant = <mul_no_wrap(p1, 40)>
+  kgen.param.constant = <div(mul_no_wrap(p1, 200000), 5000)>
 
   // CHECK: = kgen.param.constant = <div(p1, 5000)>
   kgen.param.constant = <div(p1, 5000)>
 
   // These are too large so the result may overflow on some devices for indices
   // 5B --> too large for 32 bit systems. This may be poisoned so we do
-  // CHECK: = kgen.param.constant = <div(mul_nuw(p1, 5000000000), 5000)>
-  kgen.param.constant = <div(mul_nuw(p1, 5000000000), 5000)>
+  // CHECK: = kgen.param.constant = <div(mul_no_wrap(p1, 5000000000), 5000)>
+  kgen.param.constant = <div(mul_no_wrap(p1, 5000000000), 5000)>
 
   // CHECK: = kgen.param.constant = <div(p1, 10)>
-  kgen.param.constant = <div(mul_nuw(50, 2, p1), 1000)>
+  kgen.param.constant = <div(mul_no_wrap(50, 2, p1), 1000)>
 
   // CHECK: = kgen.param.constant = <p1>
-  kgen.param.constant = <div(mul_nuw(p1, -1), -1)>
+  kgen.param.constant = <div(mul_no_wrap(p1, -1), -1)>
 
   // CHECK: = kgen.param.constant: si64 = <1>
   kgen.param.constant: si64 = <div(-4, -4)>
@@ -441,8 +441,8 @@ kgen.generator @param_canonicalize<p1, p2>() {
 
   kgen.param.constant = <mul(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mul(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
-  kgen.param.constant = <mul_nuw(p1, 1)>  // CHECK: kgen.param.constant = <p1>
-  kgen.param.constant = <mul_nuw(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mul_no_wrap(p1, 1)>  // CHECK: kgen.param.constant = <p1>
+  kgen.param.constant = <mul_no_wrap(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <and(12, 6)>  // CHECK: kgen.param.constant = <4>
   kgen.param.constant = <or(12, 6)>  // CHECK: kgen.param.constant = <14>
   kgen.param.constant = <xor(4, 6)>  // CHECK: kgen.param.constant = <2>
@@ -455,12 +455,12 @@ kgen.generator @param_canonicalize<p1, p2>() {
   kgen.param.constant = <mod(1, 0)>  // CHECK: kgen.param.constant = <mod(1, 0)>
   kgen.param.constant = <mod(p1, p1)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <mod(mul(p1, 2), p1)>  // CHECK: kgen.param.constant = <0>
-  kgen.param.constant = <mod(mul_nuw(p1, 2), p1)>  // CHECK: kgen.param.constant = <0>
+  kgen.param.constant = <mod(mul_no_wrap(p1, 2), p1)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <mod(add(p1, 2), p1)>  // CHECK: kgen.param.constant = <mod(add(p1, 2), p1)>
-  kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(2, p2))>  // CHECK: kgen.param.constant = <mul_nuw(max(p1, p2), 2)>
+  kgen.param.constant = <max(mul_no_wrap(p1, 2), mul_no_wrap(2, p2))>  // CHECK: kgen.param.constant = <mul_no_wrap(max(p1, p2), 2)>
   kgen.param.constant = <max(mul(p1, 2), mul(2, p2))>  // CHECK: kgen.param.constant = <max(mul(p1, 2), mul(p2, 2))>
-  kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 3))>  // CHECK: kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 3))>
-  kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 4))>  // CHECK: kgen.param.constant = <max(mul_nuw(p1, 2), mul_nuw(p2, 4))>
+  kgen.param.constant = <max(mul_no_wrap(p1, 2), mul_no_wrap(p2, 3))>  // CHECK: kgen.param.constant = <max(mul_no_wrap(p1, 2), mul_no_wrap(p2, 3))>
+  kgen.param.constant = <max(mul_no_wrap(p1, 2), mul_no_wrap(p2, 4))>  // CHECK: kgen.param.constant = <max(mul_no_wrap(p1, 2), mul_no_wrap(p2, 4))>
   kgen.param.constant = <max(add(p1, 2), add(p2, 2))>  // CHECK: kgen.param.constant = <max(add(p1, 2), add(p2, 2))>
 
   kgen.param.declare square = <mul(p1, p1)>  // CHECK: kgen.param.declare square = <mul(p1, p1)>

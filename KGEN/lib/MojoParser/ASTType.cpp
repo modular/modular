@@ -664,7 +664,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
         binOp = " + ";
         break;
       case POC::Mul:
-      case POC::MulNuw:
+      case POC::MulNoWrap:
         binOp = " * ";
         break;
       case POC::Div:

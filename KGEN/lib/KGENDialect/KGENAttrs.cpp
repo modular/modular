@@ -1307,7 +1307,7 @@ LogicalResult ParamOperatorAttr::verify(
   switch (opcode) {
   case POC::Add:
   case POC::Mul:
-  case POC::MulNuw:
+  case POC::MulNoWrap:
   case POC::And:
   case POC::Or:
   case POC::Xor:
@@ -1728,7 +1728,7 @@ struct DecomposedAddend {
 /// null as the second (standin for "multiplication by 1").
 static DecomposedAddend decomposeAddend(TypedAttr operand) {
   auto mul = dyn_cast<ParamOperatorAttr>(operand);
-  if (mul && llvm::is_contained({POC::MulNuw, POC::Mul}, mul.getOpcode())) {
+  if (mul && llvm::is_contained({POC::MulNoWrap, POC::Mul}, mul.getOpcode())) {
     if (auto cst = dyn_cast<IntegerAttr>(mul.getOperands().back())) {
       auto nonCst = ParamOperatorAttr::get(mul.getOpcode(),
                                            mul.getOperands().drop_back());
@@ -1741,14 +1741,14 @@ static DecomposedAddend decomposeAddend(TypedAttr operand) {
 }
 
 /// Infer the preferred multiplication opcode from two decomposed addends.
-/// The goal is to avoid accidentally converting MulNuw to the more strict
+/// The goal is to avoid accidentally converting MulNoWrap to the more strict
 /// Mul when Mul is not present in the original expression.
 static POC inferOpcode(const DecomposedAddend &lhs,
                        const DecomposedAddend &rhs) {
   if (lhs.constant && rhs.constant) {
     if (lhs.opcode == POC::Mul || rhs.opcode == POC::Mul)
       return POC::Mul;
-    return POC::MulNuw;
+    return POC::MulNoWrap;
   }
 
   if (lhs.constant)
@@ -1893,7 +1893,7 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
   IntegerAttr commonFactor;
   for (TypedAttr operand : operands) {
     // Operand must be a product.
-    auto mulAttr = dyn_castPE(POC::MulNuw, operand);
+    auto mulAttr = dyn_castPE(POC::MulNoWrap, operand);
     if (!mulAttr)
       return {};
 
@@ -1920,7 +1920,7 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
   // New operands with the common factor dropped from the end of each product.
   SmallVector<TypedAttr> newOperands;
   for (TypedAttr operand : operands) {
-    auto mulAttr = dyn_castPE(POC::MulNuw, operand);
+    auto mulAttr = dyn_castPE(POC::MulNoWrap, operand);
 
     // If the product has the form `x * commonFactor`, the new operand is `x`.
     size_t numOperands = mulAttr.getNumOperands();
@@ -1933,7 +1933,7 @@ static Attribute simplifyMax(SmallVectorImpl<TypedAttr> &operands) {
     }
   }
   auto newMax = ParamOperatorAttr::get(POC::Max, newOperands);
-  auto product = ParamOperatorAttr::get(POC::MulNuw, {newMax, commonFactor});
+  auto product = ParamOperatorAttr::get(POC::MulNoWrap, {newMax, commonFactor});
   return product;
 }
 
@@ -2034,20 +2034,20 @@ static Attribute simplifyShr(SmallVectorImpl<TypedAttr> &operands) {
       [](auto a, auto b) { return a.ashr(b); });
 }
 
-/// Tracks the operands of MulNuw in a form which allows easy simplification.
+/// Tracks the operands of MulNoWrap in a form which allows easy simplification.
 namespace {
 struct DivOperandInfo {
   // tracks the occurrences of non-integral operands only, e.g. D1
   SmallDenseMap<TypedAttr, size_t> symOccurrences;
 
-  // tracks the coalesced constant terms, e.g. mul_nuw(5, 10, D1)
+  // tracks the coalesced constant terms, e.g. mul_no_wrap(5, 10, D1)
   // this would be 5 * 10 = 50.
   APInt constant;
 
   Type attrType;
 
   // whether folding of `constant` leads to overflow on the current system
-  // OR initialized with wrong attr (only support IntegerAttr and MulNuw)
+  // OR initialized with wrong attr (only support IntegerAttr and MulNoWrap)
   // OR when dealing with potential expressions which are sufficiently large
   //    as to differ in behavior on 32/64 bit systems
   bool isPoisoned = false;
@@ -2078,7 +2078,8 @@ struct DivOperandInfo {
                  (isIndex && (constant.trunc(32).sext(64) != constant));
   }
 
-  /// Construct an Info object using a MulNuw operator, or constant IntegerAttr
+  /// Construct an Info object using a MulNoWrap operator, or constant
+  /// IntegerAttr
   DivOperandInfo(TypedAttr attr) {
     constant = IntegerAttr::get(attr.getType(), 1).getValue();
     attrType = attr.getType();
@@ -2088,7 +2089,7 @@ struct DivOperandInfo {
       return;
     }
 
-    if (auto mulAttr = dyn_castPE(POC::MulNuw, attr)) {
+    if (auto mulAttr = dyn_castPE(POC::MulNoWrap, attr)) {
       for (TypedAttr numOpAttr : mulAttr.getOperands()) {
         if (auto constAttr = dyn_cast<IntegerAttr>(numOpAttr)) {
           updateConstant(constAttr);
@@ -2108,8 +2109,8 @@ struct DivOperandInfo {
     isPoisoned = true;
   }
 
-  /// Create a new MulNuw expression from the info stored. If no symbolic
-  /// variables are left, return an IntegerAttr, else return a MulNuw
+  /// Create a new MulNoWrap expression from the info stored. If no symbolic
+  /// variables are left, return an IntegerAttr, else return a MulNoWrap
   TypedAttr getExpression() {
     SmallVector<TypedAttr> operands;
 
@@ -2124,7 +2125,7 @@ struct DivOperandInfo {
       return constTerm;
     }
 
-    return ParamOperatorAttr::get(POC::MulNuw, operands);
+    return ParamOperatorAttr::get(POC::MulNoWrap, operands);
   }
 
   /// Simplify terms in `numerator` and `denominator` assuming deriving terms
@@ -2138,8 +2139,8 @@ struct DivOperandInfo {
 
     // Emulate cancelling out shared operand(s) by decrementing their
     // occurrences. e.g., for
-    //   `mul_nuw(D0, D2, D0)` with occurrence mapping `{ D0 : 2, D2 : 1 }`.
-    //   `mul_nuw(D2, D0, D2)` with occurrence mapping `{ D0 : 1, D2 : 2 }`.
+    //   `mul_no_wrap(D0, D2, D0)` with occurrence mapping `{ D0 : 2, D2 : 1 }`.
+    //   `mul_no_wrap(D2, D0, D2)` with occurrence mapping `{ D0 : 1, D2 : 2 }`.
     // the new occurrence mappings are
     //   `{ D0 : 1, D2 : 0 }`.
     //   `{ D0 : 0, D2 : 1 }`.
@@ -2188,15 +2189,15 @@ static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
   TypedAttr &numeratorAttr = operands[0];
   TypedAttr &denominatorAttr = operands[1];
 
-  // Build mapping from each MulNuw op operand to the number of its occurrences,
-  // e.g., for `mul_nuw(D0, 42, D0)`, we build the mapping `{ D0 : 2}, constant:
-  // 42`
+  // Build mapping from each MulNoWrap op operand to the number of its
+  // occurrences, e.g., for `mul_no_wrap(D0, 42, D0)`, we build the mapping `{
+  // D0 : 2}, constant: 42`
   DivOperandInfo numeratorInfo = DivOperandInfo(numeratorAttr);
   DivOperandInfo denominatorInfo = DivOperandInfo(denominatorAttr);
 
   // Poisoning: implies overflow in folding of constant @ precision of int64_t:
-  //     e.g. mul_nuw(1e18, 1e18, D1) --> 1e90
-  // Or numerator/denominator is is not a MulNuw or an IntegerAttr
+  //     e.g. mul_no_wrap(1e18, 1e18, D1) --> 1e90
+  // Or numerator/denominator is is not a MulNoWrap or an IntegerAttr
   if (numeratorInfo.isPoisoned || denominatorInfo.isPoisoned)
     return;
 
@@ -2289,7 +2290,7 @@ static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {
     ArrayRef<TypedAttr> xProductOperands;
     if (auto mulAttr = dyn_castPE(POC::Mul, x))
       xProductOperands = mulAttr.getOperands();
-    if (auto mulAttr = dyn_castPE(POC::MulNuw, x))
+    if (auto mulAttr = dyn_castPE(POC::MulNoWrap, x))
       xProductOperands = mulAttr.getOperands();
     return llvm::is_contained(xProductOperands, y);
   };
@@ -2872,7 +2873,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::Mul:
     [[fallthrough]];
-  case POC::MulNuw:
+  case POC::MulNoWrap:
     result = simplifyGenericMul(operands, opcode);
     break;
   case POC::And:
