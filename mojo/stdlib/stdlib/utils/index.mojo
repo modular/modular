@@ -160,10 +160,6 @@ fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-fn _is_unsigned[dtype: DType]() -> Bool:
-    return dtype in (DType.uint8, DType.uint16, DType.uint32, DType.uint64)
-
-
 @register_passable("trivial")
 struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Sized,
