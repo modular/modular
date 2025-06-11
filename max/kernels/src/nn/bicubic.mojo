@@ -26,7 +26,13 @@ from runtime.asyncrt import DeviceContextPtr
 
 
 fn cubic_kernel(x: Float32) -> Float32:
-    """Cubic interpolation kernel with a=-0.5.
+    """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
+    filter.
+
+    This uses the Catmull-Rom variant (Robidoux cubic) with a = -0.75,
+    which is what PyTorch uses in get_cubic_upsample_coefficients.
+    ([Source](https://github.com/pytorch/pytorch/blob/59eb61b2d1e4b64debbefa036acd0d8c7d55f0a3/aten/src/ATen/native/UpSample.h#L410-L423)).
+    This also matches OpenCV's [interpolateCubic](https://github.com/opencv/opencv/blob/cf2a3c8e7430cc92569dd7f114609f9377b12d9e/modules/imgproc/src/resize.cpp#L907-L915).
 
     Args:
         x: Distance from the center point.
@@ -34,7 +40,8 @@ fn cubic_kernel(x: Float32) -> Float32:
     Returns:
         Weight contribution based on the distance.
     """
-    var a: Float32 = -0.5
+    # Use a = -0.75 to match the PyTorch bicubic filter.
+    var a: Float32 = -0.75
     var abs_x = abs(x)
     var abs_x_squared = abs_x * abs_x
     var abs_x_cubed = abs_x_squared * abs_x
@@ -100,37 +107,30 @@ fn cpu_bicubic_kernel[
 
                         @parameter
                         for j in range(4):
-                            var y_pos = in_y_floor + i - 1
-                            var x_pos = in_x_floor + j - 1
-
                             # don't be <0 or >frame bounds
-                            y_pos = clamp(y_pos, 0, in_height - 1)
-                            x_pos = clamp(x_pos, 0, in_width - 1)
+                            var y_pos = clamp(
+                                in_y_floor + i - 1, 0, in_height - 1
+                            )
+                            var x_pos = clamp(
+                                in_x_floor + j - 1, 0, in_width - 1
+                            )
 
-                            # SOURCE: https://en.wikipedia.org/wiki/Bicubic_interpolation
-                            # NOTE:
-                            # This implementation uses the convolution-based bicubic interpolation method (Keys' kernel with a = -0.5),
-                            # which is described in the "Bicubic convolution algorithm" section of the Wikipedia article.
-                            # It does NOT implement the full spline-based interpolation described earlier in the article,
-                            # which requires solving for 16 coefficients using function values and their partial derivatives (f, fx, fy, fxy).
-                            # The convolution approach is what most image processing libraries (e.g., OpenCV, PIL, PyTorch) actually use.
+                            # This implementation uses the convolution-based bicubic interpolation method,
+                            # matching PyTorch's implementation with a = -0.75 (Robidoux cubic).
+                            # This is what most image processing libraries (e.g., PyTorch, torchvision) use.
                             var weight_y = cubic_kernel(Float32(i) - 1.0 - dy)
                             var weight_x = cubic_kernel(Float32(j) - 1.0 - dx)
                             var weight: Float32 = weight_y * weight_x
 
                             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
-                            var pixel_value: Float32 = Float32(
+                            var pixel_value = Float32(
                                 input_host[b, c, y_pos, x_pos]
                             )
-                            sum_value = sum_value + (pixel_value * weight)
-                            sum_weights = sum_weights + weight
-
-                    # normalize if needed
-                    if sum_weights > 0:
-                        sum_value = sum_value / sum_weights
+                            sum_value += pixel_value * weight
+                            sum_weights += weight
 
                     # store the result in the output tensor
-                    output_host[b, c, y_out, x_out] = SIMD[type, 1](sum_value)
+                    output_host[b, c, y_out, x_out] = sum_value.cast[type]()
 
 
 fn gpu_bicubic_kernel[
@@ -148,8 +148,7 @@ fn gpu_bicubic_kernel[
     """
     var b = block_idx.x
     var c = block_idx.y
-    var y_out = thread_idx.x
-    var x_out = thread_idx.y
+    var tid = thread_idx.x
 
     var in_height = input.dynamic_shape[2]
     var in_width = input.dynamic_shape[3]
@@ -159,49 +158,50 @@ fn gpu_bicubic_kernel[
     var scale_h = Float32(in_height) / Float32(out_height)
     var scale_w = Float32(in_width) / Float32(out_width)
 
-    var in_y = (Float32(y_out) + 0.5) * scale_h - 0.5
-    var in_x = (Float32(x_out) + 0.5) * scale_w - 0.5
+    # Each thread processes multiple output pixels
+    var total_pixels = out_height * out_width
+    var threads_per_block = block_dim.x
 
-    # get the pixel righhtttt above and to left of the output pixel
-    var in_y_floor = Int(floor(in_y))
-    var in_x_floor = Int(floor(in_x))
+    for pixel_idx in range(tid, total_pixels, threads_per_block):
+        var y_out, x_out = divmod(pixel_idx, out_width)
 
-    # (how far away from the pixel above and to the left is the output pixel?)
-    var dy = in_y - in_y_floor
-    var dx = in_x - in_x_floor
+        var in_y = (Float32(y_out) + 0.5) * scale_h - 0.5
+        var in_x = (Float32(x_out) + 0.5) * scale_w - 0.5
 
-    # i want to look at surrounding 4x4 pixels, assign weights to them (closer pixels have more weight) and get final value, for each channel
-    var sum_value: Float32 = 0.0
-    var sum_weights: Float32 = 0.0
+        # get the pixel righhtttt above and to left of the output pixel
+        var in_y_floor = Int(floor(in_y))
+        var in_x_floor = Int(floor(in_x))
 
-    # get the 4x4 surrounding pixels, and assign weights to them
-    @parameter
-    for i in range(4):
+        # (how far away from the pixel above and to the left is the output pixel?)
+        var dy = in_y - in_y_floor
+        var dx = in_x - in_x_floor
 
+        # Look at surrounding 4x4 pixels, assign weights to them (closer pixels
+        # have more weight) and get the final value for each channel.
+        var sum_value: Float32 = 0.0
+        var sum_weights: Float32 = 0.0
+
+        # get the 4x4 surrounding pixels, and assign weights to them
         @parameter
-        for j in range(4):
-            var y_pos = in_y_floor + i - 1
-            var x_pos = in_x_floor + j - 1
+        for i in range(4):
 
-            # don't be <0 or >frame bounds
-            y_pos = clamp(y_pos, 0, in_height - 1)
-            x_pos = clamp(x_pos, 0, in_width - 1)
+            @parameter
+            for j in range(4):
+                # don't be <0 or >frame bounds
+                var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
+                var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
 
-            # get the weight of the surrounding pixel, lifted off wikipedia calc 2 vibes
-            var weight_y = cubic_kernel(Float32(i) - 1.0 - dy)
-            var weight_x = cubic_kernel(Float32(j) - 1.0 - dx)
-            var weight: Float32 = weight_y * weight_x
+                # get the weight of the surrounding pixel, lifted off wikipedia calc 2 vibes
+                var weight_y = cubic_kernel(Float32(i) - 1.0 - dy)
+                var weight_x = cubic_kernel(Float32(j) - 1.0 - dx)
+                var weight: Float32 = weight_y * weight_x
 
-            # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
-            var pixel_value: Float32 = Float32(input[b, c, y_pos, x_pos])
-            sum_value = sum_value + (pixel_value * weight)
-            sum_weights = sum_weights + weight
+                # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
+                var pixel_value = Float32(input[b, c, y_pos, x_pos])
+                sum_value += pixel_value * weight
+                sum_weights += weight
 
-    # normalize if needed
-    if sum_weights > 0:
-        sum_value = sum_value / sum_weights
-    # store the result in the output tensor
-    output[b, c, y_out, x_out] = SIMD[type, 1](sum_value)
+        output[b, c, y_out, x_out] = sum_value.cast[type]()
 
 
 def resize_bicubic[
@@ -224,16 +224,16 @@ def resize_bicubic[
     if is_gpu[target]():
         var N = input.dynamic_shape[0]
         var C = input.dynamic_shape[1]
-        var H = input.dynamic_shape[2]
-        var W = input.dynamic_shape[3]
 
+        # Use a fixed block size to avoid exceeding CUDA thread limits.
+        var block_size = 256
         ctx.get_device_context().enqueue_function[
             gpu_bicubic_kernel[type, rank]
         ](
             output,
             input,
             grid_dim=(N, C),
-            block_dim=(H, W),
+            block_dim=(block_size,),
         )
     else:
         cpu_bicubic_kernel(output, input)
