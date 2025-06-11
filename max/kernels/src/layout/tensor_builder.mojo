@@ -135,7 +135,7 @@ fn _to_int_tuple[elements: VariadicList[Int]]() -> IntTuple:
     return int_tuple
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct LayoutTensorBuild[
     dtype: DType,
@@ -146,7 +146,7 @@ struct LayoutTensorBuild[
     __layout_int_type: DType = _get_layout_type(__layout, __address_space),
     __index_type: DType = _get_index_type(__layout, __address_space),
     __circular: Bool = False,
-]:
+](Copyable, Movable):
     """
     Tensor layout builder providing a fluent interface for constructing tensors with various layouts.
 

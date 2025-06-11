@@ -16,7 +16,6 @@ from math import sqrt
 from memory import UnsafePointer
 
 
-@value
 @register_passable("trivial")
 struct Complex(
     Boolable,
@@ -24,6 +23,8 @@ struct Complex(
     Writable,
     Representable,
     Stringable,
+    Copyable,
+    Movable,
 ):
     """Represents a complex value.
 

@@ -51,9 +51,8 @@ from utils.numerics import min_or_neg_inf
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct FlashAttentionAlgorithm(Stringable, Writable):
+struct FlashAttentionAlgorithm(Stringable, Writable, Copyable, Movable):
     var _value: Int32
 
     alias NAIVE = Self(0)
@@ -97,9 +96,9 @@ struct FlashAttentionAlgorithm(Stringable, Writable):
 alias is_sm90 = ":90" in _accelerator_arch()
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MHAConfig(Writable):
+struct MHAConfig(Writable, Copyable, Movable):
     var type: DType
 
     # Q, K, V, output should have the same type.

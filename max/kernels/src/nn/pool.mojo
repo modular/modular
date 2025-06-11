@@ -25,9 +25,9 @@ from .shapes import get_sliding_window_out_dim
 
 
 # Pooling method.
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct PoolMethod:
+struct PoolMethod(Copyable, Movable):
     var value: Int
     alias MAX = PoolMethod(0)  # Max pooling.
     alias AVG = PoolMethod(1)  # Average pooling not counting padded regions.

@@ -90,9 +90,9 @@ fn _compute_kv_cache_dynamic_shape_strides[
     return (kv_cache_shape, kv_cache_strides)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct KVCacheStaticParams(EqualityComparable):
+struct KVCacheStaticParams(EqualityComparable, Copyable, Movable):
     var num_heads: UInt
     var head_size: UInt
 
@@ -183,7 +183,6 @@ trait KVCacheT(Copyable, Movable):
         ...
 
 
-@value
 @register_passable("trivial")
 struct ContinuousBatchingKVCache[
     type_: DType,
@@ -354,7 +353,6 @@ struct ContinuousBatchingKVCache[
         return offset_ptr
 
 
-@value
 @register_passable("trivial")
 struct PagedKVCache[
     type_: DType,

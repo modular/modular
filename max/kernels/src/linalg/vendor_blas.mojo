@@ -97,9 +97,8 @@ from utils.variant import Variant
 # ===----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct Backend(Writable & EqualityComparable & Copyable & Movable):
+struct Backend(Writable, Copyable, Movable, EqualityComparable):
     var _value: Int32
 
     alias AUTOMATIC = Self(0)
@@ -158,8 +157,9 @@ fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
 # ===----------------------------------------------------------------------===#
 
 
-@value
-struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
+struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
+    Copyable, Movable
+):
     alias resolved_backend = _resolve_backend[backend]()
     alias _cublas_type = UnsafePointer[cublasContext]
     alias _rocblas_type = _rocblas.Handle

@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@value
 @register_passable("trivial")
-struct IO:
+struct IO(Copyable, Movable):
     var value: Int
 
     # TODO: either rename or get rid of this
@@ -39,9 +38,9 @@ struct IO:
         return self.value == other.value
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct IOSpec[mut: Bool, input: IO]:
+struct IOSpec[mut: Bool, input: IO](Copyable, Movable):
     """
     Parameter used to encode whether a particular tensor argument to a DPS kernel
     is an output, input, or mutable input.

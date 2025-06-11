@@ -17,8 +17,8 @@ from ._c.ffi import MLIR_func
 from .ir import Context, DialectType, Type
 
 
-@value
-struct FunctionType(DialectType):
+@fieldwise_init
+struct FunctionType(DialectType, Copyable, Movable):
     var ctx: Context
     var inputs: List[Type]
     var results: List[Type]

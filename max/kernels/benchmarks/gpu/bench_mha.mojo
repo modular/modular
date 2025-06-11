@@ -263,8 +263,8 @@ fn run_mha[
     flash_output_ptr.free()
 
 
-@value
-struct MHA_cfg:
+@fieldwise_init
+struct MHA_cfg(Copyable, Movable):
     # params
     var qkv_type: DType
     var mask_type: DType

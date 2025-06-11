@@ -77,8 +77,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-@value
-struct DriverVersion(StringableRaising):
+struct DriverVersion(StringableRaising, Copyable, Movable):
     var _value: List[String]
 
     @implicit
@@ -103,9 +102,9 @@ struct DriverVersion(StringableRaising):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Result(Stringable, EqualityComparable):
+struct Result(Stringable, EqualityComparable, Copyable, Movable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -311,9 +310,9 @@ fn _check_error(err: Result) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable):
+struct EnableState(EqualityComparable, Copyable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -336,9 +335,9 @@ struct EnableState(EqualityComparable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable):
+struct ClockType(EqualityComparable, Copyable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
@@ -367,9 +366,9 @@ struct ClockType(EqualityComparable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl:
+struct _DeviceImpl(Copyable, Movable):
     var handle: UnsafePointer[NoneType]
 
     @always_inline
@@ -621,9 +620,9 @@ struct Device(Writable):
         return String.write(self)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _EnableState:
+struct _EnableState(Copyable, Movable):
     var state: Int32
 
     alias DISABLED = _EnableState(0)  # Feature disabled

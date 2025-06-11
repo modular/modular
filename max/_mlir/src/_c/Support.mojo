@@ -105,9 +105,9 @@ fn mlirStringRefEqual(string: MlirStringRef, other: MlirStringRef) -> Bool:
 # ===----------------------------------------------------------------------===//
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MlirLogicalResult:
+struct MlirLogicalResult(Copyable, Movable):
     """A logical result value, essentially a boolean with named states. LLVM
     convention for using boolean values to designate success or failure of an
     operation is a moving target, so MLIR opted for an explicit class.

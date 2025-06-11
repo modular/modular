@@ -305,9 +305,8 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct Swizzle(LayoutTrait, Stringable, Writable):
+struct Swizzle(LayoutTrait, Stringable, Writable, Movable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared

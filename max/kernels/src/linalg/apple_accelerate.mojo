@@ -127,17 +127,17 @@ fn use_apple_accelerate_lib[
     return os_is_macos() and a_type == b_type == c_type is DType.float32
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CBLASOrder:
+struct _CBLASOrder(Copyable, Movable):
     var value: Int32
     alias ROW_MAJOR = _CBLASOrder(101)
     alias COL_MAJOR = _CBLASOrder(102)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CBLASTranspose:
+struct _CBLASTranspose(Copyable, Movable):
     var value: Int32
     alias NO_TRANSPOSE = _CBLASTranspose(111)
     alias TRANSPOSE = _CBLASTranspose(112)

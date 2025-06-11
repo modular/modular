@@ -39,7 +39,7 @@ from .utils import (
 )
 
 
-@value
+@fieldwise_init
 struct PackMatrixRows[
     original_mut: Bool, //,
     # original matrix shape list
@@ -51,7 +51,7 @@ struct PackMatrixRows[
     row_inner_size: Int,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-]:
+](Copyable, Movable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
@@ -280,7 +280,7 @@ struct PackMatrixRows[
             row_idx += simd_size
 
 
-@value
+@fieldwise_init
 struct PackMatrixCols[
     original_mut: Bool, //,
     # original matrix shape list
@@ -294,7 +294,7 @@ struct PackMatrixCols[
     use_i8mm: Bool,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-]:
+](Copyable, Movable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
@@ -881,7 +881,7 @@ fn pack_transposed_b_ndbuffer[
     ](b_input, output_buffer, kernel_type_m)
 
 
-@value
+@fieldwise_init
 struct BTileGenerator[
     mut: Bool, //,
     config: KernelConfig,
@@ -892,7 +892,7 @@ struct BTileGenerator[
     transpose_b: Bool,
     b_packed: Bool,
     origin: Origin[mut],
-]:
+](Copyable, Movable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
     If b_packed is true, calls to get_tile will return a buffer view from B.

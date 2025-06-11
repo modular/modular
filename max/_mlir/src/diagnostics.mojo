@@ -25,9 +25,8 @@ from ._c.ffi import MLIR_func
 from ._c.Support import MlirLogicalResult
 
 
-@value
 @register_passable("trivial")
-struct DiagnosticSeverity:
+struct DiagnosticSeverity(Copyable, Movable):
     """Severity level of a diagnostic."""
 
     alias cType = _c.Diagnostics.MlirDiagnosticSeverity
@@ -46,8 +45,7 @@ struct DiagnosticSeverity:
         return self.c.value == other.c.value
 
 
-@value
-struct Diagnostic(Stringable, Writable):
+struct Diagnostic(Stringable, Writable, Copyable, Movable):
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 
@@ -71,8 +69,8 @@ struct Diagnostic(Stringable, Writable):
 alias DiagnosticHandlerID = _c.Diagnostics.MlirDiagnosticHandlerID
 
 
-@value
-struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
+@fieldwise_init
+struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool](Copyable, Movable):
     """Deals with attaching and detaching diagnostic functions to an MLIRContext.
 
     Parameters:
@@ -108,7 +106,7 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
         return MlirLogicalResult(1 if result else 0)
 
 
-@value
+@fieldwise_init
 struct DiagnosticHandlerWithData[
     UserDataType: AnyType,
     handler: fn (Diagnostic, mut UserDataType) -> Bool,

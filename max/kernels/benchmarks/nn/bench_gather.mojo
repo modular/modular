@@ -82,8 +82,8 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
     _ = output_tensor
 
 
-@value
-struct GatherSpec(Stringable):
+@fieldwise_init
+struct GatherSpec(Stringable, Copyable, Movable):
     var axis: Int
     var m1: Int
     var m2: Int

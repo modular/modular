@@ -122,9 +122,9 @@ struct AlibiScoreMod[
         return score_mod_vec
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct IdentityScoreMod(ScoreModTrait):
+struct IdentityScoreMod(ScoreModTrait, Copyable, Movable):
     """IdentityScoreMod simply returns attention score."""
 
     alias name_str: String = "no_pos"

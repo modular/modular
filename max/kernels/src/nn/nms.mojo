@@ -21,8 +21,8 @@ from utils import IndexList
 from utils.index import Index
 
 
-@value
-struct BoundingBox[type: DType]:
+@fieldwise_init
+struct BoundingBox[type: DType](Copyable, Movable):
     var nw: SIMD[type, 2]
     var se: SIMD[type, 2]
 

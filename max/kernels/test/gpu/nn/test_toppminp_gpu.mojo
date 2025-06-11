@@ -33,8 +33,9 @@ alias DEBUG_BENCH = False
 alias PRINT_OUTPUT = False
 
 
-@value
-struct TestCase[_type: DType, _out_idx_type: DType, _is_top_p: Bool]:
+struct TestCase[_type: DType, _out_idx_type: DType, _is_top_p: Bool](
+    Copyable, Movable
+):
     alias is_top_p = _is_top_p
     alias type = _type
     alias out_idx_type = _out_idx_type

@@ -50,8 +50,8 @@ from .matmul_gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
 
 
-@value
-struct GEMVAlgorithm:
+@fieldwise_init
+struct GEMVAlgorithm(Copyable, Movable):
     var _value: Int
 
     alias GEMV_KERNEL = Self(0)

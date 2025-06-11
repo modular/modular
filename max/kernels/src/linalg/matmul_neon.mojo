@@ -28,8 +28,8 @@ from .utils import GemmShape
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the Neon microkernel.
-@value
-struct Inner_matmul_neon(InnerMatmulKernel):
+@fieldwise_init
+struct Inner_matmul_neon(InnerMatmulKernel, Movable):
     @always_inline
     fn _accumulate_lane[
         simd_size: Int,

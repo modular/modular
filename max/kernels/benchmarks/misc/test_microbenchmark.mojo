@@ -45,9 +45,9 @@ fn gemm_naive[
                 c[i, j] += a_val * b_val
 
 
-@value
+@fieldwise_init
 struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable
+    Benchmarkable, Copyable, Movable
 ):
     var m: Int
     var n: Int
@@ -124,8 +124,10 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         pass
 
 
-@value
-struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
+@fieldwise_init
+struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
+    Benchmarkable, Copyable, Movable
+):
     var m: Int
     var n: Int
     var k: Int

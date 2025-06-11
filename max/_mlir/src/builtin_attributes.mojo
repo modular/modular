@@ -21,8 +21,8 @@ from ._c.ffi import MLIR_func
 from .ir import Attribute, Context, DialectAttribute, Type
 
 
-@value
-struct BoolAttr(DialectAttribute):
+@fieldwise_init
+struct BoolAttr(DialectAttribute, Copyable, Movable):
     var ctx: Context
     var value: Bool
 
@@ -39,8 +39,7 @@ struct BoolAttr(DialectAttribute):
         )
 
 
-@value
-struct TypeAttr(DialectAttribute):
+struct TypeAttr(DialectAttribute, Copyable, Movable):
     var type: Type
 
     @implicit
@@ -57,8 +56,8 @@ struct TypeAttr(DialectAttribute):
         return Self(_c.BuiltinAttributes.mlirTypeAttrGetValue(attr.c))
 
 
-@value
-struct StringAttr(DialectAttribute):
+@fieldwise_init
+struct StringAttr(DialectAttribute, Copyable, Movable):
     var ctx: Context
     var value: String
 

@@ -488,7 +488,7 @@ struct DynamicTensor[
     ]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ManagedTensorSlice[
     mut: Bool,
@@ -1210,7 +1210,7 @@ alias _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
 alias _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct VariadicTensors[
     mut: Bool,
@@ -1221,7 +1221,7 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](Sized):
+](Sized, Copyable, Movable):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 

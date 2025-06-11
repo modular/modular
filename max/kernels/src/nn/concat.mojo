@@ -108,9 +108,9 @@ fn memcpy_or_fuse[
         elementwise[epilogue_wrapper, simd_width=1](shape_1d)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _Span:
+struct _Span(Copyable, Movable):
     var start: Int
     var end: Int
 
@@ -123,9 +123,9 @@ struct _Span:
         return Self(max(self.start, other.start), min(self.end, other.end))
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CanonicallyReshapedBuffer:
+struct _CanonicallyReshapedBuffer(Copyable, Movable):
     var data: UnsafePointer[Int8]
     var h: Int
     var w: Int

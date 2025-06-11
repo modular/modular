@@ -135,9 +135,9 @@ def reference_attention_bshd[
     score_ptr.free()
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TestCaseConfig[batch_rank: Int]:
+struct TestCaseConfig[batch_rank: Int](Copyable, Movable):
     """Test case workload configuration hyperparameters."""
 
     alias rank = batch_rank + 2

@@ -935,9 +935,8 @@ fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
 
 
-@value
 @register_passable("trivial")
-struct MyIntReg:
+struct MyIntReg(Copyable, Movable):
     var val: Int
 
     @implicit
@@ -951,9 +950,8 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
 
 
-@value
 @register_passable
-struct MyIntReg2:
+struct MyIntReg2(Copyable, Movable):
     var val: Int
 
     @implicit

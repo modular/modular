@@ -22,8 +22,8 @@ from memory import UnsafePointer
 from testing import assert_equal
 
 
-@value
-struct FillStrategy:
+@fieldwise_init
+struct FillStrategy(Copyable, Movable):
     var value: Int
 
     alias LINSPACE = Self(0)

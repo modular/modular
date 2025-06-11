@@ -98,7 +98,6 @@ fn _block_swizzle_by_scale[
 # ===------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
@@ -106,7 +105,7 @@ struct MatmulConfig[
     c_type: DType,
     transpose_b: Bool = False,
     mma_shape: IndexList[3] = get_mma_shape[a_type, get_accum_type[a_type]()](),
-](Stringable, Writable):
+](Stringable, Writable, Copyable, Movable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -303,11 +302,11 @@ fn _shared_memory_usage[
     return max(max(a_usage + b_usage, c_usage), slice_k_reduction)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-]:
+](Copyable, Movable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.
