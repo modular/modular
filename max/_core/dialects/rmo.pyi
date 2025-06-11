@@ -3564,6 +3564,56 @@ class MoReshapeOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
+class MoResizeBicubicOp(max._core.Operation):
+    """
+    Resizes a tensor to a new shape using the bicubic interpolation algorithm.
+
+    Bicubic interpolation uses a 4x4 pixel neighborhood and cubic polynomials
+    to produce smoother results than linear interpolation. This implementation
+    uses Keys' cubic convolution with a = -0.5.
+
+    Example:
+    ```mlir
+      %input : !mo.tensor<[1, 3, 224, 224], f32>
+      %size = mo.constant {
+        value = #M.dense_array<1, 3, 448, 448> : tensor<4xsi64>} : !mo.tensor<[4], si64>
+      %res = rmo.resize.bicubic(%input, %size) :
+        (!mo.tensor<[1, 3, 224, 224], f32>, !mo.tensor<[4], si64>) ->
+          !mo.tensor<[1, 3, 448, 448], f32>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        size: max._core.Value[max._core.dialects.mo.TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        input_values: Sequence[max._core.Value[max._core.Type]],
+        graph_op: max._core.dialects.mo.GraphOp,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def size(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class MoResizeLinearOp(max._core.Operation):
     """
     Resizes a tensor to a new shape using the linear algorithm.
