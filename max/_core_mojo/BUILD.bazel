@@ -6,7 +6,7 @@ modular_py_library(
     data = glob(["**/*.mojo"]) + ["//KGEN/tools/mojo"],
     deps = [
         requirement("numpy"),
-        "//SDK/lib/API/python/max/_mojo",
+        "//SDK/lib/API/python/max/mojo",
     ],
 )
 
