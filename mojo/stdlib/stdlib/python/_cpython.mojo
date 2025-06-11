@@ -2132,12 +2132,17 @@ struct CPython(Copyable, Movable):
         mut self,
         capsule: PyObjectPtr,
         owned name: String,
-    ) -> OpaquePointer:
+    ) raises -> OpaquePointer:
         """Extract the pointer to another C extension from a PyCapsule `capsule` with the given `name`.
 
         [Reference](https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer).
         """
         # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
-        return self.lib.call["PyCapsule_GetPointer", OpaquePointer](
+        var ptr = self.lib.call["PyCapsule_GetPointer", OpaquePointer](
             capsule, name.unsafe_cstr_ptr()
         )
+
+        if self.PyErr_Occurred():
+            raise self.get_error()
+
+        return ptr
