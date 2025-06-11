@@ -293,8 +293,6 @@ def test_context_sampling_params_integration():
         frequency_penalty=0.4,
         presence_penalty=0.2,
         repetition_penalty=1.15,
-        enable_structured_output=True,
-        enable_variable_logits=False,
     )
 
     context = TextContext(
