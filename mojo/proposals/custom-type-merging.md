@@ -1,7 +1,12 @@
 # Customizable Type Merging in Mojo
 
 Chris Lattner, Feb 28, 2025
-Status: Proposed, not implemented.
+Status: Implemented in 25.3
+
+NOTE: this doc explains an expansion of the Mojo type checker.  It is now
+implemented, but the doc still explains it as "the old behavior" and then "the
+new change".  If you are reading this to understand Mojo's behavior, please
+skip down to the "Proposed Solution" section.
 
 One small but important decision the Mojo type checker needs to handle is “what
 is the result type of merging two values, and how do we compute it”. For
@@ -9,21 +14,21 @@ example, consider the ternary operator `a if cond else b` : when `a` and `b`
 have the same type, the result is obviously the same, but what happens when `a`
 is an `Int` and `b` is an `Float64`? The answer is `Float64` in this example,
 but deciding that is the problem of type merging. Mojo also currently lacks
-support support for homogenous collection literals, but we will eventually want
-to support things like `[1.0, 2, b, a]` and be able to determine a single
-homogenous element type (e.g. `Float64`).
+support support for homogenous collection literals, but it needs to be able to
+support things like `[1.0, 2, b, a]` - determining a single homogenous element
+type (e.g. `Float64`) or rejecting it with an error.
 
-## Type Merging in Mojo Today (as of Feb 2025)
+## Type Merging in Mojo as of Feb 2025 (Note: Changed now)
 
 As of this writing, Mojo’s type unification follows the following algorithm in
-pseudo code, implemented in `ExprEmitter::coerceTypesToEachOther` :
+pseudo code:
 
 ```mojo
 fn get_common_type(typea, typeb) raises -> Type:
    # If the types are already identical, then we are done.
    if typea == typeb:
        return typea
-     
+
    # Check for implicit conversions.
    a_impl_converts_to_b = is_implicitly_convertible(typea -> typeb)
    b_impl_converts_to_a = is_implicitly_convertible(typeb -> typea)
@@ -33,7 +38,7 @@ fn get_common_type(typea, typeb) raises -> Type:
        return typeb  # Use implicit conversion
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
-   
+
    # Elided: do similar test for @nonmaterializable types.
    throw "no common type found"
 ```
@@ -44,7 +49,7 @@ enough for numeric conversions, e.g. consider:
 
 ```mojo
 fn int_example(a: Int8, b: Int16, cond: Bool):
-  # Currently: error: value of type 'SIMD[int8, 1]' is not compatible with value of type 'SIMD[int16, 1]' 
+  # Currently: error: value of type 'SIMD[int8, 1]' is not compatible with value of type 'SIMD[int16, 1]'
   c = a if cond else b
   # Desired type: Int16
 ```
@@ -56,7 +61,7 @@ above only works when one or the other types is the right answer.
 
 ## Type merging needs to be able to invent new novel types
 
-Consider examples like this:
+Consider examples like this (Note: these all work now):
 
 ```mojo
 fn ptr_example(mut x: Int, mut y: Int, cond: Bool):
@@ -78,10 +83,10 @@ fn ptr_example(mut x: Int, mut y: Int, cond: Bool):
   xptr = Pointer.address_of(x) # Type: Pointer[Int, __origin_of(x)]
   yptr = Pointer.address_of(y) # Type: Pointer[Int, __origin_of(y)]
 
-  # Currently error.   
+  # Currently error.
   xy_ptr = xptr if cond else yptr
   # Desired type: Pointer[Int, __origin_of(x, y)]
-  
+
   xy_ptr[] += 42
 ```
 
@@ -154,9 +159,9 @@ struct SIMD[type: DType, size: Int](
     fn __merge_with__[other_type: __type_of(SIMD[_, size])]
       (self, out result: SIMD[type.merged_with(other_type.type), size]):
         return __type_of(result)(self) # Use explicit conversion ctor
-        
+
 struct DType:
-   ... 
+   ...
    fn merged_with(self, other: DType) -> DType:
       # ... decide how to merge two dtypes, or use pop operation to do it...
 
@@ -173,7 +178,7 @@ enough for numeric conversions, e.g. consider:
 
 ```mojo
 fn int_example(a: Int8, b: Int16, cond: Bool):
-  # Currently: error: value of type 'SIMD[int8, 1]' is not compatible with value of type 'SIMD[int16, 1]' 
+  # Currently: error: value of type 'SIMD[int8, 1]' is not compatible with value of type 'SIMD[int16, 1]'
   c = a if cond else b
   # Desired type: Int16
 ```
@@ -210,7 +215,7 @@ fn get_common_type(typea, typeb) raises -> Type:
       if is_implicitly_convertible(typea -> bmerge.result_type)
         return bmerge.result_type
       throw "cannot convert"
-   
+
    # Check for implicit conversions.
    a_impl_converts_to_b = is_implicitly_convertible(typea -> typeb)
    b_impl_converts_to_a = is_implicitly_convertible(typeb -> typea)
@@ -220,7 +225,7 @@ fn get_common_type(typea, typeb) raises -> Type:
        return typeb  # Use implicit conversion
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
-   
+
    # Elided: do similar test for @nonmaterializable types.
    throw "no common type found"
 ```
