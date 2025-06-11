@@ -2210,7 +2210,7 @@ struct LayoutTensor[
         ]()
 
         var ptr = stack_allocation[
-            layout.size(),
+            layout.size() * element_layout.size(),
             dtype,
             alignment=alignment,
             address_space=address_space,

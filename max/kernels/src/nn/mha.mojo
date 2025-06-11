@@ -543,6 +543,7 @@ fn flash_attention_dispatch[
                 and q_half_float
                 and (ragged or not _use_valid_length)
                 and mask_t.mask_safe_out_of_bounds
+                and config.algorithm == FlashAttentionAlgorithm(3)
             )
             alias kernel = mha_decoding[
                 q.type,

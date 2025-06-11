@@ -159,7 +159,11 @@ fn tcgen05_ld[
         or (datapaths == 16 and bits == 128)
         or (datapaths == 16 and bits == 256)
         or (datapaths == 32 and bits == 32),
-        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b.",
+        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b, got "
+        + String(datapaths)
+        + "x"
+        + String(bits)
+        + "b.",
     ]()
 
     constrained[
@@ -295,7 +299,7 @@ fn tcgen05_st[
     """Stores data from registers into tensor memory.
 
     Parameters:
-        type: The data type to load.
+        type: The data type to store.
         width: The number of elements in the data vector.
         datapaths: The first dimension of the shape.
         bits: The second dimension of the shape.
@@ -337,7 +341,7 @@ fn tcgen05_st[
 
     alias shape_str = String(datapaths) + "x" + String(bits)
     alias num_str = String(repeat)
-    alias pack_str = ".pack::16b" if pack else ""
+    alias pack_str = ".unpack::16b" if pack else ""
     alias constraints_str = "r," * width + "r"
     alias addr_str = "[$" + String(width) + "]"
     alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"

@@ -78,15 +78,21 @@ from nn.mha_tile_scheduler import (
     WorkInfo,
 )
 from nn.mha_utils import (
+    DynamicInt,
     FlashAttentionAlgorithm,
     MHAConfig,
+    MHAPartitionScheme,
+    NoPartition,
+    OptionallyStaticInt,
+    SplitKPartition,
+    StaticInt,
     _copy_frag_to_smem,
+    _is_decoding,
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
 from nn.softmax import (
     _online_softmax_correction,
-    _online_softmax_iter_for_mma_output_sm90,
     _rowmax_online_softmax,
     _rowsum,
 )
@@ -95,126 +101,6 @@ from tensor_internal import ManagedTensorSlice
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
-
-
-# The motivation here is to be able to pass `StaticInt[1]()`
-# to indicate `decoding=True`, and have this not generate any code
-# when passing as a function argument.
-# That is, we want different specializations of a function to have
-# different numbers of arguments post-compilation.
-trait OptionallyStaticInt(Intable):
-    alias static_value: OptionalReg[Int]
-
-    fn as_uint32(self) -> UInt32:
-        ...
-
-
-# These are used to avoid generating code for passing unused values to kernels.
-# That is, if we have a static int, no argument should be passed.
-@register_passable("trivial")
-struct StaticInt[value: Int](OptionallyStaticInt, Defaultable):
-    alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        pass
-
-    @always_inline("nodebug")
-    fn __int__(self) -> Int:
-        return Self.value
-
-    @always_inline("nodebug")
-    fn as_uint32(self) -> UInt32:
-        return UInt32(Self.value)
-
-
-@register_passable("trivial")
-struct DynamicInt(OptionallyStaticInt):
-    var value: UInt32
-    alias static_value: OptionalReg[Int] = None
-
-    @always_inline("nodebug")
-    fn __init__(out self, value: Int):
-        self.value = UInt32(value)
-
-    @always_inline("nodebug")
-    fn __int__(self) -> Int:
-        return Int(self.value)
-
-    @always_inline("nodebug")
-    fn as_uint32(self) -> UInt32:
-        return self.value
-
-
-@always_inline
-fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
-    return int_t.static_value.or_else(0) == 1
-
-
-@register_passable("trivial")
-trait MHAPartitionScheme:
-    alias do_partition: Bool
-    alias accum_dtype: DType
-
-    @always_inline
-    fn num_partitions(self) -> UInt32:
-        ...
-
-    @always_inline
-    fn get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        ...
-
-
-@register_passable("trivial")
-struct NoPartition[dtype: DType](
-    MHAPartitionScheme, Copyable, Defaultable, Movable
-):
-    alias do_partition: Bool = False
-    alias accum_dtype: DType = dtype
-
-    @always_inline
-    fn __init__(out self):
-        pass
-
-    @always_inline
-    fn num_partitions(self) -> UInt32:
-        return 1
-
-    @always_inline
-    fn get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        return UnsafePointer[Scalar[Self.accum_dtype]]()
-
-
-@register_passable("trivial")
-struct SplitKPartition[dtype: DType](MHAPartitionScheme, Copyable, Movable):
-    alias do_partition: Bool = True
-    alias accum_dtype: DType = Self.dtype
-    var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
-    var num_partitions_value: UInt32
-
-    @always_inline
-    fn __init__(
-        out self,
-        ptr: UnsafePointer[Scalar[Self.accum_dtype]],
-        num_partitions_value: UInt32,
-    ):
-        debug_assert(ptr != UnsafePointer[Scalar[Self.accum_dtype]]())
-        self.ptr = ptr
-        self.num_partitions_value = num_partitions_value
-
-    @always_inline
-    fn num_partitions(self) -> UInt32:
-        return self.num_partitions_value
-
-    @always_inline
-    fn get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        return self.ptr
 
 
 @always_inline
@@ -2096,7 +1982,7 @@ fn _mha_sm90[
             rowmax.copy_from(
                 _rowmax_online_softmax[
                     # threads layout by warp
-                    Layout.row_major(num_warps_m, num_warps_n),
+                    num_warps_n,
                     mma_thread_layout,
                     use_exp2=True,
                 ](vectorize_output(p_reg_tile), rowmax, init_rowmax=True)
@@ -2158,7 +2044,7 @@ fn _mha_sm90[
                     )
                     score_frag_rowmax = _rowmax_online_softmax[
                         # threads layout by warp
-                        Layout.row_major(num_warps_m, num_warps_n),
+                        num_warps_n,
                         mma_thread_layout,
                         use_exp2=True,
                     ](

@@ -14,6 +14,7 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
+from memory import UnsafePointer
 from sys import (
     alignof,
     env_get_int,
@@ -96,6 +97,8 @@ struct FlashAttentionAlgorithm(
 
 
 alias is_sm90 = ":90" in _accelerator_arch()
+alias is_sm100 = ":100" in _accelerator_arch()
+alias is_sm90or100 = is_sm90 or is_sm100
 
 
 @fieldwise_init
@@ -150,13 +153,13 @@ struct MHAConfig(Writable, Copyable, Movable):
             + self.num_producer_threads[producer_consumer_kernel]()
         )
 
-    fn q_smem_size(self, sm_90: Bool = False) -> UInt:
+    fn q_smem_size(self, fa3: Bool = False) -> UInt:
         q_smem = self.block_m() * self.depth
-        return UInt(2) * q_smem if sm_90 else q_smem
+        return UInt(2) * q_smem if fa3 else q_smem
 
-    fn kv_smem_size(self, sm_90: Bool = False) -> UInt:
+    fn kv_smem_size(self, fa3: Bool = False) -> UInt:
         kv_smem = self.block_n() * self.depth
-        return kv_smem * self.num_pipeline_stages if sm_90 else kv_smem
+        return kv_smem * self.num_pipeline_stages if fa3 else kv_smem
 
     fn k_smem_size(self, sm_90: Bool = False) -> UInt:
         k_smem = self.block_n() * self.depth
@@ -218,7 +221,7 @@ struct MHAConfig(Writable, Copyable, Movable):
         BK: OptionalReg[UInt] = None,
         WM: OptionalReg[UInt] = None,
         WN: OptionalReg[UInt] = None,
-        num_pipeline_stages: UInt = 2 if is_sm90 else 4,
+        num_pipeline_stages: UInt = 2 if is_sm90or100 else 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(),
     ):
@@ -233,7 +236,7 @@ struct MHAConfig(Writable, Copyable, Movable):
         # BN
         self.num_keys_per_block = num_keys_per_block.or_else(depth)
 
-        if is_sm90 and type.is_half_float():
+        if is_sm90or100 and type.is_half_float():
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 128 if algorithm == 3 else 64
@@ -616,3 +619,125 @@ fn _dispatch_score_mod[
         return wrapper(IdentityScoreMod())
     else:
         constrained[False, "Unsupported score mod type: " + score_mod_type]()
+
+
+# The motivation here is to be able to pass `StaticInt[1]()`
+# to indicate `decoding=True`, and have this not generate any code
+# when passing as a function argument.
+# That is, we want different specializations of a function to have
+# different numbers of arguments post-compilation.
+trait OptionallyStaticInt(Intable):
+    alias static_value: OptionalReg[Int]
+
+    fn as_uint32(self) -> UInt32:
+        ...
+
+
+# These are used to avoid generating code for passing unused values to kernels.
+# That is, if we have a static int, no argument should be passed.
+@value
+@register_passable("trivial")
+struct StaticInt[value: Int](OptionallyStaticInt):
+    alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        pass
+
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        return Self.value
+
+    @always_inline("nodebug")
+    fn as_uint32(self) -> UInt32:
+        return UInt32(Self.value)
+
+
+@value
+@register_passable("trivial")
+struct DynamicInt(OptionallyStaticInt):
+    var value: UInt32
+    alias static_value: OptionalReg[Int] = None
+
+    @always_inline("nodebug")
+    fn __init__(out self, value: Int):
+        self.value = UInt32(value)
+
+    @always_inline("nodebug")
+    fn __int__(self) -> Int:
+        return Int(self.value)
+
+    @always_inline("nodebug")
+    fn as_uint32(self) -> UInt32:
+        return self.value
+
+
+@always_inline
+fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
+    return int_t.static_value.or_else(0) == 1
+
+
+@register_passable("trivial")
+trait MHAPartitionScheme:
+    alias do_partition: Bool
+    alias accum_dtype: DType
+
+    @always_inline
+    fn num_partitions(self) -> UInt32:
+        ...
+
+    @always_inline
+    fn get_exp_sum_qk_max_pointer(
+        self,
+    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+        ...
+
+
+@value
+@register_passable("trivial")
+struct NoPartition[dtype: DType](MHAPartitionScheme):
+    alias do_partition: Bool = False
+    alias accum_dtype: DType = dtype
+
+    @always_inline
+    fn __init__(out self):
+        pass
+
+    @always_inline
+    fn num_partitions(self) -> UInt32:
+        return 1
+
+    @always_inline
+    fn get_exp_sum_qk_max_pointer(
+        self,
+    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+        return UnsafePointer[Scalar[Self.accum_dtype]]()
+
+
+@value
+@register_passable("trivial")
+struct SplitKPartition[dtype: DType](MHAPartitionScheme):
+    alias do_partition: Bool = True
+    alias accum_dtype: DType = Self.dtype
+    var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
+    var num_partitions_value: UInt32
+
+    @always_inline
+    fn __init__(
+        out self,
+        ptr: UnsafePointer[Scalar[Self.accum_dtype]],
+        num_partitions_value: UInt32,
+    ):
+        debug_assert(ptr != UnsafePointer[Scalar[Self.accum_dtype]]())
+        self.ptr = ptr
+        self.num_partitions_value = num_partitions_value
+
+    @always_inline
+    fn num_partitions(self) -> UInt32:
+        return self.num_partitions_value
+
+    @always_inline
+    fn get_exp_sum_qk_max_pointer(
+        self,
+    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
+        return self.ptr
