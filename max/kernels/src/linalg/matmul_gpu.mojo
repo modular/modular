@@ -1807,7 +1807,7 @@ fn _matmul_gpu[
             @parameter
             if (
                 a_type == b_type
-                and a_type.is_half_float()
+                and (a_type.is_half_float() or a_type == DType.float32)
                 and ctx.device_info is H100
                 and transpose_b
                 and not use_A100_kernels_on_H100
