@@ -41,13 +41,11 @@ from sys.ffi import OpaquePointer
 from memory import UnsafePointer, bitcast, memcpy
 
 
-trait KeyElement(Copyable, Movable, Hashable, EqualityComparable):
-    """A trait composition for types which implement all requirements of
-    dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
-    and EqualityComparable for a hash map. Until we have references
-    they must also be copyable."""
-
-    pass
+alias KeyElement = Copyable & Movable & Hashable & EqualityComparable
+"""A trait composition for types which implement all requirements of
+dictionary keys. Dict keys must minimally be Copyable, Movable, Hashable,
+and EqualityComparable for a hash map. Until we have references
+they must also be copyable."""
 
 
 @fieldwise_init
@@ -337,7 +335,7 @@ struct _DictIndex(Movable):
 
 
 struct Dict[K: KeyElement, V: Copyable & Movable](
-    Sized, Copyable, Movable, ExplicitlyCopyable, Boolable
+    Sized, Copyable, Movable, ExplicitlyCopyable, Boolable, Defaultable
 ):
     """A container that stores key-value pairs.
 
@@ -1068,7 +1066,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
 
 
 struct OwnedKwargsDict[V: Copyable & Movable](
-    Sized, Copyable, Movable, ExplicitlyCopyable
+    Sized, Copyable, Movable, ExplicitlyCopyable, Defaultable
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 

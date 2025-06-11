@@ -133,7 +133,7 @@ fn wait_on_dependent_grids():
 
 
 @register_passable("trivial")
-struct PDLLevel:
+struct PDLLevel(Defaultable):
     """Programmatic Dependency Launch (PDL) level."""
 
     var _level: Int
@@ -219,7 +219,7 @@ struct PDLLevel:
         return self._level >= other._level
 
 
-struct PDL:
+struct PDL(Defaultable):
     """Programmatic Dependency Launch (PDL) control structure.
 
     This struct provides a way to manage programmatic stream serialization on

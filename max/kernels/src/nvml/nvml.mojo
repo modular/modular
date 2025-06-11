@@ -368,7 +368,7 @@ struct ClockType(EqualityComparable, Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl(Copyable, Movable):
+struct _DeviceImpl(Copyable, Defaultable, Movable):
     var handle: UnsafePointer[NoneType]
 
     @always_inline

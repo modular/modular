@@ -323,6 +323,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
     Movable,
     Stringable,
     Writable,
+    Defaultable,
 ):
     var stride: IndexList[rank]
 

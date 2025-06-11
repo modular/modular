@@ -395,7 +395,7 @@ struct SharedMemBarrier(Copyable, Movable):
 
 
 @register_passable("trivial")
-struct PipelineState[num_stages: Int](Copyable, Movable):
+struct PipelineState[num_stages: Int](Copyable, Movable, Defaultable):
     """Manages state for a multi-stage pipeline with circular buffer semantics.
 
     PipelineState provides a mechanism for tracking the current stage in a

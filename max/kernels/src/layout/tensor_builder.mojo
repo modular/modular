@@ -40,7 +40,7 @@ from utils import Index, IndexList, StaticTuple
 from .int_tuple import UNKNOWN_VALUE
 
 
-struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE]:
+struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE](Defaultable):
     """
     Represents either a static dimension (known at compile time) or a dynamic dimension (known at runtime).
 
@@ -146,7 +146,7 @@ struct LayoutTensorBuild[
     __layout_int_type: DType = _get_layout_type(__layout, __address_space),
     __index_type: DType = _get_index_type(__layout, __address_space),
     __circular: Bool = False,
-](Copyable, Movable):
+](Copyable, Movable, Defaultable):
     """
     Tensor layout builder providing a fluent interface for constructing tensors with various layouts.
 

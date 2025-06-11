@@ -41,7 +41,7 @@ from utils.write import _WriteBufferStack
 # This type is used to pass into CompilerRT functions.  It is an owning
 # pointer+length that is tightly coupled to the llvm::StringRef memory layout.
 @register_passable
-struct _OwnedStringRef(Boolable):
+struct _OwnedStringRef(Boolable, Defaultable):
     var data: UnsafePointer[UInt8]
     var length: Int
 
@@ -66,7 +66,7 @@ struct _OwnedStringRef(Boolable):
         return self.length != 0
 
 
-struct FileHandle(Writer, Movable):
+struct FileHandle(Writer, Movable, Defaultable):
     """File handle to an opened file."""
 
     var handle: OpaquePointer

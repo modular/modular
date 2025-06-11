@@ -74,6 +74,7 @@ struct UnsafePointer[
     Writable,
     Intable,
     Comparable,
+    Defaultable,
 ):
     """UnsafePointer[T] represents an indirect reference to one or more values of
     type T consecutively in memory, and can refer to uninitialized memory.

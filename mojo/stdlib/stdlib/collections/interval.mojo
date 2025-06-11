@@ -530,7 +530,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement, U: Copyable & Movable & Stringable & Comparable
-](Writable):
+](Writable, Defaultable):
     """An interval tree data structure for efficient range queries.
 
     Parameters:

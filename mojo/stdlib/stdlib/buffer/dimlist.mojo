@@ -34,6 +34,7 @@ struct Dim(
     ImplicitlyBoolable,
     Indexer,
     EqualityComparable,
+    Defaultable,
 ):
     """A static or dynamic dimension modeled with an optional integer.
 

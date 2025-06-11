@@ -206,7 +206,7 @@ struct _StringCapacityField:
 
 # This is a private struct used to store the reference count of a out-of-line
 # mutable string buffer.
-struct _StringOutOfLineHeader:
+struct _StringOutOfLineHeader(Defaultable):
     var refcount: Atomic[DType.index]
     alias _SIZE = sizeof[Self]()
 

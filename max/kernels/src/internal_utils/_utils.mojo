@@ -44,7 +44,7 @@ from utils import Index, IndexList
 from utils.index import product
 
 
-struct ValOrDim[dim: Dim = Dim()]:
+struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):

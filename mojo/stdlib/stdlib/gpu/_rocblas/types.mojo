@@ -18,7 +18,7 @@ from memory import UnsafePointer
 
 @fieldwise_init
 @register_passable("trivial")
-struct Handle:
+struct Handle(Defaultable):
     var _value: UnsafePointer[NoneType]
 
     fn __init__(out self):

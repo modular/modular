@@ -46,6 +46,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     PathLike,
     _CurlyEntryFormattable,
     PythonConvertible,
+    Defaultable,
 ):
     """This type represents a string literal.
 

@@ -242,7 +242,7 @@ struct LaunchAttributeID(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttributeValue:
+struct LaunchAttributeValue(Defaultable):
     """Represents a value for a CUDA launch attribute.
 
     This struct emulates a C union to store different types of launch attribute values.
@@ -402,7 +402,7 @@ struct AccessProperty(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Copyable, Movable):
+struct LaunchAttribute(Copyable, Movable, Defaultable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -468,7 +468,7 @@ struct LaunchAttribute(Copyable, Movable):
 
 
 @register_passable("trivial")
-struct AccessPolicyWindow(Writable):
+struct AccessPolicyWindow(Writable, Defaultable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and

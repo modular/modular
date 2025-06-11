@@ -419,7 +419,7 @@ struct MHASchedule(Copyable, Movable):
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
-](MHATileScheduler, Copyable, Movable):
+](MHATileScheduler, Copyable, Defaultable, Movable):
     alias may_advance: Bool = False
     alias mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
@@ -490,7 +490,7 @@ struct TileScheduler[
     /,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](MHATileScheduler, Copyable, Movable):
+](MHATileScheduler, Copyable, Defaultable, Movable):
     alias may_advance: Bool = True
     alias mha_schedule: MHASchedule = schedule
 

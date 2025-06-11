@@ -574,7 +574,7 @@ struct _Global[
     name: StaticString,
     StorageType: Movable,
     init_fn: fn () -> StorageType,
-]:
+](Defaultable):
     alias ResultType = UnsafePointer[StorageType]
 
     fn __init__(out self):

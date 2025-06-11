@@ -1800,7 +1800,7 @@ struct Preference:
 
 
 @register_passable("trivial")
-struct MatmulAlgorithm:
+struct MatmulAlgorithm(Defaultable):
     """Semi-opaque algorithm descriptor (to avoid complicated alloc/free schemes).
 
     This structure can be trivially serialized and later restored for use with the same version of cuBLAS library to save
@@ -3546,7 +3546,7 @@ fn cublasLtMatmulPreferenceCreate(
 
 
 @register_passable("trivial")
-struct cublasLtMatmulHeuristicResult_t:
+struct cublasLtMatmulHeuristicResult_t(Defaultable):
     """Results structure used by cublasLtMatmulGetAlgo.
 
     Holds returned configured algo descriptor and its runtime properties.

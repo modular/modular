@@ -69,7 +69,7 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(Sized):
+struct _PyIter(Sized, Defaultable):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#
@@ -176,6 +176,7 @@ struct PythonObject(
     SizedRaising,
     Writable,
     PythonConvertible,
+    Defaultable,
 ):
     """A Python object."""
 

@@ -24,6 +24,7 @@ struct NoneType(
     Writable,
     Representable,
     Stringable,
+    Defaultable,
 ):
     """Represents the absence of a value."""
 

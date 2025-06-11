@@ -32,7 +32,7 @@ from .tracing import TraceLevel
 
 
 @register_passable("trivial")
-struct _Chain(Boolable):
+struct _Chain(Boolable, Defaultable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
@@ -337,7 +337,7 @@ struct _TaskGroupBox(Copyable, Movable):
         return abort[Self]("_TaskGroupBox.copy should never get called")
 
 
-struct TaskGroup:
+struct TaskGroup(Defaultable):
     """A group of tasks that can be executed concurrently.
 
     TaskGroup manages a collection of coroutines that can be executed in parallel.
@@ -452,7 +452,7 @@ struct TaskGroup:
 
 
 @register_passable("trivial")
-struct DeviceContextPtr:
+struct DeviceContextPtr(Defaultable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not

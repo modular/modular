@@ -36,7 +36,7 @@ struct _Accumulator[
     simd_width: Int,
     row_start: Int = 0,
     row_stop: Int = num_rows,
-]:
+](Defaultable):
     """
     Parameters:
         type: DType of accumulator.

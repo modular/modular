@@ -64,6 +64,7 @@ struct Optional[T: Copyable & Movable](
     ExplicitlyCopyable,
     Movable,
     Boolable,
+    Defaultable,
 ):
     """A type modeling a value which may or may not be present.
 
@@ -446,7 +447,7 @@ struct Optional[T: Copyable & Movable](
 
 
 @register_passable("trivial")
-struct OptionalReg[T: AnyTrivialRegType](Boolable):
+struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register

@@ -144,7 +144,7 @@ struct TensorCore[
     in_type: DType,
     shape: IndexList[3],
     transpose_b: Bool = False,
-]:
+](Defaultable):
     """TensorCore provides an abstraction for GPU tensor core hardware to perform optimized matrix operations.
 
     This struct encapsulates the functionality required to efficiently map matrix operations to Tensor Cores

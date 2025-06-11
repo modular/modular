@@ -98,7 +98,7 @@ struct InterpolationMode(Copyable, Movable):
 
 
 @register_passable("trivial")
-struct Interpolator[mode: InterpolationMode](Copyable, Movable):
+struct Interpolator[mode: InterpolationMode](Copyable, Defaultable, Movable):
     var cubic_coeff: Float32
 
     @always_inline

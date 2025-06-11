@@ -126,7 +126,7 @@ fn vectorize_distribute_layout[
 
 
 @register_passable
-struct WaveFrontSummary(Copyable, Movable):
+struct WaveFrontSummary(Copyable, Defaultable, Movable):
     var total_wavefronts: Int
     var expected_wavefronts: Int
 

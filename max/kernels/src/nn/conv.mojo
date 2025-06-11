@@ -3108,7 +3108,7 @@ fn check_cudnn_error(stat: cudnnStatus_t):
 
 
 @register_passable
-struct CuDNNConvMeta(Copyable, Movable):
+struct CuDNNConvMeta(Copyable, Defaultable, Movable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]

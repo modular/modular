@@ -532,7 +532,7 @@ struct SharedMemoryManager[
     depth: Int,
     num_rowwise_warps: Int,
     token_gen: Bool,
-]:
+](Defaultable):
     var p_smem: UnsafePointer[
         Scalar[dtype], address_space = AddressSpace.SHARED
     ]

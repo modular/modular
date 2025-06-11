@@ -258,6 +258,7 @@ fn _has_native_f8_support() -> Bool:
 struct SIMD[dtype: DType, size: Int](
     Absable,
     Boolable,
+    Defaultable,
     Ceilable,
     CeilDivable,
     Copyable,

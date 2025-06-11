@@ -661,7 +661,7 @@ struct TensorCoreAsync[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = False,
-]:
+](Defaultable):
     """High-performance asynchronous tensor core operations for matrix multiplication.
 
     This struct provides methods for utilizing NVIDIA's Tensor Cores for asynchronous

@@ -24,7 +24,7 @@ from utils import Variant
 
 
 @fieldwise_init
-struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable):
+struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable, Defaultable):
     """A container for counting hashable items.
 
     The value type must be specified statically, unlike a Python

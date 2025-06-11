@@ -27,6 +27,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     Intable,
     Stringable,
     Floatable,
+    Defaultable,
 ):
     """Mojo floating point literal type.
 

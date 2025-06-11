@@ -159,7 +159,7 @@ fn matmul_test_case[
     _ = mat_c_dev^
 
 
-struct ValOrDim[dim: Dim = Dim()]:
+struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):

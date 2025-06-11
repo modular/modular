@@ -52,7 +52,9 @@ from utils.numerics import min_or_neg_inf
 
 
 @register_passable("trivial")
-struct FlashAttentionAlgorithm(Stringable, Writable, Copyable, Movable):
+struct FlashAttentionAlgorithm(
+    Stringable, Writable, Copyable, Defaultable, Movable
+):
     var _value: Int32
 
     alias NAIVE = Self(0)
