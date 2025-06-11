@@ -230,6 +230,23 @@ public:
   /// trait type.
   TraitType getCanonicalTrait(SmallVectorImpl<SymbolRefAttr> &symbols);
 
+  /// Define the self parameter of the trait and add inheritance attributes. For
+  /// example, given:
+  ///
+  /// "trait @vanilla", {@Movable}, {@AnyType}
+  ///
+  /// this function modifies "vanilla" to the following:
+  ///
+  /// trait @vanilla<?, *"_Self`": !lit.trait<@vanilla>>(!lit.trait<@AnyType,
+  /// @Movable>) attributes {immediateParents = #M<symbols[@AnyType]>}
+  LogicalResult addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
+                                   SmallVector<SymbolRefAttr> &parentTraits,
+                                   DenseSet<SymbolRefAttr> &immediateParents);
+  // Populate the trait with methods it inherits from parents.
+  void addParentDeclsToTrait(
+      TraitDeclOp traitOp, ASTDecl &traitDecl,
+      DenseSet<std::pair<StringAttr, StringAttr>> &existingFns);
+
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should

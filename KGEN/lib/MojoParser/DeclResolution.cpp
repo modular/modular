@@ -958,6 +958,28 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   return {std::move(captured), unbound};
 }
 
+static void emitUnifiedClosureInstance(ASTDecl &nestedFnDecl,
+                                       SharedState &shared) {
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
+  SMLoc loc = nestedFnDecl.getLoc();
+  Location mlirLoc = shared.translateLocation(loc);
+  if (shared.diBuilder)
+    mlirLoc = shared.diBuilder->createScopedLoc(mlirLoc);
+
+  ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
+  auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
+      nestedFn.getFuncTypeGenerator());
+  shared.getOrCreateParametricClosureWrapper(loc, wrapperSig, moduleDecl,
+                                             nestedFn.getInlineLevel());
+
+  // TODO: Create an instance of the LIT.CLOSURE.INIT OP, allocate closure
+  // wrapper, emit a call to the constructor of the closure wrapper with the
+  // lit.init.op, and Return the closure wrapper instance as an MLValue.
+  nestedFnDecl.getIfOperation()->erase();
+  nestedFnDecl.setIRValue(nullptr);
+  shared.deleteDecl(nestedFnDecl);
+}
+
 static MLValue emitClosureInstance(ArrayRef<Capture> captures,
                                    ArrayRef<ParamDeclRefAttr> paramCaptures,
                                    ASTDecl &nestedFnDecl, SharedState &shared) {
@@ -1291,10 +1313,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   }
 
   if (signature.isUnified()) {
-    // TODO: actually implement.
-    decl.getIfOperation()->erase();
-    decl.setIRValue(nullptr);
-    shared.deleteDecl(decl);
+    emitUnifiedClosureInstance(decl, shared);
     return success();
   }
 
@@ -2645,6 +2664,39 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
 //===----------------------------------------------------------------------===//
 // Trait Decl implementation
 //===----------------------------------------------------------------------===//
+LogicalResult
+DeclResolver::addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
+                                 SmallVector<SymbolRefAttr> &parentTraits,
+                                 DenseSet<SymbolRefAttr> &immediateParents) {
+  auto actualType = ParamDeclAttr::get(decl.mangleParamName("_Self"),
+                                       traitOp.bindReference());
+
+  MLIRContext *ctx = getContext();
+  auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
+  auto paramListAttr =
+      PogListAttr::get(ctx, StringAttr::get(ctx), PassingKind::Implicit);
+  auto sig = TypeSignatureType::remapToSignature(silenceErrors(ctx), paramArray,
+                                                 paramListAttr);
+  if (!sig)
+    return failure();
+  traitOp.setParams(paramArray);
+  traitOp.setSignature(sig);
+
+  // Add the trait itself to its canonical trait list.
+  parentTraits.push_back(getFullyResolvedSymbolRef(traitOp));
+  TraitType canonTrait = getCanonicalTrait(parentTraits);
+  traitOp.setCanonicalTrait(canonTrait);
+
+  // Add the immediate parents to the trait.
+  SmallVector<SymbolRefAttr> immediateParentsVec(immediateParents.begin(),
+                                                 immediateParents.end());
+  sortAndDeduplicateSymbols(immediateParentsVec);
+  traitOp.setImmediateParents(
+      SymbolRefArrayAttr::get(ctx, immediateParentsVec));
+
+  decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(traitOp));
+  return success();
+}
 
 LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                              ASTDecl &decl) {
@@ -2775,33 +2827,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   // Insert the implicit trait parameter:
   // - _Self: a value of this trait type - the struct conforming to this trait.
-  auto actualType = ParamDeclAttr::get(decl.mangleParamName("_Self"),
-                                       traitOp.bindReference());
-
-  MLIRContext *ctx = getContext();
-  auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
-  auto paramListAttr =
-      PogListAttr::get(ctx, StringAttr::get(ctx), PassingKind::Implicit);
-  auto sig = TypeSignatureType::remapToSignature(silenceErrors(ctx), paramArray,
-                                                 paramListAttr);
-  if (!sig)
+  if (failed(addSelfTypeToTrait(traitOp, decl, parentTraits, immediateParents)))
     return failure();
-  traitOp.setParams(paramArray);
-  traitOp.setSignature(sig);
-
-  // Add the trait itself to its canonical trait list.
-  parentTraits.push_back(getFullyResolvedSymbolRef(traitOp));
-  TraitType canonTrait = getCanonicalTrait(parentTraits);
-  traitOp.setCanonicalTrait(canonTrait);
-
-  // Add the immediate parents to the trait.
-  SmallVector<SymbolRefAttr> immediateParentsVec(immediateParents.begin(),
-                                                 immediateParents.end());
-  sortAndDeduplicateSymbols(immediateParentsVec);
-  traitOp.setImmediateParents(
-      SymbolRefArrayAttr::get(ctx, immediateParentsVec));
-
-  decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(traitOp));
 
   shared.notifyListenerOnTraitDecl(decl, identifierLoc);
 
@@ -2842,34 +2869,9 @@ static void replaceTraitMethodSelfTypes(FnOp func, TypedAttr parentSelfType,
     arg.setType(replacer.replace(arg.getType()));
 }
 
-ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
-                                      ASTDecl &traitDecl) {
-  // Push the debug scope for this trait if necessary so that nested operations
-  // have proper debug info.
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (shared.diBuilder)
-    diScopeGuard = shared.diBuilder->pushScopeGuard(traitOp.getLocScope());
-
-  if (ParserBase(shared, lexer).parseSuite(traitDecl))
-    return failure();
-
-  // Resolve functions in the body here so that we can diagnose them.
-  // Deduplicate inherited functions based on their name and mangled name, since
-  // the mangled name contains the required information for distinguishing
-  // overload candidates.
-  DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    if (decls.empty() || !isa<FnOp>(decls.front()))
-      continue;
-    for (ASTDecl *decl : decls) {
-      auto func = cast<FnOp>(*decl);
-      if (failed(resolveBody(*decl, decl->getLoc())))
-        return failure();
-
-      existingFns.insert({name, func.getSymNameAttr()});
-    }
-  }
-
+void DeclResolver::addParentDeclsToTrait(
+    TraitDeclOp traitOp, ASTDecl &traitDecl,
+    DenseSet<std::pair<StringAttr, StringAttr>> &existingFns) {
   // Get our Self type, which will be a reference to the T parameter on this
   // trait.
   ASTType traitSelfType = traitDecl.getTypeDeclSelf();
@@ -2921,6 +2923,37 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
 
   if (SymbolConstantAttr dtor = lookupDestructor(traitDecl, shared))
     traitOp.setDtorSig(dtor.getType());
+}
+
+ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
+                                      ASTDecl &traitDecl) {
+  // Push the debug scope for this trait if necessary so that nested operations
+  // have proper debug info.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(traitOp.getLocScope());
+
+  if (ParserBase(shared, lexer).parseSuite(traitDecl))
+    return failure();
+
+  // Resolve functions in the body here so that we can diagnose them.
+  // Deduplicate inherited functions based on their name and mangled name, since
+  // the mangled name contains the required information for distinguishing
+  // overload candidates.
+  DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    if (decls.empty() || !isa<FnOp>(decls.front()))
+      continue;
+    for (ASTDecl *decl : decls) {
+      auto func = cast<FnOp>(*decl);
+      if (failed(resolveBody(*decl, decl->getLoc())))
+        return failure();
+
+      existingFns.insert({name, func.getSymNameAttr()});
+    }
+  }
+
+  addParentDeclsToTrait(traitOp, traitDecl, existingFns);
 
   return success();
 }

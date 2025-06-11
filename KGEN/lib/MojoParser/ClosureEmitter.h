@@ -39,6 +39,13 @@ public:
                                  FnTypeGeneratorType signatureType,
                                  SMLoc nestedFunctionOrTypeLocation);
 
+  /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
+  /// parametric field. Both the field and the struct must conform to the
+  /// associated closure trait characterized by the signature of the closure.
+  StructDeclOp createParametricClosureWrapperStructDecl(
+      StringAttr name, FnTypeGeneratorType signatureType,
+      SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel);
+
   /// Generate a Closure Implementation Struct, a struct that contains the
   /// capture list.
   StructDeclOp replaceNestedFunctionWithClosureImplStructDecl(
@@ -72,6 +79,34 @@ private:
   /// function pointer of the same function signature.
   void synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
                                   FnTypeGeneratorType sig);
+  /// Given a name, a list of builtin parent traits (like "Movable" for
+  /// example), a location, and a populate method, return a trait declaration
+  /// that inherits from the parent and contains the methods added to the
+  /// function list populated by the populate method.
+  std::pair<TraitDeclOp, ASTDecl *>
+  createTraitOp(StringAttr name, ArrayRef<StringRef> parents,
+                SMLoc nestedFunctionOrTypeLocation,
+                llvm::function_ref<void(
+                    ASTDecl &traitDecl,
+                    DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
+                    populateTrait);
+  /// Given a name and a trait decl, generate a struct that conforms to the
+  /// trait and has a single field that also conforms to that same trait. For
+  /// example, if the trait is:
+  /// trait MyTrait:
+  ///    fn doSomething(self, x:Int):
+  ///       ...
+  /// This method will generate a struct:
+  /// struct MyTraitWrapper[T: MyTraitWrapper](MyTraitWrapper):
+  ///    var field: T
+  ///    fn doSomething(self, x:Int):
+  ///       self.field.doSomething(x)
+  /// This is useful in the context of emitting closures because in the case of
+  /// closures "T" is an abstract type (ClosureType). Wrapping the closure
+  /// instance in a struct renders it eligible to be handled properly by our
+  /// check-lifetimes pass.
+  StructDeclOp createStructWrapper(StringRef baseName, ASTDecl &traitDecl,
+                                   SMLoc location);
 };
 
 } // namespace M::KGEN::LIT

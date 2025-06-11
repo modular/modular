@@ -251,6 +251,189 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   IREmitter::emitNormalReturn(b, callIndirect.getResult(0));
 }
 
+namespace {
+// ParamIndexRefReplacer converts parameter references by index (e.g., *(0,1))
+// to references by name (e.g., "b").
+//
+// Problem:
+// In Mojo parametric functions, parameter types can refer to earlier parameters
+// using indices. For example, in "fn f[T: Baz, b: T]", the type of 'b' refers
+// to 'T' via an index. When creating function types outside this context, we
+// need named references instead.
+//
+// Example:
+// Input
+// Parameter types: [!lit.trait<@Baz>, !kgen.param<*(0,0)>]
+// Parameter names: ["T", "b"]
+//
+// Output (canonical types):
+// {"T": !lit.trait<@Baz>, "b": !kgen.param<"T">}
+//
+// Solution:
+// We recursively traverse attributes, replacing ParamIndexRefAttr with
+// ParamDeclRefAttr using a map from indices to parameter declarations.
+// The recursion terminates because MLIR attributes are directed acyclic graphs.
+struct ParamIndexRefReplacer
+    : public IndexParameterReplacer<ParamIndexRefReplacer> {
+  using Base = IndexParameterReplacer<ParamIndexRefReplacer>;
+  ParamIndexRefReplacer(ArrayRef<ParamDeclAttr> declarations) {
+    for (auto [i, p] : llvm::enumerate(declarations))
+      parameters.insert({i, p.getName()});
+  }
+  ParamIndexRefReplacer(ArrayRef<PogMetadataAttr> declarations) {
+    for (auto [i, p] : llvm::enumerate(declarations))
+      parameters.insert({i, p.getName()});
+  }
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
+    if (!indexRef || indexRef.getDepth() != depth)
+      return nullptr;
+    auto it = parameters.find(indexRef.getIndex());
+    if (it == parameters.end())
+      return nullptr;
+
+    StringRef paramName = it->second;
+    Type mappedType = Base::replace(indexRef.getType());
+    return ParamDeclRefAttr::get(paramName, mappedType);
+  }
+  Type tryReplace(Type t, size_t) { return {}; }
+  DenseMap<unsigned, StringRef> parameters;
+};
+} // namespace
+
+std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
+    StringAttr name, ArrayRef<StringRef> parentNames,
+    SMLoc nestedFunctionOrTypeLocation,
+    llvm::function_ref<
+        void(ASTDecl &traitDecl,
+             DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
+        populateTrait) {
+  auto module = cast<FileModuleOp>(moduleDecl);
+  OpBuilder b(module.getRegion());
+  MLIRContext *ctx = b.getContext();
+  Location location =
+      shared.diags.translateLocation(nestedFunctionOrTypeLocation);
+  StringRef originalName = name.getValue();
+  auto closureTrait =
+      b.create<TraitDeclOp>(location, StringAttr::get(ctx, originalName));
+  ASTDecl &traitDecl = shared.declResolver->addFullyResolvedDecl(
+      &*closureTrait, name, nestedFunctionOrTypeLocation, &moduleDecl);
+
+  // Populate the trait with parent and self methods.
+  SmallVector<SymbolRefAttr> parents;
+  for (StringRef parent : parentNames) {
+    if (auto anyType = shared.lookupBuiltinTrait(parent, &moduleDecl,
+                                                 nestedFunctionOrTypeLocation))
+      parents.push_back(anyType->getSymbolRef());
+  }
+
+  DenseSet<SymbolRefAttr> immediateParents;
+  for (auto p : parents)
+    immediateParents.insert(p);
+  (void)shared.declResolver->addSelfTypeToTrait(closureTrait, traitDecl,
+                                                parents, immediateParents);
+  DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
+  populateTrait(traitDecl, existingFns);
+  shared.declResolver->addParentDeclsToTrait(closureTrait, traitDecl,
+                                             existingFns);
+  return std::pair<TraitDeclOp, ASTDecl *>(closureTrait, &traitDecl);
+}
+
+/// Converts function type generator parameters to ParamDeclAttr instances.
+///
+/// The function type generator stores parameters as (name, metadata) pairs and
+/// types, where types can reference earlier parameters by index. This function
+/// converts these to ParamDeclAttr instances with canonical types that use
+/// named references.
+///
+/// @param sig The function type generator type
+/// @return Vector of ParamDeclAttr instances with canonical types
+static SmallVector<ParamDeclAttr>
+populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
+  auto pogAttrs = sig.getParamListAttrs().getPogs();
+  ParamIndexRefReplacer replacer(pogAttrs);
+  SmallVector<ParamDeclAttr> parameters;
+  parameters.reserve(pogAttrs.size());
+
+  for (auto [pog, type] : llvm::zip(pogAttrs, sig.getInputParamTypes())) {
+    Type canonicalType = replacer.replace(type);
+    parameters.push_back(ParamDeclAttr::get(pog.getName(), canonicalType));
+  }
+
+  return parameters;
+}
+
+StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
+                                                 ASTDecl &traitDecl,
+                                                 SMLoc location) {
+  TraitDeclOp trait = cast<TraitDeclOp>(traitDecl);
+  auto module = cast<FileModuleOp>(moduleDecl);
+  OpBuilder b(module.getRegion());
+  b.setInsertionPointAfter(trait);
+  MLIRContext *ctx = b.getContext();
+  StringRef root = moduleDecl.getSymbolRef().getRootReference();
+  SmallVector<FlatSymbolRefAttr> path(
+      moduleDecl.getSymbolRef().getNestedReferences());
+  path.push_back(FlatSymbolRefAttr::get(trait.getSymNameAttr()));
+  SymbolRefAttr symbol = SymbolRefAttr::get(ctx, root, path);
+  Type traitType = TraitType::get(ctx, symbol);
+
+  SmallVector<ParamDeclAttr> implParameters;
+  ParamDeclAttr implType = ParamDeclAttr::get("impl", traitType);
+  implParameters.push_back(implType);
+  auto [structDecl, declOp] =
+      createStruct(shared, moduleDecl,
+                   StringAttr::get(b.getContext(), baseName + "_wrapper"),
+                   implParameters, moduleDecl.getLoc());
+  addFieldsToStruct(declOp, structDecl,
+                    KGEN::ParamType::get(ParamDeclRefAttr::get(implType)),
+                    *shared.declResolver);
+  return declOp;
+}
+
+StructDeclOp ClosureEmitter::createParametricClosureWrapperStructDecl(
+    StringAttr name, FnTypeGeneratorType dependentSignatureType,
+    SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel) {
+  // Generate the movable, destructable closure trait, populating the trait
+  // definition with the single characteristic "__call__" method.
+  SmallVector<StringRef> parents{"Movable", "AnyType"};
+  auto populate = [&](ASTDecl &decl,
+                      DenseSet<std::pair<StringAttr, StringAttr>> &functions) {
+    TraitDeclOp closureTrait = cast<TraitDeclOp>(decl);
+    RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
+    FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
+        refType, ArgConvention::Mut, dependentSignatureType);
+    ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
+        closureTrait.getLoc(), &closureTrait.getFields().front());
+    SmallVector<ParamDeclAttr> parameters(
+        populateParametersFromFnGeneratorType(sig));
+    auto callName = StringAttr::get(ctx, "__call__");
+    // Calculate the argument types and result types in terms of the named
+    // parameters.
+    ParamIndexRefReplacer replacer(parameters);
+    SmallVector<Type> argumentTypes;
+    llvm::append_range(argumentTypes,
+                       llvm::map_range(sig.getArguments(), [&](Type original) {
+                         return replacer.replace(original);
+                       }));
+    Type result = replacer.replace(sig.getResults().front());
+    auto [fnOp, fnDecl] = synthesizeFunction(
+        decl, callName, parameters, sig.getParamListAttrs(), argumentTypes,
+        sig.getArgConventions(), sig.getArgListAttrs(), result,
+        SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
+        sig.getFnEffects().setUnified(false), "", true, inlineLevel);
+    builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
+    builder.create<UnreachableOp>();
+    functions.insert({callName, fnOp.getSymNameAttr()});
+  };
+  auto [closureTrait, traitDecl] =
+      createTraitOp(name, parents, nestedFunctionOrTypeLocation, populate);
+
+  // Now create a wrapper struct that conforms to the trait we created.
+  return createStructWrapper(name.getValue(), *traitDecl,
+                             nestedFunctionOrTypeLocation);
+}
+
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     StringAttr name, FnTypeGeneratorType dependentSignatureType,
     SMLoc nestedFunctionOrTypeLocation) {

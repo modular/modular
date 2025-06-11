@@ -451,7 +451,19 @@ public:
   /// the provided module if one does not already exist.
   StructDeclOp getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
                                          ASTDecl *moduleDecl);
-
+  /// Given a signature [Int](y:Int) -> Int for example, return the struct
+  /// definition wrapper. If there is not a wrapper already generated, the
+  /// compiler will generate the following:
+  ///  trait Closure_Int_yInt_Int(Movable, AnyType):
+  ///      fn __call__(mut self, y: Int) -> Int:
+  ///         ...
+  ///  struct Impl[T : Closure_Int_yInt_Int](Closure_Int_yInt_Int):
+  ///     var impl: T
+  /// ... and return the StructDeclOp for "Impl".
+  StructDeclOp getOrCreateParametricClosureWrapper(SMLoc loc,
+                                                   FuncTypeGeneratorType sig,
+                                                   ASTDecl *moduleDecl,
+                                                   InlineLevel inlineLevel);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
