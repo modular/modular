@@ -141,10 +141,8 @@ fn test_bicubic_kernel[
         "--------------------------------now we want to call the bicubic"
         " upsampling kernel--------------------------------"
     )
-    # Call the bicubic upsampling kernel
-    output_host.tensor = cpu_bicubic_kernel(
-        input_host.tensor, output_host.tensor
-    )
+    # Call the bicubic upsampling kernel.
+    cpu_bicubic_kernel(output_host.tensor, input_host.tensor)
     print(
         "--------------------------------after calling the bicubic upsampling"
         " kernel--------------------------------"
@@ -602,15 +600,9 @@ fn test_bicubic_kernel[
     alias H = output_dim.get[2]()
     alias W = output_dim.get[3]()
 
-    alias gpu_bicubic_kernel_type = gpu_bicubic_kernel[
-        input_dim,
-        output_dim,
-        type,
-    ]
-
-    ctx.enqueue_function[gpu_bicubic_kernel_type](
-        input_dev.tensor,
+    ctx.enqueue_function[gpu_bicubic_kernel[type, rank=4]](
         output_dev.tensor,
+        input_dev.tensor,
         grid_dim=(N, C),
         block_dim=(H, W),
     )

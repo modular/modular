@@ -178,6 +178,8 @@ from nn.rand_uniform import random_uniform
 from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
+
+from nn.bicubic import resize_bicubic
 from nn.roi_align import roi_align_nhwc
 from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.slice import (
@@ -4701,6 +4703,39 @@ struct ResizeLinear:
         input: InputTensor[rank=rank],
         size: InputTensor[rank=1],
     ) -> IndexList[
+        rank
+    ]:
+        var shape = IndexList[rank]()
+        for i in range(rank):
+            shape[i] = Int(size[i])
+
+        return shape
+
+
+@compiler.register("mo.resize.bicubic")
+struct ResizeBicubic:
+    @staticmethod
+    fn execute[
+        coordinate_transform_mode: Int,
+        rank: Int,
+        dtype: DType,
+        target: StaticString, //,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],
+        size: InputTensor[rank=1],
+        ctx: DeviceContextPtr,
+    ) raises:
+        # Get input and output dimensions from tensors
+        var output_buffer = managed_tensor_slice_to_ndbuffer(output)
+        var input_buffer = managed_tensor_slice_to_ndbuffer(input)
+
+        resize_bicubic[target](output_buffer, input_buffer, ctx)
+
+    @staticmethod
+    fn shape[
+        rank: Int
+    ](input: InputTensor[rank=rank], size: InputTensor[rank=1]) -> IndexList[
         rank
     ]:
         var shape = IndexList[rank]()

@@ -16,14 +16,13 @@ Bicubic interpolation is a 2D extension of cubic interpolation for resampling
 digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
+from buffer import NDBuffer
 from gpu.host import DeviceContext
+from gpu.host.info import is_gpu
 from gpu.id import block_dim, block_idx, thread_idx
 from math import floor, clamp
 from memory import UnsafePointer
-from sys import exit
-from sys.info import has_accelerator
-from buffer.dimlist import DimList
-from buffer import NDBuffer
+from runtime.asyncrt import DeviceContextPtr
 
 
 fn cubic_kernel(x: Float32) -> Float32:
@@ -49,22 +48,20 @@ fn cubic_kernel(x: Float32) -> Float32:
 
 
 fn cpu_bicubic_kernel[
-    input_dim: DimList,
-    output_dim: DimList,
     type: DType,
+    rank: Int, //,
 ](
-    input_host: NDBuffer[type, 4, StaticConstantOrigin, input_dim],
-    output_host: NDBuffer[type, 4, MutableAnyOrigin, output_dim],
-) -> NDBuffer[type, 4, MutableAnyOrigin, output_dim]:
+    output_host: NDBuffer[mut=True, type, rank, *_],
+    input_host: NDBuffer[type, rank, *_],
+) -> None:
     """Perform bicubic interpolation on an NDBuffer of form NCHW.
 
     Args:
-        input_host: Input tensor of shape [B, C, H, W].
         output_host: Output tensor with desired dimensions.
-
-    Returns:
-        Interpolated tensor.
+        input_host: Input tensor of shape [B, C, H, W].
     """
+    constrained[rank == 4, "bicubic resize only supports rank 4 tensors"]()
+
     # get dimensions
     var batch_size = input_host.dynamic_shape[0]
     var channels = input_host.dynamic_shape[1]
@@ -135,22 +132,19 @@ fn cpu_bicubic_kernel[
                     # store the result in the output tensor
                     output_host[b, c, y_out, x_out] = SIMD[type, 1](sum_value)
 
-    return output_host
-
 
 fn gpu_bicubic_kernel[
-    input_dim: DimList,
-    output_dim: DimList,
     type: DType,
+    rank: Int,
 ](
-    input: NDBuffer[type, 4, MutableAnyOrigin, input_dim],
-    output: NDBuffer[type, 4, MutableAnyOrigin, output_dim],
-):
+    output: NDBuffer[mut=True, type, rank, MutableAnyOrigin],
+    input: NDBuffer[type, rank, MutableAnyOrigin],
+) -> None:
     """Perform bicubic interpolation using GPU.
 
     Args:
-        input: Input tensor of shape [B, C, H, W] on the device.
         output: Output tensor with desired dimensions on the device.
+        input: Input tensor of shape [B, C, H, W] on the device.
     """
     var b = block_idx.x
     var c = block_idx.y
@@ -208,3 +202,38 @@ fn gpu_bicubic_kernel[
         sum_value = sum_value / sum_weights
     # store the result in the output tensor
     output[b, c, y_out, x_out] = SIMD[type, 1](sum_value)
+
+
+def resize_bicubic[
+    type: DType, rank: Int, //, target: StaticString
+](
+    output: NDBuffer[mut=True, type, rank, *_],
+    input: NDBuffer[type, rank, *_],
+    ctx: DeviceContextPtr,
+) -> None:
+    """Perform bicubic interpolation.
+
+    Args:
+        output: Output tensor with desired dimensions on host or device.
+        input: Input tensor of shape [B, C, H, W] on host or device.
+        ctx: Device context to enqueue GPU kernels on.
+    """
+    constrained[rank == 4, "bicubic resize only supports rank 4 tensors"]()
+
+    @parameter
+    if is_gpu[target]():
+        var N = input.dynamic_shape[0]
+        var C = input.dynamic_shape[1]
+        var H = input.dynamic_shape[2]
+        var W = input.dynamic_shape[3]
+
+        ctx.get_device_context().enqueue_function[
+            gpu_bicubic_kernel[type, rank]
+        ](
+            output,
+            input,
+            grid_dim=(N, C),
+            block_dim=(H, W),
+        )
+    else:
+        cpu_bicubic_kernel(output, input)
