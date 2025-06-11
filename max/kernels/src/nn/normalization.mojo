@@ -1446,17 +1446,28 @@ fn group_norm_gpu[
     fn input_fn_2d[
         simd_width: Int
     ](row: Int, col: Int) capturing -> SIMD[type, simd_width]:
-        var inner_volume = shape[2] * shape[3]
-
         var n = row // num_groups
         var g = row % num_groups
-        var c = g * channels_per_group + (col // inner_volume)
-        var hw = col % inner_volume
-        var h = hw // shape[3]
-        var w = hw % shape[3]
+        var c = g * channels_per_group
 
-        var indices = IndexList[4](n, c, h, w)
-        return input_fn[simd_width, 4](indices)
+        var indices = IndexList[rank]()  # placeholder to satisfy compiler
+
+        @parameter
+        if rank == 4:
+            var inner_volume = shape[2] * shape[3]
+            c += col // inner_volume
+            var hw = col % inner_volume
+            var h = hw // shape[3]
+            var w = hw % shape[3]
+            indices = IndexList[rank](n, c, h, w)
+
+        elif rank == 3:
+            var inner_volume = shape[2]
+            c += col // inner_volume
+            var l = col % inner_volume
+            indices = IndexList[rank](n, c, l)
+
+        return input_fn[simd_width, rank](indices)
 
     alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     if num_cols < simd_width:
@@ -1556,7 +1567,9 @@ fn group_norm[
     output: NDBuffer[mut=True, type, rank, *_],
     ctx: DeviceContextPtr,
 ) raises:
-    constrained[rank >= 2, "group_norm requires input rank >= 2"]()
+    constrained[
+        rank > 2 and rank < 5, "group_norm requires input rank of 3 or 4"
+    ]()
     constrained[
         is_gpu[target](), "group_norm only supports GPU targets at this point"
     ]()
