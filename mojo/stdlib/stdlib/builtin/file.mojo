@@ -66,7 +66,6 @@ struct _OwnedStringRef(Boolable, Defaultable):
         return self.length != 0
 
 
-
 struct FileHandle(Writer, Movable, Defaultable):
     """File handle to an opened file."""
 
