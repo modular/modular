@@ -32,6 +32,7 @@ from .mask_config import (
     PositionalEncodingVariant,
 )
 from .multi_latent_attention import LatentAttentionWithRope
+from .multihead_attention import MultiheadAttention
 from .ragged_attention import RaggedAttention
 
 __all__ = [
@@ -49,5 +50,6 @@ __all__ = [
     "PositionalEncodingVariant",
     "MHAMaskConfig",
     "MHAMaskVariant",
+    "MultiheadAttention",
     "RaggedAttention",
 ]
