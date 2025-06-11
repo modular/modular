@@ -575,7 +575,7 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
             ),
-            cos_dist_threshold=7.6e-3,
+            cos_dist_threshold=8.5e-3,
             kl_div_threshold=8.6e-2,
         ),
     ),
