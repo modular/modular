@@ -207,9 +207,9 @@ Other areas are not open for external contributions.
 - macOS: ARM64 (Apple Silicon)
 - Windows: Not currently supported
 
-## Documentation Resources
+## LLM-friendly Documentation
 
-- Mojo API docs: <https://docs.modular.com/mojo/>
-- MAX API docs: <https://docs.modular.com/max/>
-- LLM reference: <https://docs.modular.com/llms-mojo.txt>
-- Comprehensive docs: <https://docs.modular.com/llms.txt>
+- Docs index: <https://docs.modular.com/llms.txt>
+- Mojo API docs: <https://docs.modular.com/llms-mojo.txt>
+- Python API docs: <https://docs.modular.com/llms-python.txt>
+- Comprehensive docs: <https://docs.modular.com/llms-full.txt>
