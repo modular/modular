@@ -3,7 +3,6 @@ load("//bazel:api.bzl", "modular_py_binary", "pkg_files", "requirement", "strip_
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "pyproject.toml",
     "shim.py",
 ])
 
