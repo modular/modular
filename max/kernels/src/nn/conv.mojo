@@ -3259,7 +3259,7 @@ fn conv_cudnn[
     # to disable tf32, run export NVIDIA_TF32_OVERRIDE=0 in the environment
     alias algo = cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
     var workspace_size_var = 0
-    var workspace_size_ptr = UnsafePointer[Int].address_of(workspace_size_var)
+    var workspace_size_ptr = UnsafePointer(to=workspace_size_var)
     check_cudnn_error(
         cudnnGetConvolutionForwardWorkspaceSize(
             ptr_meta[].ptr_handle,
