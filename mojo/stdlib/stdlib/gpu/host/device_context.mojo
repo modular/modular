@@ -42,7 +42,6 @@ from sys.param_env import _is_bool_like
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
 from compile.compile import Info
-from compile.reflection import get_type_name
 from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,
@@ -714,7 +713,7 @@ struct DeviceBuffer[type: DType](
     """
 
     # Implementation of `DevicePassable`
-    alias device_type: AnyType = UnsafePointer[Scalar[type]]
+    alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[type]]
     """DeviceBuffer types are remapped to UnsafePointer when passed to accelerator devices."""
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):
