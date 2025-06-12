@@ -204,3 +204,25 @@ pip_requirements(
         "//:bazel/pip/requirements/torch/requirements-{}.txt".format(DEFAULT_TORCH_VERSION),
     ],
 )
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+RUFF_VERSION = "0.11.13"
+
+[
+    http_archive(
+        name = "ruff-{arch}".format(arch = arch),
+        build_file_content = 'exports_files(["ruff"])',
+        sha256 = sha,
+        strip_prefix = "ruff-{arch}".format(arch = arch),
+        url = "https://github.com/astral-sh/ruff/releases/download/{version}/ruff-{arch}.tar.gz".format(
+            arch = arch,
+            version = RUFF_VERSION,
+        ),
+    )
+    for arch, sha in [
+        ("x86_64-unknown-linux-gnu", "01aa32d29d00876b8d1429c617ed63a00b1fc81abfa4183bb05c9cb647fbc3d0"),
+        ("aarch64-unknown-linux-gnu", "551af2ebc439d8268dcaf871ea60ad035f688728d30943dcbb2bf775e105213e"),
+        ("aarch64-apple-darwin", "7d5e8feea7ee5c3962807996cad557e8a0c4d676c1cba6223bfb0e8b2ca07723"),
+    ]
+]
