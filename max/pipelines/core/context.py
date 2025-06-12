@@ -33,12 +33,13 @@ CHUNK_SIZE = 128
 class InputContext(Protocol):
     """A base class for model contexts, represent model inputs for TokenGenerators.
 
-    Token array layout:
-    .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
-    . +--------------------+---------------+-----------------+----------------+
-    . |     completed      |  next_tokens  |                 |  preallocated  |
-    . +--------------------+---------------+-----------------+----------------+
-    .            start_idx ^    active_idx ^         end_idx ^
+    Token array layout::
+
+        .                      +---------- full prompt ----------+   CHUNK_SIZE*N v
+        . +--------------------+---------------+-----------------+----------------+
+        . |     completed      |  next_tokens  |                 |  preallocated  |
+        . +--------------------+---------------+-----------------+----------------+
+        .            start_idx ^    active_idx ^         end_idx ^
 
     -    completed: The tokens that have already been processed and encoded.
     -  next_tokens: The tokens that will be processed in the next iteration.
