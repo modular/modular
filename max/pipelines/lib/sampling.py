@@ -55,7 +55,7 @@ def _sampling_input_types(
     top_k_type = TensorType(DType.int64, ["batch"], device=device)
     inputs["top_k"] = top_k_type
 
-    max_k_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
+    max_k_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
     inputs["max_k"] = max_k_type
 
     temperature_type = TensorType(DType.float32, ["batch"], device=device)

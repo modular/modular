@@ -886,7 +886,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             dtype=np.int64,
         )
         top_k = Tensor.from_numpy(top_k_np).to(self._devices[0])
-        max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
+        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
         max_k = Tensor.from_numpy(max_k_np)
 
         top_p = Tensor.from_numpy(
