@@ -270,6 +270,21 @@ struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
 # ===-----------------------------------------------------------------------===#
 
 
+struct _TotalWritableBytes(Writer):
+    var size: Int
+
+    fn __init__(out self):
+        self.size = 0
+
+    fn write_bytes(mut self, bytes: Span[UInt8, _]):
+        self.size += len(bytes)
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
+
+
 # fmt: off
 alias _hex_table = SIMD[DType.uint8, 16](
     ord("0"), ord("1"), ord("2"), ord("3"), ord("4"),
