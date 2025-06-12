@@ -866,10 +866,10 @@ struct Grid(StringableRaising):
         # Seed the random number generator using the current time.
         random.seed()
 
-        data = List[List[Int]]()
+        var data: List[List[Int]] = []
 
         for row in range(rows):
-            row_data = List[Int]()
+            var row_data: List[Int] = []
             for col in range(cols):
                 # Generate a random 0 or 1 and append it to the row.
                 row_data.append(Int(random.random_si64(0, 1)))

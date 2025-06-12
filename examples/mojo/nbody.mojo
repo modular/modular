@@ -17,7 +17,6 @@
 # This sample implements the nbody benchmarking in
 # https://benchmarksgame-team.pages.debian.net/benchmarksgame/performance/nbody.html
 
-from collections import List
 from math import sqrt
 
 from benchmark import keep, run
