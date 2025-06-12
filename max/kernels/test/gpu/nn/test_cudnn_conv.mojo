@@ -15,7 +15,6 @@ from math import ceildiv, isclose
 from random import rand
 from sys import sizeof
 from sys.info import num_physical_cores, simdwidthof
-import time
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
