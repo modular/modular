@@ -30,6 +30,16 @@ def test_missing_operation(op_library: CustomOpLibrary):
         _ = op_library.some_kernel_that_doesnt_exist[{"const": 10}]
 
 
+def test_unsupported_arg_type_error(op_library: CustomOpLibrary):
+    # Attempting to access the unsupported_type_op should raise ValueError
+    # because it has a String parameter which is not a supported type.
+    with pytest.raises(
+        ValueError,
+        match="Unsupported argument type 'stdlib::String' in custom op 'unsupported_type_op'.",
+    ):
+        _ = op_library.unsupported_type_op
+
+
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_grayscale(op_library: CustomOpLibrary, backend: str):
     @torch.compile(backend=backend)
@@ -153,6 +163,39 @@ def test_parameters(op_library: CustomOpLibrary, backend: str):
         rtol=1e-4,
         atol=1e-4,
     )
+
+
+@pytest.mark.parametrize("backend", ["eager", "inductor"])
+def test_scalar_add(op_library: CustomOpLibrary, backend: str):
+    scalar_add_kernel = op_library.scalar_add
+
+    @torch.compile(backend=backend, fullgraph=True)
+    def add_scalars(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        result = torch.empty_like(a)
+        scalar_add_kernel(result, a, b)
+        return result
+
+    # Test with float32 scalars
+    a = torch.tensor(3.14, dtype=torch.float32)
+    b = torch.tensor(2.71, dtype=torch.float32)
+    result = add_scalars(a, b)
+
+    expected = a + b
+    np.testing.assert_allclose(
+        result.item(),
+        expected.item(),
+        equal_nan=True,
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+    # Test with int32 scalars
+    a_int = torch.tensor(42, dtype=torch.int32)
+    b_int = torch.tensor(17, dtype=torch.int32)
+    result_int = add_scalars(a_int, b_int)
+
+    expected_int = a_int + b_int
+    assert result_int.item() == expected_int.item()
 
 
 # This just gut-checks that we run other tests without an active MLIR context

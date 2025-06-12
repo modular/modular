@@ -106,3 +106,38 @@ struct ParameterIncrement:
             return a + __type_of(a)(increment)
 
         foreach[doit, target=target](B)
+
+
+@register("scalar_add")
+struct ScalarAdd:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+    ](
+        C: OutputTensor[dtype=dtype, rank=1],
+        A: Scalar[dtype],
+        B: Scalar[dtype],
+    ) raises:
+        C.store(IndexList[1](0), A + B)
+
+
+@register("unsupported_type_op")
+struct UnsupportedTypeOp:
+    @staticmethod
+    fn execute[
+        dtype: DType, rank: Int
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: InputTensor[dtype=dtype, rank=rank],
+        message: String,  # String is not a supported type for PyTorch custom ops
+    ) raises:
+        # This operation is for testing error handling only
+        # The String parameter should cause a validation error
+        @parameter
+        @always_inline
+        fn copy[
+            simd_width: Int
+        ](idx: IndexList[output.rank]) -> SIMD[output.dtype, simd_width]:
+            return input.load[simd_width](idx)
+
+        foreach[copy, target="cpu"](output)
