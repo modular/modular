@@ -25,6 +25,21 @@ from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 
 
+@always_inline
+fn map_output_to_input_coord(output_coord: Int, scale: Float32) -> Float32:
+    """Map output pixel coordinate to input coordinate using center alignment.
+    This implements the standard coordinate mapping for image resizing:
+    input_coord = (output_coord + 0.5) * scale - 0.5
+    The +0.5 and -0.5 terms ensure pixel centers are aligned properly.
+    Args:
+        output_coord: Output pixel coordinate.
+        scale: Scale factor (input_size / output_size).
+    Returns:
+        Corresponding input coordinate as a float.
+    """
+    return (Float32(output_coord) + 0.5) * scale - 0.5
+
+
 fn cubic_kernel(x: Float32) -> Float32:
     """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
     filter.
@@ -120,8 +135,8 @@ fn cpu_bicubic_kernel[
             for y_out in range(out_height):
                 for x_out in range(out_width):
                     # get the mapping of where the output pixel lies on input (so if 1d, and scaling from 1-5 to 1-10, x=7 output is mapped to x=3.5 input)
-                    var in_y = (Float32(y_out) + 0.5) * scale_h - 0.5
-                    var in_x = (Float32(x_out) + 0.5) * scale_w - 0.5
+                    var in_y = map_output_to_input_coord(y_out, scale_h)
+                    var in_x = map_output_to_input_coord(x_out, scale_w)
 
                     # get the pixel righhtttt above and to left of the output pixel
                     var in_y_floor = Int(floor(in_y))
@@ -199,10 +214,10 @@ fn gpu_bicubic_kernel[
     for pixel_idx in range(tid, total_pixels, threads_per_block):
         var y_out, x_out = divmod(pixel_idx, out_width)
 
-        var in_y = (Float32(y_out) + 0.5) * scale_h - 0.5
-        var in_x = (Float32(x_out) + 0.5) * scale_w - 0.5
+        var in_y = map_output_to_input_coord(y_out, scale_h)
+        var in_x = map_output_to_input_coord(x_out, scale_w)
 
-        # get the pixel righhtttt above and to left of the output pixel
+        # get the pixel right above and to left of the output pixel
         var in_y_floor = Int(floor(in_y))
         var in_x_floor = Int(floor(in_x))
 
