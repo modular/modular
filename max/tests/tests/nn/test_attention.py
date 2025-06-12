@@ -14,22 +14,19 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Graph, ops
-from max.nn.attention import (
-    AttentionWithRope,
-    DistributedAttentionWithRope,
-)
+from max.nn.attention import AttentionWithRope, DistributedAttentionWithRope
 from max.nn.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheCollection,
 )
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
     """Tests that AttentionWithRope raises ValueError for stacked_qkv with bias."""
-    rope = OptimizedRotaryEmbedding(
+    rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
         theta=10000.0,
@@ -62,7 +59,7 @@ def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
 
 def test_attention_with_rope_clip_qkv_validation() -> None:
     """Tests that AttentionWithRope raises ValueError for stacked_qkv with clip_qkv."""
-    rope = OptimizedRotaryEmbedding(
+    rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
         theta=10000.0,
@@ -95,7 +92,7 @@ def test_attention_with_rope_clip_qkv_validation() -> None:
 
 def test_distributed_attention_with_rope_device_validation() -> None:
     """Tests that DistributedAttentionWithRope raises ValueError for < 2 devices."""
-    rope = OptimizedRotaryEmbedding(
+    rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
         theta=10000.0,
@@ -163,7 +160,7 @@ def test_distributed_attention_with_rope_call_validation(
     allreduce_mock: mock.Mock,
 ) -> None:
     """Tests input validation in DistributedAttentionWithRope.__call__."""
-    rope = OptimizedRotaryEmbedding(
+    rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
         theta=10000.0,
