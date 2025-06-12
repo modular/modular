@@ -141,11 +141,11 @@ class Line:
 
     @property
     def is_class(self) -> bool:
-        """Is this line a class definition?"""
+        """Is this line a class/struct/trait definition?"""
         return bool(self) and (
             (
                 self.leaves[0].type == token.NAME
-                and self.leaves[0].value == "class"
+                and self.leaves[0].value in ("class", "struct", "trait")
             )
             or self.leaves[0].type == token.STRUCT
             or self.leaves[0].type == token.TRAIT
@@ -456,6 +456,53 @@ class Line:
 
     def __str__(self) -> str:
         """Render the line."""
+        # Auto-sort struct/trait conformances for Mojo
+        if self.is_class and (
+            self.leaves[0].type in (token.STRUCT, token.TRAIT) or
+            (self.leaves[0].type == token.NAME and self.leaves[0].value in ("struct", "trait"))
+        ):
+            # Find LPAR and RPAR, but only if not inside square brackets
+            lpar_idx = None
+            rpar_idx = None
+            in_square_brackets = False
+            for i, leaf in enumerate(self.leaves):
+                if leaf.type == token.LSQB:
+                    in_square_brackets = True
+                elif leaf.type == token.RSQB:
+                    in_square_brackets = False
+                elif not in_square_brackets:
+                    if leaf.type == token.LPAR:
+                        lpar_idx = i
+                    elif leaf.type == token.RPAR:
+                        rpar_idx = i
+                        break
+            if lpar_idx is not None and rpar_idx is not None and rpar_idx > lpar_idx + 1:
+                # Collect expressions (as lists of leaves) between commas
+                exprs = []
+                current = []
+                for leaf in self.leaves[lpar_idx+1:rpar_idx]:
+                    if leaf.type == token.COMMA:
+                        if current:
+                            exprs.append(current)
+                            current = []
+                    else:
+                        current.append(leaf)
+                if current:
+                    exprs.append(current)
+                # Sort by string representation (stripped of leading/trailing whitespace)
+                def expr_key(leaves):
+                    return ''.join(l.value for l in leaves).strip()
+                exprs_sorted = sorted(exprs, key=expr_key)
+                # Rebuild leaves with ',' separator
+                new_leaves = []
+                for idx, expr in enumerate(exprs_sorted):
+                    if idx > 0:
+                        new_leaves.append(Leaf(token.COMMA, ","))
+                    if expr:
+                        for l in expr:
+                            new_leaves.append(l)
+                self.leaves[lpar_idx+1:rpar_idx] = new_leaves
+
         if not self:
             return "\n"
 

@@ -27,7 +27,7 @@ alias Traits123 = Trait1 & Trait2 & Trait3
 
 
 @value
-struct Struct123(Traits12, Trait3):
+struct Struct123(Trait3, Traits12):
     fn f1(self):
         print("f1")
 

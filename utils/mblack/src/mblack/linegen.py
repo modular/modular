@@ -262,6 +262,15 @@ class LineGenerator(Visitor[Line]):
                 yield from self.line()
             yield from self.visit_default(node)
 
+        # Patch: emit a line for Mojo struct/trait definitions
+        if (
+            node.children
+            and isinstance(node.children[0], Leaf)
+            and node.children[0].type == token.NAME
+            and node.children[0].value in ("struct", "trait")
+        ):
+            yield from self.line()
+
     def visit_async_stmt(self, node: Node) -> Iterator[Line]:
         """Visit `async def`, `async for`, `async with`."""
         yield from self.line()
@@ -425,6 +434,47 @@ class LineGenerator(Visitor[Line]):
 
         yield from self.visit_default(leaf)
 
+    def _sort_struct_trait_conformances(self, node: Node) -> None:
+        """Sorts the conformance/inheritance list for struct/trait nodes in-place."""
+        # Find the parentheses group (LPAR ... RPAR) after the struct/trait name
+        lpar_idx = None
+        rpar_idx = None
+        for i, child in enumerate(node.children):
+            if isinstance(child, Leaf) and child.type == token.LPAR:
+                lpar_idx = i
+            if isinstance(child, Leaf) and child.type == token.RPAR:
+                rpar_idx = i
+                break
+        if lpar_idx is None or rpar_idx is None:
+            return
+
+        if rpar_idx > lpar_idx + 1:
+            # Extract the conformances (skip commas, sort names only)
+            conformances = []
+            for c in node.children[lpar_idx+1:rpar_idx]:
+                if isinstance(c, Leaf) and c.type == token.NAME:
+                    conformances.append(c.value)
+
+            # Sort conformances alphabetically
+            sorted_conformances = sorted(conformances)
+
+            # Rebuild the children between LPAR and RPAR
+            new_children = []
+            for idx, name in enumerate(sorted_conformances):
+                new_children.append(Leaf(token.NAME, name))
+                new_children.append(Leaf(token.COMMA, ","))
+
+            # Replace in node.children
+            node.children[lpar_idx+1:rpar_idx] = new_children
+
+    def visit_classdef_sorted(self, node: Node, keywords: Set[str], parens: Set[str], nodeTypes: Set[int] = set()):
+        # Only sort for struct/trait, not regular class
+        from mblib2to3.pgen2 import token as mtoken
+        if getattr(node, 'type', None) == mtoken.STRUCT or getattr(node, 'type', None) == mtoken.TRAIT:
+            self._sort_struct_trait_conformances(node)
+        # Fallback to original logic
+        yield from self.visit_stmt(node, keywords, parens, nodeTypes)
+
     def __post_init__(self) -> None:
         """You are in a twisty little maze of passages."""
         self.current_line = Line(mode=self.mode)
@@ -448,7 +498,9 @@ class LineGenerator(Visitor[Line]):
         else:
             self.visit_except_clause = partial(v, keywords={"except"}, parens=Ø)
             self.visit_with_stmt = partial(v, keywords={"with"}, parens=Ø)
-        self.visit_classdef = partial(v, keywords={"class"}, parens=Ø, nodeTypes={token.STRUCT, token.TRAIT})
+        # Patch: use our sorting logic for struct/trait
+        from mblib2to3.pgen2 import token as mtoken
+        self.visit_classdef = partial(self.visit_classdef_sorted, keywords={"class"}, parens=Ø, nodeTypes={mtoken.STRUCT, mtoken.TRAIT})
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(v, keywords={"return"}, parens={"return"})
         self.visit_import_from = partial(v, keywords=Ø, parens={"import"})
