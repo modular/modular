@@ -272,7 +272,7 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 
-var g_dtor_count: Int = 0
+var __g_dtor_count: Int = 0
 
 
 struct DelCounter(Copyable, Movable, Writable):
@@ -293,11 +293,11 @@ struct DelCounter(Copyable, Movable, Writable):
         existing.payload = 0
 
     fn __del__(owned self):
-        g_dtor_count += 1
+        __g_dtor_count += 1
 
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("DelCounter(")
-        writer.write(String(g_dtor_count))
+        writer.write(String(__g_dtor_count))
         writer.write(")")
 
 

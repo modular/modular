@@ -19,7 +19,7 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
-    g_dtor_count,
+    __g_dtor_count,
 )
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
@@ -540,16 +540,16 @@ def test_indexing():
 
 def inner_test_list_dtor():
     # explicitly reset global counter
-    g_dtor_count = 0
+    __g_dtor_count = 0
 
     var l = LinkedList[DelCounter]()
-    assert_equal(g_dtor_count, 0)
+    assert_equal(__g_dtor_count, 0)
 
     l.append(DelCounter())
-    assert_equal(g_dtor_count, 0)
+    assert_equal(__g_dtor_count, 0)
 
     l^.__del__()
-    assert_equal(g_dtor_count, 1)
+    assert_equal(__g_dtor_count, 1)
 
 
 def test_list_dtor():
@@ -557,7 +557,7 @@ def test_list_dtor():
     inner_test_list_dtor()
 
     # verify we still only ran the destructor once
-    assert_equal(g_dtor_count, 1)
+    assert_equal(__g_dtor_count, 1)
 
 
 def test_iter():

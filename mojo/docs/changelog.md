@@ -139,6 +139,10 @@ what we publish.
 - `def` arguments are no longer implicitly mutable. If you would like to have a
    locally mutable argument, declare it `owned` explicitly.
 
+- Global (file-scope) variables are deprecated. Global variables in Mojo are
+  only partially implemented and are known to cause cryptic errors.
+  Now Mojo compiler issues a warning on global variable usage.
+
 ### Standard library changes
 
 - The [`Dict`](/mojo/stdlib/collections/dict/Dict/) type is now part of the
