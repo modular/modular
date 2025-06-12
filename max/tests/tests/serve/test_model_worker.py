@@ -11,6 +11,7 @@ import pytest
 from max.pipelines.core import TokenGenerator
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.scheduler import (
@@ -23,7 +24,9 @@ from max.serve.telemetry.metrics import NoopClient
 async def test_model_worker_propagates_exception() -> None:
     """Tests raising in the model worker context manager."""
     settings = Settings()
-    dispatcher_factory = DispatcherFactory[str](settings.dispatcher_config)
+    dispatcher_factory = DispatcherFactory[str](
+        settings.dispatcher_config, transport_payload_type=TransportMessage[str]
+    )
 
     with pytest.raises(AssertionError):
         async with start_model_worker(
@@ -56,7 +59,9 @@ class MockInvalidTokenGenerator(TokenGenerator[str]):
 async def test_model_worker_propagates_construction_exception() -> None:
     """Tests raising in the model worker task."""
     settings = Settings()
-    dispatcher_factory = DispatcherFactory[str](settings.dispatcher_config)
+    dispatcher_factory = DispatcherFactory[str](
+        settings.dispatcher_config, transport_payload_type=TransportMessage[str]
+    )
 
     with pytest.raises(
         ValueError, match=MockInvalidTokenGenerator.ERROR_MESSAGE
@@ -88,7 +93,9 @@ class MockSlowTokenGenerator(TokenGenerator[str]):
 async def test_model_worker_start_timeout() -> None:
     """Tests raising in the model worker task."""
     settings = Settings(MAX_SERVE_MW_TIMEOUT=0.1)
-    dispatcher_factory = DispatcherFactory[str](settings.dispatcher_config)
+    dispatcher_factory = DispatcherFactory[str](
+        settings.dispatcher_config, transport_payload_type=TransportMessage[str]
+    )
 
     with pytest.raises(TimeoutError):
         async with start_model_worker(

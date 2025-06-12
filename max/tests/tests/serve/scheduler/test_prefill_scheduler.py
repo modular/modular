@@ -23,6 +23,7 @@ from max.serve.kvcache_agent.dispatcher_factory import (
     TransportFactory,
     TransportType,
 )
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 from max.serve.scheduler.prefill_scheduler import (
@@ -120,7 +121,12 @@ def prefill_dispatcher_factory(prefill_address, decode_address):
             default_destination_address=decode_address,
         ),
     )
-    return DispatcherFactory[Union[PrefillResponse, PrefillRequest]](config)
+    return DispatcherFactory[Union[PrefillResponse, PrefillRequest]](
+        config,
+        transport_payload_type=TransportMessage[
+            Union[PrefillRequest, PrefillResponse]
+        ],
+    )
 
 
 @pytest.fixture
@@ -133,7 +139,12 @@ def decode_dispatcher_factory(prefill_address, decode_address):
             default_destination_address=prefill_address,
         ),
     )
-    return DispatcherFactory[Union[PrefillRequest, PrefillResponse]](config)
+    return DispatcherFactory[Union[PrefillRequest, PrefillResponse]](
+        config,
+        transport_payload_type=TransportMessage[
+            Union[PrefillRequest, PrefillResponse]
+        ],
+    )
 
 
 async def setup_scheduler(
