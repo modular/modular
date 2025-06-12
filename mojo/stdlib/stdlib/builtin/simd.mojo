@@ -1862,6 +1862,15 @@ struct SIMD[dtype: DType, size: Int](
                 self.cast[DType.float32](),
             )._refine[target]()
 
+        @parameter
+        if dtype in (DType._uint1, DType._uint2, DType._uint4):
+            # `pop.cast` doesn't support some conversions from `ui1`, `ui2`, or `ui4`
+            var uint = __mlir_op.`pop.cast`[
+                _type = SIMD[DType.uint32, size]._mlir_type,
+                fast = __mlir_attr.unit,
+            ](self.value)
+            return SIMD[DType.uint32, size](uint).cast[target]()
+
         return __mlir_op.`pop.cast`[
             _type = SIMD[target, size]._mlir_type, fast = __mlir_attr.unit
         ](self.value)
