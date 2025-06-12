@@ -9,13 +9,24 @@ This example include custom layers, blocks, and architectural patterns that
 showcase the flexibility of MAX's Python API for deep learning development, from
 simple MLP blocks to more complex neural network architectures.
 
-To run this example, execute the following command:
+For a walkthrough, see the tutorial to [build an MLP block as a
+module](https://docs.modular.com/max/tutorials/build-an-mlp-block/).
+
+## Usage
+
+If you don't have it, install `pixi`:
 
 ```sh
-python main.py
+curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
-The following is the expected output:
+Then navigate to this directory and run the example:
+
+```sh
+pixi run python main.py
+```
+
+You should see the following output:
 
 ```output
 --- Simple MLP Block ---

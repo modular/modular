@@ -30,7 +30,7 @@ alias blksize_t = Int32
 
 
 @fieldwise_init
-struct _c_stat(Stringable, Writable, Copyable, Movable):
+struct _c_stat(Stringable, Writable, Copyable, Movable, Defaultable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_mode: mode_t

@@ -435,7 +435,7 @@ class MAXModelConfig(MAXModelConfigBase):
         the KV cache strategy and finalizes the encoding config.
         """
         self._validate_quantization_encoding_device_compatibility(
-            supported_encodings_list=list(supported_encodings.keys()),
+            supported_encodings_list=list(supported_encodings.keys())
         )
         self._finalize_encoding_config()
         self._resolve_weight_path(default_weights_format=default_weights_format)
@@ -500,7 +500,7 @@ class MAXModelConfig(MAXModelConfigBase):
         if not self.weight_path:
             # Retrieve the default files for each weights format.
             weight_files = self.huggingface_weight_repo.files_for_encoding(
-                encoding=self.quantization_encoding,
+                encoding=self.quantization_encoding
             )
 
             if default_weight_files := weight_files.get(

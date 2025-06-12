@@ -15,7 +15,7 @@
 
 
 from python import Python, PythonObject
-from python.bindings import PythonTypeBuilder, PythonModuleBuilder
+from python.bindings import PythonModuleBuilder
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -283,39 +283,33 @@ def test_bool_conversion():
     assert_true(x == 0 or x == 1)
 
 
-fn test_string_conversions() raises -> None:
-    fn test_string_literal() -> None:
-        try:
-            var mojo_str: StaticString = "mojo"
-            var py_str = PythonObject(mojo_str)
-            var py_capitalized = py_str.capitalize()
-            var py = Python()
-            var mojo_capitalized = py.as_string_slice(py_capitalized)
-            assert_true(mojo_capitalized == "Mojo")
-        except e:
-            print("Error occurred")
+fn test_string_conversions(mut python: Python) raises -> None:
+    # static string
+    var static_str: StaticString = "mojo"
+    var py_str = PythonObject(static_str)
+    var py_capitalized = py_str.capitalize()
+    var mojo_capitalized = python.as_string_slice(py_capitalized)
+    assert_true(mojo_capitalized == "Mojo")
 
-    fn test_string() -> None:
-        try:
-            var mo_str = String("mo")
-            var jo_str = String("jo")
-            var mojo_str = mo_str + jo_str
-            var py_str = PythonObject(mojo_str)
-            var py_capitalized = py_str.capitalize()
-            var py = Python()
-            var mojo_capitalized = py.as_string_slice(py_capitalized)
-            assert_true(mojo_capitalized == "Mojo")
-        except e:
-            print("Error occurred")
+    # string object
+    var mo_str = String("mo")
+    var jo_str = String("jo")
+    var mojo_str = mo_str + jo_str
+    py_str = PythonObject(mojo_str)
+    py_capitalized = py_str.capitalize()
+    mojo_capitalized = python.as_string_slice(py_capitalized)
+    assert_true(mojo_capitalized == "Mojo")
 
-    fn test_type_object() raises -> None:
-        var py_float = PythonObject(3.14)
-        var type_obj = Python.type(py_float)
-        assert_equal(String(type_obj), "<class 'float'>")
+    # type object
+    var py_float = PythonObject(3.14)
+    var type_obj = python.type(py_float)
+    assert_equal(String(type_obj), "<class 'float'>")
 
-    test_string_literal()
-    test_string()
-    test_type_object()
+    # check that invalid utf-8 encoding raises an error
+    var buffer = InlineArray[Byte, 2](0xF0, 0x28)
+    var invalid = String(bytes=buffer)
+    with assert_raises(contains="'utf-8' codec can't decode byte"):
+        _ = PythonObject(invalid)
 
 
 def test_len():
@@ -665,7 +659,7 @@ def main():
     test_inplace_dunder_methods(python)
     test_num_conversion()
     test_bool_conversion()
-    test_string_conversions()
+    test_string_conversions(python)
     test_len()
     test_is()
     test_iter()

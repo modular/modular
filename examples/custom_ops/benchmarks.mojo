@@ -49,13 +49,13 @@ from utils import IndexList
 
 
 # Wrap a ManagedTensorSlice and DeviceBuffer as an owning Tensor
-@value
+@fieldwise_init
 struct Tensor[
     dtype: DType,
     rank: Int, //,
     io_spec: IOSpec,
     static_spec: StaticTensorSpec[dtype, rank],
-]:
+](Copyable, Movable):
     alias size = Int(static_spec.shape.product())
 
     var slice: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]

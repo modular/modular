@@ -62,7 +62,7 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout.layout_tensor import Layout, LayoutTensor
+from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
@@ -170,7 +170,7 @@ from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.moe import moe_create_indices
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.normalization import layer_norm, rms_norm
+from nn.normalization import group_norm, layer_norm, rms_norm
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
@@ -4303,6 +4303,65 @@ struct RMSNorm:
         return input.shape()
 
 
+@compiler.register("group_norm")
+struct GroupNorm:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank],
+        input: FusedInputTensor[dtype=dtype, rank=rank],
+        gamma: FusedInputTensor[dtype=dtype, rank=1],
+        beta: FusedInputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        fn input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        fn gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return gamma._lambda_load[width=width](coords)
+
+        @parameter
+        @always_inline
+        fn beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return beta._lambda_load[width=width](coords)
+
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
+            shape=input.shape(),
+            epsilon=epsilon,
+            groups=num_groups,
+            output=output_buf,
+            ctx=ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        beta: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
 # ===-----------------------------------------------------------------------===#
 # TopK kernels
 # ===-----------------------------------------------------------------------===#
@@ -5367,17 +5426,23 @@ struct Split:
         axis: Scalar,
         ctx: DeviceContextPtr,
     ) raises:
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var output_bufs = StaticTuple[
-            NDBuffer[dtype, rank, MutableAnyOrigin], output.size
+            LayoutTensor[dtype, Layout.row_major[rank](), MutableAnyOrigin],
+            output.size,
         ]()
 
         @parameter
         for i in range(output.size):
-            output_bufs[i] = managed_tensor_slice_to_ndbuffer(output[i])
+            var output_tensor = LayoutTensor[dtype, Layout.row_major[rank]()](
+                output[i].unsafe_ptr(),
+                RuntimeLayout[Layout.row_major[rank]()].row_major(
+                    output[i].to_layout_tensor().runtime_layout.shape.value,
+                ),
+            )
+            output_bufs[i] = output_tensor
 
-        split[dtype, rank, target=target, trace_description=_trace_name](
-            input_buf,
+        split[dtype, target=target, trace_description=_trace_name](
+            input.to_layout_tensor(),
             normalize_neg_index(Int(axis), rank),
             output_bufs,
             ctx.get_device_context(),
@@ -8291,7 +8356,12 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
     @always_inline
     @staticmethod
     fn execute[
-        dtype: DType, num_heads: Int, head_dim: Int, //, target: StaticString
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool, //,
+        target: StaticString,
     ](
         kv_collection: ContinuousBatchingKVCacheCollection[
             dtype,
@@ -8306,7 +8376,9 @@ struct Struct_rms_norm_kv_cache_ragged_continuous_batching:
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_continuous_batching[
-            target=target, multiply_before_cast=True
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
         ](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),
@@ -8327,7 +8399,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         dtype: DType,
         num_heads: Int,
         head_dim: Int,
-        page_size: Int, //,
+        page_size: Int,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool, //,
         target: StaticString,
     ](
         kv_collection: PagedKVCacheCollection[
@@ -8344,7 +8418,9 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
         context: DeviceContextPtr,
     ) raises:
         rms_norm_kv_cache_ragged_paged[
-            target=target, multiply_before_cast=True
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
         ](
             kv_collection,
             managed_tensor_slice_to_ndbuffer(gamma),

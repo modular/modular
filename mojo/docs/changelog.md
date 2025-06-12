@@ -37,15 +37,34 @@ what we publish.
   - `Mogg` directory which contains registration of kernels with the Graph
     Compiler
 
+  - Mojo now supports AMD GPUs, expanding hardware compatibility beyond NVIDIA
+  to include AMD's GPU ecosystem. This enables Mojo applications to leverage
+  AMD's RDNA and CDNA architectures for high-performance computing workloads,
+  providing developers with greater flexibility in choosing hardware platforms
+  for AI and compute-intensive applications.
+
+  - Primitives for working with NVIDIA Blackwell GPUs have been added,
+  providing low-level access to the latest GPU architecture features. These
+  primitives enable developers to take advantage of Blackwell's enhanced
+  compute capabilities, improved memory bandwidth, and advanced AI acceleration
+  features, including support for newer tensor operations and optimized memory
+  management patterns.
+
+- Mojo is now available on Godbolt (see <https://mojo.godbo.lt/z/EshWcoqe7> for
+  an example).
+
 ### Language Enhancements
 
 - `var` declarations in functions now support more flexible "patterns", allowing
   multiple values to be declared at once, e.g. `var a, b = 4, 5` and
   `var a, b : Int, Float64`.
 
-- Mojo now supports Python-style type patterns within function bodies without
-  needing the use of the `var` keyword, e.g.: `x = 4; y: UInt8 = 5` implicitly
-  declares `x` as type `Int`, but implicitly declares `y` with type `UInt8`.
+- Mojo now supports the use of Python-style type patterns when declaring
+  variables on first assignment without the `var` keyword. For example,
+  `x = 4; y: UInt8 = 5` declares both `x` and `y`: `x` is inferred to the
+  default type of `Int`, but `y` gets the explicit type `UInt8`.  Declaring
+  variables without `var` gives you a function-scoped name, whereas `var` makes
+  things scoped to the statement they are in (e.g. an `if` body).
 
 - Mojo now supports 'ref' patterns that bind a stored LValue into a named
   declaration, extending the argument convention into local function scope.
@@ -316,7 +335,7 @@ Changes to Python-Mojo interoperability:
   `write_buffered` and `write_args` functions have also been removed, to improve
   compile speed and reduce register pressure on GPU, you should now unroll the
   variadic pack at each call site:
-  
+
   Unbuffered:
 
   ```mojo

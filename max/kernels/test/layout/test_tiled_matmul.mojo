@@ -19,9 +19,9 @@ from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Dim(Stringable):
+struct Dim(Stringable, Copyable, Movable):
     var m: Int
     var n: Int
     var k: Int

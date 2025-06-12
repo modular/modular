@@ -184,9 +184,7 @@ def fastapi_app(
     app = FastAPI(
         title="MAX Serve",
         lifespan=partial(
-            lifespan,
-            settings=settings,
-            serving_settings=serving_settings,
+            lifespan, settings=settings, serving_settings=serving_settings
         ),
     )
 

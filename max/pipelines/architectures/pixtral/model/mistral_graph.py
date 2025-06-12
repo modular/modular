@@ -46,24 +46,9 @@ def feed_forward(
     weights: Weights,
 ):
     return MLPV1(
-        linear(
-            dtype,
-            feed_forward_length,
-            hidden_dim,
-            weights.mlp.gate_proj,
-        ),
-        linear(
-            dtype,
-            hidden_dim,
-            feed_forward_length,
-            weights.mlp.down_proj,
-        ),
-        linear(
-            dtype,
-            feed_forward_length,
-            hidden_dim,
-            weights.mlp.up_proj,
-        ),
+        linear(dtype, feed_forward_length, hidden_dim, weights.mlp.gate_proj),
+        linear(dtype, hidden_dim, feed_forward_length, weights.mlp.down_proj),
+        linear(dtype, feed_forward_length, hidden_dim, weights.mlp.up_proj),
     )
 
 

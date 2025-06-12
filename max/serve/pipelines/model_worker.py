@@ -202,9 +202,7 @@ class ModelWorker:
             pass
         except Exception as e:
             logger.exception(
-                "Encountered an error in ModelWorker.run %s",
-                e,
-                stack_info=True,
+                "Encountered an error in ModelWorker.run %s", e, stack_info=True
             )
 
 
@@ -233,9 +231,7 @@ async def start_model_worker(
 
     mp_context = multiprocessing.get_context("spawn")
     pc = ProcessControl(
-        mp_context,
-        "model-worker",
-        health_fail_s=settings.mw_health_fail_s,
+        mp_context, "model-worker", health_fail_s=settings.mw_health_fail_s
     )
     zmq_ctx = zmq.Context(io_threads=zmq_io_threads)
     engine_queue: EngineQueue = EngineQueue(

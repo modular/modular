@@ -145,16 +145,16 @@ fn bench_matmul[
     c_ptr.free()
 
 
-@value
-struct MatmulSpecStatic:
+@fieldwise_init
+struct MatmulSpecStatic(Copyable, Movable):
     var b_packed: Bool
     var a_type: DType
     var b_type: DType
     var c_type: DType
 
 
-@value
-struct MatmulSpec[static_info: MatmulSpecStatic](Stringable):
+@fieldwise_init
+struct MatmulSpec[static_info: MatmulSpecStatic](Stringable, Copyable, Movable):
     var m: Int
     var n: Int
     var k: Int

@@ -157,8 +157,7 @@ class MoE(Module):
             expert_ids,
             expert_usage_stats,
         ) = moe_create_indices(
-            ops.cast(top_idx, DType.uint32),
-            self.num_experts,
+            ops.cast(top_idx, DType.uint32), self.num_experts
         )
 
         permutated_states = ops.gather(

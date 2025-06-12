@@ -142,9 +142,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             model_inputs.next_tokens_batch, model_inputs.attention_mask
         )
 
-        return ModelOutputs(
-            logits=cast(Tensor, model_outputs[0]),
-        )
+        return ModelOutputs(logits=cast(Tensor, model_outputs[0]))
 
     def prepare_initial_token_inputs(
         self,
@@ -199,8 +197,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             DeviceRef.from_device(self.devices[0]),
         )
         model = session.load(
-            graph,
-            weights_registry=self.weights.allocated_weights,
+            graph, weights_registry=self.weights.allocated_weights
         )
         after = time.perf_counter()
         logger.info(

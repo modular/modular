@@ -19,6 +19,7 @@ from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
 
@@ -708,7 +709,7 @@ fn st_matrix[
 
 # Shared memory operand descriptor.
 @register_passable("trivial")
-struct WGMMADescriptor[dtype: DType]:
+struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     """Descriptor for shared memory operands used in warp group matrix multiply operations.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1215,7 +1216,6 @@ fn wgmma_async[
     - Row major matrix A.
     - Column major matrix B (or row major for BF16).
     """
-
     constrained[
         (m * n // 128) * sizeof[accum_type]()
         == frag_c_width * sizeof[c_dtype](),

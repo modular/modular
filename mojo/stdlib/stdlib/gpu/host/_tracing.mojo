@@ -294,7 +294,7 @@ alias _roctxRangeStop = _dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Mark:
+struct _Mark(Defaultable):
     var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
 
     fn __init__(out self):
@@ -313,7 +313,7 @@ struct _Mark:
         self._fn[_roctxMarkA.fn_type](val)
 
 
-struct _RangeStart:
+struct _RangeStart(Defaultable):
     var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
 
     fn __init__(out self):
@@ -332,7 +332,7 @@ struct _RangeStart:
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
-struct _RangeEnd:
+struct _RangeEnd(Defaultable):
     var _fn: fn (RangeID) -> NoneType
 
     fn __init__(out self):
@@ -346,7 +346,7 @@ struct _RangeEnd:
         self._fn(val)
 
 
-struct _RangePush:
+struct _RangePush(Defaultable):
     var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
 
     fn __init__(out self):
@@ -365,7 +365,7 @@ struct _RangePush:
         return self._fn[_roctxRangePushA.fn_type](val)
 
 
-struct _RangePop:
+struct _RangePop(Defaultable):
     var _fn: _nvtxRangePop.fn_type
 
     fn __init__(out self):

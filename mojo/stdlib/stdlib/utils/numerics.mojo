@@ -386,7 +386,7 @@ struct FPUtils[
 # ===----------------------------------------------------------------------=== #
 
 
-struct FlushDenormals:
+struct FlushDenormals(Defaultable):
     """Flushes and denormals are set to zero within the context and the state
     is restored to the prior value on exit."""
 

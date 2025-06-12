@@ -148,7 +148,4 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         except asyncio.CancelledError:
             raise
         finally:
-            logger.debug(
-                "Terminating response worker [self=%s]",
-                os.getpid(),
-            )
+            logger.debug("Terminating response worker [self=%s]", os.getpid())

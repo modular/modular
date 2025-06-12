@@ -178,9 +178,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             token_log_probabilities,
                             top_log_probabilities,
                         ) = await self._collect_log_probs(
-                            log_prob,
-                            context,
-                            skip_special_tokens,
+                            log_prob, context, skip_special_tokens
                         )
                         del tracer  # collect_log_probs
 
@@ -489,9 +487,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
-                audio_data=torch.tensor([]),
-                metadata={},
-                is_done=True,
+                audio_data=torch.tensor([]), metadata={}, is_done=True
             )
 
         # Combine audio chunks and metadata.

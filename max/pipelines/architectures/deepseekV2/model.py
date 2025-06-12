@@ -152,8 +152,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch],
-            dtype=np.uint32,
+            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
@@ -265,8 +264,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=huggingface_config.num_hidden_layers,
             available_cache_memory=available_cache_memory,
@@ -375,9 +373,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
             device=DeviceRef.GPU(),
         )
         return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.GPU(),
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.GPU()
         )
         kv_cache_types = self.kv_manager.input_symbols()[0]
         with Graph(

@@ -1839,7 +1839,7 @@ fn _rowmax_online_softmax[
     row_accum_layout: Layout,
     fragment_layout: Layout,
     accum_frag_layout: Layout, //,
-    block_layout_by_warp: Layout,
+    num_rowwise_warps: Int,
     warp_layout: Layout,
     use_exp2: Bool,
 ](
@@ -1866,8 +1866,6 @@ fn _rowmax_online_softmax[
     ],
     init_rowmax: Bool = False,
 ):
-    alias num_colwise_warps = block_layout_by_warp.shape[0].value()
-    alias num_rowwise_warps = block_layout_by_warp.shape[1].value()
     constrained[
         num_rowwise_warps == 1,
         "FIXME: add support for num_rowwise_warps>1, required by deepseek",
@@ -2049,103 +2047,3 @@ fn _online_softmax_correction[
             exp_function(rowmax_tensor._get[col_tile]() - sfr)
         )
         rowmax_tensor._set[col_tile](sfr)
-
-
-@always_inline
-fn _online_softmax_iter_for_mma_output_sm90[
-    type: DType,
-    reg_tile_layout: Layout,
-    row_accum_layout: Layout,
-    fragment_layout: Layout,
-    accum_frag_layout: Layout, //,
-    block_layout_by_warp: Layout,
-    warp_layout: Layout,
-    use_exp2: Bool,
-](
-    out correction: LayoutTensor[
-        type,
-        row_accum_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-        element_layout=accum_frag_layout,
-    ],
-    score_reg_tile: LayoutTensor[
-        type,
-        reg_tile_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-        element_layout=fragment_layout,
-    ],
-    rowmax_tensor: LayoutTensor[
-        type,
-        row_accum_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-        element_layout=accum_frag_layout,
-    ],
-    rowsum_tensor: LayoutTensor[
-        type,
-        row_accum_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-        element_layout=accum_frag_layout,
-    ],
-):
-    alias num_colwise_warps = block_layout_by_warp.shape[0].value()
-    alias num_rowwise_warps = block_layout_by_warp.shape[1].value()
-    constrained[
-        num_rowwise_warps == 1,
-        "FIXME: add support for num_rowwise_warps>1, required by deepseek",
-    ]()
-
-    # Assume p_reg_tile has been properly vectorized. The element layout
-    # represents number elements per thread in a row or column
-    # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
-
-    # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
-    # alias frag_num_rows = fragment_layout.shape[0].value() # sm90 1
-    alias frag_num_cols = fragment_layout.shape[1].value()  # sm90 2
-    alias frag_num_rows = accum_frag_layout.size()
-    constrained[frag_num_rows == fragment_layout.shape[0].value()]()
-
-    alias num_colwise_tiles = reg_tile_layout[0].size()
-    alias num_rowwise_tiles = reg_tile_layout[1].size()
-    # The online softmax attributes for each thread's elements (fragments).
-    alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
-
-    constrained[
-        rowmax_tensor.element_layout.size() == frag_num_rows,
-        (
-            "`rowmax_tensor` and `rowsum_tensor` should be vectorized for AMD,"
-            " where `frag_num_rows > 1`. This simplifies the implementation."
-        ),
-    ]()
-
-    # Initialize local max with the running max, and local sum with zero.
-
-    alias is_nvidia: Bool = is_nvidia_gpu()
-    # this is basically M in mma shape, but for nvidia we absorb the factor
-    # of 2 in num_m_mma so we use 8 here for nvidia
-    alias num_colwise_lanes = UInt32(
-        warp_layout.shape[0].value()
-    ) if is_nvidia else UInt32(16)
-    alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
-
-    # Online softmax; correction is initially used as `score_frag_rowmax`
-    correction = _rowmax_online_softmax[
-        block_layout_by_warp, warp_layout, use_exp2=use_exp2
-    ](score_reg_tile, rowmax_tensor)
-
-    score_frag_rowsum = _rowsum[warp_layout](score_reg_tile)
-
-    _online_softmax_correction[use_exp2=use_exp2](rowmax_tensor, correction)
-
-    @parameter
-    for col_tile in range(num_colwise_tiles):
-        # Save current rowmax and rowsum
-        rowsum_tensor._set[col_tile](
-            rowsum_tensor._get[col_tile]() * correction._get[col_tile]()
-            + rebind[SIMD[type, accum_frag_layout.size()]](
-                score_frag_rowsum._get[col_tile]()
-            )
-        )

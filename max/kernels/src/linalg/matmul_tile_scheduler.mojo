@@ -21,9 +21,9 @@ from utils.index import Index, IndexList
 from linalg.utils_gpu import block_swizzle
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Stringable, Writable):
+struct WorkInfo(Stringable, Writable, Copyable, Movable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -58,9 +58,9 @@ struct WorkInfo(Stringable, Writable):
         )
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MatmulSchedule:
+struct MatmulSchedule(Copyable, Movable):
     var _value: Int32
 
     alias NONE = Self(-1)

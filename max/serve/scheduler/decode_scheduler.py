@@ -90,8 +90,7 @@ class DecodeScheduler(Scheduler):
             ),
         )
         self.response_push_socket = ZmqPushSocket[tuple[str, TextResponse]](
-            zmq_ctx=zmq_ctx,
-            zmq_endpoint=response_zmq_endpoint,
+            zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
         )
         self.cancel_pull_socket = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
@@ -302,7 +301,7 @@ class DecodeScheduler(Scheduler):
                 # So assign it to the correct seq_id in the Decode Paged Cache.
                 prefill_response.context.unassign_from_cache()
                 prefill_response.context.assign_to_cache(
-                    self.reserved_cache_indices[prefill_response.id],
+                    self.reserved_cache_indices[prefill_response.id]
                 )
 
                 # Add to active batch.

@@ -15,7 +15,7 @@ from os import abort
 
 
 struct UnsafeMaybeUninitialized[ElementType: AnyType](
-    ExplicitlyCopyable, Copyable, Movable
+    ExplicitlyCopyable, Copyable, Movable, Defaultable
 ):
     """A memory location that may or may not be initialized.
 

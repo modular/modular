@@ -195,6 +195,8 @@ fn _supported_mma_shape[
 # Core matrix dimensions
 # Each core matrix has 8 rows and 16 bytes per row.
 alias _CM_NUM_ROWS = 8
+
+
 alias _CM_ROW_BYTES = 16
 alias _CM_ROW_BITS = 128
 
@@ -661,7 +663,7 @@ struct TensorCoreAsync[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = False,
-]:
+](Defaultable):
     """High-performance asynchronous tensor core operations for matrix multiplication.
 
     This struct provides methods for utilizing NVIDIA's Tensor Cores for asynchronous

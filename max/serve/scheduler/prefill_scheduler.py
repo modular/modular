@@ -278,10 +278,7 @@ class PrefillScheduler(Scheduler):
         and sends completed requests to the decode queue while resetting their token indices.
         """
         # Execute the Batch
-        _ = self.pipeline.next_token(
-            self.active_batch,
-            num_steps=1,
-        )
+        _ = self.pipeline.next_token(self.active_batch, num_steps=1)
 
         if self.scheduler_config.enable_chunked_prefill:
             self._handle_chunked_requests()

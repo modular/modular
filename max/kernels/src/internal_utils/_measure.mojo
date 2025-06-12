@@ -32,18 +32,18 @@ fn kl_div(x: SIMD, y: __type_of(x)) -> __type_of(x):
 
     $$
     \\mathrm{kl\\_div}(x, y) =
-      \begin{cases}
-        x \\log(x / y) - x + y & x > 0, y > 0 \\
-        y & x = 0, y \\ge 0 \\
+      \\begin{cases}
+        x \\log(x / y) - x + y & x > 0, y > 0 \\\\
+        y & x = 0, y \\ge 0 \\\\
         \\infty & \\text{otherwise}
       \\end{cases}
     $$
     """
-    return (isnan(x) or isnan(y)).select(
-        __type_of(x)(nan[x.dtype]()),
-        (x > 0 and y > 0).select(
+    return (isnan(x) | isnan(y)).select(
+        nan[x.dtype](),
+        ((x > 0) & (y > 0)).select(
             x * log(x / y) - x + y,
-            (x == 0 and y >= 0).select(y, __type_of(x)(inf[x.dtype]())),
+            ((x == 0) & (y >= 0)).select(y, inf[x.dtype]()),
         ),
     )
 

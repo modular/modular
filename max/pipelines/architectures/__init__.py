@@ -36,6 +36,7 @@ def register_all_models():
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
     from .olmo import olmo_arch
+    from .olmo2 import olmo2_arch
     from .phi3 import phi3_arch
     from .pixtral import pixtral_arch
     from .qwen2 import qwen2_arch
@@ -55,6 +56,7 @@ def register_all_models():
         mistral3_arch,
         mpnet_arch,
         olmo_arch,
+        olmo2_arch,
         phi3_arch,
         pixtral_arch,
         qwen2_arch,

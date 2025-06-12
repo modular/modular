@@ -325,10 +325,7 @@ fn _try_write_int[
         #   Support printing non-null-terminated strings on GPU and switch
         #   back to this code without a workaround.
         # ptr=digit_chars_array,
-        var zero = StringSlice[ImmutableAnyOrigin](
-            ptr=zero_buf.unsafe_ptr(), length=1
-        )
-        writer.write(zero)
+        writer.write(StringSlice(ptr=zero_buf.unsafe_ptr(), length=1))
 
         return None
 

@@ -206,7 +206,7 @@ struct _StringCapacityField:
 
 # This is a private struct used to store the reference count of a out-of-line
 # mutable string buffer.
-struct _StringOutOfLineHeader:
+struct _StringOutOfLineHeader(Defaultable):
     var refcount: Atomic[DType.index]
     alias _SIZE = sizeof[Self]()
 
@@ -548,11 +548,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline
     fn __init__(
@@ -568,11 +564,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, owned other: Self):
@@ -1010,7 +1002,7 @@ struct String(
         """
         return self
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1061,7 +1053,9 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
+            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
+        )
         return String(elems, sep=sep)
 
     fn join[

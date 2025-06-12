@@ -284,9 +284,7 @@ class AudioGenerationScheduler(Scheduler):
             else:
                 audio_data = torch.tensor([], dtype=torch.float32)
             audio_responses[req_id] = AudioGeneratorOutput(
-                audio_data=audio_data,
-                metadata={},
-                is_done=response.is_done,
+                audio_data=audio_data, metadata={}, is_done=response.is_done
             )
             if response.is_done:
                 stop_responses[req_id] = stop_stream
@@ -367,9 +365,7 @@ class AudioGenerationScheduler(Scheduler):
                     raise RuntimeError("Ran out of KV cache")
 
         return AudioGenerationSchedulerOutput(
-            ce_batch,
-            num_steps=1,
-            batch_type=BatchType.ContextEncoding,
+            ce_batch, num_steps=1, batch_type=BatchType.ContextEncoding
         )
 
     def _schedule(self, batch: AudioGenerationSchedulerOutput) -> None:
@@ -378,8 +374,7 @@ class AudioGenerationScheduler(Scheduler):
         # execute the batch
         with Trace(f"_schedule({batch})"):
             responses = self.pipeline.next_chunk(
-                batch.reqs,
-                num_tokens=batch.num_steps,
+                batch.reqs, num_tokens=batch.num_steps
             )
 
         # add the encoded requests to the continuous batch

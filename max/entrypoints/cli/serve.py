@@ -111,8 +111,7 @@ def serve_pipeline(
 
     # Load batch config.
     batch_config = batch_config_from_pipeline_config(
-        pipeline_config=pipeline_config,
-        pipeline_task=pipeline_task,
+        pipeline_config=pipeline_config, pipeline_task=pipeline_task
     )
 
     # If explicit model name is not provided, set to model_path.
@@ -128,10 +127,7 @@ def serve_pipeline(
     )
 
     # Initialize and serve webserver.
-    app = fastapi_app(
-        settings,
-        pipeline_settings,
-    )
+    app = fastapi_app(settings, pipeline_settings)
     config = fastapi_config(app=app, server_settings=settings)
 
     server = Server(config)

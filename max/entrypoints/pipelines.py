@@ -148,11 +148,7 @@ def common_server_options(func):
         default=False,
         help="Experimental: Enable KV Cache Agent support.",
     )
-    @click.option(
-        "--port",
-        type=int,
-        help="Port to run the server on.",
-    )
+    @click.option("--port", type=int, help="Port to run the server on.")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -160,16 +156,10 @@ def common_server_options(func):
     return wrapper
 
 
-@main.command(
-    name="serve",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
 @click.option(
-    "--task",
-    type=str,
-    default="text_generation",
-    help="The task to run.",
+    "--task", type=str, default="text_generation", help="The task to run."
 )
 @click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
 def cli_serve(
@@ -222,10 +212,7 @@ def cli_serve(
     )
 
 
-@main.command(
-    name="generate",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="generate", cls=WithLazyPipelineOptions)
 @click.option(
     "--prompt",
     type=str,
@@ -278,10 +265,7 @@ def cli_pipeline(
     )
 
 
-@main.command(
-    name="encode",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="encode", cls=WithLazyPipelineOptions)
 @click.option(
     "--prompt",
     type=str,
@@ -306,17 +290,10 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
-    pipeline_encode(
-        pipeline_config,
-        prompt=prompt,
-        num_warmups=num_warmups,
-    )
+    pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
 
 
-@main.command(
-    name="warm-cache",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="warm-cache", cls=WithLazyPipelineOptions)
 def cli_warm_cache(**config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
     from max.pipelines import PIPELINE_REGISTRY, PipelineConfig

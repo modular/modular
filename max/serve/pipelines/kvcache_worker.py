@@ -94,9 +94,7 @@ async def start_kvcache_agent(
 
     mp_context = multiprocessing.get_context("spawn")
     pc = ProcessControl(
-        mp_context,
-        "kvcache-agent",
-        health_fail_s=settings.mw_health_fail_s,
+        mp_context, "kvcache-agent", health_fail_s=settings.mw_health_fail_s
     )
 
     logger.info("Starting KV Cache Agent: %s", process_name)
@@ -114,9 +112,7 @@ async def start_kvcache_agent(
     ht = asyncio.create_task(monitor.until_started())
 
     completed_tasks, pending_tasks = await asyncio.wait(
-        [ht, dt],
-        timeout=10,
-        return_when=asyncio.FIRST_COMPLETED,
+        [ht, dt], timeout=10, return_when=asyncio.FIRST_COMPLETED
     )
 
     # cleanup tasks

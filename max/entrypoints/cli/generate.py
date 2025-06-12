@@ -72,8 +72,7 @@ async def stream_text_to_console(
         generate_again = True
         while generate_again:
             responses = pipeline.next_token(
-                pipeline_request,
-                num_steps=num_steps,
+                pipeline_request, num_steps=num_steps
             )
 
             for request_idx, response in responses.items():

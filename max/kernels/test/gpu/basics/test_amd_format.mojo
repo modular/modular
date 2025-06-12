@@ -24,7 +24,7 @@ from testing import assert_true
 from utils.write import _WriteBufferStack
 
 
-struct Buffer[capacity: Int](Writer):
+struct Buffer[capacity: Int](Writer, Defaultable):
     var data: InlineArray[UInt8, capacity]
     var pos: Int
 

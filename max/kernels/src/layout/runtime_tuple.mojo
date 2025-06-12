@@ -72,7 +72,7 @@ fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
 @register_passable("trivial")
 struct RuntimeTuple[
     S: IntTuple = UNKNOWN_VALUE, /, *, element_type: DType = DType.int64
-](Intable, Stringable, Sized, Writable):
+](Intable, Stringable, Sized, Writable, Defaultable):
     """A struct representing tuple-like data with compile-time and runtime elements.
     RuntimeTuple combines static (compile-time) and dynamic (runtime) handling of
     tuple-like data structures, typically used for tensor shapes, indices, and coordinates
@@ -569,7 +569,14 @@ fn crd2idx[
         constrained[
             shape_t.is_tuple()
             and (len(crd_t) == len(shape_t) == len(stride_t)),
-            "Inputs should have same rank",
+            String(
+                "Inputs should have same rank but got crd_t: ",
+                len(crd_t),
+                " shape_t: ",
+                len(shape_t),
+                " stride_t: ",
+                len(stride_t),
+            ),
         ]()
         var r: Scalar[out_type] = 0
         alias size = min(min(len(crd_t), len(shape_t)), len(stride_t))

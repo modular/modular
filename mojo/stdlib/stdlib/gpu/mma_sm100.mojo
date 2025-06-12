@@ -19,6 +19,7 @@ from sys.info import _has_blackwell_tcgen05
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200, DEFAULT_GPU_ARCH, Info
+from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
 
@@ -739,7 +740,7 @@ struct UMMAInsDescriptor[
 
 
 @register_passable("trivial")
-struct MMASmemDescriptor:
+struct MMASmemDescriptor(MMAOperandDescriptor):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -970,6 +971,179 @@ fn mma[
             }""",
             NoneType,
             constraints="r,l,l,r,n,r,r,r,r,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+            masks[4],
+            masks[5],
+            masks[6],
+            masks[7],
+        )
+    else:
+        constrained[False, String("Unsupported cta group: ", cta_group)]()
+
+
+@always_inline
+fn mma[
+    kind: UMMAKind, //,
+    cta_group: Int = 1,
+    /,
+    *,
+](
+    a_desc: MMASmemDescriptor,
+    b_desc: MMASmemDescriptor,
+    c_tmem: UInt32,
+    inst_desc: UMMAInsDescriptor[kind],
+    c_scale: UInt32,
+):
+    """Perform a matrix multiply-accumulate operation using the tcgen05.mma instruction.
+
+    Parameters:
+        kind: Data type of the matrices.
+        cta_group: Number of ctas used by MMA.
+
+    Args:
+        a_desc: The descriptor for the A matrix.
+        b_desc: The descriptor for the B matrix.
+        c_tmem: The address of the C matrix in the tensor memory.
+        inst_desc: The descriptor for the MMA instruction.
+        c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
+    """
+    constrained[
+        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
+    ]()
+
+    @parameter
+    if cta_group == 1:
+        var masks = IndexList[4, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::1."""
+            + String(kind)
+            + """ [$0], $1, $2, $3, {$5, $6, $7, $8}, p;
+            }""",
+            NoneType,
+            constraints="r,l,l,r,r,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+        )
+    elif cta_group == 2:
+        var masks = IndexList[8, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::2."""
+            + String(kind)
+            + """ [$0], $1, $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+            }""",
+            NoneType,
+            constraints="r,l,l,r,r,r,r,r,r,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+            masks[4],
+            masks[5],
+            masks[6],
+            masks[7],
+        )
+    else:
+        constrained[False, String("Unsupported cta group: ", cta_group)]()
+
+
+@always_inline
+fn mma[
+    kind: UMMAKind, //,
+    cta_group: Int = 1,
+    /,
+](
+    a_desc: UInt32,
+    b_desc: MMASmemDescriptor,
+    c_tmem: UInt32,
+    inst_desc: UMMAInsDescriptor[kind],
+    c_scale: UInt32,
+):
+    """Perform a matrix multiply-accumulate operation using the tcgen05.mma instruction.
+
+    Parameters:
+        kind: Data type of the matrices.
+        cta_group: Number of ctas used by MMA.
+
+    Args:
+        a_desc: The descriptor for the A matrix.
+        b_desc: The descriptor for the B matrix.
+        c_tmem: The address of the C matrix in the tensor memory.
+        inst_desc: The descriptor for the MMA instruction.
+        c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
+    """
+    constrained[
+        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
+    ]()
+
+    @parameter
+    if cta_group == 1:
+        var masks = IndexList[4, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::1."""
+            + String(kind)
+            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8}, p;
+            }""",
+            NoneType,
+            constraints="r,r,l,r,r,r,r,r,r",
+        ](
+            c_tmem,
+            a_desc,
+            b_desc,
+            inst_desc,
+            c_scale,
+            masks[0],
+            masks[1],
+            masks[2],
+            masks[3],
+        )
+    elif cta_group == 2:
+        var masks = IndexList[8, element_type = DType.uint32](0)
+
+        inlined_assembly[
+            """{
+                .reg .pred p;
+                setp.ne.b32 p, $4, 0;
+                tcgen05.mma.cta_group::2."""
+            + String(kind)
+            + """ [$0], [$1], $2, $3, {$5, $6, $7, $8, $9, $10, $11, $12}, p;
+            }""",
+            NoneType,
+            constraints="r,r,l,r,r,r,r,r,r,r,r,r,r",
         ](
             c_tmem,
             a_desc,

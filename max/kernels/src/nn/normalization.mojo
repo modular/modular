@@ -1563,7 +1563,7 @@ fn group_norm[
 ](
     shape: IndexList[rank],
     epsilon: Scalar[type],
-    num_groups: Int,
+    groups: Int32,
     output: NDBuffer[mut=True, type, rank, *_],
     ctx: DeviceContextPtr,
 ) raises:
@@ -1579,6 +1579,8 @@ fn group_norm[
             "Input/output shape mismatch: input = {shape}, output ="
             " {output.dynamic_shape}"
         )
+
+    var num_groups: Int = Int(groups[0])
 
     var C = shape[1]
     if C % num_groups != 0:
@@ -1621,6 +1623,6 @@ fn group_norm_shape[
     gamma: NDBuffer[type, 1],
     beta: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    num_groups: Int,
+    num_groups: Int32,
 ) -> IndexList[rank]:
     return input.get_shape()

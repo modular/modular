@@ -39,6 +39,7 @@ struct Error(
     Movable,
     ExplicitlyCopyable,
     _CurlyEntryFormattable,
+    Defaultable,
 ):
     """This type represents an Error."""
 

@@ -77,12 +77,7 @@ class RotaryEmbedding(Module):
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
         iota = ops.range(
-            0,
-            n - 1,
-            2,
-            out_dim=n // 2,
-            dtype=DType.float64,
-            device=self.device,
+            0, n - 1, 2, out_dim=n // 2, dtype=DType.float64, device=self.device
         )
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
 
@@ -388,8 +383,7 @@ class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
         assert self.scaling_params
         scale = super().compute_scale(user_scale)
         mscale = self._yarn_get_mscale(
-            self.scaling_params.scaling_factor,
-            self.scaling_params.mscale,
+            self.scaling_params.scaling_factor, self.scaling_params.mscale
         )
 
         return scale * mscale * mscale

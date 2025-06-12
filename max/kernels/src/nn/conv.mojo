@@ -40,6 +40,8 @@ from gpu._cudnn.cnn_infer import (
     cudnnDestroyConvolutionDescriptor,
     cudnnDestroyFilterDescriptor,
     cudnnSetConvolution2dDescriptor,
+    cudnnSetConvolutionMathType,
+    cudnnGetConvolutionForwardWorkspaceSize,
 )
 from gpu._cudnn.infer import (
     cudnnContext,
@@ -57,6 +59,7 @@ from gpu._cudnn.infer import (
     cudnnStatus_t,
     cudnnTensorFormat_t,
     cudnnTensorStruct,
+    cudnnMathType_t,
 )
 from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._nvidia_cuda import CUDA
@@ -90,12 +93,12 @@ from .conv_utils import (
 from .shapes import get_sliding_window_out_dim
 
 
-@value
+@fieldwise_init
 struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-]:
+](Copyable, Movable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
@@ -352,7 +355,7 @@ fn _reduce_output[
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct ConvDirectNHWC[
     input_mut: Bool,
     filter_mut: Bool, //,
@@ -371,7 +374,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-]:
+](Copyable, Movable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -3107,9 +3110,8 @@ fn check_cudnn_error(stat: cudnnStatus_t):
         print(stat)
 
 
-@value
 @register_passable
-struct CuDNNConvMeta:
+struct CuDNNConvMeta(Copyable, Defaultable, Movable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
@@ -3249,6 +3251,30 @@ fn conv_cudnn[
     var beta = Float32(0.0)
 
     check_cudnn_error(
+        cudnnSetConvolutionMathType(
+            ptr_meta[].ptr_conv_desc,
+            cudnnMathType_t.CUDNN_DEFAULT_MATH,  # this is the line that enables tf32
+        )
+    )
+    # to disable tf32, run export NVIDIA_TF32_OVERRIDE=0 in the environment
+    alias algo = cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+    var workspace_size_var = 0
+    var workspace_size_ptr = UnsafePointer[Int].address_of(workspace_size_var)
+    check_cudnn_error(
+        cudnnGetConvolutionForwardWorkspaceSize(
+            ptr_meta[].ptr_handle,
+            ptr_meta[].ptr_input_desc,
+            ptr_meta[].ptr_filter_desc,
+            ptr_meta[].ptr_conv_desc,
+            ptr_meta[].ptr_output_desc,
+            algo,
+            workspace_size_ptr,
+        )
+    )
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size_var
+    )
+    check_cudnn_error(
         cudnnConvolutionForward(
             ptr_meta[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
@@ -3257,14 +3283,15 @@ fn conv_cudnn[
             ptr_meta[].ptr_filter_desc,
             rebind[UnsafePointer[NoneType]](filter.data.bitcast[NoneType]()),
             ptr_meta[].ptr_conv_desc,
-            cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
-            UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
-            0,
+            algo,
+            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            workspace_size_var,
             UnsafePointer(to=beta).bitcast[NoneType](),
             ptr_meta[].ptr_output_desc,
             rebind[UnsafePointer[NoneType]](output.data.bitcast[NoneType]()),
         )
     )
+    _ = workspace_buffer^
 
 
 fn conv_gpu[

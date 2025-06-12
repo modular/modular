@@ -70,9 +70,7 @@ class TransformerBlock(Module):
     ) -> TensorValue:
         residual = x
         attn_out = self.self_attn(
-            self.input_layernorm(x),
-            kv_collection,
-            **kwargs,
+            self.input_layernorm(x), kv_collection, **kwargs
         )
         hidden_states = self.post_attention_layernorm(attn_out)
         hidden_states = residual + hidden_states
@@ -136,9 +134,7 @@ class Gemma3TextModel(Module):
         )
 
         self.norm = Gemma3RMSNorm(
-            config.hidden_size,
-            config.dtype,
-            config.rms_norm_eps,
+            config.hidden_size, config.dtype, config.rms_norm_eps
         )
 
         self.lm_head = Linear(

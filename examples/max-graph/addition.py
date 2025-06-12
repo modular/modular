@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any
 
 import numpy as np
 from max import engine
+from max.driver import Tensor
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, Any]:
+def add_tensors(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     # 1. Build the graph
     input_type = TensorType(
         dtype=DType.float32, shape=(1,), device=DeviceRef.CPU()
@@ -42,12 +42,15 @@ def add_tensors(a: np.ndarray, b: np.ndarray) -> dict[str, Any]:
         )
 
     # 3. Execute the graph
-    ret = model.execute(a, b)[0]
-    print("result:", ret)
-    return ret
+    output = model.execute(a, b)[0]
+    assert isinstance(output, Tensor)  # We don't want MojoValue
+    result = output.to_numpy()
+    return result
 
 
 if __name__ == "__main__":
     input0 = np.array([1.0], dtype=np.float32)
     input1 = np.array([1.0], dtype=np.float32)
-    add_tensors(input0, input1)
+    result = add_tensors(input0, input1)
+    print("result:", result)
+    assert result == [2.0]

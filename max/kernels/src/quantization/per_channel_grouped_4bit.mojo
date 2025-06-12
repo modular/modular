@@ -107,7 +107,7 @@ fn calculate_symmetric_vector[
 struct Q4sym[
     group_size: Int,
     float_dtype: DType = DType.float32,
-]:
+](Defaultable):
     """
     Q4sym: compresses values of type `float_dtype` to 4bit unsigned integers
     which have been dynamically symmetrically quantized with the given scale

@@ -303,9 +303,9 @@ fn matmul_kernel_naive[
         c[Index(x, y)] = accum.cast[c_type]()
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct AMDSchedulerTuning:
+struct AMDSchedulerTuning(Copyable, Movable):
     var block_shape: IndexList[2]
     var tuning_values: IndexList[3]
 
@@ -1807,7 +1807,7 @@ fn _matmul_gpu[
             @parameter
             if (
                 a_type == b_type
-                and a_type.is_half_float()
+                and (a_type.is_half_float() or a_type == DType.float32)
                 and ctx.device_info is H100
                 and transpose_b
                 and not use_A100_kernels_on_H100

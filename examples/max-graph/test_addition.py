@@ -11,9 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import os
+import sys
+
 import numpy as np
 import pytest
-from max_ops.addition import add_tensors
+
+# Add the project root to sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, current_dir)
+from addition import add_tensors
 
 
 @pytest.mark.parametrize(
@@ -43,21 +50,19 @@ from max_ops.addition import add_tensors
 )
 def test_add_tensors(input0, input1, expected):
     result = add_tensors(input0, input1)
-    np.testing.assert_almost_equal(result["output0"], expected, decimal=5)
+    np.testing.assert_almost_equal(result, expected, decimal=5)
 
 
 def test_add_tensors_type():
     input0 = np.array([1.0], dtype=np.float32)
     input1 = np.array([2.0], dtype=np.float32)
     result = add_tensors(input0, input1)
-    assert isinstance(result, dict)
-    assert "output0" in result
-    assert isinstance(result["output0"], np.ndarray)
-    assert result["output0"].dtype == np.float32
+    assert isinstance(result, np.ndarray)
+    assert result.dtype == np.float32
 
 
 def test_add_tensors_shape():
     input0 = np.array([1.0], dtype=np.float32)
     input1 = np.array([2.0], dtype=np.float32)
     result = add_tensors(input0, input1)
-    assert result["output0"].shape == (1,)
+    assert result.shape == (1,)

@@ -11,17 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
+from .arch import olmo2_arch
 
-# The Mojo importer module will handle compilation of the Mojo files.
-import max.mojo.importer  # noqa
-
-sys.path.insert(0, "")
-
-# Importing our Mojo module, defined in the `mandelbrot_mojo.mojo` file.
-import mandelbrot_mojo
-
-if __name__ == "__main__":
-    # Run the Mandelbrot set calculation on GPU, in Mojo, and get back the ASCII art results.
-    ascii_mandelbrot = mandelbrot_mojo.run_mandelbrot(100)
-    print(ascii_mandelbrot)
+__all__ = ["olmo2_arch"]

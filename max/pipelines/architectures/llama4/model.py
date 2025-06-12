@@ -153,9 +153,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         # Contents of signal buffer should be filled with zeros.
         self.signal_buffers = [
             Tensor.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=dev,
+                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
             )
             for dev in self.devices
         ]
@@ -210,10 +208,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
         return Llama4Config.get_kv_params(
-            huggingface_config,
-            n_devices,
-            kv_cache_config,
-            cache_dtype,
+            huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -267,11 +262,10 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=Llama4Config.get_num_layers(
-                huggingface_config=huggingface_config,
+                huggingface_config=huggingface_config
             ),
             available_cache_memory=available_cache_memory,
             devices=devices,
@@ -480,8 +474,7 @@ class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch],
-            dtype=np.uint32,
+            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).

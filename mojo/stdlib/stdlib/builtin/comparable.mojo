@@ -75,11 +75,5 @@ trait GreaterThanOrEqualComparable:
         ...
 
 
-trait Comparable(
-    EqualityComparable,
-    LessThanComparable,
-    GreaterThanComparable,
-    LessThanOrEqualComparable,
-    GreaterThanOrEqualComparable,
-):
-    """A type which can be compared with other instances of itself."""
+alias Comparable = EqualityComparable & LessThanComparable & GreaterThanComparable & LessThanOrEqualComparable & GreaterThanOrEqualComparable
+"""A type which can be compared with other instances of itself."""

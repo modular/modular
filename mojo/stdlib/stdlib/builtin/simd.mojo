@@ -258,6 +258,7 @@ fn _has_native_f8_support() -> Bool:
 struct SIMD[dtype: DType, size: Int](
     Absable,
     Boolable,
+    Defaultable,
     Ceilable,
     CeilDivable,
     Copyable,
@@ -1474,7 +1475,7 @@ struct SIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:

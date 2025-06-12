@@ -63,10 +63,7 @@ class TransformerBlock(Module):
             self.residual_multiplier, x.dtype, device=x.device
         )
         attn_out = self.self_attn(
-            layer_idx,
-            self.input_layernorm(x),
-            kv_collection,
-            input_row_offsets,
+            layer_idx, self.input_layernorm(x), kv_collection, input_row_offsets
         )
 
         if self.residual_multiplier != 1.0:

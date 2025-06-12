@@ -139,9 +139,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # InternVL is natively distributed, so we always need these.
         self.signal_buffers = [
             Tensor.zeros(
-                shape=(Signals.NUM_BYTES,),
-                dtype=DType.uint8,
-                device=dev,
+                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
             )
             for dev in self.devices
         ]
@@ -168,10 +166,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for InternVL."""
         return InternVLConfig.get_kv_params(
-            huggingface_config,
-            n_devices,
-            kv_cache_config,
-            cache_dtype,
+            huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -199,11 +194,10 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=InternVLConfig.get_num_layers(
-                huggingface_config=huggingface_config,
+                huggingface_config=huggingface_config
             ),
             available_cache_memory=available_cache_memory,
             devices=devices,

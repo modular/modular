@@ -165,7 +165,7 @@ fn tiled_matmul_run[
 
 
 # Tiled Matmul Implementation.
-@value
+@fieldwise_init
 struct TiledMatmul[
     a_mut: Bool,
     b_mut: Bool, //,
@@ -184,7 +184,7 @@ struct TiledMatmul[
     c_shape: DimList,
     c_origin: MutableOrigin,
     algorithm: InnerMatmulKernel,
-]:
+](Copyable, Movable):
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 

@@ -50,9 +50,9 @@ struct MlirDiagnostic:
     var ptr: UnsafePointer[NoneType]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MlirDiagnosticSeverity:
+struct MlirDiagnosticSeverity(Copyable, Movable):
     """Severity of a diagnostic."""
 
     var value: Int8

@@ -10,3 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# """This module includes traits abstracting WGMMA operand descriptors."""
+
+
+@register_passable("trivial")
+trait MMAOperandDescriptor(Copyable, Movable):
+    @always_inline
+    fn __add__(self, offset: Int) -> Self:
+        ...

@@ -76,18 +76,10 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
 
         self.local_pull_socket = ZmqPullSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](
-            zmq_ctx,
-            recv_endpoint,
-            deserialize=deserialize,
-        )
+        ](zmq_ctx, recv_endpoint, deserialize=deserialize)
         self.local_push_socket = ZmqPushSocket[
             DispatcherMessage[DispatcherMessagePayload]
-        ](
-            zmq_ctx,
-            send_endpoint,
-            serialize=serialize,
-        )
+        ](zmq_ctx, send_endpoint, serialize=serialize)
 
         self._running = False
         self._tasks: list[asyncio.Task] = []

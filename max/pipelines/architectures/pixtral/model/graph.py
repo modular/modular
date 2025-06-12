@@ -270,11 +270,7 @@ def _build_vision_graph(
         ],
     ) as graph:
         model = _llava_vision_encoder_and_projector(
-            graph,
-            pipeline_config,
-            weights,
-            huggingface_config,
-            dtype,
+            graph, pipeline_config, weights, huggingface_config, dtype
         )
         (
             pixel_values,

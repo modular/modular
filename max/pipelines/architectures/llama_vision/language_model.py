@@ -106,9 +106,7 @@ class TextModel(Layer):
                 )
             else:
                 hidden_states = decoder_layer(
-                    hidden_states,
-                    text_kv_collection,
-                    hidden_input_row_offsets,
+                    hidden_states, text_kv_collection, hidden_input_row_offsets
                 )
 
         assert hidden_states.shape == before_attention_blocks_shape
@@ -416,9 +414,7 @@ def instantiate_language_model(
     # Track the cross attention KV cache layer index to compute the self
     # attention KV layer index.
     cross_kv_layer_idx = -1
-    for layer_idx in range(
-        num_hidden_layers,
-    ):
+    for layer_idx in range(num_hidden_layers):
         curr_layer_weight = weights.language_model.model.layers[layer_idx]
 
         if layer_idx in cross_attention_layers:

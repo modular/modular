@@ -2210,7 +2210,7 @@ struct LayoutTensor[
         ]()
 
         var ptr = stack_allocation[
-            layout.size(),
+            layout.size() * element_layout.size(),
             dtype,
             alignment=alignment,
             address_space=address_space,
@@ -5416,9 +5416,8 @@ fn stack_allocation_like[
     return __type_of(result).stack_allocation()
 
 
-@value
 @register_passable("trivial")
-struct ThreadScope:
+struct ThreadScope(Copyable, Movable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -7434,7 +7433,7 @@ struct LayoutTensorIter[
     layout_int_type: DType = _get_index_type(address_space),
     linear_idx_type: DType = _get_index_type(address_space),
     masked: Bool = False,
-]:
+](Defaultable):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `LayoutTensorIter` provides a way to iterate through memory according to a

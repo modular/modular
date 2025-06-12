@@ -43,7 +43,7 @@ fn _init_python_global() -> _PythonGlobal:
     return _PythonGlobal()
 
 
-struct _PythonGlobal(Movable):
+struct _PythonGlobal(Movable, Defaultable):
     var cpython: CPython
 
     fn __init__(out self):
@@ -70,7 +70,7 @@ fn _get_python_interface() -> Pointer[CPython, StaticConstantOrigin]:
     return Pointer(to=ptr2[])
 
 
-struct Python:
+struct Python(Defaultable):
     """Provides methods that help you use Python code in Mojo."""
 
     var _impl: Pointer[CPython, StaticConstantOrigin]
@@ -455,7 +455,7 @@ struct Python:
     @staticmethod
     fn list[
         T: PythonConvertible & Copyable & Movable
-    ](values: Span[T]) -> PythonObject:
+    ](values: Span[T]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
         Parameters:
@@ -481,7 +481,7 @@ struct Python:
         *Ts: PythonConvertible & Copyable
     ](
         values: VariadicPack[True, _, PythonConvertible & Copyable, *Ts]
-    ) -> PythonObject:
+    ) raises -> PythonObject:
         """Initialize the object from a list literal.
 
         Parameters:
@@ -507,7 +507,7 @@ struct Python:
     @staticmethod
     fn list[
         *Ts: PythonConvertible & Copyable
-    ](owned *values: *Ts) -> PythonObject:
+    ](owned *values: *Ts) raises -> PythonObject:
         """Construct an Python list of objects.
 
         Parameters:
@@ -526,7 +526,7 @@ struct Python:
         *Ts: PythonConvertible & Copyable
     ](
         values: VariadicPack[True, _, PythonConvertible & Copyable, *Ts]
-    ) -> PythonObject:
+    ) raises -> PythonObject:
         """Initialize the object from a tuple literal.
 
         Parameters:
@@ -552,7 +552,7 @@ struct Python:
     @staticmethod
     fn tuple[
         *Ts: PythonConvertible & Copyable
-    ](owned *values: *Ts) -> PythonObject:
+    ](owned *values: *Ts) raises -> PythonObject:
         """Construct an Python tuple of objects.
 
         Parameters:
