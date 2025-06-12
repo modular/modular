@@ -22,7 +22,7 @@ from os import listdir
 
 from collections import InlineArray, List
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
-from sys.ffi import c_int32, c_char_pointer, OpaquePointer, c_char
+from sys.ffi import ctypes, c_int, OpaquePointer, c_char
 
 from memory import UnsafePointer
 
@@ -272,37 +272,37 @@ fn abort[result: AnyType = NoneType._mlir_type](message: String) -> result:
 # remove / unlink
 # ===----------------------------------------------------------------------=== #
 
-# --- errno / strerror bindings (keep near other C interop in this file) -------
+# --- errno / strerror bindings ----------------------------------------------
+@ctypes.extern
+var errno: c_int                     # POSIX errno
 
-@ctypes.extern var errno: c_int                 # POSIX errno
-
-@ctypes.extern                                  # char *strerror(int)
-fn strerror(errnum: c_int) -> Pointer[c_char]
-
+@ctypes.extern                       # char *strerror(int)
+fn strerror(errnum: c_int) -> UnsafePointer[c_char]
 # -----------------------------------------------------------------------------
-
 
 fn remove[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
 
-    If the path is a directory or it cannot be deleted, an error is raised.
-    """
+    Parameters:
+      PathLike: A type conforming to the ``os.PathLike`` trait.
 
-    let fspath = path.__fspath__()
-    let rc = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
+    Args:
+      path: The path to the file.
+    """
+    var fspath = path.__fspath__()
+    var rc = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
 
     if rc != 0:
-        # Capture errno *immediately*.
-        let code: Int32 = errno
-        let msg = String.from_c_str(strerror(code))
+        # Capture ``errno`` *immediately*.
+        var code: Int32 = errno
+        var msg = String.from_c_str(strerror(code))
         raise Error(
             String("Unable to remove '{}' : {} (errno={})")
                 .format(fspath, msg, code)
         )
 
-
 fn unlink[PathLike: os.PathLike](path: PathLike) raises:
-    """Alias for `remove()`."""
+    """Alias for :pyfunc:`os.remove`."""
     remove(path.__fspath__())
 
 
