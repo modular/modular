@@ -99,6 +99,15 @@ def fold(
                     f"the calculated number of blocks ({L})."
                 )
 
+    parameters: dict[str, int] = {
+        "stride_h": stride[0],
+        "stride_w": stride[1],
+        "dilation_h": dilation[0],
+        "dilation_w": dilation[1],
+        "padding_h": padding[0],
+        "padding_w": padding[1],
+    }
+
     return custom(
         "fold",
         input.device,
@@ -106,9 +115,7 @@ def fold(
             input,
             shape_to_tensor(output_size),
             shape_to_tensor(kernel_size),
-            shape_to_tensor(stride),
-            shape_to_tensor(dilation),
-            shape_to_tensor(padding),
         ],
         [TensorType(input.dtype, output_shape, input.device)],
+        parameters=parameters,
     )[0].tensor
