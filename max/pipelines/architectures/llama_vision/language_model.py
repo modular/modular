@@ -26,14 +26,11 @@ from max.nn import (
     AttentionWithRopeQKV,
     EmbeddingV1,
     LinearV1,
-    OptimizedRotaryEmbedding,
     RMSNormV1,
+    RotaryEmbedding,
     TransformerBlock,
 )
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheParams,
-)
+from max.nn.kv_cache import FetchPagedKVCacheCollection, KVCacheParams
 from max.nn.layer import Layer
 
 from .cross_attention_decoder import (
@@ -301,7 +298,7 @@ def self_attention_decoder_layer(
     kv_params: KVCacheParams,
     weights: Weights,
     layer_idx: int,
-    rotary_embedding: OptimizedRotaryEmbedding,
+    rotary_embedding: RotaryEmbedding,
     device: DeviceRef,
 ) -> SelfAttentionDecoderLayer:
     head_dim = hidden_size // num_attention_heads
@@ -402,7 +399,7 @@ def instantiate_language_model(
     # We don't really have a rotary embedding layer within the graph as it's largely
     # folded into the custom kernel, but leaving this here for now.
     # TODO: this should be Llama3RotaryEmbedding with rope scaling params.
-    rotary_embedding = OptimizedRotaryEmbedding(
+    rotary_embedding = RotaryEmbedding(
         dim=hidden_size,
         n_heads=n_heads,
         theta=rope_theta,

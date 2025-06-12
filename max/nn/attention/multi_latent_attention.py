@@ -18,13 +18,7 @@ import math
 from typing import Callable, Union
 
 from max.dtype import DType
-from max.graph import (
-    DeviceRef,
-    TensorType,
-    TensorValue,
-    Weight,
-    ops,
-)
+from max.graph import DeviceRef, TensorType, TensorValue, Weight, ops
 
 from ..kernels import (
     flare_mla_decode_ragged,
@@ -44,7 +38,7 @@ from ..kv_cache import (
 from ..layer import Module
 from ..linear import Linear
 from ..norm import RMSNorm
-from ..rotary_embedding import OptimizedRotaryEmbedding
+from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
 
 
@@ -52,12 +46,12 @@ class LatentAttentionWithRope(Module):
     """Implementation of Latent Attention with Rope."""
 
     # TODO: This will be replaced with a generic Yarn Rope implementation for Deepseek-V2-lite.
-    rope: OptimizedRotaryEmbedding
+    rope: RotaryEmbedding
 
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,

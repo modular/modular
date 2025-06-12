@@ -55,7 +55,6 @@ from .rotary_embedding import (
     LinearScalingParams,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
-    OptimizedRotaryEmbedding,
     RotaryEmbedding,
 )
 from .sequential import Sequential
@@ -114,7 +113,6 @@ __all__ = [
     "MLPV1",
     "MLP",
     "Module",
-    "OptimizedRotaryEmbedding",
     "RMSNormV1",
     "RMSNorm",
     "RotaryEmbedding",

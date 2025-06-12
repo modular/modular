@@ -40,13 +40,13 @@ class AttentionImpl(Layer, ABC):
     - ...
 
     There are a series of shared attributes, however, more may be needed for each individual variant.
-    For example, we may introduce an OptimizedRotaryEmbedding class for the AttentionWithRope class:
+    For example, we may introduce an RotaryEmbedding class for the AttentionWithRope class:
 
     .. code-block:: python
 
         @dataclass
         class AttentionWithRope(AttentionImpl):
-            rope: OptimizedRotaryEmbedding
+            rope: RotaryEmbedding
             ...
 
     We expect the ``__call__`` abstractmethod to remain relatively consistent, however the ``**kwargs``
@@ -142,13 +142,13 @@ class AttentionImplQKV(Layer, ABC):
     - ...
 
     There are a series of shared attributes, however, more may be needed for each individual variant.
-    For example, we may introduce an OptimizedRotaryEmbedding class for the AttentionWithRope class:
+    For example, we may introduce an RotaryEmbedding class for the AttentionWithRope class:
 
     .. code-block:: python
 
         @dataclass
         class AttentionWithRope(AttentionImpl):
-            rope: OptimizedRotaryEmbedding
+            rope: RotaryEmbedding
             ...
 
     We expect the ``__call__`` abstractmethod to remain relatively consistent, however the ``**kwargs``

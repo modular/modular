@@ -24,13 +24,10 @@ from max.nn import (
     DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    OptimizedRotaryEmbedding,
+    RotaryEmbedding,
     VocabParallelEmbedding,
 )
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
-)
+from max.nn.kv_cache import FetchPagedKVCacheCollection, KVCacheStrategy
 
 logger = logging.getLogger("max.pipelines")
 
@@ -43,7 +40,7 @@ class DistributedMistral(DistributedTransformer):
     def __init__(self, config: MistralConfig):
         assert len(config.devices) > 1
 
-        rope = OptimizedRotaryEmbedding(
+        rope = RotaryEmbedding(
             dim=config.num_attention_heads * config.head_dim,
             n_heads=config.num_attention_heads,
             head_dim=config.head_dim,
