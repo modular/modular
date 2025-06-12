@@ -20,8 +20,8 @@ from max.nn import (
     Conv2DV1,
     EmbeddingV1,
     LinearV1,
-    OptimizedRotaryEmbedding,
     RMSNormV1,
+    RotaryEmbedding,
 )
 from max.nn import TransformerBlock as nnTransformerBlock
 from max.nn.kv_cache import (
@@ -360,7 +360,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         )
 
     def attention(
-        kv_params, rope: OptimizedRotaryEmbedding, layer_idx: int
+        kv_params, rope: RotaryEmbedding, layer_idx: int
     ) -> AttentionWithRopeV1:
         wq = ops.transpose(
             _weight(
@@ -408,7 +408,7 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
             scale=math.sqrt(1 / config.head_dim),
         )
 
-    rope = OptimizedRotaryEmbedding(
+    rope = RotaryEmbedding(
         dim=config.num_attention_heads * config.head_dim,
         n_heads=config.num_attention_heads,
         head_dim=config.head_dim,

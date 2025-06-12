@@ -13,7 +13,7 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn import OptimizedRotaryEmbedding
+from max.nn import RotaryEmbedding
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     KVCacheManager,
@@ -33,9 +33,7 @@ from transformers.models.llama4.configuration_llama4 import (
     Llama4Config,
     Llama4TextConfig,
 )
-from transformers.models.llama4.modeling_llama4 import (
-    Llama4TextModel,
-)
+from transformers.models.llama4.modeling_llama4 import Llama4TextModel
 
 # TODO(KERN-1729): this is load bearing and MAX_SEQ_LEN = 100 fails on AMD GPU.
 MAX_SEQ_LEN = 64
@@ -167,7 +165,7 @@ def generate_max_outputs(
     outputs = []
     for layer_idx, use_rope in enumerate([True, False]):
         attention = _Llama4TextAttention(
-            rope=OptimizedRotaryEmbedding(
+            rope=RotaryEmbedding(
                 text_config.hidden_size,
                 text_config.num_attention_heads,
                 text_config.rope_theta,

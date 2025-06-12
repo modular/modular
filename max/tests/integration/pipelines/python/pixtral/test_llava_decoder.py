@@ -19,8 +19,8 @@ from max.nn import (
     AttentionWithRopeV1,
     EmbeddingV1,
     LinearV1,
-    OptimizedRotaryEmbedding,
     RMSNormV1,
+    RotaryEmbedding,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -128,7 +128,7 @@ def mistral_given_pytorch_mistral(
             device=DeviceRef.CPU(),
         )
 
-    def attention(kv_params, rope: OptimizedRotaryEmbedding, layer_idx: int):
+    def attention(kv_params, rope: RotaryEmbedding, layer_idx: int):
         wq = ops.transpose(
             _weight(
                 f"text.wq_weights_{layer_idx}",
@@ -175,7 +175,7 @@ def mistral_given_pytorch_mistral(
             scale=math.sqrt(1.0 / kv_params.head_dim),
         )
 
-    rope = OptimizedRotaryEmbedding(
+    rope = RotaryEmbedding(
         dim=config.num_attention_heads * config.head_dim,
         n_heads=config.num_attention_heads,
         head_dim=config.head_dim,

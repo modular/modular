@@ -116,6 +116,14 @@ def test_freqs_cis(session, dtype: DType, params: RopeParams):
         graph.output(rope.freqs_cis)
         model = session.load(graph)
     result = model.execute()[0].to_numpy()
+
+    # Handle flattened freqs_cis format - reshape back to 3D to extract real/imaginary
+    if len(result.shape) == 2:
+        d0, d1 = result.shape  # (max_seq_len * 2, head_dim)
+        result = result.reshape(
+            (d0, d1 // 2, 2)
+        )  # (max_seq_len * 2, head_dim // 2, 2)
+
     # freqs_cis result is stacked along a new dimension - real goes first, then imaginary.
     # The result is a tensor with shape (..., 2) where the last dimension holds [real, imaginary]
     # We extract and convert into a complex tensor type before comparing them.
