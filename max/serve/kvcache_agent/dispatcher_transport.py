@@ -19,10 +19,11 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Generic, Optional, TypeVar
 
+import msgspec
 import zmq
+from max.pipelines.core import msgpack_numpy_decoder, msgpack_numpy_encoder
 from max.serve.kvcache_agent.dispatcher_base import ReplyContext
 from max.serve.queue.zmq_queue import (
     ZmqDealerSocket,
@@ -32,9 +33,12 @@ from max.serve.queue.zmq_queue import (
 
 logger = logging.getLogger(__name__)
 
+Payload = TypeVar("Payload")
 
-@dataclass
-class TransportMessage:
+
+class TransportMessage(
+    msgspec.Struct, Generic[Payload], tag=True, kw_only=True, omit_defaults=True
+):
     """
     Core message structure for transport layer communication.
 
@@ -42,20 +46,29 @@ class TransportMessage:
     across different transport mechanisms (ZMQ, HTTP, gRPC).
     """
 
-    message_id: str  # Unique identifier for this message
-    message_type: str  # Type of message
-    payload: Any  # Message payload data
-    source_id: Optional[str] = None  # Identifier of the sending instance
-    destination_address: Optional[str] = None  # Target address for routing
-    correlation_id: Optional[str] = None  # ID for request-response correlation
-    is_reply: bool = False  # Whether this message is a reply to another message
-    timestamp: float = field(
+    message_id: str = msgspec.field()  # Unique identifier for this message
+    message_type: str = msgspec.field()  # Type of message
+    payload: Payload = msgspec.field()  # Message payload data
+    source_id: Optional[str] = msgspec.field(
+        default=None
+    )  # Identifier of the sending instance
+    destination_address: Optional[str] = msgspec.field(
+        default=None
+    )  # Target address for routing
+    correlation_id: Optional[str] = msgspec.field(
+        default=None
+    )  # ID for request-response correlation
+    is_reply: bool = msgspec.field(
+        default=False
+    )  # Whether this message is a reply to another message
+    timestamp: float = msgspec.field(
         default_factory=time.time
     )  # Message creation timestamp
 
 
-@dataclass
-class TransportMessageEnvelope:
+class TransportMessageEnvelope(
+    msgspec.Struct, Generic[Payload], tag=True, kw_only=True, omit_defaults=True
+):
     """
     Container for an inbound message and its optional reply context.
 
@@ -63,8 +76,10 @@ class TransportMessageEnvelope:
     transport-agnostic reply handling for request-response patterns.
     """
 
-    message: TransportMessage  # The received message
-    reply_context: Optional[ReplyContext] = None  # Context for sending replies
+    message: TransportMessage[Payload] = msgspec.field()  # The received message
+    reply_context: Optional[ReplyContext] = msgspec.field(
+        default=None
+    )  # Context for sending replies
 
     def can_reply(self) -> bool:
         """
@@ -73,7 +88,7 @@ class TransportMessageEnvelope:
         return self.reply_context is not None
 
 
-class DispatcherTransport(ABC):
+class DispatcherTransport(Generic[Payload], ABC):
     """
     Abstract base class for transport layer implementations.
 
@@ -91,7 +106,7 @@ class DispatcherTransport(ABC):
     @abstractmethod
     async def send_message(
         self,
-        message: TransportMessage,
+        message: TransportMessage[Payload],
         destination_address: Optional[str] = None,
     ) -> None:
         """
@@ -106,7 +121,7 @@ class DispatcherTransport(ABC):
     @abstractmethod
     async def send_reply(
         self,
-        message: TransportMessage,
+        message: TransportMessage[Payload],
         reply_context: ReplyContext,
     ) -> None:
         """
@@ -115,7 +130,9 @@ class DispatcherTransport(ABC):
         pass
 
     @abstractmethod
-    async def receive_message(self) -> Optional[TransportMessageEnvelope]:
+    async def receive_message(
+        self,
+    ) -> Optional[TransportMessageEnvelope[Payload]]:
         """
         Receive an inbound message with optional reply context.
         """
@@ -136,7 +153,7 @@ class DispatcherTransport(ABC):
         pass
 
 
-class DynamicZmqTransport(DispatcherTransport):
+class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
     """
     Dynamic ZMQ transport designed for N:M communication patterns with explicit addressing.
     """
@@ -146,6 +163,7 @@ class DynamicZmqTransport(DispatcherTransport):
         zmq_ctx: zmq.Context,
         bind_address: str,
         instance_id: str,
+        payload_type: Any,
         default_destination_address: Optional[str] = None,
     ):
         """
@@ -155,12 +173,17 @@ class DynamicZmqTransport(DispatcherTransport):
         self._bind_address = bind_address
         self._instance_id = instance_id
         self._default_destination_address = default_destination_address
+        self._payload_type = payload_type
 
         # Receiving socket (ROUTER for handling multiple connections)
-        self._router_socket: Optional[ZmqRouterSocket[Any]] = None
+        self._router_socket: Optional[
+            ZmqRouterSocket[TransportMessage[Payload]]
+        ] = None
 
         # Sending sockets (DEALER for each destination)
-        self._dealer_connections: dict[str, ZmqDealerSocket[Any]] = {}
+        self._dealer_connections: dict[
+            str, ZmqDealerSocket[TransportMessage[Payload]]
+        ] = {}
 
         # Correlation tracking (correlation_id -> request_info)
         self._pending_requests: dict[str, dict[str, Any]] = {}
@@ -177,8 +200,11 @@ class DynamicZmqTransport(DispatcherTransport):
         Start the transport by creating and binding ROUTER socket.
         """
         try:
-            self._router_socket = ZmqRouterSocket[Any](
-                self._zmq_ctx, self._bind_address
+            self._router_socket = ZmqRouterSocket[TransportMessage[Payload]](
+                self._zmq_ctx,
+                self._bind_address,
+                serialize=msgpack_numpy_encoder(),
+                deserialize=msgpack_numpy_decoder(self._payload_type),
             )
             self._running = True
             logger.debug(
@@ -190,7 +216,7 @@ class DynamicZmqTransport(DispatcherTransport):
 
     async def send_message(
         self,
-        message: TransportMessage,
+        message: TransportMessage[Payload],
         destination_address: Optional[str] = None,
     ) -> None:
         """
@@ -258,7 +284,7 @@ class DynamicZmqTransport(DispatcherTransport):
 
     async def send_reply(
         self,
-        message: TransportMessage,
+        message: TransportMessage[Payload],
         reply_context: Optional[ReplyContext] = None,
     ) -> None:
         """
@@ -298,7 +324,9 @@ class DynamicZmqTransport(DispatcherTransport):
                 f"Failed to send reply message {message.message_id}: {e}"
             )
 
-    async def receive_message(self) -> Optional[TransportMessageEnvelope]:
+    async def receive_message(
+        self,
+    ) -> Optional[TransportMessageEnvelope[Payload]]:
         """
         Receive messages from both ROUTER (new requests) and DEALER (replies) sockets.
         """
@@ -324,7 +352,7 @@ class DynamicZmqTransport(DispatcherTransport):
                     logger.debug(
                         f"Received request message {message.message_id} type={message.message_type}"
                     )
-                    return TransportMessageEnvelope(
+                    return TransportMessageEnvelope[Payload](
                         message=message, reply_context=reply_context
                     )
                 except queue.Empty:
@@ -351,7 +379,7 @@ class DynamicZmqTransport(DispatcherTransport):
                         logger.debug(
                             f"Received reply message {message.message_id} type={message.message_type}"
                         )
-                        return TransportMessageEnvelope(
+                        return TransportMessageEnvelope[Payload](
                             message=message, reply_context=None
                         )
                     except queue.Empty:
@@ -372,8 +400,12 @@ class DynamicZmqTransport(DispatcherTransport):
                 logger.error(f"Invalid ZMQ address: {destination_address}")
                 return False
 
-            dealer_socket = ZmqDealerSocket[Any](
-                self._zmq_ctx, destination_address, bind=False
+            dealer_socket = ZmqDealerSocket[TransportMessage[Payload]](
+                self._zmq_ctx,
+                destination_address,
+                bind=False,
+                serialize=msgpack_numpy_encoder(),
+                deserialize=msgpack_numpy_decoder(self._payload_type),
             )
             self._dealer_connections[destination_address] = dealer_socket
             logger.debug(f"Created DEALER connection to: {destination_address}")

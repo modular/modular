@@ -30,6 +30,7 @@ from max.pipelines.core import (
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.kvcache_worker import start_kvcache_agent
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -92,7 +93,12 @@ async def lifespan(
             # create dispatcher factory
             dispatcher_factory = DispatcherFactory[
                 Union[PrefillRequest, PrefillResponse]
-            ](settings.dispatcher_config)
+            ](
+                settings.dispatcher_config,
+                transport_payload_type=TransportMessage[
+                    Union[PrefillRequest, PrefillResponse]
+                ],
+            )
 
             if settings.experimental_enable_kvcache_agent:
                 logger.info("Starting KV Cache Agent...")
