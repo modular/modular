@@ -1,0 +1,97 @@
+load("@module_versions//:config.bzl", "TORCH_VERSIONS")
+load("@rules_multirun//:defs.bzl", "multirun")
+load("@rules_uv//uv:pip.bzl", "pip_compile")
+
+exports_files(glob(["**/*-requirements*.txt"]))
+
+[
+    pip_compile(
+        name = "generate_{}_gpu_requirements".format(gpu_vendor),
+        args = [
+            "--isolated",
+            "--emit-index-url",
+            "--index-strategy=unsafe-best-match",  # NOTE: required because torch's index contains typing-extensions and that is preferred over pypi
+            "--no-strip-markers",
+            "--no-strip-extras",
+            # Make sure -e flags don't make it to the requirements.txt, but that the transitives are included
+            "--no-emit-package",
+            "modular-pyutils",
+            "--no-emit-package",
+            "model",
+            "--no-emit-package",
+            "mblack",
+            "--no-emit-package",
+            "bench",
+            "--no-emit-package",
+            "flowmeter",
+            "--no-emit-package",
+            "perfsect_v2",
+            "--universal",
+            "--config-file",
+            "bazel/pip/requirements/gpu-uv.toml",
+        ] + ([
+            "--no-emit-package",
+            "triton",
+        ] if gpu_vendor == "amd" else []),
+        data = [
+            "gpu-uv.toml",
+            "requirements.in",
+        ],
+        exec_properties = {"dockerNetwork": "bridge"},
+        py3_runtime = "@python_3_9//:py3_runtime",
+        requirements_in = "{}-gpu-requirements.in".format(gpu_vendor),
+        requirements_txt = "{}-gpu-requirements.txt".format(gpu_vendor),
+    )
+    for gpu_vendor in [
+        "amd",
+        "nvidia",
+    ]
+]
+
+[
+    pip_compile(
+        name = "generate_torch_requirements-{}".format(version),
+        args = [
+            "--emit-index-url",
+            "--index-strategy=unsafe-best-match",  # NOTE: required because torch's index contains requests and that is preferred over pypi
+            "--isolated",
+            "--no-strip-extras",
+            # Make sure -e flags don't make it to the requirements.txt, but that the transitives are included
+            "--no-emit-package",
+            "modular-pyutils",
+            "--no-emit-package",
+            "model",
+            "--no-emit-package",
+            "mblack",
+            "--no-emit-package",
+            "bench",
+            "--no-emit-package",
+            "flowmeter",
+            "--no-emit-package",
+            "perfsect_v2",
+            "--universal",
+            "--config-file",
+            "bazel/pip/requirements/default-uv.toml",
+        ],
+        data = [
+            "default-uv.toml",
+            "requirements.in",
+        ],
+        exec_properties = {"dockerNetwork": "bridge"},
+        py3_runtime = "@python_3_9//:py3_runtime",
+        requirements_in = "torch/requirements-{}.in".format(version),
+        requirements_txt = "torch/requirements-{}.txt".format(version),
+    )
+    for version in TORCH_VERSIONS
+]
+
+multirun(
+    name = "update_requirements",
+    commands = [
+        ":generate_amd_gpu_requirements",
+        ":generate_nvidia_gpu_requirements",
+    ] + [
+        ":generate_torch_requirements-{}".format(version)
+        for version in TORCH_VERSIONS
+    ],
+)

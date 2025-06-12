@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/rocm6.3
+
+-r requirements.in
+
+torch==2.7.0+rocm6.3
+torchaudio==2.7.0+rocm6.3
+torchvision==0.22.0+rocm6.3
+nvtx
+xgrammar
+
+gptqmodel @ https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl

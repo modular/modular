@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+-r ../requirements.in
+
+torch==2.5.1; platform_machine != "x86_64"
+torchaudio; platform_machine != "x86_64"
+torchvision; platform_machine != "x86_64"
+
+torch==2.5.1+cpu; platform_machine == "x86_64"
+torchaudio; platform_machine == "x86_64"
+torchvision; platform_machine == "x86_64"

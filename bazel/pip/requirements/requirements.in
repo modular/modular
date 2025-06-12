@@ -1,0 +1,136 @@
+accelerate
+aiohttp
+asgiref
+async-asgi-testclient
+boto3
+click>=8.1
+datasets
+device_smi
+docutils
+einops
+einx
+fastapi>=0.115.3 # >=0.115.3 is required for resolving CVE-2024-47874
+faster_whisper
+fire  # For mistral-evals.
+filelock
+gguf
+hf-transfer
+httpx==0.27.2
+huggingface_hub>=0.27.1
+hypothesis==6.108.4
+ipython
+jinja2
+jiwer
+kaleido==0.2.1
+lm-eval[api,ifeval,math]
+logbar
+markupsafe
+matplotlib
+msgspec
+mteb
+munch
+mypy==1.13.0
+notebook
+numpy
+nvitop
+onnxruntime<=1.20.1  # Needed by faster_whisper, newer versions don't support python 3.9
+opentelemetry-api
+opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-prometheus
+opentelemetry-sdk
+optimum
+pre-commit
+prometheus-async
+prometheus-client
+protobuf==5.29.1  # Must match bazel protobuf version since it doesn't the codegen
+psutil>=5.9.0 # needed for setting `--timeout` for llvm-lit
+py-cpuinfo
+pyarrow
+pydantic
+pydantic-settings==2.3.4
+pygame
+pygments
+pyinstrument
+pytest-asyncio==0.23.7
+pytest-benchmark
+pytest-mock
+pytest-xdist
+pytest>=7.2
+python-json-logger
+PyYAML>=5.3.1, <=6.0.1
+pyzmq
+plotly
+qwen-vl-utils
+requests>=2.28
+safetensors
+sentence-transformers
+sentencepiece==0.2.0
+sentinel==1.0.0
+setuptools
+sphinx==7.4.7
+sse-starlette==2.1.2
+sseclient-py
+starlette==0.41.2 # transitively included by sse-starlette, >=0.40.0 is required for resolving CVE-2024-47874, 0.41.3 introduces a breaking change against mypy (https://github.com/encode/starlette/discussions/2757)
+stack-pr
+taskgroup
+threadpoolctl
+timm # Required to run transformers with InternVL.
+tokenicer
+tomli
+tqdm
+transformers>=4.51.1  # v4.47.0 and v4.49.0 introduced changes that break our torch.compile backend.
+tokenizers
+torchmetrics
+typing-extensions
+uvloop>=0.21.0
+uvicorn
+absl-py
+
+# modeltool
+google-auth==2.29.0
+google-cloud-bigquery==3.22.0
+pandas>=1.4.2
+pyasn1
+PyGithub>=1.59.1
+requests>=2.28.0
+rich>=12.4.4
+scipy>=1.10.1
+seaborn>=0.11.2
+slack_sdk>=3.27.1
+structlog>=23.3.0
+tabulate>=0.8.9
+
+# Support
+find-libpython>=0.3.0
+ruamel.yaml>=0.17
+ruamel-yaml-clib
+
+# benchmarks
+schema==0.7.5
+
+# perfsect_v2
+responses>=0.23.3
+
+# mblack
+mypy_extensions>=0.4.3
+pathspec>=0.9.0
+pip>=22.3.1
+platformdirs>=2
+
+# pillow is required to get the torch tests configured correctly
+# in the wheel build.
+pillow>=10.0.0
+locust
+openai==1.52.2
+librosa==0.10.2
+soundfile==0.12.1
+grpcio
+grpcio-tools
+grpcio-reflection
+pytest-grpc
+
+# mypy types
+types-protobuf
+types-PyYAML
+types-setuptools
+types-tabulate

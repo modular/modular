@@ -1,6 +1,5 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
-load("@modular_test_deps//:requirements.bzl", _requirement = "requirement")
 load("@rules_mojo//mojo:mojo_binary.bzl", _mojo_binary = "mojo_binary")
 load("@rules_mojo//mojo:mojo_library.bzl", _mojo_library = "mojo_library")
 load("@rules_mojo//mojo:mojo_test.bzl", _mojo_test = "mojo_test")
@@ -8,6 +7,7 @@ load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
+load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test

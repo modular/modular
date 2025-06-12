@@ -16,7 +16,6 @@ bazel_dep(name = "rules_cc", version = "0.1.1")
 bazel_dep(name = "rules_mojo", version = "0.1.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
-bazel_dep(name = "rules_python", version = "1.4.0-rc4")
 bazel_dep(name = "rules_shell", version = "0.4.1")
 
 # TODO: Remove when 0.3.0 is released
@@ -29,7 +28,6 @@ archive_override(
     ],
 )
 
-bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
 bazel_dep(name = "toolchains_llvm", version = "1.4.0", dev_dependency = True)
 single_version_override(
     module_name = "toolchains_llvm",
@@ -46,23 +44,6 @@ mojo_aliases(name = "mojo")
 include("//bazel:mojo.MODULE.bazel")
 
 register_toolchains("@mojo_toolchains//...")
-
-_DEFAULT_PYTHON_VERSION = "3.12"
-
-python = use_extension("@rules_python//python/extensions:python.bzl", "python", dev_dependency = True)
-python.toolchain(
-    ignore_root_user_error = True,
-    is_default = True,
-    python_version = _DEFAULT_PYTHON_VERSION,
-)
-
-pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip", dev_dependency = True)
-pip.parse(
-    hub_name = "modular_test_deps",
-    python_version = _DEFAULT_PYTHON_VERSION,
-    requirements_lock = "bazel/requirements.txt",
-)
-use_repo(pip, "modular_test_deps")
 
 llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm", dev_dependency = True)
 llvm.toolchain(

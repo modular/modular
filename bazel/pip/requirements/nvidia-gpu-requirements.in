@@ -1,0 +1,16 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+-r requirements.in
+
+# NOTE: This is a re-upload of the vanilla wheel with these patches:
+# - https://github.com/pytorch/pytorch/pull/137059
+torch @ https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch/2.7.0/76be807ccbeeca14632a7a49c3737b9b4e4b8f57e78889730314de0807d28bb7/torch-2.7.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl
+
+torchaudio==2.7.0+cu128
+torchvision==0.22.0+cu128
+xgrammar
+
+gptqmodel @ https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl
+nvidia-nvtx-cu12
+nvtx
+nixl
