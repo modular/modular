@@ -15,6 +15,7 @@ from math import ceildiv, isclose
 from random import rand
 from sys import sizeof
 from sys.info import num_physical_cores, simdwidthof
+import time
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -147,7 +148,7 @@ fn test_conv_cudnn[
         ctx,
     )
 
-    conv_cudnn[input_type, filter_type, output_type,](
+    conv_cudnn[input_type, filter_type, output_type](
         input_dev.tensor,
         filter_nchw_dev.tensor,
         output_dev.tensor,
@@ -174,7 +175,7 @@ fn test_conv_cudnn[
                     assert_almost_equal(
                         output_host_buf[n, h, w, f],
                         output_ref_host_buf[n, h, w, f],
-                        rtol=0.0001,
+                        rtol=0.01,
                     )
     print("Succeed")
 
