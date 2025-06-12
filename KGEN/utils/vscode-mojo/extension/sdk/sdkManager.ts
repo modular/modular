@@ -458,7 +458,7 @@ export class MAXSDKManager extends DisposableContext {
     if (!bazelContents) {
       return undefined;
     }
-    if (!bazelContents.includes('module(name = "modular")')) {
+    if (!bazelContents.includes('module(name = "modular-internal")')) {
       return undefined;
     }
     // It is possible to clone the monorepo and run the extension without ever creating .derived.
