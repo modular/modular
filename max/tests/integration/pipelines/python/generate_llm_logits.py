@@ -604,32 +604,114 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
     "olmo2-1b": GenericOracle(
+        model_path="allenai/OLMo-2-0425-1B",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={
+            "gpu": ["float32"],
+            "cpu": ["float32"],
+        },
+    ),
+    "olmo2-1b-instruct": GenericOracle(
         model_path="allenai/OLMo-2-0425-1B-Instruct",
         config_params={
             "max_length": 512,
         },
-        device_encoding_map={"gpu": ["bfloat16"]},
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
+    ),
+    "olmo2-1b-rvlr1": GenericOracle(
+        model_path="allenai/OLMo-2-0425-1B-RLVR1",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
     ),
     "olmo2-7b": GenericOracle(
         model_path="allenai/OLMo-2-1124-7B",
         config_params={
             "max_length": 512,
         },
-        device_encoding_map={"gpu": ["float32"], "cpu": ["float32"]},
+        device_encoding_map={
+            "gpu": ["float32"],
+            "cpu": ["float32"],
+        },
+    ),
+    "olmo2-7b-instruct": GenericOracle(
+        model_path="allenai/OLMo-2-1124-7B-Instruct",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
     ),
     "olmo2-13b": GenericOracle(
+        model_path="allenai/OLMo-2-1124-13B",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={
+            "gpu": ["float32"],
+            "cpu": ["float32"],
+        },
+    ),
+    "olmo2-13b-instruct": GenericOracle(
         model_path="allenai/OLMo-2-1124-13B-Instruct",
         config_params={
             "max_length": 512,
         },
-        device_encoding_map={"gpu": ["bfloat16"]},
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
     ),
-    "olmo2-32b": GenericOracle(
+    "olmo2-13b-instruct-rvlr1": GenericOracle(
+        model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR1",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
+    ),
+    "olmo2-13b-instruct-rvlr2": GenericOracle(
+        model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR2",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
+    ),
+    "olmo2-32b-instruct": GenericOracle(
         model_path="allenai/OLMo-2-0325-32B-Instruct",
         config_params={
             "max_length": 512,
         },
-        device_encoding_map={"gpu": ["bfloat16"]},
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
+    ),
+    "olmo2-32b-math": GenericOracle(
+        model_path="tngtech/OLMo-2-Instruct-Math-32B",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={
+            "gpu": ["bfloat16"],
+            "cpu": ["bfloat16"],
+        },
     ),
     "mistral": GenericOracle(
         model_path="mistralai/Mistral-Nemo-Instruct-2407",
