@@ -12,4 +12,4 @@ test = "python basic.py"
 
 [dependencies]
 python = ">=3.9,<3.14"
-max-pipelines = "*"
+modular = "*"
