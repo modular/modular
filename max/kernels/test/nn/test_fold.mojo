@@ -62,15 +62,15 @@ from utils.index import Index, IndexList
 
 # CHECK-LABEL: test_fold
 fn test[
-    dtype: DType,
+    dtype: DType, //,
     input_dim: DimList,
     output_dim: DimList,
+    stride: Tuple[Int, Int],
+    dilation: Tuple[Int, Int],
+    padding: Tuple[Int, Int],
 ](
     output_size: IndexList[2],
     kernel_size: IndexList[2],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
     input_values: List[Scalar[dtype]],
     expected_output: List[Scalar[dtype]],
 ) raises:
@@ -98,14 +98,11 @@ fn test[
         output_ptr, output_dim
     )
 
-    fold[target="cpu"](
+    fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,
         output=output,
         output_size=output_size,
         kernel_size=kernel_size,
-        dilation=dilation,
-        padding=padding,
-        stride=stride,
         ctx=DeviceContextPtr(),
     )
 
@@ -122,9 +119,9 @@ fn test[
                         print("Output shape: ", output_dim)
                         print("Output size: ", output_size)
                         print("Kernel size: ", kernel_size)
-                        print("Stride: ", stride)
-                        print("Dilation: ", dilation)
-                        print("Padding: ", padding)
+                        print("Stride: ", stride[0], stride[1])
+                        print("Dilation: ", dilation[0], dilation[1])
+                        print("Padding: ", padding[0], padding[1])
                         print(
                             "Test failed at index: ",
                             Index(n, c, h, w),
@@ -168,15 +165,14 @@ fn main() raises:
     alias dtype = DType.float32
     # fmt: off
     test[
-        dtype,
         input_dim = DimList(1, 6, 15),
-        output_dim = DimList(1, 1, 5, 6)
+        output_dim = DimList(1, 1, 5, 6),
+        stride=(1, 1),
+        dilation=(1, 1),
+        padding=(0, 0),
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        stride=Index(1, 1),
-        dilation=Index(1, 1),
-        padding=Index(0, 0),
         input_values=List[Scalar[dtype]](
             24., 43., 47., 13., 27., 24., 16.,  1., 41.,  1., 45., 24.,  4.,  7., 36.,
             11., 13., 36., 14.,  1., 28.,  2., 20., 20., 45., 27., 44., 20., 40., 14.,
@@ -196,15 +192,14 @@ fn main() raises:
 
     # Test with dilation.
     test[
-        dtype,
         input_dim = DimList(1, 6, 4),
-        output_dim = DimList(1, 1, 5, 6)
+        output_dim = DimList(1, 1, 5, 6),
+        stride=(1, 1),
+        dilation=(2, 2),
+        padding=(0, 0),
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        stride=Index(1, 1),
-        dilation=Index(2, 2),
-        padding=Index(0, 0),
         input_values=List[Scalar[dtype]](
             49., 24., 22.,  9.,
             48., 38., 32., 30.,
@@ -224,15 +219,14 @@ fn main() raises:
 
     # Test with stride and dilation.
     test[
-        dtype,
         input_dim = DimList(1, 6, 2),
-        output_dim = DimList(1, 1, 5, 6)
+        output_dim = DimList(1, 1, 5, 6),
+        stride=(2, 2),
+        dilation=(2, 2),
+        padding=(0, 0),
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        stride=Index(2, 2),
-        dilation=Index(2, 2),
-        padding=Index(0, 0),
         input_values=List[Scalar[dtype]](
             6.,  8.,
             39., 43.,
@@ -252,15 +246,14 @@ fn main() raises:
 
     # Test with stride, dilation and padding.
     test[
-        dtype,
         input_dim = DimList(1, 6, 12),
-        output_dim = DimList(1, 1, 5, 6)
+        output_dim = DimList(1, 1, 5, 6),
+        stride=(2, 2),
+        dilation=(1, 1),
+        padding=(1, 1),
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        stride=Index(2, 2),
-        dilation=Index(1, 1),
-        padding=Index(1, 1),
         input_values=List[Scalar[dtype]](
             20., 23., 46., 16., 22., 40.,  9.,  6., 17., 31., 31.,  7.,
             6.,  3., 26.,  6., 34., 15.,  2., 21., 10.,  8., 48., 37.,
@@ -280,15 +273,14 @@ fn main() raises:
 
     # Test with batch > 1.
     test[
-        dtype,
         input_dim = DimList(2, 4, 2),
-        output_dim = DimList(2, 1, 2, 3)
+        output_dim = DimList(2, 1, 2, 3),
+        stride=(1, 1),
+        dilation=(1, 1),
+        padding=(0, 0),
     ](
         output_size=Index(2, 3),
         kernel_size=Index(2, 2),
-        stride=Index(1, 1),
-        dilation=Index(1, 1),
-        padding=Index(0, 0),
         input_values=List[Scalar[dtype]](
             39., 32.,
             42., 31.,
@@ -310,15 +302,14 @@ fn main() raises:
 
     # Test with channel size > 1.
     test[
-        dtype,
         input_dim = DimList(1, 8, 2),
-        output_dim = DimList(1, 2, 2, 3)
+        output_dim = DimList(1, 2, 2, 3),
+        stride=(1, 1),
+        dilation=(1, 1),
+        padding=(0, 0),
     ](
         output_size=Index(2, 3),
         kernel_size=Index(2, 2),
-        stride=Index(1, 1),
-        dilation=Index(1, 1),
-        padding=Index(0, 0),
         input_values=List[Scalar[dtype]](
             42.,  3.,
             39., 27.,

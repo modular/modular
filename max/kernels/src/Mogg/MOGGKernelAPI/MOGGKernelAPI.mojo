@@ -5869,82 +5869,67 @@ struct Fold:
     @staticmethod
     fn execute[
         dtype: DType,
+        stride_h: Int,
+        stride_w: Int,
+        dilation_h: Int,
+        dilation_w: Int,
+        padding_h: Int,
+        padding_w: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=3],
         output_size: InputTensor,
         kernel_size: InputTensor,
-        stride: InputTensor,
-        dilation: InputTensor,
-        padding: InputTensor,
         ctx: DeviceContextPtr,
     ) raises:
         constrained[
-            stride.dtype.is_integral()
-            and dilation.dtype.is_integral()
-            and padding.dtype.is_integral()
-            and kernel_size.dtype.is_integral()
-            and output_size.dtype.is_integral(),
-            (
-                "stride, dilation, padding, kernel_size and output_size must"
-                " have integral type"
-            ),
+            kernel_size.dtype.is_integral() and output_size.dtype.is_integral(),
+            "kernel_size and output_size must have integral type",
         ]()
         var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
-        var stride_tuple = Index(stride._ptr[0], stride._ptr[1])
-        var dilation_tuple = Index(dilation._ptr[0], dilation._ptr[1])
-        var padding_tuple = Index(padding._ptr[0], padding._ptr[1])
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        fold[dtype, target=target](
+        fold[
+            stride= (stride_h, stride_w),
+            dilation= (dilation_h, dilation_w),
+            padding= (padding_h, padding_w),
+            target=target,
+        ](
             input_buf,
             output_buf,
             output_size_tuple,
             kernel_size_tuple,
-            stride_tuple,
-            dilation_tuple,
-            padding_tuple,
             ctx,
         )
 
     @staticmethod
     fn shape[
         dtype: DType,
+        stride_h: Int,
+        stride_w: Int,
+        dilation_h: Int,
+        dilation_w: Int,
+        padding_h: Int,
+        padding_w: Int,
     ](
         input: InputTensor[dtype=dtype, rank=3],
         output_size: InputTensor,
         kernel_size: InputTensor,
-        stride: InputTensor,
-        dilation: InputTensor,
-        padding: InputTensor,
     ) raises -> IndexList[4]:
         constrained[
-            stride.dtype.is_integral()
-            and dilation.dtype.is_integral()
-            and padding.dtype.is_integral()
-            and kernel_size.dtype.is_integral()
-            and output_size.dtype.is_integral(),
-            (
-                "stride, dilation, padding, kernel_size and output_size must"
-                " have integral dtype"
-            ),
+            kernel_size.dtype.is_integral() and output_size.dtype.is_integral(),
+            "kernel_size and output_size must have integral type",
         ]()
         var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
         var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
-        var stride_tuple = Index(stride._ptr[0], stride._ptr[1])
-        var dilation_tuple = Index(dilation._ptr[0], dilation._ptr[1])
-        var padding_tuple = Index(padding._ptr[0], padding._ptr[1])
         return fold_shape(
             managed_tensor_slice_to_ndbuffer(input),
             output_size_tuple,
             kernel_size_tuple,
-            stride_tuple,
-            dilation_tuple,
-            padding_tuple,
         )
 
 
