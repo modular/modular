@@ -257,13 +257,13 @@ fn gpu_bicubic_kernel[
         output[b, c, y_out, x_out] = sum_value.cast[type]()
 
 
-def resize_bicubic[
+fn resize_bicubic[
     type: DType, rank: Int, //, target: StaticString
 ](
     output: NDBuffer[mut=True, type, rank, *_],
     input: NDBuffer[type, rank, *_],
     ctx: DeviceContextPtr,
-) -> None:
+) raises:
     """Perform bicubic interpolation.
 
     Args:
