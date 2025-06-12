@@ -40,7 +40,29 @@ You can also use the decorator with the `"nodebug"` argument, which has the
 same effect to inline the function, but without debug information. This means
 that you can't step into the function when debugging.
 
-This decorator is intended to be used on the lowest-level functions in a
+This decorator is intended to be used on the low-level functions in a
 library,   which may wrap primitive functions, MLIR operations, or inline
 assembly. Marking these functions as "nodebug" prevents users from accidentally
 stepping into low-level non-Mojo code when debugging.
+
+## `@always_inline("builtin")`
+
+The `"builtin"` argument is like `"nodebug"`, but even stricter. The `"builtin"`
+version of the decorator should only be used on functions that wrap a single
+MLIR operation that the compiler has special compile-time handling for. It
+allows the compiler to inline the function when it's used in a parameter
+context. This simplifies the generated IR and allows for further optimizations.
+
+This version of the decorator does everything that `"nodebug"` does, plus two
+other behaviors:
+
+- It checks the body of the function to validate that it doesn’t use
+  anything that `@always_inline("builtin")` can’t handle-this checks that there
+  is no control flow, no function calls to functions that are not themselves
+  `@always_inline("builtin")`, no use of unsupported MLIR operations, etc.
+
+- When the function is used in a parameter context, it is unconditionally
+  inlined.
+
+For more details and background, see
+[the `@always_inline("builtin") proposal](https://github.com/modularml/modular/blob/main/open-source/max/mojo/proposals/always_inline_builtin.md).

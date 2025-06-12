@@ -1,0 +1,25 @@
+---
+title: '@no_inline'
+description: Prevents a function from being inlined.
+codeTitle: true
+
+---
+
+You can add the `@no_inline` decorator on any function to prevent it from being
+inlined by the compiler.
+
+```mojo
+@no_inline
+fn my_large_function():
+    ...
+```
+
+Inlining is an optimization that reduces function call overhead for small,
+frequently-called functions. Functions can be explicitly marked for inlining
+using
+[`@always_inline`](/mojo/manual/decorators/always-inline/), or may be inlined
+automatically by the compiler.
+
+Too many inlined functions can slow compilation and substantially increase the
+binary size of the compiled program. In particular, large or complex functions
+may not benefit as much from inlining.
