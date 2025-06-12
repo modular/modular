@@ -81,7 +81,7 @@ def test_bitmask_sampling_vs_xgrammar(
     ).to(device)
     top_k_np = np.array([sampling_params.top_k] * batch_size, dtype=np.int64)
     top_k = Tensor.from_numpy(top_k_np).to(device)
-    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
+    max_k = Tensor.from_numpy(np.array(np.max(top_k_np), dtype=np.int64))
     top_p = Tensor.from_numpy(
         np.array([sampling_params.top_p] * batch_size, dtype=np.float32)
     ).to(device)
@@ -164,7 +164,7 @@ def test_sampling_return_logits(session: InferenceSession):
     ).to(device)
     top_k_np = np.array([sampling_params.top_k] * batch_size, dtype=np.int64)
     top_k = Tensor.from_numpy(top_k_np).to(device)
-    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
+    max_k = Tensor.from_numpy(np.array(np.max(top_k_np), dtype=np.int64))
 
     # Generate Random Logits
     for j in range(3):
@@ -517,7 +517,7 @@ def test_sampling_with_seed(session: InferenceSession):
     ).to(device)
     top_k_np = np.array([sampling_params.top_k] * batch_size, dtype=np.int64)
     top_k_tensor = Tensor.from_numpy(top_k_np).to(device)
-    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
+    max_k = Tensor.from_numpy(np.array(np.max(top_k_np), dtype=np.int64))
     top_p = Tensor.from_numpy(
         np.array([sampling_params.top_p] * batch_size, dtype=np.float32)
     ).to(device)
@@ -635,7 +635,7 @@ def test_top_p_sampling(session: InferenceSession):
     seed_type = TensorType(DType.uint64, [1], device=device_ref)
     top_p_type = TensorType(DType.float32, [1], device=device_ref)
     top_k_type = TensorType(DType.int64, [1], device=device_ref)
-    max_k_type = TensorType(DType.int64, [1], device=DeviceRef.CPU())
+    max_k_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
     temperature_type = TensorType(DType.float32, [1], device=device_ref)
 
     def create_sampling_graph():
@@ -692,7 +692,7 @@ def test_top_p_sampling(session: InferenceSession):
     )
     top_k_np = np.array([top_k], dtype=np.int64)
     top_k_tensor = Tensor.from_numpy(top_k_np).to(device)
-    max_k = Tensor.from_numpy(np.array([np.max(top_k_np)], dtype=np.int64))
+    max_k = Tensor.from_numpy(np.array(np.max(top_k_np), dtype=np.int64))
     top_p_tensor = Tensor.from_numpy(np.array([0.5], dtype=np.float32)).to(
         device
     )
@@ -779,7 +779,7 @@ def test_batch_sampling_arguments(session: InferenceSession):
         batch_logits_np = np.repeat(logits_np, repeats=batch_size, axis=0)
         logits = Tensor.from_dlpack(batch_logits_np).to(device)
         top_k = Tensor.from_numpy(k).to(device)
-        max_k = Tensor.from_numpy(np.array([np.max(k)], dtype=np.int64))
+        max_k = Tensor.from_numpy(np.array(np.max(k), dtype=np.int64))
         temperature_tensor = Tensor.from_numpy(temperature).to(device)
 
         top_p = np.array([0.51, 0.5, 0.5, 0.5], dtype=np.float32)
@@ -831,7 +831,7 @@ def test_batch_sampling_arguments(session: InferenceSession):
             seed_tensor = Tensor.from_numpy(seed_array).to(device)
             k = np.array([1, 2, 3, 4], dtype=np.int64)
             top_k = Tensor.from_numpy(k).to(device)
-            max_k = Tensor.from_numpy(np.array([np.max(k)], dtype=np.int64))
+            max_k = Tensor.from_numpy(np.array(np.max(k), dtype=np.int64))
             tokens = sampler(
                 logits,
                 prev_tokens,
@@ -862,7 +862,7 @@ def test_batch_sampling_arguments(session: InferenceSession):
         top_p_tensor = Tensor.from_numpy(top_p).to(device)
         k = np.array([vocab_size] * batch_size, dtype=np.int64)
         top_k = Tensor.from_numpy(k).to(device)
-        max_k = Tensor.from_numpy(np.array([np.max(k)], dtype=np.int64))
+        max_k = Tensor.from_numpy(np.array(np.max(k), dtype=np.int64))
 
         batch_sampled_tokens: list[list[int]] = [[] for _ in range(batch_size)]
         for seed_val in range(num_trials):
