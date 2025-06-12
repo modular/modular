@@ -574,7 +574,7 @@ def _parse_flag_int(value: str, flag_name: str) -> int:
         ) from exc
 
 
-class PrependPromptSpeechTokens(Enum):
+class PrependPromptSpeechTokens(str, Enum):
     NEVER = "never"
     ONCE = "once"
     ALWAYS = "always"

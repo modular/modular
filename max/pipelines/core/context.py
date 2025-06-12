@@ -880,10 +880,7 @@ class TTSContext(TextContext):
         default_factory=lambda: np.array([], dtype=np.int32)
     )
 
-    # Silence detection related fields.
-    audio_buffer: np.ndarray = msgspec.field(
-        default_factory=lambda: np.empty((1, 0))
-    )
+    # For silence detection.
     prev_samples_beyond_offset: int = msgspec.field(default=0)
 
     # Fields for tracking the state of speech token or audio generation.
