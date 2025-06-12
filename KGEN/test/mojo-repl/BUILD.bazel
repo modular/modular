@@ -18,6 +18,7 @@ lit_tests(
         "//:asan": ["@platforms//:incompatible"],  # __jit_debug_descriptor exists in liblldb and libMojoLLDB
         "//:tsan": ["@platforms//:incompatible"],
         "//:ubsan": ["@platforms//:incompatible"],
+        "//:b200_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tools = [

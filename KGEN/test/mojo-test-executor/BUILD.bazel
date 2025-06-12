@@ -10,6 +10,7 @@ lit_tests(
     ],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
+        "//:b200_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tools = [

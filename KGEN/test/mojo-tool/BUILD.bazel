@@ -32,6 +32,10 @@ lit_tests(
         "@mojo//:layout",
         "@mojo//:stdlib",
     ],
+    target_compatible_with = select({
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tools = [
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/mojo",
