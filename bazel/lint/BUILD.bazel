@@ -42,11 +42,63 @@ command(
     visibility = ["//visibility:public"],
 )
 
+sh_binary(
+    name = "ruff-wrapper",
+    srcs = ["ruff-wrapper.sh"],
+    data = select({
+        "//:linux_x86_64": ["@ruff-x86_64-unknown-linux-gnu//:ruff"],
+        "//:linux_aarch64": ["@ruff-aarch64-unknown-linux-gnu//:ruff"],
+        "@platforms//os:macos": ["@ruff-aarch64-apple-darwin//:ruff"],
+    }),
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "ruff-lint.check",
+    arguments = [
+        "check",
+        "--quiet",
+    ],
+    command = ":ruff-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "ruff-lint.fix",
+    arguments = [
+        "check",
+        "--fix",
+    ],
+    command = ":ruff-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "ruff-format.check",
+    arguments = [
+        "format",
+        "--check",
+        "--quiet",
+        "--diff",
+    ],
+    command = ":ruff-wrapper",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "ruff-format.fix",
+    arguments = ["format"],
+    command = ":ruff-wrapper",
+    visibility = ["//visibility:public"],
+)
+
 multirun(
     name = "lint",
     buffer_output = True,
     commands = [
         ":markdownlint.check",
+        ":ruff-format.check",
+        ":ruff-lint.check",
     ],
     jobs = 0,
     visibility = ["//visibility:public"],
@@ -57,6 +109,8 @@ multirun(
     buffer_output = True,
     commands = [
         ":markdownlint.fix",
+        ":ruff-format.fix",
+        ":ruff-lint.fix",
     ],
     jobs = 0,
     visibility = ["//visibility:public"],
