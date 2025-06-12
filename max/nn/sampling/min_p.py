@@ -14,7 +14,15 @@
 
 from max import nn
 from max.dtype import DType
-from max.graph import DeviceRef, Shape, ShapeLike, TensorType, TensorValue, ops
+from max.graph import (
+    DeviceRef,
+    Shape,
+    ShapeLike,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 
 
 class MinPSampler(nn.Module):
@@ -29,22 +37,36 @@ class MinPSampler(nn.Module):
         self,
         dtype: DType,
         shape: ShapeLike,
-        min_p: float = 0.0,
         temperature: float = 1,
     ):
         self.dtype = dtype
         self.shape = Shape(shape)
-        self.min_p = min_p
         self.temperature = temperature
 
-    def __call__(self, input: TensorValue) -> TensorValue:
+    def __call__(
+        self, input: TensorValue, min_p: TensorValueLike = 0.0
+    ) -> TensorValue:
+        batch_size = input.shape[0]
+        # Handle top_p parameter - can be scalar or tensor
+        if isinstance(min_p, (float, int)):
+            if float(min_p) < 0.0 or float(min_p) > 1.0:
+                raise ValueError(f"expected min_p to be in [0, 1], got {min_p}")
+            min_p_tensor = ops.broadcast_to(
+                ops.constant(min_p, dtype=DType.float32, device=input.device),
+                [batch_size],
+            )
+        else:
+            min_p_tensor = TensorValue(min_p)
+            if min_p_tensor.shape[0] != batch_size:
+                raise ValueError(
+                    f"top_p tensor shape {min_p_tensor.shape} does not match batch_size {batch_size}"
+                )
+
         return ops.custom(
             "min_p_sampling",
             input.device,
             [
-                ops.constant(
-                    self.min_p, dtype=self.dtype, device=DeviceRef.CPU()
-                ),
+                min_p_tensor,
                 input,
                 ops.constant(
                     self.temperature, dtype=self.dtype, device=DeviceRef.CPU()

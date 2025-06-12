@@ -8805,7 +8805,7 @@ struct Struct_min_p_sampling:
         _trace_name: StaticString,
     ](
         out_token_ids: OutputTensor[dtype=out_idx_type, rank=rank],
-        min_p: Scalar[dtype],
+        min_ps: InputTensor[dtype=dtype, rank=1],
         input: InputTensor[dtype=dtype, rank=rank],
         temperature: Scalar[dtype],
         ctx: DeviceContextPtr,
@@ -8814,16 +8814,13 @@ struct Struct_min_p_sampling:
 
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
         var out_token_ids_buf = managed_tensor_slice_to_ndbuffer(out_token_ids)
-        var min_ps_buf = NDBuffer[dtype, 1, _, 1, 1](UnsafePointer(to=min_p))
-        var min_ps_tensor = LayoutTensor[dtype, Layout.row_major(1)](
-            UnsafePointer(to=min_p)
-        )
+        var min_ps_buf = managed_tensor_slice_to_ndbuffer(min_ps)
         with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
             if is_cpu[target]():
                 min_p_sampling_cpu(
-                    min_ps_tensor,
+                    min_ps.to_layout_tensor(),
                     input.to_layout_tensor(),
                     out_token_ids.to_layout_tensor(),
                     temperature,
