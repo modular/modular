@@ -40,6 +40,7 @@ from gpu._cudnn.cnn_infer import (
     cudnnDestroyConvolutionDescriptor,
     cudnnDestroyFilterDescriptor,
     cudnnSetConvolution2dDescriptor,
+    cudnnSetConvolutionGroupCount,
     cudnnSetConvolutionMathType,
     cudnnGetConvolutionForwardWorkspaceSize,
 )
@@ -3181,6 +3182,23 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     return ptr_meta
 
 
+fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
+    """Map Mojo DType to cuDNN data type.
+
+    Support only floating point dtypes for now.
+    """
+
+    @parameter
+    if dtype == DType.float32:
+        return cudnnDataType_t.CUDNN_DATA_FLOAT
+    elif dtype == DType.float16:
+        return cudnnDataType_t.CUDNN_DATA_HALF
+    elif dtype == DType.bfloat16:
+        return cudnnDataType_t.CUDNN_DATA_BFLOAT16
+    else:
+        raise Error("unsupported dtype", dtype, "for cuDNN")
+
+
 fn conv_cudnn[
     input_type: DType,
     filter_type: DType,
@@ -3201,7 +3219,7 @@ fn conv_cudnn[
         cudnnSetTensor4dDescriptor(
             ptr_meta[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            get_cudnn_dtype[input_type](),
             input.dim[0](),
             input.dim[3](),
             input.dim[1](),
@@ -3212,7 +3230,7 @@ fn conv_cudnn[
     check_cudnn_error(
         cudnnSetFilter4dDescriptor(
             ptr_meta[].ptr_filter_desc,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            get_cudnn_dtype[filter_type](),
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             filter.dim[0](),
             filter.dim[1](),
@@ -3231,15 +3249,23 @@ fn conv_cudnn[
             dilation[0],
             dilation[1],
             cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
+            # cuDNN 8+ requires float32 accumulation when the I/O tensors are
+            # bfloat16.
+            # Note that this is correct for float16, bfloat16, and float32 but
+            # would have to be adjusted for other input dtypes, such as int8.
             cudnnDataType_t.CUDNN_DATA_FLOAT,
         )
+    )
+
+    check_cudnn_error(
+        cudnnSetConvolutionGroupCount(ptr_meta[].ptr_conv_desc, num_groups)
     )
 
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
             ptr_meta[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            get_cudnn_dtype[output_type](),
             output.dim[0](),
             output.dim[3](),
             output.dim[1](),
@@ -3257,7 +3283,9 @@ fn conv_cudnn[
         )
     )
     # to disable tf32, run export NVIDIA_TF32_OVERRIDE=0 in the environment
-    alias algo = cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+    algo = (
+        cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+    )
     var workspace_size_var = 0
     var workspace_size_ptr = UnsafePointer(to=workspace_size_var)
     check_cudnn_error(

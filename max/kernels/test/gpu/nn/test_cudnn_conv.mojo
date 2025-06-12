@@ -69,8 +69,18 @@ fn test_conv_cudnn[
     stride_dim: IndexList[2],
     dilation_dim: IndexList[2],
     pad_dim: IndexList[2],
+    num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
-    print("== test_cudnn_conv_gpu")
+    print(
+        "== test_cudnn_conv_gpu: dtype_in=",
+        input_type,
+        " dtype_filter=",
+        filter_type,
+        " dtype_out=",
+        output_type,
+        " num_groups=",
+        num_groups,
+    )
 
     var input_dim_flattened = input_dim.product().get()
     var filter_dim_flattened = filter_dim.product().get()
@@ -143,7 +153,7 @@ fn test_conv_cudnn[
         stride_dim,
         dilation_dim,
         pad_dim,
-        1,
+        num_groups,
         ctx,
     )
 
@@ -154,7 +164,7 @@ fn test_conv_cudnn[
         stride_dim,
         dilation_dim,
         pad_dim,
-        1,
+        num_groups,
         ctx,
     )
 
@@ -190,6 +200,9 @@ fn test_conv_cudnn[
 
 def main():
     with DeviceContext() as ctx:
+        # Test configurations for data types.
+        alias dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
+
         test_conv_cudnn[
             DimList(1, 1, 550, 1024),  # input  (NHWC)
             DimList(
@@ -203,3 +216,34 @@ def main():
             IndexList[2](1, 1),  # dilation
             IndexList[2](0, 3),  # pad
         ](ctx)
+
+        # Test different data types.
+        @parameter
+        for i in range(len(dtype_configs)):
+            alias dtype = dtype_configs[i]
+
+            test_conv_cudnn[
+                DimList(1, 8, 8, 16),  # input  (NHWC)
+                DimList(3, 3, 16, 32),  # filter (RSCF)
+                DimList(1, 6, 6, 32),  # output (NHWC)
+                dtype,
+                dtype,
+                dtype,
+                IndexList[2](1, 1),  # stride
+                IndexList[2](1, 1),  # dilation
+                IndexList[2](0, 0),  # pad
+            ](ctx)
+
+        # Test grouped convolutions
+        # NOTE: Grouped convolutions are not supported by conv_gpu's naive implementation,
+        # so we cannot validate against it. These tests would need a different reference
+        # implementation or manual validation.
+
+        # TODO(KERN-1846): Add grouped convolution tests once we have a proper
+        # reference implementation.
+        # The following configurations would be tested:
+        # - Standard conv with num_groups=1
+        # - 2 groups
+        # - 4 groups
+        # - Depthwise convolution (num_groups = in_channels)
+        # - Grouped convolution with float16
