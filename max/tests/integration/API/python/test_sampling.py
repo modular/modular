@@ -19,6 +19,18 @@ from max.pipelines.lib import SamplingConfig, rejection_sampler, token_sampler
 from transformers import AutoConfig, AutoTokenizer
 
 
+def test_sampling_top_k():
+    with pytest.raises(ValueError):
+        SamplingParams(top_k=0)
+
+    with pytest.raises(ValueError):
+        SamplingParams(top_k=257)
+
+    # TODO(E2EOPT-315) -- this is a temporary band-aid, we will add support for top_k = -1 in the future.
+    with pytest.raises(ValueError):
+        SamplingParams(top_k=-1)
+
+
 def test_bitmask_sampling_vs_xgrammar(
     session: InferenceSession, modular_ai_llama_3_1_local_path
 ):
