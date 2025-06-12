@@ -265,9 +265,7 @@ class PipelineModel(ABC, Generic[T]):
 
         # TODO we should map HF configs to a unified MAX Config object
         # this would help avoid these excessive calls to class methods.
-        n_layers = cls.get_num_layers(
-            huggingface_config=huggingface_config,
-        )
+        n_layers = cls.get_num_layers(huggingface_config=huggingface_config)
 
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
@@ -278,8 +276,7 @@ class PipelineModel(ABC, Generic[T]):
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=n_layers,
             available_cache_memory=available_cache_memory,
@@ -500,8 +497,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             )
             self.vocab_size = len(self.tokenizer)
             tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-                self.tokenizer,
-                vocab_size=self.vocab_size,
+                self.tokenizer, vocab_size=self.vocab_size
             )
 
             self._grammar_compiler = xgr.GrammarCompiler(tokenizer_info)
@@ -577,7 +573,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             token_sampler(
                 self._pipeline_config.sampling_config,
                 device=DeviceRef.from_device(self._devices[0]),
-            ),
+            )
         )
 
     def calculate_num_steps(
@@ -613,10 +609,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         if self._pipeline_config.sampling_config.enable_structured_output:
             assert self.vocab_size is not None
             bitmask = torch.full(
-                xgr.get_bitmask_shape(
-                    len(batch),
-                    self.vocab_size,
-                ),
+                xgr.get_bitmask_shape(len(batch), self.vocab_size),
                 -1,
                 dtype=torch.int32,
             )
@@ -634,8 +627,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 try:
                     compiled_grammar = (
                         self._grammar_compiler.compile_json_schema(
-                            context.json_schema,
-                            any_whitespace=False,
+                            context.json_schema, any_whitespace=False
                         )
                     )
                     matcher = xgr.GrammarMatcher(compiled_grammar)
@@ -964,17 +956,14 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
             # Execute the model and get next tokens.
             model_outputs = self._pipeline_model.execute(
-                model_inputs=curr_step_inputs,
+                model_inputs=curr_step_inputs
             )
 
             if bitmask is not None:
                 assert self.vocab_size is not None
                 bits = 2 ** torch.arange(32, dtype=torch.int32)
                 bitmask = (bitmask.unsqueeze(-1) & bits) != 0
-                bitmask = bitmask.reshape(
-                    len(context_batch),
-                    -1,
-                ).to(torch.bool)
+                bitmask = bitmask.reshape(len(context_batch), -1).to(torch.bool)
                 bitmask = bitmask[:, 0 : self.vocab_size]
 
                 bitmask = Tensor.from_dlpack(bitmask).to(self._devices[0])
@@ -1074,8 +1063,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     log_probs = log_probs_for_step[batch_index]
 
                 context.update(
-                    new_token=next_token,
-                    log_probabilities=log_probs,
+                    new_token=next_token, log_probabilities=log_probs
                 )
                 res[request_id].update_status(context.status)
                 if context.is_done:

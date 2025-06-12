@@ -356,7 +356,7 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo,
+            huggingface_repo=self.draft_model_config.huggingface_model_repo
         )
 
         if not draft_arch:
@@ -364,7 +364,7 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo,
+            huggingface_repo=self.model_config.huggingface_model_repo
         )
         if not target_arch:
             msg = "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -418,7 +418,7 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=model_config.huggingface_model_repo,
+            huggingface_repo=model_config.huggingface_model_repo
         )
 
         # If nothing is provided, we should not update any more params.

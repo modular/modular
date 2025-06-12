@@ -29,9 +29,7 @@ def ragged_token_merger(device: DeviceRef) -> Graph:
 
         merge_op = RaggedTokenMerger(device)
         merged_tensor, merged_row_offsets = merge_op(
-            prompt_tensor.tensor,
-            prompt_row_offsets.tensor,
-            draft_tensor.tensor,
+            prompt_tensor.tensor, prompt_row_offsets.tensor, draft_tensor.tensor
         )
 
         graph.output(merged_tensor, merged_row_offsets)
@@ -68,10 +66,7 @@ class RaggedTokenMerger(nn.Module):
             dtype=DType.uint32,
         )
         merged_tensor, merged_offsets = merge_ragged_tensors(
-            prompt_tokens,
-            prompt_offsets,
-            draft_tokens_flattened,
-            draft_offsets,
+            prompt_tokens, prompt_offsets, draft_tokens_flattened, draft_offsets
         )
 
         return merged_tensor, merged_offsets

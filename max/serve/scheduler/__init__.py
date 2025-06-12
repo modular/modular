@@ -58,7 +58,7 @@ def load_scheduler(
 ) -> Scheduler:
     if isinstance(pipeline, EmbeddingsGenerator):
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
-            max_batch_size=config.token_generation.size,
+            max_batch_size=config.token_generation.size
         )
         return EmbeddingsScheduler(
             process_control=pc,

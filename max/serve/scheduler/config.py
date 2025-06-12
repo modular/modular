@@ -120,8 +120,7 @@ class TokenGeneratorSchedulerConfig:
         executed until all requests are completed.
         """
         token_generation_config = BatchQueueConfig(
-            size=batch_size,
-            enable_chunked_prefill=False,
+            size=batch_size, enable_chunked_prefill=False
         )
         config = cls(
             token_generation=token_generation_config,
@@ -155,8 +154,7 @@ class TokenGeneratorSchedulerConfig:
             enable_in_flight_batching=enable_in_flight_batching,
         )
         context_encoding_config = BatchQueueConfig(
-            size=ce_batch_size,
-            target_sum_seq_len=target_ce_batch_tokens,
+            size=ce_batch_size, target_sum_seq_len=target_ce_batch_tokens
         )
         config = cls(
             context_encoding=context_encoding_config,

@@ -149,9 +149,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         self.signal_buffers = (
             [
                 Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,),
-                    dtype=DType.uint8,
-                    device=dev,
+                    shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
                 )
                 for dev in self.devices
             ]
@@ -172,10 +170,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         cache_dtype: DType,
     ) -> KVCacheParams:
         return Llama3Config.get_kv_params(
-            huggingface_config,
-            n_devices,
-            kv_cache_config,
-            cache_dtype,
+            huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -188,9 +183,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         # Construct general input types
         return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
         kv_inputs = self.kv_manager.input_symbols()
@@ -251,8 +244,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         else:
             assert isinstance(model_outputs[0], Tensor)
             return ModelOutputs(
-                logits=model_outputs[0],
-                next_token_logits=model_outputs[0],
+                logits=model_outputs[0], next_token_logits=model_outputs[0]
             )
 
     def prepare_initial_token_inputs(
@@ -265,8 +257,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch],
-            dtype=np.uint32,
+            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
@@ -357,11 +348,10 @@ class LlamaModelBase(PipelineModel[TextContext]):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=Llama3Config.get_num_layers(
-                huggingface_config=huggingface_config,
+                huggingface_config=huggingface_config
             ),
             available_cache_memory=available_cache_memory,
             devices=devices,
@@ -516,10 +506,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
             self.state_dict = nn_model.state_dict()
 
-            with Graph(
-                "llama3",
-                input_types=graph_inputs,
-            ) as graph:
+            with Graph("llama3", input_types=graph_inputs) as graph:
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )

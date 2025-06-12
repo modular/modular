@@ -92,10 +92,7 @@ class Qwen3Model(LlamaModelBase):
 
         self.state_dict = nn_model.state_dict()
 
-        with Graph(
-            "qwen3",
-            input_types=graph_inputs,
-        ) as graph:
+        with Graph("qwen3", input_types=graph_inputs) as graph:
             tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                 inp.tensor for inp in graph.inputs
             )

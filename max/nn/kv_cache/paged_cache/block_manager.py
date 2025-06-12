@@ -248,8 +248,7 @@ class BlockManager(Generic[T]):
                 ctx.committed_idx + len(prefix_cache_blocks) * self.block_size
             )
             ctx.set_token_indices(
-                committed_idx=new_committed_idx,
-                start_idx=new_committed_idx,
+                committed_idx=new_committed_idx, start_idx=new_committed_idx
             )
             assert ctx.committed_idx == ctx.start_idx
 
@@ -278,9 +277,7 @@ class BlockManager(Generic[T]):
 
                 fresh_block = self.allocate_device_block()
                 req_blocks.append(fresh_block)
-                ctx.bump_token_indices(
-                    start_idx=tokens_matched,
-                )
+                ctx.bump_token_indices(start_idx=tokens_matched)
 
                 # Enqueue a D2D block copy operation.
                 assert self.block_copy_engine is not None
@@ -442,8 +439,7 @@ class BlockManager(Generic[T]):
             return None, 0
 
         child_hash = hash_block_tokens(
-            parent_hash.value,
-            np.array(best_child_tokens),
+            parent_hash.value, np.array(best_child_tokens)
         )
         child_block = self.device_block_pool.hash_to_committed_block[
             child_hash.value
@@ -494,7 +490,7 @@ class BlockManager(Generic[T]):
                 self.recently_committed_device_blocks.append(block)
 
         ctx.set_token_indices(
-            committed_idx=num_computed_blocks * self.block_size,
+            committed_idx=num_computed_blocks * self.block_size
         )
 
     def release(self, seq_id: int) -> None:
@@ -595,9 +591,7 @@ class BlockManager(Generic[T]):
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.device_block_pool.free_block(block)
-        ctx.set_token_indices(
-            start_idx=ctx.committed_idx,
-        )
+        ctx.set_token_indices(start_idx=ctx.committed_idx)
 
     @traced
     def get_req_blocks(self, seq_id: int) -> list[int]:
@@ -656,6 +650,5 @@ class BlockManager(Generic[T]):
             prev_hash = req_hashes[hash_idx - 1]
             assert curr_hash.parent_hash_value == prev_hash.value
             assert curr_hash == hash_block_tokens(
-                prev_hash.value,
-                np.array(curr_hash.token_ids),
+                prev_hash.value, np.array(curr_hash.token_ids)
             )

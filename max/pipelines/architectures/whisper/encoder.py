@@ -119,10 +119,7 @@ class WhisperEncoderLayer(Layer):
         x: TensorValue,
         **kwargs,
     ) -> TensorValue:
-        attn_out = self.attention(
-            self.attention_norm(x),
-            **kwargs,
-        )
+        attn_out = self.attention(self.attention_norm(x), **kwargs)
 
         h = x + attn_out
         h = h + self.mlp(self.mlp_norm(h))

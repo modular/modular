@@ -122,8 +122,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         description="Count of pipelines loaded for each model",
     ),  # type: ignore
     "maxserve.batch_size": _meter.create_histogram(
-        "maxserve.batch_size",
-        description="Distribution of batch sizes",
+        "maxserve.batch_size", description="Distribution of batch sizes"
     ),  # type: ignore
     # semantically, this should be a gauge, but it seems unimplemented in the OTEL SDK
     "maxserve.cache.num_used_blocks": _meter.create_counter(
@@ -344,8 +343,7 @@ class _AsyncMetrics:
 
     def model_load_time(self, ms: float) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.model_load_time", ms),
-            MetricLevel.BASIC,
+            MaxMeasurement("maxserve.model_load_time", ms), MetricLevel.BASIC
         )
 
     def itl(self, ms: float) -> None:
@@ -356,20 +354,14 @@ class _AsyncMetrics:
     def pipeline_load(self, name: str) -> None:
         self.client.send_measurement(
             MaxMeasurement(
-                "maxserve.pipeline_load",
-                1,
-                attributes={"model": name},
+                "maxserve.pipeline_load", 1, attributes={"model": name}
             ),
             MetricLevel.BASIC,
         )
 
     def batch_size(self, size: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.batch_size",
-                size,
-            ),
-            MetricLevel.DETAILED,
+            MaxMeasurement("maxserve.batch_size", size), MetricLevel.DETAILED
         )
 
     def cache_num_used_blocks(self, num_used_blocks: int) -> None:
@@ -392,8 +384,7 @@ class _AsyncMetrics:
 
     def cache_hits(self, hits: int) -> None:
         self.client.send_measurement(
-            MaxMeasurement("maxserve.cache.hits", hits),
-            MetricLevel.DETAILED,
+            MaxMeasurement("maxserve.cache.hits", hits), MetricLevel.DETAILED
         )
 
     def cache_misses(self, cache_misses: int) -> None:

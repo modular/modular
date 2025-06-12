@@ -327,12 +327,10 @@ class HuggingFaceRepo:
                 fs.glob(f"{self.repo_id}/{safetensor_search_pattern}"),
             )
             gguf_paths = cast(
-                list[str],
-                fs.glob(f"{self.repo_id}/{gguf_search_pattern}"),
+                list[str], fs.glob(f"{self.repo_id}/{gguf_search_pattern}")
             )
             pytorch_paths = cast(
-                list[str],
-                fs.glob(f"{self.repo_id}/{pytorch_search_pattern}"),
+                list[str], fs.glob(f"{self.repo_id}/{pytorch_search_pattern}")
             )
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")

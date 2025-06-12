@@ -186,8 +186,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
     ):
         position_ids = Tensor.from_numpy(
             mrope_pos_ids_3d(
-                grid_thw,
-                self.huggingface_config.spatial_merge_size,
+                grid_thw, self.huggingface_config.spatial_merge_size
             )
         )
 
@@ -199,9 +198,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
             self.huggingface_config.spatial_merge_unit,
         )
         attention_mask_full, attention_mask_window = generate_attention_mask(
-            grid_thw,
-            pixel_values.shape[0],
-            cu_window_seqlens,
+            grid_thw, pixel_values.shape[0], cu_window_seqlens
         )
         return (
             pixel_values,
@@ -327,12 +324,7 @@ class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
         #                                       ctx.video_grid_thw,
         #                                       ctx.second_per_grid_ts,
         #                                       ctx.attention_mask)
-        rope_index = Tensor.from_numpy(
-            np.array(
-                [0],
-                dtype=np.uint32,
-            )
-        )
+        rope_index = Tensor.from_numpy(np.array([0], dtype=np.uint32))
 
         # Input Ids: ["total_seq_len"], Int64
         # Create a ragged token vector of length: sum(len(t) for t in tokens).

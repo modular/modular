@@ -400,7 +400,7 @@ class PipelineRegistry:
                 arch = self.architectures[override_architecture]
             else:
                 arch = self.retrieve_architecture(
-                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
+                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo
                 )
 
             # Load HuggingFace Config
@@ -422,8 +422,7 @@ class PipelineRegistry:
             )
 
             max_length = arch.pipeline_model.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             )
 
             # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer

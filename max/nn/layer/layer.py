@@ -259,8 +259,7 @@ class Module(Layer, ABC):
 
             if weight_prefix:
                 for weight in filter(
-                    lambda w: w.name.startswith(weight_prefix),
-                    layer_weights,
+                    lambda w: w.name.startswith(weight_prefix), layer_weights
                 ):
                     weight._placeholder = True
                     weight.name = weight.name.removeprefix(weight_prefix)
@@ -380,8 +379,7 @@ class Module(Layer, ABC):
                     )
                 # Contents of weights should be filled with zeros.
                 data = self._weight_values[full_weight_name] = Tensor.zeros(
-                    shape=weight.shape.static_dims,
-                    dtype=weight.dtype,
+                    shape=weight.shape.static_dims, dtype=weight.dtype
                 )
             state_dict[full_weight_name] = data
             weight.name = full_weight_name

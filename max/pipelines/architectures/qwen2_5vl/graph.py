@@ -60,11 +60,7 @@ def patch_embed(
         ),
         [2, 3, 4, 1, 0],
     )
-    proj = Conv3DV1(
-        filter=filter_weights,
-        bias=None,
-        stride=kernel_size,
-    )
+    proj = Conv3DV1(filter=filter_weights, bias=None, stride=kernel_size)
     return VisionPatchEmbed(
         proj=proj,
         patch_size=patch_size,
@@ -91,14 +87,8 @@ def linear_with_bias(
     weights: Weights,
 ) -> LinearV1:
     return LinearV1(
-        weights.weight.allocate(
-            dtype,
-            [in_features, out_features],
-        ),
-        bias=weights.bias.allocate(
-            dtype,
-            [out_features],
-        ),
+        weights.weight.allocate(dtype, [in_features, out_features]),
+        bias=weights.bias.allocate(dtype, [out_features]),
     )
 
 
@@ -110,30 +100,20 @@ def mlp_with_bias(
 ) -> MLPV1:
     return MLPV1(
         linear_with_bias(
-            dtype,
-            feed_forward_length,
-            hidden_dim,
-            weights.mlp.gate_proj,
+            dtype, feed_forward_length, hidden_dim, weights.mlp.gate_proj
         ),
         linear_with_bias(
-            dtype,
-            hidden_dim,
-            feed_forward_length,
-            weights.mlp.down_proj,
+            dtype, hidden_dim, feed_forward_length, weights.mlp.down_proj
         ),
         linear_with_bias(
-            dtype,
-            feed_forward_length,
-            hidden_dim,
-            weights.mlp.up_proj,
+            dtype, feed_forward_length, hidden_dim, weights.mlp.up_proj
         ),
     )
 
 
 def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNormV1:
     return RMSNormV1(
-        weight=weights.weight.allocate(DType.float32, [dims]),
-        eps=eps,
+        weight=weights.weight.allocate(DType.float32, [dims]), eps=eps
     )
 
 
@@ -162,28 +142,12 @@ def vision_transformer_block(
     weights: Weights,
 ) -> VisionBlock:
     return VisionBlock(
-        norm1=rms_norm(
-            hidden_size,
-            rms_norm_eps,
-            weights.norm1,
-        ),
-        norm2=rms_norm(
-            hidden_size,
-            rms_norm_eps,
-            weights.norm2,
-        ),
+        norm1=rms_norm(hidden_size, rms_norm_eps, weights.norm1),
+        norm2=rms_norm(hidden_size, rms_norm_eps, weights.norm2),
         attn=vision_window_attention(
-            dtype,
-            hidden_size,
-            num_heads,
-            weights.attn,
+            dtype, hidden_size, num_heads, weights.attn
         ),
-        mlp=mlp_with_bias(
-            dtype,
-            hidden_size,
-            intermediate_size,
-            weights.mlp,
-        ),
+        mlp=mlp_with_bias(dtype, hidden_size, intermediate_size, weights.mlp),
     )
 
 
@@ -213,11 +177,7 @@ def merger(
             ),
         ]
     )
-    return PatchMerger(
-        norm=norm,
-        mlp=mlp,
-        dim=out_hidden_size,
-    )
+    return PatchMerger(norm=norm, mlp=mlp, dim=out_hidden_size)
 
 
 def vision_transformer(

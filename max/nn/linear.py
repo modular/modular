@@ -423,10 +423,7 @@ class Linear(Module, Shardable):
 
         if self.weight.quantization_encoding:
             res = ops.qmatmul(
-                self.weight.quantization_encoding,
-                None,
-                x,
-                weight,
+                self.weight.quantization_encoding, None, x, weight
             )
         elif self.float8_config:
             assert self.weight_scale is not None
@@ -447,11 +444,7 @@ class Linear(Module, Shardable):
                     weight_scale = weight_scale.to(self.device)
 
                 res = dynamic_scaled_matmul(
-                    x,
-                    weight,
-                    x_scales,
-                    weight_scale,
-                    out_type=DType.bfloat16,
+                    x, weight, x_scales, weight_scale, out_type=DType.bfloat16
                 )
         else:
             res = x @ weight.T
@@ -705,12 +698,7 @@ class QLinearV1(LinearV1):
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
         weight = weight.to(x.type.device)
-        res = ops.qmatmul(
-            self.quantization_encoding,
-            None,
-            x,
-            weight,
-        )
+        res = ops.qmatmul(self.quantization_encoding, None, x, weight)
         if self.bias is not None:
             bias = TensorValue(self.bias).to(x.type.device or DeviceRef.CPU())
             res += bias
@@ -769,10 +757,7 @@ class GPTQLinearV1(QLinearV1):
             ).transpose(0, 1)
 
             if desc_act:
-                perm_idx = weights.g_idx.allocate(
-                    DType.int32,
-                    [out_features],
-                )
+                perm_idx = weights.g_idx.allocate(DType.int32, [out_features])
                 # hack: argsort the perm_idx array
                 weights._allocated[perm_idx.name] = np.argsort(  # type: ignore
                     weights._allocated[perm_idx.name]  # type: ignore
@@ -811,10 +796,7 @@ class GPTQLinearV1(QLinearV1):
             )
         else:
             res = ops.qmatmul(
-                self.quantization_encoding,
-                self.quantization_config,
-                x,
-                weight,
+                self.quantization_encoding, self.quantization_config, x, weight
             )
         if self.bias is not None:
             res += TensorValue(self.bias)
@@ -885,10 +867,7 @@ class GPTQLinear(Linear):
         self.perm_idx = None
         if desc_act:
             self.perm_idx = Weight(
-                "perm_idx",
-                DType.int32,
-                [in_dim],
-                device=device,
+                "perm_idx", DType.int32, [in_dim], device=device
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -951,11 +930,7 @@ class MLPV1(Layer):
             and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
         ):
             return self.down_proj(
-                swish_glu(
-                    x,
-                    self.gate_proj.weight,
-                    self.up_proj.weight,
-                )
+                swish_glu(x, self.gate_proj.weight, self.up_proj.weight)
             )
 
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
@@ -1052,11 +1027,7 @@ class MLP(Module):
             and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
         ):
             return self.down_proj(
-                swish_glu(
-                    x,
-                    self.gate_proj.weight,
-                    self.up_proj.weight,
-                )
+                swish_glu(x, self.gate_proj.weight, self.up_proj.weight)
             )
         if self.quantization_encoding or self.float8_config:
             return self.down_proj(

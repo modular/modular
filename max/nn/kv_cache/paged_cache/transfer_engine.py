@@ -317,8 +317,7 @@ class KVTransferEngine:
             src_addr = self.base_addr + src_idx * bytes_per_page
             descs_src.append((src_addr, bytes_per_page, self.memory_type.value))
         xfer_dlist_src = nixl.TransferDescriptorList(
-            type=self.memory_type,
-            descs=descs_src,
+            type=self.memory_type, descs=descs_src
         )
 
         # Prepare destination descriptor list
@@ -329,8 +328,7 @@ class KVTransferEngine:
                 (dst_addr, bytes_per_page, remote.memory_type.value)
             )
         xfer_dlist_dst = nixl.TransferDescriptorList(
-            type=remote.memory_type,
-            descs=descs_dst,
+            type=remote.memory_type, descs=descs_dst
         )
 
         xfer_name = str(uuid4())

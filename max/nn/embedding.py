@@ -131,11 +131,7 @@ class Embedding(Module):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        result = ops.gather(
-            TensorValue(self.weight),
-            indices,
-            axis=0,
-        )
+        result = ops.gather(TensorValue(self.weight), indices, axis=0)
         if self.weight.quantization_encoding is not None:
             result = ops.dequantize(self.weight.quantization_encoding, result)
         return result
@@ -254,11 +250,7 @@ class VocabParallelEmbedding(Module):
         # Apply mask to avoid searching for out-of-bound tokens
         indices *= input_mask
 
-        result = ops.gather(
-            embedding_shard,
-            indices,
-            axis=0,
-        )
+        result = ops.gather(embedding_shard, indices, axis=0)
         if self.weight.quantization_encoding is not None:
             result = ops.dequantize(self.weight.quantization_encoding, result)
         result *= ops.cast(

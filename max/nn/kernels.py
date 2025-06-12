@@ -995,13 +995,7 @@ def flash_attention_gpu(
     return ops.custom(
         op_name,
         values=values,
-        out_types=[
-            TensorType(
-                dtype=q.dtype,
-                shape=q.shape,
-                device=q.device,
-            )
-        ],
+        out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
         parameters=parameters,
         device=q.device,
     )[0].tensor
@@ -1468,11 +1462,7 @@ def kv_cache_get_max_seq_len(
         device=DeviceRef.CPU(),
         values=[kv_collection],
         out_types=[
-            TensorType(
-                dtype=DType.uint32,
-                shape=[1],
-                device=DeviceRef.CPU(),
-            )
+            TensorType(dtype=DType.uint32, shape=[1], device=DeviceRef.CPU())
         ],
     )[0].tensor[0]
 
@@ -1616,13 +1606,7 @@ def swish_glu(
         "swishGLU",
         device=a.device,
         values=[a, b0, b1],
-        out_types=[
-            TensorType(
-                dtype=a.dtype,
-                shape=[m, n],
-                device=a.device,
-            )
-        ],
+        out_types=[TensorType(dtype=a.dtype, shape=[m, n], device=a.device)],
     )[0].tensor
 
 
@@ -1764,9 +1748,7 @@ def moe_create_indices(
                 device=topk_ids.device,
             ),  # expert_ids
             TensorType(
-                dtype=DType.uint32,
-                shape=[2],
-                device=topk_ids.device,
+                dtype=DType.uint32, shape=[2], device=topk_ids.device
             ),  # expert_usage_stats
         ],
     )
@@ -1985,9 +1967,7 @@ def dynamic_scaled_matmul(
         values=[a, b, a_scales, b_scales],
         out_types=[
             TensorType(
-                dtype=out_type,
-                shape=[a.shape[0], b.shape[0]],
-                device=a.device,
+                dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
             )
         ],
     )[0].tensor
@@ -2110,15 +2090,9 @@ def merge_ragged_tensors(
         device=a.device,
         values=[a, a_row_offsets, b, b_row_offsets],
         out_types=[
+            TensorType(dtype=a.dtype, shape=c_shape, device=a.device),
             TensorType(
-                dtype=a.dtype,
-                shape=c_shape,
-                device=a.device,
-            ),
-            TensorType(
-                dtype=DType.uint32,
-                shape=a_row_offsets.shape,
-                device=a.device,
+                dtype=DType.uint32, shape=a_row_offsets.shape, device=a.device
             ),
         ],
     )
@@ -2376,8 +2350,7 @@ def topk_fused_sampling(
     # Handle seed parameter - can be scalar or tensor
     if isinstance(seed, int):
         seed_tensor = ops.broadcast_to(
-            ops.constant(seed, dtype=DType.uint64, device=device),
-            [batch_size],
+            ops.constant(seed, dtype=DType.uint64, device=device), [batch_size]
         )
     else:
         seed_tensor = TensorValue(seed)
@@ -2401,9 +2374,7 @@ def topk_fused_sampling(
         ],
         out_types=[
             TensorType(
-                dtype=DType.int64,
-                shape=batch_shape + [1],
-                device=device,
+                dtype=DType.int64, shape=batch_shape + [1], device=device
             )
         ],
     )[0].tensor

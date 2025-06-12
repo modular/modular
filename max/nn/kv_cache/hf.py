@@ -32,12 +32,7 @@ class ContinuousHFStaticCache(StaticCache):
         ] = None,
     ) -> None:
         super().__init__(
-            config,
-            max_batch_size,
-            max_seq_len,
-            device,
-            dtype,
-            layer_device_map,
+            config, max_batch_size, max_seq_len, device, dtype, layer_device_map
         )
         self.max_batch_size = max_batch_size
         self.device = device
@@ -49,9 +44,7 @@ class ContinuousHFStaticCache(StaticCache):
         self.attention_patterns: dict[int, torch.Tensor] = {}
         self.tokens: dict[int, np.ndarray] = {}
         self.cache_position: torch.Tensor = torch.arange(
-            0,
-            len(self.active_slots),
-            device=self.device,
+            0, len(self.active_slots), device=self.device
         )
 
     def external_claim(self, seq_ids: list[int]) -> None:

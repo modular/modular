@@ -228,9 +228,7 @@ class InternVLTokenizer(TextAndVisionTokenizer):
 
         # Load config for image processing
         config = AutoConfig.from_pretrained(
-            model_path,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
+            model_path, revision=revision, trust_remote_code=trust_remote_code
         )
 
         # Create custom processor instead of AutoProcessor (which doesn't exist for InternVL)

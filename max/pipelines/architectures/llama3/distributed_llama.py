@@ -51,7 +51,7 @@ class DistributedLlama3(DistributedTransformer):
 
         if config.stacked_mlp:
             raise ValueError(
-                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs.",
+                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs."
             )
 
         if config.norm_method != "rms_norm" or config.rms_norm_eps is None:

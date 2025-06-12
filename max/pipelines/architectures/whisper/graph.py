@@ -72,9 +72,7 @@ def embedding(
 ):
     return EmbeddingV1(
         weights.weight.allocate(
-            dtype,
-            [max_source_positions, hidden_dim],
-            device=device,
+            dtype, [max_source_positions, hidden_dim], device=device
         ),
         device=device,
     )
@@ -112,19 +110,9 @@ def feed_forward(
 ):
     return Sequential(
         layers=[
-            linear(
-                dtype,
-                feed_forward_length,
-                hidden_dim,
-                weights.fc1,
-            ),
+            linear(dtype, feed_forward_length, hidden_dim, weights.fc1),
             ops.gelu,  # type: ignore
-            linear(
-                dtype,
-                hidden_dim,
-                feed_forward_length,
-                weights.fc2,
-            ),
+            linear(dtype, hidden_dim, feed_forward_length, weights.fc2),
         ]
     )
 
@@ -185,10 +173,7 @@ def attention(
         wq=LinearV1(wq, bias=bias_q),
         wk=LinearV1(wk, bias=bias_k),
         wv=LinearV1(wv, bias=bias_v),
-        wo=LinearV1(
-            wo,
-            bias=bias_o,
-        ),
+        wo=LinearV1(wo, bias=bias_o),
     )
 
 
@@ -305,8 +290,6 @@ def build_graph(
             device=device,
         )
         input_features = graph.inputs[0]
-        outputs = model(
-            input_features=input_features.tensor,
-        )
+        outputs = model(input_features=input_features.tensor)
         graph.output(*outputs)
         return graph

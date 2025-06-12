@@ -69,8 +69,7 @@ class MPNetEmbeddings(Layer):
         )
         self.layer_norm = LayerNormV1(
             weight=weights.LayerNorm.weight.allocate(
-                DType.float32,
-                [config.hidden_size],
+                DType.float32, [config.hidden_size]
             ),
             bias=weights.LayerNorm.bias.allocate(
                 DType.float32, [config.hidden_size]
@@ -229,10 +228,7 @@ class MPNetAttention(Layer):
     ):
         config = huggingface_config
         self.attn = MPNetSelfAttention(
-            pipeline_config,
-            weights.attn,
-            huggingface_config,
-            dtype,
+            pipeline_config, weights.attn, huggingface_config, dtype
         )
         self.layer_norm = LayerNormV1(
             weight=weights.LayerNorm.weight.allocate(
@@ -250,11 +246,7 @@ class MPNetAttention(Layer):
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
-        attn_output = self.attn(
-            hidden_states,
-            attention_mask,
-            position_bias,
-        )
+        attn_output = self.attn(hidden_states, attention_mask, position_bias)
         return self.layer_norm(attn_output + hidden_states)
 
 
@@ -350,16 +342,10 @@ class MPNetLayer(Layer):
         dtype: DType,
     ):
         self.attention = MPNetAttention(
-            pipeline_config,
-            weights.attention,
-            huggingface_config,
-            dtype,
+            pipeline_config, weights.attention, huggingface_config, dtype
         )
         self.intermediate = MPNetIntermediate(
-            pipeline_config,
-            weights.intermediate,
-            huggingface_config,
-            dtype,
+            pipeline_config, weights.intermediate, huggingface_config, dtype
         )
         self.output = MPNetOutput(
             pipeline_config, weights.output, huggingface_config, dtype
@@ -372,9 +358,7 @@ class MPNetLayer(Layer):
         position_bias: TensorValue,
     ) -> TensorValue:
         attention_output = self.attention(
-            hidden_states,
-            attention_mask,
-            position_bias=position_bias,
+            hidden_states, attention_mask, position_bias=position_bias
         )
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
@@ -422,11 +406,7 @@ class MPNetEncoder(Layer):
     ) -> TensorValue:
         position_bias = self.compute_position_bias(hidden_states)
         for layer in self.layer.layers:
-            hidden_states = layer(
-                hidden_states,
-                attention_mask,
-                position_bias,
-            )
+            hidden_states = layer(hidden_states, attention_mask, position_bias)
         return hidden_states
 
     def compute_position_bias(self, hidden_states: TensorValue) -> TensorValue:
@@ -448,8 +428,7 @@ class MPNetEncoder(Layer):
         values = self.relative_attention_bias(rp_bucket)
         values = ops.unsqueeze(ops.permute(values, [2, 0, 1]), 0)
         values = ops.broadcast_to(
-            values,
-            [bsz, self.num_attention_heads, qlen, klen],
+            values, [bsz, self.num_attention_heads, qlen, klen]
         )
         return values
 
@@ -518,9 +497,7 @@ class MPNetModel(Layer):
         input_ids: TensorValue,
         attention_mask: TensorValue,
     ) -> TensorValue:
-        embedding_output = self.embeddings(
-            input_ids=input_ids,
-        )
+        embedding_output = self.embeddings(input_ids=input_ids)
         extended_attention_mask = ops.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")
         )
@@ -530,8 +507,7 @@ class MPNetModel(Layer):
             device=attention_mask.device,
         )
         encoded_results = self.encoder(
-            embedding_output,
-            attention_mask=extended_attention_mask,
+            embedding_output, attention_mask=extended_attention_mask
         )
         if self.pool_outputs:
             # Pool the embeddings.

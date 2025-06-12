@@ -260,11 +260,7 @@ class MultimodalKVCacheManager(KVCacheManager):
 
         # infer the optimal batch size for each modality based on its cache size
         text_batch_size = infer_optimal_batch_size(
-            params,
-            max_seq_len,
-            num_layers,
-            text_cache_size,
-            devices,
+            params, max_seq_len, num_layers, text_cache_size, devices
         )
         vision_batch_size = (
             ContinuousBatchingKVCacheManager.infer_optimal_batch_size(
@@ -1091,8 +1087,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # batch_size * num_concurrent_media * max_num_tiles * num_patches
         # are set to 0 here to imitate a dummy tensor (used in text-only mode).
         cross_attention_states = Tensor.zeros(
-            shape=[0, self.text_config.hidden_size],
-            dtype=self.dtype,
+            shape=[0, self.text_config.hidden_size], dtype=self.dtype
         ).to(self.devices[0])
 
         model_inputs = cast(LlamaVisionInputs, model_inputs)

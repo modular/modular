@@ -77,10 +77,7 @@ class Settings(BaseSettings):
     #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="",
-        extra="allow",
-        populate_by_name=False,
+        env_file=".env", env_prefix="", extra="allow", populate_by_name=False
     )
 
     # Server configuration
@@ -161,9 +158,7 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_USE_HEARTBEAT",
     )
     mw_timeout_s: float = Field(
-        default=20 * 60.0,
-        description="",
-        alias="MAX_SERVE_MW_TIMEOUT",
+        default=20 * 60.0, description="", alias="MAX_SERVE_MW_TIMEOUT"
     )
     mw_health_fail_s: float = Field(
         # TODO: we temporarily set it to 1 minute to handle long context input

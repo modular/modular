@@ -198,9 +198,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             )
 
         # Get weight files
-        weight_files = draft_hf_repo.files_for_encoding(
-            encoding=encodings[0],
-        )
+        weight_files = draft_hf_repo.files_for_encoding(encoding=encodings[0])
 
         if not weight_files:
             raise ValueError("could not identify weight_files for draft model.")
@@ -254,7 +252,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # Load rejection sampler
         self._rejection_sampler = target_session.load(
             rejection_sampler(
-                device=DeviceRef.from_device(self.target_devices[0]),
+                device=DeviceRef.from_device(self.target_devices[0])
             )
         )
 
@@ -271,7 +269,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         self._ragged_token_merger = target_session.load(
             ragged_token_merger(
-                device=DeviceRef.from_device(self.target_devices[0]),
+                device=DeviceRef.from_device(self.target_devices[0])
             )
         )
 
@@ -285,8 +283,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         is_draft: bool = False,
     ) -> int:
         max_seq_len = model.calculate_max_seq_len(
-            self.pipeline_config,
-            huggingface_config=huggingface_config,
+            self.pipeline_config, huggingface_config=huggingface_config
         )
         if is_draft:
             max_seq_len -= 1
@@ -385,8 +382,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         prev_logits: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
         top_k_np = np.array(
-            [context.sampling_params.top_k for context in batch],
-            dtype=np.int64,
+            [context.sampling_params.top_k for context in batch], dtype=np.int64
         )
         top_k = Tensor.from_numpy(top_k_np).to(self.draft_devices[0])
         max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
@@ -404,8 +400,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         )
         top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
         seed_np = np.array(
-            [context.sampling_params.seed for context in batch],
-            dtype=np.uint64,
+            [context.sampling_params.seed for context in batch], dtype=np.uint64
         )
         seed = Tensor.from_numpy(seed_np).to(self.draft_devices[0])
 
@@ -440,15 +435,11 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         # Generate tensor for generated tokens.
         generated_tokens = Tensor.zeros(
-            (len(batch), 0),
-            dtype=DType.int64,
-            device=self.draft_devices[0],
+            (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
         )
 
         generated_logits = Tensor.zeros(
-            (len(batch), 0),
-            dtype=DType.float32,
-            device=self.draft_devices[0],
+            (len(batch), 0), dtype=DType.float32, device=self.draft_devices[0]
         )
 
         # Multi-step execution
@@ -456,16 +447,13 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         for i in range(num_steps):
             # Execute the model and get next tokens.
             model_outputs = self._draft_model.execute(
-                model_inputs=curr_step_inputs,
+                model_inputs=curr_step_inputs
             )
 
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
                 self.sample_draft_logits(
-                    batch,
-                    model_outputs,
-                    generated_tokens,
-                    generated_logits,
+                    batch, model_outputs, generated_tokens, generated_logits
                 )
             )
             generated_tokens = new_generated_tokens
@@ -525,9 +513,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         )
 
         # Generate target tokens.
-        target_outputs = self._target_model.execute(
-            model_inputs=target_inputs,
-        )
+        target_outputs = self._target_model.execute(model_inputs=target_inputs)
 
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
@@ -585,10 +571,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
 
-        res = self.build_response(
-            batch=batch,
-            context_batch=context_batch,
-        )
+        res = self.build_response(batch=batch, context_batch=context_batch)
 
         # Maybe commit blocks into prefix cache
         self._target_model.kv_manager.step(
@@ -661,15 +644,11 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         request_ids = list(batch.keys())
 
         for idx, context in enumerate(context_batch):
-            res[request_ids[idx]] = TextGenerationResponse(
-                [],
-                context.status,
-            )
+            res[request_ids[idx]] = TextGenerationResponse([], context.status)
 
             # Identify the Max Length
             context_max_length = upper_bounded_default(
-                upper_bound=self._max_length,
-                default=context.max_length,
+                upper_bound=self._max_length, default=context.max_length
             )
 
             # TODO: This resets the context object for a new sequence.

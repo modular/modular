@@ -995,10 +995,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         return self.allreduce(
             inputs=[
                 self.list_of_attentions[i](
-                    layer_idx,
-                    x[i],
-                    kv_collections[i],
-                    input_row_offsets[i],
+                    layer_idx, x[i], kv_collections[i], input_row_offsets[i]
                 )
                 for i in range(len(self.devices))
             ],

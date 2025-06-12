@@ -152,10 +152,7 @@ def get_pipeline(
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
     async def stream(self, request: TokenGeneratorRequest):
-        self.logger.debug(
-            "Streaming: Start: %s",
-            request,
-        )
+        self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
@@ -208,11 +205,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 payload = response.model_dump_json()
                 yield payload
 
-            logger.debug(
-                "Streaming: Done: %s, %d tokens",
-                request,
-                n_tokens,
-            )
+            logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
             yield "[DONE]"
         except Exception as e:
             # Note that for SSE, the server will have already responded with a
@@ -445,15 +438,11 @@ class OpenAISpeechResponseGenerator:
     async def synthesize_speech(
         self, request: AudioGenerationRequest
     ) -> CreateAudioGenerationResponse:
-        self.logger.debug(
-            "Streaming: Start: %s",
-            request,
-        )
+        self.logger.debug("Streaming: Start: %s", request)
         response = await self.pipeline.generate_full_audio(request)
         audio_data = response.audio_data.numpy().tobytes()
         response = CreateAudioGenerationResponse(
-            audio_data=base64.b64encode(audio_data),
-            metadata=response.metadata,
+            audio_data=base64.b64encode(audio_data), metadata=response.metadata
         )
         return response
 
@@ -776,10 +765,7 @@ def _process_log_probabilities(
 
 class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
     async def stream(self, request: TokenGeneratorRequest):
-        logger.debug(
-            "Streaming: Start: %s",
-            request,
-        )
+        logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
@@ -803,9 +789,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 # https://platform.openai.com/docs/api-reference/chat/object
                 choices = [
                     CompletionResponseStreamChoice(
-                        index=0,
-                        text=token.decoded_token,
-                        logprobs=log_probs,
+                        index=0, text=token.decoded_token, logprobs=log_probs
                     )
                 ]
                 # Each chunk is expected to have the same id
@@ -826,11 +810,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
 
                 yield payload
 
-            logger.debug(
-                "Streaming: Done: %s, %d tokens",
-                request,
-                n_tokens,
-            )
+            logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
             yield "[DONE]"
         except queue.Full as qe:
             status_code = 529
@@ -1044,12 +1024,7 @@ async def health() -> Response:
 async def openai_get_models(request: Request) -> ListModelsResponse:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     model_list = [
-        Model(
-            id=pipeline.model_name,
-            object="model",
-            created=None,
-            owned_by="",
-        )
+        Model(id=pipeline.model_name, object="model", created=None, owned_by="")
     ]
 
     return ListModelsResponse(object="list", data=model_list)
@@ -1059,10 +1034,7 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 async def openai_get_model(model_id: str, request: Request) -> Model:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     pipeline_model = Model(
-        id=pipeline.model_name,
-        object="model",
-        created=None,
-        owned_by="",
+        id=pipeline.model_name, object="model", created=None, owned_by=""
     )
 
     if model_id == pipeline.model_name:
@@ -1093,7 +1065,7 @@ async def create_streaming_audio_speech(
         pipeline = get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
         sampling_params = SamplingParams(
-            min_new_tokens=audio_generation_request.min_tokens,
+            min_new_tokens=audio_generation_request.min_tokens
         )
         audio_request = AudioGenerationRequest(
             id=request_id,

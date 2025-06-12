@@ -360,8 +360,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
             graph = build()
             before = time.perf_counter()
             model = session.load(
-                graph,
-                weights_registry=self.weights.allocated_weights,
+                graph, weights_registry=self.weights.allocated_weights
             )
             after = time.perf_counter()
             logger.info(

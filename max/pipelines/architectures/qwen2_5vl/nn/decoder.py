@@ -49,11 +49,7 @@ class Qwen2_5VLRotaryEmbedding(Module):
         n = self.dim // self.n_heads
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         iota = ops.range(
-            0,
-            n - 1,
-            2,
-            device=DeviceRef.CPU(),
-            dtype=DType.float64,
+            0, n - 1, 2, device=DeviceRef.CPU(), dtype=DType.float64
         )
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
         return inv_freq
@@ -196,17 +192,12 @@ class Qwen2_5VLDecoderTransformer(Module):
 
         input_row_offsets = kwargs["input_row_offsets"]
         prompt_lengths = ops.rebind(
-            input_row_offsets[1:] - input_row_offsets[:-1],
-            cache_lengths.shape,
+            input_row_offsets[1:] - input_row_offsets[:-1], cache_lengths.shape
         )
 
         for _, layer in enumerate(self.layers):
             h = layer(
-                h,
-                position_ids,
-                position_embeddings,
-                kv_collection,
-                **kwargs,
+                h, position_ids, position_embeddings, kv_collection, **kwargs
             )
 
         return self.norm(h)

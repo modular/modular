@@ -217,10 +217,7 @@ class TextTokenizer(
         }
         try:
             templated_message = self.delegate.apply_chat_template(
-                messages,
-                tokenize=False,
-                tools=tools,
-                **chat_template_options,
+                messages, tokenize=False, tools=tools, **chat_template_options
             )
             return cast(str, templated_message)
         except Exception:
@@ -320,9 +317,7 @@ class TextTokenizer(
             max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
-            len(encoded_prompt),
-            self.max_length,
-            max_new_tokens,
+            len(encoded_prompt), self.max_length, max_new_tokens
         )
 
         json_schema = (
@@ -438,9 +433,7 @@ class TextAndVisionTokenizer(
             self.delegate.encode, add_special_tokens=False
         )
         self.processor = AutoProcessor.from_pretrained(
-            model_path,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
+            model_path, revision=revision, trust_remote_code=trust_remote_code
         )
         self._default_eos_token_ids = set([self.eos])
 
@@ -561,9 +554,7 @@ class TextAndVisionTokenizer(
         # PixtralProcessor returns a torch tensor or a list of torch tensors.
         # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
-            text=prompt,
-            images=images,
-            add_special_tokens=add_special_tokens,
+            text=prompt, images=images, add_special_tokens=add_special_tokens
         )
 
         if "input_ids" not in processed_inputs:
@@ -585,9 +576,7 @@ class TextAndVisionTokenizer(
             max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
-            encoded_prompt.shape[0],
-            self.max_length,
-            max_new_tokens,
+            encoded_prompt.shape[0], self.max_length, max_new_tokens
         )
 
         extra_model_args = dict()

@@ -849,10 +849,7 @@ class TextAndVisionContext(
         log_probabilities: Optional[LogProbabilities] = None,
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
-        super().update(
-            new_token=new_token,
-            log_probabilities=log_probabilities,
-        )
+        super().update(new_token=new_token, log_probabilities=log_probabilities)
 
         # Update context not to re-encode the same image in next steps. There are no image tokens
         # expected after context encoding.
@@ -942,10 +939,7 @@ class TTSContext(TextContext):
 
         end_idx = self._speech_token_end_idx
         if audio_chunk_size is not None:
-            end_idx = min(
-                end_idx,
-                self._decoded_index + audio_chunk_size,
-            )
+            end_idx = min(end_idx, self._decoded_index + audio_chunk_size)
 
         chunk = self._speech_tokens[start_idx:end_idx]
         self._decoded_index = end_idx

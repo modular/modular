@@ -561,10 +561,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
             logits_postprocessor=logits_postprocessor,
             attention_multiplier=Llama3Config.calculate_attention_multiplier(
-                huggingface_config,
-                n_devices,
-                kv_cache_config,
-                cache_dtype,
+                huggingface_config, n_devices, kv_cache_config, cache_dtype
             ),
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,

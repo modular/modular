@@ -297,9 +297,7 @@ class LatentAttentionWithRope(Module):
                 return [iter_i, new_result, new_softmax_info]
 
             loop_result = ops.while_loop(
-                (iter_i, result, softmax_info),
-                cond_fn,
-                body_fn,
+                (iter_i, result, softmax_info), cond_fn, body_fn
             )
 
             return loop_result[1]
@@ -420,11 +418,7 @@ class LatentAttentionWithRope(Module):
         )
 
         attn_out = self._mla_impl(
-            xq_nope,
-            xq_rope,
-            kv_collection,
-            layer_idx,
-            input_row_offsets,
+            xq_nope, xq_rope, kv_collection, layer_idx, input_row_offsets
         )
 
         return self.o_proj(attn_out)

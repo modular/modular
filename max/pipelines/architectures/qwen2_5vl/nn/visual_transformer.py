@@ -112,11 +112,7 @@ class VisionRotaryEmbedding(Module):
             n = (self.dim // self.n_heads) // 2
             # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
             iota = ops.range(
-                0,
-                n - 1,
-                2,
-                device=DeviceRef.CPU(),
-                dtype=DType.float64,
+                0, n - 1, 2, device=DeviceRef.CPU(), dtype=DType.float64
             )
             inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
             self._inv_freqs = inv_freq

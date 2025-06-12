@@ -99,8 +99,7 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
         tracer.next("prepare_initial_token_inputs")
         # Prepare inputs for the first token in multistep execution.
         model_inputs = self._pipeline_model.prepare_initial_token_inputs(
-            context_batch=context_batch,
-            kv_cache_inputs=None,
+            context_batch=context_batch, kv_cache_inputs=None
         )
 
         tracer.next("execute")

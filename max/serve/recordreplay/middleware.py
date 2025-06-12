@@ -250,17 +250,12 @@ class _TransactionRecordingContext:
                 headers = list(event["headers"])
                 event["headers"] = headers[:]
                 self._response_start = schema.ResponseStart(
-                    timestamp=_now(),
-                    status=event["status"],
-                    headers=headers,
+                    timestamp=_now(), status=event["status"], headers=headers
                 )
                 # We ignore the presence of trailers (and never record them).
         elif self._include_responses and event["type"] == "http.response.body":
             self._response_chunks.append(
-                schema.ResponseChunk(
-                    timestamp=_now(),
-                    body=event["body"],
-                )
+                schema.ResponseChunk(timestamp=_now(), body=event["body"])
             )
             if not event.get("more_body"):
                 self._response_done = True
@@ -301,8 +296,7 @@ class _TransactionRecordingContext:
         )
         if self._response_start is not None:
             response = schema.Response(
-                start=self._response_start,
-                chunks=self._response_chunks,
+                start=self._response_start, chunks=self._response_chunks
             )
         else:
             response = None

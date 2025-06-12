@@ -58,8 +58,7 @@ class MemoryEstimator:
             if not pipeline_config.max_length:
                 pipeline_config.max_length = (
                     pipeline_model.calculate_max_seq_len(
-                        pipeline_config,
-                        huggingface_config=huggingface_config,
+                        pipeline_config, huggingface_config=huggingface_config
                     )
                 )
             return
@@ -87,8 +86,7 @@ class MemoryEstimator:
         )
         if not user_provided_max_length:
             pipeline_config.max_length = pipeline_model.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             )
 
         if not model_config.quantization_encoding:

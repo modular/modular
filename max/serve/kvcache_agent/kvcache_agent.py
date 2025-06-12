@@ -333,9 +333,7 @@ def start_kvcache_agent_service(
     """
 
     config = KVCacheAgentServerConfig(
-        host=host,
-        port=port,
-        num_workers=num_workers,
+        host=host, port=port, num_workers=num_workers
     )
     server = KVCacheAgentServer(config, zmq_ctx, kv_cache_events_zmq_endpoint)
     server.start()

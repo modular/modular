@@ -110,8 +110,7 @@ def causal_attention_mask_2d(
     # Expand the mask dimensions to match the expected transformer input shape.
     fill_matrix = np.expand_dims(fill_matrix, axis=(0, 1))  # Add two new axes
     fill_matrix = np.broadcast_to(
-        fill_matrix,
-        (int(patch_embeds.shape[0]), 1, seq_len, seq_len),
+        fill_matrix, (int(patch_embeds.shape[0]), 1, seq_len, seq_len)
     )
     return fill_matrix
 

@@ -53,10 +53,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         weight_adapters: dict[WeightsFormat, WeightsAdapter],
     ) -> None:
         super().__init__(
-            pipeline_config,
-            pipeline_model,
-            eos_token_id,
-            weight_adapters,
+            pipeline_config, pipeline_model, eos_token_id, weight_adapters
         )
         self.d2h_stream = DeviceStream(self._devices[0])
 
@@ -173,7 +170,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
             # Execute the model and get next tokens.
             model_outputs = self._pipeline_model.execute(
-                model_inputs=curr_step_inputs,
+                model_inputs=curr_step_inputs
             )
 
             if i > 0:
@@ -184,10 +181,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 assert self.vocab_size is not None
                 bits = 2 ** torch.arange(32, dtype=torch.int32)
                 bitmask = (bitmask.unsqueeze(-1) & bits) != 0
-                bitmask = bitmask.reshape(
-                    len(context_batch),
-                    -1,
-                ).to(torch.bool)
+                bitmask = bitmask.reshape(len(context_batch), -1).to(torch.bool)
                 bitmask = bitmask[:, 0 : self.vocab_size]
 
                 bitmask = Tensor.from_dlpack(bitmask).to(self._devices[0])
@@ -265,9 +259,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
                 # Convert to a Python scalar to improve serialization performance.
                 next_token = int(generated_tokens_host[batch_index, step])
 
-                context.update(
-                    new_token=next_token,
-                )
+                context.update(new_token=next_token)
 
                 res[request_id].update_status(context.status)
                 if context.is_done:
