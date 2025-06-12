@@ -306,7 +306,13 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             (pixel_values,) = graph.inputs
 
             # Execute vision model: pixel_values -> image_embeddings.
-            image_embeddings = vision_model(pixel_values.tensor)
+            image_embeddings = vision_model(
+                [
+                    # Transfer pixel values to each device.
+                    pixel_values.tensor.to(DeviceRef.from_device(dev))
+                    for dev in self.devices
+                ]
+            )
 
             # Set graph outputs.
             graph.output(*image_embeddings)
