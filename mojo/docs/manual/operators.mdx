@@ -800,6 +800,94 @@ Hello, Vera
 Enter a name or 'quit' to exit: quit
 ```
 
+### Type merging
+
+When an expression involves values of different types,
+Mojo needs to statically determine the return type of the expression. This
+process is called *type merging*. By default, Mojo determines type merging
+based on implicit conversions. Individual structs can also define custom type
+merging behavior.
+
+The following code demonstrates type merging based on implicit conversions:
+
+```mojo
+list = [0.5, 1, 2]
+for value in list:
+    print(value)
+```
+
+```output
+0.5
+1.0
+2.0
+```
+
+Here, the list literal includes both float and integer literals, which
+materialize as `Float64` and `Int`, respectively. Since `Int` can be
+implicitly converted to `Float64`, the result is a `List[Float64]`.
+
+Here's an example of where type merging fails:
+
+```mojo
+a: Int = 0
+b: String = "Hello"
+c = a if a > 0 else b   # Error: value of type 'Int' is not compatible with
+                        # value of type 'String'mojo
+```
+
+In this case, `Int` can't be implicitly converted to a `String`, and
+`String` can't be implicitly converted to an `Int`, so type merging fails. This
+is the correct result: there's no way for Mojo to know what type you want `c` to
+take. You can fix this by adding an explicit conversion:
+
+```mojo
+c = String(a) if a > 0 else b
+```
+
+Individual structs can define custom type merging logic by defining a
+`__merge_with__()` dunder method. For example:
+
+```mojo
+@fieldwise_init
+struct MyType(Movable, Copyable):
+    var val: Int
+
+    def __bool__(self) -> Bool:
+        return self.val > 0
+
+    def __merge_with__[other_type: __type_of(Int)](self) -> Int:
+        return Int(self.val)
+
+def main():
+    i = 0
+    m = MyType(9)
+    print(i if i > 0 else m)  # prints "9"
+```
+
+If either type in the expression defines a custom `__merge_with__()` dunder
+for merging with the other type, this type takes precedence over any implicit
+conversions. (Note that the result type doesn't have to be either of the input
+types, it could be a third type.)
+
+A type can declare multiple `__merge_with__()` overrides for different types.
+
+At a high level, the logic for merging two types goes like this:
+
+- Does either type define a `__merge_with__()` method for the other type? If so,
+  the returned value determines the target type.
+  - If **both** types define a `__merge_with__()` method for the other type,
+    the two methods must both return the same type, or the conversion fails.
+  - Both types must be implicitly convertible to the target type (a type is
+    always implicitly convertible to itself).
+- Is either type implicitly convertible to the other type?
+  - If only one type is implicitly convertible to the other type, convert it.
+  - If both types are convertible to the other type, the conversion is
+    ambiguous, and it fails.
+
+For more background on type merging and the `__merge_with__()` dunder, see the
+proposal,
+[Customizable Type Merging in Mojo](https://github.com/modular/modular/blob/main/mojo/proposals/custom-type-merging.md).
+
 ## Implement operators for custom types
 
 When you create a custom struct, Mojo allows you to define the behavior of many

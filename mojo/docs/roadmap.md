@@ -17,7 +17,7 @@ the coming months. We are highly focused on building Mojo the right way (for
 the long-term), so we want to fully build-out the core Mojo language features
 before we work on other dependent features and enhancements.
 
-Currently, that means we are focused on the core system programming features
+Currently, that means we are focused on the core GPU programming features
 that are essential to [Mojo's mission](/mojo/why-mojo), and as outlined in the
 following sections of this roadmap.
 
@@ -40,48 +40,9 @@ have suggestions to improve the experience with Python, we encourage
 you to propose these "general goodness" enhancements through the formal [PEP
 process](https://peps.python.org/pep-0001/).
 
-### Why not add syntactic sugar or other minor new features?
-
-We are frequently asked whether Mojo will add minor features that people love
-in other languages but that are missing in Python, such as "implicit
-return" at the end of a function, public/private access control, fixing Python
-packaging, and various syntactic shorthands.  As mentioned above, we are
-intentionally *not* adding these kinds of features to Mojo right now.
-There are three major reasons for this:
-
-- First, Mojo is still young: we are still "building a house" by laying down
-major bricks in the type system and adding system programming features that
-Python lacks. We know we need to implement support for many existing Python
-features (compatibility is a massive and important goal of Mojo) and this work
-is not done yet. We have limited engineering bandwidth and want focus on
-building essential functionality, and we will not debate whether certain
-syntactic sugar is important or not.
-
-- Second, syntactic sugar is like mortar in a building—its best use is to hold
-the building together by filling in usability gaps. Sugar (and mortar) is
-problematic to add early into a system: you can run into problems with laying
-the next bricks because the sugar gets in the way. We have experience building
-other languages (such as Swift) that added sugar early, which could have been
-subsumed by more general features if time and care were given to broader
-evaluation.
-
-- Third, the Python community should tackle some of these ideas first. It is
-important to us that Mojo be a good member of the Python family,
-not just a language with Pythonic syntax. As such, we don't want to needlessly
-diverge from Python evolution: adding a bunch of features could lead to
-problems down the road if Python makes incompatible decisions. Such a future
-would fracture the community which would cause massively more harm than any
-minor language feature could offset.
-
-For all these reasons, "nice to have" syntactic sugar is not a priority, and we
-will quickly close such proposals to avoid cluttering the issue tracker. If
-you'd like to propose a "general goodness" syntactic feature, please do so with
-the existing [Python PEP process](https://peps.python.org/pep-0000/). If/when
-Python adopts a feature, Mojo may also add it, because Mojo's goal is to adopt
-Python's syntax. We are happy with this approach because the Python community is
-better equipped to evaluate these features, they have mature code bases to
-evaluate them with, and they have processes and infrastructure for making
-structured language evolution features.
+We periodically post roadmap updates in the Modular forum—see the
+[Official announcements](https://forum.modular.com/c/modular/announcements/9)
+category.
 
 ## Small independent features
 
@@ -93,22 +54,19 @@ include things like:
 - Many standard library features, including copy-on-write data structures.
 - Support for "top level code" at file scope.
 - Algebraic data types like `enum` in Swift/Rust, and pattern matching.
-- Many standard library types need refinement, including `Optional[T]` and
-  `Result[T, Error]`.
+- Many standard library types need refinement, including `Optional[T]`.
 
-## Ownership and Lifetimes
+## Ownership and lifetimes
 
-The ownership system is partially implemented, and is expected to get built out
-in the next couple of months.  The basic support for ownership includes features
-like:
+The ownership system is largely implemented, but we are still fixing bugs and
+improving the developer experience. The current support for ownership includes
+features like:
 
 - Capture declarations in closures.
 - Lifetime checker: complain about invalid mutable references.
 - Lifetime checker: enforce argument exclusivity for mutable references.
-
-Mojo has support for a safe `Pointer` type, and it is used in the standard
-library, but it is still under active development and not very pretty or nice
-to use right now.
+- Functions can return references to owned values.
+- `ref` pattern supported for binding a reference to a local name.
 
 ## Traits support
 
@@ -163,12 +121,8 @@ from "math.h" import cos
 print(cos(0))
 ```
 
-## Calling Mojo from Python
-
-Currently you can call Python code from Mojo, but not the reverse: you can't
-pass a Mojo callback to a Python function, or build a Python extension in Mojo.
-We want to support calling Mojo from Python, but we want to do it right and we
-need the core language to be more mature first.
+For now, however, working with C/C++ modules requires the
+[`sys.ffi`](/mojo/stdlib/sys/ffi/) package.
 
 ## Full MLIR decorator reflection
 
@@ -206,10 +160,6 @@ surprising or unexpected. This section of the document describes a variety of
 "sharp edges" in Mojo, and potentially how to work around them if needed. We
 expect all of these to be resolved in time, but in the meantime, they are
 documented here.
-
-### List / dict / set comprehensions
-
-Supported since Mojo 25.4 (see the `Types → List` docs for examples).
 
 ### No `lambda` syntax
 
@@ -261,10 +211,11 @@ raised in Mojo right now.
 Mojo does not yet support Python-style generator functions (`yield` syntax).
 These are "synchronous co-routines" -- functions with multiple suspend points.
 
-### No `async for` or `async with`
+### Support for `async` is incomplete
 
-Although Mojo has support for async functions with `async fn` and `async def`,
-Mojo does not yet support the `async for` and `async with` statements.
+Although the Mojo compiler has support for the `async` keyword, with `async fn`
+and `async def`, the implementation of async functions and the surrounding
+standard library features is not complete.
 
 ### Scoping and mutability of statement variables
 
@@ -285,19 +236,36 @@ for i in range(3): pass
 print(i)
 ```
 
-However, Mojo will complain that `print(i)` is a use of an unknown declaration.
-This is because whether `i` is defined at this line is dynamic in Python. For
-instance the following Python program will fail:
+However, Mojo will complain that `print(i)` is a use of an unknown declaration,
+The induction variable's lifetime doesn't outlive the loop.
+
+In addition, the loop induction variable is an immutable reference by default.
+Consider the following Python code:
 
 ```python
-for i in range(0): pass
-print(i)
+    list = [1, 2, 3]
+    for i in list:
+        i += 1
+        print(i)
+    print(list[0])
 ```
 
-With `NameError: name 'i' is not defined`, because the definition of `i` is a
-dynamic characteristic of the function. Mojo's lifetime tracker is intentionally
-simple (so lifetimes are easy to use!), and cannot reason that `i` would be
-defined even when the loop bounds are constant.
+In Python, `i` is a **copy** of the value from the list, so changing the
+value of `i` doesn't alter the list.
+
+Mojo produces an error for the line `i += 1` because `i` is an immutable
+reference, not a copy.
+
+Use a `var` pattern if you want a local copy like python, or a `ref` pattern if
+you want to mutate the values inside a mutable collection.
+
+```mojo
+for var v in list:
+    i += 1  # i is a copy; changing i doesn't update the list
+
+for ref r in list:
+    i += 1  # r is a mutable reference; changing r updates the list
+```
 
 ### Name scoping of nested function declarations
 
@@ -327,7 +295,7 @@ Currently, this means you cannot declare two nested functions with the same
 name. For instance, the following example does not work in Mojo:
 
 ```mojo
-def pick_func(cond) -> def() capturing:
+def pick_func(cond: Bool) -> def() capturing:
     if cond:
         def bar(): return 42
     else:
@@ -419,106 +387,3 @@ at the moment.
 The upstream dialects available in the Playground are the
 [`index`](https://mlir.llvm.org/docs/Dialects/IndexOps/) dialect and the
 [`LLVM`](https://mlir.llvm.org/docs/Dialects/LLVM/) dialect.
-
-### `or` expression is statically typed
-
-Because Mojo has static typing, the `or` expression can't currently mimic the
-behavior of Python. In Python, the result type of the `or` expression is
-dynamic, based on the runtime values:
-
-```python
-i: int = 0
-s: str = "hello"
-print(type(i or s)) # prints <class 'str'>
-i = 5
-print(type(i or s)) # prints <class 'int'>
-```
-
-In Mojo, given the expression `(a or b)`, the compiler needs to statically
-determine a result type that the types of `a` and `b` can both be **converted** to.
-
-For example, currently an `Int` can be implicitly converted to a `String`, but a
-`String` can't be implicitly converted to an `Int`. So given an integer value
-`i` and a string value `s`, the value of `(i or s)` will *always* be a `String`.
-
-### `StringLiteral` behaves differently than `String`
-
-String literals behave differently than `String` values in Mojo code. For
-example:
-
-```mojo
-fn main():
-    var g: Int = 0
-    var h: String = "hello"
-    print(g or h)  # prints `hello`
-    print(g or "hello")  # prints `True`
-```
-
-While the `IntLiteral` and `FloatLiteral` types convert or *materialize* at
-runtime into `Int` and `Float64` values, respectively, string literals continue
-to exist at runtime as `StringLiteral` values. This can result in surprising
-behavior because `StringLiteral` has a more restricted API than `String`.
-
-In the example above, because the `or` expression is statically typed,
-and `Int` cannot be implicitly converted to a `StringLiteral`, the compiler
-chooses a result type that both `Int` and `StringLiteral` can be converted to—in
-this case, `Bool`.
-
-We plan to address this issue in the future, but in the near term, you can avoid
-the inconsistency between `StringLiteral` and `String` problems by explicitly
-converting string literals to `String` values. For example:
-
-```mojo
-var h: String = "hello"
-# or
-print(g or String("hello"))
-```
-
-### Walrus assignment expression limitations
-
-The Mojo compiler reports an uninitialized value error if an expression uses
-multiple "walrus" [assignment
-expressions](/mojo/manual/operators#assignment-expressions) to declare more than
-one variable. For example:
-
-```mojo
-def A() -> Int: return 42
-
-def B() -> String: return "waffles"
-
-def main():
-    if (a := A()) and (b := B()):
-        print("a =", a)
-        print("b =", b)
-```
-
-```output
-walrus-conditional.mojo:8:14: error: use of uninitialized value 'b'
-        print("b =", b)
-             ^
-walrus-conditional.mojo:6:24: note: 'b' declared here
-    if (a := A()) and (b := B()):
-                       ^
-```
-
-Ideally, the Mojo compiler should compile this code because the second `print()`
-statement executes only if a value is assigned to `b`. To work around this
-limitation you can explicitly initialize `b` before the `if` statement, like
-this:
-
-```mojo
-def A() -> Int: return 42
-
-def B() -> String: return "waffles"
-
-def main():
-    b = String()
-    if (a := A()) and (b := B()):
-        print("a =", a)
-        print("b =", b)
-```
-
-```output
-a = 42
-b = waffles
-```
