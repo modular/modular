@@ -135,7 +135,7 @@ def repeat_interleave(
     # is statically known, otherwise use the provided out_dim.
     result_shape[axis] = inferred_size
 
-    axis_val = constant(np.array([axis]), DType.int64, DeviceRef.CPU())
+    axis_val = constant(np.array(axis), DType.int64, DeviceRef.CPU())
 
     output = custom(
         "repeat_interleave",
