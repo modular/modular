@@ -54,6 +54,40 @@ fn cubic_kernel(x: Float32) -> Float32:
         return 0
 
 
+@always_inline
+fn cubic_kernel(x: SIMD) -> __type_of(x):
+    """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
+    filter.
+
+    This uses the Catmull-Rom variant (Robidoux cubic) with a = -0.75,
+    which is what PyTorch uses in get_cubic_upsample_coefficients.
+    ([Source](https://github.com/pytorch/pytorch/blob/59eb61b2d1e4b64debbefa036acd0d8c7d55f0a3/aten/src/ATen/native/UpSample.h#L410-L423)).
+    This also matches OpenCV's [interpolateCubic](https://github.com/opencv/opencv/blob/cf2a3c8e7430cc92569dd7f114609f9377b12d9e/modules/imgproc/src/resize.cpp#L907-L915).
+
+    Args:
+        x: Distance from the center point.
+
+    Returns:
+        Weight contribution based on the distance.
+    """
+    # Use a = -0.75 to match the PyTorch bicubic filter.
+    alias a = __type_of(x)(-0.75)
+    var abs_x = abs(x)
+    var abs_x_squared = abs_x * abs_x
+    var abs_x_cubed = abs_x_squared * abs_x
+
+    # The cubic kernel is defined piecewise:
+    # - For |x| <= 1: f(x) = (a + 2) * |x|^3 - (a + 3) * |x|^2 + 1
+    # - For 1 < |x| < 2: f(x) = a * |x|^3 - 5 * a * |x|^2 + 8 * a * |x| - 4 * a
+    # - For |x| >= 2: f(x) = 0
+
+    var case_1 = (a + 2) * abs_x_cubed - (a + 3) * abs_x_squared + 1
+    var case_2 = a * abs_x_cubed - 5 * a * abs_x_squared + 8 * a * abs_x - 4 * a
+    var case_3 = __type_of(x)(0)
+
+    return (abs_x <= 1).select(case_1, (abs_x < 2).select(case_2, case_3))
+
+
 fn cpu_bicubic_kernel[
     type: DType,
     rank: Int, //,
@@ -181,6 +215,10 @@ fn gpu_bicubic_kernel[
         var sum_value: Float32 = 0.0
         var sum_weights: Float32 = 0.0
 
+        # Pre-compute cubic weights for better performance
+        var weights_y = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dy)
+        var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
+
         # get the 4x4 surrounding pixels, and assign weights to them
         @parameter
         for i in range(4):
@@ -191,13 +229,13 @@ fn gpu_bicubic_kernel[
                 var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
                 var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
 
-                # get the weight of the surrounding pixel, lifted off wikipedia calc 2 vibes
-                var weight_y = cubic_kernel(Float32(i) - 1.0 - dy)
-                var weight_x = cubic_kernel(Float32(j) - 1.0 - dx)
-                var weight: Float32 = weight_y * weight_x
+                # get the weight of the surrounding pixel
+                var weight = weights_y[i] * weights_x[j]
 
                 # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
-                var pixel_value = Float32(input[b, c, y_pos, x_pos])
+                var pixel_value = input[b, c, y_pos, x_pos].cast[
+                    DType.float32
+                ]()
                 sum_value += pixel_value * weight
                 sum_weights += weight
 
