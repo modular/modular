@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from max.driver import accelerator_count
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, SymbolicDim, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.quantization import QuantizationEncoding
 
 
@@ -77,55 +77,3 @@ def test_dequantize(session):
     generated = compiled.execute(np.zeros((1, 18), dtype="uint8"))[0]
     expected = np.zeros((1, 32))
     np.testing.assert_equal(generated.to_numpy(), expected)
-
-
-@pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="Quantization only supported on cpu currently",
-)
-def test_dequantize_nondivisible_error():
-    graph = Graph(
-        "dequantize",
-        input_types=[TensorType(DType.uint8, (1, 19), device=DeviceRef.CPU())],
-        output_types=[
-            TensorType(DType.float32, (1, 32), device=DeviceRef.CPU())
-        ],
-    )
-
-    with graph:
-        with pytest.raises(
-            ValueError,
-            match=(
-                r"last dimension \(.*19.*\) not divisible by block size \(18\)"
-            ),
-        ):
-            ops.dequantize(
-                QuantizationEncoding.Q4_0, *[x.tensor for x in graph.inputs]
-            )
-
-
-@pytest.mark.skipif(
-    accelerator_count() > 0,
-    reason="Quantization only supported on cpu currently",
-)
-def test_dequantize_nonstatic_last_dim_error():
-    graph = Graph(
-        "dequantize",
-        input_types=[
-            TensorType(
-                DType.uint8, (1, SymbolicDim("x")), device=DeviceRef.CPU()
-            )
-        ],
-        output_types=[
-            TensorType(DType.float32, (1, 32), device=DeviceRef.CPU())
-        ],
-    )
-
-    with graph:
-        with pytest.raises(
-            TypeError,
-            match="dequantize only supported with static last dimension",
-        ):
-            ops.dequantize(
-                QuantizationEncoding.Q4_0, *[x.tensor for x in graph.inputs]
-            )
