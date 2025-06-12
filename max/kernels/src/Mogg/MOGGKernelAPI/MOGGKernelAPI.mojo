@@ -4775,7 +4775,6 @@ struct ResizeLinear:
 struct ResizeBicubic:
     @staticmethod
     fn execute[
-        coordinate_transform_mode: Int,
         rank: Int,
         dtype: DType,
         target: StaticString, //,
