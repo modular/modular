@@ -37,6 +37,22 @@ what we publish.
   - `Mogg` directory which contains registration of kernels with the Graph
     Compiler
 
+  - Mojo now supports AMD GPUs, expanding hardware compatibility beyond NVIDIA
+  to include AMD's GPU ecosystem. This enables Mojo applications to leverage
+  AMD's RDNA and CDNA architectures for high-performance computing workloads,
+  providing developers with greater flexibility in choosing hardware platforms
+  for AI and compute-intensive applications.
+
+  - Primitives for working with NVIDIA Blackwell GPUs have been added,
+  providing low-level access to the latest GPU architecture features. These
+  primitives enable developers to take advantage of Blackwell's enhanced
+  compute capabilities, improved memory bandwidth, and advanced AI acceleration
+  features, including support for newer tensor operations and optimized memory
+  management patterns.
+
+- Mojo is now available on Godbolt (see <https://mojo.godbo.lt/z/EshWcoqe7> for
+  an example).
+
 ### Language Enhancements
 
 - `var` declarations in functions now support more flexible "patterns", allowing
