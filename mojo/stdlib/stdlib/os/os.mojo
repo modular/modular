@@ -22,7 +22,7 @@ from os import listdir
 
 from collections import InlineArray, List
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import c_int32, c_char_pointer, OpaquePointer, c_char
 
 from memory import UnsafePointer
 
@@ -269,45 +269,40 @@ fn abort[result: AnyType = NoneType._mlir_type](message: String) -> result:
 
 
 # ===----------------------------------------------------------------------=== #
-# remove/unlink
+# remove / unlink
 # ===----------------------------------------------------------------------=== #
+
+# --- errno / strerror bindings (keep near other C interop in this file) -------
+
+@ctypes.extern var errno: c_int                 # POSIX errno
+
+@ctypes.extern                                  # char *strerror(int)
+fn strerror(errnum: c_int) -> Pointer[c_char]
+
+# -----------------------------------------------------------------------------
+
+
 fn remove[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
 
-    If the path is a directory or it can not be deleted, an error is raised.
-    Absolute and relative paths are allowed, relative paths are resolved from cwd.
-
-    Parameters:
-      PathLike: The a type conforming to the os.PathLike trait.
-
-    Args:
-      path: The path to the file.
-
+    If the path is a directory or it cannot be deleted, an error is raised.
     """
-    var fspath = path.__fspath__()
-    var error = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
 
-    if error != 0:
-        # TODO get error message, the following code prints it
-        # var error_str = String("Something went wrong")
-        # _ = external_call["perror", UnsafePointer[NoneType]](error_str.unsafe_ptr())
-        # _ = error_str
-        raise Error("Can not remove file: " + fspath)
+    let fspath = path.__fspath__()
+    let rc = external_call["unlink", Int32](fspath.unsafe_cstr_ptr())
+
+    if rc != 0:
+        # Capture errno *immediately*.
+        let code: Int32 = errno
+        let msg = String.from_c_str(strerror(code))
+        raise Error(
+            String("Unable to remove '{}' : {} (errno={})")
+                .format(fspath, msg, code)
+        )
 
 
 fn unlink[PathLike: os.PathLike](path: PathLike) raises:
-    """Removes the specified file.
-
-    If the path is a directory or it can not be deleted, an error is raised.
-    Absolute and relative paths are allowed, relative paths are resolved from cwd.
-
-    Parameters:
-      PathLike: The a type conforming to the os.PathLike trait.
-
-    Args:
-      path: The path to the file.
-
-    """
+    """Alias for `remove()`."""
     remove(path.__fspath__())
 
 
