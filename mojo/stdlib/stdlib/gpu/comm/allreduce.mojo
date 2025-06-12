@@ -747,7 +747,7 @@ fn _allreduce_1stage_kernel[
             input_index=my_rank, width=simd_width, alignment=alignment
         ](
             result.get_nd_index(elem_idx),
-            rebind[SIMD[type, simd_width]](accum.cast[type]()),
+            accum.cast[type](),
         )
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
