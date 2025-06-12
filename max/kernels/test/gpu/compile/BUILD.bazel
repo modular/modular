@@ -37,7 +37,10 @@ _EXTRA_CONSTRAINTS = {
         size = "large",
         srcs = [src],
         copts = _EXTRA_COPTS.get(src, []),
-        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []) + select({
+            "//:b200_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
         deps = [
             "@mojo//:stdlib",
         ],
