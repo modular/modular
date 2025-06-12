@@ -52,10 +52,8 @@ modular_py_test(
         requirement("torch"),
         requirement("transformers"),
         requirement("msgspec"),
-    ] + select({
-        "//:has_gpu": [requirement("xgrammar")],  # needed only for test_sampling.py
-        "//conditions:default": [],
-    }),
+        requirement("xgrammar"),  # needed only for test_sampling.py
+    ],
 )
 
 # TODO(AITLIB-349): Fix this test. For some reason it doesn't work on AMD, so
