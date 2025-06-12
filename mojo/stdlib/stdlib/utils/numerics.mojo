@@ -580,28 +580,23 @@ fn isnan[
     ):
         return False
 
-    alias int_dtype = _integral_type_of[dtype]()
-
-    @parameter
-    if dtype is DType.float8_e4m3fn:
-        return (bitcast[int_dtype, width](val) & 0x7F) == 0x7F
+    elif dtype is DType.float8_e4m3fn:
+        return val.to_bits() & 0x7F == 0x7F
     elif dtype is DType.float8_e5m2:
         # For the float8_e5m2 dtype NaN is limited to 0x7F and 0xFF values.
         # 7D, 7E, 7F are positive NaNs; FD, FE, FF are negative NaNs.
-        return (bitcast[int_dtype, width](val) & 0x7F) > 0x7C
+        return val.to_bits() & 0x7F > 0x7C
     elif dtype is DType.bfloat16:
-        alias x7FFF = SIMD[int_dtype, width](0x7FFF)
-        alias x7F80 = SIMD[int_dtype, width](0x7F80)
-        return bitcast[int_dtype, width](val) & x7FFF > x7F80
+        return val.to_bits() & 0x7FFF > 0x7F80
     elif dtype is DType.float16:
-        var ival = bitcast[int_dtype, width](val)
-        return (ival & 0x7C00) == 0x7C00 and (ival & 0x03FF) != 0
+        var bits = val.to_bits()
+        return (bits & 0x7C00 == 0x7C00) & (bits & 0x03FF != 0)
 
     alias signaling_nan_test: UInt32 = 0x0001
     alias quiet_nan_test: UInt32 = 0x0002
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
-    ](val.value, (signaling_nan_test | quiet_nan_test))
+    ](val.value, signaling_nan_test | quiet_nan_test)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -910,16 +905,16 @@ fn isinf[
         DType.float8_e5m2fnuz,
     ):
         return False
+
     elif dtype is DType.float8_e5m2:
         # For the float8_e5m2 both 7C and FC are infinity.
-        alias int_dtype = _integral_type_of[dtype]()
-        return (bitcast[int_dtype, width](val) & 0x7F) == 0x7C
+        return val.to_bits() & 0x7F == 0x7C
 
     alias negative_infinity_test: UInt32 = 0x0004
     alias positive_infinity_test: UInt32 = 0x0200
-    return llvm_intrinsic["llvm.is.fpclass", SIMD[DType.bool, width]](
-        val.value, (negative_infinity_test | positive_infinity_test)
-    )
+    return llvm_intrinsic[
+        "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
+    ](val.value, negative_infinity_test | positive_infinity_test)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -950,9 +945,9 @@ fn isfinite[
     if not dtype.is_floating_point():
         return True
 
-    return llvm_intrinsic["llvm.is.fpclass", SIMD[DType.bool, width]](
-        val.value, UInt32(0x1F8)
-    )
+    return llvm_intrinsic[
+        "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
+    ](val.value, UInt32(0x1F8))
 
 
 # ===----------------------------------------------------------------------=== #
