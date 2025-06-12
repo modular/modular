@@ -558,7 +558,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 fn isnan[
-    dtype: DType, width: Int
+    dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is Not a Number (NaN).
 
@@ -887,7 +887,7 @@ fn min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 fn isinf[
-    dtype: DType, width: Int
+    dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is infinite.
 
@@ -929,7 +929,7 @@ fn isinf[
 
 @always_inline("nodebug")
 fn isfinite[
-    dtype: DType, width: Int
+    dtype: DType, width: Int, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is not infinite.
 
@@ -1016,7 +1016,7 @@ fn get_accum_type[
 
 
 fn nextafter[
-    dtype: DType, width: Int
+    dtype: DType, width: Int, //
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes next representable value of `arg0` in the direction of `arg1`.
 
