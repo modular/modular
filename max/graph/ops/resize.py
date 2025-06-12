@@ -84,9 +84,7 @@ def resize(
 
     # Create the result type with the new shape.
     result_type = TensorType(
-        dtype=input.dtype,
-        shape=shape,
-        device=input.device,
+        dtype=input.dtype, shape=shape, device=input.device
     )
 
     # Stage bicubic resize op.

@@ -100,8 +100,7 @@ def _static_slice(n: int, index: slice) -> tuple[slice, DimLike]:
     # Assume an arithmetic set where a0 == start, d == step, an == stop
     # stop = start + (n-1)step, ceil to return an int, return 0 if -ve length
     output_shape = max(
-        0,
-        (stop - start + (step - (1 if step > 0 else -1))) // step,
+        0, (stop - start + (step - (1 if step > 0 else -1))) // step
     )
 
     return (concrete_slice, output_shape)
@@ -132,11 +131,7 @@ def _slice_index_and_output(
                 f"Slice index value must be a scalar, had shape {index.shape}"
             )
         return (  # Same as int index.
-            slice(
-                index,
-                where(index == -1, int64_max, index + 1),
-                1,
-            ),
+            slice(index, where(index == -1, int64_max, index + 1), 1),
             None,
         )
     elif isinstance(index, slice):

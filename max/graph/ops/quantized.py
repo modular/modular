@@ -21,9 +21,7 @@ def repack_gguf_quantized_weights(
 ) -> TensorValue:
     quantization_encoding_str = quantization_encoding.name
     return _repack_quantized_weights(
-        f"vroom_{quantization_encoding_str}_repack_weights",
-        (weight,),
-        "vroom",
+        f"vroom_{quantization_encoding_str}_repack_weights", (weight,), "vroom"
     )
 
 
@@ -143,29 +141,19 @@ _QMATMUL_STRATEGIES: dict[
     Callable[[TensorValue, tuple[TensorValue, ...]], TensorValue],
 ] = {
     "gptq_b4_g128_aTrue": _repack_then_matmul(
-        "GPTQ_gpu_repack_b4_g128_desc_act",
-        "qmatmul_b4_g128",
-        "gptq",
+        "GPTQ_gpu_repack_b4_g128_desc_act", "qmatmul_b4_g128", "gptq"
     ),
     "gptq_b4_g128_aFalse": _repack_then_matmul(
-        "GPTQ_gpu_repack_b4_g128",
-        "qmatmul_b4_g128",
-        "gptq",
+        "GPTQ_gpu_repack_b4_g128", "qmatmul_b4_g128", "gptq"
     ),
     QuantizationEncoding.Q4_0: _repack_then_matmul(
-        "vroom_q4_0_repack_weights",
-        "vroom_q4_0_matmul",
-        "vroom",
+        "vroom_q4_0_repack_weights", "vroom_q4_0_matmul", "vroom"
     ),
     QuantizationEncoding.Q4_K: _repack_then_matmul(
-        "vroom_q4_k_repack_weights",
-        "vroom_q4_k_matmul",
-        "vroom",
+        "vroom_q4_k_repack_weights", "vroom_q4_k_matmul", "vroom"
     ),
     QuantizationEncoding.Q6_K: _repack_then_matmul(
-        "vroom_q6_k_repack_weights",
-        "vroom_q6_k_matmul",
-        "vroom",
+        "vroom_q6_k_repack_weights", "vroom_q6_k_matmul", "vroom"
     ),
 }
 

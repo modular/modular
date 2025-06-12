@@ -104,9 +104,7 @@ def allgather(
 
     # Stage the allgather op.
     results = Graph.current._add_op(
-        mo.distributed_allgather,
-        output_types,
-        inputs,
+        mo.distributed_allgather, output_types, inputs
     )
 
     # Convert results to TensorValues.

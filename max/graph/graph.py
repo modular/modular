@@ -622,8 +622,7 @@ class Graph:
                 )
 
             _ = self._add_op(
-                block_terminator_op,
-                results + [self._current_chain],
+                block_terminator_op, results + [self._current_chain]
             )
 
     def output(self, *outputs: Value) -> None:

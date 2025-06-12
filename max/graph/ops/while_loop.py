@@ -192,9 +192,7 @@ def while_loop(
     try:
         pred_block = while_op.condRegion.blocks[0]
         pred_wrapped_fn = wrap_while_block_function(
-            predicate,
-            pred_block.arguments,
-            is_cond_block=True,
+            predicate, pred_block.arguments, is_cond_block=True
         )
 
         Graph.current._build_block(
@@ -206,10 +204,7 @@ def while_loop(
         )
 
         body_block = while_op.bodyRegion.blocks[0]
-        body_wrapped_fn = wrap_while_block_function(
-            body,
-            body_block.arguments,
-        )
+        body_wrapped_fn = wrap_while_block_function(body, body_block.arguments)
         Graph.current._build_block(
             body_block,
             body_wrapped_fn,

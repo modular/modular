@@ -170,8 +170,7 @@ class ShardingStrategy:
             A :obj:`ShardingStrategy` instance configured for column-wise sharding.
         """
         return ShardingStrategy(
-            num_devices=num_devices,
-            shard=col_sharding_strategy,
+            num_devices=num_devices, shard=col_sharding_strategy
         )
 
     @staticmethod
