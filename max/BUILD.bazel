@@ -78,12 +78,12 @@ modular_genrule(
     mv $folder/_core.pyi $folder/__init__.pyi
     mv $folder/dialects.pyi $folder/dialects/__init__.pyi
     """.format(
-        ruff = "//bazel/lint:ruff-wrapper",
+        ruff = "//open-source/max/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
     ),
     tools = [
         "_core.stubfile_generator",
-        "//bazel/lint:ruff-wrapper",
+        "//open-source/max/bazel/lint:ruff-wrapper",
     ],
 )
 
