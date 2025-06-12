@@ -89,9 +89,7 @@ def _map_execute_kwarg(
         if isinstance(value, np.ndarray):
             keep_referenced[value.ctypes.data] = value
             return _TensorData(
-                value.ctypes.data,
-                list(value.shape),
-                DType[str(value.dtype)],
+                value.ctypes.data, list(value.shape), DType[str(value.dtype)]
             )
         # Just pass the value through if it's not a tensor/array.
         return value
