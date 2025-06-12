@@ -144,7 +144,7 @@ following requirements:
   For more information, see the [Return values](#return-values) section of this
   page.
 
-Where `def` and `fn` differ is error handling and argument mutability defaults.
+Where `def` and `fn` differ is error handling.
 
 * The compiler doesn't allow a function declared with `fn` to raise an error
   condition unless it explicitly includes a `raises` declaration. In contrast,
@@ -153,23 +153,6 @@ Where `def` and `fn` differ is error handling and argument mutability defaults.
   functions](#raising-and-non-raising-functions) section of this page for more
   information.
 
-* All arguments to a function declared with `fn` are immutable references by
-  default (that is, values are read-only, using the `read` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions)). This
-  prevents accidental mutations, and permits the use of non-copyable types as
-  arguments.
-
-  All arguments to a function declared with `def` are mutable. Arguments default
-  to using the `read` [argument
-  convention](/mojo/manual/values/ownership#argument-conventions) like an `fn`
-  function, with a special addition: if the function mutates the argument, it
-  makes a mutable copy.
-
-  You can override the default behavior for both `def` and `fn` functions by
-  providing an explicit [argument
-  convention](/mojo/manual/values/ownership#argument-conventions) when declaring
-  the argument.
-
 As far as a function caller is concerned, there is no difference between
 invoking a function declared with `def` vs a function declared with `fn`. You
 could reimplement a `def` function as an `fn` function without making any
@@ -177,12 +160,7 @@ changes to code that calls the function.
 
 ## Function arguments
 
-As noted in the previous section, there is a difference between how `def`
-and `fn` functions handle default *argument conventions*.
-Argument conventions are discussed in much more detail in the page on
-[Ownership](/mojo/manual/values/ownership#argument-conventions).
-
-The remaining rules for arguments described in this section apply to both `def`
+The rules for arguments described in this section apply to both `def`
 and `fn` functions.
 
 :::note Functions with \`/\` and \`*\` in the argument list

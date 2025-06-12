@@ -41,7 +41,12 @@ reference can have either mutable access or immutable access to that value.
 
 Mojo references are created when you call a function: function arguments can be
 passed as mutable or immutable references. A function can also return a
-reference instead of returning a value.
+reference instead of returning a value. To capture a returned reference, you
+can use a reference binding:
+
+```mojo
+ref value_ref = list[0]
+```
 
 ## Argument conventions
 
@@ -67,8 +72,7 @@ keyword at the beginning of an argument declaration:
 
 * `read`: The function receives an **immutable reference**. This means the
   function can read the original value (it is *not* a copy), but it cannot
-  mutate (modify) it. Functions defined with `def` treat this differently, as
-  described below in [Borrowed arguments](#borrowed-arguments-read).
+  mutate (modify) it.
 
 * `mut`: The function receives a **mutable reference**. This means the
   function can read and mutate the original value (it is *not* a copy).
@@ -117,25 +121,8 @@ more detail.
 
 ## Borrowed arguments (`read`)
 
-The `read` convention is the default for all arguments. But as is described in
-[`def` and `fn` comparison](/mojo/manual/functions#def-and-fn-comparison),
-functions treat `read` arguments somewhat differently depending on whether the
-function is defined with `def` or `fn`:
-
-* When using `def`, if you mutate the value in the body of the function, the
-  function receives a mutable copy of the argument. Otherwise, it receives an
-  immutable reference. This allows you to treat arguments as mutable, but avoid
-  the overhead of making extra copies when they're not needed.
-
-* When using `fn`, the function always receives an immutable reference. If you
-  want a mutable copy, you can assign it to a local variable:
-
-  ```mojo
-  var my_copy = read_arg
-  ```
-
-In both cases, the original value on the caller side can't be changed by the
-callee.
+The `read` convention is the default for all arguments. The callee receives an
+immutable reference to the argument value.
 
 For example:
 
@@ -152,9 +139,9 @@ def main():
 [1, 2, 3, 4]
 ```
 
-Here the `list` argument to `print_list()` is read and not mutated, so the
-`print_list()` function gets an immutable reference to the original `List`, and
-doesn't do any copying.
+Here the `print_list()` function can read from the `list` argument, but not
+mutate it. `list` is a reference to `values` in the `main()` function, not a
+copy.
 
 In general, passing an immutable reference is much more efficient
 when handling large or expensive-to-copy values, because the copy constructor
@@ -422,36 +409,3 @@ There are multiple ways that Mojo can transfer ownership of a value:
 
 In order for the `owned` convention to work *without* the transfer
 sigil, the value type must be copyable (via `__copyinit__()`).
-
-## Comparing `def` and `fn` argument conventions
-
-As mentioned in [Functions](/mojo/manual/functions), a function defined with
-`def` can treat a `read` argument as mutable, in which case it receives a
-mutable copy. An equivalent function defined with `fn` would need to make this
-copy explicit. For example, these two functions have the exact same behavior.
-
-```mojo
-def def_example(a: Int, mut b: Int):
-    pass
-
-fn fn_example(a_in: Int, mut b: Int):
-    var a = a_in
-    pass
-```
-
-This shadow copy typically adds little overhead, for small types. However,
-copying large types that allocate heap storage can be expensive. (For example,
-copying `List` or `Dict` types, or copying large numbers of strings.)
-
-### `read` versus `owned` in `def` functions
-
-The difference between `read` and `owned` in a `def` function may be a
-little subtle. In both cases, you can end up with a uniquely-owned value that's
-a copy of the original value.
-
-* The `read` argument always gets an immutable reference or a local copy.
-  You can't transfer a value into a `read` argument.
-
-* The `owned` argument always gets a uniquely owned value, which may have been
-  copied or transferred from the callee. Using `owned` arguments without the
-  transfer sigil (`^`) usually results in values being copied.

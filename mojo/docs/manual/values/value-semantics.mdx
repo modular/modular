@@ -53,96 +53,13 @@ are cheap to copy.
 ## Value semantics in Mojo functions
 
 Value semantics also apply to function arguments in Mojo by default. However,
-the way in which they apply differs depending on whether you define the function
-using `def` or `fn`. You can also override the default behavior by providing an
-explicit [argument
+the way in which they apply differs depending on the [argument
 convention](/mojo/manual/values/ownership#argument-conventions), which is
 discussed in the [Ownership](/mojo/manual/values/ownership) page.
 
-### Value semantics in `def` functions
-
-Here's an example with a function defined using `def`:
-
-```mojo
-def add_one(y: Int):
-    # def creates an implicit copy of the value because it's mutated
-    y += 1
-    print("y:", y)
-
-def main():
-    var x = 1
-    add_one(x)
-    print("x:", x)
-```
-
-```output
-y: 2
-x: 1
-```
-
-Again, the `y` value is a copy and the function cannot modify the original `x`
-value.
-
-If you're familiar with Python, this is probably familiar so far, because the
-code above behaves the same in Python. However, Python is not value semantic.
-
-It gets complicated, but let's consider a situation in which you call a Python
-function and pass an object with a pointer to a heap-allocated value. Python
-actually gives that function a reference to your object, which allows the
-function to mutate the heap-allocated value. This can cause nasty bugs if
-you're not careful, because the function might incorrectly assume it has unique
-ownership of that object.
-
-In Mojo, the default behavior for all function arguments is to use value
-semantics. If the function wants to modify the value of an incoming argument,
-then it must explicitly declare so, which avoids accidental mutations of the
-original value.
-
-All Mojo types passed to a `def` function can be treated as mutable,
-which maintains the expected mutability behavior from Python. But by default, it
-is mutating a uniquely-owned value, not the original value.
-
-For example, when you pass an instance of a `SIMD` vector to a `def`
-function it creates a unique copy of all values. Thus, if we modify the
-argument in the function, the original value is unchanged:
-
-```mojo
-def update_simd(t: SIMD[DType.int32, 4]):
-    t[0] = 9
-    print("t:", t)
-
-def main():
-    var v = SIMD[DType.int32, 4](1, 2, 3, 4)
-    update_simd(v)
-    print("v:", v)
-```
-
-```output
-t: [9, 2, 3, 4]
-v: [1, 2, 3, 4]
-```
-
-If this were Python code, the function would modify the original object, because
-Python shares a reference to the original object.
-
-However, not all types are inexpensive to copy. Copying a `String` or `List`
-requires allocating heap memory, so we want to avoid copying one by accident.
-When designing a type like this, ideally you want to prevent *implicit* copies,
-and only make a copy when it's explicitly requested.
-
-### Value semantics in `fn` functions
-
-The arguments above are mutable because a function defined with `def` has
-special treatment for the default [`read` argument
-convention](/mojo/manual/values/ownership#argument-conventions).
-
-In contrast, `fn` functions always receive `read` arguments as immutable
-references. This is a memory optimization to avoid making
-unnecessary copies.
-
-For example, let's create another function with the `fn` declaration. In this
-case, the `y` argument is immutable by default, so if the function wants to
-modify the value in the local scope, it needs to make a local copy:
+For example, in the following function, the `y` argument is immutable by
+default, so if the function wants to modify the value in the local scope, it
+needs to make a local copy:
 
 ```mojo
 fn add_two(y: Int):
@@ -166,13 +83,13 @@ x: 1
 This is all consistent with value semantics because each variable maintains
 unique ownership of its value.
 
-The way the `fn` function receives the `y` value is a "look but don't touch"
+The way the function receives the `y` value is a "look but don't touch"
 approach to value semantics. This is also a more memory-efficient approach when
 dealing with memory-intensive arguments, because Mojo doesn't make any copies
 unless we explicitly make the copies ourselves.
 
-Thus, the default behavior for `def` and `fn` arguments is fully value
-semantic: arguments are either copies or immutable references, and any living
+Thus, the default behavior for function arguments is fully value
+semantic: arguments are immutable references, and any living
 variable from the callee is not affected by the function.
 
 But we must also allow reference semantics (mutable references) because it's
@@ -185,7 +102,6 @@ The way we do that in Mojo is, instead of enforcing that every variable have
 "exclusive access" to a value, we ensure that every value has an "exclusive
 owner," and destroy each value when the lifetime of its owner ends.
 
-On the next page about [value
-ownership](/mojo/manual/values/ownership), you'll learn how to modify
-the default argument conventions, and safely use reference semantics so every
-value has only one owner at a time.
+On the next page about [value ownership](/mojo/manual/values/ownership), you'll
+learn how to modify the default argument conventions, and safely use reference
+semantics so every value has only one owner at a time.
