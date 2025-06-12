@@ -43,9 +43,12 @@ what we publish.
   multiple values to be declared at once, e.g. `var a, b = 4, 5` and
   `var a, b : Int, Float64`.
 
-- Mojo now supports Python-style type patterns within function bodies without
-  needing the use of the `var` keyword, e.g.: `x = 4; y: UInt8 = 5` implicitly
-  declares `x` as type `Int`, but implicitly declares `y` with type `UInt8`.
+- Mojo now supports the use of Python-style type patterns when declaring
+  variables on first assignment without the `var` keyword. For example,
+  `x = 4; y: UInt8 = 5` declares both `x` and `y`: `x` is inferred to the
+  default type of `Int`, but `y` gets the explicit type `UInt8`.  Declaring
+  variables without `var` gives you a function-scoped name, whereas `var` makes
+  things scoped to the statement they are in (e.g. an `if` body).
 
 - Mojo now supports 'ref' patterns that bind a stored LValue into a named
   declaration, extending the argument convention into local function scope.
@@ -316,7 +319,7 @@ Changes to Python-Mojo interoperability:
   `write_buffered` and `write_args` functions have also been removed, to improve
   compile speed and reduce register pressure on GPU, you should now unroll the
   variadic pack at each call site:
-  
+
   Unbuffered:
 
   ```mojo
