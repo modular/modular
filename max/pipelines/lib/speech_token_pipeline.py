@@ -14,8 +14,7 @@
 
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -24,10 +23,10 @@ from max.dtype import DType
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import (
-    InputContext,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
+    TTSContext,
 )
 from max.profiler import Tracer, traced
 
@@ -38,10 +37,6 @@ from .pipeline import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-
-T = TypeVar("T", bound=InputContext)
-
-logger = logging.getLogger("max.pipelines")
 
 
 class SpeechTokenGenerationPipeline(TextGenerationPipeline):
@@ -60,13 +55,15 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
     @traced
     def next_speech_token(
         self,
-        batch: dict[str, T],
+        batch: dict[str, TTSContext],
         num_steps: int,
         tokens_to_generate: dict[str, int],
     ) -> dict[str, TextGenerationResponse]:
         """Provided a batch, process batch inputs, execute the graph for num_steps in a multi-step scenario,
         then decode the tokens holistically and return the list of decoded tokens.
         """
+        if not batch or num_steps == 0:
+            return {}
         tracer: Tracer = Tracer("compute_parameters")
 
         # Flatten our batch for consistent indexing.
@@ -261,8 +258,8 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
                 context.update(new_token=next_token)
 
-                res[request_id].update_status(context.status)
-                if context.is_done:
+                res[request_id].update_status(context.speech_token_status)
+                if context.speech_token_status.is_done:
                     break
 
             # Walk outstanding completion tokens, and return to user.

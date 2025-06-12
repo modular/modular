@@ -879,6 +879,14 @@ class TTSContext(TextContext):
     audio_prompt_tokens: np.ndarray = msgspec.field(
         default_factory=lambda: np.array([], dtype=np.int32)
     )
+
+    # Silence detection related fields.
+    audio_buffer: np.ndarray = msgspec.field(
+        default_factory=lambda: np.empty((1, 0))
+    )
+    prev_samples_beyond_offset: int = msgspec.field(default=0)
+
+    # Fields for tracking the state of speech token or audio generation.
     _speech_token_size: int = msgspec.field(
         default=SPEECH_TOKEN_audio_chunk_size
     )
@@ -892,6 +900,45 @@ class TTSContext(TextContext):
     _block_counter: int = msgspec.field(default=0)
     _arrival_time: float = msgspec.field(default_factory=lambda: time.time())
 
+    _audio_generation_status: TextGenerationStatus = msgspec.field(
+        default=TextGenerationStatus.ACTIVE
+    )
+
+    @property
+    def is_done(self) -> bool:
+        return self._audio_generation_status.is_done
+
+    @property
+    def audio_generation_status(self) -> TextGenerationStatus:
+        return self._audio_generation_status
+
+    def update_audio_generation_status(
+        self, status: TextGenerationStatus
+    ) -> None:
+        self._audio_generation_status = status
+
+    @property
+    def speech_token_status(self) -> TextGenerationStatus:
+        """Returns the status of the speech token generation."""
+        # Note that `_status` is used here instead of creating a new attribute,
+        # because this class inherits from `TextContext`, which updates
+        # `_status` when EOS is reached.
+        return self._status
+
+    def update_speech_token_status(self, status: TextGenerationStatus) -> None:
+        self._status = status
+
+    @property
+    def status(self) -> TextGenerationStatus:
+        raise ValueError(
+            "Please call `speech_token_status` or `audio_generation_status` instead."
+        )
+
+    def update_status(self, status: TextGenerationStatus) -> None:
+        raise ValueError(
+            "Please call `update_speech_token_status` or `update_audio_generation_status` instead."
+        )
+
     @property
     def speech_tokens(self) -> np.ndarray:
         return self._speech_tokens[: self._speech_token_end_idx]
@@ -899,6 +946,13 @@ class TTSContext(TextContext):
     @property
     def block_counter(self) -> int:
         return self._block_counter
+
+    @property
+    def decoded_index(self) -> int:
+        return self._decoded_index
+
+    def set_decoded_index(self, idx: int) -> None:
+        self._decoded_index = idx
 
     def update_speech_tokens(self, new_tokens: np.ndarray) -> None:
         """Updates the next_tokens"""
@@ -921,7 +975,7 @@ class TTSContext(TextContext):
 
     def next_speech_tokens(
         self, audio_chunk_size: int | None = None, buffer: int | None = None
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, int]:
         """Returns a chunk of the next unseen speech tokens.
 
         Calling this function will update the index of the last seen token.
@@ -932,10 +986,11 @@ class TTSContext(TextContext):
                 decoder on each generation step.
 
         Returns:
-            A chunk of speech tokens.
+            A tuple of (chunk of speech tokens, buffer).
         """
         start_idx = self._decoded_index
         if buffer is not None:
+            buffer = min(buffer, start_idx)
             start_idx = max(0, start_idx - buffer)
 
         end_idx = self._speech_token_end_idx
@@ -943,8 +998,20 @@ class TTSContext(TextContext):
             end_idx = min(end_idx, self._decoded_index + audio_chunk_size)
 
         chunk = self._speech_tokens[start_idx:end_idx]
-        self._decoded_index = end_idx
-        return chunk
 
-    def has_undecoded_speech_tokens(self) -> bool:
-        return self._decoded_index < self._speech_token_end_idx
+        return chunk, buffer or 0
+
+    def has_undecoded_speech_tokens(self, exclude_last_n: int = 0) -> bool:
+        """Checks whether there are undecoded speech tokens.
+
+        Args:
+            exclude_last_n: Number of tokens to exclude from the end when
+                checking for undecoded tokens. For example, if set to 1,
+                the last token will not be considered when checking for
+                undecoded tokens.
+
+        Returns:
+            True if there are undecoded speech tokens (excluding the last n tokens),
+            False otherwise.
+        """
+        return self._decoded_index < self._speech_token_end_idx - exclude_last_n
