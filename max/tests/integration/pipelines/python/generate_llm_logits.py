@@ -603,6 +603,34 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "olmo2-1b": GenericOracle(
+        model_path="allenai/OLMo-2-0425-1B-Instruct",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "olmo2-7b": GenericOracle(
+        model_path="allenai/OLMo-2-1124-7B",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={"gpu": ["float32"], "cpu": ["float32"]},
+    ),
+    "olmo2-13b": GenericOracle(
+        model_path="allenai/OLMo-2-1124-13B-Instruct",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "olmo2-32b": GenericOracle(
+        model_path="allenai/OLMo-2-0325-32B-Instruct",
+        config_params={
+            "max_length": 512,
+        },
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "mistral": GenericOracle(
         model_path="mistralai/Mistral-Nemo-Instruct-2407",
         config_params={"max_length": 512},

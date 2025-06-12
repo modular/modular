@@ -15,6 +15,10 @@ Qwen/Qwen3-8B	895c8d171bc03c30e113cd7a28c02494b5e068b7
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8	12fd6884d2585dd4d020373e7f39f74507b31866
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic	b0b04ce47ca8f21386149cf613f64dd611808c05
 allenai/OLMo-1B-hf	aee7752d9c08ee4775e9b0091426d8410e8f6a89
+allenai/OLMo-2-0325-32B-Instruct	b96024342a77a69aa0dda815c3454a671f477463
+allenai/OLMo-2-0425-1B-Instruct	48d788eca847d4d7548f375ad03d3c9312f6139e
+allenai/OLMo-2-1124-13B-Instruct	3a5c85baefbb1896a54d56fe2e76c0395627ddf4
+allenai/OLMo-2-1124-7B	7df9a82518afdecae4e8c026b27adccc8c1f0032
 bartowski/Meta-Llama-3-8B-Instruct-GGUF	4ebc4aa83d60a5d6f9e1e1e9272a4d6306d770c1
 bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f12067
 deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b1

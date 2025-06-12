@@ -742,6 +742,16 @@ PIPELINES = {
             kl_div_threshold=3.7e-3,
         ),
     ),
+    "allenai/OLMo-2-1124-7B-float32": PipelineDef(
+        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        tags=["big"],
+        run=_make_pipeline_runner(
+            pipeline="olmo2-7b",
+            encoding="float32",
+            cos_dist_threshold=2.1e-5,
+            kl_div_threshold=4.6e-7,
+        ),
+    ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
         tags=["big"],
