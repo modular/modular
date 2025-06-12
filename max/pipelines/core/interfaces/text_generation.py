@@ -151,6 +151,12 @@ class SamplingParams:
         if self.repetition_penalty <= 0:
             raise ValueError("repetition_penalty must be greater than 0.")
 
+        if self.top_k <= 0 or self.top_k > 256:
+            # TODO(E2EOPT-315) -- this is a temporary band-aid, we will add support for top_k = -1 in the future.
+            raise ValueError(
+                f"top_k must be greater than 0 and less than or equal to 256, was {self.top_k}."
+            )
+
 
 @dataclass(frozen=True)
 class TokenGeneratorRequest:
