@@ -727,7 +727,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@always_inline("nodebug")
 fn max_finite[dtype: DType]() -> Scalar[dtype]:
     """Returns the maximum finite value of type.
 
@@ -790,7 +790,7 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@always_inline("nodebug")
 fn min_finite[dtype: DType]() -> Scalar[dtype]:
     """Returns the minimum (lowest) finite value of type.
 
