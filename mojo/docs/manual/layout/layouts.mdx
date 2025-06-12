@@ -380,10 +380,10 @@ Output:
 A variation on `tile_to_shape()` is the
 [`blocked_product()`](/mojo/kernels/layout/layout/blocked_product) function. The
 main difference is that where `tile_to_shape()` takes an output *shape*,
-`blocked_product()` takes a *tiler* layout: essentially, every element in the
-tiler layout is replaced by a tile. The following example generates the same
-tiled layout using `blocked_product()`. It also prints out the two input
-layouts.
+`blocked_product()` takes a *tiler* layout: Think of tiler to mean tiles of tiles 
+-- meaning essentially, every element in the tiler layout is replaced by a tile. 
+The following example generates the same tiled layout using `blocked_product()`. 
+It also prints out the two input layouts.
 
 ```mojo
 # Define 2x3 tile
