@@ -22,7 +22,7 @@ from docs_package import documented_method_defined_in_init
 
 # CHECK: lit.file_module @parser_doc{{.*}}docString = #[[MODULE_DOC]]
 # CHECK: lit.alias.decl {{.*}}AliasType{{.*}}docString = #[[ALIAS_DOC]]
-# CHECK: lit.globalvar.decl @value{{.*}}docString = #[[GLOBAL_VAR_DOC]]
+# CHECK: lit.globalvar.decl @__value{{.*}}docString = #[[GLOBAL_VAR_DOC]]
 # CHECK: lit.struct.decl @Struct{{.*}}docString = #[[STRUCT_DOC]]
 # CHECK: lit.struct.field value{{.*}}docString = #[[STRUCT_FIELD_DOC]]
 # CHECK: lit.fn @"foo()"{{.*}}docString = #[[FUNCTION_DOC]]
@@ -33,7 +33,7 @@ from docs_package import documented_method_defined_in_init
 alias AliasType = __mlir_type.`!kgen.type`
 """This is an alias doc."""
 
-var value = __mlir_attr.`10 : index`
+var __value = __mlir_attr.`10 : index`
 """This is a global variable doc."""
 
 struct Struct:

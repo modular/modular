@@ -7,11 +7,11 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-# CHECK-LABEL: lit.globalvar.decl @inferred_type : index
-# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@inferred_type : <index
+# CHECK-LABEL: lit.globalvar.decl @__inferred_type : index
+# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@__inferred_type : <index
 # CHECK-DAG: %[[VAL:.*]] = kgen.param.constant = <1>
 # CHECK-NEXT: lit.ref.store %[[VAL]], %[[REF]]
-var inferred_type = `1`
+var __inferred_type = `1`
 
 
 # COM: this also serves for testing how we emit memory-only globals.
@@ -25,20 +25,20 @@ struct ConvertibleFromInt:
         pass
 
 
-# CHECK-LABEL: lit.globalvar.decl @conv_from_int : !ConvertibleFromInt
-# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int : <!ConvertibleFromInt
+# CHECK-LABEL: lit.globalvar.decl @__conv_from_int : !ConvertibleFromInt
+# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@__conv_from_int : <!ConvertibleFromInt
 # CHECK-DAG: %[[VAL:.*]] = kgen.param.constant = <2>
 # CHECK-NEXT: lit.call {{.*}}@ConvertibleFromInt::@"__init__{{.*}}(%[[VAL]], %[[REF]])
 # CHECK: }, {
-# CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int
+# CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@__conv_from_int
 # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[REF]])
-var conv_from_int: ConvertibleFromInt = `2`
+var __conv_from_int: ConvertibleFromInt = `2`
 
-# CHECK-LABEL: lit.globalvar.decl @conv_from_int_implicit : !ConvertibleFromInt
-# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int_implicit : <!ConvertibleFromInt
+# CHECK-LABEL: lit.globalvar.decl @__conv_from_int_implicit : !ConvertibleFromInt
+# CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@__conv_from_int_implicit : <!ConvertibleFromInt
 # CHECK-DAG: %[[VAL:.*]] = kgen.param.constant = <3>
 # CHECK-NEXT: lit.call {{.*}}@ConvertibleFromInt::@"__init__{{.*}}(%[[VAL]], %[[REF]])
-var conv_from_int_implicit = ConvertibleFromInt(`3`)
+var __conv_from_int_implicit = ConvertibleFromInt(`3`)
 
 
 @value
@@ -48,21 +48,21 @@ struct RegType:
         pass
 
 
-# CHECK-LABEL: lit.globalvar.decl @reg_global : !RegType
+# CHECK-LABEL: lit.globalvar.decl @__reg_global : !RegType
 # CHECK-NEXT: [[VAL:%.*]] = lit.call {{.*}}RegType::@"__init__{{.*}}()
-# CHECK-NEXT: [[REF:%.*]] = lit.globalvar.ref {{.*}}@reg_global
+# CHECK-NEXT: [[REF:%.*]] = lit.globalvar.ref {{.*}}@__reg_global
 # CHECK-NEXT: lit.ref.store [[VAL]], [[REF]]
 
 # CHECK: }, {
-# CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@reg_global
+# CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@__reg_global
 # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[REF]])
-var reg_global: RegType = RegType()
+var __reg_global: RegType = RegType()
 
-# CHECK-LABEL: lit.globalvar.decl @reg_global_implicit : !RegType
+# CHECK-LABEL: lit.globalvar.decl @__reg_global_implicit : !RegType
 # CHECK-NEXT: [[VAL:%.*]] = lit.call {{.*}}RegType::@"__init__{{.*}}()
-# CHECK-NEXT: [[REF:%.*]] = lit.globalvar.ref {{.*}}@reg_global_implicit
+# CHECK-NEXT: [[REF:%.*]] = lit.globalvar.ref {{.*}}@__reg_global_implicit
 # CHECK-NEXT: lit.ref.store [[VAL]], [[REF]]
-var reg_global_implicit = RegType()
+var __reg_global_implicit = RegType()
 
 
 fn borrowGlobalInt(x: Index):
@@ -82,23 +82,23 @@ fn copyGlobalMem(owned x: ConvertibleFromInt):
 
 
 fn refGlobals():
-    # CHECK: %[[TRIVIAL:.*]] = lit.globalvar.ref {{.*}}@inferred_type
+    # CHECK: %[[TRIVIAL:.*]] = lit.globalvar.ref {{.*}}@__inferred_type
     # CHECK-NEXT: %[[VALUE:.*]] = lit.ref.load %[[TRIVIAL]]
     # CHECK-NEXT: call {{.*}}borrowGlobalInt{{.*}}(%[[VALUE]])
-    borrowGlobalInt(inferred_type)
+    borrowGlobalInt(__inferred_type)
 
-    # CHECK: [[REG:%.*]] = lit.globalvar.ref {{.*}}@reg_global
+    # CHECK: [[REG:%.*]] = lit.globalvar.ref {{.*}}@__reg_global
     # CHECK-NEXT: %[[VALUE:.*]] = lit.ref.immut [[REG]]
     # CHECK-NEXT: call {{.*}}borrowGlobalReg{{.*}}(%[[VALUE]])
-    borrowGlobalReg(reg_global)
+    borrowGlobalReg(__reg_global)
 
-    # CHECK: %[[REG_REF:.*]] = lit.globalvar.ref {{.*}}@reg_global
+    # CHECK: %[[REG_REF:.*]] = lit.globalvar.ref {{.*}}@__reg_global
     # CHECK-NEXT: call {{.*}}mutGlobalReg{{.*}}(%[[REG_REF]])
-    mutGlobalReg(reg_global_implicit)
+    mutGlobalReg(__reg_global_implicit)
 
-    # CHECK: %[[MEM_REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int
+    # CHECK: %[[MEM_REF:.*]] = lit.globalvar.ref {{.*}}@__conv_from_int
     # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} : !lit.ref<!ConvertibleFromInt
     # CHECK-NEXT: %[[MEM_REF_IMM:.*]] = lit.ref.immut %[[MEM_REF]]
     # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%[[MEM_REF_IMM]], %anonymous2A)
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
-    copyGlobalMem(conv_from_int)
+    copyGlobalMem(__conv_from_int)

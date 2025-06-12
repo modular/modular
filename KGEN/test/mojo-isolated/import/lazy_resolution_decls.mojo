@@ -11,7 +11,7 @@
 
 from imported_cached_module import (
     StringLiteralAlias,
-    global_variable,
+    __global_variable,
     Trait,
     FuncRefField,
 )
@@ -21,8 +21,9 @@ from imported_cached_module import (
 fn assign_from():
     # CHECK: string = <"foobar">
     var foo = StringLiteralAlias
-    # CHECK: lit.globalvar.ref {{.*}}@global_variable
-    var bar = global_variable
+
+    # CHECK: lit.globalvar.ref {{.*}}@__global_variable
+    var bar = __global_variable
 
 
 # CHECK-LABEL: lit.struct.decl @Struct(!Trait, !AnyType[!Trait])
