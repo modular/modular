@@ -1,0 +1,15 @@
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "custom-graph-module"
+description = "An example neural network module built with the MAX Python API"
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+main = "python main.py"
+test = { depends-on = [ "main"] }
+
+[dependencies]
+python = ">=3.9,<3.14"
+modular = "*"

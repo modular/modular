@@ -79,7 +79,7 @@ class MLPBlock(nn.Module):
 
         # Count different layer types
         linear_count = sum(
-            1 for layer in layers if isinstance(layer, nn.Linear)
+            1 for layer in layers if layer.__class__.__name__ == "Linear"
         )
         activation_count = len(layers) - linear_count
 
