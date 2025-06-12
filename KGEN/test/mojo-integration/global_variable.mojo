@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# Names of globals start with __ to avoid the "globals are deprecated" warning.
 
 # RUN: %bare-mojo -debug-level full %s | FileCheck %s
 # COM: This test fails with lld, force gnu-ld instead
@@ -40,11 +41,11 @@ struct OwnedInt:
         print("got deleted: ", self.value)
 
 
-var ints = ThreeInts()
+var __ints = ThreeInts()
 
-var x = OwnedInt(10, ints)
-var y = OwnedInt(x.value + 20, ints)
-var z = OwnedInt(y.value + 30, ints)
+var __x = OwnedInt(10, __ints)
+var __y = OwnedInt(__x.value + 20, __ints)
+var __z = OwnedInt(__y.value + 30, __ints)
 
 
 fn main():
@@ -53,9 +54,9 @@ fn main():
     # CHECK-NEXT: got initialized: 60
 
     # CHECK: 10 30 60
-    print(x.value, y.value, z.value)
+    print(__x.value, __y.value, __z.value)
     # CHECK: 10 30 60
-    print(ints.x, ints.y, ints.z)
+    print(__ints.x, __ints.y, __ints.z)
 
     # CHECK-NEXT: got deleted: 60
     # CHECK-NEXT: got deleted: 30

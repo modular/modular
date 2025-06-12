@@ -2560,6 +2560,13 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success();
   } else {
+    // Hack: global variables are broken but are used in standard library tests.
+    // So permit them if the name starts with __
+    if (!name.strref().starts_with("__"))
+      emitWarning(loc, "Global variables are only partially implemented in "
+                       "Mojo, only the most simple cases work. Using globals "
+                       "is not recommended. To silence this warning, start the "
+                       "variable name with '__'.");
     // Otherwise this is a global let/var declaration.
     declOp = builder.create<GlobalVarDeclOp>(loc, name, unresolvedType);
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
