@@ -16,7 +16,7 @@ from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 
 struct Set[T: KeyElement](
-    Sized, Comparable, Hashable, Boolable, Copyable, Movable, KeyElement
+    Boolable, Comparable, Copyable, Hashable, KeyElement, Movable, Sized
 ):
     """A set data type.
 

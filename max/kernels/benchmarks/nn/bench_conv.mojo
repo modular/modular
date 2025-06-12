@@ -216,7 +216,7 @@ struct ConvSpecStatic(Copyable, Movable):
 
 
 @fieldwise_init
-struct ConvSpec[static_info: ConvSpecStatic](Stringable, Copyable, Movable):
+struct ConvSpec[static_info: ConvSpecStatic](Copyable, Movable, Stringable):
     var n: Int
     var input_dims: IndexList[static_info.rank]
     var c: Int

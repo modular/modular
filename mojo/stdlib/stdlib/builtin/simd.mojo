@@ -258,18 +258,18 @@ fn _has_native_f8_support() -> Bool:
 struct SIMD[dtype: DType, size: Int](
     Absable,
     Boolable,
-    Defaultable,
-    Ceilable,
     CeilDivable,
+    Ceilable,
+    Ceilable,
     Copyable,
-    Movable,
+    Defaultable,
     DevicePassable,
     ExplicitlyCopyable,
     Floatable,
     Floorable,
     Hashable,
-    _HashableWithHasher,
     Indexer,
+    Movable,
     Powable,
     PythonConvertible,
     Representable,
@@ -278,6 +278,7 @@ struct SIMD[dtype: DType, size: Int](
     Stringable,
     Truncable,
     Writable,
+    _HashableWithHasher,
 ):
     """Represents a small vector that is backed by a hardware vector element.
 

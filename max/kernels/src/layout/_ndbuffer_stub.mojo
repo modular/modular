@@ -319,11 +319,7 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 # Stores the layout of the vectorized buffer element.
 #
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    Copyable,
-    Movable,
-    Stringable,
-    Writable,
-    Defaultable,
+    Copyable, Defaultable, Movable, Stringable, Writable
 ):
     var stride: IndexList[rank]
 

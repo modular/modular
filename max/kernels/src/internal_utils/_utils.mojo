@@ -620,7 +620,7 @@ fn array_equal[
 
 @fieldwise_init
 @register_passable("trivial")
-struct Mode(Stringable, Copyable, Movable):
+struct Mode(Copyable, Movable, Stringable):
     var _value: Int
     var handle: StaticString
     alias NONE = Self(0x0, "none")

@@ -257,23 +257,23 @@ struct _StringOutOfLineHeader(Defaultable):
 
 
 struct String(
-    Sized,
-    Defaultable,
-    Stringable,
-    Representable,
-    IntableRaising,
-    KeyElement,
-    Comparable,
     Boolable,
-    Writable,
-    Writer,
+    Comparable,
+    ConvertibleFromPython,
+    Defaultable,
     ExplicitlyCopyable,
     FloatableRaising,
-    _HashableWithHasher,
+    IntableRaising,
+    KeyElement,
     PathLike,
-    _CurlyEntryFormattable,
     PythonConvertible,
-    ConvertibleFromPython,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+    Writer,
+    _CurlyEntryFormattable,
+    _HashableWithHasher,
 ):
     """Represents a mutable string.
 

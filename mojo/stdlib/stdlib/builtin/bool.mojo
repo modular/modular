@@ -105,16 +105,16 @@ trait ImplicitlyBoolable(Boolable):
 @register_passable("trivial")
 struct Bool(
     Comparable,
+    ConvertibleFromPython,
     Copyable,
-    Movable,
     Defaultable,
     ExplicitlyCopyable,
     Floatable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
+    Movable,
     PythonConvertible,
-    ConvertibleFromPython,
     Representable,
     Stringable,
     Writable,

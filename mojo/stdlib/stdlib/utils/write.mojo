@@ -170,7 +170,7 @@ trait Writable:
 # ===-----------------------------------------------------------------------===#
 
 
-struct _WriteBufferHeap(Writer, Writable):
+struct _WriteBufferHeap(Writable, Writer):
     var data: UnsafePointer[Byte]
     var pos: Int
 

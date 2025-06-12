@@ -16,7 +16,7 @@ from collections import Optional
 
 
 @fieldwise_init
-struct Grid(StringableRaising, Copyable, Movable):
+struct Grid(Copyable, Movable, StringableRaising):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#

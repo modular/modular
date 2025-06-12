@@ -19,12 +19,12 @@ from memory import UnsafePointer
 @register_passable("trivial")
 struct Complex(
     Boolable,
+    Copyable,
     EqualityComparable,
-    Writable,
+    Movable,
     Representable,
     Stringable,
-    Copyable,
-    Movable,
+    Writable,
 ):
     """Represents a complex value.
 

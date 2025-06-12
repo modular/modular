@@ -17,7 +17,7 @@ from ._hasher import _Hasher, _HashableWithHasher
 from memory import UnsafePointer
 
 
-struct Fnv1a(_Hasher, Defaultable):
+struct Fnv1a(Defaultable, _Hasher):
     """Fnv1a is a very simple algorithm with good quality, but sub optimal runtime for long inputs.
     It can be used for comp time hash value generation.
 

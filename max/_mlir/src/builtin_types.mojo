@@ -18,7 +18,7 @@ from .ir import Context, DialectType, Type
 
 
 @fieldwise_init
-struct FunctionType(DialectType, Copyable, Movable):
+struct FunctionType(Copyable, DialectType, Movable):
     var ctx: Context
     var inputs: List[Type]
     var results: List[Type]

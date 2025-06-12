@@ -21,7 +21,7 @@ from ._macos import _getpw_macos
 
 
 @fieldwise_init
-struct Passwd(Stringable, Writable, Copyable, Movable):
+struct Passwd(Copyable, Movable, Stringable, Writable):
     """Represents user account information retrieved from the user password
     database related to a user ID."""
 

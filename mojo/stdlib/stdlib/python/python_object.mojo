@@ -69,7 +69,7 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(Sized, Defaultable):
+struct _PyIter(Defaultable, Sized):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#
@@ -172,11 +172,11 @@ alias PyFunctionRaising = fn (
 struct PythonObject(
     Boolable,
     Copyable,
+    Defaultable,
     Movable,
+    PythonConvertible,
     SizedRaising,
     Writable,
-    PythonConvertible,
-    Defaultable,
 ):
     """A Python object."""
 

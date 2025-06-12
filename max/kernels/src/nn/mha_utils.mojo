@@ -54,7 +54,7 @@ from utils.numerics import min_or_neg_inf
 
 @register_passable("trivial")
 struct FlashAttentionAlgorithm(
-    Stringable, Writable, Copyable, Defaultable, Movable
+    Copyable, Defaultable, Movable, Stringable, Writable
 ):
     var _value: Int32
 
@@ -103,7 +103,7 @@ alias is_sm90or100 = is_sm90 or is_sm100
 
 @fieldwise_init
 @register_passable("trivial")
-struct MHAConfig(Writable, Copyable, Movable):
+struct MHAConfig(Copyable, Movable, Writable):
     var type: DType
 
     # Q, K, V, output should have the same type.

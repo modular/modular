@@ -34,19 +34,20 @@ from utils._visualizers import lldb_formatter_wrapping_type
 @register_passable("trivial")
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
-    ExplicitlyCopyable,
-    Writable,
-    IntableRaising,
     Copyable,
+    Defaultable,
+    ExplicitlyCopyable,
+    FloatableRaising,
+    IntableRaising,
     Movable,
+    PathLike,
+    PythonConvertible,
+    PythonConvertible,
     Representable,
     Sized,
     Stringable,
-    FloatableRaising,
-    PathLike,
+    Writable,
     _CurlyEntryFormattable,
-    PythonConvertible,
-    Defaultable,
 ):
     """This type represents a string literal.
 

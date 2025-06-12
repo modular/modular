@@ -39,11 +39,7 @@ from utils import Variant
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(
-    Copyable,
-    ExplicitlyCopyable,
-    Movable,
-):
+struct _NoneType(Copyable, ExplicitlyCopyable, Movable):
     fn __init__(out self, *, other: Self):
         pass
 
@@ -60,11 +56,7 @@ struct _NoneType(
 
 
 struct Optional[T: Copyable & Movable](
-    Copyable,
-    ExplicitlyCopyable,
-    Movable,
-    Boolable,
-    Defaultable,
+    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable
 ):
     """A type modeling a value which may or may not be present.
 

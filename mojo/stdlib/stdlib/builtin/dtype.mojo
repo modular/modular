@@ -31,15 +31,15 @@ alias _mIsFloat = UInt8(1 << 6)
 @register_passable("trivial")
 struct DType(
     Copyable,
-    Movable,
     EqualityComparable,
     ExplicitlyCopyable,
     Hashable,
+    KeyElement,
+    Movable,
     Representable,
     Stringable,
     Writable,
     _HashableWithHasher,
-    KeyElement,
 ):
     """Represents DType and provides methods for working with it."""
 

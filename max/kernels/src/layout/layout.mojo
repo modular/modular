@@ -307,13 +307,15 @@ struct _LayoutIter[origin: ImmutableOrigin](Copyable, Movable):
 
 struct Layout(
     Copyable,
+    Defaultable,
+    EqualityComparable,
+    EqualityComparable,
     LayoutTrait,
+    Movable,
+    Movable,
     Sized,
     Stringable,
     Writable,
-    Movable,
-    EqualityComparable,
-    Defaultable,
 ):
     """Represents a memory layout for multi-dimensional data.
 

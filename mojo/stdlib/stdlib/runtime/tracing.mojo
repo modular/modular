@@ -120,7 +120,7 @@ struct TraceCategory(EqualityComparable, Intable):
 
 
 @register_passable("trivial")
-struct TraceLevel(EqualityComparable, Copyable, Movable):
+struct TraceLevel(Copyable, EqualityComparable, Movable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     alias ALWAYS = Self(0)

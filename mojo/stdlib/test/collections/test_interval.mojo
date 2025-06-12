@@ -114,7 +114,7 @@ def test_interval():
 
 
 struct MyType(
-    Copyable, Movable, Stringable, Comparable, Floatable, IntervalElement
+    Comparable, Copyable, Floatable, IntervalElement, Movable, Stringable
 ):
     var value: Float64
 

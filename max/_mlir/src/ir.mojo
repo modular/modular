@@ -261,7 +261,7 @@ struct Location(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Module(Stringable, Writable, Copyable, Movable):
+struct Module(Copyable, Movable, Stringable, Writable):
     alias cType = _c.IR.MlirModule
     var c: Self.cType
 
@@ -805,7 +805,7 @@ struct Block(Copyable, Movable, Stringable, Writable):
 
 
 @register_passable("trivial")
-struct Region(Copyable, Movable, Defaultable):
+struct Region(Copyable, Defaultable, Movable):
     alias cType = _c.IR.MlirRegion
     var c: Self.cType
 

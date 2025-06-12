@@ -694,12 +694,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
 
 
 struct DeviceBuffer[type: DType](
-    Sized,
-    Stringable,
-    Writable,
-    Copyable,
-    Movable,
-    DevicePassable,
+    Copyable, DevicePassable, Movable, Sized, Stringable, Writable
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.

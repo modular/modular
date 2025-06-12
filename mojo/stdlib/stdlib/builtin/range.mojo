@@ -42,7 +42,7 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(Sized, ReversibleRange, _ParamForIterator, Movable):
+struct _ZeroStartingRange(Movable, ReversibleRange, Sized, _ParamForIterator):
     alias _IndexType = Int
     var curr: Int
     var end: Int
@@ -83,7 +83,7 @@ struct _ZeroStartingRange(Sized, ReversibleRange, _ParamForIterator, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(Sized, ReversibleRange, _ParamForIterator):
+struct _SequentialRange(ReversibleRange, Sized, _ParamForIterator):
     alias _IndexType = Int
     var start: Int
     var end: Int
@@ -146,7 +146,7 @@ struct _StridedRangeIterator(Sized, _ParamForIterator):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRange(Sized, ReversibleRange, _ParamForIterator):
+struct _StridedRange(ReversibleRange, Sized, _ParamForIterator):
     alias _IndexType = Int
     var start: Int
     var end: Int

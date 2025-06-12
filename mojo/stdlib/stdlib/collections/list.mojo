@@ -78,12 +78,7 @@ struct _ListIter[
 
 
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
-    Boolable,
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
-    Sized,
-    Defaultable,
+    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
     """The `List` type is a dynamically-allocated list.
 

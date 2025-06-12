@@ -98,7 +98,7 @@ from utils.variant import Variant
 
 
 @register_passable("trivial")
-struct Backend(Writable, Copyable, Movable, EqualityComparable):
+struct Backend(Copyable, EqualityComparable, Movable, Writable):
     var _value: Int32
 
     alias AUTOMATIC = Self(0)

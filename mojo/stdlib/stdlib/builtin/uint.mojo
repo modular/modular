@@ -33,18 +33,17 @@ struct UInt(
     Absable,
     Boolable,
     CeilDivable,
-    Copyable,
-    Movable,
     Comparable,
+    Copyable,
+    Defaultable,
     ExplicitlyCopyable,
     Hashable,
-    _HashableWithHasher,
     Indexer,
     KeyElement,
+    Movable,
     Representable,
     Stringable,
     Writable,
-    Defaultable,
 ):
     """This type represents an unsigned integer.
 

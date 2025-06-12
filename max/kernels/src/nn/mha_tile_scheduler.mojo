@@ -38,7 +38,7 @@ from utils.index import Index, IndexList
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Stringable, Writable, Copyable, Movable):
+struct WorkInfo(Copyable, Movable, Stringable, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -419,7 +419,7 @@ struct MHASchedule(Copyable, Movable):
 struct TransientScheduler[
     tile_shape: UInt32,
     num_heads: UInt32,
-](MHATileScheduler, Copyable, Defaultable, Movable):
+](Copyable, Defaultable, MHATileScheduler, Movable):
     alias may_advance: Bool = False
     alias mha_schedule: MHASchedule = MHASchedule.DEFAULT
 
@@ -490,7 +490,7 @@ struct TileScheduler[
     /,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](MHATileScheduler, Copyable, Defaultable, Movable):
+](Copyable, Defaultable, MHATileScheduler, Movable):
     alias may_advance: Bool = True
     alias mha_schedule: MHASchedule = schedule
 
@@ -574,7 +574,7 @@ struct QueuedTileScheduler[
     decoding: Bool,
     num_ctas: UInt32 = H100.sm_count,
     schedule: MHASchedule = MHASchedule.DEFAULT,
-](MHATileScheduler, Copyable, Movable):
+](Copyable, MHATileScheduler, Movable):
     """
     If `decoding == False`, then `num_heads` is `q_num_heads`.
     If `decoding == True`, then `num_heads` is `kv_num_heads`.

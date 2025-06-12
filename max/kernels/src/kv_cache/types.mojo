@@ -92,7 +92,7 @@ fn _compute_kv_cache_dynamic_shape_strides[
 
 @fieldwise_init
 @register_passable("trivial")
-struct KVCacheStaticParams(EqualityComparable, Copyable, Movable):
+struct KVCacheStaticParams(Copyable, EqualityComparable, Movable):
     var num_heads: UInt
     var head_size: UInt
 

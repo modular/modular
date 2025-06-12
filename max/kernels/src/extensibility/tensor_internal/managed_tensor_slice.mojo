@@ -1221,7 +1221,7 @@ struct VariadicTensors[
     io_spec: IOSpec[mut, input],
     *,
     static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
-](Sized, Copyable, Movable):
+](Copyable, Movable, Sized):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 

@@ -55,13 +55,7 @@ from memory import UnsafePointer
 from .deque import Deque
 
 
-trait IntervalElement(
-    Copyable,
-    Movable,
-    Writable,
-    Intable,
-    Comparable,
-):
+trait IntervalElement(Comparable, Copyable, Intable, Movable, Writable):
     """The trait denotes a trait composition of the `Copyable`, `Movable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
     """
@@ -79,14 +73,14 @@ trait IntervalElement(
 
 
 struct Interval[T: IntervalElement](
-    Copyable,
-    Movable,
     Boolable,
-    Writable,
+    Copyable,
+    EqualityComparable,
+    Movable,
+    Representable,
     Sized,
     Stringable,
-    Representable,
-    EqualityComparable,
+    Writable,
 ):
     """A half-open interval [start, end) that represents a range of values.
 
@@ -530,7 +524,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement, U: Copyable & Movable & Stringable & Comparable
-](Writable, Defaultable):
+](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
     Parameters:

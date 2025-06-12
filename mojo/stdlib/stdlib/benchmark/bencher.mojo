@@ -216,7 +216,7 @@ struct ThroughputMeasure(Copyable, Movable):
 
 
 @fieldwise_init
-struct Format(Writable, Stringable, Copyable, Movable):
+struct Format(Copyable, Movable, Stringable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -518,7 +518,7 @@ struct Mode(Copyable, Movable):
         return self.value == other.value
 
 
-struct Bench(Writable, Stringable):
+struct Bench(Stringable, Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 

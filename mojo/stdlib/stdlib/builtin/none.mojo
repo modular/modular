@@ -19,12 +19,12 @@ These are Mojo built-ins, so you don't need to import them.
 @register_passable("trivial")
 struct NoneType(
     Copyable,
-    Movable,
+    Defaultable,
     ExplicitlyCopyable,
-    Writable,
+    Movable,
     Representable,
     Stringable,
-    Defaultable,
+    Writable,
 ):
     """Represents the absence of a value."""
 

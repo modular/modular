@@ -154,7 +154,7 @@ struct MatmulSpecStatic(Copyable, Movable):
 
 
 @fieldwise_init
-struct MatmulSpec[static_info: MatmulSpecStatic](Stringable, Copyable, Movable):
+struct MatmulSpec[static_info: MatmulSpecStatic](Copyable, Movable, Stringable):
     var m: Int
     var n: Int
     var k: Int

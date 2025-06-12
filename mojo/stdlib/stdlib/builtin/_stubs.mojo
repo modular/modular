@@ -19,7 +19,7 @@ from builtin.range import _StridedRangeIterator, _UIntStridedRangeIterator
 
 
 @register_passable("trivial")
-struct __MLIRType[T: AnyTrivialRegType](Movable, Copyable, ExplicitlyCopyable):
+struct __MLIRType[T: AnyTrivialRegType](Copyable, ExplicitlyCopyable, Movable):
     var value: T
 
     fn copy(self) -> Self:

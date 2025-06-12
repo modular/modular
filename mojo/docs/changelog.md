@@ -328,6 +328,8 @@ Changes to Python-Mojo interoperability:
 
 - Added `associated alias` support for documentation generated via `mojo doc`.
 
+- Added struct and trait conformance list sorting support to `mojo format`.
+
 ### ❌ Removed
 
 - `VariadicPack.each` and `VariadicPack.each_idx` methods have been removed.

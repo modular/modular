@@ -24,7 +24,7 @@ from utils import Variant
 
 
 @fieldwise_init
-struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable, Defaultable):
+struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
     """A container for counting hashable items.
 
     The value type must be specified statically, unlike a Python
@@ -608,10 +608,7 @@ struct Counter[V: KeyElement](Sized, Copyable, Movable, Boolable, Defaultable):
             self[item.key] = self.get(item.key, 0) - item.value
 
 
-struct CountTuple[V: KeyElement](
-    Copyable,
-    Movable,
-):
+struct CountTuple[V: KeyElement](Copyable, Movable):
     """A tuple representing a value and its count in a Counter.
 
     Parameters:

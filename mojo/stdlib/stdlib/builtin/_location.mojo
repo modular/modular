@@ -16,7 +16,7 @@
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SourceLocation(Writable, Stringable, Copyable, Movable):
+struct _SourceLocation(Copyable, Movable, Stringable, Writable):
     """Type to carry file name, line, and column information."""
 
     var line: Int
