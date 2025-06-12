@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional, Union, cast
 
 from max import mlir
+from max._core import Attribute
 from max._core import Type as _Type
 from max._core.dialects import builtin, kgen
 from max.driver import Accelerator, Tensor, accelerator_count
@@ -189,7 +190,9 @@ class CustomOp:
 
 
 ###############################################################################
+
 # Convert torch.Tensor to a TensorType
+
 ###############################################################################
 
 
@@ -216,7 +219,9 @@ def torch_tensor_to_type(tensor: torch.Tensor) -> TensorType:
 
 
 ###############################################################################
+
 # Tensor Conversions
+
 ###############################################################################
 
 
@@ -289,8 +294,14 @@ def custom_op_graph(
     return graph
 
 
-def get_strings(array_attr: builtin.ArrayAttr) -> list[str]:
-    return [cast(builtin.StringAttr, s).value for s in array_attr.value]
+def mogg_annotations(array_attr: builtin.ArrayAttr) -> list[str]:
+    def string_value(x: Attribute) -> str:
+        if isinstance(x, builtin.StringAttr):
+            return x.value
+        assert isinstance(x, builtin.UnitAttr)
+        return ""
+
+    return [string_value(s) for s in array_attr.value]
 
 
 def num_outputs(op: kgen.GeneratorOp) -> int:
@@ -299,7 +310,40 @@ def num_outputs(op: kgen.GeneratorOp) -> int:
     ).value
 
 
-def op_signature(op: kgen.GeneratorOp) -> inspect.Signature:
+def validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
+    """Validate that all argument types in a custom op are supported.
+
+    Args:
+        io_specs: List of type specifications from mogg.arg_type_names
+        op_name: Name of the custom operation for error reporting
+
+    Raises:
+        ValueError: If any type is not supported (not a tensor type or
+            implicitly handled type)
+    """
+    # The set of types that are legal tensor inputs.
+    tensor_like_types = {
+        "tensor_internal::ManagedTensorSlice",
+        "stdlib::SIMD",
+    }
+
+    # Types that are ignored or implicitly supplied by the graph compiler.
+    types_to_ignore = {
+        "stdlib::DeviceContextPtr",
+        "stdlib::DeviceContextPtrList",
+        "stdlib::Error",
+    }
+
+    # Validate that all types are either tensor-like or can be ignored
+    allowed_types = tensor_like_types | types_to_ignore
+    for spec in io_specs:
+        if spec and spec not in allowed_types:
+            raise ValueError(
+                f"Unsupported argument type '{spec}' in custom op '{op_name}'."
+            )
+
+
+def op_signature(custom_op: CustomOp) -> inspect.Signature:
     """Compute the Python-level signature of the provided custom op.
 
     The computed signature is derived from the KGEN-level annotations on the
@@ -317,17 +361,33 @@ def op_signature(op: kgen.GeneratorOp) -> inspect.Signature:
         inspect.Signature: The Python-level signature for the custom op.
     """
 
+    op = custom_op.kernel
+
     # TODO(GEX-2219): support non-dps outputs
     num_dps_outputs = num_outputs(op)
 
     # TODO(GEX-2223): Expose more of MojoLibraryAnalysis so we don't need to
     # hard code MLIR attributes.
-    io_specs = get_strings(
-        cast(builtin.ArrayAttr, op.discardable_attributes["mogg.args_io_specs"])
+    io_specs = mogg_annotations(
+        cast(
+            builtin.ArrayAttr, op.discardable_attributes["mogg.arg_type_names"]
+        )
     )
-    arg_names = get_strings(
+
+    # Validate all argument types are supported
+    validate_op_arg_types(io_specs, custom_op.name)
+
+    # Filter to keep only tensor-like types
+    tensor_like_types = {
+        "tensor_internal::ManagedTensorSlice",
+        "stdlib::SIMD",
+    }
+    io_specs = [spec for spec in io_specs if spec in tensor_like_types]
+
+    arg_names = mogg_annotations(
         cast(builtin.ArrayAttr, op.discardable_attributes["mogg.arg_src_names"])
     )
+
     input_specs = io_specs[num_dps_outputs:]
     nargs = len(input_specs)
     args = [
@@ -367,7 +427,7 @@ def compile_custom_op(op: CustomOp) -> CustomOpDef:
     # is invoked for the first time.
     model_cache: dict[CompiledModelKey, Model] = {}
 
-    signature: inspect.Signature = op_signature(op.kernel)
+    signature: inspect.Signature = op_signature(op)
 
     num_dps_outputs = num_outputs(op.kernel)
     mutated_args = list(signature.parameters.keys())[:num_dps_outputs]
