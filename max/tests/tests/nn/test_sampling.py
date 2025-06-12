@@ -42,8 +42,8 @@ def test_min_p_execution(
         ],
     ) as graph:
         inputs, *_ = graph.inputs
-        sampler = MinPSampler(DType.float32, input_shape, min_p, temperature)
-        out = sampler(inputs.tensor)
+        sampler = MinPSampler(DType.float32, input_shape, temperature)
+        out = sampler(inputs.tensor, min_p)
         graph.output(out)
 
         # Compile and execute the graph.
@@ -55,3 +55,46 @@ def test_min_p_execution(
         # Execute MAX model.
         min_p_output, *_ = model.execute(np_input)
         cast(Tensor, min_p_output).to_numpy()
+
+
+def test_min_p_known_inputs_outputs(session: InferenceSession) -> None:
+    """Tests MinP sampling with known inputs and expected behavior."""
+    batch_size = 5
+    vocab_size = 4
+    input_shape = (batch_size, vocab_size)
+    temperature = 1.0  # Set to 1 for predictable softmax behavior
+
+    with Graph(
+        "min_p_known_test",
+        input_types=[
+            TensorType(
+                DType.float32, shape=input_shape, device=DeviceRef.CPU()
+            ),
+            TensorType(
+                DType.float32, shape=(batch_size,), device=DeviceRef.CPU()
+            ),
+        ],
+    ) as graph:
+        inputs, min_p_tensor, *_ = graph.inputs
+        sampler = MinPSampler(DType.float32, input_shape, temperature)
+        out = sampler(inputs.tensor, min_p_tensor.tensor)
+        graph.output(out)
+        model = session.load(graph)
+
+        np_input = np.array(
+            [
+                [-1.0, 1.0, 2.0, 0.0],
+                [0.0, 0.0, 0.0, 3.0],
+                [1.0, 1.0, 1.1, 1.0],
+                [0.0, 2.0, 4.0, 1.0],
+                [0.0, 0.0, 2.0, 1.0],
+            ],
+            dtype=np.float32,
+        )
+
+        min_p_array = np.array([0.1, 0.1, 0.26, 0.1, 0.1], dtype=np.float32)
+        min_p_output, *_ = model.execute(np_input, min_p_array)
+        result = cast(Tensor, min_p_output).to_numpy()
+        assert (
+            result[2, 0] == 2
+        )  # 1.1 is the only logit that is greater than 0.26 after softmax
