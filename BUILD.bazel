@@ -52,3 +52,15 @@ config_setting(
     tags = ["maybe-unused"],
     values = {"features": "asan"},
 )
+
+alias(
+    name = "lint",
+    actual = "//bazel/lint",
+    tags = ["top-level"],
+)
+
+alias(
+    name = "format",
+    actual = "//bazel/lint:fix",
+    tags = ["top-level"],
+)

@@ -1,0 +1,5 @@
+"""Define bazel dependencies common to the internal and external repos."""
+
+bazel_dep(name = "aspect_bazel_lib", version = "2.14.0")
+bazel_dep(name = "aspect_rules_js", version = "2.3.7")
+bazel_dep(name = "rules_multirun", version = "0.12.0")

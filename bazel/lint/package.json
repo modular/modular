@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "deep-extend": "^0.6.0",
+    "markdownlint-cli": "^0.39.0"
+  }
+}
