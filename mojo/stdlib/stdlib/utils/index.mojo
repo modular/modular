@@ -781,17 +781,13 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             The list casted to the target type.
         """
         constrained[dtype.is_integral(), "the target type must be integral"]()
-
-        var res = __type_of(result)()
+        result = {}
 
         @parameter
         for i in range(size):
-            res.data[i] = rebind[__type_of(result.data).element_type](
-                rebind[Scalar[Self.element_type]](
-                    self.data.__getitem__[i]()
-                ).cast[result.element_type]()
-            )
-        return res
+            result.data[i] = self.data.__getitem__[i]().cast[
+                result.element_type
+            ]()
 
     fn __hash__[H: _Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.

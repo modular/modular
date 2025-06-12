@@ -75,7 +75,7 @@ fn bitcast[
 
     @parameter
     if dtype == src_dtype:
-        return rebind[SIMD[dtype, width]](val)
+        return val._refine[dtype, width]()
     return __mlir_op.`pop.bitcast`[_type = SIMD[dtype, width]._mlir_type](
         val.value
     )

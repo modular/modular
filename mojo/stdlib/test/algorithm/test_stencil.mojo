@@ -95,9 +95,7 @@ fn test_stencil_avg_pool():
     fn load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
-        return rebind[SIMD[dtype, simd_width]](
-            input.load[width=simd_width](point)
-        )
+        return input.load[width=simd_width](point)._refine[dtype]()
 
     @always_inline
     @parameter
@@ -211,9 +209,7 @@ fn test_stencil_avg_pool_padded():
     fn load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
-        return rebind[SIMD[dtype, simd_width]](
-            input.load[width=simd_width](point)
-        )
+        return input.load[width=simd_width](point)._refine[dtype]()
 
     @always_inline
     @parameter
@@ -328,9 +324,7 @@ fn test_stencil_avg_pool_stride_2():
     fn load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
-        return rebind[SIMD[dtype, simd_width]](
-            input.load[width=simd_width](point)
-        )
+        return input.load[width=simd_width](point)._refine[dtype]()
 
     @always_inline
     @parameter
@@ -447,9 +441,7 @@ fn test_stencil_max_pool_dilation_2():
     fn load_fn[
         simd_width: Int, dtype: DType
     ](point: IndexList[rank, **_]) -> SIMD[dtype, simd_width]:
-        return rebind[SIMD[dtype, simd_width]](
-            input.load[width=simd_width](point)
-        )
+        return input.load[width=simd_width](point)._refine[dtype]()
 
     @always_inline
     @parameter

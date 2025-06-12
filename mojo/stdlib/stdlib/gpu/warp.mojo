@@ -97,7 +97,7 @@ fn _shuffle[
         @parameter
         if simd_width == 1:
             # splat and recurse to meet 32 bitwidth requirements
-            var splatted_val = SIMD[type, 2](rebind[Scalar[type]](val))
+            var splatted_val = SIMD[type, 2](val._refine[size=1]())
             return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
                 mask, splatted_val, offset
             )[0]
@@ -140,7 +140,7 @@ fn _shuffle_amd_helper[
             type
         ]()
     elif bitwidthof[type]() == 16:
-        var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
+        var val_splatted = SIMD[type, 2](val._refine[size=1]())
         return _shuffle_amd_helper(dst_lane, val_splatted)[0]
     elif bitwidthof[type]() == 64:
         var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
@@ -851,7 +851,7 @@ fn sum[
             ),
         ]()
 
-        return rebind[Scalar[output_type]](sum(x.reduce_add()))
+        return sum(x.reduce_add())._refine[output_type]()
     else:
         return tc_reduce[output_type](x.cast[intermediate_type]())
 
