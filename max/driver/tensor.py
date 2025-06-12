@@ -262,11 +262,7 @@ def load_max_tensor(path: PathLike) -> Tensor:
                 new_shape[-1] *= 2
 
             tensor = Tensor.mmap(
-                path,
-                DType.uint8,
-                new_shape,
-                mode="r",
-                offset=offset,
+                path, DType.uint8, new_shape, mode="r", offset=offset
             )
             return tensor.view(DType.bfloat16)
         else:
