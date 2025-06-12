@@ -251,8 +251,10 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
   // Generate a symbol table and an export map for the module post-compile.
   SymbolTable symtab(*module);
   switch (outputType) {
+  case OutputType::object:
+    // Objects can be linked as a executable or shared library.
+    break;
   case OutputType::executable:
-  case OutputType::object: // NOTE: This isn't a required limitation
     if (!symtab.lookup("main"))
       return state.reportError("module does not contain a 'main' function");
     break;

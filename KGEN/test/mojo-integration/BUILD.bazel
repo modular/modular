@@ -29,6 +29,7 @@ lit_tests(
         "//KGEN/tools/kgen-translate",
         "//KGEN/tools/llvm-module-split",
         "//KGEN/tools/mojo",
+        "@llvm-project//llvm:llvm-nm",
         "@llvm-project//llvm:llvm-objdump",
     ],
 )
