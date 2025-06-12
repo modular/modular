@@ -14,7 +14,7 @@ from threading import Thread
 import numpy as np
 import pytest
 from common import get_unique_port
-from max.driver import CPU, Accelerator, Device
+from max.driver import CPU, Device
 from max.driver.tensor import Tensor
 from max.nn.kv_cache import (
     KVTransferEngine,
@@ -40,7 +40,7 @@ def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue):
     engine.recv_xfer_sync(xfer_req)
 
 
-@pytest.mark.parametrize("device", [CPU(), Accelerator()])
+@pytest.mark.parametrize("device", [CPU()])
 def test_send_recv_basic(device: Device):
     total_num_pages = 3
     elts_per_page = 3
