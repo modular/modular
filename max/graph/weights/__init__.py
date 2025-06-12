@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Methods for loading weights into the Graph API."""
+"""APIs for loading weights into a graph."""
 
 from .format import WeightsFormat, weights_format
 from .load import load_weights
