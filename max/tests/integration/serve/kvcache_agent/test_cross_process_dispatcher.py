@@ -18,13 +18,14 @@ from max.serve.kvcache_agent.dispatcher_factory import (
     TransportFactory,
     TransportType,
 )
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.process_control import ProcessControl, ProcessMonitor
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
 
 def instance_a_service_process_fn(
     pc: ProcessControl,
-    factory: DispatcherFactory,
+    factory: DispatcherFactory[dict[str, Union[str, int]]],
 ) -> None:
     """Process function for instance A dispatcher service."""
     try:
@@ -61,7 +62,7 @@ def instance_a_service_process_fn(
 
 def instance_b_service_process_fn(
     pc: ProcessControl,
-    factory: DispatcherFactory,
+    factory: DispatcherFactory[dict[str, Union[str, int]]],
 ) -> None:
     """Process function for instance B dispatcher service."""
     try:
@@ -125,10 +126,12 @@ async def test_single_request_reply():
 
     # Create factories
     instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config
+        instance_a_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
     instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config
+        instance_b_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
 
     # Create process controls
@@ -291,10 +294,12 @@ async def test_multiple_request_reply():
 
     # Create factories
     instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config
+        instance_a_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
     instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config
+        instance_b_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
 
     # Create process controls
@@ -469,10 +474,12 @@ async def test_bidirectional_communication():
 
     # Create factories
     instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config
+        instance_a_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
     instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config
+        instance_b_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
 
     # Create process controls
@@ -667,10 +674,12 @@ async def test_high_throughput_cross_process():
 
     # Create factories
     instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_a_config
+        instance_a_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
     instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-        instance_b_config
+        instance_b_config,
+        transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
     )
 
     # Create process controls

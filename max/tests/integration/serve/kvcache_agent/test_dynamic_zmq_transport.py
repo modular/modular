@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
-from typing import Any
+from typing import Any, Union
 
 import pytest
 import zmq
@@ -35,11 +35,17 @@ async def test_simple_send_receive():
 
     try:
         # Create sender and receiver
-        sender = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "sender"
+        sender = DynamicZmqTransport[dict[str, str]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "sender",
+            payload_type=TransportMessage[dict[str, str]],
         )
-        receiver = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "receiver"
+        receiver = DynamicZmqTransport[dict[str, str]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "receiver",
+            payload_type=TransportMessage[dict[str, str]],
         )
 
         # Start both transports
@@ -85,11 +91,17 @@ async def test_request_reply_pattern():
 
     try:
         # Create client and server
-        client = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "client"
+        client = DynamicZmqTransport[dict[str, str]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "client",
+            payload_type=TransportMessage[dict[str, str]],
         )
-        server = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "server"
+        server = DynamicZmqTransport[dict[str, str]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "server",
+            payload_type=TransportMessage[dict[str, str]],
         )
 
         await client.start()
@@ -113,7 +125,7 @@ async def test_request_reply_pattern():
         assert received_request.message.payload["question"] == "What is 2+2?"
 
         # Server sends reply
-        reply = TransportMessage(
+        reply = TransportMessage[dict[str, str]](
             message_id="reply-1",
             message_type=MessageType.PREFILL_RESPONSE.value,
             payload={"answer": "4"},
@@ -149,15 +161,21 @@ async def test_multiple_clients_one_server():
 
     try:
         # Create one server and three clients
-        server = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "server"
+        server = DynamicZmqTransport[dict[str, Union[int, str]]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "server",
+            payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
 
         clients = []
         for i in range(3):
             client_endpoint = generate_zmq_inproc_endpoint()
-            client = DynamicZmqTransport(
-                zmq_ctx, client_endpoint, f"client_{i}"
+            client = DynamicZmqTransport[dict[str, Union[int, str]]](
+                zmq_ctx,
+                client_endpoint,
+                f"client_{i}",
+                payload_type=TransportMessage[dict[str, Union[int, str]]],
             )
             clients.append(client)
 
@@ -219,8 +237,11 @@ async def test_multiple_clients_multiple_servers():
         servers = []
         server_endpoints = []
         for i in range(2):
-            server = DynamicZmqTransport(
-                zmq_ctx, generate_zmq_inproc_endpoint(), f"server_{i}"
+            server = DynamicZmqTransport[dict[str, Union[int, str]]](
+                zmq_ctx,
+                generate_zmq_inproc_endpoint(),
+                f"server_{i}",
+                payload_type=TransportMessage[dict[str, Union[int, str]]],
             )
             servers.append(server)
             server_endpoints.append(server.get_address())
@@ -229,8 +250,11 @@ async def test_multiple_clients_multiple_servers():
         clients = []
         client_endpoints = []
         for i in range(3):
-            client = DynamicZmqTransport(
-                zmq_ctx, generate_zmq_inproc_endpoint(), f"client_{i}"
+            client = DynamicZmqTransport[dict[str, Union[int, str]]](
+                zmq_ctx,
+                generate_zmq_inproc_endpoint(),
+                f"client_{i}",
+                payload_type=TransportMessage[dict[str, Union[int, str]]],
             )
             clients.append(client)
 
@@ -289,7 +313,7 @@ async def test_multiple_clients_multiple_servers():
             for received_msg in received_messages:
                 client_id = received_msg.message.payload["client_id"]
 
-                reply = TransportMessage(
+                reply = TransportMessage[dict[str, str]](
                     message_id=f"reply_from_server_{server_idx}_to_client_{client_id}",
                     message_type=MessageType.PREFILL_RESPONSE.value,
                     payload={
@@ -367,8 +391,11 @@ async def test_connection_failure():
             generate_zmq_inproc_endpoint()
         )  # No one is listening here
 
-        sender = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "sender"
+        sender = DynamicZmqTransport[dict[str, str]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "sender",
+            payload_type=TransportMessage[dict[str, str]],
         )
         await sender.start()
 
@@ -400,11 +427,17 @@ async def test_high_throughput():
     zmq_ctx = zmq.Context()
 
     try:
-        sender = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "sender"
+        sender = DynamicZmqTransport[dict[str, Union[int, str]]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "sender",
+            payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
-        receiver = DynamicZmqTransport(
-            zmq_ctx, generate_zmq_inproc_endpoint(), "receiver"
+        receiver = DynamicZmqTransport[dict[str, Union[int, str]]](
+            zmq_ctx,
+            generate_zmq_inproc_endpoint(),
+            "receiver",
+            payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
 
         await sender.start()
@@ -451,11 +484,12 @@ async def test_no_destination_address_provided():
 
     try:
         # Create transport with NO default destination address
-        transport = DynamicZmqTransport(
+        transport = DynamicZmqTransport[dict[str, str]](
             zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="test_transport",
             default_destination_address=None,  # Explicitly set to None
+            payload_type=TransportMessage[dict[str, str]],
         )
 
         await transport.start()
@@ -487,10 +521,11 @@ async def test_no_destination_address_provided():
 
         # Verify transport can still send to a valid destination after errors
         # Create a receiver to test that the transport still works
-        receiver = DynamicZmqTransport(
+        receiver = DynamicZmqTransport[dict[str, str]](
             zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="receiver",
+            payload_type=TransportMessage[dict[str, str]],
         )
         await receiver.start()
 
@@ -533,19 +568,21 @@ async def test_default_destination_address():
 
     try:
         # Create receiver first to get its address
-        receiver = DynamicZmqTransport(
+        receiver = DynamicZmqTransport[dict[str, str]](
             zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="receiver",
+            payload_type=TransportMessage[dict[str, str]],
         )
         await receiver.start()
 
         # Create sender with default destination address set to receiver
-        sender = DynamicZmqTransport(
+        sender = DynamicZmqTransport[dict[str, str]](
             zmq_ctx=zmq_ctx,
             bind_address=generate_zmq_inproc_endpoint(),
             instance_id="sender",
             default_destination_address=receiver.get_address(),
+            payload_type=TransportMessage[dict[str, str]],
         )
         await sender.start()
 

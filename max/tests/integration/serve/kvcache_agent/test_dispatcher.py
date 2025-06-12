@@ -17,6 +17,7 @@ from max.serve.kvcache_agent.dispatcher_factory import (
     TransportFactory,
     TransportType,
 )
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 
 
@@ -45,10 +46,12 @@ async def test_dispatcher_client_to_service_communication():
 
         # Create factories
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+            client_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
         server_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            server_config
+            server_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create dispatcher services and clients using factories
@@ -151,10 +154,12 @@ async def test_dispatcher_request_reply_pattern():
 
         # Create factories
         instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            instance_a_config
+            instance_a_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
         instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            instance_b_config
+            instance_b_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create dispatcher services and clients using factories
@@ -245,7 +250,8 @@ async def test_multiple_clients_one_server_dispatcher():
             ),
         )
         server_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            server_config
+            server_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
         server_dispatcher = server_factory.create_service(zmq_ctx)
         server_app = server_factory.create_client(zmq_ctx)
@@ -267,7 +273,10 @@ async def test_multiple_clients_one_server_dispatcher():
                 ),
             )
             client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-                client_config
+                client_config,
+                transport_payload_type=TransportMessage[
+                    dict[str, Union[str, int]]
+                ],
             )
             client_dispatcher = client_factory.create_service(zmq_ctx)
             client_app = client_factory.create_client(zmq_ctx)
@@ -393,10 +402,12 @@ async def test_composable_handlers():
 
         # Create factories
         instance_a_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            instance_a_config
+            instance_a_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
         instance_b_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            instance_b_config
+            instance_b_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create dispatcher services and clients using factories
@@ -526,11 +537,17 @@ async def test_error_handling_and_resilience():
         )
 
         # Create factories
-        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            server_config
+        server_factory = DispatcherFactory[dict[str, Union[str, int, bool]]](
+            server_config,
+            transport_payload_type=TransportMessage[
+                dict[str, Union[str, int, bool]]
+            ],
         )
-        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+        client_factory = DispatcherFactory[dict[str, Union[str, int, bool]]](
+            client_config,
+            transport_payload_type=TransportMessage[
+                dict[str, Union[str, int, bool]]
+            ],
         )
 
         # Create dispatcher services and clients using factories
@@ -650,10 +667,12 @@ async def test_high_throughput_performance():
 
         # Create factories
         server_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            server_config
+            server_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+            client_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create dispatcher services and clients using factories
@@ -764,7 +783,8 @@ async def test_connection_failure_recovery():
 
         # Create factory
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+            client_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create dispatcher service and client using factory
@@ -827,11 +847,17 @@ async def test_handler_exception_isolation():
         )
 
         # Create factories
-        server_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            server_config
+        server_factory = DispatcherFactory[dict[str, Union[str, int, bool]]](
+            server_config,
+            transport_payload_type=TransportMessage[
+                dict[str, Union[str, int, bool]]
+            ],
         )
-        client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+        client_factory = DispatcherFactory[dict[str, Union[str, int, bool]]](
+            client_config,
+            transport_payload_type=TransportMessage[
+                dict[str, Union[str, int, bool]]
+            ],
         )
 
         # Create dispatcher services and clients using factories
@@ -956,10 +982,12 @@ async def test_no_handler_registered():
 
         # Create factories
         server_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            server_config
+            server_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+            client_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create dispatcher services and clients using factories
@@ -1033,7 +1061,8 @@ async def test_invalid_destination_address():
 
         # Create factory
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+            client_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create dispatcher service and client using factory
@@ -1098,7 +1127,8 @@ async def test_duplicate_handler_registration():
 
         # Create factory
         client_factory = DispatcherFactory[dict[str, Union[str, int]]](
-            client_config
+            client_config,
+            transport_payload_type=TransportMessage[dict[str, Union[str, int]]],
         )
 
         # Create client

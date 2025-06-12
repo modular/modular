@@ -16,6 +16,7 @@ from max.serve.kvcache_agent.dispatcher_factory import (
     TransportFactory,
     TransportType,
 )
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 
 
@@ -30,7 +31,9 @@ async def test_dispatcher_factory_dynamic_zmq():
                 instance_id="test_factory",
             ),
         )
-        factory = DispatcherFactory[int](config)
+        factory = DispatcherFactory[int](
+            config, transport_payload_type=TransportMessage[int]
+        )
 
         # Test creating server and client
         zmq_ctx = zmq.Context()
@@ -63,7 +66,8 @@ async def test_end_to_end_communication_with_config():
         )
 
         server_factory = DispatcherFactory[dict[str, Union[int, str]]](
-            server_config
+            server_config,
+            transport_payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
         server_dispatcher = server_factory.create_service(zmq_ctx)
         server_client = server_factory.create_client(zmq_ctx)
@@ -78,7 +82,8 @@ async def test_end_to_end_communication_with_config():
         )
 
         client_factory = DispatcherFactory[dict[str, Union[int, str]]](
-            client_config
+            client_config,
+            transport_payload_type=TransportMessage[dict[str, Union[int, str]]],
         )
         client_dispatcher = client_factory.create_service(zmq_ctx)
         client_app = client_factory.create_client(zmq_ctx)
