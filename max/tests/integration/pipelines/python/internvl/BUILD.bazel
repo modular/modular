@@ -1,4 +1,11 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+# InternVL integration tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
 
 modular_py_library(
     name = "torch_utils",
@@ -15,11 +22,31 @@ modular_py_library(
 )
 
 modular_py_test(
-    name = "test_tokenizer",
-    size = "small",
-    srcs = ["test_tokenizer.py"],
+    name = "internvl",
+    size = "large",
+    srcs = glob(["*.py"]),
+    data = [
+        "//ModularFramework/tools/max",
+    ],
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
     deps = [
-        "//SDK/lib/API/python/max",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        "//SDK/lib/API/python/max/serve",
+        "//Support/python:support",
+        requirement("numpy"),
+        requirement("pillow"),
         requirement("pytest-asyncio"),
+        requirement("requests"),
+        requirement("torch"),
+        requirement("torchvision"),
+        requirement("transformers"),
     ],
 )
