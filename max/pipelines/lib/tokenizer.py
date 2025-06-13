@@ -284,40 +284,58 @@ class TextTokenizer(
 
         return self.delegate.decode(encoded, **kwargs)
 
+    async def _generate_prompt_and_token_ids(
+        self,
+        prompt: Optional[Union[Sequence[int], str]],
+        messages: Optional[list[TokenGeneratorRequestMessage]],
+        tools: Optional[list[TokenGeneratorRequestTool]] = None,
+        chat_template_options: Optional[dict[str, Any]] = None,
+    ) -> tuple[Union[str, list[int]], np.ndarray]:
+        if prompt and messages:
+            raise ValueError("both prompt and messages cannot be provided.")
+
+        if isinstance(prompt, str):
+            return prompt, await self.encode(prompt, add_special_tokens=True)
+        elif isinstance(prompt, list):
+            return prompt, await self.encode(prompt, add_special_tokens=True)
+        elif isinstance(messages, list):
+            prompt = self.apply_chat_template(
+                messages, tools, chat_template_options
+            )
+            return prompt, await self.encode(prompt, add_special_tokens=False)
+        else:
+            raise ValueError(
+                "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TokenGeneratorRequestMessage]"
+            )
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: Optional[list[int]],
+        stop: Optional[list[str]],
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = self._default_eos_token_ids
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
+
     async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
         """Create a new TextContext object, leveraging necessary information like
         cache_seq_id and prompt from TokenGeneratorRequest."""
 
-        prompt: Union[str, list[int]]
-        add_special_tokens = True
-        if request.prompt is not None:
-            if isinstance(request.prompt, str):
-                prompt = str(request.prompt)
-            else:
-                prompt = [int(t) for t in request.prompt]
-        elif request.messages is not None:
-            prompt = self.apply_chat_template(
-                request.messages, request.tools, request.chat_template_options
-            )
-            # Chat templating already adds special tokens, therefore we step around this here.
-            add_special_tokens = False
-        else:
-            raise ValueError(f"{request} does not provide messages or prompt.")
-
-        encoded_prompt = await self.encode(
-            prompt, add_special_tokens=add_special_tokens
-        )
-
-        # TODO(zheng): We should probably just make max_new_tokens an optional
-        # instead of -1.
-        max_new_tokens = None
-        if request.sampling_params.max_new_tokens is not None:
-            max_new_tokens = request.sampling_params.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
-
-        max_gen_tokens = max_tokens_to_generate(
-            len(encoded_prompt), self.max_length, max_new_tokens
+        # Encode Prompt / Messages
+        prompt, token_ids = await self._generate_prompt_and_token_ids(
+            prompt=request.prompt,
+            messages=request.messages,
+            tools=request.tools,
+            chat_template_options=request.chat_template_options,
         )
 
         json_schema = (
@@ -326,26 +344,31 @@ class TextTokenizer(
             else None
         )
 
-        eos_token_ids = self._default_eos_token_ids
-        eos_sequences = list()
+        eos_token_ids, eos_sequences = await self._get_eos_variables(
+            request.sampling_params.ignore_eos,
+            request.sampling_params.stop_token_ids,
+            request.sampling_params.stop,
+        )
 
-        if request.sampling_params.ignore_eos:
-            eos_token_ids = set()
-        elif request.sampling_params.stop_token_ids:
-            eos_token_ids.update(request.sampling_params.stop_token_ids)
-        elif request.sampling_params.stop:
-            eos_sequences = await self._encode_stop_criteria(
-                request.sampling_params.stop
-            )
+        # Calculate Max Length
+        max_new_tokens = None
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
+        elif self.max_new_tokens != -1:
+            max_new_tokens = self.max_new_tokens
+
+        max_gen_tokens = max_tokens_to_generate(
+            len(token_ids), self.max_length, max_new_tokens
+        )
 
         context = TextContext(
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             eos_sequences=eos_sequences,
-            max_length=len(encoded_prompt) + max_gen_tokens
+            max_length=len(token_ids) + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
-            tokens=np.array(encoded_prompt),
+            tokens=np.array(token_ids),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
