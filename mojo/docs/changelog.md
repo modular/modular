@@ -30,3 +30,6 @@ what we publish.
 ### ❌ Removed
 
 ### 🛠️ Fixed
+
+- [#4820](https://github.com/modular/modular/issues/4820) - `math.exp2` picks
+  the wrong implementation for `float64`.
