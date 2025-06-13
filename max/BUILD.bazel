@@ -77,6 +77,9 @@ modular_genrule(
     done
     mv $folder/_core.pyi $folder/__init__.pyi
     mv $folder/dialects.pyi $folder/dialects/__init__.pyi
+    mv $folder/dialects/builtin.pyi $folder/dialects/builtin/__init__.pyi
+    mv $folder/dialects/mo.pyi $folder/dialects/mo/__init__.pyi
+    mv $folder/dialects/rmo.pyi $folder/dialects/rmo/__init__.pyi
     """.format(
         ruff = "//open-source/max/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
