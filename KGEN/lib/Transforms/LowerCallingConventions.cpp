@@ -30,26 +30,16 @@ struct LowerCallingConventionsPass
 
 /// Filters out none types from the given range, and returns a flag indicating
 /// if there were any in the input.
-static std::pair<bool, SmallVector<Type>> removeNoneTypes(TypeRange types) {
+static std::pair<bool, SmallVector<Type>>
+removeNoneTypes(TypeRange types, mlir::AttrTypeReplacer *replacer = nullptr) {
   SmallVector<Type> newTypes;
-  for (Type type : types)
-    if (!StructType::isNoneOrEmpty(type))
-      newTypes.push_back(type);
+  for (Type type : types) {
+    Type newType = replacer ? replacer->replace(type) : type;
+    newType = newType ? newType : type;
+    if (!StructType::isNoneOrEmpty(newType))
+      newTypes.push_back(newType);
+  }
   return {newTypes.size() != types.size(), std::move(newTypes)};
-}
-
-/// Lower the signature results by replacing all the `!kgen.none` results in a
-/// signature. This will also set the signature to non-throwing, and erase
-/// `byref_result` argument conventions.
-static FuncType lowerResult(FuncType signature) {
-  auto [anyNone, newResults] = removeNoneTypes(signature.getResults());
-  // Micro-optimization: don't hash a new type if it won't change.
-  if (!anyNone)
-    return signature;
-  return FuncType::get(FunctionType::get(signature.getContext(),
-                                         signature.getArguments(), newResults),
-                       signature.getArgConventions(),
-                       signature.getFnEffects().setThrows(false));
 }
 
 /// Remove none types from the results of debuginfo subroutine types as well.
@@ -352,6 +342,22 @@ static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer) {
 
 void LowerCallingConventionsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
+
+  // Lower the signature results by replacing all the `!kgen.none` results in a
+  // signature. This will also set the signature to non-throwing, and erase
+  // `byref_result` argument conventions.
+  auto lowerResult = [&replacer](FuncType signature) -> FuncType {
+    auto [anyNone, newResults] =
+        removeNoneTypes(signature.getResults(), &replacer);
+    // Micro-optimization: don't hash a new type if it won't change.
+    if (!anyNone)
+      return signature;
+    return FuncType::get(FunctionType::get(signature.getContext(),
+                                           signature.getArguments(),
+                                           newResults),
+                         signature.getArgConventions(),
+                         signature.getFnEffects().setThrows(false));
+  };
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);
   replacer.addReplacement(lowerPackTypeToStruct);
