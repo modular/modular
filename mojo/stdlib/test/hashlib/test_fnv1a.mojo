@@ -206,9 +206,9 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int256, 1](1)), 12478008331234465636)
     assert_equal(hash(SIMD[DType.int64, 4](1, 0, 0, 0)), 12478008331234465636)
 
-    assert_equal(hash(SIMD[DType.int8, 1](-1)), 5808589858502755950)
-    assert_equal(hash(SIMD[DType.int16, 1](-1)), 5808589858502755950)
-    assert_equal(hash(SIMD[DType.int32, 1](-1)), 5808589858502755950)
+    assert_equal(hash(SIMD[DType.int8, 1](-1)), 12638352127299873646)
+    assert_equal(hash(SIMD[DType.int16, 1](-1)), 12690424998011946606)
+    assert_equal(hash(SIMD[DType.int32, 1](-1)), 7718450949043144302)
     assert_equal(hash(SIMD[DType.int64, 1](-1)), 5808589858502755950)
     assert_equal(hash(SIMD[DType.int128, 1](-1)), 591639543425159523)
     assert_equal(hash(SIMD[DType.int64, 2](-1)), 591639543425159523)

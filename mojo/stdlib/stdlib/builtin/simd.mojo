@@ -1944,6 +1944,10 @@ struct SIMD[dtype: DType, size: Int](
             dtype.bitwidth() >= Self.dtype.bitwidth(),
             "the target type must be at least as wide as the source type",
         ]()
+
+        @parameter
+        if Self.dtype is DType.bool:
+            return self.cast[DType.uint8]().to_bits[dtype]()
         alias uint = _unsigned_integral_type_of[Self.dtype]()
         return bitcast[uint, size](self).cast[dtype]()
 
