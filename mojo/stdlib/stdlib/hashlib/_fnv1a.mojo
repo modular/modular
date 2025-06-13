@@ -70,7 +70,7 @@ struct Fnv1a(Defaultable, _Hasher):
 
                 @parameter
                 if value.dtype.is_floating_point():
-                    u64 = v.to_bits().cast[DType.uint64]()
+                    u64 = v._to_bits_signed().cast[DType.uint64]()
                 elif value.dtype.is_integral():
                     u64 = (v >> (r * 64)).cast[DType.uint64]()
                 else:

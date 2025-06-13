@@ -186,7 +186,7 @@ struct AHasher[key: U256](Defaultable, _Hasher):
 
             @parameter
             if new_data.dtype.is_floating_point():
-                u64 = new_data.to_bits().cast[DType.uint64]()
+                u64 = new_data._to_bits_signed().cast[DType.uint64]()
             else:
                 u64 = new_data.cast[DType.uint64]()
 

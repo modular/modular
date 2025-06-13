@@ -1924,31 +1924,31 @@ struct SIMD[dtype: DType, size: Int](
         if size > 1:
             writer.write("]")
 
-    # FIXME: `_integral_type_of` doesn't work with `DType.bool`.
     @always_inline
     fn to_bits[
-        int_dtype: DType = _integral_type_of[dtype]()
-    ](self) -> SIMD[int_dtype, size]:
+        dtype: DType = _unsigned_integral_type_of[Self.dtype]()
+    ](self) -> SIMD[dtype, size]:
         """Bitcasts the SIMD vector to an integer SIMD vector.
 
         Parameters:
-            int_dtype: The integer type to cast to.
+            dtype: The integer type to cast to.
 
         Returns:
             An integer representation of the floating-point value.
         """
         constrained[
-            int_dtype.is_integral(), "the target type must be integral"
+            dtype.is_unsigned(),
+            "the target type must be unsigned integral",
         ]()
         constrained[
-            bitwidthof[int_dtype]() >= bitwidthof[dtype](),
-            (
-                "the target integer type must be at least as wide as the source"
-                " type"
-            ),
+            dtype.bitwidth() >= Self.dtype.bitwidth(),
+            "the target type must be at least as wide as the source type",
         ]()
+        alias uint = _unsigned_integral_type_of[Self.dtype]()
+        return bitcast[uint, size](self).cast[dtype]()
 
-        return bitcast[_integral_type_of[dtype](), size](self).cast[int_dtype]()
+    fn _to_bits_signed(self) -> SIMD[_integral_type_of[Self.dtype](), size]:
+        return bitcast[_integral_type_of[dtype](), size](self)
 
     @staticmethod
     fn from_bytes[
@@ -3530,7 +3530,7 @@ fn _floor(x: SIMD) -> __type_of(x):
     alias bias = FPUtils[x.dtype].exponent_bias()
     alias shift_factor = bitwidth - exponent_width - 1
 
-    var bits = x.to_bits()
+    var bits = x._to_bits_signed()
     var e = ((bits & mask) >> mantissa_width) - bias
     bits = (e < shift_factor).select(
         bits & ~((1 << (shift_factor - e)) - 1),
