@@ -39,7 +39,7 @@ from test_common.distance_metrics import is_euclidean_distance_close
 from torch.nn.functional import scaled_dot_product_attention
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
-    MllamaTextCrossSdpaAttention,
+    MllamaTextCrossAttention,
 )
 
 ACCURACY_RTOL = 1e-2
@@ -70,7 +70,7 @@ class CrossAttentionModel:
         self,
         config: MllamaTextConfig,
         kv_params: KVCacheParams,
-        torch_cross_attn: MllamaTextCrossSdpaAttention,
+        torch_cross_attn: MllamaTextCrossAttention,
         dtype: DType,
     ) -> None:
         """Inits fetch and cross attention layers using the torch model."""
@@ -180,10 +180,11 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
         num_key_value_heads=8,
         rope_theta=10000.0,
         max_position_embeddings=8192,
+        _attn_implementation="sdpa",
     )
     # Set up PyTorch attention layer.
     torch_dtype = torch.float32
-    torch_cross_attn = MllamaTextCrossSdpaAttention(config, layer_idx=0)
+    torch_cross_attn = MllamaTextCrossAttention(config, layer_idx=0)
     torch_cross_attn.to(torch_dtype)
 
     # Set up MAX graph attention layer.
@@ -316,9 +317,13 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
     attention_mask = torch.ones(
         [1, 1, max(hidden_seq_lens), cross_seq_len], dtype=torch.bool
     )
+    position_ids = torch.arange(
+        0, max(hidden_seq_lens), dtype=torch.long
+    ).unsqueeze(0)
     expected = (
         torch_cross_attn(
             hidden_states=hidden_states_padded,
+            position_embeddings=position_ids,
             cross_attention_states=cross_attention_states.reshape(
                 [batch_size, num_tiles * num_vision_tokens, config.hidden_size]
             ),

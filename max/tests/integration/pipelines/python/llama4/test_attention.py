@@ -56,6 +56,7 @@ def generate_torch_outputs(
     # Construct full Llama4 text model to help with setting up inputs
     # to the attention layers.
     model = Llama4TextModel(text_config)
+    model.to(device)
     assert model.layers[0].self_attn.use_rope
     # Hack - Transformers `LLama4TextAttention` doesn't actually use the config
     # to configure whether the layer uses rope. Set this manually.
