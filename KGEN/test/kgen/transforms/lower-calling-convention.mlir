@@ -277,3 +277,24 @@ module {
     kgen.return
   }
 }
+
+// -----
+
+module {
+  // CHECK: kgen.func @func1(%arg0: !kgen.none) always_inline_no_debug
+  kgen.func @func1(%arg0: !kgen.none) -> !kgen.pack<[]> always_inline_no_debug {
+    %0 = kgen.pack.create() : !kgen.pack<[]>
+    %1 = pop.stack_allocation 1 x !kgen.pack<[]> marked
+    pop.store %0, %1 : !kgen.pointer<!kgen.pack<[]>>
+    %2 = pop.load %1 : !kgen.pointer<!kgen.pack<[]>>
+    pop.stack_alloc.lifetime.end(%1) : !kgen.pointer<!kgen.pack<[]>>
+    kgen.return %2 : !kgen.pack<[]>
+  }
+
+  kgen.func export @func2() {
+      %none_4 = kgen.param.constant: none = <#kgen.none>
+      // CHECK: kgen.call @func1(%none) : (!kgen.none) -> ()
+      %11 = kgen.call @func1(%none_4) : (!kgen.none) -> !kgen.pack<[]>
+    kgen.return
+  }
+}
