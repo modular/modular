@@ -72,7 +72,17 @@ from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
 try:
+    # xgrammar configures the root logger, which also transitively
+    # impacts anyone using us as a library.  So let's avoid the damage here.
+    originalBasicConfig = logging.basicConfig
+
+    def basicConfig(**kwargs):
+        pass
+
+    logging.basicConfig = basicConfig
     import xgrammar as xgr
+
+    logging.basicConfig = originalBasicConfig
 except ImportError:
     pass
 

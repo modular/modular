@@ -126,24 +126,25 @@ def configure_logging(settings: Settings) -> None:
     logging_handlers: list[logging.Handler] = []
 
     # Create a console handler
-    console_handler = logging.StreamHandler()
-    console_formatter: logging.Formatter
-    if settings.structured_logging:
-        console_formatter = jsonlogger.JsonFormatter(
-            "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
-            timestamp=True,
-        )
-    else:
-        console_formatter = logging.Formatter(
-            (
-                "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
-                " %(name)s: %(message)s"
-            ),
-            datefmt="%H:%M:%S",
-        )
-    console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(settings.logs_console_level)
-    logging_handlers.append(console_handler)
+    if settings.logs_console_level is not None:
+        console_handler = logging.StreamHandler()
+        console_formatter: logging.Formatter
+        if settings.structured_logging:
+            console_formatter = jsonlogger.JsonFormatter(
+                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
+                timestamp=True,
+            )
+        else:
+            console_formatter = logging.Formatter(
+                (
+                    "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
+                    " %(name)s: %(message)s"
+                ),
+                datefmt="%H:%M:%S",
+            )
+        console_handler.setFormatter(console_formatter)
+        console_handler.setLevel(settings.logs_console_level)
+        logging_handlers.append(console_handler)
 
     if (
         settings.logs_file_level is not None
@@ -184,19 +185,21 @@ def configure_logging(settings: Settings) -> None:
         logging_handlers.append(otlp_handler)
 
     # Configure root logger level
-    logger_level = min(h.level for h in logging_handlers)
     logger = logging.getLogger()
-    logger.setLevel(logger_level)
-    for handler in logging_handlers:
-        logger.addHandler(handler)
+    if len(logging_handlers) > 0:
+        logger_level = min(h.level for h in logging_handlers)
+        logger.setLevel(logger_level)
+        for handler in logging_handlers:
+            logger.addHandler(handler)
 
-    # TODO use FastAPIInstrumentor once Motel supports traces.
-    # For now, manually configure uvicorn.
-    logging.getLogger("uvicorn").setLevel(logging.WARNING)
-    # Explicit levels to reduce noise
-    logging.getLogger("sse_starlette.sse").setLevel(
-        max(logger_level, logging.INFO)
-    )
+        # TODO use FastAPIInstrumentor once Motel supports traces.
+        # For now, manually configure uvicorn.
+        logging.getLogger("uvicorn").setLevel(logging.WARNING)
+        # Explicit levels to reduce noise
+        logging.getLogger("sse_starlette.sse").setLevel(
+            max(logger_level, logging.INFO)
+        )
+
     logger.info(
         "Logging initialized: Console: %s, File: %s, Telemetry: %s",
         settings.logs_console_level,
