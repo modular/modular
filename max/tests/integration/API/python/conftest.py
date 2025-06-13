@@ -54,6 +54,11 @@ GEMMA_3_1B_IT_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     GEMMA_3_1B_IT_HF_REPO_ID
 )
 
+LLAMA_3_1_LORA_HF_REPO_ID = "FinGPT/fingpt-mt_llama3-8b_lora"
+LLAMA_3_1_LORA_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    LLAMA_3_1_LORA_HF_REPO_ID
+)
+
 
 logger = logging.getLogger("max.pipelines")
 
@@ -293,4 +298,19 @@ def gemma_3_1b_it_local_path():
             f"Falling back to repo_id: {GEMMA_3_1B_IT_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = GEMMA_3_1B_IT_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def llama_3_1_8b_lora_local_path():
+    try:
+        model_path = generate_local_model_path(
+            LLAMA_3_1_LORA_HF_REPO_ID, LLAMA_3_1_LORA_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(
+            f"Falling back to repo_id: {LLAMA_3_1_LORA_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = LLAMA_3_1_LORA_HF_REPO_ID
     return model_path

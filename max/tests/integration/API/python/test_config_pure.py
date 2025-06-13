@@ -300,3 +300,25 @@ def test_config__validates_engine_configurations(
         engine=PipelineEngine.HUGGINGFACE,
     )
     assert config.engine == PipelineEngine.HUGGINGFACE
+
+
+@prepare_registry
+def test_config__validates_lora_configuration(
+    llama_3_1_8b_instruct_local_path, llama_3_1_8b_lora_local_path
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    # Test explicit HuggingFace engine with valid config
+    # This verifies we can force HF even when MAX would work
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        device_specs=[DeviceSpec.accelerator()],
+        max_length=1,
+        engine=PipelineEngine.MAX,
+        lora_paths=[llama_3_1_8b_lora_local_path],
+    )
+    assert config.engine == PipelineEngine.MAX
+    assert config.lora_config is not None
+    assert config.lora_config.lora_paths[0] == llama_3_1_8b_lora_local_path
+    assert config.lora_config.max_lora_rank == 16
+    assert config.lora_config.max_num_loras == 100
