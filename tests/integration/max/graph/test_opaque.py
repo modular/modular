@@ -141,5 +141,5 @@ def test_pyobject_opaque(
 
     counter = PythonCounter()
     for _ in range(5):
-        counter = bumper_compiled.execute_legacy(input0=counter)["output0"]  # type: ignore
+        counter = bumper_compiled.execute(counter)[0]  # type: ignore
     assert counter.a == 10 and counter.b == 55
