@@ -183,74 +183,24 @@ def generate_max_outputs(
 
 
 @pytest.mark.parametrize(
-    "original_size,target_size",
+    "target_size",
     [
-        (448, 224),  # Downscale
-        (224, 448),  # Upscale
-        (448, 896),  # 2x upscale
+        224,  # Downscale from 448
+        448,  # Same size
+        896,  # 2x upscale from 448
     ],
 )
 def test_vision_embeddings(
-    original_size: int,
+    vision_config: VisionConfig,
+    embeddings_weights: dict[str, torch.Tensor],
     target_size: int,
 ) -> None:
     """Test position embedding interpolation for different resolutions."""
-    # Use fixed parameters
-    patch_size = 14
-    hidden_size = 768
-
-    # Create vision config with original size
-    vision_config = VisionConfig(
-        dtype=DType.bfloat16,
-        hidden_size=hidden_size,
-        intermediate_size=4 * hidden_size,
-        norm_type="layer_norm",
-        image_size=original_size,
-        patch_size=patch_size,
-        num_attention_heads=hidden_size // 64,
-        head_dim=64,
-        layer_norm_eps=1e-6,
-        qk_normalization=True,
-    )
-
     # Create test inputs with target size
-    torch.manual_seed(42)
     batch_size = 1
-    # Pixel values after ImageNet normalization typically have std ~1.04
     pixel_values = torch.randn(
         batch_size, 3, target_size, target_size, dtype=torch.bfloat16
     ).to("cuda")
-
-    # Create test weights for original size
-    num_patches_original = (original_size // patch_size) ** 2
-    num_positions_original = num_patches_original + 1
-
-    # Weight initialization based on real InternVL model statistics:
-    # ┌─────────────────────┬──────────┬───────────────┬───────────────┐
-    # │ Weight              │ Std Dev  │ Range Min     │ Range Max     │
-    # ├─────────────────────┼──────────┼───────────────┼───────────────┤
-    # │ patch_embedding     │ 0.0134   │ -0.1328       │ 0.1162        │
-    # │ patch_embedding.bias│ 0.0078   │ -0.0317       │ 0.0264        │
-    # │ class_embedding     │ 0.1494   │ -1.8594       │ 0.8320        │
-    # │ position_embedding  │ 0.0177   │ -0.1318       │ 0.1387        │
-    # └─────────────────────┴──────────┴───────────────┴───────────────┘
-    # Note: pixel_values after ImageNet normalization have std ~1.04
-
-    # Use realistic weight initialization based on real InternVL model
-    embeddings_weights = {
-        "patch_embedding.weight": torch.randn(
-            hidden_size, 3, patch_size, patch_size, dtype=torch.bfloat16
-        )
-        * 0.0134,  # Real model std: 0.0134
-        "patch_embedding.bias": torch.randn(hidden_size, dtype=torch.bfloat16)
-        * 0.0078,  # Real model std: 0.0078
-        "class_embedding": torch.randn(1, 1, hidden_size, dtype=torch.bfloat16)
-        * 0.1494,  # Real model std: 0.1494
-        "position_embedding": torch.randn(
-            1, num_positions_original, hidden_size, dtype=torch.bfloat16
-        )
-        * 0.0177,  # Real model std: 0.0177
-    }
 
     # Generate reference output
     torch_output = generate_torch_outputs(
@@ -267,8 +217,12 @@ def test_vision_embeddings(
     )
 
     # Verify output shape
-    expected_num_patches = (target_size // patch_size) ** 2
-    expected_shape = (batch_size, expected_num_patches + 1, hidden_size)
+    expected_num_patches = (target_size // vision_config.patch_size) ** 2
+    expected_shape = (
+        batch_size,
+        expected_num_patches + 1,
+        vision_config.hidden_size,
+    )
     assert max_output.shape == expected_shape, (
         f"Expected shape {expected_shape}, got {max_output.shape}"
     )
