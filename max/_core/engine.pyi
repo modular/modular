@@ -14,16 +14,13 @@ from typing import Any, Union, overload
 
 import max._core.driver
 import max._core.dtype
-import numpy
 from max import mlir
 from max._core.driver import Tensor
 from max._core_types.driver import DLPackArray
 from numpy import typing as npt
 
 DLPackCompatible = Union[DLPackArray, npt.NDArray]
-InputType = Union[
-    DLPackCompatible, Tensor, MojoValue, int, float, bool, numpy.generic
-]
+InputType = Union[DLPackCompatible, Tensor, MojoValue, int, float, bool]
 
 class FrameworkFormat(enum.Enum):
     max_graph = 0
@@ -173,42 +170,6 @@ class Model:
             ValueError: If positional inputs are not one of the supported
               types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
               :obj:`max.driver.Tensor`.
-        """
-
-    def execute_legacy(
-        self, **kwargs: Any
-    ) -> dict[str, Union[numpy.ndarray, dict, list, tuple]]:
-        """
-        Executes the model with a set of named tensors. This API is maintained
-        primarily to support frameworks that require named inputs (i.e. ONNX).
-
-        NOTICE: This API does not support GPU inputs and is slated for
-        deprecation.
-
-        For example, if the model has one input tensor named `input0`:
-
-        .. code-block:: python
-
-            input_tensor = np.random.rand(1, 224, 224, 3)
-            model.execute_legacy(input0=input_tensor)
-
-        Args:
-            kwargs: The input tensors, each specified with the appropriate
-              tensor name as a keyword and its value as an :obj:`np.ndarray`.
-              You can find the tensor names to use as keywords from
-              :obj:`~Model.input_metadata`.
-
-        Returns:
-            A dictionary of output values, each as an :obj:`np.ndarray`,
-            :obj:`Dict`, :obj:`List`, or :obj:`Tuple` identified by its output
-            name.
-
-        Raises:
-            RuntimeError: If the given input tensors' name and shape don't
-              match what the model expects.
-
-            TypeError: If the given input tensors' dtype cannot be cast to what
-              the model expects.
         """
 
     def __call__(
