@@ -45,7 +45,15 @@ def hann_window(
 
     Returns:
         A 1-D tensor of size (window_length,) containing the window.
+
+    Raises:
+        ValueError: If window_length is negative.
+        TypeError: If window_length is not an integer.
     """
+    if not isinstance(window_length, int):
+        raise TypeError(
+            f"window_length must be an integer, got {type(window_length).__name__}"
+        )
     if window_length < 0:
         raise ValueError("window_length must be non-negative")
     if window_length == 0:
