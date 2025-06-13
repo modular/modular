@@ -166,7 +166,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
     def generate(
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
+        llm_state_dict: dict[str, WeightData],
         dtype: DType,
         n_devices: int,
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
@@ -180,7 +180,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         Args:
             pipeline_config: Pipeline configuration.
             huggingface_config: HuggingFace model configuration.
-            state_dict: Model weights dictionary.
+            llm_state_dict: Model weights dictionary.
             dtype: Data type for model parameters.
             n_devices: Number of devices.
             logits_postprocessor: Optional logits postprocessor.
@@ -205,7 +205,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         llm_config = Llama3Config.generate(
             pipeline_config=pipeline_config,
             huggingface_config=huggingface_config.llm_config,
-            state_dict=state_dict,
+            state_dict=llm_state_dict,
             dtype=dtype,
             n_devices=n_devices,
             logits_postprocessor=logits_postprocessor,

@@ -172,6 +172,8 @@ class InternVLProcessor:
                 image = image.convert("RGB")
 
             # Convert PIL image to numpy array (H, W, C format)
+            # TODO(MODELS-565): correctly patchify the image here.
+            image = image.resize((448, 448))
             image_array = np.array(image, dtype=np.float32)
             raw_pixel_values.append(image_array)
 
