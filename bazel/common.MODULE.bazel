@@ -2,6 +2,7 @@
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
 bazel_dep(name = "aspect_rules_js", version = "2.3.7")
+bazel_dep(name = "aspect_rules_py", version = "1.6.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "platforms", version = "0.0.11")
@@ -11,6 +12,7 @@ bazel_dep(name = "rules_mojo", version = "0.1.0")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
+bazel_dep(name = "rules_pycross", version = "0.7.1")
 bazel_dep(name = "rules_python", version = "1.4.0-rc4")
 bazel_dep(name = "rules_shell", version = "0.4.1")
 

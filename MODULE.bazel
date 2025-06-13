@@ -20,6 +20,10 @@ mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
 mojo_aliases(name = "mojo")
 
+modular_wheel_repository = use_repo_rule("//bazel:modular_wheel_repository.bzl", "modular_wheel_repository")
+
+modular_wheel_repository(name = "modular_wheel")
+
 include("//bazel:mojo.MODULE.bazel")
 
 register_toolchains("@mojo_toolchains//...")
