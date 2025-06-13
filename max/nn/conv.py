@@ -11,18 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional, Union
 
 import max.driver as md
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, Weight, ops
+from max.graph import (
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    TensorValueLike,
+    Weight,
+    ops,
+)
 from max.graph.type import FilterLayout
 
-from .layer import Layer, Module
+from .layer import Layer, Module, Shardable
 
 
-class Conv2D(Module):
+class Conv2D(Module, Shardable):
     """A 2D convolution over an input signal composed of several input
     planes.
 
@@ -42,7 +51,7 @@ class Conv2D(Module):
             )
     """
 
-    device: Union[DeviceRef, None]
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     filter: Weight
@@ -107,14 +116,23 @@ class Conv2D(Module):
         """
         super().__init__()
 
+        # Store configuration for easy reconstruction
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.dtype = dtype
         self.device = device
         self.permute = permute
+        self.num_groups = num_groups
+        self.has_bias = has_bias
+        self.name = name
 
         # Handle kernel_size as int or tuple
         if isinstance(kernel_size, int):
             kernel_height = kernel_width = kernel_size
+            self.kernel_size = (kernel_size, kernel_size)
         else:
             kernel_height, kernel_width = kernel_size
+            self.kernel_size = kernel_size
 
         self.filter = Weight(
             name=f"{name}.weight" if name else "weight",
@@ -160,13 +178,72 @@ class Conv2D(Module):
             dilation = (dilation, dilation)
         self.dilation = dilation
 
-        self.num_groups = num_groups
-
         if (
             isinstance(self.filter, Weight)
             and self.filter.quantization_encoding is not None
         ):
             raise ValueError("Conv2D not implemented with weight quantization.")
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the Conv2D sharding strategy."""
+        # Always take the sharding strategy of the conv filter.
+        return self.filter.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the conv layer.
+
+        Args:
+            strategy: The strategy describing the conv's sharding.
+        """
+        if not strategy.is_replicate:
+            raise ValueError(
+                "only replicate is supported for Conv2D, currently"
+            )
+
+        self.filter.sharding_strategy = strategy
+        if self.bias:
+            self.bias.sharding_strategy = strategy
+
+    def shard(self, shard_idx: int, device: DeviceRef) -> Conv2D:
+        """Creates a sharded view of this Conv2D layer for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded Conv2D instance.
+        """
+        if not self.sharding_strategy:
+            raise ValueError(
+                "Conv2D layer cannot be sharded because no sharding strategy was provided."
+            )
+        assert self.sharding_strategy.is_replicate
+
+        # Create new Conv2D with same configuration.
+        sharded = Conv2D(
+            kernel_size=self.kernel_size,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            dtype=self.dtype,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            num_groups=self.num_groups,
+            device=device,
+            has_bias=self.has_bias,
+            permute=self.permute,
+            name=self.name,
+        )
+
+        # Replace the weights with sharded versions.
+        sharded.filter = self.filter.shard(shard_idx, device)
+        if self.bias:
+            sharded.bias = self.bias.shard(shard_idx, device)
+
+        return sharded
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Apply 2D convolution to input `x`. Permutes pytorch weights to match max API if permute=True.
