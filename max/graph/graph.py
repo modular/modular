@@ -51,6 +51,14 @@ _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
 
 
 class KernelLibrary:
+    """Manages custom kernel libraries and operations for a graph.
+
+    A kernel library provides access to custom operations and kernels that can
+    be loaded from various sources including Mojo binary packages (``.mojopkg``)
+    and Mojo source directories. The library handles verification and registration
+    of custom operations within the MLIR context.
+    """
+
     _context: mlir.Context
     _analysis: _graph.Analysis
 
@@ -64,28 +72,40 @@ class KernelLibrary:
         self._analysis = _graph.Analysis(context, paths)
 
     def library_paths(self) -> list[Path]:
+        """Returns the list of kernel library paths.
+
+        Returns:
+            A list of :obj:`Path` objects representing the currently loaded
+            kernel library paths.
+        """
         return self._analysis.library_paths
 
     def add_path(self, path: Path):
+        """Adds a kernel library path to the analysis.
+
+        Args:
+            path: The :obj:`Path` to the kernel library to be added to the
+                current analysis.
+        """
         self._analysis.add_path(path)
 
     def load_paths(
         self, context: mlir.Context, custom_extensions: Iterable[Path]
     ):
-        """Load the custom operations from provided library paths.
+        """Loads custom operations from provided library paths.
 
         Performs additional "smart" library loading logic for custom operation
         libraries in additional formats. The loading logic supports the
         following formats:
 
-        - Compiled Mojo binary packages with .mojopkg extension
+        - Compiled Mojo binary packages with ``.mojopkg`` extension
         - Mojo source directory with custom operations
 
         The loaded libraries are added to the current kernel library.
 
         Args:
-            context: The MLIR context for loading MLIR operations
-            custom_extensions: File paths to the custom operation libraries
+            context: The MLIR context for loading MLIR operations.
+            custom_extensions: The file paths to the custom operation libraries.
         """
         with context:
             for ext_path in custom_extensions:
@@ -112,6 +132,12 @@ class KernelLibrary:
         yield from sorted(self._analysis.symbol_names)
 
     def verify_custom_op(self, custom_op: mlir.Operation):
+        """Verifies that a custom operation is valid within the current context.
+
+        Args:
+            custom_op: The :obj:`mlir.Operation` to be verified against the
+                current kernel library analysis.
+        """
         self._analysis.verify_custom_op(custom_op)
 
 
