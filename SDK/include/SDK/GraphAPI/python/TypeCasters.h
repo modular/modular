@@ -540,6 +540,10 @@ struct type_caster<mlir::detail::TypedValue<Type>> {
   }
 };
 
+template <>
+struct type_caster<mlir::BlockArgument>
+    : delegate_caster<mlir::BlockArgument, mlir::Value> {};
+
 template <typename Entry>
 struct type_caster<llvm::FailureOr<Entry>>
     : delegate_caster<llvm::FailureOr<Entry>, std::optional<Entry>> {};
@@ -625,6 +629,11 @@ struct type_caster<::llvm::ArrayRef<Entry>> {
     return make_caster<M::Graph::Python::SequenceView>::from_cpp(
         M::Graph::Python::SequenceView(ar), policy, cleanup);
   }
+};
+
+template <typename Entry>
+struct type_caster<::llvm::MutableArrayRef<Entry>>
+    : delegate_caster<::llvm::MutableArrayRef<Entry>, ::llvm::ArrayRef<Entry>> {
 };
 
 /// Casts object <-> mlir::TypeRange.
