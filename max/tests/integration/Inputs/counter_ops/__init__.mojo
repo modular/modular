@@ -83,7 +83,7 @@ struct ReadCounter:
 @compiler.register("bump_python_counter")
 struct BumpPythonCounter:
     @staticmethod
-    fn execute[stride: Int](counter: PythonObject) -> PythonObject:
+    fn execute(counter: PythonObject) -> PythonObject:
         var cpython = Python().cpython()
         var state = cpython.PyGILState_Ensure()
         try:
