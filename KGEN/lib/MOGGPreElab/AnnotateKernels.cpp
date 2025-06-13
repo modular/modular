@@ -31,14 +31,10 @@ static constexpr std::array<StringLiteral, 3> kIOSpec = {"tensor_internal",
 
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_internal", "managed_tensor_slice", "ManagedTensorSlice"};
-static constexpr std::array<StringLiteral, 4> kMaxSIMD = {"stdlib", "builtin",
-                                                          "simd", "SIMD"};
 static constexpr std::array<StringLiteral, 3> kMaxVariadicTensors = {
     "tensor_internal", "managed_tensor_slice", "VariadicTensors"};
 static constexpr std::array<StringLiteral, 4> kMaxList = {
     "stdlib", "collections", "list", "List"};
-static constexpr std::array<StringLiteral, 4> kMaxRuntimeDeviceContextPtrList =
-    {"stdlib", "runtime", "asyncrt", "DeviceContextPtrList"};
 
 // TODO(GEX-1822): Should be able to query this information from
 // The lit.struct.decl ops for each of these types rather than hard-coding them.
@@ -373,11 +369,14 @@ static bool willBePresentInKgen(KGENModule &kgenModule, LIT::StructType type) {
   return true;
 }
 
-static DictionaryAttr getUnboundParameters(KGENModule &kgenModule,
-                                           LIT::StructType type) {
+static Attribute getUnboundParameters(KGENModule &kgenModule,
+                                      LIT::StructType type) {
   Builder builder(type.getContext());
 
   auto allValues = type.getParamValues();
+  if (allValues.empty())
+    return builder.getUnitAttr();
+
   auto decl = kgenModule.lookup<LIT::StructDeclOp>(type.getSymbol());
 
   ASSERT_STREAM(decl.getAllParams().size() == allValues.size(),
@@ -428,15 +427,14 @@ static Attribute getUnboundParametersForTensorList(KGENModule &kgenModule,
 
 static void labelTensorParamsInKernel(KGENModule &kgenModule,
                                       LIT::FnOp funcOp) {
-  Builder builder{funcOp.getContext()};
-
   if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp) &&
       !isViewMaterializeFunc(funcOp) && !isKernel(funcOp))
     return;
 
-  SmallVector<Attribute> valueParameters;
+  Builder builder{funcOp.getContext()};
   Attribute emptyAttr = builder.getUnitAttr();
 
+  SmallVector<Attribute> valueParameters;
   for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
     LIT::StructType asStructType = getAsStructType(litType);
 
@@ -445,21 +443,14 @@ static void labelTensorParamsInKernel(KGENModule &kgenModule,
       continue;
     }
 
-    if (symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice) ||
-        symbolMatches(asStructType.getSymbol(), kMaxSIMD) ||
-        symbolMatches(asStructType.getSymbol(), kMaxVariadicTensors) ||
-        symbolMatches(asStructType.getSymbol(),
-                      kMaxRuntimeDeviceContextPtrList)) {
-      auto tensorSpecNamedAttrs =
-          getUnboundParameters(kgenModule, asStructType);
-      valueParameters.push_back(tensorSpecNamedAttrs);
-    } else if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
-      auto tensorSpecNamedAttrs =
+    if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
+      auto parameters =
           getUnboundParametersForTensorList(kgenModule, asStructType);
-      valueParameters.push_back(tensorSpecNamedAttrs);
+      valueParameters.push_back(parameters);
     } else {
-      // Unsupported type, can ignore
-      valueParameters.push_back(emptyAttr);
+      // Otherwise we have an opaque type
+      auto parameters = getUnboundParameters(kgenModule, asStructType);
+      valueParameters.push_back(parameters);
     }
   }
   funcOp->setDiscardableAttr(kKernelValueParameterAttrName,
