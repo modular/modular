@@ -68,6 +68,7 @@ if TYPE_CHECKING:
 
 from .config_enums import RepoType, SupportedEncoding
 from .hf_utils import download_weight_files
+from .lora import LoRAManager
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
@@ -561,6 +562,15 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 self._pipeline_config.model_config.model_path / x
                 for x in self._pipeline_config.model_config.weight_path
             ]
+
+        weights = load_weights(weight_paths)
+
+        if self._pipeline_config.lora_config is not None:
+            self._lora_manager = LoRAManager(
+                weights,
+                self._pipeline_config.lora_config.max_num_loras,
+                self._pipeline_config.lora_config.lora_paths,
+            )
 
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,

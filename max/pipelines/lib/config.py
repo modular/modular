@@ -27,8 +27,10 @@ from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
 from .config_enums import PipelineEngine, PipelineRole
+from .lora import LoRAManager
 from .max_config import (
     KVCacheConfig,
+    LoRAConfig,
     MAXConfig,
     ProfilingConfig,
     SamplingConfig,
@@ -160,6 +162,12 @@ class PipelineConfig(MAXConfig):
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
     """The profiling config."""
 
+    _lora_config: Optional[LoRAConfig] = None
+    """The LoRA config."""
+
+    _lora_manager: Optional[LoRAManager] = None
+    """The LoRA Manager"""
+
     def __init__(self, **kwargs: Any) -> None:
         # Initialize all fields with their defaults first
         for curr_field in fields(self.__class__):
@@ -167,6 +175,17 @@ class PipelineConfig(MAXConfig):
                 setattr(self, curr_field.name, curr_field.default)
             elif curr_field.default_factory is not MISSING:
                 setattr(self, curr_field.name, curr_field.default_factory())
+
+        lora_kwargs = {}
+        for k, v in list(kwargs.items()):
+            if k in LoRAConfig.__dataclass_fields__:
+                lora_kwargs[k] = v
+                del kwargs[k]
+
+        if lora_kwargs.get("lora_paths", []):
+            self._lora_config = LoRAConfig(**lora_kwargs)
+        else:
+            self._lora_config = None
 
         # Check against draft model first
         draft_kwargs = {}
@@ -552,6 +571,14 @@ class PipelineConfig(MAXConfig):
     @property
     def profiling_config(self) -> ProfilingConfig:
         return self._profiling_config
+
+    @property
+    def lora_config(self) -> Optional[LoRAConfig]:
+        return self._lora_config
+
+    @property
+    def lora_manager(self) -> Optional[LoRAManager]:
+        return self._lora_manager
 
 
 def _parse_flag_bool(value: str, flag_name: str) -> bool:

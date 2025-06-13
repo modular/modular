@@ -161,3 +161,29 @@ class ProfilingConfig(MAXConfig):
         return {
             "gpu_profiling": "Whether to turn on GPU profiling for the model. This defaults to 'off'.",
         }
+
+
+@dataclass
+class LoRAConfig(MAXConfig):
+    lora_paths: list[str]
+    """List of statically defined LoRA paths"""
+
+    max_lora_rank: int = 16
+    """Maximum rank of all possible LoRAs"""
+
+    max_num_loras: int = 100
+    """The maximum number of active LoRAs in a batch"""
+
+    def __post_init__(self):
+        if len(self.lora_paths) > self.max_num_loras:
+            raise ValueError(
+                "Number of statically defined LoRAs exceeds the number of maximum loadable LoRAs."
+            )
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {
+            "lora_paths": "List of paths to the LoRAs.",
+            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16",
+            "max_num_loras": "The maximum number of active LoRAs in a batch",
+        }

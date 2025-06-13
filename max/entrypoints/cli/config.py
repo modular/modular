@@ -28,6 +28,7 @@ import click
 from max.driver import DeviceSpec
 from max.pipelines.lib import (
     KVCacheConfig,
+    LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
     ProfilingConfig,
@@ -188,6 +189,7 @@ def pipeline_config_options(func):
     @config_to_flag(MAXModelConfig)
     @config_to_flag(MAXModelConfig, prefix="draft")
     @config_to_flag(KVCacheConfig)
+    @config_to_flag(LoRAConfig)
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)
     @click.option(
