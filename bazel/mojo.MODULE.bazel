@@ -28,7 +28,7 @@ _PLATFORM_MAPPINGS = {
             MOJO_VERSION,
             _PLATFORM_MAPPINGS[platform],
         ),
-        url = "https://dl.modular.com/public/nightly/python/max-{}-py3-none-{}.whl".format(
+        url = URL_OVERRIDE or "https://dl.modular.com/public/nightly/python/max-{}-py3-none-{}.whl".format(
             MOJO_VERSION,
             _PLATFORM_MAPPINGS[platform],
         ),
