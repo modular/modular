@@ -2,8 +2,12 @@
 
 MOJO_VERSION = "25.4.0.dev2025061222"
 
+# NOTE: Used internally when pushing new releases
+URL_OVERRIDE = ""
+
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
+    url_override = URL_OVERRIDE,
     use_prebuilt_packages = False,
     version = MOJO_VERSION,
 )
