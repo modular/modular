@@ -215,6 +215,18 @@ def test_exp2():
     assert_equal(exp2(Float32(0)), 1.0)
     assert_equal(exp2(Float32(-1)), 0.5)
     assert_equal(exp2(Float32(2)), 4.0)
+    assert_almost_equal(exp2(Float32(-125)), 2.3509887e-38)
+    assert_almost_equal(exp2(Float32(125)), 4.2535296e37)
+
+    assert_equal(exp2(Float64(1)), 2.0)
+    assert_almost_equal(exp2(Float64(0.2)), 1.148696)
+    assert_equal(exp2(Float64(0)), 1.0)
+    assert_equal(exp2(Float64(-1)), 0.5)
+    assert_equal(exp2(Float64(2)), 4.0)
+    assert_almost_equal(exp2(Float64(-127)), 5.877471754111438e-39)
+    assert_almost_equal(exp2(Float64(127)), 1.7014118346046923e38)
+    assert_almost_equal(exp2(Float64(-1023)), 1.1125369292536007e-308)
+    assert_almost_equal(exp2(Float64(1023)), 8.98846567431158e307)
 
 
 def test_iota():
