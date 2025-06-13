@@ -141,6 +141,11 @@ class ShardingStrategy:
         """Whether the sharding strategy is column-wise."""
         return self.shard is col_sharding_strategy
 
+    @property
+    def is_replicate(self) -> bool:
+        """Whether the sharding strategy is replicate."""
+        return self.shard is replicate_sharding_strategy
+
     @staticmethod
     def rowwise(num_devices: int) -> ShardingStrategy:
         """Creates a row-wise sharding strategy.

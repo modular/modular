@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Weight
-from max.graph.weight import col_sharding_strategy, row_sharding_strategy
+from max.graph.weight import (
+    ShardingStrategy,
+    col_sharding_strategy,
+    row_sharding_strategy,
+)
 
 
 def test_row_sharding_strategy_divisible():
@@ -147,3 +151,51 @@ def test_row_sharding_small_non_divisible():
                 f"Device {i} should have {expected_rows[i]} rows, "
                 f"but got {int(shard.shape[0])}"
             )
+
+
+def test_sharding_strategy_is_rowwise():
+    """Tests the is_rowwise property of ShardingStrategy."""
+    # Test rowwise strategy
+    rowwise_strategy = ShardingStrategy.rowwise(num_devices=4)
+    assert rowwise_strategy.is_rowwise is True
+    assert rowwise_strategy.is_colwise is False
+    assert rowwise_strategy.is_replicate is False
+
+    # Test non-rowwise strategies
+    colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
+    assert colwise_strategy.is_rowwise is False
+
+    replicate_strategy = ShardingStrategy.replicate(num_devices=4)
+    assert replicate_strategy.is_rowwise is False
+
+
+def test_sharding_strategy_is_colwise():
+    """Tests the is_colwise property of ShardingStrategy."""
+    # Test columnwise strategy
+    colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
+    assert colwise_strategy.is_colwise is True
+    assert colwise_strategy.is_rowwise is False
+    assert colwise_strategy.is_replicate is False
+
+    # Test non-colwise strategies
+    rowwise_strategy = ShardingStrategy.rowwise(num_devices=4)
+    assert rowwise_strategy.is_colwise is False
+
+    replicate_strategy = ShardingStrategy.replicate(num_devices=4)
+    assert replicate_strategy.is_colwise is False
+
+
+def test_sharding_strategy_is_replicate():
+    """Tests the is_replicate property of ShardingStrategy."""
+    # Test replicate strategy
+    replicate_strategy = ShardingStrategy.replicate(num_devices=4)
+    assert replicate_strategy.is_replicate is True
+    assert replicate_strategy.is_rowwise is False
+    assert replicate_strategy.is_colwise is False
+
+    # Test non-replicate strategies
+    rowwise_strategy = ShardingStrategy.rowwise(num_devices=4)
+    assert rowwise_strategy.is_replicate is False
+
+    colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
+    assert colwise_strategy.is_replicate is False
