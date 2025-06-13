@@ -121,7 +121,7 @@ coloredlogs==15.0.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via onnxruntime
 comm==0.2.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via ipykernel
-configargparse==1.7 ; sys_platform == 'darwin' or sys_platform == 'linux'
+configargparse==1.7.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via locust
 contextlib2==21.6.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via schema
