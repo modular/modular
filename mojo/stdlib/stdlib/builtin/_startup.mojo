@@ -15,8 +15,6 @@
 from sys import external_call
 from sys.ffi import OpaquePointer, _get_global
 
-from memory import UnsafePointer
-
 
 fn _init_global_runtime() -> OpaquePointer:
     return external_call[

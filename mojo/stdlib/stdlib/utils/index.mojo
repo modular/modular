@@ -20,7 +20,6 @@ from utils import IndexList
 ```
 """
 
-from collections.string.string import _calc_initial_buffer_size
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof
 

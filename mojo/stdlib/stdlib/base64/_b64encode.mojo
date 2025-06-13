@@ -24,7 +24,6 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from collections import InlineArray
 from math import iota
 from sys import llvm_intrinsic
 

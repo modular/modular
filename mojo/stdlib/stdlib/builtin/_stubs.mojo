@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.range import _StridedRangeIterator, _UIntStridedRangeIterator
 
 # ===-----------------------------------------------------------------------===#
 # __MLIRType

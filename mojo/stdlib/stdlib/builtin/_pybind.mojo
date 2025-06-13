@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import alignof, sizeof
 from compile.reflection import get_type_name
 
 import python._cpython as cp
