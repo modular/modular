@@ -666,6 +666,12 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   return signature;
 }
 
+FnTypeGeneratorType LIT::specializeSignature(FnOp traitFn, ASTType newSelfType,
+                                             DeclResolver &declResolver) {
+  return createRequirementSignature(traitFn, newSelfType, nullptr, nullptr,
+                                    declResolver);
+}
+
 FailureOr<GetWitnessAttr>
 LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
                                        TraitType trait, StringRef entryName,

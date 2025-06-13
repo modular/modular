@@ -21,6 +21,7 @@ class GetWitnessAttr;
 namespace M::KGEN::LIT {
 class ASTDecl;
 class SharedState;
+class FnTypeGeneratorType;
 
 /// Check conformance of a struct against a given trait decl. Inherited methods
 /// are not checked, so to verify full conformance of an inheriting trait decl,
@@ -48,6 +49,9 @@ FailureOr<GetWitnessAttr> getUniqueWitnessForTypeIfConforms(SharedState &shared,
                                                             TraitType trait,
                                                             StringRef entryName,
                                                             SMLoc errorLoc);
+
+FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
+                                        DeclResolver &declResolver);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_TRAITS_H
