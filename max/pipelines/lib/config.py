@@ -603,8 +603,14 @@ def _parse_flag_int(value: str, flag_name: str) -> int:
 
 class PrependPromptSpeechTokens(str, Enum):
     NEVER = "never"
+    """Never prepend the prompt speech tokens sent to the audio decoder."""
+
     ONCE = "once"
+    """Prepend the prompt speech tokens to the first block of the audio decoder."""
+
     ALWAYS = "always"
+    """Prepend the prompt speech tokens to all blocks of speech tokens sent to
+    the audio decoder."""
 
 
 @dataclass
@@ -630,7 +636,7 @@ class AudioGenerationConfig(PipelineConfig):
     Has no effect if buffer is not set."""
 
     prepend_prompt_speech_tokens: PrependPromptSpeechTokens = (
-        PrependPromptSpeechTokens.NEVER
+        PrependPromptSpeechTokens.ONCE
     )
     """Whether the prompt speech tokens should be forwarded to the audio decoder.
     If "never", the prompt tokens are not forwarded.
