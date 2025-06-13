@@ -8,3 +8,30 @@ mojo.toolchain(
     version = MOJO_VERSION,
 )
 use_repo(mojo, "mojo_toolchains")
+
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+_PLATFORM_MAPPINGS = {
+    "linux_aarch64": "manylinux_2_34_aarch64",
+    "linux_x86_64": "manylinux_2_34_x86_64",
+    "macos_arm64": "macosx_13_0_arm64",
+}
+
+[
+    http_file(
+        name = "modular_{}".format(platform),
+        downloaded_file_path = "max-{}-py3-none-{}.whl".format(
+            MOJO_VERSION,
+            _PLATFORM_MAPPINGS[platform],
+        ),
+        url = "https://dl.modular.com/public/nightly/python/max-{}-py3-none-{}.whl".format(
+            MOJO_VERSION,
+            _PLATFORM_MAPPINGS[platform],
+        ),
+    )
+    for platform in [
+        "linux_x86_64",
+        "linux_aarch64",
+        "macos_arm64",
+    ]
+]
