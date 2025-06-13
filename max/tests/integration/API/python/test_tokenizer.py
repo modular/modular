@@ -173,6 +173,7 @@ def test_tokenizer_regression_MODELS_467() -> None:
         "mistralai/Mistral-7B-Instruct-v0.3",
         revision="e0bc86c23ce5aae1db576c8cca6f06f1f73af2db",
         enable_llama_whitespace_fix=True,
+        trust_remote_code=True,
     )
 
     def rank1(items: list[int]) -> np.ndarray:
@@ -298,3 +299,66 @@ def test_tokenizer_encode_stop_criteria(llama_3_1_8b_instruct_local_path):
     assert len(context.eos_sequences) == 1
     assert len(context.eos_sequences[0]) == 1
     assert np.array_equal(context.eos_sequences[0], [0])
+
+
+@pytest.mark.asyncio
+async def test_tokenizer__generate_prompt_and_token_ids(
+    llama_3_1_8b_instruct_local_path,
+):
+    """Test the _generate_prompt_and_token_ids method of TextTokenizer."""
+    tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
+
+    # Test with string prompt
+    prompt = "Hello, how are you?"
+    prompt_text, token_ids = await tokenizer._generate_prompt_and_token_ids(
+        prompt=prompt,
+        messages=None,
+    )
+    assert isinstance(prompt_text, str)
+    assert prompt_text == prompt
+    assert isinstance(token_ids, np.ndarray)
+    expected_token_ids = await tokenizer.encode(prompt, add_special_tokens=True)
+    assert np.array_equal(token_ids, expected_token_ids)
+
+    # Test with list of messages
+    messages = [
+        TokenGeneratorRequestMessage(
+            role="user",
+            content="Hello, how are you?",
+        ),
+        TokenGeneratorRequestMessage(
+            role="assistant",
+            content="I'm doing well, thank you!",
+        ),
+    ]
+    prompt_text, token_ids = await tokenizer._generate_prompt_and_token_ids(
+        prompt=None,
+        messages=messages,
+    )
+    assert isinstance(prompt_text, str)
+    expected_token_ids = await tokenizer.encode(
+        prompt_text, add_special_tokens=False
+    )
+    assert np.array_equal(token_ids, expected_token_ids)
+    # Verify that the chat template was applied
+    assert "Hello, how are you?" in prompt_text
+    assert "I'm doing well, thank you!" in prompt_text
+
+    # Test with both prompt and messages (should raise ValueError)
+    with pytest.raises(
+        ValueError, match="both prompt and messages cannot be provided"
+    ):
+        await tokenizer._generate_prompt_and_token_ids(
+            prompt="test",
+            messages=messages,
+        )
+
+    # Test with neither prompt nor messages (should raise ValueError)
+    with pytest.raises(
+        ValueError,
+        match="either prompt must be provided as a list\\[int\\] or str, or messages must be provided as a list\\[TokenGeneratorRequestMessage\\]",
+    ):
+        await tokenizer._generate_prompt_and_token_ids(
+            prompt=None,
+            messages=None,
+        )

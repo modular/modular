@@ -53,6 +53,7 @@ modular_py_test(
         requirement("transformers"),
         requirement("msgspec"),
         requirement("xgrammar"),  # needed only for test_sampling.py
+        requirement("pytest-asyncio"),
     ],
 )
 
