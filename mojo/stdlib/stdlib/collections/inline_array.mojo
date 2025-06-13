@@ -118,7 +118,7 @@ struct InlineArray[
             (
                 "Initialize with either a variadic list of arguments, a default"
                 " fill element or pass the keyword argument"
-                " 'unsafe_uninitialized'."
+                " 'uninitialized=True'."
             ),
         ]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))

@@ -17,7 +17,7 @@ from builtin._location import __call_location
 from hashlib._fnv1a import Fnv1a
 from hashlib._hasher import _Hasher, _HashableWithHasher
 from testing import assert_equal, assert_not_equal, assert_true
-from memory import memset_zero, stack_allocation, UnsafePointer
+from memory import memset_zero, UnsafePointer
 from test_utils import (
     gen_word_pairs,
     words_ar,
@@ -43,9 +43,9 @@ fn hash[
     return value
 
 
-fn hash[HasherType: _Hasher](bytes: UnsafePointer[UInt8], n: Int) -> UInt64:
+fn hash[HasherType: _Hasher](bytes: Span[UInt8, _], n: Int) -> UInt64:
     var hasher = HasherType()
-    hasher._update_with_bytes(bytes, n)
+    hasher._update_with_bytes(bytes.unsafe_ptr(), n)
     var value = hasher^.finish()
     return value
 
@@ -87,16 +87,15 @@ def test_hash_byte_array():
 def test_avalanche():
     # test that values which differ just in one bit,
     # produce significatly different hash values
-    var data = stack_allocation[256, UInt8]()
-    memset_zero(data, 256)
+    var buffer = InlineArray[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(hash[HasherType=Fnv1a](data, 256))
+    hashes.append(hash[HasherType=Fnv1a](buffer, 256))
 
     for i in range(256):
-        memset_zero(data, 256)
+        memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
-        data[i >> 3] = v
-        hashes.append(hash[HasherType=Fnv1a](data, 256))
+        buffer[i >> 3] = v
+        hashes.append(hash[HasherType=Fnv1a](buffer, 256))
 
     assert_dif_hashes(hashes, 15)
 
@@ -104,12 +103,11 @@ def test_avalanche():
 def test_trailing_zeros():
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
-    var data = stack_allocation[8, UInt8]()
-    memset_zero(data, 8)
-    data[0] = 23
+    var buffer = InlineArray[UInt8, 8](fill=0)
+    buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(hash[HasherType=Fnv1a](data, i))
+        hashes.append(hash[HasherType=Fnv1a](buffer, i))
 
     assert_dif_hashes(hashes, 21)
 
