@@ -85,6 +85,11 @@ class Value(Generic[MlirType]):
 
     @classmethod
     def from_mlir(cls, value: _Value[MlirType]) -> Value:
+        """Creates a :obj:`Value` from an MLIR value.
+
+        Args:
+            value: The MLIR value to wrap.
+        """
         if isinstance(value.type, mo.TensorType):
             return TensorValue.from_mlir(cast(_Value[mo.TensorType], value))
         elif isinstance(value.type, mo.ChainType):
@@ -96,6 +101,7 @@ class Value(Generic[MlirType]):
         raise TypeError(f"Invalid mlir value {value=}")
 
     def __repr__(self):
+        """Returns a string representation of the :obj:`Value`."""
         return str(self._mlir_value.type)
 
     @property
@@ -192,6 +198,11 @@ class BufferValue(Value[mo.BufferType]):
     """Represents a mutable semantic tensor within a `Graph`."""
 
     def __init__(self, value: Value | _Value[mo.BufferType]) -> None:
+        """Initializes a :obj:`BufferValue` from another value.
+
+        Args:
+            value: The value to wrap, either an MLIR value of buffer type or another :obj:`BufferValue`.
+        """
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.BufferType)
             self._mlir_value = value
@@ -205,6 +216,11 @@ class BufferValue(Value[mo.BufferType]):
 
     @classmethod
     def from_mlir(cls, value: _Value[mo.BufferType]) -> BufferValue:
+        """Creates a :obj:`BufferValue` from an MLIR buffer value.
+
+        Args:
+            value: The MLIR buffer value to wrap.
+        """
         return cls(value)
 
     @property
@@ -233,12 +249,18 @@ class BufferValue(Value[mo.BufferType]):
         return self.type.rank
 
     def __repr__(self):
+        """Returns a string representation of the :obj:`BufferValue`."""
         dtype = self.dtype
         shape = self.shape
         device = self.device
         return f"{type(self).__name__}({dtype=}, {shape=}, {device=})"
 
     def __getitem__(self, index) -> TensorValue:
+        """Loads data from the buffer at the specified index.
+
+        Args:
+            index: The index or slice to access. Can be an integer, slice, or tuple of indices.
+        """
         x = ops.buffer_load(self)
         if index is Ellipsis:
             return x
@@ -252,6 +274,12 @@ class BufferValue(Value[mo.BufferType]):
         index,
         val: TensorValue,
     ) -> None:
+        """Stores data into the buffer at the specified index.
+
+        Args:
+            index: The index or slice to store at. Can be an integer, slice, or tuple of indices.
+            val: The :obj:`TensorValue` to store in the buffer.
+        """
         if index is Ellipsis:
             return ops.buffer_store(self, val)
         return ops.buffer_store_slice(
@@ -261,6 +289,7 @@ class BufferValue(Value[mo.BufferType]):
         )
 
     def print(self, label: str = "debug_buffer"):
+        """Prints detailed information about the buffer."""
         ops.print(self[...], label=label)
 
 
@@ -303,6 +332,12 @@ class TensorValue(Value[mo.TensorType]):
     __iter__ = None
 
     def __init__(self, value: TensorValueLike) -> None:
+        """Initializes a :obj:`TensorValue` from a tensor-like value.
+
+        Args:
+            value: The value to wrap. Can be an MLIR tensor value, another :obj:`TensorValue`,
+                a :obj:`Dim`, or a :obj:`Shape`.
+        """
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.TensorType)
             self._mlir_value = value
@@ -327,6 +362,11 @@ class TensorValue(Value[mo.TensorType]):
 
     @classmethod
     def from_mlir(cls, value: _Value[mo.TensorType]) -> TensorValue:
+        """Creates a :obj:`TensorValue` from an MLIR tensor value.
+
+        Args:
+            value: The MLIR tensor value to wrap.
+        """
         return cls(value)
 
     @staticmethod
@@ -335,9 +375,6 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             dim: The dimension value.
-
-        Returns:
-            A new :obj:`TensorValue`.
         """
         ans = ops.shape_to_tensor([dim])
         ans.type.device = DeviceRef.CPU()
@@ -349,15 +386,13 @@ class TensorValue(Value[mo.TensorType]):
 
         Args:
             shape: An iterable of integers or symbolic dimensions.
-
-        Returns:
-            A new :obj:`TensorValue`.
         """
         ans = ops.shape_to_tensor(shape)
         ans.type.device = DeviceRef.CPU()
         return ans
 
     def __repr__(self):
+        """Returns a string representation of the :obj:`TensorValue`."""
         dtype = self.dtype
         shape = self.shape
         device = self.device
@@ -702,12 +737,22 @@ class TensorValue(Value[mo.TensorType]):
         return self.transpose(-1, -2)
 
     def __getitem__(self, index: Any) -> TensorValue:
+        """Extracts a slice or subset of the tensor.
+
+        Args:
+            index: The index or slice to access. Can be an integer, slice, ellipsis, or tuple of indices.
+        """
         return ops.slice_tensor(
             self,
             index if isinstance(index, Iterable) else (index,),  # type: ignore
         )
 
     def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+        """Performs element-wise equality comparison.
+
+        Args:
+            rhs: The right-hand side operand for comparison. Must be tensor-like.
+        """
         if _is_tensor_value_like(rhs):
             return ops.equal(self, rhs)
         else:
@@ -717,9 +762,15 @@ class TensorValue(Value[mo.TensorType]):
             )
 
     def __neg__(self) -> TensorValue:
+        """Performs element-wise negation."""
         return ops.negate(self)
 
     def __ne__(self, rhs: Any) -> TensorValue:  # type: ignore[override]
+        """Performs element-wise inequality comparison.
+
+        Args:
+            rhs: The right-hand side operand for comparison. Must be tensor-like.
+        """
         if _is_tensor_value_like(rhs):
             return ops.not_equal(self, rhs)
         else:
@@ -729,6 +780,11 @@ class TensorValue(Value[mo.TensorType]):
             )
 
     def __ge__(self, rhs: Any) -> TensorValue:
+        """Performs element-wise greater-than-or-equal comparison.
+
+        Args:
+            rhs: The right-hand side operand for comparison. Must be tensor-like.
+        """
         if _is_tensor_value_like(rhs):
             return ops.greater_equal(self, rhs)
         else:
@@ -738,6 +794,11 @@ class TensorValue(Value[mo.TensorType]):
             )
 
     def __gt__(self, rhs: Any) -> TensorValue:
+        """Performs element-wise greater-than comparison.
+
+        Args:
+            rhs: The right-hand side operand for comparison. Must be tensor-like.
+        """
         if _is_tensor_value_like(rhs):
             return ops.greater(self, rhs)
         else:
@@ -747,88 +808,219 @@ class TensorValue(Value[mo.TensorType]):
             )
 
     def __lt__(self, rhs: Any) -> TensorValue:
+        """Performs element-wise less-than comparison.
+
+        Args:
+            rhs: The right-hand side operand for comparison. Must be tensor-like.
+        """
         return ops.logical_not(self >= rhs)
 
     def __le__(self, rhs: Any) -> TensorValue:
+        """Performs element-wise less-than-or-equal comparison.
+
+        Args:
+            rhs: The right-hand side operand for comparison. Must be tensor-like.
+        """
         return ops.logical_not(self > rhs)
 
     def __add__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise addition.
+
+        Args:
+            rhs: The right-hand side operand for addition. Must be tensor-like.
+        """
         return ops.add(self, rhs)
 
     def __radd__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise addition with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for addition. Must be tensor-like.
+        """
         return ops.add(lhs, self)
 
     def __sub__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise subtraction.
+
+        Args:
+            rhs: The right-hand side operand for subtraction. Must be tensor-like.
+        """
         return ops.sub(self, rhs)
 
     def __rsub__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise subtraction with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for subtraction. Must be tensor-like.
+        """
         return ops.sub(lhs, self)
 
     def __mul__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise multiplication.
+
+        Args:
+            rhs: The right-hand side operand for multiplication. Must be tensor-like.
+        """
         return ops.mul(self, rhs)
 
     def __rmul__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise multiplication with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for multiplication. Must be tensor-like.
+        """
         return ops.mul(lhs, self)
 
     def __truediv__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise division.
+
+        Args:
+            rhs: The right-hand side operand for division. Must be tensor-like.
+        """
         return ops.div(self, rhs)
 
     def __rtruediv__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise division with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for division. Must be tensor-like.
+        """
         return ops.div(lhs, self)
 
     def __floordiv__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise floor division.
+
+        Args:
+            rhs: The right-hand side operand for floor division. Must be tensor-like.
+        """
         return ops.floor(ops.div(self, rhs))
 
     def __rfloordiv__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise floor division with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for floor division. Must be tensor-like.
+        """
         return ops.floor(ops.div(lhs, self))
 
     def __mod__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise modulo operation.
+
+        Args:
+            rhs: The right-hand side operand for modulo. Must be tensor-like.
+        """
         return ops.mod(self, rhs)
 
     def __rmod__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise modulo operation with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for modulo. Must be tensor-like.
+        """
         return ops.mod(lhs, self)
 
     def __divmod__(
         self, rhs: TensorValueLike
     ) -> tuple[TensorValue, TensorValue]:
+        """Performs element-wise division and modulo operation simultaneously.
+
+        Args:
+            rhs: The right-hand side operand for divmod. Must be tensor-like.
+        """
         return (self // rhs, self % rhs)
 
     def __rdivmod__(
         self, lhs: TensorValueLike
     ) -> tuple[TensorValue, TensorValue]:
+        """Performs element-wise division and modulo operation with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for divmod. Must be tensor-like.
+        """
         return (lhs // self, lhs % self)
 
     def __matmul__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs matrix multiplication.
+
+        Args:
+            rhs: The right-hand side operand for matrix multiplication. Must be tensor-like.
+        """
         return ops.matmul(self, rhs)
 
     def __rmatmul__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs matrix multiplication with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for matrix multiplication. Must be tensor-like.
+        """
         return ops.matmul(lhs, self)
 
     def __pow__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise exponentiation.
+
+        Args:
+            rhs: The right-hand side operand for exponentiation. Must be tensor-like.
+        """
         return ops.pow(self, rhs)
 
     def __rpow__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise exponentiation with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for exponentiation. Must be tensor-like.
+        """
         return ops.pow(lhs, self)
 
     def __and__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise logical AND operation.
+
+        Args:
+            rhs: The right-hand side operand for logical AND. Must be tensor-like.
+        """
         return ops.logical_and(self, rhs)
 
     def __rand__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise logical AND operation with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for logical AND. Must be tensor-like.
+        """
         return ops.logical_and(lhs, self)
 
     def __or__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise logical OR operation.
+
+        Args:
+            rhs: The right-hand side operand for logical OR. Must be tensor-like.
+        """
         return ops.logical_or(self, rhs)
 
     def __ror__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise logical OR operation with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for logical OR. Must be tensor-like.
+        """
         return ops.logical_or(lhs, self)
 
     def __xor__(self, rhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise logical XOR operation.
+
+        Args:
+            rhs: The right-hand side operand for logical XOR. Must be tensor-like.
+        """
         return ops.logical_xor(self, rhs)
 
     def __rxor__(self, lhs: TensorValueLike) -> TensorValue:
+        """Performs element-wise logical XOR operation with reversed operands.
+
+        Args:
+            lhs: The left-hand side operand for logical XOR. Must be tensor-like.
+        """
         return ops.logical_xor(lhs, self)
 
     def __invert__(self) -> TensorValue:
+        """Performs element-wise logical NOT operation."""
         return ops.logical_not(self)
 
 
