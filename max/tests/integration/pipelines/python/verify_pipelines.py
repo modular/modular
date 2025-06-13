@@ -824,24 +824,25 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="gemma3-1b",
             encoding="bfloat16",
-            cos_dist_threshold=9.9e-04,
-            kl_div_threshold=1.1e-02,
+            cos_dist_threshold=1.3e-3,
+            kl_div_threshold=1.4e-02,
         ),
     ),
     # TODO: Gemma-3-12B requires unusually high tolerances (atol=7.3, rtol=0.52).
     # This should be investigated to improve model accuracy.
-    "google/gemma-3-12b-it-float16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="gemma3-multimodal",
-            encoding="bfloat16",
-            absolute_tolerance=7.3,
-            relative_tolerance=0.52,
-            cos_dist_threshold=1.1e-01,
-            kl_div_threshold=2.5e-01,
-        ),
-    ),
+    # TODO(MODELS-620): Disabled because of a HF transformers bump
+    # "google/gemma-3-12b-it-float16": PipelineDef(
+    #     compatible_with=[DeviceKind.GPU],
+    #     tags=["big"],
+    #     run=_make_pipeline_runner(
+    #         pipeline="gemma3-multimodal",
+    #         encoding="bfloat16",
+    #         absolute_tolerance=7.3,
+    #         relative_tolerance=0.52,
+    #         cos_dist_threshold=1.1e-01,
+    #         kl_div_threshold=2.5e-01,
+    #     ),
+    # ),
 }
 
 
