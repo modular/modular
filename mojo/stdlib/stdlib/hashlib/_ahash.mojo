@@ -182,13 +182,7 @@ struct AHasher[key: U256](Defaultable, _Hasher):
         @parameter
         if rounds == 1:
             # vector values are not bigger than 8 bytes each
-            var u64: SIMD[DType.uint64, new_data.size]
-
-            @parameter
-            if new_data.dtype.is_floating_point():
-                u64 = new_data._to_bits_signed().cast[DType.uint64]()
-            else:
-                u64 = new_data.cast[DType.uint64]()
+            var u64 = new_data.to_bits[DType.uint64]()
 
             @parameter
             if u64.size == 1:

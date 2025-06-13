@@ -69,13 +69,11 @@ struct Fnv1a(Defaultable, _Hasher):
                 var u64: UInt64
 
                 @parameter
-                if value.dtype.is_floating_point():
-                    u64 = v._to_bits_signed().cast[DType.uint64]()
-                elif value.dtype.is_integral():
+                if value.dtype.is_integral():
                     u64 = (v >> (r * 64)).cast[DType.uint64]()
                 else:
-                    u64 = v.cast[DType.uint64]()
-                self._value ^= u64.cast[DType.uint64]()
+                    u64 = v.to_bits[DType.uint64]()
+                self._value ^= u64
                 self._value *= 0x100000001B3
 
     fn update[T: _HashableWithHasher](mut self, value: T):
