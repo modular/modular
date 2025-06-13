@@ -212,6 +212,15 @@ class Graph:
         module: Optional[mlir.Module] = None,
         **kwargs,
     ) -> None:
+        """
+        Args:
+            name: A name for the graph.
+            forward: The sequence of graph ops for the forward pass (inference).
+            input_types: The data type(s) for the input tensor(s).
+            path: The path to a saved graph (internal use only).
+            custom_extensions: The extensions to load for the model.
+              Supports paths to `.mojopkg` or `.mojo` sources with custom ops.
+        """
         self.name = name
         if path is not None:
             self._load_mlir(path)
