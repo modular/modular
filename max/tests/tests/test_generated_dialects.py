@@ -9,7 +9,7 @@ import functools
 
 import pytest
 from max import mlir
-from max._core import NamedAttribute, OpBuilder, Type
+from max._core import Block, InsertPoint, NamedAttribute, OpBuilder, Type
 from max._core.dialects import builtin, m, mo, mosh
 from max._core.dtype import DType
 
@@ -74,6 +74,25 @@ def test_mo_graph_op(mlir_context):
     assert graph.name == "hello"
     assert list(graph.input_parameters) == []
     assert graph.function_type == builtin.FunctionType([], [])
+
+
+def test_regions_and_blocks(mlir_context):
+    loc = mlir.Location.current
+
+    module = builtin.ModuleOp(loc)
+    builder = OpBuilder(module.body.end)
+    graph = builder.create(mo.GraphOp, loc)("hello", [], [], is_subgraph=False)
+
+    block = graph.regions[0].front
+    assert isinstance(block, Block)
+
+    del builder
+    del graph
+    del module
+
+    # check that we can still safely access the block
+    ip = block.end
+    assert isinstance(ip, InsertPoint)
 
 
 def test_device_ref_attr(mlir_context):
