@@ -32,12 +32,16 @@ from max.support.paths import (
 )
 
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
-# implements the protocol.
+
+# implements the protocol
+
 DLPackCompatible = Union[DLPackArray, npt.NDArray]
 InputShape = Optional[list[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[list[CustomExtensionType], CustomExtensionType]
-# Need to use tuple instead of Union to ensure that Python 3.9 support works.
+
+# Need to use tuple instead of Union to ensure that Python 3.9 support works
+
 ScalarType = (int, float, bool, np.generic)
 InputType = Union[
     DLPackCompatible, Tensor, MojoValue, int, float, bool, np.generic
@@ -132,6 +136,29 @@ def _map_execute_kwarg(
 @traced
 def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
     tracer = Tracer()
+
+    # Check if any inputs expect opaque types (DType._unknown)
+    has_opaque_inputs = any(
+        spec.dtype == DType._unknown for spec in self.input_metadata
+    )
+
+    if has_opaque_inputs:
+        # Use the kwargs-based execution path which can handle opaque types
+        kwargs = {
+            spec.name: arg for spec, arg in zip(self.input_metadata, args)
+        }
+        results_dict = self._execute(**kwargs)
+        # Convert dict results to list in the order of output metadata
+        opaque_results: list[Tensor | MojoValue] = []
+        for spec in self.output_metadata:
+            result = results_dict[spec.name]
+            # Ensure tensor results are wrapped as Tensor objects
+            if isinstance(result, np.ndarray):
+                result = Tensor.from_numpy(result)
+            opaque_results.append(result)
+        return opaque_results
+
+    # Original tensor-only execution path
     input_impls: list[Union[Tensor, MojoValue]] = []
 
     for idx, arg in enumerate(args):
@@ -181,23 +208,6 @@ def _Model_call(
     return self.execute(*bound.arguments.values())
 
 
-def _Model_execute_legacy(
-    self: Model,
-    **kwargs: Any,
-) -> dict[str, Union[np.ndarray, dict, list, tuple]]:
-    # Wrapping the tensors happens by recording their addresses, which does
-    # not increase reference count, so we need to ensure the garbage
-    # collector does not free them. Since numpy arrays are not hashable, we
-    # do this with a dictionary with pointer keys.
-    keep_referenced: dict[int, Any] = {}
-    dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
-    for input_name, input_value in kwargs.items():
-        kwargs[input_name] = _map_execute_kwarg(
-            input_value, dtype_map[input_name], keep_referenced
-        )
-    return self._execute(**kwargs)
-
-
 def _Model_repr(self: Model) -> str:
     return f"Model(inputs={self.input_metadata})"
 
@@ -213,7 +223,6 @@ def _Model_signature(self: Model) -> Signature:
 
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
-Model.execute_legacy = _Model_execute_legacy  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 
@@ -250,16 +259,6 @@ def _is_torch_metadata_module(obj: Any) -> bool:
     return type(obj).__name__ == "TorchMetadata"
 
 
-def _is_torchscript_module(obj: Any) -> bool:
-    """Checks if an object is a `torch.jit.script.ScriptModule` or a compatible
-    (sub)class thereof."""
-    t = type(obj)
-    return t.__name__ in [
-        "ScriptModule",
-        "RecursiveScriptModule",
-    ] and t.__module__ in ["torch.jit.script", "torch.jit._script"]
-
-
 def _is_max_graph(obj: Any) -> bool:
     """Checks if an object is `max.graph.Graph`."""
     # TODO(MSDK-677): We should use isinstance here once max.graph
@@ -269,32 +268,6 @@ def _is_max_graph(obj: Any) -> bool:
         object_kind.__name__ == "Graph"
         and object_kind.__module__.startswith("max.graph")
     )
-
-
-def _remove_static_info_from_torch_jit_graph(graph: Any):
-    """Removes any static tensor type information from a torch.jit graph.
-    Preserve device annotations."""
-    import torch  # type: ignore
-
-    def _remove_static_info_from_value(value):
-        if (
-            value.type().isSubtypeOf(torch._C.TensorType.get())
-            and value.type().device()
-        ):
-            value.setType(
-                torch._C.TensorType.get().with_device(value.type().device())
-            )
-
-    def _remove_static_info_from_node(node):
-        for input in node.inputs():
-            _remove_static_info_from_value(input)
-
-        for output in node.outputs():
-            _remove_static_info_from_value(output)
-
-    # Apply this function to all nodes in the graph
-    for node in graph.nodes():
-        _remove_static_info_from_node(node)
 
 
 def _process_custom_extensions_object(
@@ -309,8 +282,6 @@ def _process_custom_extensions_object(
         return custom_extension
     if _is_torch_metadata_module(custom_extension):
         return custom_extension._get_jit_functions()._c
-    if _is_torchscript_module(custom_extension):
-        return custom_extension._c
     raise TypeError("Unsupported type for custom ops libraries.")
 
 
@@ -398,11 +369,8 @@ class InferenceSession:
             devices: A list of devices on which to run inference. Default is
               the host CPU only.
             custom_extensions: The extensions to load for the model.
-              Supports paths to `.mojopkg` custom ops, `.so` custom op libraries
-              for PyTorch and `.pt` torchscript files for torch metadata
-              libraries. Supports :obj:`TorchMetadata` and
-              :obj:`torch.jit.ScriptModule` objects for
-              torch metadata libraries without serialization.
+              Supports paths to a `.mojopkg` custom ops library or a `.mojo`
+              source file.
         """
         config: dict[str, Any] = {}
         self.num_threads = num_threads
