@@ -1118,7 +1118,7 @@ traitlets==5.14.3 ; sys_platform == 'linux'
     #   nbclient
     #   nbconvert
     #   nbformat
-transformers==4.51.3 ; sys_platform == 'linux'
+transformers==4.52.4 ; sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/requirements.in
     #   lm-eval
