@@ -226,7 +226,9 @@ modular_shared_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//AsyncRT:DeviceContextImpl",
         "//AsyncRT:NIXL",
+        "//AsyncRT:Support",
         "@ucx_prebuilt//:ucx",
     ],
 )
