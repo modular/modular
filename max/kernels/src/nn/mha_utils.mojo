@@ -635,9 +635,8 @@ trait OptionallyStaticInt(Intable):
 
 # These are used to avoid generating code for passing unused values to kernels.
 # That is, if we have a static int, no argument should be passed.
-@value
 @register_passable("trivial")
-struct StaticInt[value: Int](OptionallyStaticInt):
+struct StaticInt[value: Int](Defaultable, OptionallyStaticInt):
     alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
 
     @always_inline("nodebug")
@@ -653,7 +652,6 @@ struct StaticInt[value: Int](OptionallyStaticInt):
         return UInt32(Self.value)
 
 
-@value
 @register_passable("trivial")
 struct DynamicInt(OptionallyStaticInt):
     var value: UInt32
@@ -693,9 +691,10 @@ trait MHAPartitionScheme:
         ...
 
 
-@value
 @register_passable("trivial")
-struct NoPartition[dtype: DType](MHAPartitionScheme):
+struct NoPartition[dtype: DType](
+    Copyable, Defaultable, MHAPartitionScheme, Movable
+):
     alias do_partition: Bool = False
     alias accum_dtype: DType = dtype
 
@@ -714,9 +713,8 @@ struct NoPartition[dtype: DType](MHAPartitionScheme):
         return UnsafePointer[Scalar[Self.accum_dtype]]()
 
 
-@value
 @register_passable("trivial")
-struct SplitKPartition[dtype: DType](MHAPartitionScheme):
+struct SplitKPartition[dtype: DType](Copyable, MHAPartitionScheme, Movable):
     alias do_partition: Bool = True
     alias accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
