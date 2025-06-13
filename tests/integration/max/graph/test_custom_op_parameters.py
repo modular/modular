@@ -33,10 +33,9 @@ def test_custom_op_with_int_parameter(
         "test_op_with_int_parameter",
         input_types=[unimportant_for_test_tensor_type],
         output_types=[unimportant_for_test_tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_int_parameter",
@@ -68,10 +67,9 @@ def test_custom_op_with_dtype_parameter(
         "test_op_with_dtype_parameter",
         input_types=[unimportant_for_test_tensor_type],
         output_types=[unimportant_for_test_tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_dtype_parameter",
@@ -102,10 +100,9 @@ def test_custom_op_with_static_string_parameter(
         "test_op_with_static_string_parameter",
         input_types=[unimportant_for_test_tensor_type],
         output_types=[unimportant_for_test_tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_static_string_parameter",

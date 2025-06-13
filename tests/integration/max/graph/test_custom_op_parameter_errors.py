@@ -27,10 +27,9 @@ def test_op_with_int_parameter_passed_as_string(
         "test_op_with_int_parameter_passed_as_string",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_int_parameter",
@@ -57,10 +56,9 @@ def test_op_with_int_parameter_passed_as_dtype(
         "test_op_with_int_parameter_passed_as_dtype",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_int_parameter",
@@ -87,10 +85,9 @@ def test_op_with_dtype_parameter_passed_as_string(
         "test_op_with_dtype_parameter_passed_as_string",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_dtype_parameter",
@@ -117,10 +114,9 @@ def test_op_with_dtype_parameter_passed_as_int(
         "test_op_with_dtype_parameter_passed_as_int",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_dtype_parameter",
@@ -147,10 +143,9 @@ def test_op_with_string_parameter_passed_as_int(
         "test_op_with_string_parameter_passed_as_int",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_string_parameter",
@@ -177,10 +172,9 @@ def test_op_with_string_parameter_passed_as_dtype(
         "test_op_with_string_parameter_passed_as_dtype",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_string_parameter",
@@ -207,10 +201,9 @@ def test_op_with_string_parameter_passed_as_string_literal(
         "test_op_with_string_parameter_passed_as_string_literal",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_string_parameter",
@@ -237,10 +230,9 @@ def test_op_with_string_slice_parameter_passed_as_int(
         "test_op_with_string_slice_parameter_passed_as_int",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_string_slice_parameter",
@@ -267,10 +259,9 @@ def test_op_with_string_slice_parameter_passed_as_dtype(
         "test_op_with_string_slice_parameter_passed_as_dtype",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_string_slice_parameter",
@@ -297,10 +288,9 @@ def test_op_with_string_slice_parameter_passed_as_string_literal(
         "test_op_with_string_slice_parameter_passed_as_string_literal",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_string_slice_parameter",
@@ -327,10 +317,9 @@ def test_op_with_static_string_parameter_passed_as_int(
         "test_op_with_static_string_parameter_passed_as_int",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_static_string_parameter",
@@ -357,10 +346,9 @@ def test_op_with_static_string_parameter_passed_as_dtype(
         "test_op_with_static_string_parameter_passed_as_dtype",
         input_types=[tensor_type],
         output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph._import_kernels([kernel_verification_ops_path])
-
         graph.output(
             ops.custom(
                 "op_with_static_string_parameter",
