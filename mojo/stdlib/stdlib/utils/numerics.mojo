@@ -734,7 +734,7 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
 
     @parameter
     if dtype is DType.bool:
-        return rebind[Scalar[dtype]](Scalar(True))
+        return Scalar(True)._refine[dtype]()
 
     elif dtype is DType.index and DType.index.bitwidth() == 32:
         return 2147483647
@@ -797,7 +797,7 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
 
     @parameter
     if dtype is DType.bool:
-        return rebind[Scalar[dtype]](Scalar(False))
+        return Scalar(False)._refine[dtype]()
 
     elif dtype is DType.index and DType.index.bitwidth() == 32:
         return -2147483648
