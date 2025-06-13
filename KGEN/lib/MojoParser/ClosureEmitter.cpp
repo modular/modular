@@ -14,6 +14,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "ParserEvaluationContext.h"
+#include "Traits.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
@@ -365,12 +366,16 @@ populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
 
 StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                                                  ASTDecl &traitDecl,
-                                                 SMLoc location) {
+                                                 SMLoc smLocation) {
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl);
   auto module = cast<FileModuleOp>(moduleDecl);
-  OpBuilder b(module.getRegion());
+  Location location = shared.diags.translateLocation(smLocation);
+  ImplicitLocOpBuilder b =
+      ImplicitLocOpBuilder::atBlockBegin(location, module->getBlock());
   b.setInsertionPointAfter(trait);
   MLIRContext *ctx = b.getContext();
+
+  // Create the trait type.
   StringRef root = moduleDecl.getSymbolRef().getRootReference();
   SmallVector<FlatSymbolRefAttr> path(
       moduleDecl.getSymbolRef().getNestedReferences());
@@ -378,16 +383,148 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
   SymbolRefAttr symbol = SymbolRefAttr::get(ctx, root, path);
   Type traitType = TraitType::get(ctx, symbol);
 
+  // Give the struct a parameter "impl" of metatype trait.
   SmallVector<ParamDeclAttr> implParameters;
   ParamDeclAttr implType = ParamDeclAttr::get("impl", traitType);
+  Type paramType = ParamType::get(ParamDeclRefAttr::get(implType));
   implParameters.push_back(implType);
-  auto [structDecl, declOp] =
+  ASTType selfType(paramType);
+
+  // Create a struct with a single field of type "impl".
+  std::pair<ASTDecl &, StructDeclOp> pair =
       createStruct(shared, moduleDecl,
                    StringAttr::get(b.getContext(), baseName + "_wrapper"),
-                   implParameters, moduleDecl.getLoc());
+                   implParameters, smLocation);
+  ASTDecl &structDecl = pair.first;
+  StructDeclOp declOp = pair.second;
   addFieldsToStruct(declOp, structDecl,
                     KGEN::ParamType::get(ParamDeclRefAttr::get(implType)),
                     *shared.declResolver);
+  StructFieldOp wrappedField = *declOp.getFieldDecls().begin();
+
+  // Populate the wrapper methods with a call to the result of a vtable lookup.
+  auto populateTraitFn = [&](FnOp traitFnOp) {
+    b.setInsertionPointToEnd(&declOp.getFields().front());
+    FnTypeGeneratorType wrappedSignature =
+        specializeSignature(traitFnOp, selfType, *shared.declResolver);
+
+    // Wrapper signature is the signature of the method on the wrapper struct.
+    // We create it by specializing the trait method by binding the struct type
+    // to the self parameter.
+    FnTypeGeneratorType wrapperSignature = specializeSignature(
+        traitFnOp, structDecl.getTypeDeclSelf(), *shared.declResolver);
+
+    // Calculate the argument types and result types in terms of the named
+    // parameters. Since the name of the parameters have not changed from the
+    // trait definition, we can avoid another remap of the indexed types in
+    // parameters and instead reuse the trait function's input parameters.
+    ArrayRef<ParamDeclAttr> parameters =
+        ArrayRef<ParamDeclAttr>(traitFnOp.getInputParams())
+            .take_front(traitFnOp.getInputParams().size() -
+                        wrappedSignature.getNumImplicitOriginDecls());
+    ParamIndexRefReplacer replacer(parameters);
+    SmallVector<Type> argumentTypes;
+    llvm::append_range(
+        argumentTypes,
+        llvm::map_range(wrapperSignature.getArguments(), [&](Type original) {
+          return replacer.replace(original);
+        }));
+    Type result = replacer.replace(wrapperSignature.getResults().front());
+    auto [op, decl] =
+        synthesizeFunction(structDecl, traitFnOp.getSourceNameAttr(),
+                           parameters, wrapperSignature.getParamListAttrs(),
+                           argumentTypes, wrapperSignature.getArgConventions(),
+                           wrapperSignature.getArgListAttrs(), result,
+                           SpecialFunctionKind::kNormal, smLocation, b,
+                           wrapperSignature.getFnEffects().setUnified(false),
+                           "", true, traitFnOp.getInlineLevel());
+
+    // Generate the call op by collecting the operands and rebinding the
+    // signature.
+    b.setInsertionPointToEnd(&op.getBodyRegion().front());
+    Value selfArgument = op.getBodyRegion().front().getArgument(0);
+    SmallVector<Value> operands;
+    operands.reserve(op.getNumArguments());
+    Type wrapperType = cast<RefType>(selfArgument.getType()).getElementType();
+
+    // Replace wrapper type with impl type.
+    // If we map a value to its field, save the lifetime name so we can map the
+    // origins as well.
+    DenseMap<StringRef, StringAttr> originToField;
+    for (Value arg : op.getBodyRegion().front().getArguments()) {
+      RefType refType = dyn_cast<RefType>(arg.getType());
+      if (!refType) {
+        operands.push_back(arg);
+        continue;
+      }
+
+      if (refType.getElementType() == wrapperType) {
+        ParamDeclRefAttr originReference =
+            dyn_cast<ParamDeclRefAttr>(refType.getOrigin());
+        assert(originReference && "There should not be parameter expressions "
+                                  "in the signature of wrapper functions");
+        operands.push_back(
+            b.create<RefStructGEROp>(arg, wrappedField)->getResults().front());
+        originToField[originReference.getName().getValue()] =
+            wrappedField.getNameAttr();
+      } else {
+        operands.push_back(arg);
+      }
+    }
+
+    // Since this is a wrapper we know all the origins of the function must be
+    // bound to the single call op in the body.
+    SmallVector<ParamDeclAttr> allParams = op.collectAllParams(true);
+    SmallVector<TypedAttr> origins;
+    llvm::SmallDenseSet<StringRef> explicitParameters;
+    for (auto explicitParam : parameters)
+      explicitParameters.insert(explicitParam.getName().getValue());
+    for (ParamDeclAttr param : allParams) {
+      if (explicitParameters.contains(param.getName().getValue()))
+        continue;
+      auto originType = dyn_cast<OriginType>(param.getType());
+      if (!originType)
+        continue;
+      ParamDeclRefAttr originRef =
+          ParamDeclRefAttr::get(param.getName(), param.getType());
+      TypedAttr originArg;
+      auto ptr = originToField.find(originRef.getName().getValue());
+      if (ptr != originToField.end())
+        originArg =
+            OriginFieldAttr::get(ctx, originRef, ptr->second, originType);
+      else
+        originArg = originRef;
+      origins.push_back(originArg);
+    }
+
+    TypedAttr symbol = ParamOperatorAttr::get(
+        POC::GetVTableEntry,
+        {ParamDeclRefAttr::get(implType.getName(), implType.getType()),
+         StringAttr::get(op.getSourceNameAttr().getValue(),
+                         StringType::get(ctx))},
+        wrappedSignature);
+    SmallVector<TypedAttr> paramArgs;
+    llvm::append_range(
+        paramArgs,
+        llvm::map_range(parameters, [](ParamDeclAttr p) -> TypedAttr {
+          return ParamDeclRefAttr::get(p);
+        }));
+    auto callOp = b.create<LIT::CallOp>(
+        result, BindParamsAttr::get(symbol, paramArgs), origins, operands);
+    ValueRange results = callOp.getResults();
+    b.create<LIT::ReturnOp>(results);
+    b.create<LIT::EndFnOp>();
+  };
+  for (auto decls : traitDecl.getDeclsInScope()) {
+    for (auto method : decls.second) {
+      auto fnOp = dyn_cast<FnOp>(method);
+      if (!fnOp)
+        continue;
+      populateTraitFn(fnOp);
+    }
+  }
+
+  // TODO: generate the constructor
   return declOp;
 }
 
