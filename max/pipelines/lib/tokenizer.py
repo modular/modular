@@ -293,7 +293,6 @@ class TextTokenizer(
         if request.prompt is not None:
             if isinstance(request.prompt, str):
                 prompt = str(request.prompt)
-                add_special_tokens = False
             else:
                 prompt = [int(t) for t in request.prompt]
         elif request.messages is not None:
