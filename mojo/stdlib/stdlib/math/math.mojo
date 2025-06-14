@@ -435,17 +435,23 @@ fn exp2[
         ](x)
 
     @parameter
-    if dtype not in (DType.float32, DType.float64):
+    if dtype is DType.float32:
+        return _exp2_float32(x._refine[DType.float32]())._refine[dtype]()
+    elif dtype is DType.float64:
+        return 2**x
+    else:
         return exp2(x.cast[DType.float32]()).cast[dtype]()
 
+
+@always_inline
+fn _exp2_float32(x: SIMD[DType.float32, _]) -> __type_of(x):
+    alias u32 = DType.uint32
     var xc = x.clamp(-126, 126)
-
-    var m = xc.cast[__type_of(x.to_bits()).dtype]()
-
-    xc -= m.cast[dtype]()
+    var m = xc.cast[DType.int32]()
+    xc -= m.cast[x.dtype]()
 
     var r = polynomial_evaluate[
-        List[Scalar[dtype]](
+        List[Float32](
             1.0,
             0.693144857883,
             0.2401793301105,
@@ -454,8 +460,9 @@ fn exp2[
             1.33336498402e-3,
         ),
     ](xc)
-    return __type_of(r).from_bits(
-        (r.to_bits() + (m << FPUtils[dtype].mantissa_width()))
+    return __type_of(x).from_bits(
+        r.to_bits[u32]()
+        + (m.cast[u32]() << FPUtils[DType.float32].mantissa_width())
     )
 
 
