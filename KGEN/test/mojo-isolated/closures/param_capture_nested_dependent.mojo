@@ -24,17 +24,17 @@
 # CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<@{{.*}}::@"fn{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]]>
 
 
-@value
-struct Foo[C: Int, D: Int]:
+@fieldwise_init
+struct Foo[C: Int, D: Int](Copyable, Movable):
     var x: Int
 
     fn get(self) -> Int:
         return self.x + C
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Bat[A: Int]:
+struct Bat[A: Int](Copyable):
     var b: Int
 
     fn get_test[B: Int](self) -> fn (y: Int) escaping -> Foo[B, A]:

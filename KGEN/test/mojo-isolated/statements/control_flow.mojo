@@ -501,7 +501,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
         # CHECK: }
 
 
-@value
+@fieldwise_init
 struct IterRange(_ParamForIterator):
     alias _IndexType = Int
 

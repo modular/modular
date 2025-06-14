@@ -13,7 +13,7 @@
 # Check single file debug info generation.
 
 
-@value
+@fieldwise_init
 struct MemPair:
     var x: Int
     var y: Int

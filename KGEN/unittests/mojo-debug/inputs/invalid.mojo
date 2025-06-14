@@ -7,8 +7,8 @@
 from memory import UnsafePointer
 
 
-@value
-struct A:
+@fieldwise_init
+struct A(Copyable, Movable):
     var x: UnsafePointer[Scalar[DType.invalid]]
 
     fn __init__(out self):

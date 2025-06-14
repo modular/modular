@@ -425,7 +425,7 @@ fn testInfiniteloop():
     # CHECK-NEXT:  }
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TrivialRange:
     alias _IndexType = Int

@@ -14,7 +14,7 @@ fn use_ints(x: Int, y: Int):
     pass
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MyPair:
     var x: Int

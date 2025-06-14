@@ -15,7 +15,7 @@ trait RGTrivialTrait:
         ...
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Conforms(RGTrivialTrait):
     var x: Int

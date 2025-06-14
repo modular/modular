@@ -307,7 +307,7 @@ fn fn_with_fn_param_and_arg[
     pass
 
 
-@value
+@fieldwise_init
 struct MyStruct[x: Int]:
     pass
 

@@ -109,7 +109,7 @@ trait TFoo():
     fn foo(self):
         ...
 
-@value
+@fieldwise_init
 struct Bar[T:TFoo]:
     pass
 

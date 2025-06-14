@@ -12,7 +12,6 @@ struct Empty: pass
 # Input parameters
 ##===----------------------------------------------------------------------===##
 
-@value
 @register_passable("trivial")
 struct DType:
     alias type = __mlir_type.`!kgen.dtype`
@@ -89,7 +88,7 @@ fn call_generic[dt: DType]():
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
 # CHECK-SAME: [[A:.*]]: !Int>
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TestParamStruct[A: Int]:
 
@@ -230,7 +229,7 @@ fn str_input_param():
   # CHECK: %0 = lit.call @parameters::@"meta_str{{.*}}"<{{.*}}@StringLiteral<:string "123">{{.*}}>()
   meta_str["123"]()
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TwoParams[a: Int, b: Int]:
     pass
@@ -314,7 +313,7 @@ fn autoparam_of_params[a: Index, //, b: IndexParam, c: IndexParam[a]]():
 fn autoparam_of_struct_metatype_params[a: __type_of(IndexParam)]():
     pass
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct DependentParams[x: Index, //, p: IndexParam[x]]:
     pass
@@ -394,8 +393,7 @@ fn test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
 # Memory-only parameters
 ##===----------------------------------------------------------------------===##
 
-@value
-struct MemoryType:
+struct MemoryType(Copyable, Movable):
     var value: Int
 
     @always_inline("nodebug")
@@ -474,14 +472,9 @@ struct InitSelfParam[x: InitSelfCtor]:
     pass
 
 
-@value
+@fieldwise_init("implicit")
 struct IntBox:
     var x: Int
-
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: Int):
-        self.x = value
 
 
 @always_inline
@@ -864,7 +857,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 
 # CHECK-LABEL: lit.struct.decl @Abstraction
 # CHECK-SAMEL <[[A:.*]]: !Int>
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Abstraction[a: Int]:
   alias val = a.value
@@ -1049,7 +1042,7 @@ trait ToInt:
     fn to_int(self) -> Int:
         pass
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct HasToInt(ToInt):
     var inner: Int
@@ -1058,7 +1051,7 @@ struct HasToInt(ToInt):
         return self.inner
 
 # COM: https://linear.app/modularml/issue/MOCO-885/crash-when-using-autoparam-in-parametrized-structs
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MixedInferAndPosParam[size: Int]:
     var f0: Int
@@ -1068,7 +1061,7 @@ struct MixedInferAndPosParam[size: Int]:
     fn __init__[T0: ToInt, T1: ToInt, //](out self, a: T0, b: T1):
         self.f0 = a.to_int()
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
     var f0: Int
@@ -1241,7 +1234,7 @@ fn test_inferred_default_param[
 
 
 # COM: basic check for memory-only default parameters
-@value
+@fieldwise_init
 struct MemoryOnlyType:
     pass
 
@@ -1299,7 +1292,7 @@ fn test_optional_inference(value: ParamType[`3`]):
 ##===----------------------------------------------------------------------===##
 
 # CHECK: lit.struct.decl @DefaultParams<{{.*}}: !Int, {{.*}}: !Int = {7}, {{.*}}: {{.*}}#StringLiteral <:string "woof">
-@value
+@fieldwise_init
 struct DefaultParams[a: Int, b: Int = 7, msg: String = "woof"]: pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct()"
@@ -1330,7 +1323,7 @@ fn test_default_param_struct():
 
 
 # CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = {0}, {{.*}}MemoryOnlyType::@"__init__()
-@value
+@fieldwise_init
 struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
 # CHECK-LABEL: lit.fn @"test_default_param_struct_all_default()"
@@ -1364,7 +1357,7 @@ fn test_struct_with_parametric_default_value():
 # Struct keyword parameters
 ##===----------------------------------------------------------------------===##
 
-@value
+@fieldwise_init
 struct KwParamStruct[a: Int, b: Int = 2, c: Int = 3]: pass
 
 # CHECK-LABEL: lit.fn @"test_struct_kw_params()"
@@ -1386,7 +1379,7 @@ fn test_struct_kw_params():
 # Partial binding
 ##===----------------------------------------------------------------------===##
 
-@value
+@fieldwise_init
 struct Thing[v: Int]: pass
 
 struct CtadStruct[a: Int, b: Int]:
@@ -1455,7 +1448,7 @@ fn test_partial_binding_CTAD(multi: CtadStructWithMultiDefault[5]):
 
 # COM: https://github.com/modular/mojo/issues/1227
 # COM: Ensure default parameters are rebound during CTAD.
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct DependentDefault[x: Int = 1, y: Int = x]:
     pass
@@ -1494,7 +1487,6 @@ fn funct_partial_binding[x: Empty, F: fn[t: Empty, s: Empty] () -> None]():
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, x, ?))>
     alias H: fn[u: Empty] () -> None = F[x]
 
-@value
 struct StructWithSpecificSelfInitTypes[size: Int]:
     fn __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
     @implicit
@@ -1589,7 +1581,7 @@ fn call_variadic_pack_with_function():
 
 
 # MOCO-1065: Crash handling self conditional conformance inference.
-@value
+@fieldwise_init
 struct MOCO1065[
     mut: Bool, //,
     T: Copyable & Movable,
@@ -1604,7 +1596,7 @@ fn test_MOCO1065[p: Empty](t: Empty):
 
 
 ### Complex dependent type inference problem.
-@value
+@fieldwise_init
 struct DepValue[a: Int]: pass
 struct DepUser[b: Int]:
     fn foo(self):

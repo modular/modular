@@ -69,7 +69,7 @@ fn infers_param_from_kwargs[T: SomeTrait](**kwargs: T):
     pass
 
 
-@value
+@fieldwise_init
 struct MemOnly(SomeTrait):
     pass
 

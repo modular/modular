@@ -59,8 +59,8 @@
 # CHECK-NEXT: lit.return
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     pass
 
 

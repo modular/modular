@@ -1093,7 +1093,6 @@ fn useBigNumber() -> Int:
   return notSoBig
 
 
-@value
 @register_passable("trivial")
 struct IndexList[size: Int]:
     @implicit

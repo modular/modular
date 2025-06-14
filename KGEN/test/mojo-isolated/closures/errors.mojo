@@ -28,7 +28,6 @@ fn makes_escaping_closurenocopy(m: StringNoCopy):
 # COM: https://github.com/modular/mojo/issues/1223
 # COM: When a runtime argument has incorrect type, nested function bodies may
 # COM: still be resolved. Ensure that we don't crash when the arg is used.
-@value
 struct Parametric[a: Index]:
     pass
 

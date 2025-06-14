@@ -11,7 +11,7 @@
 
 
 # CHECK-LABEL: lit.struct.decl @Param
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Param[x: Index]:
     alias value = x
@@ -29,7 +29,7 @@ struct Param[x: Index]:
 
 
 # CHECK-LABEL: lit.struct.decl @TwoParam
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TwoParam[x: Index, y: Index]:
     alias first = x
@@ -116,7 +116,7 @@ fn partial_autoparam(value: TwoParam[y=`1`]):
 
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<F, I: variadic<index> pos_vararg>
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ParamVarArg[F: Index, *I: Index]:
     # CHECK-LABEL: lit.fn @"self_type

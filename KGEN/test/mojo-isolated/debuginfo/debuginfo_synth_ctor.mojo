@@ -15,6 +15,6 @@
 # CHECK-NOT: #debuginfo.subprogram
 
 
-@value
-struct MyValueStruct:
+@fieldwise_init
+struct MyValueStruct(Copyable, Movable, ExplicitlyCopyable):
     var value: __mlir_type.index

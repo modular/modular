@@ -7,9 +7,9 @@
 # COM: Signature Capture
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Foo[a: Int]:
+struct Foo[a: Int](Copyable):
     var b: Int
 
     fn get(self) -> Int:

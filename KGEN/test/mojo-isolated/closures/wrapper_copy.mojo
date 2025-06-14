@@ -6,7 +6,7 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK: lit.fn @"__copyinit__{{.*}}(%other: {{.*}}!MemType1{{.*}}read_mem
-# CHECK-SAME: %self: !lit.ref<!MemType1, mut {{.*}}> byref_result) 
+# CHECK-SAME: %self: !lit.ref<!MemType1, mut {{.*}}> byref_result)
 # CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = lit.ref.load [[existing_impl]]
@@ -55,8 +55,8 @@
 # CHECK-NEXT:  return [[V4]]
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType()
 

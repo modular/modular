@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@value
-struct Foo:
+@fieldwise_init
+struct Foo(Copyable, Movable):
     var x: Int
     var y: String
     var z: Int

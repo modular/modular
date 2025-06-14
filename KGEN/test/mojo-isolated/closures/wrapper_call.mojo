@@ -26,8 +26,8 @@
 # CHECK-NEXT: lit.return [[result_of_typed_call]] : !kgen.none
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType()
 

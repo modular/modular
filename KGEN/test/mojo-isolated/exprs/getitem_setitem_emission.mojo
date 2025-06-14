@@ -192,7 +192,7 @@ fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
 # ===----------------------------------------------------------------------=== #
 # Keyword arguments in setters
 
-@value
+@fieldwise_init
 struct VariadicIndexList:
     fn __getitem__(mut self, *indices: Int) -> Int:
         pass

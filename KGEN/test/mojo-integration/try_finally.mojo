@@ -60,8 +60,8 @@ def with_it_err(handle: Bool) -> Int:
     return 3
 
 
-@value
-struct MemoryType:
+@fieldwise_init
+struct MemoryType(Copyable, Movable):
     fn __del__(owned self):
         print("delete")
 

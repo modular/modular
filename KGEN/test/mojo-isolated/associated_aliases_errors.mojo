@@ -26,14 +26,12 @@ trait ExplicitlyCopyable:
 alias K: Int
 
 
-@value
-struct Int:
+struct Int(Copyable, Movable):
     fn __init__(out self):
         pass
 
 
-@value
-struct Bool:
+struct Bool(Copyable, Movable):
     fn __init__(out self):
         pass
 
@@ -49,13 +47,11 @@ trait TraitWithInitializedAlias:
     alias Z: Int = Int()
 
 
-@value
 # expected-error @below {{struct 'StructConformingExplicitlyWithNoMatchingAlias' does not implement all requirements for 'MyTrait'}}
 struct StructConformingExplicitlyWithNoMatchingAlias(MyTrait):
     pass
 
 
-@value
 # expected-error @below {{struct 'StructConformingExplicitlyWithMismatchedAlias' does not implement all requirements for 'MyTrait'}}
 struct StructConformingExplicitlyWithMismatchedAlias(MyTrait):
     alias N: Bool = Bool()
@@ -65,24 +61,21 @@ struct StructConformingExplicitlyWithMismatchedAlias(MyTrait):
 struct StructConformingExplicitlyWithMemberSameName(MyTrait):
     var N: Int
 
-
-@value
+@fieldwise_init
 struct StructWithNoMatchingAlias:
     pass
 
 
-@value
+@fieldwise_init
 struct StructWithMismatchedAlias:
     alias N: Bool = Bool()
 
 
-@value
 struct StructWithUninitializedAlias:
     # expected-error @below {{only traits may contain an alias without an initializer}}
     alias N: Bool
 
 
-@value
 struct StructWithTypelessUninitializedAlias:
     # This makes sure we print out this error, rather than the also-relevant "alias without initial value must have a type" error
     # expected-error @below {{only traits may contain an alias without an initializer}}

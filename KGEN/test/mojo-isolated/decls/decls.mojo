@@ -662,7 +662,7 @@ fn callVariadic[p: Int](x: Int):
 
 
 # COM: Test variadic arguments in a parameter context.
-@value
+@fieldwise_init
 struct MemStruct:
     alias t = 5
 
@@ -731,7 +731,7 @@ fn raise_and_return(a: Error) raises -> Error:
     return Error()
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct RaisingGetterSetter:
     fn __getitem__(self, i: Int) raises -> FloatDyn:
@@ -925,14 +925,14 @@ struct LegacyInOutInit:
 
 
 ##===----------------------------------------------------------------------===##
-# Struct @value decorator
+# Struct @fieldwise_init decorator
 ##===----------------------------------------------------------------------===##
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
 # CHECK: move :!lit.generator<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
-@value
-struct ValueMem:
+@fieldwise_init
+struct ValueMem(Copyable, Movable, ExplicitlyCopyable):
     var a: Int  # Trivial
     var b: StructExample  # Copy ctor
 
@@ -976,8 +976,8 @@ struct ValueMem:
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
-@value
-struct ValueMemHasCopy:
+@fieldwise_init
+struct ValueMemHasCopy(Copyable, Movable, ExplicitlyCopyable):
     var a: Int
     var b: StructExample
 
@@ -987,8 +987,8 @@ struct ValueMemHasCopy:
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility)
-@value
-struct ValueMemHasMove(Movable, Copyable):
+@fieldwise_init
+struct ValueMemHasMove(Movable, Copyable, ExplicitlyCopyable):
     var a: Int
     var b: StructExample
 
@@ -1011,16 +1011,16 @@ struct ValueMemHasMove(Movable, Copyable):
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: lit.return %none : !kgen.none
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ValueRegTrivial:
+struct ValueRegTrivial(ExplicitlyCopyable):
     var a: __mlir_type.index
 
 
 # CHECK-LABEL: lit.struct.decl @ValueReg
-@value
+@fieldwise_init
 @register_passable
-struct ValueReg:
+struct ValueReg(Copyable):
     var a: Int
     var b: StructExample
 
@@ -1055,8 +1055,8 @@ struct ValueReg:
 
 # COM: Ensure that "self" is a valid field name.
 # CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_ExplicitlyCopyable_Movable_UnknownDestructibility) attributes
-@value
-struct Foo:
+@fieldwise_init
+struct Foo(Copyable, Movable, ExplicitlyCopyable):
     var a: Int
     var self: Int
 
@@ -1065,15 +1065,15 @@ struct Foo:
 
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> pos_vararg>
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ParamVarArg[*I: Int]:
     pass
 
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
-@value
-struct TraitMember[T: Copyable]:
+@fieldwise_init
+struct TraitMember[T: Copyable](Copyable, Movable):
     var value: T
     # CHECK: lit.fn @"__moveinit__
     # CHECK: call{{.*}}__copyinit__
@@ -1085,8 +1085,8 @@ struct TraitMember[T: Copyable]:
 # CHECK: lit.fn @"__moveinit__{{.*}}isSynthetic
 # CHECK: lit.fn @"__copyinit__{{.*}}isSynthetic
 # CHECK: lit.fn @"__init__{{.*}}isSynthetic
-@value
-struct NotSynthetic:
+@fieldwise_init
+struct NotSynthetic(Copyable, Movable, ExplicitlyCopyable):
     var member: __mlir_type.`index`
 
     fn notSynthetic(self):
@@ -1094,7 +1094,7 @@ struct NotSynthetic:
 
 
 # CHECK-LABEL: lit.struct.decl @VarArgInit
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct VarArgInit:
     var a: Int
@@ -1114,8 +1114,8 @@ struct BoxCopyable[T: Copyable]:
     pass
 
 
-@value
-struct Node:
+@fieldwise_init
+struct Node(Copyable, Movable):
     var id: RecursiveCopyable.ID
 
 
@@ -1128,8 +1128,7 @@ struct RecursiveCopyable:
 
 
 # CHECK-LABEL: lit.struct.decl @RaisingFieldwiseInit
-@value
-struct RaisingFieldwiseInit:
+struct RaisingFieldwiseInit(Copyable, Movable):
     var x: Int
 
     # CHECK-LABEL: lit.fn @"__init__{{.*}} throws
@@ -1225,7 +1224,7 @@ async fn capture_byref(mut x: Awaitable, y: Awaitable):
     pass
 
 
-@value
+@fieldwise_init
 @register_passable
 struct LifetimeAccess[origin: __mlir_type.`!lit.origin<1>`]:
     pass
@@ -1623,7 +1622,7 @@ struct Bound[T: AnyType]:
     pass
 
 
-@value
+@fieldwise_init
 struct Match[lt: __mlir_type.`!lit.origin<0>`]:
     pass
 
@@ -1776,7 +1775,6 @@ fn testOverloadKwArgs():
 
 
 # Can't generate the constructors for a type wrapping !lit.ref
-@value
 struct MOCO1320[mut: Bool, //, origin: Origin[mut]]:
     alias _mlir_type = __mlir_type[
         `!lit.ref<`,

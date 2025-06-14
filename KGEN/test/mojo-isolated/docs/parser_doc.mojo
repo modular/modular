@@ -59,7 +59,7 @@ trait Trait:
     ...
 
 # MOTO-869: A docstring ending with an example should pass validation.
-@value
+@fieldwise_init
 struct StructWithExamples:
     """A struct with a function in it."""
 

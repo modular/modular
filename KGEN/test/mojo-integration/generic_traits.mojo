@@ -102,9 +102,8 @@ fn like_father_like(value: Son):
     take_father(value)
 
 
-@value
 @register_passable
-struct SomeType:
+struct SomeType(Copyable):
     fn __del__(owned self):
         pass
 

@@ -8,7 +8,7 @@ from debug_test_utils import keep_alive
 from memory import UnsafePointer
 
 
-@value
+@fieldwise_init
 struct Foo:
     var x: Int
     var ptr: UnsafePointer[Foo]

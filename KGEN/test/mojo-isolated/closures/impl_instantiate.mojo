@@ -6,8 +6,8 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType()
 

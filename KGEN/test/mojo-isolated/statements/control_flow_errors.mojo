@@ -74,7 +74,7 @@ struct MyList_range_no_next:
 struct MyList_no_iter:
     fn __init__(out self): pass
 
-@value
+@fieldwise_init
 struct MyFloat:
     pass
 

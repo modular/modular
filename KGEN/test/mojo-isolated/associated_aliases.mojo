@@ -130,7 +130,6 @@ trait ATrait:
     pass
 
 
-@value
 struct SIMD[T: ATrait]:
     pass
 
@@ -141,8 +140,7 @@ trait TraitWithAliasArgMethod:
     fn lork(self, thing: SIMD[T]):
         ...
 
-
-@value
+@fieldwise_init
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
     alias T: ATrait = ZInt
 
@@ -176,7 +174,6 @@ trait ATrait:
     pass
 
 
-@value
 struct SIMD[T: ATrait]:
     pass
 
@@ -215,8 +212,7 @@ struct ZInt(ATrait):
 trait ATrait:
     pass
 
-
-@value
+@fieldwise_init
 struct SIMD[T: ATrait]:
     pass
 
@@ -229,7 +225,7 @@ trait TraitWithAliasReturnMethod:
 
 
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
-@value
+@fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
     alias T: ATrait = ZInt
 
@@ -256,7 +252,6 @@ trait ATrait:
     pass
 
 
-@value
 struct SIMD[T: ATrait]:
     pass
 
@@ -294,8 +289,7 @@ struct ZInt(ATrait):
 trait ATrait:
     pass
 
-
-@value
+@fieldwise_init
 struct SIMD[T: ATrait]:
     pass
 
@@ -308,7 +302,7 @@ trait TraitWithAliasReturnMethod:
 
 
 # TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
-@value
+@fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
     alias T: ATrait = Z
 
@@ -342,7 +336,7 @@ trait ATrait:
     pass
 
 
-@value
+@fieldwise_init
 struct SIMD[T: ATrait]:
     pass
 
@@ -393,7 +387,7 @@ trait ATrait:
     pass
 
 
-@value
+@fieldwise_init
 struct SIMD[T: ATrait]:
     pass
 
@@ -408,7 +402,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 
 
 # TODO(MOCO-1109): also check that this works with the thunk generation for @register_passable methods
-@value
+@fieldwise_init
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     TraitWithSelfDotAliasReturnMethod
 ):
@@ -462,7 +456,7 @@ trait TraitWithAliasReturnMethod:
 
 
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
-@value
+@fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
     alias T: ASubTrait = ZInt
 

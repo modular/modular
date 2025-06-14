@@ -15,8 +15,8 @@ var __inferred_type = `1`
 
 
 # COM: this also serves for testing how we emit memory-only globals.
-@value
-struct ConvertibleFromInt:
+@fieldwise_init
+struct ConvertibleFromInt(Copyable, Movable):
     @implicit
     fn __init__(out self, v: Index):
         pass
@@ -41,9 +41,9 @@ var __conv_from_int: ConvertibleFromInt = `2`
 var __conv_from_int_implicit = ConvertibleFromInt(`3`)
 
 
-@value
+@fieldwise_init
 @register_passable
-struct RegType:
+struct RegType(Copyable):
     fn __del__(owned self):
         pass
 

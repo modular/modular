@@ -693,8 +693,8 @@ struct TraitMember[T: Movable]:
 
 
 # CHECK-LABEL: lit.struct.decl @MyPointer
-@value
-struct MyPointer[T: AnyType]:
+@fieldwise_init
+struct MyPointer[T: AnyType](Copyable, Movable):
     pass
     # CHECK: lit.fn @"__del__
     # CHECK: lit.fn @"__init__

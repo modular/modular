@@ -16,7 +16,7 @@ from gpu.host._compile import _get_gpu_target
 from collections.string.string_slice import StaticString, _get_kgen_string
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct _Info:
     var kernel: __mlir_type.`!kgen.string`
@@ -24,7 +24,7 @@ struct _Info:
     var num_captures: __mlir_type.index
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Info:
     var kernel: StaticString

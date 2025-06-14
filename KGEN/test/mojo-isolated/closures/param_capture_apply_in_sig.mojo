@@ -6,9 +6,9 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Foo[x: Index]:
+struct Foo[x: Index](Copyable):
     var b: Index
 
     fn get(self) -> Index:

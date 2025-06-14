@@ -10,8 +10,8 @@
 # CHECK-COUNT-2: lit.struct.decl @"`_CI_
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType()
 

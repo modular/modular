@@ -400,17 +400,17 @@ fn inout_restored_at_throw(mut x: MemExample, err: Error) raises:
 
 # Invalid error field 'w.x.y' destroyed out of the middle of a value, preventing the overall value from being destroyed
 # https://github.com/modular/mojo/issues/1535
-@value
-struct NestedInt:
+@fieldwise_init
+struct NestedInt(Copyable, Movable):
     var y: Int
 
 
-@value
+@fieldwise_init
 struct WrapperNestedInt:
     var x: NestedInt
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TrivialRange:
     alias _IndexType = Int

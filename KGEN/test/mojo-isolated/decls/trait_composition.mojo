@@ -33,7 +33,7 @@ alias Traits12 = Trait1 & Trait2
 alias Traits123 = Trait1 & Trait2 & Trait3
 
 
-@value
+@fieldwise_init
 struct Struct123(Trait1, Trait2):
     fn f1(self):
         pass
@@ -46,7 +46,7 @@ struct Struct123(Trait1, Trait2):
 
 
 # Use direct trait union as parent.
-@value
+@fieldwise_init
 struct Struct12Direct(Trait1 & Trait2):
     fn f1(self):
         pass
@@ -56,7 +56,7 @@ struct Struct12Direct(Trait1 & Trait2):
 
 
 # Use trait union alias.
-@value
+@fieldwise_init
 struct Struct12Alias(Traits12):
     fn f1(self):
         pass
@@ -169,7 +169,7 @@ trait Trait2:
 alias Traits12 = Trait1 & Trait2
 
 
-@value
+@fieldwise_init
 struct Struct12(Traits12):
     fn f1(self):
         pass
@@ -179,7 +179,7 @@ struct Struct12(Traits12):
 
 
 # conditional method
-@value
+@fieldwise_init
 struct Wrapper[T: AnyType]:
     fn cond1[T: Trait1](self: Wrapper[T], other: Wrapper[T]):
         pass
@@ -274,7 +274,7 @@ trait Trait1C(Trait1):
     fn f1C(self):
         ...
 
-@value
+@fieldwise_init
 struct Struct1C(Trait1C, Trait2):
     fn f1(self):
         pass

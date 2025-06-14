@@ -10,9 +10,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 @register_passable
-struct RegPassable:
+struct RegPassable(Copyable):
     pass
 
 

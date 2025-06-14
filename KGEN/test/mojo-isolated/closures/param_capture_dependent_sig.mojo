@@ -8,9 +8,9 @@
 # CHECK: lit.struct.decl @"fn{{.*}}"<p0, |>
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Foo[B: Index]:
+struct Foo[B: Index](Copyable):
     pass
 
 

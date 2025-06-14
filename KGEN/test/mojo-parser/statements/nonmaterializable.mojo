@@ -11,14 +11,10 @@
 ##===----------------------------------------------------------------------===##
 
 
-@value
+@fieldwise_init("implicit")
 @register_passable("trivial")
 struct NmTarget(Boolable):
     var x: Bool
-
-    @implicit
-    fn __init__(out self, x: Bool):
-        self.x = x
 
     @always_inline("builtin")
     @implicit
@@ -29,7 +25,6 @@ struct NmTarget(Boolable):
         return self.x
 
 
-@value
 @nonmaterializable(NmTarget)
 @register_passable("trivial")
 struct NmStruct:
