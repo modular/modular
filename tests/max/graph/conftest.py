@@ -34,6 +34,7 @@ from max.graph import (
     StaticDim,
     SymbolicDim,
     TensorType,
+    _OpaqueType,
 )
 
 # When running in CI, graph tests can take around 300ms for a single run.
@@ -177,6 +178,21 @@ def tensor_types(dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()):
     return st.builds(TensorType, dtypes, shapes, st.just(device))
 
 
+def opaque_types():
+    names = st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=1)
+    si64s = st.integers(min_value=-(2**63), max_value=2**63 - 1)
+    parameters = st.dictionaries(
+        keys=names,
+        values=st.one_of(
+            dtypes,
+            names,
+            si64s,
+            st.booleans(),
+        ),
+    )
+    return st.builds(_OpaqueType, names, parameters)
+
+
 def buffer_types(dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()):
     return st.builds(BufferType, dtypes, shapes, st.just(device))
 
@@ -248,6 +264,7 @@ st.register_type_strategy(StaticDim, static_dims())
 st.register_type_strategy(SymbolicDim, symbolic_dims)
 st.register_type_strategy(TensorType, tensor_types())
 st.register_type_strategy(BufferType, buffer_types())
+st.register_type_strategy(_OpaqueType, opaque_types())
 
 
 def broadcastable_subshape(shape: list[Dim], random: random.Random):

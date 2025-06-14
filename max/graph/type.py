@@ -28,13 +28,15 @@ else:
     Self = TypeVar("Self")
 
 import numpy as np
-from max._core import NamedAttribute
+from max._core import Attribute, NamedAttribute
 from max._core import Type as _Type
+from max._core import graph as _graph
 from max._core.dialects import builtin, kgen, m, mo, mosh
 from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 
 MlirType = TypeVar("MlirType", bound=_Type)
+OpaqueParameter = Union[bool, int, str, DType]
 
 
 class FilterLayout(enum.Enum):
@@ -927,6 +929,54 @@ class BufferType(_TensorTypeBase[mo.BufferType]):
         return TensorType(self.dtype, self.shape, self.device)
 
 
+def _value_to_attribute(param: OpaqueParameter) -> Attribute:
+    """Converts a native Python value to an MLIR attribute to parametrize a
+    kernel or opaque type.
+    """
+    if isinstance(param, bool):
+        return builtin.BoolAttr(param)
+
+    if isinstance(param, int):
+        signedness = builtin.SignednessSemantics.signed
+        return builtin.IntegerAttr(builtin.IntegerType(64, signedness), param)
+
+    if isinstance(param, str):
+        return builtin.StringAttr(param)
+
+    if isinstance(param, DType):
+        # Wrap the MLIR type corresponding to dtype in a TypeAttr,
+        # which MOToKGENLowering expects.
+        dtype = _graph.dtype_type(param)
+        return builtin.TypeAttr(dtype)
+
+    msg = f"unsupported parameter type {type(param)} for custom op"
+    raise TypeError(msg)
+
+
+def _attribute_to_value(value: Attribute) -> OpaqueParameter:
+    """Converts an MLIR attribute representing a Mojo parameter to the
+    corresponding Python type.
+
+    This function is the inverse of _value_to_attribute.
+    """
+    if isinstance(value, (builtin.BoolAttr, builtin.StringAttr)):
+        return value.value
+
+    if isinstance(value, builtin.IntegerAttr):
+        type = value.type
+        if isinstance(type, builtin.IntegerType) and type.width == 1:
+            return bool(value.value)
+
+        return value.value
+
+    if isinstance(value, builtin.TypeAttr):
+        val = value.value
+        assert val is not None
+        return DType(val.asm)
+
+    raise TypeError(f"unsupported attribute type {value}")
+
+
 @dataclass(frozen=True)
 class _OpaqueType(Type[mo.OpaqueType]):
     """A type representing an opaque type."""
@@ -934,14 +984,43 @@ class _OpaqueType(Type[mo.OpaqueType]):
     name: str
     """Identifier for the opaque type."""
 
+    parameters: dict[str, OpaqueParameter] = field(default_factory=dict)
+    """Dictionary of Mojo parameter assignments.
+
+    Valid parameter types are ``bool``, ``int``, ``str``, and ``DType``.
+
+    Example:
+
+    .. code-block:: python
+
+        # Create an opaque type with parameters
+        custom_type = _OpaqueType(
+            name="MyCustomType",
+            parameters={
+                "rank": 3,
+                "mut": True,
+                "type": DType.float32,
+                "address_space": "global"
+            }
+        )
+    """
+
     def to_mlir(self) -> mo.OpaqueType:
         """Converts to an ``mlir.Type`` instance.
 
         Returns:
             An ``mlir.Type`` in the specified Context.
         """
+        # Convert Python dict to MLIR DictionaryAttr
+
+        mlir_params = [
+            NamedAttribute(key, _value_to_attribute(value))
+            for key, value in self.parameters.items()
+        ]
+
         return mo.OpaqueType(
-            builtin.StringAttr(self.name), parameters=builtin.DictionaryAttr([])
+            builtin.StringAttr(self.name),
+            parameters=builtin.DictionaryAttr(mlir_params),
         )
 
     @staticmethod
@@ -954,7 +1033,11 @@ class _OpaqueType(Type[mo.OpaqueType]):
         Returns:
             The opaque type represented by the MLIR Type value.
         """
-        return _OpaqueType(t.symbol.value)
+        params: dict[str, OpaqueParameter] = {
+            name: _attribute_to_value(attr) for name, attr in t.parameters.value
+        }
+
+        return _OpaqueType(t.symbol.value, params)
 
 
 @dataclass

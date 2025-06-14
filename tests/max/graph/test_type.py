@@ -23,6 +23,7 @@ from max.graph import (
     SymbolicDim,
     TensorType,
     _ChainType,
+    _OpaqueType,
 )
 from max.graph.type import FilterLayout, Type
 
@@ -170,6 +171,11 @@ def test_opaque_type(mlir_context) -> None:
     assert isinstance(opaque, mo.OpaqueType)
     assert not isinstance(opaque, mo.TensorType)
     assert opaque.symbol.value == "custom_type"
+
+
+@given(opaque_type=...)
+def test_opaque_type_to_mlir(mlir_context, opaque_type: _OpaqueType):
+    assert opaque_type == _OpaqueType.from_mlir(opaque_type.to_mlir())
 
 
 def test_type_checking(mlir_context) -> None:
