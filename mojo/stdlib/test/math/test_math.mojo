@@ -41,7 +41,7 @@ from math import (
 from sys.info import has_neon
 
 from memory import Span
-from testing import assert_almost_equal, assert_equal, assert_false, assert_true
+from testing import assert_almost_equal, assert_equal, assert_false, assert_true, assert_raises
 
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
 
@@ -64,6 +64,9 @@ fn test_factorial() raises:
     assert_equal(factorial(1), 1)
     assert_equal(factorial(15), 1307674368000)
     assert_equal(factorial(20), 2432902008176640000)
+    assert_raises(
+        factorial, 21, msg="factorial(21) should raise OverflowError"
+    )
 
 
 def test_copysign():
