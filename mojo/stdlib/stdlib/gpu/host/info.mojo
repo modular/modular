@@ -833,6 +833,57 @@ alias MI300X = GPUInfo(
 
 
 # ===-----------------------------------------------------------------------===#
+# Radeon VII (GCN5 gfx906)
+# ===-----------------------------------------------------------------------===#
+
+
+fn _get_vega20_target() -> __mlir_type.`!kgen.target`:
+    """
+    Creates an MLIR target configuration for AMD Vega20 GPU.
+
+    Returns:
+        MLIR target configuration for Vega20.
+    """
+
+    return __mlir_attr[
+        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `arch = "gfx906", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+alias Vega20 = GPUInfo(
+    name="Vega20",
+    vendor=Vendor.AMD_GPU,
+    api="hip",
+    arch_name="gfx906",
+    compute=9.0,
+    version="GCN5",
+    sm_count=64,
+    warp_size=64,
+    threads_per_sm=2048,
+    threads_per_warp=64,
+    warps_per_multiprocessor=32,  # 2048 threads per sm / 64 threads per warp = 32 warps per sm
+    threads_per_multiprocessor=2048,
+    thread_blocks_per_multiprocessor=2,
+    shared_memory_per_multiprocessor=65536,
+    register_file_size=65536,
+    register_allocation_unit_size=256,
+    allocation_granularity="warp",
+    max_registers_per_thread=255,
+    max_registers_per_block=65536,
+    max_blocks_per_multiprocessor=2,
+    shared_memory_allocation_unit_size=128,
+    warp_allocation_granularity=4,
+    max_thread_block_size=1024,
+)
+
+
+# ===-----------------------------------------------------------------------===#
 # Radeon 7xxx, 9xxx, 780m
 # ===-----------------------------------------------------------------------===#
 
@@ -1403,6 +1454,8 @@ struct GPUInfo(Stringable, Writable):
             return _get_rtx5090_target()
         if self.name == "MI300X":
             return _get_mi300x_target()
+        if self.name == "Vega20":
+            return _get_vega20_target()
         if self.name == "Radeon 780M":
             return _get_780m_target()
         if self.name == "Radeon 880M":
@@ -1987,6 +2040,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
             StaticString("120a"),
             # AMD
             StaticString("mi300x"),
+            StaticString("gfx906"),
             StaticString("gfx942"),
             StaticString("gfx1030"),
             StaticString("gfx1100"),
@@ -2025,6 +2079,8 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return RTX5090
     elif target_arch == "gfx942" or target_arch == "mi300x":
         return MI300X
+    elif target_arch == "gfx906":
+        return Vega20
     elif target_arch == "gfx1030":
         return Radeon6900
     elif target_arch == "gfx1100":
