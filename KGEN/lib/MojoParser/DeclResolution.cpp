@@ -2352,6 +2352,11 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     return;
   }
 
+  shared.emitWarning(
+      decoratorLoc,
+      "'@value' is deprecated, please move to '@fieldwise_init' and explicit "
+      "`Copyable` and `Movable` conformances instead");
+
   // Generate the fieldwise init unless it already has one.
   if (!findFieldwiseInit(structDecl))
     structEmitter.synthesizeFieldwiseInit(structDecl);
