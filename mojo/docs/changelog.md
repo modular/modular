@@ -23,6 +23,10 @@ what we publish.
 
 ### Language changes
 
+- The `@value` decorator has been formally deprecated with a warning, it will
+  be removed in the next release of Mojo.  Please move to the `@fieldwise_init`
+  and synthesized `Copyable` and `Movable` trait conformance.
+
 ### Standard library changes
 
 - Added support for a wider range of consumer-grade AMD hardware, including:
