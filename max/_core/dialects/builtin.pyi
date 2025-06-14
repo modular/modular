@@ -13,8 +13,6 @@ from typing import Protocol, overload
 import max._core
 from max.mlir import Location
 
-from . import passes as passes
-
 # Many of the generated overloads for constructors are more specialized in
 # C++ than they are in Python. For example, `int32_t` and `int64_t` and `size_t`
 # all map to `int` in Python typing. It may not always be clear which of these
