@@ -103,13 +103,10 @@ struct MakeMyIntMemory:
         return MyIntMemory(Int(x[0]))
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MyIntReg(Movable):
     var val: Int
-
-    fn __init__(out self, val: Int):
-        self.val = val
 
 
 @compiler.register("make_my_int_reg")
