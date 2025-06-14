@@ -438,10 +438,10 @@ fn exp2[
     if dtype not in (DType.float32, DType.float64):
         return exp2(x.cast[DType.float32]()).cast[dtype]()
 
+    # constrained[dtype is not DType.float64, "exp2 doesn't support float64"]()
+
     var xc = x.clamp(-126, 126)
-
-    var m = xc.cast[__type_of(x.to_bits()).dtype]()
-
+    var m = xc.cast[__type_of(x._to_bits_signed()).dtype]()
     xc -= m.cast[dtype]()
 
     var r = polynomial_evaluate[
@@ -455,7 +455,7 @@ fn exp2[
         ),
     ](xc)
     return __type_of(r).from_bits(
-        (r.to_bits() + (m << FPUtils[dtype].mantissa_width()))
+        r._to_bits_signed() + (m << FPUtils[dtype].mantissa_width())
     )
 
 
@@ -723,7 +723,7 @@ fn frexp[
     alias mantissa_width = FPUtils[dtype].mantissa_width()
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
-    var x_int = x.to_bits()
+    var x_int = x._to_bits_signed()
     var selector = x != zero
     var exp = selector.select(
         (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[dtype](),
