@@ -1808,12 +1808,16 @@ fn _get_info_from_target[target_arch0: StaticString]() -> Info:
         return MI300X
     elif target_arch == "gfx1100":
         return Radeon7900
-    elif target_arch == "gfx1001":
+    elif target_arch == "gfx1101":
         return Radeon7800
-    elif target_arch == "gfx1002":
-        return RTX5090
-    elif target_arch == "gfx1003":
+    elif target_arch == "gfx1102":
+        return Radeon7600
+    elif target_arch == "gfx1103":
         return Radeon780m
+    elif target_arch == "gfx1200":
+        return Radeon9060
+    elif target_arch == "gfx1201":
+        return Radeon9070
     elif DEFAULT_GPU_ARCH == "":
         return NoGPU
 
