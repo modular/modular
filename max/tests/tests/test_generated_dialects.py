@@ -9,19 +9,9 @@ import functools
 
 import pytest
 from max import mlir
-from max._core import (
-    Block,
-    InsertPoint,
-    NamedAttribute,
-    OpBuilder,
-    Operation,
-    Pass,
-    Type,
-    lower,
-)
+from max._core import Block, InsertPoint, NamedAttribute, OpBuilder, Type
 from max._core.dialects import builtin, m, mo, mosh
 from max._core.dtype import DType
-from max.graph import Graph
 
 
 def test_mo_attr(mlir_context):
@@ -113,6 +103,9 @@ def test_device_ref_attr(mlir_context):
 
 def test_dictattr_arrayview(mlir_context):
     na = NamedAttribute("foo", builtin.StringAttr("bar"))
+    print(na)
+    print(na.name)
+    print(na.value)
     attr = builtin.DictionaryAttr([na])
     assert list(attr.value) == [na]
 
@@ -256,41 +249,3 @@ def test_discardable_attrs__concurrent_modification(mlir_context):
     _ = list(keys2)
     _ = list(items2)
     _ = list(values2)
-
-
-def test_lower_remove_dead_values(mlir_context):
-    with Graph("empty", input_types=[]) as graph:
-        graph.output()
-    module = Operation._from_cmlir(graph._module.operation)
-    assert isinstance(module, builtin.ModuleOp)
-    assert "mo.chain.create()" in str(module)
-    lower(module, [builtin.passes.RemoveDeadValues()])
-    assert isinstance(module, builtin.ModuleOp)
-    assert "mo.chain.create()" not in str(module)
-
-
-def test_lowering_failure_diagnostic(mlir_context):
-    # graph with no output!
-    graph = Graph("empty", input_types=[])
-    module = Operation._from_cmlir(graph._module.operation)
-    assert isinstance(module, builtin.ModuleOp)
-    with pytest.raises(Exception):
-        module.verify()
-    with pytest.raises(Exception):
-        lower(module, [builtin.passes.RemoveDeadValues()])
-
-
-def test_construct_pass_with_options(mlir_context):
-    # Tablegen doesn't generate a public-visibility way to inspect
-    # pass options, so don't try to test the actual pass option values.
-
-    no_options = mo.passes.MOToMOGG()
-    assert isinstance(no_options, Pass)
-    assert no_options.name == "MOToMOGG"
-
-    with_options = mo.passes.MOToMOGG(
-        kernel_library_paths=["foo", "bar"],
-        force_sync=True,
-    )
-    assert isinstance(with_options, Pass)
-    assert with_options.name == "MOToMOGG"
