@@ -1145,3 +1145,7 @@ struct FieldwiseInitExample[T: Movable]:
   # expected-note @below {{initializer declared here}}
   fn __init__(out self, x: Int, y: T):
     pass
+
+@value # expected-warning {{'@value' is deprecated, please move to '@fieldwise_init' and explicit `Copyable` and `Movable` conformances instead}}
+struct LegacyValueDecorator:
+  pass
