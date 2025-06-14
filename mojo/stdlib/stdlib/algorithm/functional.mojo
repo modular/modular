@@ -102,7 +102,7 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from memory import UnsafePointer
+    from memory import UnsafePointer, SIMD, simdwidthof
 
     # The amount of elements to loop through
     alias size = 10
@@ -116,11 +116,12 @@ fn vectorize[
         @parameter
         fn closure[width: Int](i: Int):
             print("storing", width, "els at pos", i)
-            p.store[width=width](i, i)
+            let v = SIMD[Int32, width].splat(i)
+            p.store[width](i, v)
 
         vectorize[closure, simd_width](size)
-        print(p.load[width=simd_width]())
-        print(p.load[width=simd_width](simd_width))
+        for idx in range(0, size, simd_width):
+            print(p.load[simd_width](idx))
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -211,7 +212,7 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from memory import UnsafePointer
+    from memory import UnsafePointer, SIMD, simdwidthof
 
     # The amount of elements to loop through
     alias size = 10
@@ -225,11 +226,12 @@ fn vectorize[
         @parameter
         fn closure[width: Int](i: Int):
             print("storing", width, "els at pos", i)
-            p.store[width=width](i, i)
+            let v = SIMD[Int32, width].splat(i)
+            p.store[width](i, v)
 
         vectorize[closure, simd_width](size)
-        print(p.load[width=simd_width]())
-        print(p.load[width=simd_width](simd_width))
+        for idx in range(0, size, simd_width):
+            print(p.load[simd_width](idx))
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
