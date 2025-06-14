@@ -36,6 +36,12 @@ float_dtype = st.sampled_from(
 )
 
 
+def test_roundtrip():
+    for dtype in DType:
+        assert isinstance(dtype, DType)
+        assert DType(dtype._mlir) == dtype
+
+
 @given(dtype=int_dtype | float_dtype)
 def test_numpy_roundtrip(dtype: DType):
     # There is no float8 / bf16 in numpy, so we cannot roundtrip float8 / bf16
