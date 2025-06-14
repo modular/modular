@@ -327,7 +327,7 @@ class TargetInfoAttr(max._core.Attribute):
 
     The `accelerator_arch` contains the vendor name of the accelerator in
     lowercase (e.g. nvidia or amd) along with the compute capability (e.g. 80 or
-    90). For example, a valid `accelerator_arch` is `nvidia:80` or `amdgpu:94`.
+    90). For example, a valid `accelerator_arch` is `nvidia:80` or `amdgpu:gfx942`.
     """
 
     def __init__(
