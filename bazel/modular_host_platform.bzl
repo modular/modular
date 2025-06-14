@@ -12,17 +12,29 @@ def _log_result(rctx, binary, result):
             .format(binary, result.return_code, result.stdout, result.stderr),
     )
 
-def _get_amd_constraint(blob):
+def _get_amdgpu_constraint(series):
+    if "MI300X" in series:
+        return "@//:mi300x_gpu"
+    if "MI325" in series:
+        return "@//:mi325_gpu"
+    if "Navi" in series:
+        return "@//:radeon_gpu"
+    if "AMD Radeon Graphics" in series:
+        return "@//:radeon_gpu"
+
+    fail("Unrecognized amd-smi/rocm-smi output, please report: {}".format(series))
+
+def _get_rocm_constraint(blob):
     for value in blob.values():
         series = value["Card Series"]
-        if "MI300X" in series:
-            return "@//:mi300x_gpu"
-        if "MI325" in series:
-            return "@//:mi325_gpu"
-        if "AMD Radeon Graphics" in series:
-            return "@//:radeon_gpu"
-
+        return _get_amdgpu_constraint(series)
     fail("Unrecognized rocm-smi output, please report: {}".format(blob))
+
+def _get_amd_constraint(blob):
+    for value in blob:
+        series = value["asic"]["market_name"]
+        return _get_amdgpu_constraint(series)
+    fail("Unrecognized amd-smi output, please report: {}".format(blob))
 
 def _get_nvidia_constraint(lines):
     line = lines[0]
@@ -65,11 +77,18 @@ def _get_nvidia_constraint(lines):
 
 def _impl(rctx):
     constraints = []
-    if rctx.os.name == "linux" and rctx.os.arch == "amd64":
-        nvidia_smi = rctx.which("nvidia-smi")
-        rocm_smi = rctx.which("rocm-smi")
-        _verbose_log(rctx, "nvidia-smi path: {}, rocm-smi path: {}".format(nvidia_smi, rocm_smi))
 
+    if rctx.os.name == "linux" and rctx.os.arch == "amd64":
+        # A system may have both rocm-smi and nvidia-smi installed, check both.
+        nvidia_smi = rctx.which("nvidia-smi")
+
+        # amd-smi supersedes rocm-smi
+        amd_smi = rctx.which("amd-smi")
+        rocm_smi = rctx.which("rocm-smi")
+
+        _verbose_log(rctx, "nvidia-smi path: {}, rocm-smi path: {}, amd-smi path: {}".format(nvidia_smi, rocm_smi, amd_smi))
+
+        # NVIDIA
         if nvidia_smi:
             result = rctx.execute([nvidia_smi, "--query-gpu=gpu_name", "--format=csv,noheader"])
             _log_result(rctx, nvidia_smi, result)
@@ -91,6 +110,27 @@ def _impl(rctx):
                 if len(lines) >= 4:
                     constraints.append("@//:has_4_gpus")
 
+        # AMD
+        if amd_smi:
+            result = rctx.execute([amd_smi, "static", "--json"])
+            _log_result(rctx, amd_smi, result)
+
+            if result.return_code == 0:
+                constraints.extend([
+                    "@//:amd_gpu",
+                    "@//:has_gpu",
+                ])
+
+                blob = json.decode(result.stdout)
+                if len(blob) == 0:
+                    fail("amd-smi succeeded but didn't actually have any GPUs, please report this issue")
+
+                constraints.append(_get_amd_constraint(blob))
+                if len(blob) > 1:
+                    constraints.append("@//:has_multi_gpu")
+                if len(blob) >= 4:
+                    constraints.append("@//:has_4_gpus")
+
         elif rocm_smi:
             result = rctx.execute([rocm_smi, "--json", "--showproductname"])
             _log_result(rctx, rocm_smi, result)
@@ -105,7 +145,7 @@ def _impl(rctx):
                 if len(blob.keys()) == 0:
                     fail("rocm-smi succeeded but didn't actually have any GPUs, please report this issue")
 
-                constraints.append(_get_amd_constraint(blob))
+                constraints.append(_get_rocm_constraint(blob))
                 if len(blob.keys()) > 1:
                     constraints.append("@//:has_multi_gpu")
                 if len(blob.keys()) >= 4:

@@ -5133,6 +5133,32 @@ struct DeviceContext(Copyable, Movable):
         )
         return Int(compute_capability)
 
+    @doc_private
+    @always_inline
+    fn arch_name(self) raises -> String:
+        """Returns the architecture name of this device.
+
+        This internal method retrieves the architecture name of AMD GPUs.
+
+        Returns:
+            The compute capability as a string (e.g., `gfx942` for `MI300`).
+
+        Raises:
+            If there's an error retrieving the compute capability.
+
+        Notes:
+
+        This is a private method intended for internal use only.
+        """
+        var arch_name = StaticString(ptr=UnsafePointer[Byte](), length=0)
+        external_call[
+            "AsyncRT_DeviceContext_archName",
+            NoneType,
+            UnsafePointer[StaticString],
+            _DeviceContextPtr,
+        ](UnsafePointer(to=arch_name), self._handle)
+        return String(arch_name)
+
     @always_inline
     fn get_memory_info(self) raises -> (_SizeT, _SizeT):
         """Returns the free and total memory size for this device.
