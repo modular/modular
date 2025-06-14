@@ -844,7 +844,7 @@ fn alignof[
 
 @always_inline("nodebug")
 fn bitwidthof[
-    type: AnyTrivialRegType,
+    type: AnyType,
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Int:
     """Returns the size of (in bits) of the type.
