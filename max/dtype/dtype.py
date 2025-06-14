@@ -97,7 +97,7 @@ def _from_numpy(dtype: np.dtype) -> DType:
 
 
 _DTYPE_TO_MLIR = {
-    DType.bool: "bool",
+    DType.bool: "i1",
     DType.int8: "si8",
     DType.int16: "si16",
     DType.int32: "si32",
