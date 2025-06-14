@@ -123,7 +123,7 @@ fn mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
 trait FancyTrait(Copyable, Movable):
     fn __eq__(self, other: Self) -> Bool: pass
 
-@value
+@fieldwise_init
 struct MyOptional[T: Copyable & Movable]:
 
     fn __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
@@ -152,7 +152,7 @@ struct DefBoxInference:
         return DefBoxInferenceIter[__origin_of(self)](Pointer(to=self))
 
 
-@value
+@fieldwise_init
 struct DefBoxInferenceIter[
     origin: ImmutableOrigin,
 ]:

@@ -65,14 +65,13 @@ fn init_self_conversion():
     alias f: fn () -> None = Constructible.__init__
 
 
-@value
-struct ConvertibleFromInt:
+struct ConvertibleFromInt(Copyable, Movable):
     @implicit
     fn __init__(out self, arg: Int):
         pass
 
 
-@value
+@fieldwise_init
 # expected-note @below {{candidate generated with type 'fn(owned a: ConvertibleFromInt, b: Int) -> AmbiguousCtor'}}
 struct AmbiguousCtor:
     var a: ConvertibleFromInt

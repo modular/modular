@@ -68,7 +68,7 @@ trait Implicit:
         ...
 
 
-@value
+@fieldwise_init
 struct Foo(Explicit, Implicit):
     fn __int__(self) -> Int:
         return 42

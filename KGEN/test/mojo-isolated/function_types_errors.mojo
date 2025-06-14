@@ -90,7 +90,7 @@ fn device_func(a: Int, b: Bool) -> Int:
     return 73
 
 
-@value
+@fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: *ArgTypes) -> Int:
@@ -125,7 +125,7 @@ fn device_func_usedT[T: AnyType](a: T, b: Bool) -> Int:
     return 73
 
 
-@value
+@fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     pass
 
@@ -160,7 +160,7 @@ fn device_func(a: Int, b: Bool) -> Int:
     return 73
 
 
-@value
+@fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: *ArgTypes) -> Int:
@@ -215,7 +215,7 @@ fn main():
 # only caught by elaborator for now and is tested elsewhere (search FTAGPUF).
 
 
-@value
+@fieldwise_init
 struct ZBool:
     pass
 
@@ -266,21 +266,21 @@ struct ZLayoutTensor(AnyRPTrivialType):
         var z: ZLayoutTensor = c.to_tensor()
 
 
-@value
+@fieldwise_init
 struct DeviceFunction[*ArgTypes: AnyRPTrivialType]:
     # expected-note @below {{function declared here}}
     fn call(self, *args: *ArgTypes) -> Int:
         return 91
 
 
-@value
+@fieldwise_init
 struct ManagedLayoutTensor(ConvertibleToZLayoutTensor):
     fn to_tensor(self) -> ZLayoutTensor:
         return ZLayoutTensor()
 
 
 # Never converted, the GPU just uses this one directly
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct NDBuffer(AnyRPTrivialType):
     pass

@@ -349,7 +349,7 @@ fn dynamic_used_as_param() -> Int:
   # expected-error @+1 {{cannot use a dynamic value in call parameter}}
   return func_with_static_param[x]()
 
-@value
+@fieldwise_init
 struct StructWithField:
   var x : Int
 

@@ -29,7 +29,7 @@ trait Resettable(Copyable, Movable):
         ...
 
 
-@value
+@fieldwise_init
 struct MemOnly(Resettable):
     var value: Int
 

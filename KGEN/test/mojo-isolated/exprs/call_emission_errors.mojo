@@ -194,7 +194,7 @@ fn call_test_ref(mut s: String):
     f2(s)
 
 
-@value
+@fieldwise_init
 struct MyMutSpan[origin: MutableOrigin]:
     pass
 
@@ -204,8 +204,8 @@ fn take_two_spans(a: MyMutSpan[_], b: MyMutSpan[_]):
     pass
 
 
-@value
-struct MyStruct:
+@fieldwise_init
+struct MyStruct(Copyable, Movable):
     var a: Int
     var b: Int
 
@@ -330,7 +330,7 @@ fn call_param_inference_unrelated_error():
     param_inference_unrelated_error(x, y)
 
 
-@value
+@fieldwise_init
 @register_passable
 struct MyRPStruct:
     var a: Int
@@ -339,7 +339,7 @@ struct MyRPStruct:
         pass
 
 
-@value
+@fieldwise_init
 @register_passable
 struct MyRPStruct2:
     var b: MyRPStruct

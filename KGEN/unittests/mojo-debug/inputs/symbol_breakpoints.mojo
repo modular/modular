@@ -13,7 +13,7 @@ fn parametrized_fn[T: Stringable](x: T):
     print(String(x))  # parametrized_fn stop
 
 
-@value
+@fieldwise_init
 struct Struct[T1: Stringable]:
     fn parametrized_method[T2: Stringable](self, x: T1, y: T2):
         print(String(x))  # parametrized_method stop

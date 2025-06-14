@@ -44,7 +44,7 @@ trait MainTraitT2:
     fn get2(self) -> Self.ret_type:
         ...
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ImplT(SubTraitT, SubTraitT2):
     fn subget(self) -> Index:
@@ -56,7 +56,7 @@ struct ImplT(SubTraitT, SubTraitT2):
     fn BAR(self) -> Index:
         return `1`
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MainImplT(MainTraitT, MainTraitT2):
     # CHECK: lit.alias.decl *"ret_type{{.*}}": !mt_ImplT = <!ImplT>

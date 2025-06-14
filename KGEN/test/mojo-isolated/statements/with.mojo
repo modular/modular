@@ -47,13 +47,13 @@ struct MutatingCM:
         pass  # normal
 
 
-@value
+@fieldwise_init
 struct NoExitCMReg:
     fn __enter__(mut self) -> Int:
         pass
 
 
-@value
+@fieldwise_init
 struct NoExitCMMem:
     fn __enter__(mut self) -> Self:
         pass
@@ -362,7 +362,7 @@ fn testCMWithoutExitEarlyReturn():
         return
 
 
-@value
+@fieldwise_init
 struct CMUnconditionalExit:
     fn __enter__(self):
         pass

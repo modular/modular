@@ -11,7 +11,7 @@ fn getFloat() -> Float32:
     return 4.125
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ARegisterPassableStruct:
     var int: Int

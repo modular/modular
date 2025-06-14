@@ -20,12 +20,12 @@ fn call_nested_function():
     return
 
 
-@value
+@fieldwise_init
 struct SomeType:
     var value: Index
 
 
-@value
+@fieldwise_init
 struct `weird()struct[]`:
     pass
 
@@ -34,12 +34,12 @@ fn `use()weird[]`() -> `weird()struct[]`:
     return `weird()struct[]`()
 
 
-@value
-struct ParameterizedType[value: Index]:
+@fieldwise_init
+struct ParameterizedType[value: Index](Copyable, Movable):
     pass
 
 
-@value
+@fieldwise_init
 struct Wrapper:
     var data: Index
 

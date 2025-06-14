@@ -644,7 +644,7 @@ struct AddrSpace:
         self._value = value
     fn value(self) -> __mlir_type.index:
         return self._value
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`]:
     var value: __mlir_type[
@@ -698,9 +698,9 @@ struct MemoryNoDtor:
 # CHECK-LABEL: lit.struct.decl @RegExampleValue({{.*}}) register_passable
 # Compiler crashes trying to insert a destructor call
 # https://github.com/modularml/modular/issues/26410
-@value
+@fieldwise_init
 @register_passable
-struct RegExampleValue:
+struct RegExampleValue(Copyable):
   var x: RegExample
   fn __init__(out self):
     self.x = RegExample()
@@ -936,19 +936,19 @@ struct HasMemExample:
     except:
       pass
 
-@value
-struct Dim:
+@fieldwise_init
+struct Dim(Copyable, Movable):
   var dim: Int
 
 fn maybeDim() raises -> Dim:
    return Dim(3)
 
-@value
-struct List:
+@fieldwise_init
+struct List(Copyable, Movable):
   fn append(self, d: MemExample):
      pass
 
-@value
+@fieldwise_init
 struct DoNotPropagateErrorStateIntoContinueSet:
   var dims: List
   # CHECK-LABEL: lit.fn @"__init__(
@@ -1060,7 +1060,7 @@ fn field_sensitive_ref_last_use(owned write_state : IntAndOptional):
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %msg)
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%write_state)
 
-@value
+@fieldwise_init
 struct IntAndOptional:
     var handle: Int
     var error: Optional[String]
@@ -1379,8 +1379,8 @@ def origin_of_def_arg(a: String):
     _ = __origin_of(a)
 
 # MOCO-1542: Need to rebind field type when checking size.
-@value
-struct MyParameterizedField[T: Copyable & Movable]:
+@fieldwise_init
+struct MyParameterizedField[T: Copyable & Movable](Copyable, Movable):
   var a: T
   var b: T
 

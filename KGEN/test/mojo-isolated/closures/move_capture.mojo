@@ -10,8 +10,8 @@
 # CHECK: @Thing::@"__moveinit__
 
 
-@value
-struct Thing:
+@fieldwise_init
+struct Thing(Copyable, Movable):
     pass
 
 

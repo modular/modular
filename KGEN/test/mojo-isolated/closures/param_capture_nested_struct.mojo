@@ -16,9 +16,9 @@
 # CHECK-SAME: !lit.generator<[2]({{.*}}"self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}<:origin<0> *"self`2x", :!Int [[ALoc]]>
 
 
-@value
+@fieldwise_init
 @register_passable
-struct Foo[A: Int]:
+struct Foo[A: Int](Copyable, Movable):
     var b: Int
 
     fn get[C: Int](self) -> fn (y: Int) escaping -> Int:

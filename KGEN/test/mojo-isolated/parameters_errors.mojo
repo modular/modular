@@ -281,13 +281,13 @@ fn crash1_caller[p: __mlir_type.index](a: __mlir_type.index):
     alias y = crash1_callee(a, p)
 
 
-@value
+@fieldwise_init
 struct StructWithParams[a: Int, b: Int]:
     alias a1 = StructWithParams[1, 2]()
     alias a2 = a+1
     alias a3 = a+b+1
 
-fn testStructWithParams(): 
+fn testStructWithParams():
     # These are ok because the referenced alias doesn't depend on unbound parameters.
     _ = StructWithParams.a1
     _ = StructWithParams[1].a2
@@ -313,7 +313,7 @@ struct DefaultParams[a: Int, b: Int = 7, msg: Int]:
     pass
 
 
-@value
+@fieldwise_init
 struct DefaultParams2[a: Int, b: Int = 7]:  # expected-note {{declared here}}
     pass
 
@@ -364,13 +364,13 @@ fn indirect_callable_pos_only[
 
 
 # expected-note @+2 {{declared here}}
-@value
+@fieldwise_init
 struct KwParamStruct[a: Int, b: Int = 0]:
     pass
 
 
 # expected-note @+2 {{declared here}}
-@value
+@fieldwise_init
 struct VarParamStruct[s: StringLiteral, *args: Int]:
     pass
 
@@ -404,7 +404,7 @@ fn test_struct_kw_params3():
 
 
 # expected-note @+2 {{declared here}}
-@value
+@fieldwise_init
 struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
     pass
 
@@ -463,7 +463,7 @@ fn pass_no_traits(x: NoTraitsType):
     take_some_trait(x)
 
 
-@value
+@fieldwise_init
 @register_passable
 struct ParamType[p: Int]:
     pass
@@ -572,4 +572,3 @@ struct SimpleSIMD[arg1: Int, size: Int]:
 fn dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
     # expected-error @below {{could not deduce parameter 'T' of callee '__init__'}}
     x = SimpleSIMD[50, 4](b)
-

@@ -58,7 +58,7 @@ fn test_setitem_overload(b: MultiSetItem, x: Index):
     b[x] = x
 
 
-@value
+@fieldwise_init
 struct VariadicIndexList:
     fn __getitem__(mut self, *indices: Int) -> Int:
         pass

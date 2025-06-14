@@ -69,8 +69,8 @@ fn issue1242():
         pass
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     pass
 
 # COM: Issue https://github.com/modularml/modular/issues/37758 where the
@@ -178,7 +178,7 @@ struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
     def __init__(out self, *args: T):
         pass
 
-@value
+@fieldwise_init
 struct TestTuple[*Ts: AnyTrivialRegType]:
     # expected-note @+1 {{function declared here}}
     fn test[i: Int, j: Int](self):
@@ -517,7 +517,7 @@ fn someFn2():
   if True: # expected-error {{unknown tokens at the end of a declaration}}
     pass
 
-@value  # expected-error {{unrecognized body decorators}}
+@fieldwise_init  # expected-error {{unrecognized body decorators}}
 trait NoDecorators:
     pass
 
@@ -724,15 +724,15 @@ struct BadDtor1:
   fn __del__(self): # expected-error {{self argument must be 'owned'}}
     pass
 
-@value
-struct CantSynthesize:
+@fieldwise_init
+struct CantSynthesize(Copyable, Movable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'x' has non-copyable and non-movable type 'InMemStruct'}}
   var x : InMemStruct
 
 
-@value
+@fieldwise_init
 struct ResolveErrorIsBubbled:
    var x: Int
    @implicit
@@ -774,9 +774,9 @@ struct NotRegisterPassable:
 # https://github.com/modularml/modular/issues/34551
 # Don't crash on emitting methods when the struct itself is erroneous.
 
-@value
+@fieldwise_init
 @register_passable
-struct Outer34551: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
+struct Outer34551(Copyable, Movable): # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
     # expected-error @below {{cannot synthesize __moveinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
     # expected-error @below {{cannot synthesize __copyinit__ because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
@@ -792,10 +792,10 @@ struct Outer34551: # expected-error {{all members of '@register_passable' struct
 struct StructWithoutBody:
     pass
 
-@value
+@fieldwise_init
 @register_passable
 # expected-error @below {{'StructWithoutBody' is not copyable because it has no '__copyinit__'}}
-struct OkayStruct:
+struct OkayStruct(Copyable):
     var begin: StructWithoutBody
 
 
@@ -847,7 +847,7 @@ trait Shape(Copyable, Movable):
 	fn area(self) -> Index:
 	    ...
 
-@value
+@fieldwise_init
 struct ShapeContainer:
     var shape: Shape # expected-error {{TODO: dynamic traits not supported yet, please use a compile time generic instead of 'Shape'}}
 
@@ -967,7 +967,7 @@ def func_overloaded(x: Int):
 def func_overloaded(x: Bool):
   ...
 
-@value
+@fieldwise_init
 struct HasBoolParam[a: Bool]:
    pass
 
@@ -997,18 +997,18 @@ struct copy_init_raises:
 
 # Order of declaration processing.
 # https://github.com/modular/mojo/issues/235
-@value
+@fieldwise_init
 struct Inner:
     pass
 
-@value
+@fieldwise_init
 @register_passable
 struct Outer: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 
 
-@value
-struct AnyTypeMember[T: AnyType]:
+@fieldwise_init
+struct AnyTypeMember[T: AnyType](Copyable, Movable):
 # expected-error @below {{cannot synthesize fieldwise init because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __moveinit__ because field 'value' has non-copyable and non-movable type 'T'}}
 # expected-error @below {{cannot synthesize __copyinit__ because field 'value' has non-copyable and non-movable type 'T'}}
@@ -1019,15 +1019,15 @@ struct ExpCopyable(ExplicitlyCopyable):
   var x: Int
 
 # Issue https://github.com/modular/mojo/issues/1675
-# Ensure @value fails gracefully in the presence of duplicate field names.
-@value
+# Ensure @fieldwise_init fails gracefully in the presence of duplicate field names.
+@fieldwise_init
 struct BadStruct:
     var b: Index  # expected-note {{previous definition here}}
     var b: Index  # expected-error {{invalid redefinition of 'b'}}
 
 
-# Also ensure that @value doesn't fail if a method/alias shadows it.
-@value
+# Also ensure that @fieldwise_init doesn't fail if a method/alias shadows it.
+@fieldwise_init
 struct OtherBadStruct:
     # expected-note @below {{previous definition here}}
     # expected-note @below {{cannot overload with this non-function definition}}
@@ -1046,11 +1046,11 @@ fn test_bad_struct():
 # Bad implicit conversions.
 ##===----------------------------------------------------------------------===##
 
-@value
-struct Foo:
+@fieldwise_init
+struct Foo(Copyable, Movable):
     var val: Int
 
-@value
+@fieldwise_init
 struct ContainsFoo:
     var foo: Foo
 

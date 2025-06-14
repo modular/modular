@@ -9,8 +9,8 @@
 # COM: Check all the generated methods.
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     pass
 
 

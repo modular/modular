@@ -11,7 +11,7 @@
 fn imported_fn():
     return
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct VeryUniqueStruct:
     var very_unique_field: __mlir_type.index

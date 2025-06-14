@@ -37,7 +37,7 @@ fn makeClosure(x: Index):
     var y = writer()
 
 
-@value
+@fieldwise_init
 struct MemType:
     var a: Index
 

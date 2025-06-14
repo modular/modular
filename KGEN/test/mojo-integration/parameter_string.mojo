@@ -9,7 +9,7 @@
 from collections.string.string_slice import StaticString, get_static_string
 
 
-@value
+@fieldwise_init
 struct StringParam[value: String]:
     fn print_it(self):
         print(value)

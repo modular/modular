@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Thing:
     @implicit
@@ -38,7 +38,7 @@ fn anytype_result[T: AnyTrivialRegType]() -> T:
     pass
 
 
-@value
+@fieldwise_init
 @nonmaterializable(Thing)
 @register_passable
 struct NMType:
@@ -80,7 +80,7 @@ fn metatypes():
 
 
 # Stef's crazy metatype stress test.
-@value
+@fieldwise_init
 struct StefStressTest[x: Int]:
     @staticmethod
     fn increment() -> __type_of(StefStressTest[x+1]):
@@ -94,13 +94,11 @@ fn access_param_from_metatype():
     # CHECK-NEXT: lit.alias.decl *"f1`": meta<!lit.struct<#StefStressTest <:!Int {1}>>>
     alias f1 = StefStressTest[0].increment()
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK: lit.call {{.*}}@"use_int{{.*}}([[TMP]]) 
+    # CHECK: lit.call {{.*}}@"use_int{{.*}}([[TMP]])
     use_int(f1.x)
 
     # CHECK: lit.call {{.*}}@"increment()"<:!Int {0}>()
     # CHECK: lit.call {{.*}}@"increment()"<:!Int {1}>()
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: lit.call {{.*}}@"use_int{{.*}}([[TMP]]) 
+    # CHECK-NEXT: lit.call {{.*}}@"use_int{{.*}}([[TMP]])
     use_int(StefStressTest[0].increment().increment().x)
-
-

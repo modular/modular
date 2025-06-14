@@ -22,7 +22,7 @@ alias Traits12 = Trait1 & Trait2
 alias Traits23 = Trait2 & Trait3
 alias Traits123 = Trait1 & Trait2 & Trait3
 
-@value
+@fieldwise_init
 struct Struct4():
     fn f4(self):
         pass

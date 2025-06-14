@@ -7,7 +7,7 @@
 from debug_test_utils import keep_alive
 
 
-@value
+@fieldwise_init
 struct MyPair:
     var first: Int8
     var second: Int64

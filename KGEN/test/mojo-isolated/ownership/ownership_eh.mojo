@@ -166,7 +166,7 @@ fn finally_may_raise() raises:
         somethingThatRaises()
 
 
-@value
+@fieldwise_init
 struct ThrowingExit:
     fn __enter__(self):
         pass

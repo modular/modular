@@ -6,15 +6,15 @@
 # RUN: kgen -elaborate -O0 %s -S | FileCheck %s
 
 
-@value
+@fieldwise_init
 @register_passable
-struct RegPassable:
+struct RegPassable(Copyable):
     var v: Float32
     var w: Float32
 
 
-@value
-struct MemOnly:
+@fieldwise_init
+struct MemOnly(Copyable, Movable):
     var a: Int
     var b: Int
 

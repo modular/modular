@@ -9,8 +9,8 @@
 # COM: implementation struct.
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     fn __del__(owned self):
         pass
 

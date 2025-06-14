@@ -6,14 +6,14 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Index:
     pass
 
 
-@value
-struct MemType:
+@fieldwise_init
+struct MemType(Copyable, Movable):
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType()
 
