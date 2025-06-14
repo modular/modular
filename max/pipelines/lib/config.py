@@ -134,7 +134,7 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
-    pdl_level: str = os.environ.get("PDL_LEVEL", "1")
+    pdl_level: str = os.environ.get("PDL_LEVEL", "0")
     """Level of overlap of kernel launch via programmatic dependent grid control."""
 
     ignore_eos: bool = False
