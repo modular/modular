@@ -16,6 +16,7 @@
 from .testing import (
     assert_almost_equal,
     assert_equal,
+    assert_equal_py_object,
     assert_false,
     assert_is,
     assert_is_not,
