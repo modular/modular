@@ -311,7 +311,7 @@ amount of time spent executing the `with` code block:
 import sys
 import time
 
-@value
+@fieldwise_init
 struct Timer:
     var start_time: Int
 
@@ -384,7 +384,6 @@ type of error condition and propagates all others:
 import sys
 import time
 
-@value
 struct ConditionalTimer:
     var start_time: Int
 

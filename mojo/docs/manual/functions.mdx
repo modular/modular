@@ -588,7 +588,6 @@ compiler error. You can fix this by casting the value to the type you really
 want:
 
 ```mojo
-@value
 struct MyString:
     @implicit
     fn __init__(out self, string: StringLiteral):

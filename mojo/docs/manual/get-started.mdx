@@ -507,8 +507,8 @@ containing the following definition of a struct named `Grid` consisting of three
 fields:
 
 ```mojo title="gridv1.mojo"
-@value
-struct Grid():
+@fieldwise_init
+struct Grid(Copyable, Movable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
@@ -529,7 +529,7 @@ lifecycle behaviors, you can simply add the
 definition to have the Mojo compiler automatically generate lifecycle methods
 for you.
 
-Because we used the `@value` decorator, `Grid` includes a "member-wise"
+Because we used the `@fieldwise_init` decorator, `Grid` includes a "field-wise"
 [constructor](/mojo/manual/lifecycle/life#constructor) . The constructor's
 arguments are the same names and types as the struct's fields and appear in the
 same order. So this means that we can create an instance of `Grid` like this:
@@ -616,8 +616,8 @@ To do so, move the function into `gridv1.mojo` and edit it to look like this (or
 simply copy the code below into `gridv1.mojo`):
 
 ```mojo title="gridv1.mojo"
-@value
-struct Grid():
+@fieldwise_init
+struct Grid(Copyable, Movable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
@@ -706,8 +706,8 @@ the type conforms to `StringableRaising` and rename the `grid_str()` method to
 `__str__()`:
 
 ```mojo title="gridv1.mojo"
-@value
-struct Grid(StringableRaising):
+@fieldwise_init
+struct Grid(StringableRaising, Copyable, Movable):
     ...
     def __str__(self) -> String:
         ...
@@ -766,8 +766,8 @@ of the built-in operators for a custom type by implementing special *dunder*
 `Grid` struct in `gridv1.mojo`:
 
 ```mojo title="gridv1.mojo"
-@value
-struct Grid(StringableRaising):
+@fieldwise_init
+struct Grid(StringableRaising, Copyable, Movable):
     ...
     def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
@@ -794,8 +794,8 @@ Now that we've implemented these methods, we can update `__str__()` to use
 indexing syntax to access the cell value.
 
 ```mojo title="gridv1.mojo"
-@value
-struct Grid(StringableRaising):
+@fieldwise_init
+struct Grid(StringableRaising, Copyable, Movable):
     ...
     def __str__(self) -> String:
         ...
@@ -809,8 +809,8 @@ struct Grid(StringableRaising):
   <summary>Click here to see the complete `gridv1.mojo` so far:</summary>
 
 ```mojo title="gridv1.mojo"
-@value
-struct Grid(StringableRaising):
+@fieldwise_init
+struct Grid(StringableRaising, Copyable, Movable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
@@ -858,8 +858,8 @@ function. We indicate that a method is a static method by using the
 ```mojo title="gridv1.mojo"
 import random
 
-@value
-struct Grid(StringableRaising):
+@fieldwise_init
+struct Grid(StringableRaising, Copyable, Movable):
     ...
     @staticmethod
     def random(rows: Int, cols: Int) -> Self:
