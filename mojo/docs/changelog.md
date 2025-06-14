@@ -52,6 +52,8 @@ what we publish.
   alias EDEADLK = platform_map["EDEADLK", linux = 35, macos = 11]()
   ```
 
+- Added support for AMD RX 6900 XT consumer-grade GPU.
+
 ### Tooling changes
 
 ### ❌ Removed
