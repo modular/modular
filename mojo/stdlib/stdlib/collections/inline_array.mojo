@@ -177,7 +177,6 @@ struct InlineArray[
             )
 
     @always_inline
-    @implicit
     fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
@@ -238,7 +237,6 @@ struct InlineArray[
         )
 
     @always_inline
-    @implicit
     fn __init__(
         out self, owned *elems: Self.ElementType, __list_literal__: () = ()
     ):
@@ -256,7 +254,7 @@ struct InlineArray[
         var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
         ```
         """
-
+        debug_assert(len(elems) == size, "No. of elems must match array size")
         self = Self(storage=elems^)
 
     @always_inline
