@@ -43,6 +43,11 @@ def test_stringable():
     assert_equal("AAA", String(StringSlice("AAA")))
     assert_equal("a string", String(AString()))
 
+    # Should not produce an exclusivity error.
+    # Incorrect exclusivity error when printing a StringSlice
+    # https://github.com/modular/modular/issues/4790
+    print(String("test").removeprefix(""))
+
 
 def test_constructors():
     # Default construction
