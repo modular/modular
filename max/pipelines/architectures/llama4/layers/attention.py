@@ -43,7 +43,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 
 from .norm import l2_norm
 
@@ -63,7 +63,7 @@ class _Llama4TextAttention(Module):
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,

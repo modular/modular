@@ -21,7 +21,6 @@ from sys import alignof, sizeof
 from sys.ffi import c_char
 
 from memory import UnsafePointer, memcpy
-from memory.memory import _free
 from utils.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
@@ -31,15 +30,15 @@ from utils.write import _WriteBufferStack
 
 @register_passable
 struct Error(
-    Stringable,
     Boolable,
-    Representable,
-    Writable,
     Copyable,
-    Movable,
-    ExplicitlyCopyable,
-    _CurlyEntryFormattable,
     Defaultable,
+    ExplicitlyCopyable,
+    Movable,
+    Representable,
+    Stringable,
+    Writable,
+    _CurlyEntryFormattable,
 ):
     """This type represents an Error."""
 

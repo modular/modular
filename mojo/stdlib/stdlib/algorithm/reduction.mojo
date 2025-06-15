@@ -19,9 +19,8 @@ from algorithm import map_reduce
 ```
 """
 
-from math import align_down, ceildiv, iota
-from os import abort
-from sys.info import bitwidthof, is_nvidia_gpu, simdwidthof, sizeof
+from math import align_down, ceildiv
+from sys.info import simdwidthof, sizeof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -33,7 +32,6 @@ from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 

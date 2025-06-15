@@ -49,7 +49,7 @@ modular_py_library(
     srcs = ["mojo.py"],
     data = [
         "//KGEN/tools/mojo",
-        "//open-source/max/mojo/stdlib/stdlib",
+        "@mojo//:stdlib",
     ],
     visibility = ["//visibility:public"],
     deps = [":_package_root"],

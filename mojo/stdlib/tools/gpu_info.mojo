@@ -62,6 +62,7 @@ fn main() raises:
     var ctx = host.DeviceContext(device_id, api=api)
 
     var compute_capability = ctx.compute_capability()
+    var arch_name = ctx.arch_name()
     var major = compute_capability // 10
     var minor = compute_capability % 10
 
@@ -170,22 +171,10 @@ fn main() raises:
         print('name="' + ctx.name() + '", ')
         print("vendor=Vendor.AMD_GPU,")
         print('api="' + String(ctx.api()) + '", ')
-        print(
-            'arch_name="'
-            + compute_capability_to_arch_name(major, minor)
-            + '", '
-        )
+        print('arch_name="' + arch_name + '", ')
         print('compile_options="", ')
         print(
             "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
-        )
-        print(
-            'version="sm_'
-            + (
-                String(compute_capability)
-                + ("a" if compute_capability >= 90 else "")
-            )
-            + '",'
         )
         print(
             "sm_count="
@@ -216,24 +205,6 @@ fn main() raises:
             + ", "
         )
         print(
-            "thread_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
-            "shared_memory_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
-                )
-            )
-            + ", "
-        )
-        print(
             "register_file_size="
             + String(
                 ctx.get_attribute(
@@ -249,15 +220,6 @@ fn main() raises:
             "max_registers_per_block="
             + String(
                 ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
-            )
-            + ", "
-        )
-        print(
-            "max_blocks_per_multiprocessor="
-            + String(
-                ctx.get_attribute(
-                    host.DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-                )
             )
             + ", "
         )

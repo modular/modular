@@ -22,13 +22,14 @@ import threading
 import uuid
 from collections.abc import Awaitable, Mapping, Sequence
 from threading import Thread
-from typing import Callable, NewType, TypeVar, cast
+from typing import Callable, NewType, TypeVar, Union, cast
 
 import tqdm
 from max.pipelines.core import SamplingParams
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
@@ -184,8 +185,13 @@ async def _async_worker(
     )
     batch_config = batch_config_from_pipeline_config(pipeline_config)
     model_name = pipeline_config.model_config.model_path
-    dispatcher_factory: DispatcherFactory[PrefillRequest | PrefillResponse] = (
-        DispatcherFactory(settings.dispatcher_config)
+    dispatcher_factory = DispatcherFactory[
+        Union[PrefillRequest, PrefillResponse]
+    ](
+        settings.dispatcher_config,
+        transport_payload_type=TransportMessage[
+            Union[PrefillRequest, PrefillResponse]
+        ],
     )
 
     # Start the model worker process.

@@ -34,7 +34,7 @@ from sys import (
     sizeof,
 )
 from sys.compile import DebugLevel, OptimizationLevel
-from sys.ffi import c_char
+from sys.ffi import c_char, OpaquePointer
 from sys.info import _get_arch, has_nvidia_gpu_accelerator, is_triple
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like
@@ -92,7 +92,6 @@ alias _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
 alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
 alias _CharPtr = UnsafePointer[UInt8]
 alias _IntPtr = UnsafePointer[Int32]
-alias _VoidPtr = UnsafePointer[NoneType]
 alias _SizeT = UInt
 
 alias _DumpPath = Variant[Bool, Path, StaticString, fn () capturing -> Path]
@@ -694,12 +693,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
 
 
 struct DeviceBuffer[type: DType](
-    Sized,
-    Stringable,
-    Writable,
-    Copyable,
-    Movable,
-    DevicePassable,
+    Copyable, DevicePassable, Movable, Sized, Stringable, Writable
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
@@ -716,7 +710,7 @@ struct DeviceBuffer[type: DType](
     alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[type]]
     """DeviceBuffer types are remapped to UnsafePointer when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping from DeviceBuffer to the device's UnsafePointer.
         """
         # TODO: Allow the low-level DeviceContext implementation to intercept
@@ -1640,7 +1634,7 @@ struct DeviceFunction[
                 _DeviceFunctionPtr,
                 _CharPtr,
                 _SizeT,
-                _VoidPtr,
+                OpaquePointer,
                 _SizeT,
             ](
                 self._handle,
@@ -1862,34 +1856,35 @@ struct DeviceFunction[
         alias populate = __type_of(self._func_impl).populate
         alias num_captures_static = 16
 
-        var dense_args_addrs = stack_allocation[
-            num_captures_static + num_args, UnsafePointer[NoneType]
-        ]()
-
+        # NOTE: Manual short buffer optimization. We could use a
+        # Variant[List, InlineArray] instead, but it would look a lot more
+        # verbose. This way, however, we need to conditionally free at the end.
+        var dense_args_addrs: UnsafePointer[OpaquePointer]
         if num_captures > num_captures_static:
-            dense_args_addrs = UnsafePointer[UnsafePointer[NoneType]].alloc(
-                num_captures + num_args
-            )
+            dense_args_addrs = dense_args_addrs.alloc(num_captures + num_args)
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_args, OpaquePointer
+            ]()
 
         @parameter
         for i in range(num_args):
-            var first_word_addr = UnsafePointer(to=args[i])
-            dense_args_addrs[i] = first_word_addr.bitcast[NoneType]()
+            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
 
         if cluster_dim:
             attributes.append(
                 LaunchAttribute.from_cluster_dim(cluster_dim.value())
             )
 
-        if constant_memory:
-            for i in range(len(constant_memory)):
-                self._copy_to_constant_memory(constant_memory[i])
+        for i in range(len(constant_memory)):
+            self._copy_to_constant_memory(constant_memory[i])
 
-        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(const DeviceContext *ctx, const DeviceFunction *func,
-        #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
-        #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
-        #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #                                                         void **args)
+        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(
+        #     const DeviceContext *ctx, const DeviceFunction *func,
+        #     uint32_t gridX, uint32_t gridY, uint32_t gridZ,
+        #     uint32_t blockX, uint32_t blockY, uint32_t blockZ,
+        #     uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
+        #     void **args)
 
         if num_captures > 0:
             # Call the populate function to initialize the captured values in the arguments array.
@@ -1901,11 +1896,7 @@ struct DeviceFunction[
             # to store the captured values in dense_args_addrs, they need to
             # not go out of the scope before dense_args_addr is being use.
             var capture_args_start = dense_args_addrs.offset(num_args)
-            populate(
-                rebind[UnsafePointer[NoneType]](
-                    capture_args_start.bitcast[NoneType]()
-                )
-            )
+            populate(capture_args_start.bitcast[NoneType]())
 
             _checked(
                 external_call[
@@ -1922,7 +1913,7 @@ struct DeviceFunction[
                     UInt32,
                     UnsafePointer[LaunchAttribute],
                     UInt32,
-                    UnsafePointer[UnsafePointer[NoneType]],
+                    UnsafePointer[OpaquePointer],
                 ](
                     ctx._handle,
                     self._handle,
@@ -1954,7 +1945,7 @@ struct DeviceFunction[
                     UInt32,
                     UnsafePointer[LaunchAttribute],
                     UInt32,
-                    UnsafePointer[UnsafePointer[NoneType]],
+                    UnsafePointer[OpaquePointer],
                 ](
                     ctx._handle,
                     self._handle,
@@ -1994,7 +1985,9 @@ struct DeviceFunction[
         alias num_passed_args = len(VariadicList(Ts))
         var num_translated_args = 0
 
-        var translated_arg_offsets = stack_allocation[num_passed_args, Int]()
+        var translated_arg_offsets = InlineArray[Int, num_passed_args](
+            uninitialized=True
+        )
 
         # Validate that all actual arguments do remap to the declared device
         # type in the kernel.
@@ -2067,10 +2060,6 @@ struct DeviceFunction[
         alias populate = __type_of(self._func_impl).populate
         alias num_captures_static = 16
 
-        var dense_args_addrs = stack_allocation[
-            num_captures_static + num_passed_args, UnsafePointer[NoneType]
-        ]()
-
         # We need the total byte size of arguments as a compile time constant,
         # so we break out the calculation into a function executed at compile
         # time.
@@ -2090,12 +2079,20 @@ struct DeviceFunction[
 
         # Space to store the arguments to the kernel that have been converted
         # from host type to device type.
-        var translated_args = stack_allocation[args_size, Byte]()
+        var translated_args = InlineArray[Byte, args_size](uninitialized=True)
 
+        # NOTE: Manual short buffer optimization. We could use a
+        # Variant[List, InlineArray] instead, but it would look a lot more
+        # verbose. This way, however, we need to conditionally free at the end.
+        var dense_args_addrs: UnsafePointer[OpaquePointer]
         if num_captures > num_captures_static:
-            dense_args_addrs = UnsafePointer[UnsafePointer[NoneType]].alloc(
+            dense_args_addrs = dense_args_addrs.alloc(
                 num_captures + num_passed_args
             )
+        else:
+            dense_args_addrs = stack_allocation[
+                num_captures_static + num_passed_args, OpaquePointer
+            ]()
 
         # Since we skip over zero sized declared types when passing arguments
         # we need to know the current count arguments pushed.
@@ -2109,7 +2106,7 @@ struct DeviceFunction[
             if translated_arg_offset >= 0:
                 alias actual_arg_type = Ts[i]
                 var first_word_addr = UnsafePointer(
-                    to=translated_args[translated_arg_offset]
+                    to=translated_args.unsafe_ptr()[translated_arg_offset]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)
                 dense_args_addrs[translated_arg_idx] = first_word_addr
@@ -2142,11 +2139,7 @@ struct DeviceFunction[
             var capture_args_start = dense_args_addrs.offset(
                 num_translated_args
             )
-            populate(
-                rebind[UnsafePointer[NoneType]](
-                    capture_args_start.bitcast[NoneType]()
-                )
-            )
+            populate(capture_args_start.bitcast[NoneType]())
 
             _checked(
                 external_call[
@@ -2163,7 +2156,7 @@ struct DeviceFunction[
                     UInt32,
                     UnsafePointer[LaunchAttribute],
                     UInt32,
-                    UnsafePointer[UnsafePointer[NoneType]],
+                    UnsafePointer[OpaquePointer],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2195,7 +2188,7 @@ struct DeviceFunction[
                     UInt32,
                     UnsafePointer[LaunchAttribute],
                     UInt32,
-                    UnsafePointer[UnsafePointer[NoneType]],
+                    UnsafePointer[OpaquePointer],
                 ](
                     ctx._handle,
                     self._handle,
@@ -2403,7 +2396,7 @@ struct DeviceExternalFunction:
                 _DeviceFunctionPtr,
                 _CharPtr,
                 _SizeT,
-                _VoidPtr,
+                OpaquePointer,
                 _SizeT,
             ](
                 self._handle,
@@ -2449,14 +2442,13 @@ struct DeviceExternalFunction:
         """
         alias num_args = len(VariadicList(Ts))
 
-        var dense_args_addrs = stack_allocation[
-            num_args, UnsafePointer[NoneType]
-        ]()
+        var dense_args_addrs = InlineArray[OpaquePointer, num_args](
+            uninitialized=True
+        )
 
         @parameter
         for i in range(num_args):
-            var first_word_addr = UnsafePointer(to=args[i])
-            dense_args_addrs[i] = first_word_addr.bitcast[NoneType]()
+            dense_args_addrs[i] = UnsafePointer(to=args[i]).bitcast[NoneType]()
 
         if cluster_dim:
             attributes.append(
@@ -2487,7 +2479,7 @@ struct DeviceExternalFunction:
                 UInt32,
                 UnsafePointer[LaunchAttribute],
                 UInt32,
-                UnsafePointer[UnsafePointer[NoneType]],
+                UnsafePointer[OpaquePointer],
             ](
                 ctx._handle,
                 self._handle,
@@ -2500,7 +2492,7 @@ struct DeviceExternalFunction:
                 shared_mem_bytes.or_else(0),
                 attributes.unsafe_ptr(),
                 len(attributes),
-                dense_args_addrs,
+                dense_args_addrs.unsafe_ptr(),
             )
         )
 
@@ -2649,7 +2641,7 @@ struct DeviceContext(Copyable, Movable):
 
     @doc_private
     @implicit
-    fn __init__(out self, handle: UnsafePointer[NoneType]):
+    fn __init__(out self, handle: OpaquePointer):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()
@@ -5140,6 +5132,32 @@ struct DeviceContext(Copyable, Movable):
             ](UnsafePointer(to=compute_capability), self._handle)
         )
         return Int(compute_capability)
+
+    @doc_private
+    @always_inline
+    fn arch_name(self) raises -> String:
+        """Returns the architecture name of this device.
+
+        This internal method retrieves the architecture name of AMD GPUs.
+
+        Returns:
+            The compute capability as a string (e.g., `gfx942` for `MI300`).
+
+        Raises:
+            If there's an error retrieving the compute capability.
+
+        Notes:
+
+        This is a private method intended for internal use only.
+        """
+        var arch_name = StaticString(ptr=UnsafePointer[Byte](), length=0)
+        external_call[
+            "AsyncRT_DeviceContext_archName",
+            NoneType,
+            UnsafePointer[StaticString],
+            _DeviceContextPtr,
+        ](UnsafePointer(to=arch_name), self._handle)
+        return String(arch_name)
 
     @always_inline
     fn get_memory_info(self) raises -> (_SizeT, _SizeT):

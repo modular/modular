@@ -313,6 +313,8 @@ class ZmqRouterSocket(Generic[T]):
         zmq_ctx: zmq.Context,
         zmq_endpoint: str,
         bind: bool = True,
+        serialize: Callable[[Any], bytes] = pickle.dumps,
+        deserialize: Callable[[Any], Any] = pickle.loads,
     ):
         self.zmq_endpoint = zmq_endpoint
         self.router_socket = _open_zmq_socket(
@@ -320,6 +322,8 @@ class ZmqRouterSocket(Generic[T]):
         )
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
+        self.serialize = serialize
+        self.deserialize = deserialize
 
     def _cleanup(self) -> None:
         if not self.router_socket.closed:
@@ -341,8 +345,14 @@ class ZmqRouterSocket(Generic[T]):
             raise RuntimeError("Socket is closed")
 
         try:
+            serialized_msg = self.serialize(message)
+        except Exception as e:
+            logger.exception(f"Failed to serialize message: {e}")
+            raise
+
+        try:
             self.router_socket.send_multipart(
-                [identity, pickle.dumps(message)], flags=flags
+                [identity, serialized_msg], flags=flags
             )
         except zmq.ZMQError as e:
             if e.errno != zmq.EAGAIN:
@@ -358,12 +368,17 @@ class ZmqRouterSocket(Generic[T]):
             identity, message_data = self.router_socket.recv_multipart(
                 flags=flags
             )
-            message = pickle.loads(message_data)
-            return identity, message
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
                 raise queue.Empty()
             logger.exception(f"Failed to receive multipart message: {e}")
+            raise
+
+        try:
+            message = self.deserialize(message_data)
+            return identity, message
+        except Exception as e:
+            logger.exception(f"Failed to deserialize message: {e}")
             raise
 
     def recv_multipart_nowait(self) -> tuple[bytes, T]:
@@ -379,11 +394,15 @@ class ZmqDealerSocket(Generic[T]):
         zmq_ctx: zmq.Context,
         zmq_endpoint: str,
         bind: bool = False,
+        serialize: Callable[[Any], bytes] = pickle.dumps,
+        deserialize: Callable[[Any], Any] = pickle.loads,
     ):
         self.zmq_endpoint = zmq_endpoint
         self.dealer_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.DEALER, bind=bind
         )
+        self.serialize = serialize
+        self.deserialize = deserialize
         self._closed = False
         self._finalize = weakref.finalize(self, self._cleanup)
 
@@ -405,7 +424,13 @@ class ZmqDealerSocket(Generic[T]):
             raise RuntimeError("Socket is closed")
 
         try:
-            self.dealer_socket.send_pyobj(message, flags=flags)
+            serialized_msg = self.serialize(message)
+        except Exception as e:
+            logger.exception(f"Failed to serialized message: {e}")
+            raise
+
+        try:
+            self.dealer_socket.send(serialized_msg, flags=flags)
         except zmq.ZMQError as e:
             if e.errno != zmq.EAGAIN:
                 logger.exception(f"Failed to send message: {e}")
@@ -417,11 +442,17 @@ class ZmqDealerSocket(Generic[T]):
             raise RuntimeError("Socket is closed")
 
         try:
-            return self.dealer_socket.recv_pyobj(flags=flags)
+            message = self.dealer_socket.recv(flags=flags)
         except zmq.ZMQError as e:
             if e.errno == zmq.EAGAIN:
                 raise queue.Empty()
             logger.exception(f"Failed to receive message: {e}")
+            raise
+
+        try:
+            return self.deserialize(message)
+        except Exception as e:
+            logger.exception(f"Failed to deserialize message: {e}")
             raise
 
     def recv_pyobj_nowait(self) -> T:

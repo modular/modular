@@ -251,15 +251,16 @@ class MAXModelConfig(MAXModelConfigBase):
 
         for file_path in self.weight_path:
             file_path_str = str(file_path)
+            full_file_path = Path(repo.repo_id) / file_path
 
             # 1. Check if the file exists locally (direct path, local repo, or cache)
-            if local_file_location := self._local_weight_path(file_path):
+            if local_file_location := self._local_weight_path(full_file_path):
                 total_weights_size += os.path.getsize(local_file_location)
                 continue
 
             # 2. File not found locally or non-existence is cached.
             if repo.repo_type == RepoType.local:
-                if not self._local_weight_path(Path(repo.repo_id) / file_path):
+                if not self._local_weight_path(full_file_path):
                     raise FileNotFoundError(
                         f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
                     )

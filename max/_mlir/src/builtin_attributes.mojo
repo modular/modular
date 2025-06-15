@@ -22,7 +22,7 @@ from .ir import Attribute, Context, DialectAttribute, Type
 
 
 @fieldwise_init
-struct BoolAttr(DialectAttribute, Copyable, Movable):
+struct BoolAttr(Copyable, DialectAttribute, Movable):
     var ctx: Context
     var value: Bool
 
@@ -39,7 +39,7 @@ struct BoolAttr(DialectAttribute, Copyable, Movable):
         )
 
 
-struct TypeAttr(DialectAttribute, Copyable, Movable):
+struct TypeAttr(Copyable, DialectAttribute, Movable):
     var type: Type
 
     @implicit
@@ -57,7 +57,7 @@ struct TypeAttr(DialectAttribute, Copyable, Movable):
 
 
 @fieldwise_init
-struct StringAttr(DialectAttribute, Copyable, Movable):
+struct StringAttr(Copyable, DialectAttribute, Movable):
     var ctx: Context
     var value: String
 

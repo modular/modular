@@ -56,7 +56,7 @@ alias DEFAULT_LEVEL = Level._from_str(
 
 
 @fieldwise_init
-struct Level(Stringable, Writable, Copyable, Movable):
+struct Level(Copyable, Movable, Stringable, Writable):
     """Represents logging severity levels.
 
     Defines the available logging levels in ascending order of severity.

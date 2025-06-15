@@ -13,19 +13,14 @@
 
 import time
 from collections import Dict, Optional
-from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 from pathlib import Path
 from sys.arg import argv
 
 from gpu.host import DeviceContext
-from stdlib.builtin.file import FileHandle
-from stdlib.builtin.io import _snprintf
-from testing import assert_true
 
 from utils.numerics import FlushDenormals
 
-from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
 
 
@@ -216,7 +211,7 @@ struct ThroughputMeasure(Copyable, Movable):
 
 
 @fieldwise_init
-struct Format(Writable, Stringable, Copyable, Movable):
+struct Format(Copyable, Movable, Stringable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -518,7 +513,7 @@ struct Mode(Copyable, Movable):
         return self.value == other.value
 
 
-struct Bench(Writable, Stringable):
+struct Bench(Stringable, Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 

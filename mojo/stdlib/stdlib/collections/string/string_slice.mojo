@@ -448,24 +448,23 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut]](
 
 @register_passable("trivial")
 struct StringSlice[mut: Bool, //, origin: Origin[mut]](
-    Stringable,
+    Boolable,
+    Copyable,
+    Defaultable,
+    EqualityComparable,
+    ExplicitlyCopyable,
+    FloatableRaising,
+    Hashable,
+    IntableRaising,
+    KeyElement,
+    Movable,
+    PathLike,
+    PythonConvertible,
     Representable,
     Sized,
+    Stringable,
     Writable,
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
-    EqualityComparable,
-    Hashable,
-    _HashableWithHasher,
-    KeyElement,
-    PathLike,
-    FloatableRaising,
-    Boolable,
-    IntableRaising,
-    PythonConvertible,
     _CurlyEntryFormattable,
-    Defaultable,
 ):
     """A non-owning view to encoded string data.
 

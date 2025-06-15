@@ -19,7 +19,6 @@ from python import PythonObject
 ```
 """
 
-from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import abort
 from sys.ffi import c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
@@ -69,7 +68,7 @@ trait ConvertibleFromPython(Copyable, Movable):
         ...
 
 
-struct _PyIter(Sized, Defaultable):
+struct _PyIter(Defaultable, Sized):
     """A Python iterator."""
 
     # ===-------------------------------------------------------------------===#
@@ -172,11 +171,11 @@ alias PyFunctionRaising = fn (
 struct PythonObject(
     Boolable,
     Copyable,
+    Defaultable,
     Movable,
+    PythonConvertible,
     SizedRaising,
     Writable,
-    PythonConvertible,
-    Defaultable,
 ):
     """A Python object."""
 

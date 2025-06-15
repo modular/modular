@@ -19,12 +19,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn import (
-    MLP,
-    LayerList,
-    Linear,
-    Module,
-)
+from max.nn import MLP, LayerList, Linear, Module
 from max.nn.kv_cache import FetchPagedKVCacheCollection
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,

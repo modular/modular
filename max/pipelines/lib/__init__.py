@@ -29,8 +29,10 @@ from .hf_utils import (
     generate_local_model_path,
     repo_exists_with_retry,
 )
+from .lora import LoRAManager
 from .max_config import (
     KVCacheConfig,
+    LoRAConfig,
     ProfilingConfig,
     SamplingConfig,
 )
@@ -68,6 +70,8 @@ __all__ = [
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVCacheMixin",
+    "LoRAConfig",
+    "LoRAManager",
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MEMORY_ESTIMATOR",

@@ -1807,18 +1807,25 @@ fn _matmul_gpu[
             @parameter
             if (
                 a_type == b_type
-                and (a_type.is_half_float() or a_type == DType.float32)
+                and (a_type.is_half_float() or a_type is DType.float32)
                 and ctx.device_info is H100
                 and transpose_b
                 and not use_A100_kernels_on_H100
             ):
                 alias static_N = c_shape.get[1]()
                 alias static_K = a_shape.get[1]()
+                alias a_is_bfloat16_or_float32 = a_type in (
+                    DType.bfloat16,
+                    DType.float32,
+                )
+                alias size_factor = 2 if a_type is DType.float32 else 1
+                alias mma_k = 16 // size_factor
+                alias BK = 64 // size_factor
 
                 # GTC matmul configs
                 @parameter
                 if (
-                    a_type is DType.bfloat16
+                    a_is_bfloat16_or_float32
                     and static_N == 2560
                     and static_K == 8192
                 ):
@@ -1828,9 +1835,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 80, 16),
+                            mma_shape = Index(64, 80 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 80, 64),
+                            block_tile_shape=Index(128, 80 // size_factor, BK),
                             cluster_shape=Index(1, 2, 1),
                             num_pipeline_stages=8,
                             num_consumer=2,
@@ -1861,9 +1868,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(1, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -1894,9 +1901,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -1922,7 +1929,7 @@ fn _matmul_gpu[
 
                 @parameter
                 if (
-                    a_type is DType.bfloat16
+                    a_is_bfloat16_or_float32
                     and static_N == 8192
                     and static_K == 2048
                 ):
@@ -1932,9 +1939,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -1965,9 +1972,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -1993,7 +2000,7 @@ fn _matmul_gpu[
 
                 @parameter
                 if (
-                    a_type is DType.bfloat16
+                    a_is_bfloat16_or_float32
                     and static_N == 14336
                     and static_K == 8192
                 ):
@@ -2003,9 +2010,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -2036,9 +2043,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -2064,7 +2071,7 @@ fn _matmul_gpu[
 
                 @parameter
                 if (
-                    a_type is DType.bfloat16
+                    a_is_bfloat16_or_float32
                     and static_N == 8192
                     and static_K == 7168
                 ):
@@ -2074,9 +2081,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -2107,9 +2114,9 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, 256, 16),
+                            mma_shape = Index(64, 256 // size_factor, mma_k),
                         ](
-                            block_tile_shape=Index(128, 256, 64),
+                            block_tile_shape=Index(128, 256 // size_factor, BK),
                             cluster_shape=Index(2, 1, 1),
                             num_pipeline_stages=4,
                             num_consumer=2,
@@ -2133,9 +2140,12 @@ fn _matmul_gpu[
                         )
                         return
 
-                alias BN = _find_largest_bn_for_sm90_matmul[static_N]()
-                alias BK = 64
+                alias BN = _find_largest_bn_for_sm90_matmul[
+                    static_N
+                ]() // size_factor
 
+                # `audio_decoder/test_residual_fsq.py::test_fsq` test fails if
+                # we enable float32 here.
                 @parameter
                 if a_type is DType.bfloat16 and BN != -1 and static_K % BK == 0:
                     if m <= 128:
@@ -2144,7 +2154,7 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, BN, 16),
+                            mma_shape = Index(64, BN, mma_k),
                         ](
                             block_tile_shape=Index(64, BN, BK),
                             cluster_shape=Index(1, 1, 1),
@@ -2175,7 +2185,7 @@ fn _matmul_gpu[
                             b_type,
                             c_type,
                             transpose_b,
-                            mma_shape = Index(64, BN, 16),
+                            mma_shape = Index(64, BN, mma_k),
                         ](
                             block_tile_shape=Index(128, BN, BK),
                             cluster_shape=Index(1, 1, 1),

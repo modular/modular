@@ -385,7 +385,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             [context.sampling_params.top_k for context in batch], dtype=np.int64
         )
         top_k = Tensor.from_numpy(top_k_np).to(self.draft_devices[0])
-        max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
+        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
         max_k = Tensor.from_numpy(max_k_np)
         temperature_np = np.array(
             [context.sampling_params.temperature for context in batch],

@@ -23,7 +23,6 @@ from sys.info import is_amd_gpu, is_gpu, is_nvidia_gpu
 from sys import alignof
 from memory import Span, UnsafePointer, memcpy
 from sys.param_env import env_get_int
-from collections.string.string_slice import _get_kgen_string
 
 
 # ===-----------------------------------------------------------------------===#
@@ -170,7 +169,7 @@ trait Writable:
 # ===-----------------------------------------------------------------------===#
 
 
-struct _WriteBufferHeap(Writer, Writable):
+struct _WriteBufferHeap(Writable, Writer):
     var data: UnsafePointer[Byte]
     var pos: Int
 

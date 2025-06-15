@@ -536,7 +536,7 @@ def test_sort_strings():
 
 
 @fieldwise_init
-struct Person(Copyable, Movable, Comparable):
+struct Person(Comparable, Copyable, Movable):
     var name: String
     var age: Int
 

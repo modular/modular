@@ -77,7 +77,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(StringableRaising, Copyable, Movable):
+struct DriverVersion(Copyable, Movable, StringableRaising):
     var _value: List[String]
 
     @implicit
@@ -104,7 +104,7 @@ struct DriverVersion(StringableRaising, Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct Result(Stringable, EqualityComparable, Copyable, Movable):
+struct Result(Copyable, EqualityComparable, Movable, Stringable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -312,7 +312,7 @@ fn _check_error(err: Result) raises:
 
 @fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable, Copyable, Movable):
+struct EnableState(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -337,7 +337,7 @@ struct EnableState(EqualityComparable, Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable, Copyable, Movable):
+struct ClockType(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
