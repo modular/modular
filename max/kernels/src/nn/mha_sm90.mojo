@@ -1100,21 +1100,18 @@ fn _apply_mask[
                                 bound,
                                 p,
                             )
-                        else:
-                            if BN + kv_tile_start_row > position.num_keys:
-                                bound = IndexList[
-                                    2, element_type = DType.uint32
-                                ](
-                                    Int(position.seq_len),
-                                    Int(position.num_keys),
-                                )
-                                p = _kernel_mask(
-                                    IndexList[2, element_type = DType.uint32](
-                                        Int(score_row), Int(score_col)
-                                    ),
-                                    bound,
-                                    p,
-                                )
+                        elif masked:
+                            bound = IndexList[2, element_type = DType.uint32](
+                                Int(position.seq_len),
+                                Int(position.num_keys),
+                            )
+                            p = _kernel_mask(
+                                IndexList[2, element_type = DType.uint32](
+                                    Int(score_row), Int(score_col)
+                                ),
+                                bound,
+                                p,
+                            )
                         p_reg_tile._set[idx=idx](p)
 
     @parameter
@@ -1122,7 +1119,12 @@ fn _apply_mask[
         _apply_mask_capture[True]()
     else:
         unswitch[_apply_mask_capture](
-            mask_status == TileMaskStatus.PARTIAL_MASK
+            (mask_status == TileMaskStatus.PARTIAL_MASK)
+            # NOTE: mask_status should be either PARTIAL_MASK or NO_MASK at
+            # this point.
+            # In the NO_MASK case, we still need to mask out the scores for the
+            # last tile, which goes beyond num_keys (for num_keys % 128 != 0).
+            or (not decoding and (BN + kv_tile_start_row > position.num_keys))
         )
 
 
