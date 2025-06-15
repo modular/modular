@@ -177,27 +177,25 @@ fn b64decode[
 # b16encode
 # ===-----------------------------------------------------------------------===#
 
-
-fn b16encode(str: StringSlice[mut=False]) -> String:
-    """Performs base16 encoding on the input string slice.
+fn b16encode(input_bytes: Span[mut=False, UInt8]) -> String:
+    """Performs base16 encoding on the input byte span.
 
     Args:
-        str: The input string slice.
+        input_bytes: The input byte span.
 
     Returns:
-        Base16 encoding of the input string.
+        Base16 encoding of the input bytes.
     """
     alias lookup = "0123456789ABCDEF"
     var b16chars = lookup.unsafe_ptr()
 
-    var data = str.as_bytes()
-    var length = str.byte_length()
+    var length = input_bytes.size()
     var result = String(capacity=length * 2)
 
     for i in range(length):
-        var str_byte = data[i]
-        var hi = str_byte >> 4
-        var lo = str_byte & 0b1111
+        var byte = input_bytes[i]
+        var hi = byte >> 4
+        var lo = byte & 0b1111
         result.append_byte(b16chars[hi])
         result.append_byte(b16chars[lo])
 
@@ -208,46 +206,51 @@ fn b16encode(str: StringSlice[mut=False]) -> String:
 # b16decode
 # ===-----------------------------------------------------------------------===#
 
-
-fn b16decode(str: StringSlice[mut=False]) -> String:
-    """Performs base16 decoding on the input string.
+fn b16decode(str: StringSlice[mut=False], mut result: List[UInt8]):
+    """Performs base16 decoding on the input string, writing to a mutable List[UInt8].
 
     Args:
         str: A base16 encoded string.
-
-    Returns:
-        The decoded string.
+        result: The List[UInt8] to write decoded bytes into.
     """
+    alias `A` = UInt8(ord("A"))
+    alias `a` = UInt8(ord("a"))
+    alias `Z` = UInt8(ord("Z"))
+    alias `z` = UInt8(ord("z"))
+    alias `0` = UInt8(ord("0"))
+    alias `9` = UInt8(ord("9"))
 
-    alias `A` = Byte(ord("A"))
-    alias `a` = Byte(ord("a"))
-    alias `Z` = Byte(ord("Z"))
-    alias `z` = Byte(ord("z"))
-    alias `0` = Byte(ord("0"))
-    alias `9` = Byte(ord("9"))
-
-    # TODO: Measure perf against lookup table approach
     @parameter
     @always_inline
-    fn decode(c: Byte) -> Byte:
+    fn decode(c: UInt8) -> UInt8:
         if `A` <= c <= `Z`:
-            return c - `A` + Byte(10)
+            return c - `A` + UInt8(10)
         elif `a` <= c <= `z`:
-            return c - `a` + Byte(10)
+            return c - `a` + UInt8(10)
         elif `0` <= c <= `9`:
             return c - `0`
         else:
-            return Byte(-1)
+            return UInt8(-1)
 
     var data = str.as_bytes()
     var n = str.byte_length()
     debug_assert(n % 2 == 0, "Input length '", n, "' must be divisible by 2")
 
-    var result = String(capacity=n // 2)
-
     for i in range(0, n, 2):
         var hi = data[i]
         var lo = data[i + 1]
-        result.append_byte(decode(hi) << 4 | decode(lo))
+        result.append(decode(hi) << 4 | decode(lo))
 
-    return result^
+
+fn b16decode(str: StringSlice[mut=False]) -> List[UInt8]:
+    """Performs base16 decoding on the input string and returns a List[UInt8].
+
+    Args:
+        str: A base16 encoded string.
+
+    Returns:
+        The decoded bytes as a List[UInt8].
+    """
+    var result = List[UInt8](capacity=str.byte_length() // 2)
+    b16decode(str, result)
+    return result
