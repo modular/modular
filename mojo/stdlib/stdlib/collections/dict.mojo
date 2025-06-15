@@ -191,7 +191,7 @@ struct _DictValueIter[
 
 @fieldwise_init
 struct DictEntry[K: KeyElement, V: Copyable & Movable](
-    Copyable, Movable, ExplicitlyCopyable
+    Copyable, ExplicitlyCopyable, Movable
 ):
     """Store a key-value pair entry inside a dictionary.
 
@@ -335,7 +335,7 @@ struct _DictIndex(Movable):
 
 
 struct Dict[K: KeyElement, V: Copyable & Movable](
-    Sized, Copyable, Movable, ExplicitlyCopyable, Boolable, Defaultable
+    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
     """A container that stores key-value pairs.
 
@@ -1066,7 +1066,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
 
 
 struct OwnedKwargsDict[V: Copyable & Movable](
-    Sized, Copyable, Movable, ExplicitlyCopyable, Defaultable
+    Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 

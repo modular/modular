@@ -119,12 +119,12 @@ fn cpu_bicubic_kernel[
     constrained[rank == 4, "bicubic resize only supports rank 4 tensors"]()
 
     # get dimensions
-    var batch_size = input_host.dynamic_shape[0]
-    var channels = input_host.dynamic_shape[1]
-    var in_height = input_host.dynamic_shape[2]
-    var in_width = input_host.dynamic_shape[3]
-    var out_height = output_host.dynamic_shape[2]
-    var out_width = output_host.dynamic_shape[3]
+    var batch_size = input_host.dim[0]()
+    var channels = input_host.dim[1]()
+    var in_height = input_host.dim[2]()
+    var in_width = input_host.dim[3]()
+    var out_height = output_host.dim[2]()
+    var out_width = output_host.dim[3]()
 
     var scale_h = Float32(in_height) / Float32(out_height)
     var scale_w = Float32(in_width) / Float32(out_width)
@@ -199,10 +199,10 @@ fn gpu_bicubic_kernel[
     var c = block_idx.y
     var tid = thread_idx.x
 
-    var in_height = input.dynamic_shape[2]
-    var in_width = input.dynamic_shape[3]
-    var out_height = output.dynamic_shape[2]
-    var out_width = output.dynamic_shape[3]
+    var in_height = input.dim[2]()
+    var in_width = input.dim[3]()
+    var out_height = output.dim[2]()
+    var out_width = output.dim[3]()
 
     var scale_h = Float32(in_height) / Float32(out_height)
     var scale_w = Float32(in_width) / Float32(out_width)
@@ -257,13 +257,13 @@ fn gpu_bicubic_kernel[
         output[b, c, y_out, x_out] = sum_value.cast[type]()
 
 
-def resize_bicubic[
+fn resize_bicubic[
     type: DType, rank: Int, //, target: StaticString
 ](
     output: NDBuffer[mut=True, type, rank, *_],
     input: NDBuffer[type, rank, *_],
     ctx: DeviceContextPtr,
-) -> None:
+) raises:
     """Perform bicubic interpolation.
 
     Args:
@@ -275,8 +275,8 @@ def resize_bicubic[
 
     @parameter
     if is_gpu[target]():
-        var N = input.dynamic_shape[0]
-        var C = input.dynamic_shape[1]
+        var N = input.dim[0]()
+        var C = input.dim[1]()
 
         # Use a fixed block size to avoid exceeding CUDA thread limits.
         var block_size = 256

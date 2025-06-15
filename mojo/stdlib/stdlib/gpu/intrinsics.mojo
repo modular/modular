@@ -33,7 +33,6 @@ from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x, alignof, bitwidthof
 from sys.intrinsics import llvm_intrinsic, readfirstlane
 
-from builtin.dtype import _int_type_of_width
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 
@@ -442,7 +441,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 
 
 @fieldwise_init
-struct Scope(Writable, Copyable, Movable, EqualityComparable):
+struct Scope(Copyable, EqualityComparable, Movable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from

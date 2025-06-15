@@ -28,7 +28,7 @@ from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv1DV1, Conv2D, Conv2DV1, Conv3D, Conv3DV1
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
-from .layer import Layer, LayerList, Module
+from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
     MLPV1,
@@ -55,7 +55,6 @@ from .rotary_embedding import (
     LinearScalingParams,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
-    OptimizedRotaryEmbedding,
     RotaryEmbedding,
 )
 from .sequential import Sequential
@@ -114,13 +113,13 @@ __all__ = [
     "MLPV1",
     "MLP",
     "Module",
-    "OptimizedRotaryEmbedding",
     "RMSNormV1",
     "RMSNorm",
     "RotaryEmbedding",
     "ReturnLogits",
     "Sequential",
     "Signals",
+    "Shardable",
     "Transformer",
     "TransformerBlock",
     "VocabParallelEmbedding",

@@ -67,7 +67,7 @@ class DispatcherService(Generic[DispatcherMessagePayload]):
         zmq_ctx: zmq.Context,
         send_endpoint: str,
         recv_endpoint: str,
-        transport: DispatcherTransport,
+        transport: DispatcherTransport[DispatcherMessagePayload],
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
     ):

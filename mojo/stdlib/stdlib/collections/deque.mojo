@@ -31,10 +31,7 @@ from memory import UnsafePointer
 
 
 struct Deque[ElementType: Copyable & Movable](
-    Boolable,
-    ExplicitlyCopyable,
-    Movable,
-    Sized,
+    Boolable, ExplicitlyCopyable, Movable, Sized
 ):
     """Implements a double-ended queue.
 

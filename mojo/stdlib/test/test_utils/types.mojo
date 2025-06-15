@@ -132,7 +132,7 @@ struct ImplicitCopyOnly(Copyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
+struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
     """Counts the number of copies performed on a value."""
 
     var copy_count: Int
@@ -164,9 +164,7 @@ struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
 
 
 struct MoveCounter[T: ExplicitlyCopyable & Movable](
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
+    Copyable, ExplicitlyCopyable, Movable
 ):
     """Counts the number of moves performed on a value."""
 
@@ -237,7 +235,7 @@ struct MoveCopyCounter(Copyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder(ExplicitlyCopyable, Copyable, Movable):
+struct DelRecorder(Copyable, ExplicitlyCopyable, Movable):
     var value: Int
     var destructor_counter: UnsafePointer[List[Int]]
 
@@ -274,7 +272,7 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 
-var g_dtor_count: Int = 0
+var __g_dtor_count: Int = 0
 
 
 struct DelCounter(Copyable, Movable, Writable):
@@ -295,11 +293,11 @@ struct DelCounter(Copyable, Movable, Writable):
         existing.payload = 0
 
     fn __del__(owned self):
-        g_dtor_count += 1
+        __g_dtor_count += 1
 
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("DelCounter(")
-        writer.write(String(g_dtor_count))
+        writer.write(String(__g_dtor_count))
         writer.write(")")
 
 

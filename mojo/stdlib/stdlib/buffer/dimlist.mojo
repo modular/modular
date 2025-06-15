@@ -28,13 +28,16 @@ from utils import IndexList, StaticTuple
 
 @register_passable("trivial")
 struct Dim(
+    Defaultable,
+    EqualityComparable,
+    EqualityComparable,
+    ImplicitlyBoolable,
+    ImplicitlyBoolable,
+    Indexer,
+    Indexer,
     Intable,
     Stringable,
     Writable,
-    ImplicitlyBoolable,
-    Indexer,
-    EqualityComparable,
-    Defaultable,
 ):
     """A static or dynamic dimension modeled with an optional integer.
 
@@ -312,12 +315,7 @@ struct Dim(
 
 
 @register_passable("trivial")
-struct DimList(
-    Sized,
-    Stringable,
-    Representable,
-    Writable,
-):
+struct DimList(Representable, Sized, Stringable, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 

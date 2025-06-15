@@ -402,7 +402,7 @@ struct AccessProperty(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Copyable, Movable, Defaultable):
+struct LaunchAttribute(Copyable, Defaultable, Movable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -468,7 +468,7 @@ struct LaunchAttribute(Copyable, Movable, Defaultable):
 
 
 @register_passable("trivial")
-struct AccessPolicyWindow(Writable, Defaultable):
+struct AccessPolicyWindow(Defaultable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and

@@ -23,8 +23,8 @@ from max.nn import (
     AttentionWithRopeV1,
     EmbeddingV1,
     LinearV1,
-    OptimizedRotaryEmbedding,
     RMSNormV1,
+    RotaryEmbedding,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -90,7 +90,7 @@ def embedding(
 def _attention_opaque(
     kv_params: KVCacheParams,
     params: PipelineConfig,
-    rope: OptimizedRotaryEmbedding,
+    rope: RotaryEmbedding,
     weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
@@ -147,7 +147,7 @@ def _transformer(
     dtype: DType,
 ):
     with graph:
-        rope = OptimizedRotaryEmbedding(
+        rope = RotaryEmbedding(
             dim=huggingface_config.text_config.num_attention_heads
             * huggingface_config.text_config.head_dim,
             n_heads=huggingface_config.text_config.num_attention_heads,

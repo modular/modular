@@ -25,28 +25,34 @@ from utils.index import Index, IndexList
 fn fold[
     dtype: DType,
     input_dim: DimList,
-    output_dim: DimList,
+    output_dim: DimList, //,
+    stride: Tuple[Int, Int],
+    dilation: Tuple[Int, Int],
+    padding: Tuple[Int, Int],
     target: StaticString,
 ](
     input: NDBuffer[dtype, 3, MutableAnyOrigin, input_dim],
     output: NDBuffer[dtype, 4, MutableAnyOrigin, output_dim],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
     ctx: DeviceContextPtr,
 ) raises:
     """Folds array of sliding local blocks into a single output tensor.
 
-    Args:
-        input: Input tensor to fold, shape [N, C x kernel size, num_blocks].
-        output: Output tensor to write to, shape [N, C, H, W].
-        output_size: Spacial shape of the output tensor (H, W).
-        kernel_size: Size of the sliding blocks.
+    Parameters:
+        dtype: The data type for the input and output.
+        input_dim: The static shape of the input NDBuffer.
+        output_dim: The static shape of the output NDBuffer.
         stride: Stride of the sliding blocks.
         dilation: Dilation of the sliding blocks.
         padding: 0-paddings to be added on both sides of the inputs.
+        target: The target architecture to compile for.
+
+    Args:
+        input: Input tensor to fold, shape [N, C x kernel size, num_blocks].
+        output: Output tensor to write to, shape [N, C, H, W].
+        output_size: Spatial shape of the output tensor (H, W).
+        kernel_size: Size of the sliding blocks.
         ctx: DeviceContextPtr.
     """
 
@@ -96,24 +102,16 @@ fn fold[
 
     var kernel_w = kernel_size[1]
     var kernel_h = kernel_size[0]
-    var padding_w = padding[1]
-    var padding_h = padding[0]
-    var dilation_w = dilation[1]
-    var dilation_h = dilation[0]
-    var stride_w = stride[1]
-    var stride_h = stride[0]
+    alias dilation_w = dilation[1]
+    alias dilation_h = dilation[0]
+    alias stride_w = stride[1]
+    alias stride_h = stride[0]
 
     @always_inline
     @parameter
     @__copy_capture(
         kernel_w,
         kernel_h,
-        padding_w,
-        padding_h,
-        dilation_w,
-        dilation_h,
-        stride_w,
-        stride_h,
         height_col,
         width_col,
     )
@@ -128,20 +126,29 @@ fn fold[
 
         var output_val = Scalar[dtype](0)
 
-        for kernel_ind in range(kernel_h * kernel_w):
-            h_offset, w_offset = divmod(kernel_ind, kernel_w)
+        # The span of the kernel in the output tensor.
+        var kernel_span_w = (kernel_w - 1) * dilation_w + 1
+        var kernel_span_h = (kernel_h - 1) * dilation_h + 1
 
-            # For a given output position (h_out, w_out), assuming its relative
-            # position in a patch is (h_offset, w_offset), then the position of
-            # the patch is (h, w)
-            var h_pos = h_out - h_offset * dilation_h + padding_h
-            var w_pos = w_out - w_offset * dilation_w + padding_w
-            h, h_invalid = divmod(h_pos, stride_h)
-            w, w_invalid = divmod(w_pos, stride_w)
+        # Given the position in the output tensor (h_out, w_out), compute the
+        # start and end of the kernel patches that might overlap with this position.
+        var h_start = max(0, (h_out - kernel_span_h) // stride_h + 1)
+        var w_start = max(0, (w_out - kernel_span_w) // stride_w + 1)
+        var h_end = min(h_out // stride_h + 1, height_col)
+        var w_end = min(w_out // stride_w + 1, width_col)
 
-            if not (h_invalid or w_invalid):
-                if (0 <= h < height_col) and (0 <= w < width_col):
-                    # Calculate channel offset and patch offset
+        for h in range(h_start, h_end):
+            for w in range(w_start, w_end):
+                # compute the relative position of current position in the
+                # kernel patch.
+                var h_offset = h_out - h * stride_h
+                var w_offset = w_out - w * stride_w
+
+                # Check if the current position is covered by the patch.
+                if h_offset % dilation_h == 0 and w_offset % dilation_w == 0:
+                    h_offset = h_offset // dilation_h
+                    w_offset = w_offset // dilation_w
+
                     var channel_offset = channel * kernel_h * kernel_w
                     var kernel_offset = h_offset * kernel_w + w_offset
                     var patch_offset = h * width_col + w
@@ -168,9 +175,6 @@ fn fold_shape[
     input: NDBuffer[dtype, 3, MutableAnyOrigin, input_dim],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
 ) raises -> IndexList[4]:
     """Returns the shape of the output tensor of the fold operation."""
     var output_shape = IndexList[4]()

@@ -86,7 +86,7 @@ fn normalize_neg_index[
 
 
 @register_passable("trivial")
-struct Axis(Intable, Indexer):
+struct Axis(Indexer, Intable):
     var axis: Int
 
     @always_inline

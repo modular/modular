@@ -43,7 +43,7 @@ fn _init_python_global() -> _PythonGlobal:
     return _PythonGlobal()
 
 
-struct _PythonGlobal(Movable, Defaultable):
+struct _PythonGlobal(Defaultable, Movable):
     var cpython: CPython
 
     fn __init__(out self):
