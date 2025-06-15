@@ -6,6 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics
 
+from builtin.stubs import _ParamForIterator
 
 struct Empty:
     fn __init__(out self):
@@ -412,7 +413,7 @@ struct WrapperNestedInt:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TrivialRange:
+struct TrivialRange(_ParamForIterator, Copyable):
     alias _IndexType = Int
 
     fn __iter__(self) -> Self:
