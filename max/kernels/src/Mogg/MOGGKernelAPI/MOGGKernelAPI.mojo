@@ -5516,6 +5516,7 @@ struct Conv:
         static_dilations: DimList,
         static_padding: DimList,
         target: StaticString,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
@@ -5597,79 +5598,82 @@ struct Conv:
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        @parameter
-        if is_cpu[target]():
-            constrained[
-                not filter_is_fcrs, "Filter layout FCRS is not supported on CPU"
-            ]()
-            conv_nhwc_direct[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # input shape
-                filter._static_shape,  # filter shape
-                output._static_shape,  # output shape
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                filter_packed,
-                conv_attr,
-                lambdas_have_fusion,
-                output_fn,
-            ](
-                input_buf,
-                filter_buf,
-                output_buf,
-                stride_tuple,
-                dilation_tuple,
-                pad_d_tuple,
-                pad_h_tuple,
-                pad_w_tuple,
-                Int(num_groups),
-            )
-        else:
-            constrained[
-                (input.rank == 4 and filter.rank == 4)
-                or (input.rank == 5 and filter.rank == 5),
-                "only rank 4 or 5 tensor is supported on cuda gpu",
-            ]()
-            constrained[
-                filter_packed == False,
-                "only unpacked filter is supported on cuda gpu",
-            ]()
-
-            var cuda_ctx = ctx.get_device_context()
-            var pad_tuple = IndexList[input.rank - 2](0)
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
-            if input.rank == 4:
-                pad_tuple[0] = pad_h_tuple[0]
-                pad_tuple[1] = pad_w_tuple[0]
-            elif input.rank == 5:
-                pad_tuple[0] = pad_d_tuple[0]
-                pad_tuple[1] = pad_h_tuple[0]
-                pad_tuple[2] = pad_w_tuple[0]
+            if is_cpu[target]():
+                constrained[
+                    not filter_is_fcrs,
+                    "Filter layout FCRS is not supported on CPU",
+                ]()
+                conv_nhwc_direct[
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
+                    input.dtype,
+                    filter.dtype,
+                    output.dtype,
+                    filter_packed,
+                    conv_attr,
+                    lambdas_have_fusion,
+                    output_fn,
+                ](
+                    input_buf,
+                    filter_buf,
+                    output_buf,
+                    stride_tuple,
+                    dilation_tuple,
+                    pad_d_tuple,
+                    pad_h_tuple,
+                    pad_w_tuple,
+                    Int(num_groups),
+                )
+            else:
+                constrained[
+                    (input.rank == 4 and filter.rank == 4)
+                    or (input.rank == 5 and filter.rank == 5),
+                    "only rank 4 or 5 tensor is supported on cuda gpu",
+                ]()
+                constrained[
+                    filter_packed == False,
+                    "only unpacked filter is supported on cuda gpu",
+                ]()
 
-            conv_gpu[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # input shape
-                filter._static_shape,  # filter shape
-                output._static_shape,  # output shape
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                output_fn,
-                filter_is_fcrs,
-            ](
-                input_buf,
-                filter_buf,
-                output_buf,
-                stride_tuple,
-                dilation_tuple,
-                pad_tuple,
-                Int(num_groups),
-                cuda_ctx,
-            )
+                var cuda_ctx = ctx.get_device_context()
+                var pad_tuple = IndexList[input.rank - 2](0)
+
+                @parameter
+                if input.rank == 4:
+                    pad_tuple[0] = pad_h_tuple[0]
+                    pad_tuple[1] = pad_w_tuple[0]
+                elif input.rank == 5:
+                    pad_tuple[0] = pad_d_tuple[0]
+                    pad_tuple[1] = pad_h_tuple[0]
+                    pad_tuple[2] = pad_w_tuple[0]
+
+                conv_gpu[
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
+                    input.dtype,
+                    filter.dtype,
+                    output.dtype,
+                    output_fn,
+                    filter_is_fcrs,
+                ](
+                    input_buf,
+                    filter_buf,
+                    output_buf,
+                    stride_tuple,
+                    dilation_tuple,
+                    pad_tuple,
+                    Int(num_groups),
+                    cuda_ctx,
+                )
 
     @staticmethod
     fn shape[
