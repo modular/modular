@@ -1010,7 +1010,9 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
 
   // If the selected candidate needs some register operands emitted to memory,
   // do so and try again.
-  if (fitness.getArgsNeedingOrigins().any()) {
+  if (fitness.getArgsNeedingOrigins().any() &&
+      // Parameter emission can always use immortal origins.
+      builder) {
     // Emit one or more operands to memory.  We know this can't infinitely
     // loop because there is a forward progress guarantee here.
     if (failed(emitOperandsNeedingOriginsToMemory(

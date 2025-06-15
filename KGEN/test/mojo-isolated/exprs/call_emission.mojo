@@ -456,7 +456,6 @@ fn testUnneededCopy(heavy: Heavy):
 
 
 # Check that field sensitivity is properly field sensitive.
-
 struct NonCopyable: pass
 fn take_and_return(a: NonCopyable) -> NonCopyable: pass
 # CHECK-LABEL: lit.struct.decl @TestFieldSensitiveResultSlot
@@ -472,3 +471,15 @@ struct TestFieldSensitiveResultSlot:
         # CHECK-NEXT: lit.call {{.*}}take_and_return{{.*}}([[AI]], [[B]])
         # Should be in-place without a copy/move
         self.b = take_and_return(self.a)
+
+# Check that imm origin binding works with partially applied functions (which
+# get bound to a function pointer then called indirectly.
+struct SomeStructWithRefMethod:
+    fn take_ref(ref self) -> SomeStructWithRefMethod: pass
+
+# CHECK-LABEL: lit.fn @"testSomeStructWithRefMethod
+fn testSomeStructWithRefMethod[val: SomeStructWithRefMethod]():
+    alias f = SomeStructWithRefMethod.take_ref
+    # CHECK: lit.alias.decl *"b`1":
+    # CHECK-SAME: <:i1 0, :origin<0> #lit.any.origin>), {{.*}} store_to_mem(val)))>
+    alias b = f(val)
