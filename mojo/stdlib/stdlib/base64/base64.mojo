@@ -22,7 +22,7 @@ from base64 import b64encode
 
 from memory import Span
 
-from ._b64encode import _b64encode
+from stdlib.base64._b64encode import _b64encode
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -130,17 +130,15 @@ fn b64encode(input_bytes: Span[mut=False, Byte]) -> String:
 
 fn b64decode[
     *, validate: Bool = False
-](str: StringSlice[mut=False]) raises -> String:
-    """Performs base64 decoding on the input string.
+](str: StringSlice[mut=False], mut result: List[UInt8]) raises:
+    """Performs base64 decoding on the input string, writing to a mutable List[UInt8].
 
     Parameters:
         validate: If true, the function will validate the input string.
 
     Args:
         str: A base64 encoded string.
-
-    Returns:
-        The decoded string.
+        result: The List[UInt8] to write decoded bytes into.
     """
     alias `=` = Byte(ord("="))
     var data = str.as_bytes()
@@ -153,8 +151,6 @@ fn b64decode[
                 "ValueError: Input length '", n, "' must be divisible by 4"
             )
 
-    var result = String(capacity=n)
-
     # This algorithm is based on https://arxiv.org/abs/1704.00605
     for i in range(0, n, 4):
         var a = _ascii_to_value[validate](data[i])
@@ -162,22 +158,40 @@ fn b64decode[
         var c = _ascii_to_value[validate](data[i + 2])
         var d = _ascii_to_value[validate](data[i + 3])
 
-        result.append_byte((a << 2) | (b >> 4))
+        result.append((a << 2) | (b >> 4))
         if data[i + 2] == `=`:
             break
-        result.append_byte(((b & 0x0F) << 4) | (c >> 2))
+        result.append(((b & 0x0F) << 4) | (c >> 2))
         if data[i + 3] == `=`:
             break
-        result.append_byte(((c & 0x03) << 6) | d)
+        result.append(((c & 0x03) << 6) | d)
 
-    return result^
+
+fn b64decode[
+    *, validate: Bool = False
+](str: StringSlice[mut=False]) raises -> List[UInt8]:
+    """Performs base64 decoding on the input string and returns a List[UInt8].
+
+    Parameters:
+        validate: If true, the function will validate the input string.
+
+    Args:
+        str: A base64 encoded string.
+
+    Returns:
+        The decoded bytes as a List[UInt8].
+    """
+    var result = List[UInt8](capacity=str.byte_length() // 4 * 3)
+    b64decode[validate=validate](str, result)
+    return result
 
 
 # ===-----------------------------------------------------------------------===#
 # b16encode
 # ===-----------------------------------------------------------------------===#
 
-fn b16encode(input_bytes: Span[mut=False, UInt8]) -> String:
+
+fn b16encode[origin: Origin](input_bytes: Span[UInt8, origin]) -> String:
     """Performs base16 encoding on the input byte span.
 
     Args:
@@ -189,7 +203,7 @@ fn b16encode(input_bytes: Span[mut=False, UInt8]) -> String:
     alias lookup = "0123456789ABCDEF"
     var b16chars = lookup.unsafe_ptr()
 
-    var length = input_bytes.size()
+    var length = len(input_bytes)
     var result = String(capacity=length * 2)
 
     for i in range(length):
@@ -205,6 +219,7 @@ fn b16encode(input_bytes: Span[mut=False, UInt8]) -> String:
 # ===-----------------------------------------------------------------------===#
 # b16decode
 # ===-----------------------------------------------------------------------===#
+
 
 fn b16decode(str: StringSlice[mut=False], mut result: List[UInt8]):
     """Performs base16 decoding on the input string, writing to a mutable List[UInt8].
