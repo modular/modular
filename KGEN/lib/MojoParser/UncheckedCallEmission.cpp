@@ -737,23 +737,27 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     argTypes.push_back(value.getType());
   }
 
-  SmallPtrSet<Attribute, 2> destOrigins;
+  // We're doing field sensitive comparisons below, so we record a destination
+  // "x.y" as a full "x.y" path, to make sure it doesn't conflict with reads of
+  // "x.z".  We do want "x.y.q" and "x" to conflict with "x.y" though.  Keep
+  // track of the fully field sensitive origin, and the containing origins.
+  SmallPtrSet<Attribute, 2> destOrigins, destContainerOrigins;
 
-  // We're not doing field sensitive comparisons below, so strip down to the
-  // base origin for comparisons.
-  // TODO: Make this more aggressive with field information.
-  processRawOrigin(cast<RefType>(destBuffer.getType()).getOrigin(),
-                   [&](TypedAttr origin) {
-                     while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
-                       origin = fieldAttr.getBase();
-                     // AnyOrigin is assumed to be ok since it is used for
-                     // UnsafePointer etc.
-                     if (!isa<AnyOriginAttr>(origin))
-                       destOrigins.insert(origin);
-                   });
-
-  if (destOrigins.empty())
-    return true;
+  // processRawOrigin takes apart origin unions for us.
+  processRawOrigin(
+      cast<RefType>(destBuffer.getType()).getOrigin(), [&](TypedAttr origin) {
+        // AnyOrigin is assumed to be ok since it is used for
+        // UnsafePointer etc.  We don't want to track it.
+        if (isa<AnyOriginAttr>(origin))
+          return;
+        // We want to track the fully field sensitive origin, and
+        // the containing origins.
+        destOrigins.insert(origin);
+        while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
+          origin = fieldAttr.getBase();
+          destContainerOrigins.insert(origin);
+        }
+      });
 
   // Check to see if any of the the origins they may be accessing are the
   // origin in question.  If any of them is a possible reference to the
@@ -761,16 +765,24 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   CachedOriginFinder &finder = emitter.shared.cachedOriginFinder;
   for (TypedAttr origin :
        finder.findOriginsIn(argTypes, calleeSig.getCaptureOrigins())) {
-    // If an operand is reading from the origin, there will be an immcast in
-    // the way.  Look through it and any field sensitivity.
+    // Look through any immcasts.
     origin = OriginMutCastAttr::strip(origin);
-    while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
-      origin = fieldAttr.getBase();
 
-    // If the destination set includes this origin, then we can't use the
-    // destination.
-    if (destOrigins.count(origin))
+    // If this is accessing any container origins directly, then we have a store
+    // to "x.y" and another use of "x" which can't be allowed.
+    if (destContainerOrigins.contains(origin))
       return false;
+
+    // Otherwise, check to see if this is descended from the specific
+    // destination, e.g. the dest is "x.y" and this is "x.y.z".
+    while (1) {
+      if (destOrigins.contains(origin))
+        return false;
+      if (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
+        origin = fieldAttr.getBase();
+      else
+        break;
+    }
   }
 
   // If no problems are found, it is safe!

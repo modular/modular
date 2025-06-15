@@ -453,3 +453,22 @@ fn testUnneededCopy(heavy: Heavy):
   # CHECK-NEXT: lit.call {{.*}}takeOwnedValue
   takeOwnedValue(heavy)
   # CHECK-NEXT: kgen.param.constant: none
+
+
+# Check that field sensitivity is properly field sensitive.
+
+struct NonCopyable: pass
+fn take_and_return(a: NonCopyable) -> NonCopyable: pass
+# CHECK-LABEL: lit.struct.decl @TestFieldSensitiveResultSlot
+struct TestFieldSensitiveResultSlot:
+    var a: NonCopyable
+    var b: NonCopyable
+
+    # CHECK: lit.fn @"__init__
+    fn __init__(out self):
+        # CHECK-NEXT: [[B:%.*]] = lit.ref.struct.ger %self[b]
+        # CHECK-NEXT: [[A:%.*]] = lit.ref.struct.ger %self[a]
+        # CHECK-NEXT: [[AI:%.*]] = lit.ref.immut [[A]]
+        # CHECK-NEXT: lit.call {{.*}}take_and_return{{.*}}([[AI]], [[B]])
+        # Should be in-place without a copy/move
+        self.b = take_and_return(self.a)
