@@ -341,10 +341,10 @@ fn _copy_frag_to_smem_nvidia[
     alias swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
 
     @parameter
-    for n_mma in range(Int(num_n_mmas)):
+    for n_mma in range(num_n_mmas):
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
                 m_mma, n_mma
             ).vectorize[1, frag_simd_width]()
@@ -425,10 +425,10 @@ fn _copy_frag_to_smem_amd[
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
     @parameter
-    for n_mma in range(Int(num_n_mmas)):
+    for n_mma in range(num_n_mmas):
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
                 m_mma, n_mma
             ).vectorize[frag_simd_width, 1]()
@@ -438,7 +438,7 @@ fn _copy_frag_to_smem_amd[
             var frag_offset = p_smem_frag.distance(p_smem_tile)
 
             @parameter
-            for i in range(Int(frag_simd_width)):
+            for i in range(frag_simd_width):
                 alias offset_in_frag = BN * i
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 var offset_BMxBN = frag_offset + offset_in_frag

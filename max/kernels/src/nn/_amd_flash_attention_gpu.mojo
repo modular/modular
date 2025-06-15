@@ -332,7 +332,7 @@ fn mma[
         ](b_wtile_coord0, b_wtile_coord1)
 
         @parameter
-        for k_mma in range(Int(num_k_mmas2)):
+        for k_mma in range(num_k_mmas2):
 
             @parameter
             if a_iter.address_space != AddressSpace.LOCAL:
@@ -425,10 +425,10 @@ fn _apply_mask[
             return
 
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
 
         @parameter
-        for n_mma in range(Int(num_n_mmas)):
+        for n_mma in range(num_n_mmas):
             alias mma_id = n_mma * num_m_mmas + m_mma
             p_reg_vectorized[mma_id, 0] = (
                 p_reg_vectorized[mma_id, 0] * scale_log2e
@@ -507,11 +507,11 @@ fn apply_softmax_denominator[
     rowsum: LayoutTensor[accum_type, **_],
 ):
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv = recip(rowsum[m_mma, 0])
 
         @parameter
-        for n_mma in range(Int(num_n_mmas)):
+        for n_mma in range(num_n_mmas):
 
             @parameter
             for i in range(fragment_layout.size()):
@@ -881,7 +881,7 @@ fn mha_single_batch[
     )
 
     @parameter
-    for i in range(Int(depth // BK)):
+    for i in range(depth // BK):
         var q_reg_tile = q_reg_tile_iter.next_unsafe(i)[]
         copy_dram_to_local[
             src_thread_layout = Layout.col_major(32, 2),
@@ -1092,14 +1092,14 @@ fn mha_single_batch[
         # schedule_barrier(mask_barrier)
 
         @parameter
-        for i in range(Int(BN // BK)):
+        for i in range(BN // BK):
             # we multiply v^T x p^T instead of p x v
             # here all threads work to load 16xdepth tile at a time
             # with each warp loading 4xdepth tile
             # each thread loads v_reg_tile is therefore BK//MMA_N 16B elements
 
             @parameter
-            if i < Int(BN // BK) - 1:
+            if i < (BN // BK) - 1:
                 load_v_gmem_tile[(i + 1) % 2]()
 
             # transpose v_gmem_tile to v_smem
@@ -1414,7 +1414,7 @@ fn mha_decoding_single_batch[
     var q_gmem_warp_iter = q_tile.tiled_iterator[WM, BK, axis=1](warp_row, 0)
 
     @parameter
-    for i in range(Int(depth // BK)):
+    for i in range(depth // BK):
         var q_reg_tile = q_reg_tile_iter.next_unsafe(i)[]
         copy_dram_to_local[
             src_thread_layout = Layout.col_major(16, 4),
@@ -1436,7 +1436,7 @@ fn mha_decoding_single_batch[
                 Int(q_tile_idx * BM + start_pos),
                 Int(kv_tile_start_row),
             ),
-            Index[dtype = DType.uint32](Int(BM), Int(BN)),
+            Index[dtype = DType.uint32](BM, BN),
         )
 
         @parameter
@@ -1696,15 +1696,15 @@ fn copy_fragment_to_smem[
     constrained[WN == BK or WN == BN, "WN must be equal to BN or BK"]()
 
     @parameter
-    for i in range(Int(WN // BK)):
+    for i in range(WN // BK):
         var p_smem_tile = p_smem_iter.next_unsafe(i + warp_col * (WN // BK))[]
         var p_smem_warp_tile = p_smem_tile.tile[WM, BK](warp_row, i)
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
 
             @parameter
-            for n_mma in range(Int(num_n_mmas_per_bk)):
+            for n_mma in range(num_n_mmas_per_bk):
                 var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
                     m_mma, n_mma
                 )

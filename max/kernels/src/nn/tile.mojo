@@ -130,7 +130,7 @@ fn tile[
                 )
                 var output_src_stride = num_cols_input
                 var count = output_src_stride
-                for rep in range(Int(repeats[repeats_len - 1])):
+                for rep in range(repeats[repeats_len - 1]):
                     var src_ptr = input.ptr.offset(input_src_index)
                     var dst_ptr = output.ptr.offset(
                         output_src_index + rep * output_src_stride
@@ -166,7 +166,7 @@ fn tile[
                 ) * num_cols_input * Int(
                     repeats[repeats_len - 1]
                 )
-                for rep in range(Int(repeats[repeats_len - 2] - 1)):
+                for rep in range(repeats[repeats_len - 2] - 1):
                     var src_ptr = output.ptr.offset(src_index)
                     var dst_ptr = output.ptr.offset(
                         src_index + (rep + 1) * src_index_stride
@@ -194,7 +194,7 @@ fn tile[
                 * num_cols_input
                 * Int(repeats[repeats_len - 1])
             )
-            for rep in range(Int(repeats[repeats_len - 3] - 1)):
+            for rep in range(repeats[repeats_len - 3] - 1):
                 var src_ptr = output.ptr.offset(src_index)
                 var dst_ptr = output.ptr.offset(
                     src_index + (rep + 1) * src_index_stride

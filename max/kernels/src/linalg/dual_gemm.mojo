@@ -311,7 +311,7 @@ fn multistage_dual_mma[
     ]() if swizzle_a else OptionalReg[Swizzle](None)
 
     @parameter
-    for i in range(Int(k_group_size)):
+    for i in range(k_group_size):
         mma_op.load_a[swizzle_a_pattern](
             a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
         )
@@ -332,10 +332,10 @@ fn multistage_dual_mma[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma0 in range(Int(num_k_mma_iters)):
+        for k_mma0 in range(num_k_mma_iters):
 
             @parameter
-            for k_mma1 in range(Int(k_group_size)):
+            for k_mma1 in range(k_group_size):
                 alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 alias current = k_mma % num_reg_tiles
                 alias k_mma_next = k_mma + k_group_size

@@ -1005,10 +1005,10 @@ fn _apply_mask[
     @always_inline
     fn _apply_mask_capture[masked: Bool]():
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
+            for n_mma in range(num_n_mmas):
                 # Coordinates in mask for current mma tile.
                 mask_frag_row = mask_warp_row + m_mma * MMA_M
                 mask_frag_col = mask_warp_col + n_mma * MMA_N
