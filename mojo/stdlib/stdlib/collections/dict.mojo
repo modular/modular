@@ -112,7 +112,7 @@ struct _DictKeyIter[
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, IteratorTrait, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -124,9 +124,11 @@ struct _DictKeyIter[
     """
 
     alias dict_entry_iter = _DictEntryIter[K, V, dict_origin, forward]
+    alias Element = K
 
     var iter: Self.dict_entry_iter
 
+    @always_inline
     fn __iter__(self) -> Self:
         return self
 
@@ -134,9 +136,14 @@ struct _DictKeyIter[
         return self.iter.__next__().key
 
     @always_inline
+    fn __next__(mut self) -> Self.Element:
+        return self.__next_ref__()
+
+    @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
+    @always_inline
     fn __len__(self) -> Int:
         return self.iter.__len__()
 
@@ -148,7 +155,7 @@ struct _DictValueIter[
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, IteratorTrait, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
@@ -161,6 +168,7 @@ struct _DictValueIter[
     """
 
     var iter: _DictEntryIter[K, V, dict_origin, forward]
+    alias Element = V
 
     fn __iter__(self) -> Self:
         return self
@@ -180,6 +188,10 @@ struct _DictValueIter[
         return UnsafePointer(to=entry_ref.value).origin_cast[
             origin=dict_origin
         ]()[]
+
+    @always_inline
+    fn __next__(mut self) -> Self.Element:
+        return self.__next_ref__()
 
     @always_inline
     fn __has_next__(self) -> Bool:

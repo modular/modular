@@ -1016,6 +1016,9 @@ struct _DequeIter[
             self.index -= 1
             return self.src[][self.index]
 
+    fn __next__(mut self) -> ElementType:
+        return self.__next_ref__()
+
     fn __len__(self) -> Int:
         @parameter
         if forward:

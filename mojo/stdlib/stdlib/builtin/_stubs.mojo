@@ -30,28 +30,19 @@ struct __MLIRType[T: AnyTrivialRegType](Copyable, ExplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-trait _ParamForIterator(Movable):
-    alias _IndexType: AnyType
+# This type is tightly bound to the internals of "@parameter for" emission.
+struct _ParamForWrapper[Iter: IteratorTrait & Copyable]:
+    var next_it: Iter
+    var value: Iter.Element
 
-    fn __has_next__(self) -> Bool:
-        ...
-
-    fn __next__(mut self) -> _IndexType:
-        ...
-
-
-struct _ParamForIteratorWrapper[IteratorT: _ParamForIterator & Copyable]:
-    var next_it: IteratorT
-    var value: IteratorT._IndexType
-
-    fn __init__(out self, it: IteratorT):
+    fn __init__(out self, it: Iter):
         self.next_it = it
         self.value = self.next_it.__next__()
 
 
 fn parameter_for_generator[
-    IteratorT: _ParamForIterator & Copyable
-](it: IteratorT) -> _ParamForIteratorWrapper[IteratorT]:
+    Iter: IteratorTrait & Copyable
+](it: Iter) -> _ParamForWrapper[Iter]:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ returns true.
-    return _ParamForIteratorWrapper(it)
+    return _ParamForWrapper(it)
