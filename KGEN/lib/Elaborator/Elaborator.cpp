@@ -220,16 +220,17 @@ StringAttr ParamNode::getMangledName() {
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
-  if (auto exprResult =                                                        \
-          (INODE)->getEvaluator().concretizeParameterExpr(INODE, LOC, EXPR);   \
-      exprResult.isError()) {                                                  \
-    (INODE)->setToError(exprResult.takeError());                               \
-    return ElaborationState::error();                                          \
-  } else if (!*exprResult) {                                                   \
-    return ElaborationState::skipNode();                                       \
-  } else {                                                                     \
+  do {                                                                         \
+    auto exprResult =                                                          \
+        (INODE)->getEvaluator().concretizeParameterExpr(INODE, LOC, EXPR);     \
+    if (exprResult.isError()) {                                                \
+      (INODE)->setToError(exprResult.takeError());                             \
+      return ElaborationState::error();                                        \
+    }                                                                          \
+    if (!*exprResult)                                                          \
+      return ElaborationState::skipNode();                                     \
     VAR = *exprResult;                                                         \
-  }
+  } while (0)
 
 //===----------------------------------------------------------------------===//
 // processParamDeclareOp
@@ -1055,31 +1056,55 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 
 ElaborationState Elaborator::processParamForOp(ImplNode *parent,
                                                ParamForOp op) {
-  // First, concretize the initializer and sequence generator expressions and
-  // result types.
-  Attribute initial, iterate;
-  SmallVector<Type> resultTypes;
+  // First, concretize the iterator value and the hasnext/getnext expressions.
+  Attribute initial, hasNext, getNext;
   HANDLE_EVALUATOR_CONC(initial, parent, op.getLoc(), op.getInitial());
-  HANDLE_EVALUATOR_CONC(iterate, parent, op.getLoc(), op.getIterate());
-  for (Type type : op.getResultTypes()) {
+  HANDLE_EVALUATOR_CONC(hasNext, parent, op.getLoc(), op.getHasNext());
+  HANDLE_EVALUATOR_CONC(getNext, parent, op.getLoc(), op.getGetNext());
+
+  // Get the result types of the for loop.  These are the values passed from
+  // kgen.param.for.break/continue across loop iterations and to the result of
+  // the kgen.param.for.  These are created by mem2reg promoting stack objects
+  // in the body of the loop.
+  SmallVector<Type> resultTypes;
+  for (Type type : op.getResultTypes())
     HANDLE_EVALUATOR_CONC(resultTypes.emplace_back(), parent, op.getLoc(),
                           type);
-  }
 
-  // Concretize the sequence generator function.
-  ErrorTreeOr<FuncOp> func = getConcreteFunction(
-      parent, op.getLoc(), cast<SymbolConstantAttr>(iterate));
-  if (func.isError()) {
-    parent->setToError(func.takeError());
+  // Concretize the __has_next__ generator function.
+  ErrorTreeOr<FuncOp> hasNextFunc = getConcreteFunction(
+      parent, op.getLoc(), cast<SymbolConstantAttr>(hasNext));
+  if (hasNextFunc.isError()) {
+    parent->setToError(hasNextFunc.takeError());
     return failure();
   }
-  if (!*func)
+  if (!*hasNextFunc)
     return ElaborationState::skipNode();
 
-  if (LLVM_UNLIKELY(!FuncOp(*func)
-                         .getFuncTypeGenerator()
-                         .getBody()
-                         .hasMemoryOnlyResult())) {
+  // Concretize the sequence generator function.
+  ErrorTreeOr<FuncOp> getNextFunc = getConcreteFunction(
+      parent, op.getLoc(), cast<SymbolConstantAttr>(getNext));
+  if (getNextFunc.isError()) {
+    parent->setToError(getNextFunc.takeError());
+    return failure();
+  }
+  if (!*getNextFunc)
+    return ElaborationState::skipNode();
+
+  // has_next should return a bool.
+  if (FuncOp(*hasNextFunc)
+          .getFuncTypeGenerator()
+          .getBody()
+          .hasMemoryOnlyResult()) {
+    parent->setToError(ErrorTree(
+        op.getLoc(), "INTERNAL ERROR: __has_next__ should return a bool"));
+    return failure();
+  }
+  // The generator should return a well-known struct.
+  if (!FuncOp(*getNextFunc)
+           .getFuncTypeGenerator()
+           .getBody()
+           .hasMemoryOnlyResult()) {
     parent->setToError(
         ErrorTree(op.getLoc(),
                   "INTERNAL ERROR: iterator should have memory-only result"));
@@ -1095,13 +1120,14 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
         StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
     parent->getEvaluator().setErrorLoc(op.getLoc());
     ErrorTreeOr<TypedAttr> result =
-        parent->getEvaluator().evaluateFunctionWithResultSlot(*func, iterator);
+        parent->getEvaluator().evaluateFunctionWithResultSlot(*getNextFunc,
+                                                              iterator);
     if (result.isError()) {
       parent->setToError(result.takeError());
       return failure();
     }
     auto structAttr = dyn_cast<StructAttr>(*result);
-    if (LLVM_UNLIKELY(!structAttr || structAttr.getValues().size() != 3)) {
+    if (!structAttr || structAttr.getValues().size() != 3) {
       parent->setToError(ErrorTree(
           op.getLoc(), "INTERNAL ERROR: expected a struct of 3 elements"));
       return failure();

@@ -1855,7 +1855,9 @@ kgen.generator export @param_for(%arg0: i1, %arg1: index) {
 
 kgen.generator @sum_from_zero<upper>() -> index {
   %idx0 = index.constant 0
-  %0 = kgen.param.for i in upper iter :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+  %0 = kgen.param.for i in upper
+    has_next :(index) -> i1 @count_to_zero_has_next
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %idx0 : index) -> index {
     %1 = kgen.param.constant = <i>
     %2 = index.add %arg0, %1
@@ -1879,7 +1881,9 @@ kgen.generator @terminators(%arg0: i1) {
   // CHECK-NEXT:   }
   // CHECK-NEXT:   hlcf.break "param_for_outer"
   // CHECK-NEXT: }
-  kgen.param.for i in 1 iter :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
+  kgen.param.for i in 1
+    has_next :(index) -> i1 @count_to_zero_has_next
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
     hlcf.if %arg0 {
       kgen.return
     } else {
@@ -1898,8 +1902,12 @@ kgen.generator @nested_param_for() {
   // CHECK: { 2, 1 }
   // CHECK: { 1, 2 }
   // CHECK: { 1, 1 }
-  kgen.param.for i in 2 iter :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
-    kgen.param.for j in 2 iter :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
+  kgen.param.for i in 2
+  has_next :(index) -> i1 @count_to_zero_has_next
+  get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
+    kgen.param.for j in 2
+    has_next :(index) -> i1 @count_to_zero_has_next
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
       kgen.param.constant: struct<(index, index)> = <{ i, j }>
       kgen.param.for.continue
     } else {
@@ -1938,7 +1946,9 @@ kgen.generator @nested_param_for() {
 
 kgen.generator @for_else<upper>(%arg0: index) -> index {
   kgen.param.declare param = <add(upper, 1)>
-  %0 = kgen.param.for i in upper iter :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+  %0 = kgen.param.for i in upper
+    has_next :(index) -> i1 @count_to_zero_has_next
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
     (%arg1 = %arg0 : index) -> index {
     kgen.param.for.continue %arg1 : index
   } else (%arg1: index) {
@@ -1953,7 +1963,9 @@ kgen.generator @for_else<upper>(%arg0: index) -> index {
 kgen.generator @parametric_result() {
   kgen.param.declare a = <1>
   %0 = kgen.param.constant: array<a, i1> = <?>
-  %1 = kgen.param.for i in 1 iter :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+  %1 = kgen.param.for i in 1
+      has_next :(index) -> i1 @count_to_zero_has_next
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %0 : !pop.array<a, i1>) -> !pop.array<a, i1> {
     kgen.param.for.continue %arg0 : !pop.array<a, i1>
   } else (%arg0: !pop.array<a, i1>) {
@@ -1980,6 +1992,12 @@ kgen.generator @count_to_zero(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<
   %2 = kgen.struct.create(%1, %i0, %false) : !kgen.struct<(index, index, i1)>
   pop.store %2, %arg1 : !kgen.pointer<struct<(index, index, i1)>>
   kgen.return %none : !kgen.none
+}
+
+kgen.generator @count_to_zero_has_next(%arg0: index) -> i1 {
+  %idx0 = index.constant 0
+  %0 = index.cmp ne(%idx0, %arg0)
+  kgen.return %0 : i1
 }
 
 // -----

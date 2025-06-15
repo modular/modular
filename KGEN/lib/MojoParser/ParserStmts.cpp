@@ -1069,8 +1069,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   // parse [target_list] in [starred_list]
   // for now, we expect target_list to be an identifier
-  // the [starred_list] needs to be a sequence with a __iter__ method that
-  // returns a type that defines __len__ and __next__
+  // the [starred_list] needs to be a sequence with a __iter__ method.
   ExprNode *targetExpr = nullptr;
   if (parseTargetListExpr(targetExpr, curIndent) ||
       parseToken(Token::kw_in, "expected 'in' after target identifier"))
@@ -1141,7 +1140,7 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // into
   //
   //   var it = iterable.__iter__()
-  //   while not it.__isatend__():
+  //   while it.__has_next__():
   //       var e = it.__next__()
   //       <BODY>
 
@@ -1245,8 +1244,7 @@ static std::optional<Type> getIndexType(IREmitter &emitter, Type structType,
   ArrayRef<TypedAttr> paramBindings{};
   PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
                                         paramBindings, loc, emitter);
-  ASTType type(result);
-  return type;
+  return ASTType(result);
 }
 
 // FIXME: This needs to parse this as a target expression and then handle it
@@ -1277,7 +1275,15 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   auto skipBodyOnFailure =
       llvm::make_scope_exit([&]() { skipUntilIndentation(curIndent); });
 
-  // Emit the sequence and call __iter__() on it.
+  // For loops generally desugar into:
+  //   var it = iterable.__iter__()
+  //   while it.__has_next__():
+  //       var e = it.__next__()
+  //       <BODY>
+  // We capture the "it" expression as a PValue and then the "has_next" and
+  // "__next__" callees so we can iterate the value in the elaborator.
+
+  // Emit the sequence and call __iter__ on it.
   AnyValue seqValue = emitter.emitExprCValue(seqExpr, EC_ForParamSeq);
   if (!seqValue)
     return failure();
@@ -1291,6 +1297,23 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   if (!iterVal)
     return failure();
 
+  ASTType iterType = iterVal.getRValueType();
+
+  // Look up __has_next__ without calling it.
+  auto handleLookupFailure = [&]() {
+    emitter.emitError(seqExpr->getLoc())
+        << "expected sequence of type " << iterType
+        << " to have __iter__ and __has_next__ methods";
+  };
+  ASTExprAnd<AnyValue> selfValue = {UnknownAttr::get(iterType), seqExpr};
+  CallOperands emptyOperands(selfValue);
+  PValue hasNext = OverloadSet::lookupAndResolve(
+      iterType, "__has_next__", emptyOperands, seqExpr, CallSyntax::kMethodCall,
+      handleLookupFailure,
+      /*shouldPrintOverloadErrors*/ true, emitter);
+  if (!hasNext)
+    return failure();
+
   // Bind the sequence initial value to the parameter for iterator generator.
   // Start by looking up the builtin generator.
   ArrayRef<ASTDecl *> paramForImpl = shared.getBuiltinFunction(
@@ -1301,7 +1324,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // Resolve the overload with the sequence's type. This succeeds if the
   // iterator type is currently supported.
   ParamBindings bindings(scope);
-  bindings.add(seqExpr, PValue(iterVal.getType()));
+  bindings.add(seqExpr, PValue(iterType));
   OverloadSet call("parameter_for_generator", paramForImpl, std::move(bindings),
                    seqExpr, CallSyntax::kDirectCall);
   PValue iterate = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
@@ -1311,10 +1334,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // Sniff the type of the induction variable and create its declaration.
   // We expect that the struct returned by the range() call has an _IndexType
   // alias.
-  std::optional<Type> indexType =
-      getIndexType(emitter, iterVal.getRValueType(), forLoc);
-  if (!indexType)
-    indexType = shared.lookupNamedType("Int", scope, forLoc);
+  std::optional<Type> indexType = getIndexType(emitter, iterType, forLoc);
   if (!indexType)
     return failure();
 
@@ -1322,14 +1342,17 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   if (!target)
     return failure();
 
+  // Everything resolved, so we'll be able to parse the body, don't skip it.
   skipBodyOnFailure.release();
 
+  // Build the induction variable parameter.
   auto indVarDecl = ParamDeclAttr::get(scope.mangleParamName(target.getValue()),
                                        indexType.value());
 
   // Create the loop and parse the body into it.
-  auto paramFor =
-      builder.create<ParamForOp>(forLocation, iterVal, iterate, indVarDecl);
+  auto paramFor = builder.create<ParamForOp>(forLocation, iterVal, hasNext,
+                                             iterate, indVarDecl);
+
   builder.createBlock(&paramFor.getBody());
 
   { // Create a scope for the induction variable.

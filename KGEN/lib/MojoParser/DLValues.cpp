@@ -192,10 +192,11 @@ Value SubscriptDLValue::emitAsRefValue(llvm::SMLoc loc,
     // Call the getter to get the ref.
     ValueDest storeDest(EC_RefBinding);
     auto ref = emitLoad(storeDest, emitter);
-    if (ref && ref.isMValue())
-      return ref.getMValueReference();
     if (!ref)
       return {}; // Error emitted by emitLoad.
+    if (ref.isMValue())
+      return ref.getMValueReference();
+    // getitem returned something that isn't a ref.
   }
 
   return BaseDLValue::emitAsRefValue(loc, emitter);
