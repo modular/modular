@@ -1141,7 +1141,8 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   //
   //   var it = iterable.__iter__()
   //   while it.__has_next__():
-  //       var e = it.__next__()
+  //       ref e = it.__next_ref__()
+  //       # or: var e = it.__next__()
   //       <BODY>
 
   // Emit the expression for the iterable.
@@ -1200,10 +1201,20 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   // Lexically scope the indvarDest as a 'bind' pattern like a 'read' arg.
   indvarDest.patternDeclKind = PatternDeclKind::kBind;
 
-  if (!getEmitter().emitNamedMethodCall(
-          "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
-          CallSyntax::kMethodCall, seqExpr))
+  // See if we're calling __next_ref__ or __next__, call the first one that
+  // works.
+  CallOperands nextOperands({{MLValue(rangeRef), seqExpr}});
+  auto emitter = getEmitter();
+  if (PValue nextRef = OverloadSet::lookupAndResolve(
+          rangeRef.getType().getElementType(), "__next_ref__", nextOperands,
+          seqExpr, CallSyntax::kMethodCall, emitter)) {
+    emitter.emitIndirectCall(nextRef, std::move(nextOperands), indvarDest,
+                             CallSyntax::kOperator, seqExpr);
+  } else if (!emitter.emitNamedMethodCall("__next__", std::move(nextOperands),
+                                          indvarDest, CallSyntax::kMethodCall,
+                                          seqExpr)) {
     return {};
+  }
 
   builder.setInsertionPointToEnd(&loopOp.getBodyRegion().front());
 

@@ -134,7 +134,7 @@ struct ListValueInt:
 struct ListValueStringRef:
     fn __init__(out self): pass
     fn __iter__(self) -> ListValueStringRef: return ListValueStringRef()
-    fn __next__(mut self) -> ref [self] String: pass
+    fn __next_ref__(mut self) -> ref [self] String: pass
     fn __has_next__(self) -> Bool: return False
 
 

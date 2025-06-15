@@ -680,7 +680,7 @@ struct _VariadicListMemIter[
     var index: Int
     var src: Pointer[Self.variadic_list_type, list_origin]
 
-    fn __next__(mut self) -> ref [elt_origin] elt_type:
+    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
         while True:
             pass
 

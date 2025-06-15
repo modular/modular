@@ -459,7 +459,7 @@ fn for_range_loop():
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability]._mlir_type]:
     fn __init__(out self): pass
-    fn __next__(mut self) -> ref [list_origin] Int: pass
+    fn __next_ref__(mut self) -> ref [list_origin] Int: pass
     fn __has_next__(self) -> Bool: return False
 
 struct ListWithRefIter:
@@ -480,7 +480,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
         # CHECK:   lit.loop.condition [[COND]]
         # CHECK: } body {
-        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next__{{.*}}(%$RANGE)
+        # CHECK:   [[ELTREF:%.*]] = lit.call {{.*}}RefIter::@"__next_ref__{{.*}}(%$RANGE)
         # CHECK:   %item = lit.var.decl "item" ref
 
         # The Index value from this element is captured into item, not the reference.
