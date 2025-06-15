@@ -970,8 +970,8 @@ struct _StridedRangeIterator(_ParamForIterator):
 # ===-----------------------------------------------------------------------===#
 
 
-trait _ParamForIterator(Copyable):
-    alias _IndexType: Copyable
+trait _ParamForIterator(Movable):
+    alias _IndexType: AnyType
 
     fn __has_next__(self) -> Bool:
         ...
@@ -980,17 +980,21 @@ trait _ParamForIterator(Copyable):
         ...
 
 
-@fieldwise_init
-struct _ParamForIteratorWrapper[IteratorT: _ParamForIterator]:
+struct _ParamForIteratorWrapper[IteratorT: _ParamForIterator & Copyable]:
     var next_it: IteratorT
     var value: IteratorT._IndexType
 
+    fn __init__(out self, it: IteratorT):
+        self.next_it = it
+        self.value = self.next_it.__next__()
+
 
 fn parameter_for_generator[
-    IteratorT: _ParamForIterator
+    IteratorT: _ParamForIterator & Copyable
 ](it: IteratorT) -> _ParamForIteratorWrapper[IteratorT]:
-    var next_it = it
-    return _ParamForIteratorWrapper(next_it, next_it.__next__())
+    # NOTE: This function is called by the compiler's elaborator only when
+    # __has_next__ returns true.
+    return _ParamForIteratorWrapper(it)
 
 
 struct Optional[T: Copyable & Movable]:
