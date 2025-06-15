@@ -1221,30 +1221,30 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   return loopOp;
 }
 
-// Given a struct type T, return T._IndexType if it exists.
-static std::optional<Type> getIndexType(IREmitter &emitter, Type structType,
-                                        SMLoc loc) {
-  StringRef spelling("_IndexType");
-  LookupResult lookup =
-      emitter.shared.lookupAndResolveDecl(spelling, loc, structType,
-                                          /*searchParentScopes=*/false);
+/// Given a struct type _ParamForIteratorWrapper instantiation, return the type
+/// that would be returned by __next__.
+static ASTType getIteratedType(IREmitter &emitter, PValue paramForGeneratorFn,
+                               SMLoc loc) {
+  // The result of parameter_for_generator is some _ParamForIteratorWrapper
+  // instantiation.
+  auto paramForIteratorWrapperType =
+      cast<FnTypeGeneratorType>(paramForGeneratorFn.getType())
+          .getUserResultType();
+
+  // Look up the value member.
+  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
+      "value", loc, paramForIteratorWrapperType,
+      /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
-  if (memberDecls.empty()) {
-    // Just in case if the input happens to be not a range but something else,
-    // do not fail, just proceed.
-    return std::nullopt;
+  if (memberDecls.size() != 1 || !isa<StructFieldOp>(memberDecls[0])) {
+    if (!lookup.isFailure())
+      emitter.emitError(loc)
+          << "expected _ParamForIteratorWrapper to have a field named 'value'";
+    return {};
   }
-  // This is a contract with the standard library -- the range types
-  // should provide an _IndexType member, and there cannot be many candidates.
-  assert(memberDecls.size() == 1);
-  auto aliasDeclOpParam = dyn_cast<AliasDeclOp>(memberDecls[0]);
-  if (!aliasDeclOpParam) {
-    return std::nullopt;
-  }
-  ArrayRef<TypedAttr> paramBindings{};
-  PValue result = resolveAliasReference(aliasDeclOpParam, spelling,
-                                        paramBindings, loc, emitter);
-  return ASTType(result);
+
+  return cast<StructFieldOp>(memberDecls[0])
+      .getReboundType(cast<LIT::StructType>(paramForIteratorWrapperType));
 }
 
 // FIXME: This needs to parse this as a target expression and then handle it
@@ -1332,9 +1332,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     return failure();
 
   // Sniff the type of the induction variable and create its declaration.
-  // We expect that the struct returned by the range() call has an _IndexType
-  // alias.
-  std::optional<Type> indexType = getIndexType(emitter, iterType, forLoc);
+  ASTType indexType = getIteratedType(emitter, iterate, forLoc);
   if (!indexType)
     return failure();
 
@@ -1346,8 +1344,8 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   skipBodyOnFailure.release();
 
   // Build the induction variable parameter.
-  auto indVarDecl = ParamDeclAttr::get(scope.mangleParamName(target.getValue()),
-                                       indexType.value());
+  auto indVarDecl =
+      ParamDeclAttr::get(scope.mangleParamName(target.getValue()), indexType);
 
   // Create the loop and parse the body into it.
   auto paramFor = builder.create<ParamForOp>(forLocation, iterVal, hasNext,

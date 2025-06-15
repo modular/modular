@@ -379,9 +379,9 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
 /// "x" or an AttributeRefNode "x.y"), return the PValue for the result.
 ///
 /// 'decl' is the alias declaration to resolve.
-PValue M::KGEN::LIT::resolveAliasReference(AliasDeclOp decl, StringRef declName,
-                                           ArrayRef<TypedAttr> paramValues,
-                                           SMLoc refLoc, IREmitter &emitter) {
+static PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
+                                    ArrayRef<TypedAttr> paramValues,
+                                    SMLoc refLoc, IREmitter &emitter) {
 
   // If the param is declared in a function, then just directly use it.
   Operation *parent = decl->getParentOp();
@@ -1640,6 +1640,8 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
     // If there is no decl, the type is an MLIR type.
     Type baseMLIRType = baseRVType.mlirType;
+    if (isa<TypeCheckErrorType>(baseMLIRType))
+      return {}; // An already-diagnosed error.
 
     // Handle __mlir_op.`xxx` references, lazily synthesizing values when
     // they are referenced.
