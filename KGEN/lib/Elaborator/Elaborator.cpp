@@ -1116,6 +1116,18 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   SmallVector<TypedAttr> values;
   int64_t loopUnrollCount = 0;
   while (true) {
+    // Check to see if we are supposed to stop here.
+    parent->getEvaluator().setErrorLoc(op.getLoc());
+    ErrorTreeOr<TypedAttr> hasNextResult =
+        parent->getEvaluator().evaluateFunction(*hasNextFunc, iterator);
+    if (hasNextResult.isError()) {
+      parent->setToError(hasNextResult.takeError());
+      return failure();
+    }
+    if (!cast<BoolAttr>(*hasNextResult).getValue())
+      break;
+
+    // Get the next value.
     iterator =
         StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
     parent->getEvaluator().setErrorLoc(op.getLoc());
@@ -1127,13 +1139,11 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
       return failure();
     }
     auto structAttr = dyn_cast<StructAttr>(*result);
-    if (!structAttr || structAttr.getValues().size() != 3) {
+    if (!structAttr || structAttr.getValues().size() != 2) {
       parent->setToError(ErrorTree(
-          op.getLoc(), "INTERNAL ERROR: expected a struct of 3 elements"));
+          op.getLoc(), "INTERNAL ERROR: expected a struct of 2 elements"));
       return failure();
     }
-    if (cast<BoolAttr>(structAttr.getValues()[2]).getValue())
-      break;
     values.push_back(structAttr.getValues()[1]);
     iterator = structAttr.getValues()[0];
     loopUnrollCount++;
