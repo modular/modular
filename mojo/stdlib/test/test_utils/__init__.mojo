@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .compare_helpers import compare
+from .hash import dif_bits, assert_dif_hashes, assert_fill_factor
 from .math_helpers import ulp_distance
 from .test_utils import libm_call
 from .types import (
