@@ -43,22 +43,22 @@ def test_b64encode():
 
 
 def test_b64decode():
-    assert_equal(b64decode("YQ=="), "a")
+    def bytes_to_str(b: List[UInt8]) -> String:
+        # Helper to convert List[UInt8] to String for test comparison
+        var s = String(capacity=b.size())
+        for byte in b:
+            s.append_byte(byte)
+        return s^
 
-    assert_equal(b64decode("Zm8="), "fo")
-
-    assert_equal(b64decode("SGVsbG8gTW9qbyEhIQ=="), "Hello Mojo!!!")
-
-    assert_equal(b64decode("SGVsbG8g8J+UpSEhIQ=="), "Hello 🔥!!!")
-
+    assert_equal(bytes_to_str(b64decode("YQ==")), "a")
+    assert_equal(bytes_to_str(b64decode("Zm8=")), "fo")
+    assert_equal(bytes_to_str(b64decode("SGVsbG8gTW9qbyEhIQ==")), "Hello Mojo!!!")
+    assert_equal(bytes_to_str(b64decode("SGVsbG8g8J+UpSEhIQ==")), "Hello 🔥!!!")
     assert_equal(
-        b64decode(
-            "dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw=="
-        ),
+        bytes_to_str(b64decode("dGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw==")),
         "the quick brown fox jumps over the lazy dog",
     )
-
-    assert_equal(b64decode("QUJDREVGYWJjZGVm"), "ABCDEFabcdef")
+    assert_equal(bytes_to_str(b64decode("QUJDREVGYWJjZGVm")), "ABCDEFabcdef")
 
     with assert_raises(
         contains="ValueError: Input length '21' must be divisible by 4"
