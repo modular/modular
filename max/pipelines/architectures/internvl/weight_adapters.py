@@ -27,6 +27,13 @@ INTERNVL_LANGUAGE_MODEL_MAPPING = {
     "language_model.lm_head.": "lm_head.",
 }
 
+# Maps from InternVL checkpoint names to InternVLVisionModel weight names.
+INTERNVL_VISION_MODEL_MAPPING = {
+    # Strip the vision_model. prefix, since InternVisionEmbeddings expects
+    # "embeddings.class_embedding", for example.
+    "vision_model.": "",
+}
+
 
 def convert_internvl_language_model_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
@@ -65,3 +72,43 @@ def convert_internvl_language_model_state_dict(
             llm_state_dict[llm_name] = weight.data()
 
     return llm_state_dict
+
+
+def convert_internvl_vision_model_state_dict(
+    state_dict: dict[str, Weights], **unused_kwargs
+) -> dict[str, WeightData]:
+    """Convert InternVL vision model weights for InternVLVisionModel.
+
+    InternVL checkpoints have vision model weights prefixed with
+    `vision_model.`, but InternVLVisionModel expects that prefix dropped.
+
+    This adapter:
+    1. Filters to only include vision model weights (those with
+       `vision_model.` prefix).
+    2. Strips the `vision_model.` prefix to match InternVLVisionModel
+       expectations.
+    3. Excludes language model weights.
+
+    Args:
+        state_dict: The raw InternVL checkpoint weights.
+        huggingface_config: The InternVL HuggingFace configuration.
+        pipeline_config: The pipeline configuration.
+
+    Returns:
+        The filtered and mapped weights for DistributedLlama3.
+    """
+    vision_model_state_dict: dict[str, WeightData] = {}
+
+    for checkpoint_name, weight in state_dict.items():
+        # Only process vision model weights (skip language model).
+        if checkpoint_name.startswith("language_model."):
+            continue
+
+        # Apply mapping to strip "vision_model." prefixes.
+        vision_model_name = checkpoint_name
+        for before, after in INTERNVL_VISION_MODEL_MAPPING.items():
+            vision_model_name = vision_model_name.replace(before, after)
+
+        vision_model_state_dict[vision_model_name] = weight.data()
+
+    return vision_model_state_dict

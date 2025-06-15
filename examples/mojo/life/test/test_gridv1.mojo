@@ -20,7 +20,6 @@ alias data4x4 = [
     [0, 0, 1, 1],
     [1, 0, 0, 1],
 ]
-var __str4x4 = " ** \n**  \n  **\n*  *"
 
 
 def test_gridv1_init():
@@ -45,7 +44,8 @@ def test_gridv1_index():
 def test_gridv1_str():
     grid = Grid(4, 4, data4x4)
     grid_str = String(grid)
-    assert_equal(__str4x4, grid_str)
+    var str4x4 = " ** \n**  \n  **\n*  *"
+    assert_equal(str4x4, grid_str)
 
 
 def test_gridv1_evolve():
