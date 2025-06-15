@@ -1,0 +1,40 @@
+diff --git a/python/private/pypi/extension.bzl b/python/private/pypi/extension.bzl
+index 647407f1..42245c5d 100644
+--- a/python/private/pypi/extension.bzl
++++ b/python/private/pypi/extension.bzl
+@@ -26,7 +26,7 @@ load("//python/private:version_label.bzl", "version_label")
+ load(":attrs.bzl", "use_isolated")
+ load(":evaluate_markers.bzl", "evaluate_markers_py", EVALUATE_MARKERS_SRCS = "SRCS")
+ load(":hub_repository.bzl", "hub_repository", "whl_config_settings_to_json")
+-load(":parse_requirements.bzl", "parse_requirements")
++load(":parse_requirements.bzl", "host_platform", "parse_requirements", "select_requirement")
+ load(":parse_whl_name.bzl", "parse_whl_name")
+ load(":pip_repository_attrs.bzl", "ATTRS")
+ load(":requirements_files_by_platform.bzl", "requirements_files_by_platform")
+@@ -242,6 +242,7 @@ def _create_whl_repos(
+ 
+         for requirement in requirements:
+             for repo_name, (args, config_setting) in _whl_repos(
++                ctx = module_ctx,
+                 requirement = requirement,
+                 whl_library_args = whl_library_args,
+                 download_only = pip_attr.download_only,
+@@ -277,13 +278,17 @@ def _create_whl_repos(
+         },
+     )
+ 
+-def _whl_repos(*, requirement, whl_library_args, download_only, netrc, auth_patterns, multiple_requirements_for_whl = False, python_version):
++def _whl_repos(*, ctx, requirement, whl_library_args, download_only, netrc, auth_patterns, multiple_requirements_for_whl = False, python_version):
+     ret = {}
+ 
+     dists = requirement.whls
+     if not download_only and requirement.sdist:
+         dists = dists + [requirement.sdist]
+ 
++    repository_platform = host_platform(ctx)
++    if "torch" in requirement.srcs.requirement and not dists and not select_requirement([requirement], platform = repository_platform):
++        return {}
++
+     for distribution in dists:
+         args = dict(whl_library_args)
+         if netrc:

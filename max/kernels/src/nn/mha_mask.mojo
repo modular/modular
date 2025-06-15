@@ -62,7 +62,7 @@ struct MaskName(Stringable):
 @fieldwise_init
 @register_passable("trivial")
 struct TileMaskStatus(
-    EqualityComparable, Stringable, Writable, Copyable, Movable
+    Copyable, EqualityComparable, Movable, Stringable, Writable
 ):
     """A tile's masking status."""
 
@@ -163,7 +163,7 @@ alias MASK_VALUE = -10_000
 
 @fieldwise_init
 @register_passable("trivial")
-struct CausalMask(MHAMask, Copyable, Movable):
+struct CausalMask(Copyable, MHAMask, Movable):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     alias apply_log2e_after_mask: Bool = False
@@ -245,7 +245,7 @@ struct CausalMask(MHAMask, Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct NullMask(MHAMask, Copyable, Movable):
+struct NullMask(Copyable, MHAMask, Movable):
     """Mask that's effectively a noop."""
 
     alias apply_log2e_after_mask: Bool = False
@@ -281,7 +281,7 @@ struct NullMask(MHAMask, Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct ChunkedMask[local_window_size: Int](MHAMask, Copyable, Movable):
+struct ChunkedMask[local_window_size: Int](Copyable, MHAMask, Movable):
     """Mask implementing Chunked attention.
 
     This groups the mask into chunks of size `local_window_size`.
@@ -393,7 +393,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, Copyable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct SlidingWindowCausalMask[window_size: Int](MHAMask, Copyable, Movable):
+struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
     """Mask implementing Sliding Window attention.
 
     Considering the following case:
@@ -522,7 +522,7 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask, Copyable, Movable):
 
 @register_passable("trivial")
 struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
-    MHAMask, Copyable, Movable
+    Copyable, MHAMask, Movable
 ):
     """Mask that's backed by a materialized tensor."""
 
@@ -625,7 +625,7 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
 @fieldwise_init
 @register_passable("trivial")
 struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    MHAMask, Copyable, Movable
+    Copyable, MHAMask, Movable
 ):
     """Mask that's the AND of two masks."""
 
@@ -675,7 +675,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 @fieldwise_init
 @register_passable("trivial")
 struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
-    MHAMask, Copyable, Movable
+    Copyable, MHAMask, Movable
 ):
     """Mask that's the OR of two masks."""
 

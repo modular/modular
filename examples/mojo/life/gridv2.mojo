@@ -17,7 +17,7 @@ from collections import Optional
 from memory import UnsafePointer, memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](StringableRaising, Movable, Copyable):
+struct Grid[rows: Int, cols: Int](Copyable, Movable, StringableRaising):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#

@@ -27,7 +27,6 @@ from os import abort
 from os.atomic import Consistency
 from sys import is_amd_gpu, is_nvidia_gpu, llvm_intrinsic
 from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x
 from sys.param_env import env_get_bool
 from gpu.intrinsics import Scope
 from memory import UnsafePointer

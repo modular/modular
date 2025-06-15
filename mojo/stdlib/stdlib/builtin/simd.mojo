@@ -258,18 +258,18 @@ fn _has_native_f8_support() -> Bool:
 struct SIMD[dtype: DType, size: Int](
     Absable,
     Boolable,
-    Defaultable,
-    Ceilable,
     CeilDivable,
+    Ceilable,
+    Ceilable,
     Copyable,
-    Movable,
+    Defaultable,
     DevicePassable,
     ExplicitlyCopyable,
     Floatable,
     Floorable,
     Hashable,
-    _HashableWithHasher,
     Indexer,
+    Movable,
     Powable,
     PythonConvertible,
     Representable,
@@ -278,6 +278,7 @@ struct SIMD[dtype: DType, size: Int](
     Stringable,
     Truncable,
     Writable,
+    _HashableWithHasher,
 ):
     """Represents a small vector that is backed by a hardware vector element.
 
@@ -747,9 +748,9 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype is DType.bool:
-            return (rebind[Self._Mask](self) & rebind[Self._Mask](rhs)).cast[
-                dtype
-            ]()
+            return (
+                self._refine[DType.bool]() & rhs._refine[DType.bool]()
+            )._refine[dtype]()
         return __mlir_op.`pop.mul`(self.value, rhs.value)
 
     @always_inline("nodebug")
@@ -1110,7 +1111,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype is DType.bool:
-            return rebind[Self](self.select(Self(False), Self(True)))
+            return self.select(False, True)._refine[dtype]()
         else:
             return self ^ -1
 
@@ -1482,7 +1483,7 @@ struct SIMD[dtype: DType, size: Int](
             A PythonObject representing the value.
         """
         constrained[size == 1, "only works with scalar values"]()
-        return PythonObject(rebind[Scalar[dtype]](self))
+        return PythonObject(self._refine[size=1]())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -1512,7 +1513,7 @@ struct SIMD[dtype: DType, size: Int](
                 " instead."
             ),
         ]()
-        return rebind[Scalar[DType.bool]](self.cast[DType.bool]()).value
+        return self._refine[size=1]().cast[DType.bool]().value
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
@@ -1536,7 +1537,7 @@ struct SIMD[dtype: DType, size: Int](
             # a large unsigned
             return self.cast[_uint_type_of_width[int_width]()]().__int__()
         else:
-            return rebind[Scalar[DType.index]](self.cast[DType.index]()).value
+            return self._refine[size=1]().cast[DType.index]().value
 
     @always_inline("nodebug")
     fn __index__(self) -> __mlir_type.index:
@@ -1561,7 +1562,7 @@ struct SIMD[dtype: DType, size: Int](
             The value as a float.
         """
         constrained[size == 1, "expected a scalar type"]()
-        return rebind[Scalar[dtype]](self).cast[DType.float64]()
+        return self._refine[size=1]().cast[DType.float64]()
 
     @no_inline
     fn __str__(self) -> String:
@@ -1734,6 +1735,21 @@ struct SIMD[dtype: DType, size: Int](
     # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
+    fn _refine[
+        dtype: DType = Self.dtype, size: Int = Self.size
+    ](self) -> SIMD[dtype, size]:
+        """Manually refines the SIMD vector to a specific element type and size.
+
+        Parameters:
+            dtype: The target DType.
+            size: The target size of the SIMD vector.
+
+        Returns:
+            The same SIMD vector with the specified element type and size.
+        """
+        return rebind[SIMD[dtype, size]](self)
+
+    @always_inline("nodebug")
     fn cast[target: DType](self) -> SIMD[target, size]:
         """Casts the elements of the SIMD vector to the target element type.
 
@@ -1775,11 +1791,9 @@ struct SIMD[dtype: DType, size: Int](
         .
         """
 
-        alias Target = SIMD[target, size]
-
         @parameter
         if dtype is target:
-            return rebind[Target](self)
+            return self._refine[target]()
 
         @parameter
         if is_nvidia_gpu():
@@ -1834,20 +1848,31 @@ struct SIMD[dtype: DType, size: Int](
         if dtype is DType.bool:
             return self.select[target](1, 0)
         elif target is DType.bool:
-            return rebind[Target](self != 0)
+            return (self != 0)._refine[target]()
 
         @parameter
         if dtype is DType.bfloat16 and (
             is_amd_gpu() or not _has_native_bf16_support()
         ):
             return _bfloat16_to_f32(
-                rebind[SIMD[DType.bfloat16, size]](self)
+                self._refine[DType.bfloat16](),
             ).cast[target]()
         elif target is DType.bfloat16 and not _has_native_bf16_support():
-            return rebind[Target](_f32_to_bfloat16(self.cast[DType.float32]()))
+            return _f32_to_bfloat16(
+                self.cast[DType.float32](),
+            )._refine[target]()
+
+        @parameter
+        if dtype in (DType._uint1, DType._uint2, DType._uint4):
+            # `pop.cast` doesn't support some conversions from `ui1`, `ui2`, or `ui4`
+            var uint = __mlir_op.`pop.cast`[
+                _type = SIMD[DType.uint32, size]._mlir_type,
+                fast = __mlir_attr.unit,
+            ](self.value)
+            return SIMD[DType.uint32, size](uint).cast[target]()
 
         return __mlir_op.`pop.cast`[
-            _type = Target._mlir_type, fast = __mlir_attr.unit
+            _type = SIMD[target, size]._mlir_type, fast = __mlir_attr.unit
         ](self.value)
 
     @always_inline
@@ -2245,15 +2270,16 @@ struct SIMD[dtype: DType, size: Int](
                 # Make a bigger mask (x2) and retry
                 return self._dynamic_shuffle(mask.join({})).slice[mask_size]()
             elif mask_size == target_mask_size:
-                alias dt = SIMD[DType.uint8, target_mask_size]
-                var res = _pshuf_or_tbl1(rebind[dt](self), rebind[dt](mask))
-                return rebind[SIMD[dtype, mask_size]](res)
+                return _pshuf_or_tbl1(
+                    self._refine[DType.uint8, target_mask_size](),
+                    mask._refine[DType.uint8, target_mask_size](),
+                )._refine[dtype, mask_size]()
             elif mask_size > target_mask_size:
                 # We split it in two and call dynamic_shuffle twice.
                 var fst_mask, snd_mask = mask.split()
                 var fst = self._dynamic_shuffle(fst_mask)
                 var snd = self._dynamic_shuffle(snd_mask)
-                return rebind[SIMD[dtype, mask_size]](fst.join(snd))
+                return fst.join(snd)._refine[dtype, mask_size]()
 
         # Slow path, ~3x slower than pshuf for size 16
         var res = SIMD[dtype, mask_size]()
@@ -2332,7 +2358,7 @@ struct SIMD[dtype: DType, size: Int](
             constrained[
                 input_width == 1, "the input width must be 1 if the size is 1"
             ]()
-            return rebind[Self](value)
+            return value[0]
 
         # You cannot insert into a SIMD value at positions that are not a
         # multiple of the SIMD width via the `llvm.vector.insert` intrinsic,
@@ -2488,7 +2514,7 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if size == size_out:
-            return rebind[Self._T[size_out]](self)
+            return self._refine[size=size_out]()
         else:
             var lhs, rhs = self.split()
             return func(lhs, rhs).reduce[func, size_out]()
@@ -2518,29 +2544,17 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype.is_unsigned():
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.umax",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
+            return llvm_intrinsic[
+                "llvm.vector.reduce.umax", Scalar[dtype], has_side_effect=False
+            ](self)._refine[size=size_out]()
         elif dtype.is_integral():
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.smax",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
+            return llvm_intrinsic[
+                "llvm.vector.reduce.smax", Scalar[dtype], has_side_effect=False
+            ](self)._refine[size=size_out]()
         else:
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.fmax",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
+            return llvm_intrinsic[
+                "llvm.vector.reduce.fmax", Scalar[dtype], has_side_effect=False
+            ](self)._refine[size=size_out]()
 
     @always_inline("nodebug")
     fn reduce_min[size_out: Int = 1](self) -> SIMD[dtype, size_out]:
@@ -2567,29 +2581,17 @@ struct SIMD[dtype: DType, size: Int](
 
         @parameter
         if dtype.is_unsigned():
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.umin",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
+            return llvm_intrinsic[
+                "llvm.vector.reduce.umin", Scalar[dtype], has_side_effect=False
+            ](self)._refine[size=size_out]()
         elif dtype.is_integral():
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.smin",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
+            return llvm_intrinsic[
+                "llvm.vector.reduce.smin", Scalar[dtype], has_side_effect=False
+            ](self)._refine[size=size_out]()
         else:
-            return rebind[SIMD[dtype, size_out]](
-                llvm_intrinsic[
-                    "llvm.vector.reduce.fmin",
-                    Scalar[dtype],
-                    has_side_effect=False,
-                ](self)
-            )
+            return llvm_intrinsic[
+                "llvm.vector.reduce.fmin", Scalar[dtype], has_side_effect=False
+            ](self)._refine[size=size_out]()
 
     @always_inline
     fn reduce_add[size_out: Int = 1](self) -> SIMD[dtype, size_out]:
@@ -2748,7 +2750,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         constrained[Self.dtype is DType.bool, "the simd type must be bool"]()
         return __mlir_op.`pop.simd.select`(
-            rebind[Self._Mask](self).value,
+            self._refine[DType.bool]().value,
             true_case.value,
             false_case.value,
         )
@@ -3130,10 +3132,10 @@ fn _convert_float8_to_f32[
         @parameter
         fn wrapper_fn[
             input_dtype: DType, result_dtype: DType
-        ](val: Scalar[input_dtype]) capturing -> Scalar[result_dtype]:
-            return rebind[Scalar[result_dtype]](
-                _convert_float8_to_f32_scaler(rebind[Scalar[dtype]](val))
-            )
+        ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
+            return _convert_float8_to_f32_scaler(
+                val._refine[dtype](),
+            )._refine[result_dtype]()
 
         return _simd_apply[wrapper_fn, DType.float32, size](val)
 
@@ -3171,11 +3173,9 @@ fn _convert_f32_to_float8[
         @parameter
         fn wrapper_fn[
             input_dtype: DType, result_dtype: DType
-        ](val: Scalar[input_dtype]) capturing -> Scalar[result_dtype]:
-            return rebind[Scalar[result_dtype]](
-                _convert_f32_to_float8_scaler[dtype, result_dtype](
-                    rebind[Scalar[dtype]](val)
-                )
+        ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
+            return _convert_f32_to_float8_scaler[dtype, result_dtype](
+                val._refine[dtype]()
             )
 
         return _simd_apply[wrapper_fn, target, size](val)
@@ -3349,9 +3349,9 @@ fn _bfloat16_to_f32[
     fn wrapper_fn[
         input_dtype: DType, result_dtype: DType
     ](val: Scalar[input_dtype]) capturing -> Scalar[result_dtype]:
-        return rebind[Scalar[result_dtype]](
-            _bfloat16_to_f32_scalar(rebind[BFloat16](val))
-        )
+        return _bfloat16_to_f32_scalar(
+            val._refine[DType.bfloat16](),
+        )._refine[result_dtype]()
 
     return _simd_apply[wrapper_fn, DType.float32, size](val)
 

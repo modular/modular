@@ -1,14 +1,85 @@
+[project]
+name = "modular"
+version = "0"
+requires-python = ">= 3.9"
+
 [tool.black]
-include = '\.pyi?$'
+include = '\.mojo$'
 line-length = 80
 preview = true
 fast = true
+force-exclude = '''
+(
+  /(
+      third-party/llvm-project
+    | third-party/vllm-benchmarks
+    | \.derived
+    | venv
+    | utils/mblack
+    | KGEN/test/mojo-parser
+    | KGEN/test/mojo-isolated
+    | SDK/lib/API/python/max/serve/schemas
+  )/
+)
+'''
+
+[tool.ruff]
+line-length = 80  # Must match above
+src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directory is a python module
+extend-exclude = [
+  "**/lit.cfg.py", # Globals that aren't imported
+  "*.ipynb",
+  "*max/serve/schemas/openai.py", # Generated file
+  "Support/python/modular/utils/debuglib/lldbtypes.py",
+  "third-party",
+  "utils/build/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
+  "utils/mblack",
+]
+
+[tool.ruff.lint]
+ignore = [
+  "E401", # multiple imports on one line
+  "E402", # TODO: import top of file
+  "E711", # TODO: comparison to None
+  "E712", # TODO: Unnecessary comparison to bool
+  "E721", # TODO: Use isinstance
+  "E722", # bare except
+  "E731", # TODO: Don't assign lambda
+  "E741", # TODO: Ambiguous variable name
+  "F403", # glob imports
+  "F405", # TODO: glob imports undefined
+  "F821", # TODO: Undefined names, means script is invalid
+  "F841", # TODO: unused variables
+  "D105", # undocumented-magic-method
+  "D106", # undocumented-public-nested-class
+  "D205", # missing-blank-line-after-summary
+  "D209", # new-line-after-last-paragraph
+  "D212", # multi-line-summary-first-line (to allow init with args only)
+  "UP007", # TODO: Enable when we drop 3.9
+]
+extend-select = [
+  "I",
+  "D",
+  "UP",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"] # Ignore unused imports being re-exported
+# Slow rollout of pydocstyle lint:
+"!SDK/lib/API/python/max/{engine/api.py,driver/driver.py}" = ["D"]
 
 [tool.pyright]
-typeCheckingMode = "off"
+# TODO: Upgrade to strict mode
+typeCheckingMode = "basic"
+include = ["GenericML/tools/model/"]
+exclude = [
+  "**/node_modules",
+  "**/__pycache__",
+  "GenericML/tools/model/tests",
+  "utils/mblack",
+]
+force-exclude = ["GenericML/tools/model/tests", "utils/mblack"]
 reportMissingImports = false
-
-[project]
-requires-python = ">=3.8"
-name = "max-repo"
-version = "0.0.0"

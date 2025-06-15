@@ -27,7 +27,7 @@ from internal_utils import (
     zero,
     ndbuffer_to_str,
 )
-from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel
+from nn.bicubic import resize_bicubic, cpu_bicubic_kernel, gpu_bicubic_kernel
 from testing import assert_almost_equal
 
 alias num_elements = 20
@@ -142,7 +142,7 @@ fn test_bicubic_kernel[
         " upsampling kernel--------------------------------"
     )
     # Call the bicubic upsampling kernel.
-    cpu_bicubic_kernel(output_host.tensor, input_host.tensor)
+    resize_bicubic[target="cpu"](output_host.tensor, input_host.tensor, ctx)
     print(
         "--------------------------------after calling the bicubic upsampling"
         " kernel--------------------------------"
@@ -600,16 +600,10 @@ fn test_bicubic_kernel[
     alias H = output_dim.get[2]()
     alias W = output_dim.get[3]()
 
-    # Use fixed block size to avoid exceeding CUDA thread limits.
-    alias block_dim = 256
-    ctx.enqueue_function[gpu_bicubic_kernel[type, rank=4]](
-        output_dev.tensor,
-        input_dev.tensor,
-        grid_dim=(N, C),
-        block_dim=(block_dim,),
-    )
+    resize_bicubic[target="gpu"](output_dev.tensor, input_dev.tensor, ctx)
 
     ctx.enqueue_copy(output_ref_host.tensor.data, output_dev.buffer)
+    ctx.synchronize()
 
     print(
         "--------------------------------device"
@@ -676,6 +670,8 @@ fn test_large_image_gpu_launch[type: DType](ctx: DeviceContext) raises:
     )
 
     ctx.enqueue_copy(output_gpu_host.tensor.data, output_dev.buffer)
+
+    ctx.synchronize()
 
     print("Verifying large image GPU vs CPU results...")
     var max_diff: Float32 = 0.0

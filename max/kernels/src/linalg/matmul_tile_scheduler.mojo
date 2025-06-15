@@ -23,7 +23,7 @@ from linalg.utils_gpu import block_swizzle
 
 @fieldwise_init
 @register_passable("trivial")
-struct WorkInfo(Stringable, Writable, Copyable, Movable):
+struct WorkInfo(Copyable, Movable, Stringable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32

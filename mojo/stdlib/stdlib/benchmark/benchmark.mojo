@@ -213,7 +213,7 @@ struct Unit:
 # Report
 # ===-----------------------------------------------------------------------===#
 @fieldwise_init
-struct Report(Copyable, Movable, Defaultable):
+struct Report(Copyable, Defaultable, Movable):
     """
     Contains the average execution time, iterations, min and max of each batch.
     """

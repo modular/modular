@@ -1,8 +1,18 @@
 ---
-title: GPU architecture and terminology
-sidebar_label: Architecture and terminology
+title: Intro to GPUs
 description: An overview of GPU architecture and terminology.
 ---
+
+GPUs are essential for high-performance computation, but programming them has
+historically been a highly specialized skill. Mojo represents a chance to
+rethink GPU programming and make it more approachable. But if you've never
+programmed a GPU before, you first need to understand how the GPU hardware and
+execution model is different from a CPU. That's what this page is all
+about—there's no code here, so if you already understand GPU hardware, you can
+skip to the [Get started tutorial](/mojo/manual/gpu/intro-tutorial) or [GPU
+programming fundamentals](/mojo/manual/gpu/fundamentals).
+
+## GPU architecture overview
 
 Graphics Processing Units (GPUs) and Central Processing Units (CPUs) represent
 fundamentally different approaches to computation. While CPUs feature a few
@@ -10,10 +20,13 @@ powerful cores optimized for sequential processing and complex decision making,
 GPUs contain thousands of smaller, simpler cores designed for parallel
 processing. These simpler cores lack sophisticated features like branch
 prediction or deep instruction pipelines, but excel at performing the same
-operation across large datasets simultaneously. Modern systems take advantage of
-both processors' strengths by having the CPU handle primary program flow and
-complex logic, while offloading parallel computations to the GPU through
-specialized APIs.
+operation across large datasets simultaneously.
+
+Modern systems take advantage of both CPU and GPU processors' strengths by
+having the CPU handle primary program flow and complex logic, while offloading
+parallel computations to the GPU through specialized APIs. Figure 1 illustrates
+some of the architectural differences between the two, which we'll discuss
+further below.
 
 <figure>
 
@@ -21,17 +34,17 @@ specialized APIs.
 ![](../images/gpu/cpu-gpu-architecture-dark.png#dark)
 
 <figcaption><b>Figure 1.</b> High-level comparison of CPU vs GPU architecture,
-based on <cite>CUDA C++ Programming Guide</cite> ©2007-2025 NVIDIA Corporation &
-affiliates.</figcaption>
+based on <cite><a
+href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/">CUDA
+C++ Programming Guide</a></cite>.</figcaption>
 
 </figure>
 
-## GPU architecture overview
-
-The basic building block of a GPU is a *streaming multiprocessor* (SM), also
-known as a *compute unit* (CU) on AMD GPUs. SMs sit between the high-level GPU
-control logic and the individual execution units, acting as self-contained
-processing factories that can operate independently and in parallel.
+The basic building block of a GPU is called a *streaming multiprocessor* (SM)
+on NVIDIA GPUs or a *compute unit* (CU) on AMD GPUs (they're the same idea and
+we'll refer to them both as SM). SMs sit between the high-level GPU control
+logic and the individual execution units, acting as self-contained processing
+factories that can operate independently and in parallel.
 
 :::note
 
@@ -75,7 +88,7 @@ Each SM contains several essential components:
 ![](../images/gpu/sm-architecture-dark.png#dark)
 
 <figcaption><b>Figure 2.</b> High-level architecture of a streaming
-multiprocessor (SM).</figcaption>
+multiprocessor (SM). (Click to enlarge.)</figcaption>
 
 </figure>
 
@@ -103,14 +116,15 @@ that execute the kernel function concurrently.
 
 <figcaption><b>Figure 3.</b> Hierarchy of threads running on a GPU, showing the
 relationship of the grid, thread blocks, warps, and individual threads, based
-on <cite>HIP Programming Guide</cite> ©2023-2025 Advanced Micro Devices,
-Inc.</figcaption>
+on <cite><a
+href="https://rocm.docs.amd.com/projects/HIP/en/latest/understand/programming_model.html">HIP
+Programming Guide</a></cite></figcaption>
 
 </figure>
 
 The division of a grid into thread blocks serves multiple purposes:
 
-- It breaks down the overall workload — managed by the grid — into smaller, more
+- It breaks down the overall workload—managed by the grid—into smaller, more
   manageable portions that can be processed independently. This division allows
   for better resource utilization and scheduling flexibility across multiple SMs
   in the GPU.
@@ -121,19 +135,19 @@ The division of a grid into thread blocks serves multiple purposes:
   efficiently across different GPU architectures, as the hardware can
   automatically distribute blocks based on available resources.
 
-You specify the number of thread blocks in a grid and how they are arranged
+You must specify the number of thread blocks in a grid and how they are arranged
 across one, two, or three dimensions. Typically, you determine the dimensions of
 the grid based on the dimensionality of the data to process. For example, you
 might choose a 1-dimensional grid for processing large vectors, a 2-dimensional
 grid for processing matrices, and a 3-dimensional grid for processing the frames
-of a video. Each block within the grid is assigned a unique *block index* that
-determines its position within the grid.
+of a video. The GPU assigns each block within the grid a unique *block index*
+that determines its position within the grid.
 
-Similarly, you also specify the number of threads per thread block and how they
-are arranged across one, two, or three dimensions. Each thread within a block is
-assigned a unique *thread index* that determines its position within the block.
-The combination of block index and thread index uniquely identify the position
-of a thread within the overall grid.
+Similarly, you also must specify the number of threads per thread block and how
+they are arranged across one, two, or three dimensions. The GPU also assigns
+each thread within a block a unique *thread index* that determines its position
+within the block. The combination of block index and thread index uniquely
+identify the position of a thread within the overall grid.
 
 When a GPU assigns a thread block to execute on an SM, the SM divides the thread
 block into subsets of threads called a *warp* (or *wavefront* on AMD GPUs). The
@@ -150,7 +164,7 @@ size is 32, the SM creates:
   worth of resources (32 thread slots).
 
 The SM effectively disables the unused thread slots in partial warps, but these
-slots still consume hardware resources. For this reason, developers generally
+slots still consume hardware resources. For this reason, you generally
 should make thread block sizes a multiple of the warp size to optimize resource
 usage.
 
@@ -176,3 +190,10 @@ Warps deliver several key performance advantages:
   need for explicit synchronization.
 - The warp scheduler can hide memory latency by switching between warps,
   maximizing compute resource utilization.
+
+So far, we've explained some basic concepts about the GPU hardware and how the
+GPU executes parallel processes using threads, but without showing any code. To
+start programming a GPU with Mojo, you can either read [GPU programming
+fundamentals](/mojo/manual/gpu/fundamentals) for an overview of the Mojo
+programming model, or jump right into a project with the tutorial to [Get
+started with GPU programming](/mojo/manual/gpu/intro-tutorial).
