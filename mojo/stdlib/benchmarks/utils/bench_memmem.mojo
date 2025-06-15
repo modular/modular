@@ -26,7 +26,8 @@ from memory import UnsafePointer, bitcast, memcmp, pack_bits
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-var __haystack = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer sed dictum est, et finibus ipsum. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Nam tincidunt vel lacus vitae pulvinar. Donec ac ligula elementum, mollis purus a, lacinia quam. Maecenas vulputate mauris quis sem euismod sollicitudin. Proin accumsan nulla vel nisl congue varius. Morbi a erat dui. Aliquam maximus interdum orci, vitae pretium lorem bibendum non. Vestibulum eu lacus ullamcorper, egestas dui vel, pharetra ipsum. Pellentesque sagittis, urna a tincidunt sodales, leo sem placerat eros, vitae molestie felis diam at dolor.
+
+alias haystack = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer sed dictum est, et finibus ipsum. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Nam tincidunt vel lacus vitae pulvinar. Donec ac ligula elementum, mollis purus a, lacinia quam. Maecenas vulputate mauris quis sem euismod sollicitudin. Proin accumsan nulla vel nisl congue varius. Morbi a erat dui. Aliquam maximus interdum orci, vitae pretium lorem bibendum non. Vestibulum eu lacus ullamcorper, egestas dui vel, pharetra ipsum. Pellentesque sagittis, urna a tincidunt sodales, leo sem placerat eros, vitae molestie felis diam at dolor.
 
 Donec viverra sem sit amet facilisis laoreet. Morbi semper convallis nisi, vitae congue velit tincidunt vel. Fusce ultrices, libero vel venenatis placerat, justo tellus porttitor massa, at volutpat tortor nunc id dui. Morbi eu ex quis odio porttitor ultricies vel eget massa. Aenean quis luctus nulla. Fusce sit amet leo at quam hendrerit mattis. Morbi sed quam nisl. Quisque purus enim, iaculis sed laoreet vel, pellentesque ut orci. Vivamus risus orci, varius eu pharetra quis, tincidunt non enim. Suspendisse bibendum lacus ex, quis blandit lectus malesuada a. Maecenas iaculis porta lacus, sit amet tristique ante scelerisque non. Proin auctor elit in lacus dictum egestas. Pellentesque tincidunt justo sed vehicula blandit. Pellentesque vehicula facilisis tellus in viverra.
 
@@ -140,7 +141,7 @@ Fusce sit amet suscipit justo. Nam placerat eu orci nec lacinia. Etiam sollicitu
 
 Curabitur auctor volutpat diam vitae vehicula. Vivamus est arcu, efficitur nec interdum et, sagittis quis sem. Nam sodales vitae velit id pharetra. Mauris malesuada est quis nisi mattis, in facilisis lacus tempor. Integer cursus, risus sed molestie sollicitudin, nisi purus mattis justo, eget egestas tellus nisi mollis elit. Aenean sollicitudin justo luctus."""
 
-var __needle = "school"  # a word intentionally not in the test data
+alias needle = "school"  # a word intentionally not in the test data
 
 
 # ===-----------------------------------------------------------------------===#
@@ -190,14 +191,18 @@ fn _memmem_baseline[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_find_baseline(mut b: Bencher) raises:
+    # Make sure comptime materialization happens before the benchmark starts.
+    var local_haystack = haystack
+    var local_needle = needle
+
     @always_inline
     @parameter
     fn call_fn():
         _ = _memmem_baseline(
-            __haystack.unsafe_ptr(),
-            len(__haystack),
-            __needle.unsafe_ptr(),
-            len(__needle),
+            local_haystack.unsafe_ptr(),
+            len(local_haystack),
+            local_needle.unsafe_ptr(),
+            len(local_needle),
         )
 
     b.iter[call_fn]()
@@ -205,14 +210,18 @@ fn bench_find_baseline(mut b: Bencher) raises:
 
 @parameter
 fn bench_find_optimized(mut b: Bencher) raises:
+    # Make sure comptime materialization happens before the benchmark starts.
+    var local_haystack = haystack
+    var local_needle = needle
+
     @always_inline
     @parameter
     fn call_fn():
         _ = _memmem(
-            __haystack.unsafe_ptr(),
-            len(__haystack),
-            __needle.unsafe_ptr(),
-            len(__needle),
+            local_haystack.unsafe_ptr(),
+            len(local_haystack),
+            local_needle.unsafe_ptr(),
+            len(local_needle),
         )
 
     b.iter[call_fn]()

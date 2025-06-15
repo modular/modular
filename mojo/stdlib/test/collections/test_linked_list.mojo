@@ -13,13 +13,13 @@
 # RUN: %mojo %s
 
 from collections import LinkedList, Optional
+from memory import UnsafePointer
 
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
     MoveCounter,
-    __g_dtor_count,
 )
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
@@ -538,26 +538,17 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def inner_test_list_dtor():
-    # explicitly reset global counter
-    __g_dtor_count = 0
+def test_list_dtor():
+    var dtor_count = 0
 
     var l = LinkedList[DelCounter]()
-    assert_equal(__g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
-    l.append(DelCounter())
-    assert_equal(__g_dtor_count, 0)
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    assert_equal(dtor_count, 0)
 
     l^.__del__()
-    assert_equal(__g_dtor_count, 1)
-
-
-def test_list_dtor():
-    # call another function to force the destruction of the list
-    inner_test_list_dtor()
-
-    # verify we still only ran the destructor once
-    assert_equal(__g_dtor_count, 1)
+    assert_equal(dtor_count, 1)
 
 
 def test_iter():

@@ -20,7 +20,6 @@ from test_utils import (
     CopyCounter,
     DelCounter,
     MoveCounter,
-    __g_dtor_count,
 )
 from testing import (
     assert_equal,
@@ -866,39 +865,29 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def inner_test_list_dtor():
-    # explicitly reset global counter
-    __g_dtor_count = 0
+def test_list_dtor():
+    var dtor_count = 0
 
     var l = List[DelCounter]()
-    assert_equal(__g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
-    l.append(DelCounter())
-    assert_equal(__g_dtor_count, 0)
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    assert_equal(dtor_count, 0)
 
     l^.__del__()
-    assert_equal(__g_dtor_count, 1)
-
-
-def test_list_dtor():
-    # call another function to force the destruction of the list
-    inner_test_list_dtor()
-
-    # verify we still only ran the destructor once
-    assert_equal(__g_dtor_count, 1)
+    assert_equal(dtor_count, 1)
 
 
 # Verify we skip calling destructors for the trivial elements
 def test_destructor_trivial_elements():
-    # explicitly reset global counter
-    __g_dtor_count = 0
+    var dtor_count = 0
 
     var l = List[DelCounter, hint_trivial_type=True]()
-    l.append(DelCounter())
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
 
     l^.__del__()
 
-    assert_equal(__g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
 
 def test_list_repr():

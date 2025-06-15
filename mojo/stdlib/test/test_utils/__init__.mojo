@@ -28,7 +28,6 @@ from .types import (
     MoveOnly,
     ObservableDel,
     ObservableMoveOnly,
-    __g_dtor_count,
 )
 
 from .words import (
