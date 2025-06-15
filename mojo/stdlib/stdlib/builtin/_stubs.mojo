@@ -40,33 +40,16 @@ trait _ParamForIterator(Copyable):
         ...
 
 
+@fieldwise_init
 struct _ParamForIteratorWrapper[IteratorT: _ParamForIterator]:
     var next_it: IteratorT
     var value: IteratorT._IndexType
-    var stop: Bool
-
-    fn __init__(
-        out self,
-        next_it: IteratorT,
-        owned value: IteratorT._IndexType,
-        stop: Bool,
-    ):
-        self.next_it = next_it
-        self.value = value^
-        self.stop = stop
 
 
 fn parameter_for_generator[
     IteratorT: _ParamForIterator
 ](it: IteratorT) -> _ParamForIteratorWrapper[IteratorT]:
-    if it.__has_next__():
-        var next_it = it
-        return _ParamForIteratorWrapper(next_it, next_it.__next__(), False)
-
-    var next_iter: IteratorT
-    __mlir_op.`lit.ownership.mark_initialized`(
-        __get_mvalue_as_litref(next_iter)
-    )
-    var next_val: IteratorT._IndexType
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(next_val))
-    return _ParamForIteratorWrapper(next_iter^, next_val^, True)
+    # NOTE: This function is called by the compiler's elaborator only when
+    # __has_next__ returns true.
+    var next_it = it
+    return _ParamForIteratorWrapper(next_it, next_it.__next__())
