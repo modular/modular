@@ -10,8 +10,6 @@
 
 # Control flow related CheckLifetimes tests.
 
-from builtin.stubs import _ParamForIterator
-
 fn use(err: Error):
     pass
 
@@ -428,8 +426,8 @@ fn testInfiniteloop():
 
 @fieldwise_init
 @register_passable("trivial")
-struct TrivialRange(_ParamForIterator):
-    alias _IndexType = Int
+struct TrivialRange(IteratorTrait):
+    alias Element = Int
 
     fn __iter__(self) -> Self:
         return self
