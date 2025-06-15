@@ -1097,11 +1097,11 @@ fn use_error(e: Error):
 
 # expected-error @below {{cannot call function that may raise in a context that cannot raise}}
 # expected-note @below {{try surrounding the call in a 'try' block}}
-var __np = top_level_func()
+_ = top_level_func()
 
 # expected-error @below {{'try' must be contained in a function}}
 try:
-    var __np2 = top_level_func()
+    pass
 except e:
     # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
     use_error(e)
@@ -1114,9 +1114,8 @@ alias a = 100
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
 top_level_func_param[a]()
 
-var __y = 7
-# expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
-__y += 1
+# expected-warning @below {{global vars are deprecated; they are known-broken}}
+var globalVar = 1
 
 ##===----------------------------------------------------------------------===##
 # Decorators
