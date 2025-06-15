@@ -130,7 +130,7 @@ struct _DictKeyIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> ref [self.iter.__next__().key] K:
+    fn __next_ref__(mut self) -> ref [self.iter.__next__().key] K:
         return self.iter.__next__().key
 
     @always_inline
@@ -173,7 +173,7 @@ struct _DictValueIter[
             )
         )
 
-    fn __next__(mut self) -> ref [dict_origin] V:
+    fn __next_ref__(mut self) -> ref [dict_origin] V:
         ref entry_ref = self.iter.__next__()
         # Cast through a pointer to grant additional mutability because
         # _DictEntryIter.next erases it.

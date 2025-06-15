@@ -112,7 +112,7 @@ struct _LinkedListIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> ref [origin] ElementType:
+    fn __next_ref__(mut self) -> ref [origin] ElementType:
         var old = self.curr
 
         @parameter

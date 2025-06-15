@@ -1006,7 +1006,7 @@ struct _DequeIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> ref [deque_lifetime] ElementType:
+    fn __next_ref__(mut self) -> ref [deque_lifetime] ElementType:
         @parameter
         if forward:
             var idx = self.index

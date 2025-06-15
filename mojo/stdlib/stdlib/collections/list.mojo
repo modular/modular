@@ -56,7 +56,7 @@ struct _ListIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> ref [list_origin] T:
+    fn __next_ref__(mut self) -> ref [list_origin] T:
         @parameter
         if forward:
             self.index += 1

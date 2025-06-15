@@ -56,7 +56,7 @@ struct _SpanIter[
         return self
 
     @always_inline
-    fn __next__(mut self) -> ref [origin, address_space] T:
+    fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
             self.index += 1
