@@ -41,7 +41,6 @@ will be removed.
 
 import math
 from collections._index_normalization import normalize_index
-from sys.intrinsics import _type_is_eq
 
 from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
@@ -118,7 +117,7 @@ struct InlineArray[
             (
                 "Initialize with either a variadic list of arguments, a default"
                 " fill element or pass the keyword argument"
-                " 'unsafe_uninitialized'."
+                " 'uninitialized=True'."
             ),
         ]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))

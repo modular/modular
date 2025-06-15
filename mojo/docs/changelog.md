@@ -25,6 +25,10 @@ what we publish.
 
 ### Standard library changes
 
+- Added support for a wider range of consumer-grade AMD hardware, including:
+  - AMD Radeon RX 7xxx GPUs
+  - AMD Radeon RX 9xxx GPUs
+
 ### Tooling changes
 
 ### ❌ Removed

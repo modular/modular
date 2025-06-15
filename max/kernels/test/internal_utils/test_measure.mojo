@@ -72,14 +72,14 @@ fn test_kl_div() raises:
     var a = InlineArray[Scalar[dtype], len](uninitialized=True)
     var b = InlineArray[Scalar[dtype], len](uninitialized=True)
     for i in range(len):
-        a[i] = Scalar[dtype](0.01 * i)
-        b[i] = Scalar[dtype](0.1 * i)
+        a[i] = Scalar[dtype](1 / len)
+        b[i] = Scalar[dtype](2 * (i + 1) / (len * (len + 1)))
 
     var aa = kl_div[out_type=out_dtype](a.unsafe_ptr(), a.unsafe_ptr(), len)
     var ab = kl_div[out_type=out_dtype](a.unsafe_ptr(), b.unsafe_ptr(), len)
     assert_almost_equal(0.0, aa)
     # exact value computed using Mathematica
-    assert_almost_equal(3.013836708152679, ab)
+    assert_almost_equal(0.19430683493087375, ab)
 
 
 def main():

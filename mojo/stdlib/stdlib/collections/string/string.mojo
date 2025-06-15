@@ -94,7 +94,6 @@ from os import PathLike, abort
 from os.atomic import Atomic
 from sys import bitwidthof, is_compile_time, sizeof
 from sys.ffi import c_char
-from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcpy, memset

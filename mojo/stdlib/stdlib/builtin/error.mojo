@@ -21,7 +21,6 @@ from sys import alignof, sizeof
 from sys.ffi import c_char
 
 from memory import UnsafePointer, memcpy
-from memory.memory import _free
 from utils.write import _WriteBufferStack
 
 # ===-----------------------------------------------------------------------===#
