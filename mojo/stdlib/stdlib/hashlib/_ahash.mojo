@@ -80,7 +80,7 @@ fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
             return U128(0, 0)
 
 
-struct AHasher[key: U256](_Hasher, Defaultable):
+struct AHasher[key: U256](Defaultable, _Hasher):
     """Adopted AHash algorithm which produces fast and high quality hash value by
     implementing `_Hasher` trait.
 

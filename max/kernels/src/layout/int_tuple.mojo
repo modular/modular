@@ -325,13 +325,13 @@ struct _IntTupleIter[origin: ImmutableOrigin, tuple_origin: ImmutableOrigin]:
 
 struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     Copyable,
+    Defaultable,
+    EqualityComparable,
+    Intable,
     Movable,
     Sized,
     Stringable,
     Writable,
-    EqualityComparable,
-    Intable,
-    Defaultable,
 ):
     """A hierarchical, nested tuple of integers with efficient memory management.
 

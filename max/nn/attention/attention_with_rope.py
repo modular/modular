@@ -49,7 +49,7 @@ from ..kv_cache import (
 )
 from ..layer import Module
 from ..linear import Float8Config, Linear
-from ..rotary_embedding import OptimizedRotaryEmbedding
+from ..rotary_embedding import RotaryEmbedding
 from .interfaces import (
     AttentionImpl,
     AttentionImplQKV,
@@ -69,7 +69,7 @@ class AttentionWithRopeV1(AttentionImpl):
     # calculate rope, but it already includes a freqs_cis
     # calculation, which we will borrow
 
-    rope: OptimizedRotaryEmbedding
+    rope: RotaryEmbedding
     bias: Optional[TensorValue] = None
     perm_idx: Optional[TensorValue] = None
     quantization_config: Optional[QuantizationConfig] = None
@@ -152,12 +152,12 @@ class AttentionWithRope(Module):
     # This class will not use the RotaryEmbedding to
     # calculate rope, but it already includes a freqs_cis
     # calculation, which we will borrow
-    rope: OptimizedRotaryEmbedding
+    rope: RotaryEmbedding
 
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -478,12 +478,12 @@ class GGUFQAttentionWithRope(AttentionWithRope):
     # This class will not use the RotaryEmbedding to
     # calculate rope, but it already includes a freqs_cis
     # calculation, which we will borrow
-    rope: OptimizedRotaryEmbedding
+    rope: RotaryEmbedding
 
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -666,7 +666,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
     def __init__(
         self,
         quantization_config: QuantizationConfig,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -858,7 +858,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -1008,7 +1008,7 @@ class AttentionWithRopeQKV(AttentionImplQKV):
     # This class will not use the RotaryEmbedding to
     # calculate rope, but it already includes a freqs_cis
     # calculation, which we will borrow
-    rope: OptimizedRotaryEmbedding
+    rope: RotaryEmbedding
 
     def __call__(
         self,

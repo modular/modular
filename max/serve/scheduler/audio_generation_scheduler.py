@@ -315,8 +315,14 @@ class AudioGenerationScheduler(Scheduler):
                 self.paged_manager.max_seq_len
             )
             num_steps = min(num_steps, num_available_steps)
-
-            if not self.paged_manager.prefetch(req_data, num_steps=num_steps):
+            if (
+                # First check to see if speech token generation is active.
+                not req_data.speech_token_status.is_done
+                # Then try prefetching and checking if there is enough KV cache.
+                and not self.paged_manager.prefetch(
+                    req_data, num_steps=num_steps
+                )
+            ):
                 raise RuntimeError("Ran out of KV cache")
 
         return AudioGenerationSchedulerOutput(

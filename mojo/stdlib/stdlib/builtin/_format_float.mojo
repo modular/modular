@@ -24,11 +24,9 @@
 # KIND, either express or implied.
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray
-from math import log2
 from sys.info import sizeof
 
-from builtin.io import _printf
-from memory import Span, bitcast
+from memory import bitcast
 
 from utils.numerics import FPUtils, isinf, isnan
 

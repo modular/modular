@@ -94,7 +94,6 @@ from os import PathLike, abort
 from os.atomic import Atomic
 from sys import bitwidthof, is_compile_time, sizeof
 from sys.ffi import c_char
-from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
 from memory import Span, UnsafePointer, memcpy, memset
@@ -257,23 +256,23 @@ struct _StringOutOfLineHeader(Defaultable):
 
 
 struct String(
-    Sized,
-    Defaultable,
-    Stringable,
-    Representable,
-    IntableRaising,
-    KeyElement,
-    Comparable,
     Boolable,
-    Writable,
-    Writer,
+    Comparable,
+    ConvertibleFromPython,
+    Defaultable,
     ExplicitlyCopyable,
     FloatableRaising,
-    _HashableWithHasher,
+    IntableRaising,
+    KeyElement,
     PathLike,
-    _CurlyEntryFormattable,
     PythonConvertible,
-    ConvertibleFromPython,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+    Writer,
+    _CurlyEntryFormattable,
+    _HashableWithHasher,
 ):
     """Represents a mutable string.
 

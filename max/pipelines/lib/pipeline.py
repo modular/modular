@@ -68,11 +68,22 @@ if TYPE_CHECKING:
 
 from .config_enums import RepoType, SupportedEncoding
 from .hf_utils import download_weight_files
+from .lora import LoRAManager
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
 try:
+    # xgrammar configures the root logger, which also transitively
+    # impacts anyone using us as a library.  So let's avoid the damage here.
+    originalBasicConfig = logging.basicConfig
+
+    def basicConfig(**kwargs):
+        pass
+
+    logging.basicConfig = basicConfig
     import xgrammar as xgr
+
+    logging.basicConfig = originalBasicConfig
 except ImportError:
     pass
 
@@ -552,6 +563,15 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 for x in self._pipeline_config.model_config.weight_path
             ]
 
+        weights = load_weights(weight_paths)
+
+        if self._pipeline_config.lora_config is not None:
+            self._lora_manager = LoRAManager(
+                weights,
+                self._pipeline_config.lora_config.max_num_loras,
+                self._pipeline_config.lora_config.lora_paths,
+            )
+
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -886,7 +906,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             dtype=np.int64,
         )
         top_k = Tensor.from_numpy(top_k_np).to(self._devices[0])
-        max_k_np = np.array([np.max(top_k_np)], dtype=np.int64)
+        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
         max_k = Tensor.from_numpy(max_k_np)
 
         top_p = Tensor.from_numpy(

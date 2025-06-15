@@ -100,8 +100,8 @@ fn _build_list[start: Int, stop: Int]() -> List[Int]:
 
 
 alias width = bitwidthof[Int]()
-var int_values = _build_list[-(2 ** (width - 1)), 2 ** (width - 1) - 1]()
-var uint_values = _build_list[0, 2**width - 1]()
+var __int_values = _build_list[-(2 ** (width - 1)), 2 ** (width - 1) - 1]()
+var __uint_values = _build_list[0, 2**width - 1]()
 
 
 @parameter
@@ -110,8 +110,8 @@ fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(uint_values)):
-                var result = func(uint_values.unsafe_get(i))
+            for i in range(len(__uint_values)):
+                var result = func(__uint_values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()
@@ -123,8 +123,8 @@ fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(uint_values)):
-                var result = func(uint_values.unsafe_get(i))
+            for i in range(len(__uint_values)):
+                var result = func(__uint_values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()

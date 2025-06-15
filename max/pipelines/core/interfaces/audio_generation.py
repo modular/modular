@@ -70,13 +70,13 @@ class AudioGenerationRequest:
     """(ONLY FOR BENCHMARKING PURPOSES) An assistant message that replaces the
     speech token pattern."""
 
-    token_ids: Optional[list[int]] = field(default=None)
-    """Optionally provide a preprocessed list of token ids to pass as input directly into the model.
+    prompt: Optional[list[int] | str] = field(default=None)
+    """Optionally provide a preprocessed list of token ids or a prompt string to pass as input directly into the model.
     This replaces automatically generating TokenGeneratorRequestMessages given the input, audio prompt tokens,
     audio prompt transcription fields."""
 
     def __post_init__(self) -> None:
-        if self.token_ids is None and input is None:
+        if self.prompt is None and self.input is None:
             raise RuntimeError("either token_ids or input must be provided.")
 
 

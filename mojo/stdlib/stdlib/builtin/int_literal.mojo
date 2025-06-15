@@ -19,13 +19,13 @@ from math import Ceilable, Floorable, Truncable
 @register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Ceilable,
+    Defaultable,
     Floorable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
     Stringable,
     Truncable,
-    Defaultable,
 ):
     """This type represents a static integer literal value with
     infinite precision.  This type is a compile-time construct which stores its

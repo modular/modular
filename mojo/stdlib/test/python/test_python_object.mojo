@@ -624,7 +624,7 @@ def test_contains_dunder():
 
 
 @fieldwise_init
-struct Person(Movable, Defaultable, Representable):
+struct Person(Defaultable, Movable, Representable):
     var name: String
     var age: Int
 

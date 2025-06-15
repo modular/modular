@@ -45,7 +45,7 @@ struct DiagnosticSeverity(Copyable, Movable):
         return self.c.value == other.c.value
 
 
-struct Diagnostic(Stringable, Writable, Copyable, Movable):
+struct Diagnostic(Copyable, Movable, Stringable, Writable):
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 

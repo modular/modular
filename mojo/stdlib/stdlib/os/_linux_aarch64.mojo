@@ -28,7 +28,7 @@ alias blkcnt_t = Int64
 alias blksize_t = Int32
 
 
-struct _c_stat(Copyable, Movable, Stringable, Writable, Defaultable):
+struct _c_stat(Copyable, Defaultable, Movable, Stringable, Writable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_ino: Int64

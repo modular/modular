@@ -11,7 +11,6 @@ method.
 For example:
 
 ```mojo
-from collections import List
 from pathlib import Path
 
 

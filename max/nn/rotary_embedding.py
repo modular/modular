@@ -115,7 +115,11 @@ class RotaryEmbedding(Module):
 
     @cached_property
     def freqs_cis(self) -> TensorValue:
-        self._freqs_cis = self.freqs_cis_base()
+        # self._freqs_cis = self.freqs_cis_base()
+        freqs = self.freqs_cis_base()
+        d1, d2, d3 = freqs.shape  # (max_seq_len * 2, head_dim // 2, 2)
+        new_f_shape = [d1, d2 * d3]  # (max_seq_len * 2, head_dim)
+        self._freqs_cis = ops.reshape(freqs, new_f_shape)
         return self._freqs_cis
 
     def compute_scale(self, user_scale: Optional[float] = None) -> float:
@@ -190,20 +194,6 @@ class RotaryEmbedding(Module):
         return ops.cast(ops.reshape(rope_complex, v.shape), v.dtype)
 
 
-class OptimizedRotaryEmbedding(RotaryEmbedding):
-    """
-    Optimized version of RotaryEmbedding using 2D frequency tensor representation.
-    """
-
-    @cached_property
-    def freqs_cis(self):
-        freqs = self.freqs_cis_base()
-        d1, d2, d3 = freqs.shape  # (max_seq_len * 2, head_dim // 2, 2)
-        new_f_shape = [d1, d2 * d3]  # (max_seq_len * 2, head_dim)
-        self._freqs_cis = ops.reshape(freqs, new_f_shape)
-        return self._freqs_cis
-
-
 @dataclass
 class Llama3RopeScalingParams:
     factor: float
@@ -216,7 +206,7 @@ class Llama3RopeScalingParams:
     """The original maximum position length supported by the model."""
 
 
-class Llama3RotaryEmbedding(OptimizedRotaryEmbedding):
+class Llama3RotaryEmbedding(RotaryEmbedding):
     """
     RotaryEmbedding for Llama3 that takes rope scaling into account.
     """
@@ -303,7 +293,7 @@ class DeepseekYarnRopeScalingParams:
     """Scaling factor applied to all dimensions."""
 
 
-class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
+class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
     """
     Deepseek's YaRN (Yet another RoPE eNhancement) Rotary Position Embedding layer.
 
