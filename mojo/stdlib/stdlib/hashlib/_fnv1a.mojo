@@ -60,22 +60,15 @@ struct Fnv1a(Defaultable, _Hasher):
             value.dtype.sizeof() % 8 > 0
         )
 
+        var bits = value.to_bits()
+
         @parameter
         for i in range(value.size):
-            var v = value[i]
+            var v = bits[i]
 
             @parameter
             for r in range(rounds):
-                var u64: UInt64
-
-                @parameter
-                if value.dtype.is_floating_point():
-                    u64 = v.to_bits().cast[DType.uint64]()
-                elif value.dtype.is_integral():
-                    u64 = (v >> (r * 64)).cast[DType.uint64]()
-                else:
-                    u64 = v.cast[DType.uint64]()
-                self._value ^= u64.cast[DType.uint64]()
+                self._value ^= (v >> (r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 
     fn update[T: _HashableWithHasher](mut self, value: T):

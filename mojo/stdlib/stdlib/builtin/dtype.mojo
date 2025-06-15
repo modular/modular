@@ -957,13 +957,17 @@ fn _integral_type_of[dtype: DType]() -> DType:
     """Gets the integral type which has the same bitwidth as the input type."""
 
     @parameter
-    if dtype.is_integral():
+    if dtype is DType.bool:
+        return DType.int8
+
+    elif dtype.is_integral():
         return dtype
+
     elif dtype.is_float8():
         return DType.int8
     elif dtype.is_half_float():
         return DType.int16
-    elif dtype is DType.float32 or dtype is DType.tensor_float32:
+    elif dtype in (DType.float32, DType.tensor_float32):
         return DType.int32
     elif dtype is DType.float64:
         return DType.int64
@@ -982,15 +986,19 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
     the input type."""
 
     @parameter
-    if dtype.is_unsigned():
+    if dtype is DType.bool:
+        return DType.uint8
+
+    elif dtype.is_unsigned():
         return dtype
     elif dtype.is_integral():
         return _uint_type_of_width[bitwidthof[dtype]()]()
+
     elif dtype.is_float8():
         return DType.uint8
     elif dtype.is_half_float():
         return DType.uint16
-    elif dtype is DType.float32 or dtype is DType.tensor_float32:
+    elif dtype in (DType.float32, DType.tensor_float32):
         return DType.uint32
     elif dtype is DType.float64:
         return DType.uint64
