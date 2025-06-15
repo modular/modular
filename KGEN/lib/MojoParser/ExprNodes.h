@@ -32,10 +32,6 @@ namespace M::KGEN::LIT {
 struct ParsedArgument;
 class SRValue;
 
-PValue resolveAliasReference(AliasDeclOp decl, StringRef declName,
-                             ArrayRef<TypedAttr> paramValues, SMLoc errLoc,
-                             IREmitter &emitter);
-
 /// The IREmitter depends on ExprNode to provide a location and emit IR for
 /// its value. In the case of synthetic code, there is a source sequence that
 /// triggered the generation but not necessarily a value associated with the
