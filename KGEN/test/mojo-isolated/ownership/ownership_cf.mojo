@@ -10,6 +10,7 @@
 
 # Control flow related CheckLifetimes tests.
 
+from builtin.stubs import _ParamForIterator
 
 fn use(err: Error):
     pass
@@ -427,7 +428,7 @@ fn testInfiniteloop():
 
 @fieldwise_init
 @register_passable("trivial")
-struct TrivialRange:
+struct TrivialRange(_ParamForIterator):
     alias _IndexType = Int
 
     fn __iter__(self) -> Self:
@@ -493,8 +494,10 @@ fn test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem)
     var mem = MemExample()
 
-    # CHECK: kgen.param.for *"x`1"{{.*}}!kgen.none>
-    # CHECK-NEXT: {
+    # CHECK: kgen.param.for *"x`1": !Int in
+    # CHECK-NEXT: has_next
+    # CHECK-NEXT: get_next
+    # CHECK-SAME: {
     @parameter
     for x in TrivialRange():
         # Make sure nothing sneaks in here.
@@ -548,8 +551,10 @@ fn test_param_for2():
     # CHECK: lit.call {{.*}}__init__{{.*}}(%mem)
     var mem = MemExample()
 
-    # CHECK: kgen.param.for *"x`1"{{.*}}!kgen.none>
-    # CHECK-NEXT: {
+    # CHECK: kgen.param.for *"x`1": !Int in
+    # CHECK-NEXT: has_next
+    # CHECK-NEXT: get_next
+    # CHECK-SAME: {
     @parameter
     for x in TrivialRange():
         # Make sure nothing sneaks in here.

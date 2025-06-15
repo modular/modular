@@ -359,7 +359,9 @@ kgen.generator @parent<A>() {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee() always_inline {
-  kgen.param.for A in ? iter :() -> () ? {
+  kgen.param.for A in ?
+     has_next :() -> i1 ?
+     get_next :() -> () ? {
     kgen.param.constant = <A>
     kgen.param.for.continue
   } else {

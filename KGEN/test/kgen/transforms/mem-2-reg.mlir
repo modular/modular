@@ -523,8 +523,12 @@ kgen.generator @param_for() -> index {
   %idx0 = index.constant 0
   pop.store %idx0, %mem : !kgen.pointer<index>
   // CHECK-NEXT: %0 = kgen.param.for
-  // CHECK-NEXT: (%arg0 = %idx0 : index) -> index
-  kgen.param.for decl: index in :index 2 iter :(index, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @wrapper {
+  // CHECK-NEXT: has_next
+  // CHECK-NEXT: get_next
+  // CHECK-SAME: (%arg0 = %idx0 : index) -> index
+  kgen.param.for decl: index in :index 2
+    has_next :(index) -> i1 @has_next_wrapper
+    get_next :(index, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @wrapper {
     // CHECK-NEXT: %index = kgen.param.constant
     %0 = kgen.param.constant = <decl>
     %1 = pop.load %mem : !kgen.pointer<index>

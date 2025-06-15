@@ -174,7 +174,9 @@ kgen.generator @foo<DT>() {
   // CHECK-NEXT:   hlcf.loop
   // CHECK-NEXT:     kgen.param.declare A = <1> loc(#[[LOC0]])
   // CHECK:        kgen.param.for
-  // CHECK-NEXT:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !pop.simd<N, DT0>) -> !pop.simd<N, DT0>
+  // CHECK-NEXT: has_next
+  // CHECK-NEXT: get_next
+  // CHECK-SAME:     (%arg1 loc(fused<#[[SP0]]>[#[[LOC_ORI]]]) = %arg0 : !pop.simd<N, DT0>) -> !pop.simd<N, DT0>
   // CHECK:        } else (%arg1: !pop.simd<N, DT0> loc(fused<#[[SP0]]>[#[[LOC_ORI]]]))
   kgen.call @bar() : () -> ()
   kgen.return
@@ -187,7 +189,9 @@ kgen.generator @bar() always_inline {
       hlcf.break loc(#loc)
     } loc(#loc)
 
-    %0 = kgen.param.for I in ? iter :() -> () ?
+    %0 = kgen.param.for I in ?
+      has_next :() -> i1 ?
+      get_next :() -> () ?
     (%arg1 loc(#loc) = %arg0 : !pop.simd<N, DT>) -> !pop.simd<N, DT> {
       kgen.param.yield %arg1 : !pop.simd<N, DT> loc(#loc)
     } else (%arg1 : !pop.simd<N, DT> loc(#loc)) {

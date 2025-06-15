@@ -116,7 +116,9 @@ kgen.generator @outline_closures_ref<a>() {
 // CHECK-LABEL: @ignore_param_defined_in_nested_non_decl_region_scope()
 kgen.generator @ignore_param_defined_in_nested_non_decl_region_scope() {
   kgen.param.declare.region closure = () {
-    kgen.param.for decl: index in :index 2 iter :(index) -> !kgen.none @wrapper {
+    kgen.param.for decl: index in :index 2
+      has_next :(index) -> i1 @wrapper2
+      get_next :(index) -> !kgen.none @wrapper {
       kgen.param.for.continue loc(fused<#kgen.param.decl.ref<"decl"> : index>["x:0"])
     } else {
       kgen.param.yield
