@@ -1857,7 +1857,7 @@ kgen.generator @sum_from_zero<upper>() -> index {
   %idx0 = index.constant 0
   %0 = kgen.param.for i in upper
     has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %idx0 : index) -> index {
     %1 = kgen.param.constant = <i>
     %2 = index.add %arg0, %1
@@ -1883,7 +1883,7 @@ kgen.generator @terminators(%arg0: i1) {
   // CHECK-NEXT: }
   kgen.param.for i in 1
     has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero {
     hlcf.if %arg0 {
       kgen.return
     } else {
@@ -1904,10 +1904,10 @@ kgen.generator @nested_param_for() {
   // CHECK: { 1, 1 }
   kgen.param.for i in 2
   has_next :(index) -> i1 @count_to_zero_has_next
-  get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
+  get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero {
     kgen.param.for j in 2
     has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero {
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero {
       kgen.param.constant: struct<(index, index)> = <{ i, j }>
       kgen.param.for.continue
     } else {
@@ -1948,7 +1948,7 @@ kgen.generator @for_else<upper>(%arg0: index) -> index {
   kgen.param.declare param = <add(upper, 1)>
   %0 = kgen.param.for i in upper
     has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero
     (%arg1 = %arg0 : index) -> index {
     kgen.param.for.continue %arg1 : index
   } else (%arg1: index) {
@@ -1965,7 +1965,7 @@ kgen.generator @parametric_result() {
   %0 = kgen.param.constant: array<a, i1> = <?>
   %1 = kgen.param.for i in 1
       has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @count_to_zero
+    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %0 : !pop.array<a, i1>) -> !pop.array<a, i1> {
     kgen.param.for.continue %arg0 : !pop.array<a, i1>
   } else (%arg0: !pop.array<a, i1>) {
@@ -1974,23 +1974,13 @@ kgen.generator @parametric_result() {
   kgen.return
 }
 
-kgen.generator @count_to_zero(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none {
+kgen.generator @count_to_zero(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none {
   %i0 = pop.load %arg0 : !kgen.pointer<index>
-  %none = kgen.param.constant: none = <#kgen.none>
-  %idx0 = index.constant 0
-  %0 = index.cmp eq(%idx0, %i0)
-  hlcf.if %0 {
-    %struct = kgen.param.constant: struct<(index, index, i1)> = <{ 0, 0, 1 }>
-    pop.store %struct, %arg1 : !kgen.pointer<struct<(index, index, i1)>>
-    kgen.return %none : !kgen.none
-  } else {
-    hlcf.yield
-  }
   %idx1 = index.constant 1
   %1 = index.sub %i0, %idx1
-  %false = index.bool.constant false
-  %2 = kgen.struct.create(%1, %i0, %false) : !kgen.struct<(index, index, i1)>
-  pop.store %2, %arg1 : !kgen.pointer<struct<(index, index, i1)>>
+  %2 = kgen.struct.create(%1, %i0) : !kgen.struct<(index, index)>
+  pop.store %2, %arg1 : !kgen.pointer<struct<(index, index)>>
+  %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
 
