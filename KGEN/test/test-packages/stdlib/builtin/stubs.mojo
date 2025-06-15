@@ -753,6 +753,10 @@ struct VariadicPack[
         `>`,
     ]
 
+    # This disables nested origin exclusivity checking because it is taking a
+    # raw variadic pack which can have nested origins in it (which this does not
+    # dereference).
+    @__unsafe_disable_nested_origin_exclusivity
     fn __init__(out self, value: Self._mlir_pack_type):
         pass
 
