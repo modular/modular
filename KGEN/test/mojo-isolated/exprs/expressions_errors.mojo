@@ -904,7 +904,7 @@ fn test_mergewith_pointer():
     # works here.
 
     # expected-error @below {{'List[Pointer[Int, {a, b}]]' does not implement the '__iter__' method}}
-    # expected-error @below {{argument of '__init__' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-error @below {{argument of 'List[Pointer[Int, {a, b}]]' initializer call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'a' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
     # expected-note @below {{'b' memory accessed through reference embedded in value of type 'Pointer[Int, {a, b}]'}}
     for elt in [Pointer(to=a), Pointer(to=b)]:

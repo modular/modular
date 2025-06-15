@@ -1401,8 +1401,16 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
                 getDeclResolver().getDeclForFuncSymbol(symbol.getSymbol())) {
           auto calleeFunc = cast<FnOp>(*calleeDecl);
 
-          if (auto sourceName = calleeFunc.getSourceNameAttr())
+          // Print "'Type' initializer" instead of just '__init__'.
+          if (calleeFunc.getSpecialFunctionInfo().isInitializer()) {
+            // Use the bound result type, which is the result of the init,
+            // not the generic unbound one from the containing decl.
+            auto resultType =
+                cast<FnTypeGeneratorType>(pv.getType()).getUserResultType();
+            diag << resultType << " initializer ";
+          } else if (auto sourceName = calleeFunc.getSourceNameAttr()) {
             diag << sourceName << ' ';
+          }
         }
       }
     }
