@@ -2888,6 +2888,9 @@ class ParamForOp(max._core.Operation):
     The `kgen.param.for` operation instantiates its body with values according
     to its iterator. It takes an initial value, an iterate method that takes an
     iterator instance and returns the next value plus the next iterator.
+
+    This operation can have loop-carried values - the "operands" inputs and
+    results, which are values promoted within the loop by mem2reg.
     """
 
     @overload
@@ -2897,7 +2900,8 @@ class ParamForOp(max._core.Operation):
         location: Location,
         results: Sequence[max._core.Value[max._core.Type]],
         initial: max._core.dialects.builtin.TypedAttr,
-        iterate: max._core.dialects.builtin.TypedAttr,
+        has_next: max._core.dialects.builtin.TypedAttr,
+        get_next: max._core.dialects.builtin.TypedAttr,
         param_decl: ParamDeclAttr,
         operands: Sequence[max._core.Value[max._core.Type]],
         body_isolated: max._core.dialects.builtin.UnitAttr,
@@ -2909,7 +2913,8 @@ class ParamForOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         initial: max._core.dialects.builtin.TypedAttr,
-        iterate: max._core.dialects.builtin.TypedAttr,
+        has_next: max._core.dialects.builtin.TypedAttr,
+        get_next: max._core.dialects.builtin.TypedAttr,
         param_decl: ParamDeclAttr,
     ) -> None: ...
     @property
@@ -2917,9 +2922,17 @@ class ParamForOp(max._core.Operation):
     @initial.setter
     def initial(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
     @property
-    def iterate(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @iterate.setter
-    def iterate(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
+    def has_next(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @has_next.setter
+    def has_next(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
+    @property
+    def get_next(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @get_next.setter
+    def get_next(
+        self, arg: max._core.dialects.builtin.TypedAttr, /
+    ) -> None: ...
     @property
     def param_decl(self) -> ParamDeclAttr: ...
     @param_decl.setter
