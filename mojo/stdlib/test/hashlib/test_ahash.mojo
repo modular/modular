@@ -16,13 +16,15 @@ from hashlib._ahash import AHasher
 from hashlib._hasher import _hash_with_hasher as hash
 from hashlib.hash import hash as old_hash
 
-from bit import pop_count
 from builtin._location import __call_location
 from memory import memset_zero
 from testing import assert_equal, assert_not_equal, assert_true
 
 from test_utils import (
+    dif_bits,
     gen_word_pairs,
+    assert_dif_hashes,
+    assert_fill_factor,
     words_ar,
     words_el,
     words_en,
@@ -30,25 +32,8 @@ from test_utils import (
     words_lv,
     words_pl,
     words_ru,
+    dif_bits,
 )
-
-
-def dif_bits(i1: UInt64, i2: UInt64) -> Int:
-    return Int(pop_count(i1 ^ i2))
-
-
-@always_inline
-def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
-    for i in range(len(hashes)):
-        for j in range(i + 1, len(hashes)):
-            var diff = dif_bits(hashes[i], hashes[j])
-            assert_true(
-                diff > upper_bound,
-                String("Index: {}:{}, diff between: {} and {} is: {}").format(
-                    i, j, hashes[i], hashes[j], diff
-                ),
-                location=__call_location(),
-            )
 
 
 alias hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
@@ -134,31 +119,6 @@ def test_trailing_zeros():
 
 
 @always_inline
-def assert_fill_factor[
-    label: String
-](words: List[String], num_buckets: Int, lower_bound: Float64):
-    # A perfect hash function is when the number of buckets is equal to number of words
-    # and the fill factor results in 1.0
-    var buckets = List[Int](0) * num_buckets
-    for w in words:
-        var h = hash[HasherType=hasher0](w)
-        buckets[Int(h) % num_buckets] += 1
-    var unfilled = 0
-    for v in buckets:
-        if v == 0:
-            unfilled += 1
-
-    var fill_factor = 1 - unfilled / num_buckets
-    assert_true(
-        fill_factor >= lower_bound,
-        String("Fill factor for {} is {}, provided lower boound was {}").format(
-            label, fill_factor, lower_bound
-        ),
-        location=__call_location(),
-    )
-
-
-@always_inline
 def assert_fill_factor_old_hash[
     label: String
 ](words: List[String], num_buckets: Int, lower_bound: Float64):
@@ -185,59 +145,59 @@ def assert_fill_factor_old_hash[
 
 def test_fill_factor():
     var words: List[String] = gen_word_pairs[words_ar]()
-    assert_fill_factor["AR"](words, len(words), 0.63)
-    assert_fill_factor["AR"](words, len(words) // 2, 0.86)
-    assert_fill_factor["AR"](words, len(words) // 4, 0.98)
-    assert_fill_factor["AR"](words, len(words) // 13, 1.0)
+    assert_fill_factor["AR", hasher0](words, len(words), 0.63)
+    assert_fill_factor["AR", hasher0](words, len(words) // 2, 0.86)
+    assert_fill_factor["AR", hasher0](words, len(words) // 4, 0.98)
+    assert_fill_factor["AR", hasher0](words, len(words) // 13, 1.0)
 
     # TODO: flaky test
     # assert_fill_factor_old_hash["AR"](words, len(words), 0.59)
 
     words = gen_word_pairs[words_el]()
-    assert_fill_factor["EL"](words, len(words), 0.63)
-    assert_fill_factor["EL"](words, len(words) // 2, 0.86)
-    assert_fill_factor["EL"](words, len(words) // 4, 0.98)
-    assert_fill_factor["EL"](words, len(words) // 13, 1.0)
+    assert_fill_factor["EL", hasher0](words, len(words), 0.63)
+    assert_fill_factor["EL", hasher0](words, len(words) // 2, 0.86)
+    assert_fill_factor["EL", hasher0](words, len(words) // 4, 0.98)
+    assert_fill_factor["EL", hasher0](words, len(words) // 13, 1.0)
 
     assert_fill_factor_old_hash["EL"](words, len(words), 0.015)
 
     words = gen_word_pairs[words_en]()
-    assert_fill_factor["EN"](words, len(words), 0.63)
-    assert_fill_factor["EN"](words, len(words) // 2, 0.85)
-    assert_fill_factor["EN"](words, len(words) // 4, 0.98)
-    assert_fill_factor["EN"](words, len(words) // 14, 1.0)
+    assert_fill_factor["EN", hasher0](words, len(words), 0.63)
+    assert_fill_factor["EN", hasher0](words, len(words) // 2, 0.85)
+    assert_fill_factor["EN", hasher0](words, len(words) // 4, 0.98)
+    assert_fill_factor["EN", hasher0](words, len(words) // 14, 1.0)
 
     assert_fill_factor_old_hash["EN"](words, len(words), 0.015)
 
     words = gen_word_pairs[words_he]()
-    assert_fill_factor["HE"](words, len(words), 0.63)
-    assert_fill_factor["HE"](words, len(words) // 2, 0.86)
-    assert_fill_factor["HE"](words, len(words) // 4, 0.98)
-    assert_fill_factor["HE"](words, len(words) // 14, 1.0)
+    assert_fill_factor["HE", hasher0](words, len(words), 0.63)
+    assert_fill_factor["HE", hasher0](words, len(words) // 2, 0.86)
+    assert_fill_factor["HE", hasher0](words, len(words) // 4, 0.98)
+    assert_fill_factor["HE", hasher0](words, len(words) // 14, 1.0)
 
     assert_fill_factor_old_hash["HE"](words, len(words), 0.2)
 
     words = gen_word_pairs[words_lv]()
-    assert_fill_factor["LV"](words, len(words), 0.63)
-    assert_fill_factor["LV"](words, len(words) // 2, 0.86)
-    assert_fill_factor["LV"](words, len(words) // 4, 0.98)
-    assert_fill_factor["LV"](words, len(words) // 13, 0.99)
+    assert_fill_factor["LV", hasher0](words, len(words), 0.63)
+    assert_fill_factor["LV", hasher0](words, len(words) // 2, 0.86)
+    assert_fill_factor["LV", hasher0](words, len(words) // 4, 0.98)
+    assert_fill_factor["LV", hasher0](words, len(words) // 13, 0.99)
 
     assert_fill_factor_old_hash["LV"](words, len(words), 0.015)
 
     words = gen_word_pairs[words_pl]()
-    assert_fill_factor["PL"](words, len(words), 0.63)
-    assert_fill_factor["PL"](words, len(words) // 2, 0.86)
-    assert_fill_factor["PL"](words, len(words) // 4, 0.98)
-    assert_fill_factor["PL"](words, len(words) // 13, 1.0)
+    assert_fill_factor["PL", hasher0](words, len(words), 0.63)
+    assert_fill_factor["PL", hasher0](words, len(words) // 2, 0.86)
+    assert_fill_factor["PL", hasher0](words, len(words) // 4, 0.98)
+    assert_fill_factor["PL", hasher0](words, len(words) // 13, 1.0)
 
     assert_fill_factor_old_hash["PL"](words, len(words), 0.015)
 
     words = gen_word_pairs[words_ru]()
-    assert_fill_factor["RU"](words, len(words), 0.63)
-    assert_fill_factor["RU"](words, len(words) // 2, 0.86)
-    assert_fill_factor["RU"](words, len(words) // 4, 0.98)
-    assert_fill_factor["RU"](words, len(words) // 13, 1.0)
+    assert_fill_factor["RU", hasher0](words, len(words), 0.63)
+    assert_fill_factor["RU", hasher0](words, len(words) // 2, 0.86)
+    assert_fill_factor["RU", hasher0](words, len(words) // 4, 0.98)
+    assert_fill_factor["RU", hasher0](words, len(words) // 13, 1.0)
 
     assert_fill_factor_old_hash["RU"](words, len(words), 0.015)
 

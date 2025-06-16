@@ -126,7 +126,11 @@ struct AHasher[key: U256](Defaultable, _Hasher):
         self.buffer = rotate_bits_left[ROT]((self.buffer + self.pad) ^ combined)
 
     fn _update_with_bytes(
-        mut self, data: UnsafePointer[UInt8, mut=False, **_], length: Int
+        mut self,
+        data: UnsafePointer[
+            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
+        ],
+        length: Int,
     ):
         """Consume provided data to update the internal buffer.
 

@@ -26,7 +26,11 @@ struct DummyHasher(_Hasher):
         self._dummy_value = 0
 
     fn _update_with_bytes(
-        mut self, data: UnsafePointer[UInt8, mut=False, **_], length: Int
+        mut self,
+        data: UnsafePointer[
+            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
+        ],
+        length: Int,
     ):
         for i in range(length):
             self._dummy_value += data[i].cast[DType.uint64]()

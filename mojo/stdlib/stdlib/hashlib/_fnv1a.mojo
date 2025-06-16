@@ -32,7 +32,11 @@ struct Fnv1a(Defaultable, _Hasher):
         self._value = 0xCBF29CE484222325
 
     fn _update_with_bytes(
-        mut self, data: UnsafePointer[UInt8, mut=False, **_], length: Int
+        mut self,
+        data: UnsafePointer[
+            UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
+        ],
+        length: Int,
     ):
         """Consume provided data to update the internal buffer.
 
