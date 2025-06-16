@@ -79,7 +79,7 @@ fn mlirInferTypeOpInterfaceTypeID() -> MlirTypeID:
 # consecutive elements pointed to by the second argument. The third argument
 # is an opaque pointer forwarded to the callback by the caller.
 alias MlirTypesCallback = fn (
-    Int32, UnsafePointer[MlirType], UnsafePointer[NoneType]
+    Int32, UnsafePointer[MlirType], OpaquePointer
 ) -> None
 
 
@@ -90,11 +90,11 @@ fn mlirInferTypeOpInterfaceInferReturnTypes(
     n_operands: Int,
     operands: UnsafePointer[MlirValue],
     attributes: MlirAttribute,
-    properties: UnsafePointer[NoneType],
+    properties: OpaquePointer,
     n_regions: Int,
     regions: UnsafePointer[MlirRegion],
     callback: MlirTypesCallback,
-    user_data: UnsafePointer[NoneType],
+    user_data: OpaquePointer,
 ) -> MlirLogicalResult:
     """Infers the return types of the operation identified by its canonical given
     the arguments that will be supplied to its generic builder. Calls `callback`
@@ -140,7 +140,7 @@ alias MlirShapedTypeComponentsCallback = fn (
     UnsafePointer[Int64],
     MlirType,
     MlirAttribute,
-    UnsafePointer[NoneType],
+    OpaquePointer,
 ) -> None
 
 
@@ -151,11 +151,11 @@ fn mlirInferShapedTypeOpInterfaceInferReturnTypes(
     n_operands: Int,
     operands: UnsafePointer[MlirValue],
     attributes: MlirAttribute,
-    properties: UnsafePointer[NoneType],
+    properties: OpaquePointer,
     n_regions: Int,
     regions: UnsafePointer[MlirRegion],
     callback: MlirShapedTypeComponentsCallback,
-    user_data: UnsafePointer[NoneType],
+    user_data: OpaquePointer,
 ) -> MlirLogicalResult:
     """Infers the return shaped type components of the operation. Calls `callback`
     with the types of inferred arguments on success. Returns failure otherwise.

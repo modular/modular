@@ -39,7 +39,9 @@ what we publish.
 - Added WMMA matrix-multiplication instructions for RDNA3+ GPUs to help support
   running AI models on those GPUs.
 
-- `memory.UnsafePointer` is now implicitly included in all mojo files.
+- `memory.UnsafePointer` is now implicitly included in all mojo files. Moreover,
+  `OpaquePointer` (the equivalent of a `void*` in C) is moved into the `memory`
+  module, and is also implicitly included.
 
 ### Tooling changes
 

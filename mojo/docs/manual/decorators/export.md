@@ -38,6 +38,6 @@ identifier. For example:
 
 ```mojo
 @export("my_func", ABI="C")
-fn my_function(name: StaticString, ptr: UnsafePointer[NoneType]) -> None:
+fn my_function(name: StaticString, ptr: OpaquePointer) -> None:
     pass
 ```

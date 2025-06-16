@@ -699,7 +699,7 @@ fn mlirDenseElementsAttrGet(
 fn mlirDenseElementsAttrRawBufferGet(
     shaped_type: MlirType,
     raw_buffer_size: Int,
-    raw_buffer: UnsafePointer[NoneType],
+    raw_buffer: OpaquePointer,
 ) -> MlirAttribute:
     """Creates a dense elements attribute with the given Shaped type and elements
     populated from a packed, row-major opaque buffer of contents.
@@ -1044,11 +1044,9 @@ fn mlirDenseElementsAttrGetStringValue(
 
 fn mlirDenseElementsAttrGetRawData(
     attr: MlirAttribute,
-) -> UnsafePointer[NoneType]:
+) -> OpaquePointer:
     """Returns the raw data of the given dense elements attribute."""
-    return MLIR_func[
-        "mlirDenseElementsAttrGetRawData", UnsafePointer[NoneType]
-    ](attr)
+    return MLIR_func["mlirDenseElementsAttrGetRawData", OpaquePointer](attr)
 
 
 # ===----------------------------------------------------------------------===//
@@ -1063,14 +1061,12 @@ fn mlirAttributeIsADenseResourceElements(attr: MlirAttribute) -> Bool:
 fn mlirUnmanagedDenseResourceElementsAttrGet(
     shaped_type: MlirType,
     name: MlirStringRef,
-    data: UnsafePointer[NoneType],
+    data: OpaquePointer,
     data_length: Int,
     data_alignment: Int,
     data_is_mutable: Bool,
-    deleter: fn (
-        UnsafePointer[NoneType], UnsafePointer[NoneType], Int32, Int32
-    ) -> None,
-    user_data: UnsafePointer[NoneType],
+    deleter: fn (OpaquePointer, OpaquePointer, Int32, Int32) -> None,
+    user_data: OpaquePointer,
 ) -> MlirAttribute:
     """Unlike the typed accessors below, constructs the attribute with a raw
     data buffer and no type/alignment checking. Use a more strongly typed

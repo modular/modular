@@ -16,7 +16,6 @@ from sys import simdwidthof
 
 from memory import (
     AddressSpace,
-    UnsafePointer,
     memcmp,
     memcpy,
     memset,

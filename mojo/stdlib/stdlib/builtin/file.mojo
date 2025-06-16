@@ -33,7 +33,6 @@ with open("my_file.txt", "r") as f:
 
 from os import PathLike, abort
 from sys import external_call, sizeof
-from sys.ffi import OpaquePointer
 from memory import AddressSpace, Span
 from utils.write import _WriteBufferStack
 

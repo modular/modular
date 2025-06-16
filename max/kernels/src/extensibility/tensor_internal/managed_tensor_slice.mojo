@@ -512,7 +512,7 @@ struct ManagedTensorSlice[
         dtype, static_spec.to_layout(), MutableAnyOrigin
     ]
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self.to_layout_tensor()
 
     @staticmethod

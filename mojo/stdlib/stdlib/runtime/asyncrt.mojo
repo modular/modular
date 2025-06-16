@@ -460,7 +460,7 @@ struct DeviceContextPtr(Defaultable):
     by the graph compiler.
     """
 
-    var _handle: UnsafePointer[NoneType]
+    var _handle: OpaquePointer
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -469,10 +469,10 @@ struct DeviceContextPtr(Defaultable):
 
         This creates a `DeviceContextPtr` that doesn't point to any device context.
         """
-        self._handle = UnsafePointer[NoneType]()
+        self._handle = OpaquePointer()
 
     @implicit
-    fn __init__(out self, handle: UnsafePointer[NoneType]):
+    fn __init__(out self, handle: OpaquePointer):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:
@@ -489,7 +489,7 @@ struct DeviceContextPtr(Defaultable):
         Args:
             device: The `DeviceContext` to wrap in this pointer.
         """
-        self._handle = rebind[UnsafePointer[NoneType]](device._handle)
+        self._handle = rebind[OpaquePointer](device._handle)
 
     fn __getitem__(self) -> DeviceContext:
         """Dereference the pointer to get the `DeviceContext`.

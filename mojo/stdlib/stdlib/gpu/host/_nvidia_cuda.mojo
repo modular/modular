@@ -206,7 +206,7 @@ struct TMADescriptor:
         self.data = other.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: UnsafePointer[NoneType]):
+fn prefetch_tma_descriptor(desc_ptr: OpaquePointer):
     __mlir_op.`nvvm.prefetch.tensormap`(
         to_llvm_ptr(desc_ptr),
     )
@@ -259,7 +259,7 @@ fn create_tma_descriptor[
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
             _CharPtr,
-            UnsafePointer[NoneType],  # tensorMap
+            OpaquePointer,  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
             _DeviceBufferPtr,  #  globalAddress

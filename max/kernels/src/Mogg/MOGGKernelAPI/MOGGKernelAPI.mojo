@@ -5258,7 +5258,7 @@ struct Concat:
 fn to_managed_tensor_slice_list[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
-    raw_list_ptr: UnsafePointer[NoneType],
+    raw_list_ptr: OpaquePointer,
 ) -> List[
     ManagedTensorSlice[
         io_spec = IOSpec[mut, input](),
@@ -5269,7 +5269,7 @@ fn to_managed_tensor_slice_list[
         raw_list_ptr
     ).__int__()
 
-    var data_ptrs = List[UnsafePointer[NoneType]](capacity=num_elements)
+    var data_ptrs = List[OpaquePointer](capacity=num_elements)
     var dim_values = List[Int64](capacity=num_elements * rank)
 
     # Collect the data pointers and dimensions of each element from the list.

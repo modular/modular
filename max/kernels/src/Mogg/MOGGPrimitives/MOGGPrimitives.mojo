@@ -44,19 +44,19 @@ struct StateContext:
     This is currently meant as a mojo-side container for GML::StateContext."""
 
     var num_slots: Int
-    var ctx_ptr: UnsafePointer[NoneType]
+    var ctx_ptr: OpaquePointer
 
     @always_inline
-    fn __init__(out self, num_slots: Int, ctx_ptr: UnsafePointer[NoneType]):
+    fn __init__(out self, num_slots: Int, ctx_ptr: OpaquePointer):
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
     @always_inline
-    fn __getitem__(self, index: Int) -> UnsafePointer[NoneType]:
+    fn __getitem__(self, index: Int) -> OpaquePointer:
         debug_assert(0 <= index < self.num_slots, "index must be within bounds")
         return external_call[
             "KGEN_CompilerRT_GetContextPayloadPtr",
-            UnsafePointer[NoneType],
+            OpaquePointer,
         ](index, self.ctx_ptr)
 
 
@@ -79,7 +79,7 @@ fn pack_string_res(
 @register_internal("builtin.create_error_async_values_and_destruct_error")
 @no_inline
 fn create_error_async_values_and_destruct_error(
-    async_ptr: UnsafePointer[UnsafePointer[NoneType]],
+    async_ptr: UnsafePointer[OpaquePointer],
     async_len: Int,
     owned err: Error,
 ):
@@ -96,7 +96,7 @@ fn create_error_async_values_and_destruct_error(
 
 @register_internal("builtin.create_index_async")
 @no_inline
-fn create_index_async(value: Int, async_ptr: UnsafePointer[NoneType]):
+fn create_index_async(value: Int, async_ptr: OpaquePointer):
     external_call["KGEN_CompilerRT_CreateAsync_ssizet", NoneType](
         value, async_ptr
     )
@@ -105,9 +105,7 @@ fn create_index_async(value: Int, async_ptr: UnsafePointer[NoneType]):
 @register_internal("builtin.create_si64_async")
 @no_inline
 @export
-fn create_si64_async(
-    value: Scalar[DType.int64], async_ptr: UnsafePointer[NoneType]
-):
+fn create_si64_async(value: Scalar[DType.int64], async_ptr: OpaquePointer):
     external_call["KGEN_CompilerRT_CreateAsync_int64t", NoneType](
         value, async_ptr
     )
@@ -115,7 +113,7 @@ fn create_si64_async(
 
 @register_internal("builtin.create_chain_async")
 @no_inline
-fn create_chain_async(async_ptr: UnsafePointer[NoneType]):
+fn create_chain_async(async_ptr: OpaquePointer):
     external_call["KGEN_CompilerRT_CreateAsync_chain", NoneType](async_ptr)
 
 
@@ -124,7 +122,7 @@ fn create_chain_async(async_ptr: UnsafePointer[NoneType]):
 @no_inline
 fn create_i1_async(
     value: Bool,
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
 ):
     external_call["KGEN_CompilerRT_CreateAsync_bool", NoneType](
         value, async_ptr
@@ -135,7 +133,7 @@ fn create_i1_async(
 @no_inline
 fn create_buffer_ref_async(
     buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin],
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
     call_ctx: DeviceContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncDeviceBufferRef", NoneType](
@@ -147,7 +145,7 @@ fn create_buffer_ref_async(
 @no_inline
 fn create_non_tracked_buffer_ref_async(
     buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin],
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef", NoneType](
         buffer.data, len(buffer), async_ptr
@@ -162,7 +160,7 @@ fn create_non_tracked_tensor_async[
     type: DType,
 ](
     buffer: NDBuffer[type, buffer_rank, MutableAnyOrigin],
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
 ):
     constrained[
         tensor_rank == buffer_rank or (tensor_rank == 0 and buffer_rank == 1)
@@ -183,8 +181,8 @@ fn create_buffer_ref_with_borrow_async[
     borrowee_type: Int,
 ](
     buffer: NDBuffer[DType.int8, 1, MutableAnyOrigin],
-    async_to_borrow: UnsafePointer[NoneType],
-    output_async: UnsafePointer[NoneType],
+    async_to_borrow: OpaquePointer,
+    output_async: OpaquePointer,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferWithBorrow", NoneType](
         buffer.data,
@@ -199,7 +197,7 @@ fn create_buffer_ref_with_borrow_async[
 @no_inline
 fn create_tensor_spec_async[
     spec_rank: Int
-](spec: IndexList[spec_rank], async_ptr: UnsafePointer[NoneType],):
+](spec: IndexList[spec_rank], async_ptr: OpaquePointer,):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
@@ -224,8 +222,8 @@ fn create_tensor_async[
     borrowee_type: Int,
 ](
     buffer: NDBuffer[type, buffer_rank, MutableAnyOrigin],
-    async_to_borrow: UnsafePointer[NoneType],
-    output_async: UnsafePointer[NoneType],
+    async_to_borrow: OpaquePointer,
+    output_async: OpaquePointer,
 ):
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
@@ -254,7 +252,7 @@ fn empty_destructor(ptr: UnsafePointer[UInt8]):
 @no_inline
 fn create_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
     size: Int,
     align: Int,
     destructor_fn: fn (UnsafePointer[UInt8]) -> None,
@@ -284,7 +282,7 @@ fn create_mojo_value_async(
 @no_inline
 fn create_python_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
     size: Int,
     align: Int,
     destructor_fn: fn (UnsafePointer[UInt8]) -> None,
@@ -305,8 +303,8 @@ fn create_python_mojo_value_async(
 @register_internal("builtin.transfer_async")
 @no_inline
 fn transfer_async(
-    async_src: UnsafePointer[NoneType],
-    async_dst: UnsafePointer[NoneType],
+    async_src: OpaquePointer,
+    async_dst: OpaquePointer,
 ):
     external_call[
         "KGEN_CompilerRT_TransferAsyncRef",
@@ -317,22 +315,22 @@ fn transfer_async(
 @register_internal("builtin.unpack_async")
 @no_inline
 fn unpack_async(
-    async_ptr: UnsafePointer[NoneType],
-) -> UnsafePointer[NoneType]:
+    async_ptr: OpaquePointer,
+) -> OpaquePointer:
     return external_call[
         "KGEN_CompilerRT_GetValueFromAsync",
-        UnsafePointer[NoneType],
+        OpaquePointer,
     ](async_ptr)
 
 
 @register_internal("builtin.unpack_device_ctx")
 @no_inline
 fn unpack_device_ctx(
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
 ) -> DeviceContextPtr:
     var ptr = external_call[
         "KGEN_CompilerRT_UnpackDeviceContext",
-        UnsafePointer[NoneType],
+        OpaquePointer,
     ](async_ptr)
 
     return DeviceContextPtr(ptr)
@@ -341,12 +339,12 @@ fn unpack_device_ctx(
 @register_internal("builtin.unpack_buffer_ref")
 @no_inline
 fn unpack_buffer_ref(
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
 ) -> NDBuffer[DType.uint8, 1, MutableAnyOrigin]:
     var size: UInt64 = 0
     var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
-        UnsafePointer[NoneType],
+        OpaquePointer,
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
@@ -358,7 +356,7 @@ fn unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     type: DType,
-](tensor_async_ptr: UnsafePointer[NoneType]) -> NDBuffer[
+](tensor_async_ptr: OpaquePointer) -> NDBuffer[
     type, buffer_rank, MutableAnyOrigin
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
@@ -369,7 +367,7 @@ fn unpack_tensor[
     var shapes = IndexList[buffer_rank]()
     var buffer_ptr = external_call[
         "KGEN_CompilerRT_GetShapeAndDataFromTensor",
-        UnsafePointer[NoneType],
+        OpaquePointer,
     ](
         UnsafePointer(to=shapes.data.array),
         tensor_async_ptr,
@@ -388,7 +386,7 @@ fn unpack_tensor[
 @no_inline
 fn unpack_tensor_spec[
     spec_rank: Int
-](async_ptr: UnsafePointer[NoneType]) -> IndexList[spec_rank]:
+](async_ptr: OpaquePointer) -> IndexList[spec_rank]:
     var shape_ptr = UnsafePointer[Int].alloc(spec_rank)
     external_call[
         "KGEN_CompilerRT_GetTensorShapeFromAsync",
@@ -407,13 +405,13 @@ fn unpack_tensor_spec[
 @register_internal("builtin.unpack_context")
 @no_inline
 fn unpack_context(
-    async_ptr: UnsafePointer[NoneType],
+    async_ptr: OpaquePointer,
 ) -> StateContext:
     # We want to construct this because we want all payloads to be implemented
     var num_slots: UInt64 = 0
-    var ctx_ptr: UnsafePointer[NoneType] = external_call[
+    var ctx_ptr: OpaquePointer = external_call[
         "KGEN_CompilerRT_GetContextAndSizeFromAsync",
-        UnsafePointer[NoneType],
+        OpaquePointer,
     ](UnsafePointer(to=num_slots), async_ptr)
     return StateContext(Int(num_slots), ctx_ptr)
 
@@ -526,7 +524,7 @@ fn mgp_buffer_alloc(
 @register_internal("mgp.buffer.constant")
 @export
 fn mgp_buffer_constant(
-    resource_ptr: UnsafePointer[NoneType],
+    resource_ptr: OpaquePointer,
     resource_bytecount: Int,
 ) -> NDBuffer[DType.int8, 1, MutableAnyOrigin]:
     # Should we keep the alignment? It seems that the static alignment is
@@ -745,12 +743,12 @@ fn mgp_buffer_host_to_device[
 @no_inline
 fn mgp_buffer_get_cached(
     ctx: StateContext,
-    storage_ref_addr: UnsafePointer[UnsafePointer[NoneType]],
+    storage_ref_addr: UnsafePointer[OpaquePointer],
     buffer_slot: UInt64,
 ) raises -> NDBuffer[DType.uint8, 1, MutableAnyOrigin]:
     var buffer_size: UInt64 = 0
-    var buffer_data: UnsafePointer[NoneType] = external_call[
-        "MGP_RT_GetCachedBuffer", UnsafePointer[NoneType]
+    var buffer_data: OpaquePointer = external_call[
+        "MGP_RT_GetCachedBuffer", OpaquePointer
     ](
         Int(buffer_slot),
         ctx.ctx_ptr,
@@ -780,7 +778,7 @@ fn mgp_buffer_get_size(buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin]) -> Int:
 @register_internal("destruct_async_refs")
 @no_inline
 fn destruct_async_refs(
-    storage_ref_addr: UnsafePointer[UnsafePointer[NoneType]],
+    storage_ref_addr: UnsafePointer[OpaquePointer],
     size: Int,
     direct_ref: Bool,
 ):

@@ -17,10 +17,10 @@ from os import abort
 @fieldwise_init
 @register_passable("trivial")
 struct Handle(Defaultable):
-    var _value: UnsafePointer[NoneType]
+    var _value: OpaquePointer
 
     fn __init__(out self):
-        self._value = UnsafePointer[NoneType]()
+        self._value = OpaquePointer()
 
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value

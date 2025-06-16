@@ -21,10 +21,10 @@ from gpu.host._amdgpu_hip import hipStream_t
 
 from utils import StaticTuple
 
-alias hipblasLtHandle_t = UnsafePointer[NoneType]
-alias hipblasLtMatmulDesc_t = UnsafePointer[NoneType]
-alias hipblasLtMatrixLayout_t = UnsafePointer[NoneType]
-alias hipblasLtMatmulPreference_t = UnsafePointer[NoneType]
+alias hipblasLtHandle_t = OpaquePointer
+alias hipblasLtMatmulDesc_t = OpaquePointer
+alias hipblasLtMatrixLayout_t = OpaquePointer
+alias hipblasLtMatmulPreference_t = OpaquePointer
 
 
 @fieldwise_init
@@ -257,7 +257,7 @@ fn hipblasLtMatmulDescCreate(
 fn hipblasLtMatmulDescSetAttribute(
     matmul_desc: hipblasLtMatmulDesc_t,
     attr: hipblasLtMatmulDescAttributes_t,
-    buf: UnsafePointer[NoneType],
+    buf: OpaquePointer,
     size_in_bytes: Int,
 ) raises -> Status:
     return _get_dylib_function[
@@ -265,7 +265,7 @@ fn hipblasLtMatmulDescSetAttribute(
         fn (
             hipblasLtMatmulDesc_t,
             hipblasLtMatmulDescAttributes_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int,
         ) -> Status,
     ]()(matmul_desc, attr, buf, size_in_bytes)
@@ -367,18 +367,18 @@ fn hipblasLtMatmulPreferenceDestroy(
 fn hipblasLtMatmul(
     light_handle: hipblasLtHandle_t,
     compute_desc: hipblasLtMatmulDesc_t,
-    alpha: UnsafePointer[NoneType],
-    _a: UnsafePointer[NoneType],
+    alpha: OpaquePointer,
+    _a: OpaquePointer,
     _adesc: hipblasLtMatrixLayout_t,
-    _b: UnsafePointer[NoneType],
+    _b: OpaquePointer,
     _bdesc: hipblasLtMatrixLayout_t,
-    beta: UnsafePointer[NoneType],
-    _c: UnsafePointer[NoneType],
+    beta: OpaquePointer,
+    _c: OpaquePointer,
     _cdesc: hipblasLtMatrixLayout_t,
-    _d: UnsafePointer[NoneType],
+    _d: OpaquePointer,
     _ddesc: hipblasLtMatrixLayout_t,
     algo: UnsafePointer[hipblasLtMatmulAlgo_t],
-    workspace: UnsafePointer[NoneType],
+    workspace: OpaquePointer,
     workspace_size_in_bytes: Int,
     stream: hipStream_t,
 ) raises -> Status:
@@ -387,18 +387,18 @@ fn hipblasLtMatmul(
         fn (
             hipblasLtHandle_t,
             hipblasLtMatmulDesc_t,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
-            UnsafePointer[NoneType],
+            OpaquePointer,
             hipblasLtMatrixLayout_t,
             UnsafePointer[hipblasLtMatmulAlgo_t],
-            UnsafePointer[NoneType],
+            OpaquePointer,
             Int,
             hipStream_t,
         ) -> Status,

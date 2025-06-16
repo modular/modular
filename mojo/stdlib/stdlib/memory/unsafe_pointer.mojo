@@ -1222,3 +1222,7 @@ struct UnsafePointer[
         __get_address_as_uninit_lvalue(
             dst.address
         ) = __get_address_as_owned_value(self.address)
+
+
+alias OpaquePointer = UnsafePointer[NoneType]
+"""An opaque pointer, equivalent to the C `void*` type."""

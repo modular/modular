@@ -296,7 +296,7 @@ struct SIMD[dtype: DType, size: Int](
     alias device_type: AnyTrivialRegType = Self
     """SIMD types are remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

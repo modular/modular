@@ -367,11 +367,11 @@ struct ClockType(Copyable, EqualityComparable, Movable):
 @fieldwise_init
 @register_passable("trivial")
 struct _DeviceImpl(Copyable, Defaultable, Movable):
-    var handle: UnsafePointer[NoneType]
+    var handle: OpaquePointer
 
     @always_inline
     fn __init__(out self):
-        self.handle = UnsafePointer[NoneType]()
+        self.handle = OpaquePointer()
 
     @always_inline
     fn __bool__(self) -> Bool:

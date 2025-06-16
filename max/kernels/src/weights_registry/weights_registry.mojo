@@ -17,9 +17,9 @@ struct WeightsRegistry(Copyable, Movable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
     var names: List[String]
-    var weights: List[UnsafePointer[NoneType]]
+    var weights: List[OpaquePointer]
 
-    def __getitem__(self, name: String) -> UnsafePointer[NoneType]:
+    def __getitem__(self, name: String) -> OpaquePointer:
         for i in range(len(self.names)):
             if self.names[i] == name:
                 return self.weights[i]

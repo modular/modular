@@ -40,7 +40,7 @@ struct ConstantMemoryMapping(Copyable, Movable):
     kernel references to constant memory symbols.
     """
 
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
     """Pointer to the host memory location that will be mapped to device constant memory.
 
     This raw pointer represents the starting address of the memory region that will be

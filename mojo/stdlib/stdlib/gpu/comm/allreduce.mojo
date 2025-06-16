@@ -40,7 +40,7 @@ Limitations:
 from collections import InlineArray
 from math import ceildiv
 from sys import alignof, env_get_int, simdwidthof, sizeof
-from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys.ffi import _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer

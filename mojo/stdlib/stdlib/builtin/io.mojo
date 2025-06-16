@@ -29,7 +29,7 @@ from sys import (
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
 from builtin.dtype import _get_dtype_printf_format

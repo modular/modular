@@ -35,7 +35,7 @@ fn test_async_copy_asm():
         dst_mem: UnsafePointer[
             Float32, address_space = _GPUAddressSpace.SHARED
         ],
-        tma_descriptor: UnsafePointer[NoneType],
+        tma_descriptor: OpaquePointer,
         mem_bar: UnsafePointer[
             Float32, address_space = _GPUAddressSpace.SHARED
         ],
@@ -66,7 +66,7 @@ fn test_async_store_asm():
         src_mem: UnsafePointer[
             Float32, address_space = _GPUAddressSpace.SHARED
         ],
-        tma_descriptor: UnsafePointer[NoneType],
+        tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group [%rd1, {%r2, %r3}], [%r1];
@@ -102,7 +102,7 @@ fn test_async_bulk_tensor_reduce_asm():
         src_mem: UnsafePointer[
             Float32, address_space = _GPUAddressSpace.SHARED
         ],
-        tma_descriptor: UnsafePointer[NoneType],
+        tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
         # CHECK:

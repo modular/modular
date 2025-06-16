@@ -71,9 +71,6 @@ alias c_float = Float32
 alias c_double = Float64
 """C `double` type."""
 
-alias OpaquePointer = UnsafePointer[NoneType]
-"""An opaque pointer, equivalent to the C `void*` type."""
-
 
 fn _c_long_dtype() -> DType:
     # https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models

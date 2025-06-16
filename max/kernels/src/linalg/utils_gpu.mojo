@@ -21,7 +21,7 @@ from sys import (
     has_nvidia_gpu_accelerator,
     sizeof,
 )
-from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys.ffi import _get_global_or_null, external_call
 
 from gpu import WARP_SIZE
 from gpu.grid_controls import PDLLevel

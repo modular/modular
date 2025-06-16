@@ -53,7 +53,7 @@ from .IR import *
 
 @register_passable("trivial")
 struct MlirAffineMap:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 fn mlirAffineMapGetContext(affine_map: MlirAffineMap) -> MlirContext:
@@ -281,8 +281,8 @@ fn mlirAffineMapReplace(
 fn mlirAffineMapCompressUnusedSymbols(
     affine_maps: UnsafePointer[MlirAffineMap],
     size: Int,
-    result: UnsafePointer[NoneType],
-    populate_result: fn (UnsafePointer[NoneType], Int32, MlirAffineMap) -> None,
+    result: OpaquePointer,
+    populate_result: fn (OpaquePointer, Int32, MlirAffineMap) -> None,
 ) -> None:
     """Returns the simplified affine map resulting from dropping the symbols that
     do not appear in any of the individual maps in `affineMaps`.

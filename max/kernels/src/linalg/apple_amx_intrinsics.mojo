@@ -22,7 +22,6 @@ from sys._assembly import inlined_assembly
 from buffer import NDBuffer
 from memory import (
     AddressSpace,
-    UnsafePointer,
     memcpy,
     memset_zero,
     stack_allocation,

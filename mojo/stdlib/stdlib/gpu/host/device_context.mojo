@@ -34,7 +34,7 @@ from sys import (
     sizeof,
 )
 from sys.compile import DebugLevel, OptimizationLevel
-from sys.ffi import c_char, OpaquePointer
+from sys.ffi import c_char
 from sys.info import _get_arch, has_nvidia_gpu_accelerator, is_triple
 from sys.intrinsics import _type_is_eq
 from sys.param_env import _is_bool_like

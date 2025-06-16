@@ -46,7 +46,7 @@ struct MlirDiagnostic:
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @fieldwise_init
@@ -69,7 +69,7 @@ alias MlirDiagnosticRemark = MlirDiagnosticSeverity(3)
 # Otherwise, it is expected to return failure to indicate that other handlers
 # should attempt to process the diagnostic.
 alias MlirDiagnosticHandler = fn (
-    MlirDiagnostic, UnsafePointer[NoneType]
+    MlirDiagnostic, OpaquePointer
 ) -> MlirLogicalResult
 
 
@@ -121,8 +121,8 @@ fn mlirDiagnosticGetNote(
 fn mlirContextAttachDiagnosticHandler(
     context: MlirContext,
     handler: MlirDiagnosticHandler,
-    user_data: UnsafePointer[NoneType],
-    delete_user_data: fn (UnsafePointer[NoneType]) -> None,
+    user_data: OpaquePointer,
+    delete_user_data: fn (OpaquePointer) -> None,
 ) -> MlirDiagnosticHandlerID:
     """Attaches the diagnostic handler to the context. Handlers are invoked in the
     reverse order of attachment until one of them processes the diagnostic

@@ -3304,16 +3304,16 @@ fn conv_cudnn[
             ptr_meta[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
             ptr_meta[].ptr_input_desc,
-            rebind[UnsafePointer[NoneType]](input.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](input.data.bitcast[NoneType]()),
             ptr_meta[].ptr_filter_desc,
-            rebind[UnsafePointer[NoneType]](filter.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](filter.data.bitcast[NoneType]()),
             ptr_meta[].ptr_conv_desc,
             algo,
             workspace_buffer.unsafe_ptr().bitcast[NoneType](),
             workspace_size_var,
             UnsafePointer(to=beta).bitcast[NoneType](),
             ptr_meta[].ptr_output_desc,
-            rebind[UnsafePointer[NoneType]](output.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](output.data.bitcast[NoneType]()),
         )
     )
     _ = workspace_buffer^

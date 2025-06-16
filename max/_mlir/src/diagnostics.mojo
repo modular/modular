@@ -82,13 +82,13 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool](Copyable, Movable):
     @staticmethod
     @always_inline
     fn attach(ctx: Context) -> Self:
-        fn delete_user_data(data: UnsafePointer[NoneType]):
+        fn delete_user_data(data: OpaquePointer):
             pass
 
         var id = _c.Diagnostics.mlirContextAttachDiagnosticHandler(
             ctx.c,
             Self.c_handler,
-            UnsafePointer[NoneType](),
+            OpaquePointer(),
             delete_user_data,
         )
 
@@ -99,7 +99,7 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool](Copyable, Movable):
 
     @staticmethod
     fn c_handler(
-        diagnostic: Diagnostic.cType, user_data: UnsafePointer[NoneType]
+        diagnostic: Diagnostic.cType, user_data: OpaquePointer
     ) -> _c.Support.MlirLogicalResult:
         var result = handler(diagnostic)
         return MlirLogicalResult(1 if result else 0)
@@ -138,12 +138,12 @@ struct DiagnosticHandlerWithData[
         _c.Diagnostics.mlirContextDetachDiagnosticHandler(self.ctx.c, self.id)
 
     @staticmethod
-    fn c_delete_user_data(user_data: UnsafePointer[NoneType]):
+    fn c_delete_user_data(user_data: OpaquePointer):
         delete_user_data(user_data.bitcast[UserDataType]())
 
     @staticmethod
     fn c_handler(
-        diagnostic: Diagnostic.cType, user_data: UnsafePointer[NoneType]
+        diagnostic: Diagnostic.cType, user_data: OpaquePointer
     ) -> _c.Support.MlirLogicalResult:
         var ptr = user_data.bitcast[UserDataType]()
         var result = handler(diagnostic, ptr[])

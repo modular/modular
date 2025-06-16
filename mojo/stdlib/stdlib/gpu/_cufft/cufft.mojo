@@ -81,11 +81,9 @@ fn cufftExecR2C(
     ]()(plan, idata, odata)
 
 
-fn cufftSetWorkArea(
-    plan: cufftHandle, work_area: UnsafePointer[NoneType]
-) -> Status:
+fn cufftSetWorkArea(plan: cufftHandle, work_area: OpaquePointer) -> Status:
     return _get_dylib_function[
-        "cufftSetWorkArea", fn (cufftHandle, UnsafePointer[NoneType]) -> Status
+        "cufftSetWorkArea", fn (cufftHandle, OpaquePointer) -> Status
     ]()(plan, work_area)
 
 

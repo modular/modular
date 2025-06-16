@@ -36,7 +36,6 @@ value types must always be Movable so we can resize the dictionary as it grows.
 
 See the `Dict` docs for more details.
 """
-from sys.ffi import OpaquePointer
 
 from memory import bitcast, memcpy
 

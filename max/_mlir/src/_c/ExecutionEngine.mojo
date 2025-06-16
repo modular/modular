@@ -42,7 +42,7 @@ from .Support import *
 
 @register_passable("trivial")
 struct MlirExecutionEngine:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 fn mlirExecutionEngineCreate(
@@ -78,7 +78,7 @@ fn mlirExecutionEngineDestroy(jit: MlirExecutionEngine) -> None:
 fn mlirExecutionEngineInvokePacked(
     jit: MlirExecutionEngine,
     name: MlirStringRef,
-    arguments: UnsafePointer[UnsafePointer[NoneType]],
+    arguments: UnsafePointer[OpaquePointer],
 ) -> MlirLogicalResult:
     """Invoke a native function in the execution engine by name with the arguments
     and result of the invoked function passed as an array of pointers. The
@@ -92,26 +92,24 @@ fn mlirExecutionEngineInvokePacked(
 
 fn mlirExecutionEngineLookupPacked(
     jit: MlirExecutionEngine, name: MlirStringRef
-) -> UnsafePointer[NoneType]:
+) -> OpaquePointer:
     """Lookup the wrapper of the native function in the execution engine with the
     given name, returns nullptr if the function can't be looked-up."""
-    return MLIR_func[
-        "mlirExecutionEngineLookupPacked", UnsafePointer[NoneType]
-    ](jit, name)
-
-
-fn mlirExecutionEngineLookup(
-    jit: MlirExecutionEngine, name: MlirStringRef
-) -> UnsafePointer[NoneType]:
-    """Lookup a native function in the execution engine by name, returns nullptr
-    if the name can't be looked-up."""
-    return MLIR_func["mlirExecutionEngineLookup", UnsafePointer[NoneType]](
+    return MLIR_func["mlirExecutionEngineLookupPacked", OpaquePointer](
         jit, name
     )
 
 
+fn mlirExecutionEngineLookup(
+    jit: MlirExecutionEngine, name: MlirStringRef
+) -> OpaquePointer:
+    """Lookup a native function in the execution engine by name, returns nullptr
+    if the name can't be looked-up."""
+    return MLIR_func["mlirExecutionEngineLookup", OpaquePointer](jit, name)
+
+
 fn mlirExecutionEngineRegisterSymbol(
-    jit: MlirExecutionEngine, name: MlirStringRef, sym: UnsafePointer[NoneType]
+    jit: MlirExecutionEngine, name: MlirStringRef, sym: OpaquePointer
 ) -> None:
     """Register a symbol with the jit: this symbol will be accessible to the jitted
     code."""

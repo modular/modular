@@ -18,7 +18,7 @@ trait DevicePassable:
     alias device_type: AnyTrivialRegType
     """Indicate the type being used on accelerator devices."""
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         """
         Convert the host type object to a device_type and store it at the
         target address.

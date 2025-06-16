@@ -901,7 +901,7 @@ fn _cublasLt_matmul(
                 a.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                UnsafePointer[NoneType](),  # _c
+                OpaquePointer(),  # _c
                 _cdesc,  # _cdesc
                 d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
@@ -923,7 +923,7 @@ fn _cublasLt_matmul(
                 b.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                UnsafePointer[NoneType](),  # _c
+                OpaquePointer(),  # _c
                 _cdesc,  # _cdesc
                 d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
@@ -1097,7 +1097,7 @@ fn _hipblasLt_matmul(
             _ddata,
             _ddesc,
             UnsafePointer(to=heuristicResult.algo),
-            UnsafePointer[NoneType](),
+            OpaquePointer(),
             0,
             HIP(ctx.stream()),
         )

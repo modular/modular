@@ -33,7 +33,7 @@ struct TwoS:
 struct OneS(DevicePassable):
     alias device_type: AnyTrivialRegType = TwoS
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
 
     @staticmethod

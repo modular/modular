@@ -18,7 +18,7 @@ functionality in the rest of the Mojo standard library.
 """
 
 from sys import os_is_windows
-from sys.ffi import OpaquePointer, c_char, c_int, c_size_t
+from sys.ffi import c_char, c_int, c_size_t
 
 
 # ===-----------------------------------------------------------------------===#

@@ -57,22 +57,22 @@ from .Support import *
 
 @register_passable("trivial")
 struct MlirPass:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirExternalPass:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirPassManager:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirOpPassManager:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 # ===----------------------------------------------------------------------===//
@@ -261,25 +261,21 @@ struct MlirExternalPassCallbacks:
 
     # This callback is called from the pass is created.
     # This is analogous to a C++ pass constructor.
-    var construct: fn (UnsafePointer[NoneType]) -> None
+    var construct: fn (OpaquePointer) -> None
     # This callback is called when the pass is destroyed
     # This is analogous to a C++ pass destructor.
-    var destruct: fn (UnsafePointer[NoneType]) -> None
+    var destruct: fn (OpaquePointer) -> None
     # This callback is optional.
     # The callback is called before the pass is run, allowing a chance to
     # initialize any complex state necessary for running the pass.
     # See Pass::initialize(MLIRContext *).
-    var initialize: fn (
-        MlirContext, UnsafePointer[NoneType]
-    ) -> MlirLogicalResult
+    var initialize: fn (MlirContext, OpaquePointer) -> MlirLogicalResult
     # This callback is called when the pass is cloned.
     # See Pass::clonePass().
-    var clone: fn (UnsafePointer[NoneType]) -> UnsafePointer[NoneType]
+    var clone: fn (OpaquePointer) -> OpaquePointer
     # This callback is called when the pass is run.
     # See Pass::runOnOperation().
-    var run: fn (
-        MlirOperation, MlirExternalPass, UnsafePointer[NoneType]
-    ) -> None
+    var run: fn (MlirOperation, MlirExternalPass, OpaquePointer) -> None
 
 
 fn mlirCreateExternalPass(
@@ -291,7 +287,7 @@ fn mlirCreateExternalPass(
     n_dependent_dialects: Int,
     dependent_dialects: UnsafePointer[MlirDialectHandle],
     callbacks: MlirExternalPassCallbacks,
-    user_data: UnsafePointer[NoneType],
+    user_data: OpaquePointer,
 ) -> MlirPass:
     """Creates an external `MlirPass` that calls the supplied `callbacks` using the
     supplied `userData`. If `opName` is empty, the pass is a generic operation

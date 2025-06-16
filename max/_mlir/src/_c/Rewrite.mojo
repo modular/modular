@@ -47,22 +47,22 @@ from .Support import *
 
 @register_passable("trivial")
 struct MlirRewriterBase:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirFrozenRewritePatternSet:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirGreedyRewriteDriverConfig:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirRewritePatternSet:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 # ===----------------------------------------------------------------------===//
@@ -533,4 +533,4 @@ fn mlirRewritePatternSetFromPDLPatternModule(
 
 @register_passable("trivial")
 struct MlirPDLPatternModule:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer

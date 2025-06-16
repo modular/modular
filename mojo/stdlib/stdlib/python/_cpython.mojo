@@ -26,7 +26,6 @@ from sys import external_call
 from sys.arg import argv
 from sys.ffi import (
     DLHandle,
-    OpaquePointer,
     c_char,
     c_int,
     c_long,

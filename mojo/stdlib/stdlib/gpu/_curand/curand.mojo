@@ -1152,7 +1152,7 @@ fn curandGenerateNormalDouble(
 
 
 fn curandGetDirectionVectors32(
-    vectors: UnsafePointer[NoneType], set: curandDirectionVectorSet
+    vectors: OpaquePointer, set: curandDirectionVectorSet
 ) -> curandStatus:
     """
     \\brief Get direction vectors for 32-bit quasirandom number generation.
@@ -1177,7 +1177,7 @@ fn curandGetDirectionVectors32(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors32",
-        fn (UnsafePointer[NoneType], curandDirectionVectorSet) -> curandStatus,
+        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)
 
 
@@ -1518,7 +1518,7 @@ fn curandGetScrambleConstants32(
 
 
 fn curandGetDirectionVectors64(
-    vectors: UnsafePointer[NoneType], set: curandDirectionVectorSet
+    vectors: OpaquePointer, set: curandDirectionVectorSet
 ) -> curandStatus:
     """
     \\brief Get direction vectors for 64-bit quasirandom number generation.
@@ -1543,5 +1543,5 @@ fn curandGetDirectionVectors64(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors64",
-        fn (UnsafePointer[NoneType], curandDirectionVectorSet) -> curandStatus,
+        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)
