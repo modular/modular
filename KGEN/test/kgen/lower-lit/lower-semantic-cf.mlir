@@ -1132,3 +1132,38 @@ lit.fn @make_closure() {
     lit.return
     lit.end_fn
 }
+
+// CHECK-LABEL: lit.fn @param_for_goto_else()
+lit.fn @param_for_goto_else() {
+  // CHECK-NEXT: kgen.param.for iter in ?
+  // CHECK-NEXT: has_next :() -> i1 ?
+  // CHECK-NEXT: get_next :() -> () ? {
+  kgen.param.for iter in ?
+    has_next :() -> i1 ?
+    get_next :() -> () ? {
+    // CHECK-NEXT: kgen.param.if <?> {
+    // CHECK-NEXT:   %0 = lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
+    // CHECK-NEXT:   lit.call @make_closure() : !lit.generator<() -> ()>
+    // CHECK-NEXT:   kgen.param.for.break
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT:   kgen.param.yield
+    // CHECK-NEXT: } {elseIsolated, thenIsolated}
+    kgen.param.if <?> {
+      lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
+      kgen.param.for.goto.else
+    } else {
+      kgen.param.yield
+    }
+
+    // CHECK-NEXT: lit.call @make_closure() : !lit.generator<() -> ()>
+    // CHECK-NEXT: kgen.param.for.continue
+    lit.call @make_closure() : !lit.generator<() -> ()>
+    kgen.param.for.continue
+  } else {// CHECK-NEXT: } else {
+    // CHECK-NEXT: kgen.unreachable
+    lit.call @make_closure() : !lit.generator<() -> ()>
+    kgen.param.yield
+  }
+  lit.return
+  lit.end_fn
+}

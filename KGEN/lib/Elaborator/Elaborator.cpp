@@ -1254,6 +1254,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     body.front().eraseArguments(0, body.getNumArguments());
   };
 
+  // Finally, stamp out all of the iterations into a HLCF loop for each.
   IRMapping mapping;
   auto &nestedScopes = parent->paramGraph.nestedScopes;
   SmallVector<DeclInterface> nestedDecls;
@@ -1284,7 +1285,8 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
                                  nestedScopes.at(&declRegion).copy(mapping));
     }
 
-    // Now schedule the work item for this body.
+    // Now schedule the work item for this body, binding this iteration value
+    // to the loop decl parameter.
     nextItem.evaluator.setParameterValue(decl, value);
     parent->stack.push_back(std::move(nextItem));
   }
