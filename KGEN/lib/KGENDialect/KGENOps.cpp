@@ -858,9 +858,23 @@ void ParamForContinueOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
-  // Branch to the beginning of the body region.
+  // Branch to the beginning of the body region only (not the else region).
   targets.emplace_back(0, getOperands());
+
+  // FIXME: This isn't correct when the else model changes.
   targets.emplace_back(1, getOperands());
+}
+
+bool ParamForGotoElseOp::isParentNode(Operation *op) {
+  return isa<ParamForOp>(op);
+}
+
+void ParamForGotoElseOp::getBranchTargets(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
+  assert(operands.empty() && "Shouldn't exist by mem2reg time");
+  // Branch to the beginning of the else region.
+  targets.emplace_back(1, ValueRange());
 }
 
 //===----------------------------------------------------------------------===//

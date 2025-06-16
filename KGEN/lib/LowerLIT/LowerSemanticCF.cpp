@@ -67,6 +67,8 @@ private:
                   bool &doesFallThrough);
   bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
                     bool &enclosingBlockDoesBreak);
+  void lowerParamFor(ParamForOp paramFor, bool &enclosingBlockDoesRaise,
+                     bool &enclosingBlockDoesBreak);
   void lowerElif(HLCF::ElifOp elifOp, bool &doesRaise, bool &doesBreak,
                  bool &doesFallThrough);
   bool checkSelfRecursion(Block &block, bool isConditional);
@@ -349,6 +351,80 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   return !blockBreaks;
 }
 
+void LowerSemanticCF::lowerParamFor(ParamForOp paramFor,
+                                    bool &enclosingBlockDoesRaise,
+                                    bool &enclosingBlockDoesBreak) {
+  // The 'else' region is not inside the loop. It is transparent to raises
+  // and breaks.
+  bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
+  lowerBlock(paramFor.getElseRegion().front(), elseRaises, elseBreaks,
+             elseFallsThrough);
+  enclosingBlockDoesRaise |= elseRaises;
+  enclosingBlockDoesBreak |= elseBreaks;
+
+  // The loop is only transparent to raises.
+  bool loopRaises = false, loopBreaks = false, loopFallsThrough = false;
+  llvm::SaveAndRestore<Operation *> currentLoopSaver(currentLoop, paramFor);
+  lowerBlock(paramFor.getBody().front(), loopRaises, loopBreaks,
+             loopFallsThrough);
+  enclosingBlockDoesRaise |= loopRaises;
+
+  // Now that we've lowered the body and else logic to bind any nested breaks
+  // or continues, we can re-parent the 'else' block into the body of the loop.
+  // We do this transformation to make CheckLifetimes and the Elaborator's job
+  // easier by not having to understand the 'else' logic.  We lower:
+  //    kgen.param.for iter in stuff {
+  //       kgen.param.if should_stop() {
+  //          kgen.param.for.goto.else
+  //       }
+  //       body_that_uses_iter
+  //    } else {
+  //       cleanup_that_doesnt_happen_on_break_or_return
+  //    }
+  // Into:
+  //    kgen.param.for i in stuff {
+  //       kgen.param.if should_stop() {
+  //          cleanup_that_doesnt_happen_on_break_or_return
+  //          kgen.param.for.break
+  //       }
+  //       body_that_uses_i
+  //    } else {
+  //       kgen.unreachable
+  //    }
+  bool sawGotoElse = false;
+  paramFor.getBody().front().walk<mlir::WalkOrder::PreOrder>(
+      [&](Operation *op) {
+        // Don't step into nested functions etc.
+        if (isa<LIT::FnOp>(op))
+          return WalkResult::skip();
+
+        auto gotoElse = dyn_cast<ParamForGotoElseOp>(op);
+        if (!gotoElse)
+          return WalkResult::advance();
+        assert(!sawGotoElse && "saw multiple goto else's");
+        Block &elseBlock = paramFor.getElseRegion().front();
+        Block &gotoElseBlock = *op->getBlock();
+
+        // If the else block ended in a yield, then it should become a 'break',
+        // otherwise it is a return or something else that we leave alone.
+        if (auto elseTerm = dyn_cast<ParamYieldOp>(elseBlock.getTerminator())) {
+          OpBuilder(elseTerm).create<ParamForBreakOp>(elseTerm.getLoc());
+          elseTerm.erase();
+        }
+
+        // Move the pre-lowered body of the 'else' block here, replacing the
+        // kgen.param.for.goto.else.
+        gotoElseBlock.getOperations().splice(Block::iterator(op),
+                                             elseBlock.getOperations());
+
+        // Fill the else block with an unreachable and remove this op.
+        auto builder = OpBuilder::atBlockBegin(&elseBlock);
+        builder.create<UnreachableOp>(op->getLoc());
+        op->erase();
+        return WalkResult::skip();
+      });
+}
+
 /// Emit the semantic control-flow IR corresponding to a raise statement.
 static void emitRaise(ImplicitLocOpBuilder &b) {
   Operation *opForRaise = LIT::findOpProcessingRaise(b.getInsertionBlock());
@@ -452,6 +528,14 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       OpBuilder b(&op);
       b.create<HLCF::ContinueOp>(op.getLoc());
       op.erase();
+      return;
+    }
+
+    // A kgen.param.for.goto.else is a terminator that jumps to the 'else' block
+    // of a kgen.param.for.  It is generated syntactically by the parser so it
+    // is always valid and does not fall through (though the else block can).
+    if (isa<ParamForGotoElseOp>(op)) {
+      doesBreak = true;
       return;
     }
 
@@ -586,20 +670,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Process a ParamForOp
     if (auto paramFor = dyn_cast<ParamForOp>(op)) {
-      // The 'else' region is not inside the loop. It is transparent to raises
-      // and breaks.
-      bool elseRaises = false, elseBreaks = false, elseFallsThrough = false;
-      lowerBlock(paramFor.getElseRegion().front(), elseRaises, elseBreaks,
-                 elseFallsThrough);
-      doesRaise |= elseRaises;
-      doesBreak |= elseBreaks;
-
-      // The loop is only transparent to raises.
-      bool loopRaises = false, loopBreaks = false, loopFallsThrough = false;
-      llvm::SaveAndRestore<Operation *> currentLoopSaver(currentLoop, paramFor);
-      lowerBlock(paramFor.getBody().front(), loopRaises, loopBreaks,
-                 loopFallsThrough);
-      doesRaise |= loopRaises;
+      lowerParamFor(paramFor, doesRaise, doesBreak);
       continue;
     }
 

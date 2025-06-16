@@ -1041,6 +1041,24 @@ def KGEN_ParamForContinueOp : KGENOp<"param.for.continue", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
+// ParamForGotoElseOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamForGotoElseOp : KGENOp<"param.for.goto.else", [Terminator,
+    DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
+  let summary = "param loop 'goto else' operation";
+  let description = [{
+    The `kgen.param.for.goto.else` operation jumps to the 'else' block of a
+    `kgen.param.for`.  It only exists to help the interface between the Mojo
+    parser and the LowerSemanticCF pass work more easily.
+  }];
+
+  let arguments = (ins);
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // ParamIfOp
 //===----------------------------------------------------------------------===//
 
