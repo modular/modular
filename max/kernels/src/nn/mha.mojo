@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
-from math import align_down, align_up, ceildiv, recip
+from math import ceildiv, recip
 from math.constants import log2e
-from pathlib import Path
 from sys import (
     alignof,
     bitwidthof,
@@ -56,7 +54,7 @@ from gpu.memory import (
     async_copy_wait_all,
     external_memory,
 )
-from kv_cache.types import KVCacheStaticParams, KVCacheT, PagedKVCache
+from kv_cache.types import KVCacheT
 from layout import Layout
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -70,25 +68,22 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from layout.tma_async import TensorMapSwizzle, create_tma_tile
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
-from linalg.matmul import matmul
 from linalg.transpose import transpose
 from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
-from memory.unsafe import bitcast
 from nn._amd_flash_attention_gpu import (
     mha_decoding_single_batch as amd_mha_decoding_single_batch,
 )
 from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
-from nn.mha_mask import MaterializedMask, MHAMask, NullMask, TileMaskStatus
+from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
+from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_sm90 import (
     DynamicInt,
     NoPartition,
@@ -109,7 +104,7 @@ from tensor_internal import IOUnknown, ManagedTensorSlice
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
+from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
 from .mha_tile_scheduler import (

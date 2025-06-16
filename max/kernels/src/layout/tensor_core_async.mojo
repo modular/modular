@@ -36,9 +36,7 @@ This implementation is specifically optimized for NVIDIA GPUs with Tensor Core s
 """
 from sys import sizeof
 
-from gpu import WARP_SIZE, barrier
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -62,7 +60,7 @@ from layout.layout import (
 )
 from memory.unsafe_pointer import UnsafePointer
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #

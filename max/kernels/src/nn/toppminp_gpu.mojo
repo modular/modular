@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
-from math import ceildiv, exp
-from sys import alignof, bitwidthof, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from math import ceildiv
+from sys import alignof, bitwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

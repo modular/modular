@@ -17,11 +17,11 @@ from sys import alignof, sizeof
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.id import thread_idx
-from gpu.memory import CacheEviction, Fill, async_copy
+from gpu.memory import CacheEviction, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth
 from layout.layout import make_layout
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 

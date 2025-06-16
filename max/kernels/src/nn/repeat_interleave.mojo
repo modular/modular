@@ -16,7 +16,6 @@ from sys import simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from nn.gather_scatter import normalize_neg_index
 from tensor_internal._indexing import _row_major_strides
 
 from utils import IndexList

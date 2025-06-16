@@ -23,7 +23,6 @@ from nn.conv import (
 from .conv_utils import elementwise_simd_epilogue_type
 
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA
 from gpu._cudnn.cnn_infer import (
     cudnnConvolutionForward,
     cudnnConvolutionMode_t,
@@ -67,7 +66,6 @@ from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory import UnsafePointer
-from register import register_internal
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 

@@ -11,16 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray, OptionalReg
-from math import align_down, align_up, ceildiv, exp, recip
+from collections import OptionalReg
+from math import ceildiv, recip
 from math.constants import log2e
-from pathlib import Path
 from sys import alignof, simdwidthof, sizeof
 from sys.intrinsics import _type_is_eq, readfirstlane
 
-import gpu.warp as warp
-from algorithm.functional import tile_and_unswitch, unswitch, vectorize
-from buffer.dimlist import DimList
+from algorithm.functional import unswitch
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -33,7 +30,6 @@ from gpu import (
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
-from gpu.host import DeviceContext
 from gpu.intrinsics import buffer_store
 from gpu.memory import AddressSpace
 from gpu.mma import mma as mma_simd
@@ -43,7 +39,7 @@ from gpu.sync import (
     schedule_group_barrier,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout._utils import get_amd_buffer_descriptor, hash, idx2crd
+from layout._utils import get_amd_buffer_descriptor, idx2crd
 from layout.element import Element
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -58,13 +54,10 @@ from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_builder import static
 from layout.tensor_core import TensorCore, get_mma_shape, num_matrix_reg
-from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
 from memory import UnsafePointer, bitcast, stack_allocation
-from nn.mha_mask import CausalMask, MHAMask, NullMask, TileMaskStatus
-from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
+from nn.mha_mask import MHAMask, TileMaskStatus
+from nn.mha_operand import MHAOperand
 from nn.mha_utils import (
     MHAConfig,
     _kernel_mask,
@@ -77,8 +70,8 @@ from nn.softmax import (
     softmax,
 )
 
-from utils import Index, IndexList, StaticTuple
-from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
+from utils import Index, IndexList
+from utils.numerics import get_accum_type, min_or_neg_inf
 
 
 @always_inline("nodebug")

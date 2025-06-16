@@ -22,15 +22,12 @@ from layout.runtime_layout import RuntimeLayout, make_layout
 ```
 """
 
-from sys import bitwidthof
 
 from utils import IndexList
 
 from . import IntTuple, Layout
 from .int_tuple import UNKNOWN_VALUE, flatten
 from .layout import coalesce as coalesce_layout
-from .layout import composition as composition_layout
-from .layout import is_tuple
 from .layout import make_layout as make_layout_static
 from .runtime_tuple import (
     RuntimeTuple,

@@ -16,8 +16,7 @@ the underlying data. This type is used to build custom graph operations.
 """
 from collections import InlineArray, OptionalReg
 from collections.string import StaticString
-from math import ceil, fma, iota
-from random import rand
+from math import ceil, fma
 from sys import alignof, simdwidthof
 from sys.info import is_gpu
 from sys.intrinsics import strided_load, strided_store
@@ -30,12 +29,12 @@ from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Layout, LayoutTensor
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import trace_arg
 from tensor_internal import RuntimeTensorSpec
 
 from utils import IndexList, StaticTuple

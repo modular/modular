@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
 from collections.string import StringSlice
-from math import ceildiv
-from os import abort
-from sys import alignof, external_call, sizeof
+from sys import external_call
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from memory import Span, UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu

@@ -37,7 +37,7 @@ from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
@@ -58,7 +58,6 @@ from .int_tuple import (
 )
 from .layout import *
 from .runtime_layout import RuntimeLayout
-from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
@@ -4766,7 +4765,7 @@ struct LayoutTensor[
 
         ```mojo
         from layout import LayoutTensor, Layout
-        from gpu import thread_idx, block_idx, block_dim, global_idx, grid_dim
+        from gpu import thread_idx, block_idx, block_dim
         from gpu.memory import AddressSpace, async_copy_wait_all
 
         alias dtype = DType.float32

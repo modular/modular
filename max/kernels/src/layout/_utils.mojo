@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from sys import bitwidthof, sizeof
+from sys import sizeof
 from sys.intrinsics import readfirstlane
 
 from buffer import NDBuffer
@@ -23,7 +23,6 @@ from layout.layout_tensor import LayoutTensor, LayoutTensorIter
 from memory import UnsafePointer
 
 from utils import IndexList
-from utils.index import Index
 
 from .int_tuple import _get_index_type, _get_layout_type, product
 

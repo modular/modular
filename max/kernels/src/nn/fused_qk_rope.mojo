@@ -25,7 +25,7 @@ from gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from utils import IndexList, StaticTuple
+from utils import IndexList
 
 
 @always_inline

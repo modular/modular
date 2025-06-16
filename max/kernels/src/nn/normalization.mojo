@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 from collections.string import StaticString
 from math import align_down, ceildiv, isqrt
 from sys.info import _is_sm_9x, alignof, simdwidthof
@@ -39,7 +38,7 @@ from gpu import (
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import H100, is_cpu, is_gpu
+from gpu.host.info import is_cpu, is_gpu
 from gpu.host.launch_attribute import (
     LaunchAttribute,
     LaunchAttributeID,

@@ -16,7 +16,7 @@ from gpu.random import Random
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal._indexing import _dot_prod, _row_major_strides
 
-from utils import IndexList, product
+from utils import IndexList
 
 
 fn random_uniform[

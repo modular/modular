@@ -40,7 +40,7 @@ from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import IndexList, StaticTuple
-from utils.index import Index, product
+from utils.index import product
 from utils.numerics import get_accum_type, min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#

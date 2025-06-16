@@ -14,11 +14,10 @@
 from collections import List
 from math import iota
 
-from layout import Layout, LayoutTensor, RuntimeTuple
-from memory import Span, UnsafePointer
+from layout import LayoutTensor, RuntimeTuple
+from memory import Span
 
 from utils import IndexList
-from utils.index import Index
 
 
 @fieldwise_init

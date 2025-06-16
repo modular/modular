@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up, ceildiv
+from math import align_down, align_up
 from sys import alignof, has_neon, simdwidthof
 from sys.intrinsics import PrefetchOptions
 
@@ -23,7 +23,6 @@ from register import register_internal
 from utils.index import Index, IndexList
 
 from .apple_accelerate import use_apple_accelerate_lib
-from .gemv import gemv
 from .transpose import transpose, transpose_inplace
 from .utils import (
     GemmShape,

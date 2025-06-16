@@ -13,11 +13,11 @@
 from collections import Optional, OptionalReg
 from collections.string.string_slice import StaticString, get_static_string
 from math import align_up, ceildiv
-from sys.info import alignof, has_neon, has_nvidia_gpu_accelerator, simdwidthof
+from sys.info import alignof, simdwidthof
 
-from algorithm import sync_parallelize, tile, unswitch, vectorize
+from algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
 from memory import UnsafePointer, memset_zero

@@ -54,7 +54,7 @@ from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
 from gpu.comm.allgather import allgather
 from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -87,7 +87,7 @@ from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
 from nn._ragged_utils import merge_ragged_tensors
 from nn.activations import gelu, relu
-from nn.arange import arange, arange_shape
+from nn.arange import arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
@@ -109,7 +109,6 @@ from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
-from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.gather_scatter import (
     Axis,
     _unsafe_normalize_neg_index,
@@ -219,7 +218,7 @@ from quantization.qmatmul_k import (
 )
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel
 from tensor_internal import (
     DynamicTensor,
     InputTensor,

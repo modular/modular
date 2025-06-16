@@ -26,12 +26,11 @@ These components enable efficient tensor operations by ensuring memory accesses
 follow optimal patterns defined by the layout system.
 """
 
-from sys import alignof, bitwidthof
+from sys import alignof
 
 from layout.layout import coalesce, is_contiguous_dim
 from memory import AddressSpace, UnsafePointer
 
-from utils import IndexList
 
 from . import Layout, RuntimeLayout
 from .int_tuple import UNKNOWN_VALUE, _get_index_type

@@ -27,7 +27,6 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
 from memory import UnsafePointer
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -54,13 +53,11 @@ from nn.mla import (
 from quantization.qmatmul import matmul_qint4
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
-from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_internal import IOUnknown, ManagedTensorSlice, trace_slice_arg
-from tensor_internal.managed_tensor_slice import StaticTensorSpec
+from tensor_internal import ManagedTensorSlice, trace_slice_arg
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (ragged)

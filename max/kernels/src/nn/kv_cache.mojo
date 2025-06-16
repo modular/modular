@@ -10,13 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, Optional, OptionalReg
+from collections import Optional, OptionalReg
 from collections.string import StaticString
-from math import gcd, isqrt
-from sys.info import _current_target, simdwidthof
+from sys.info import _current_target
 from sys.intrinsics import _type_is_eq
 
-from algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext
@@ -30,24 +28,21 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
-from memory import UnsafePointer, memcpy
+from memory import UnsafePointer
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import MaterializedMask, MHAMask
+from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import (
     dispatch_mask_and_score_mod,
     dispatch_materialized_mask_and_score_mod,
 )
 from nn.normalization import _rms_norm_impl
-from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import ManagedTensorSlice, trace_slice_arg

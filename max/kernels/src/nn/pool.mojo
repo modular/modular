@@ -15,7 +15,7 @@ from sys.info import simdwidthof
 
 from algorithm import stencil, stencil_gpu
 from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeTuple
+from layout import LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils.index import IndexList

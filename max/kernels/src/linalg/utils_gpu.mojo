@@ -28,14 +28,12 @@ from gpu import WARP_SIZE
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
-from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
+from layout.tensor_core import get_mma_shape
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from gpu.memory import AddressSpace
 from memory import UnsafePointer
 from gpu.host.device_context import DeviceBuffer
-from collections.dict import Dict
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling

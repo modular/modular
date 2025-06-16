@@ -25,9 +25,8 @@ from sys import (
 )
 from sys.intrinsics import llvm_intrinsic
 
-from algorithm import sync_parallelize, tile, vectorize
+from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
 from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul

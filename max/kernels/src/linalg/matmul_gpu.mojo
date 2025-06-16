@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from collections import InlineArray, OptionalReg
-from math import align_down, align_up, ceildiv
-from pathlib import Path
+from math import align_down, ceildiv
 from sys import (
     alignof,
     bitwidthof,
@@ -39,18 +38,16 @@ from gpu import (
     thread_idx,
 )
 from gpu.grid_controls import PDLLevel
-from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
+from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import A100, B200, B100, H100
-from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.mma import ld_matrix, mma
+from gpu.host.info import A100, H100
+from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (
     copy_from_nd_buffer,
     distribute,
     from_ndbuffer_row_major,
     vectorize,
 )
-from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -59,14 +56,12 @@ from layout.layout_tensor import (
     copy_local_to_dram,
     copy_sram_to_local,
 )
-from layout.math import outer_product_acc
 from linalg.matmul_tile_scheduler import MatmulSchedule
-from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
+from memory import UnsafePointer, bitcast, stack_allocation
 
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
 from ._multistage_gemm_gpu import (

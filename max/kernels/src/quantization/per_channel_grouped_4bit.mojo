@@ -18,7 +18,7 @@ from buffer import NDBuffer
 from buffer.buffer import prod_dims
 from memory import UnsafePointer, bitcast, memcpy
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList, StaticTuple
 
 
 @always_inline

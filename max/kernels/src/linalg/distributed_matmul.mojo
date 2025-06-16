@@ -22,8 +22,7 @@ from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
 from memory import UnsafePointer
 from linalg.matmul_gpu import _matmul_gpu
-from sys import sizeof
-from utils import IndexList, StaticTuple
+from utils import IndexList
 from gpu.grid_controls import PDLLevel
 
 

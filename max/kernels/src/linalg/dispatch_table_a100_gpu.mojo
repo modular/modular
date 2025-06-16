@@ -10,18 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Dict, InlineArray, OptionalReg
-from pathlib import Path
+from collections import Dict
 
-from algorithm.functional import elementwise, tile_and_unswitch
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext
 
 from utils import IndexList
 
-from .matmul_gpu import multistage_gemm
-from .utils import elementwise_epilogue_type
 from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,

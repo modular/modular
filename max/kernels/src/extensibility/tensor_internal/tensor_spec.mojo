@@ -18,10 +18,8 @@ from max.tensor import RuntimeTensorSpec
 ```
 """
 
-from collections import List
 from sys import sizeof
 
-from memory import UnsafePointer
 
 from utils import IndexList, product
 

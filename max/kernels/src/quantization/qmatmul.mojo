@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, Optional, OptionalReg
+from collections import InlineArray, OptionalReg
 from math import ceildiv
 from sys import (
     alignof,

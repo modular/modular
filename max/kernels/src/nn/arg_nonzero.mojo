@@ -13,9 +13,8 @@
 
 from collections.string import StaticString
 
-from algorithm import sync_parallelize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from layout import Layout, LayoutTensor, RuntimeTuple, IntTuple
+from layout import LayoutTensor, RuntimeTuple, IntTuple
 from layout.int_tuple import fill_like
 from runtime.tracing import Trace, TraceLevel
 

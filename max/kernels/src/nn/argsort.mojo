@@ -14,7 +14,7 @@
 
 from collections.string import StaticString
 from math import ceildiv, iota
-from sys.info import alignof, bitwidthof, simdwidthof
+from sys.info import simdwidthof
 
 from algorithm import elementwise
 from bit import next_power_of_two
@@ -25,7 +25,7 @@ from gpu.host.info import is_cpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.tracing import Trace, TraceLevel
 
-from utils.index import Index, IndexList, StaticTuple
+from utils.index import IndexList, StaticTuple
 
 
 fn _argsort_cpu[

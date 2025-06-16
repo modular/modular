@@ -13,11 +13,8 @@
 
 from collections import Optional, OptionalReg
 from collections.string import StaticString
-from math import ceildiv, isclose
-from pathlib import Path
-from random import rand, randint, random_float64, seed
-from sys import alignof, argv, is_nvidia_gpu, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from math import ceildiv
+from sys import alignof, is_nvidia_gpu, simdwidthof, sizeof
 
 from bit import log2_floor
 from buffer import NDBuffer
@@ -31,16 +28,14 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, is_gpu
-from gpu.intrinsics import lop
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.info import is_gpu
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
 )
-from gpu.mma import ld_matrix, mma
 from layout import RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
@@ -56,7 +51,6 @@ from layout.layout_tensor import (
     copy_local_to_local,
     copy_sram_to_dram,
 )
-from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
@@ -73,7 +67,7 @@ from memory import UnsafePointer
 from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 
-from utils.index import Index, IndexList
+from utils.index import Index
 from utils.numerics import get_accum_type
 
 

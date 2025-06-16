@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+from layout import LayoutTensor
 from memory import memcpy
 
 from utils import IndexList

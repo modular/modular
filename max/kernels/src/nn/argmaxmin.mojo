@@ -23,9 +23,7 @@ from algorithm import sync_parallelize
 from algorithm.functional import _get_num_workers
 from builtin.math import max as _max
 from builtin.math import min as _min
-from layout import Layout, LayoutTensor
-
-from utils.index import IndexList
+from layout import LayoutTensor
 
 
 fn _argn[

@@ -56,7 +56,6 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-import sys
 from collections import InlineArray, List
 from os import abort
 
