@@ -669,7 +669,7 @@ fn _umul192_upper128[
     var r_128 = _umul128(x, _uint128_high(y))
     var r_low = _uint128_low(r_128)
     var r_high = _uint128_high(r_128)
-    var n = _umul128_upper64(x, _uint128_low(y))
+    var n = _umul128_upper64(x, _uint128_low(y)).cast[DType.uint64]()
     var sum = (r_low + n) & UInt64.MAX
     r_high += 1 if sum < r_low else 0
     var r = _uint64_to_uint128(r_high, sum)
