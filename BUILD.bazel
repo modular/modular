@@ -1,50 +1,39 @@
-load("//bazel:config.bzl", "SUPPORTED_GPUS")
+load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
 
 package(default_visibility = ["//visibility:public"])
 
-constraint_setting(name = "gpu_bool")
-
-constraint_value(
+alias(
     name = "has_gpu",
-    constraint_setting = ":gpu_bool",
+    actual = "@mojo_gpu_toolchains//:has_gpu",
 )
 
-constraint_setting(name = "multi_gpu_bool")
-
-constraint_value(
+alias(
     name = "has_multi_gpu",
-    constraint_setting = ":multi_gpu_bool",
+    actual = "@mojo_gpu_toolchains//:has_multi_gpu",
 )
 
-constraint_setting(name = "multi_gpu_4_bool")
-
-constraint_value(
+alias(
     name = "has_4_gpus",
-    constraint_setting = ":multi_gpu_4_bool",
+    actual = "@mojo_gpu_toolchains//:has_4_gpus",
 )
 
-constraint_setting(name = "gpu_brand")
-
-constraint_value(
+alias(
     name = "amd_gpu",
-    constraint_setting = ":gpu_brand",
-    tags = ["maybe-unused"],
+    actual = "@mojo_gpu_toolchains//:amd_gpu",
 )
 
-constraint_value(
+alias(
     name = "nvidia_gpu",
-    constraint_setting = ":gpu_brand",
+    actual = "@mojo_gpu_toolchains//:nvidia_gpu",
 )
-
-constraint_setting(name = "gpu_name")
 
 [
-    constraint_value(
+    alias(
         name = "{}_gpu".format(gpu),
-        constraint_setting = ":gpu_name",
+        actual = "@mojo_gpu_toolchains//:{}_gpu".format(gpu),
         tags = ["maybe-unused"],
     )
-    for gpu, _, _ in SUPPORTED_GPUS
+    for gpu in SUPPORTED_GPUS.keys()
 ]
 
 config_setting(

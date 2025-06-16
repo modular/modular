@@ -10,7 +10,7 @@ bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "29.1")
 bazel_dep(name = "rules_cc", version = "0.0.17")
-bazel_dep(name = "rules_mojo", version = "0.1.0")
+bazel_dep(name = "rules_mojo", version = "0.4.0")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
@@ -23,16 +23,6 @@ bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
 bazel_dep(name = "rules_mypy", version = "0.32.0", dev_dependency = True)
 bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
-
-# TODO: Remove when 0.3.0 is released
-archive_override(
-    module_name = "rules_mojo",
-    integrity = "sha256-0UmIEqwKiq3Z9Xbn5wJaTGeUoDStdHSDvrnrp5KDbFo=",
-    strip_prefix = "rules_mojo-efd192b4c7502a2c93419645f712b8bb4ce42254",
-    urls = [
-        "https://github.com/modular/rules_mojo/archive/efd192b4c7502a2c93419645f712b8bb4ce42254.tar.gz",
-    ],
-)
 
 single_version_override(
     module_name = "rules_python",
@@ -230,3 +220,44 @@ RUFF_VERSION = "0.11.13"
         ("aarch64-apple-darwin", "7d5e8feea7ee5c3962807996cad557e8a0c4d676c1cba6223bfb0e8b2ca07723"),
     ]
 ]
+
+mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
+mojo.gpu_toolchains(
+    # nvidia-smi / amd-smi output -> GPU name, empty string to ignore GPU
+    gpu_mapping = {
+        " A10G": "a10",
+        "A100-": "a100",
+        " H100 ": "h100",
+        " H200 ": "h200",
+        " L4 ": "L4",
+        " Ada ": "L4",
+        " A3000 ": "a3000",
+        "B100": "b100",
+        "B200": "b200",
+        " RTX 5090": "rtx5090",
+        "Laptop GPU": "",
+        "RTX 4070 Ti": "",
+        "RTX 4080 SUPER": "",
+        "NVIDIA GeForce RTX 3090": "",
+        "MI300X": "mi300x",
+        "MI325": "mi325",
+        "Navi": "radeon",
+        "AMD Radeon Graphics": "radeon",
+    },
+    # GPU name -> target accelerator
+    supported_gpus = {
+        "780M": "amdgpu:gfx1103",
+        "a10": "nvidia:86",
+        "a100": "nvidia:80",
+        "a3000": "nvidia:86",
+        "b100": "nvidia:100a",
+        "b200": "nvidia:100a",
+        "h100": "nvidia:90a",
+        "h200": "nvidia:90a",
+        "l4": "nvidia:89",
+        "mi300x": "amdgpu:gfx942",
+        "mi325": "amdgpu:gfx942",
+        "rtx5090": "nvidia:120a",
+    },
+)
+use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")

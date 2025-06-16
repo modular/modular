@@ -11,11 +11,17 @@ common --enable_platform_specific_config
 common:linux --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 common:linux --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 
+# Don't fail on unknown GPUs, add needed GPUs to common.MODULE.bazel
+common --repo_env=MOJO_IGNORE_UNKNOWN_GPUS=1
+
 common --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
 
+# https://github.com/bazelbuild/bazel/issues/25145
+info --platforms=
+
 # Use a custom platform to detect GPU hardware
-common --platforms=@modular_host_platform
-common --host_platform=@modular_host_platform
+common --platforms=@mojo_host_platform
+common --host_platform=@mojo_host_platform
 
 # Disable legacy duplicate runfiles creation
 common --legacy_external_runfiles=false
