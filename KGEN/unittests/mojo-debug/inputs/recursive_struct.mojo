@@ -24,11 +24,11 @@ struct Bar:
 
 fn main():
     var f1: Foo = Foo(7, UnsafePointer[Foo]())
-    var f2: Foo = Foo(8, UnsafePointer[Foo].address_of(f1))
+    var f2: Foo = Foo(8, UnsafePointer[Foo](to=f1))
     print(f2.ptr[].x)
 
     var b1: Bar = Bar(22, UnsafePointer[Bar]())
-    var b2: Bar = Bar(23, UnsafePointer[Bar].address_of(b1))
+    var b2: Bar = Bar(23, UnsafePointer[Bar](to=b1))
     print(b2.ptr[].x)  # breakpoint
 
     keep_alive(f1, f2, b1, b2)

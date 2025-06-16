@@ -288,13 +288,12 @@ struct CutDownVariadicPack[element_trait: __type_of(AnyType),
 fn test_immortal_to_mortal(arg: Pointer[Int, _])
     -> Pointer[Int, arg.origin]:
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
-  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"address_of{{.*}}([[ARGREF]])
+  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
-
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "value">, #lit.struct.extract<:@stdlib::@builtin::@stubs::@Origin<:!Bool *"mut`"> *"origin`1", "_mlir_origin">>
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[REF]] : !lit.ref<!Int, mut #lit.any.origin> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"mut`", "value">,
   # CHECK-NEXT: [[RES:%.*]] = lit.call @stdlib::@builtin::@stubs::@Pointer::@"__init__{{.*}}([[ADJREFVAL]])
   # CHECK-NEXT: kgen.return [[RES]]
-  return Pointer[Int, arg.origin](to=UnsafePointer.address_of(arg[])[])
+  return Pointer[Int, arg.origin](to=UnsafePointer(to=arg[])[])
 
 
 # CHECK-LABEL: lit.fn @"ref_copyability
