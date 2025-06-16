@@ -20,7 +20,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.comm.allgather import allgather
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList, StaticTuple

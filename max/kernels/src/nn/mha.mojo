@@ -75,7 +75,7 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
 from linalg.transpose import transpose
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from nn._amd_flash_attention_gpu import (
     mha_decoding_single_batch as amd_mha_decoding_single_batch,

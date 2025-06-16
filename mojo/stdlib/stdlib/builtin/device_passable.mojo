@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
-
 
 trait DevicePassable:
     """This trait marks types as passable to accelerator devices."""

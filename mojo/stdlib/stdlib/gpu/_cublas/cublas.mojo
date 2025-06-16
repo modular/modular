@@ -18,7 +18,6 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
-from memory import UnsafePointer
 
 from .dtype import DataType, Property
 from .result import Result

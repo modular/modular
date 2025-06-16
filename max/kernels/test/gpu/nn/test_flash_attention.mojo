@@ -22,7 +22,6 @@ from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100, Info, Vendor
 from internal_utils import assert_with_measure
-from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,

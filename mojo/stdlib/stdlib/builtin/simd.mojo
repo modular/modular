@@ -78,7 +78,7 @@ from builtin.format_int import _try_write_int
 from builtin.io import _snprintf
 from builtin.math import Powable
 from documentation import doc_private
-from memory import Span, UnsafePointer, bitcast, memcpy
+from memory import Span, bitcast, memcpy
 from python import PythonConvertible, PythonObject, Python
 
 from utils import IndexList, StaticTuple

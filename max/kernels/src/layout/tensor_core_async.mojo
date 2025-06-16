@@ -58,7 +58,6 @@ from layout.layout import (
     tile_to_shape,
     upcast,
 )
-from memory.unsafe_pointer import UnsafePointer
 
 from utils import IndexList, StaticTuple
 

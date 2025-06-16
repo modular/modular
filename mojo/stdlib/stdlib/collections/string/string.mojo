@@ -96,7 +96,7 @@ from sys import bitwidthof, is_compile_time, sizeof
 from sys.ffi import c_char
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer, memcpy, memset
+from memory import Span, memcpy, memset
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
 from utils import IndexList, Variant, Writable, Writer

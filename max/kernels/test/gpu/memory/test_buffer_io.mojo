@@ -24,7 +24,7 @@ from gpu.intrinsics import (
     make_buffer_resource,
 )
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import assert_equal
 
 alias size = 257

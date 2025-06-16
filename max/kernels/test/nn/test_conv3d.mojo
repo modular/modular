@@ -17,7 +17,6 @@ from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,

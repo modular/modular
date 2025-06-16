@@ -20,7 +20,7 @@ from collections.string.string_slice import CodepointSliceIter, StaticString
 from os import PathLike
 from sys.ffi import c_char
 
-from memory import Span, UnsafePointer, memcpy
+from memory import Span, memcpy
 from python import PythonConvertible, PythonObject
 
 from utils import Writable, Writer

@@ -17,7 +17,6 @@ from os import PathLike, abort
 from pathlib import DIR_SEPARATOR, Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 
-from memory import UnsafePointer
 
 from .info import is_64bit, os_is_linux, os_is_macos, os_is_windows
 from .intrinsics import _mlirtype_is_eq

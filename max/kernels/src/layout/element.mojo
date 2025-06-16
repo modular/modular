@@ -29,7 +29,7 @@ follow optimal patterns defined by the layout system.
 from sys import alignof
 
 from layout.layout import coalesce, is_contiguous_dim
-from memory import AddressSpace, UnsafePointer
+from memory import AddressSpace
 
 
 from . import Layout, RuntimeLayout

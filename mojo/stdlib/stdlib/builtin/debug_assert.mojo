@@ -23,7 +23,6 @@ from sys.intrinsics import block_idx, thread_idx
 from sys.param_env import env_get_string
 from utils.write import _WriteBufferHeap
 from builtin.io import _printf
-from memory import UnsafePointer
 
 from builtin._location import __call_location, _SourceLocation
 

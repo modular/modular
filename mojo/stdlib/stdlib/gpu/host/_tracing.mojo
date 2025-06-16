@@ -23,8 +23,6 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib
 from sys.param_env import env_get_int
 
-from memory import UnsafePointer
-
 from utils.variant import Variant
 
 # ===-----------------------------------------------------------------------===#

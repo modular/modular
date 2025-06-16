@@ -24,7 +24,6 @@ from os import abort, getenv
 from sys import external_call, sizeof
 from sys.ffi import _Global
 
-from memory import UnsafePointer
 
 from ._cpython import (
     CPython,

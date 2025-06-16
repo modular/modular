@@ -13,7 +13,7 @@
 
 
 from layout import LayoutTensor
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from memory.unsafe_pointer import _default_alignment
 
 # ===-----------------------------------------------------------------------===#

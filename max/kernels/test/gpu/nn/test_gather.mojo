@@ -16,7 +16,6 @@ from sys.info import simdwidthof, sizeof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from nn.gather_scatter import gather
 
 from utils.index import Index, IndexList

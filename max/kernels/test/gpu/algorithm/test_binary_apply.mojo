@@ -17,7 +17,6 @@ from sys.info import is_nvidia_gpu
 
 from gpu import *
 from gpu.host import DeviceContext, Dim
-from memory import UnsafePointer
 from testing import assert_equal
 
 

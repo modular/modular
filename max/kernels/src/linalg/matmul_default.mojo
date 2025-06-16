@@ -16,7 +16,6 @@ from sys.info import alignof
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 

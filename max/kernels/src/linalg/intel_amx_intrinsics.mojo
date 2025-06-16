@@ -20,7 +20,6 @@ from sys import llvm_intrinsic
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 
 from utils import Index, StaticTuple
 

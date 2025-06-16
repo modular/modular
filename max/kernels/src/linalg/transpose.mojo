@@ -20,7 +20,7 @@ from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout import LayoutTensor, Layout
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from runtime.asyncrt import parallelism_level
 
 from utils.index import IndexList, StaticTuple

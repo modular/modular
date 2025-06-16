@@ -57,7 +57,7 @@ from layout.layout_tensor import (
     copy_sram_to_local,
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 
 from utils import IndexList
 from utils.index import Index

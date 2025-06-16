@@ -21,7 +21,6 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from memory import UnsafePointer
 from nn.softmax import _online_softmax_kernel, _softmax_cpu, _softmax_gpu
 from testing import assert_almost_equal, assert_true
 

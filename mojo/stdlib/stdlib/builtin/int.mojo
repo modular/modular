@@ -27,7 +27,6 @@ from sys import bitwidthof
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, Powable
-from memory import UnsafePointer
 from python import (
     Python,
     PythonConvertible,

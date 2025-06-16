@@ -20,7 +20,6 @@ from gpu.comm.allreduce import (
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from linalg.matmul_gpu import _matmul_gpu
 from utils import IndexList
 from gpu.grid_controls import PDLLevel

@@ -14,7 +14,7 @@
 
 from sys.info import sizeof
 
-from memory import Span, UnsafePointer
+from memory import Span
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,

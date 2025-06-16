@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from bit import byte_swap, rotate_bits_left
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 from ._hasher import _HashableWithHasher, _Hasher
 

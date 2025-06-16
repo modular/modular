@@ -55,7 +55,7 @@ from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_mma_shape, num_matrix_reg
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import (

@@ -22,8 +22,6 @@ from sys.ffi import (
 )
 from sys.param_env import env_get_string, is_defined
 
-from memory import UnsafePointer
-
 
 # Init fns inspired by gpu.host._utils
 fn _init_dylib() -> _OwnedDLHandle:

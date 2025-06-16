@@ -14,7 +14,6 @@ from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from memory import UnsafePointer
 
 from utils.index import IndexList, StaticTuple
 

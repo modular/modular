@@ -28,7 +28,7 @@ from layout import (
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 
 from utils import IndexList, StaticTuple
 

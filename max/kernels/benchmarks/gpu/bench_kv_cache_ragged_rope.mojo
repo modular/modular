@@ -23,7 +23,6 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
 from utils.index import IndexList

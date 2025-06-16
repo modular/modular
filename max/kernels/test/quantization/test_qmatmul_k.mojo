@@ -19,7 +19,6 @@ from sys import sizeof
 from algorithm import sync_parallelize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,

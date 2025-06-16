@@ -22,7 +22,7 @@ from sys import (
 )
 from sys.intrinsics import assume, likely, unlikely
 
-from memory import UnsafePointer, memset_zero
+from memory import memset_zero
 from testing import assert_equal
 
 alias F32x4 = SIMD[DType.float32, 4]

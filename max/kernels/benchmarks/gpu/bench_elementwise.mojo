@@ -31,7 +31,6 @@ from buffer.dimlist import _make_tuple
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils import IndexList

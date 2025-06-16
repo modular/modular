@@ -20,7 +20,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 
 from .ffi import MLIR_func
 from .Support import *

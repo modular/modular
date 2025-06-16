@@ -17,7 +17,7 @@ from compile import compile_info
 from gpu import *
 from gpu.host import *
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import *
 
 

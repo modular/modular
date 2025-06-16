@@ -14,7 +14,6 @@
 from os import abort
 from sys import sizeof
 
-from memory import UnsafePointer
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
 from python._cpython import PyObjectPtr

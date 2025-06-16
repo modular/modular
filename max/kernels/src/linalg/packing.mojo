@@ -17,7 +17,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
-from memory import UnsafePointer, memcpy, stack_allocation
+from memory import memcpy, stack_allocation
 from register import register_internal
 
 from utils.index import Index, IndexList

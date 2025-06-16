@@ -22,7 +22,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import UnsafePointer
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal

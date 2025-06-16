@@ -33,7 +33,7 @@ from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
 from gpu.memory import AddressSpace
 from linalg.utils import elementwise_epilogue_type
-from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
+from memory import bitcast, memset_zero, stack_allocation
 
 from utils import StaticTuple
 from utils.index import Index

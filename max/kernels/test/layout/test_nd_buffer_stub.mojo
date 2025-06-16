@@ -35,7 +35,6 @@ from layout._ndbuffer_stub import (
     vectorize,
 )
 from layout.layout import LayoutList
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils import Index, IndexList, StaticTuple

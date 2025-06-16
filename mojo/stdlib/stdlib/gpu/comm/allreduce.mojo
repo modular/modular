@@ -62,7 +62,7 @@ from gpu.grid_controls import (
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple

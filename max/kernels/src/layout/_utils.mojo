@@ -20,7 +20,6 @@ from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu.intrinsics import _buffer_resource, make_buffer_resource
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
-from memory import UnsafePointer
 
 from utils import IndexList
 

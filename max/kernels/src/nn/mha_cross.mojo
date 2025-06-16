@@ -20,7 +20,6 @@ from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext
 from kv_cache.types import KVCacheT
-from memory import UnsafePointer
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu

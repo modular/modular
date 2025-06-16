@@ -13,7 +13,6 @@
 # RUN: %mojo %s
 
 from collections import LinkedList, Optional
-from memory import UnsafePointer
 
 from test_utils import (
     CopyCountedStruct,

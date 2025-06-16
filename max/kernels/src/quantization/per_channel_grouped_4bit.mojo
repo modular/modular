@@ -16,7 +16,7 @@ from sys.info import sizeof
 
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
-from memory import UnsafePointer, bitcast, memcpy
+from memory import bitcast, memcpy
 
 from utils import IndexList, StaticTuple
 

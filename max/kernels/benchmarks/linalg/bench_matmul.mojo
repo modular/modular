@@ -20,7 +20,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList

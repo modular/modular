@@ -29,7 +29,7 @@ from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
 from linalg.matmul import matmul
 from linalg.utils_gpu import MatmulConfig
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from runtime.tracing import trace_arg
 
 from utils.index import IndexList

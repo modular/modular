@@ -23,7 +23,6 @@ from collections import Deque
 
 
 from bit import next_power_of_two
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Deque

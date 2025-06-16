@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from layout import (
     LayoutTensor,
     Layout,

@@ -13,8 +13,6 @@
 
 from collections import List
 
-from memory import UnsafePointer
-
 
 @fieldwise_init
 struct WeightsRegistry(Copyable, Movable):

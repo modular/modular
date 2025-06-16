@@ -20,7 +20,6 @@ from gpu.mma import mma
 from gpu.mma_util import load_matrix_a_amd as load_matrix_a
 from gpu.mma_util import load_matrix_b_amd as load_matrix_b
 from gpu.mma_util import store_matrix_d
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils.numerics import isnan

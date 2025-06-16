@@ -15,7 +15,7 @@
 from collections.string.string_slice import get_static_string
 from sys.info import alignof, sizeof
 
-from memory import Span, UnsafePointer
+from memory import Span
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 # ===----------------------------------------------------------------------=== #

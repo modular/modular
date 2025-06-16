@@ -14,7 +14,6 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.apple_accelerate import apple_batched_matmul, apple_matmul
-from memory import UnsafePointer
 from testing import *
 
 from utils.index import Index, IndexList

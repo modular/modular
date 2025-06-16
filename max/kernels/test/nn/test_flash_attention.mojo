@@ -16,7 +16,6 @@ from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
 from nn.flash_attention import flash_attention, flash_attention_split_kv
 from testing import assert_equal
 

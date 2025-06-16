@@ -14,7 +14,7 @@
 
 from collections import InlineArray, List
 
-from memory import Span, UnsafePointer
+from memory import Span
 from testing import assert_equal, assert_raises, assert_true
 
 

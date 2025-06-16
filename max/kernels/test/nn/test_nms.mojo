@@ -14,7 +14,6 @@
 from collections import List
 
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from memory import UnsafePointer
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
 from utils import IndexList

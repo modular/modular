@@ -29,7 +29,6 @@
 
 from os import abort
 
-from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly

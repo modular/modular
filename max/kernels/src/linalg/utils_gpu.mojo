@@ -32,7 +32,6 @@ from layout.tensor_core import get_mma_shape
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from memory import UnsafePointer
 from gpu.host.device_context import DeviceBuffer
 
 # ===------------------------------------------------------------------===#

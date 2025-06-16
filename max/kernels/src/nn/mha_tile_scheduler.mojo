@@ -20,7 +20,6 @@ from gpu.host.info import H100
 from gpu.id import block_idx, thread_idx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier, named_barrier
-from memory import UnsafePointer
 
 
 @fieldwise_init

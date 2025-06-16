@@ -15,7 +15,6 @@ from math import iota, isclose
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.cumsum import cumsum
 
 

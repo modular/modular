@@ -36,7 +36,6 @@ from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
 from utils import IndexList

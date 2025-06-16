@@ -25,7 +25,6 @@ from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
 from math import ceildiv
-from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 from sys.info import (
     has_nvidia_gpu_accelerator,

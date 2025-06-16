@@ -25,8 +25,6 @@ from sys import bitwidthof, external_call
 from sys.ffi import OpaquePointer
 from time import perf_counter_ns
 
-from memory import UnsafePointer
-
 
 fn _get_random_state() -> OpaquePointer:
     return external_call[

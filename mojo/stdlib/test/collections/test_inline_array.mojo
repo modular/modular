@@ -15,7 +15,6 @@
 from collections import InlineArray
 from sys.info import sizeof
 
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import DelRecorder
 from testing import assert_equal, assert_false, assert_true

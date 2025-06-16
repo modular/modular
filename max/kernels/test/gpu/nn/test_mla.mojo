@@ -23,7 +23,6 @@ from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import assert_with_measure
 from internal_utils._measure import cosine
-from memory import UnsafePointer
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import NDBufferMHAOperand

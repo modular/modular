@@ -26,7 +26,6 @@ from layout.layout_tensor import copy_sram_to_local
 from layout.math import outer_product_acc
 from layout.tensor_builder import LayoutTensorBuild as tb
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index

@@ -27,7 +27,6 @@ from internal_utils import (
     random,
     zero,
 )
-from memory import UnsafePointer
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,

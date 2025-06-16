@@ -15,7 +15,6 @@
 from collections.optional import Optional
 from collections.string import StaticString
 
-from memory import UnsafePointer
 
 from utils import Variant
 from utils.write import _WriteBufferStack

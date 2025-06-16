@@ -17,7 +17,6 @@ from sys import has_neon
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
-from memory import UnsafePointer
 from testing import (
     assert_almost_equal,
     assert_equal,

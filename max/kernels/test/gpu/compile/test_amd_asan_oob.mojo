@@ -31,7 +31,6 @@
 from sys import argv
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 
 fn bad_func(ptr: UnsafePointer[Int32], i: Int):

@@ -20,7 +20,6 @@ functionality in the rest of the Mojo standard library.
 from sys import os_is_windows
 from sys.ffi import OpaquePointer, c_char, c_int, c_size_t
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations

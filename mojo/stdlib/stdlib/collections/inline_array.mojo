@@ -42,7 +42,6 @@ will be removed.
 import math
 from collections._index_normalization import normalize_index
 
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 
 # ===-----------------------------------------------------------------------===#

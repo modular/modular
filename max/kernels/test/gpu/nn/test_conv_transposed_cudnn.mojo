@@ -18,7 +18,6 @@ from random import random_float64
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.conv_transpose import conv_transpose_naive
 from nn.conv_transpose import conv_transposed_cudnn
 from internal_utils import (

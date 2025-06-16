@@ -20,7 +20,7 @@ from collections.string.string import (
 )
 from math import isinf, isnan
 
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from python import Python, PythonObject
 from testing import (
     assert_equal,

@@ -37,7 +37,7 @@ from linalg import vendor_blas
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
 from test_utils import ulp_distance
 from testing import assert_almost_equal, assert_true

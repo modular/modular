@@ -22,7 +22,7 @@ from gpu.memory import (
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import assert_equal
 
 

@@ -24,7 +24,7 @@ from gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 from utils.index import Index
 

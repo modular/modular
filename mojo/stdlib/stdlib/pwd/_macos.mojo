@@ -13,7 +13,6 @@
 
 from sys.ffi import c_char, external_call
 
-from memory import UnsafePointer
 
 from .pwd import Passwd
 

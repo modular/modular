@@ -23,7 +23,6 @@ from internal_utils import (
     ndbuffer_to_str,
 )
 from layout import LayoutTensor, RuntimeLayout, Layout
-from memory import UnsafePointer
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
 from testing import assert_equal, assert_true

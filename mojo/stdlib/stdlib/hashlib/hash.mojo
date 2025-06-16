@@ -30,7 +30,7 @@ from collections import InlineArray
 from sys import bitwidthof, simdwidthof, sizeof
 
 from builtin.dtype import _uint_type_of_width
-from memory import UnsafePointer, bitcast, memcpy, memset_zero
+from memory import bitcast, memcpy, memset_zero
 
 # ===----------------------------------------------------------------------=== #
 # Implementation

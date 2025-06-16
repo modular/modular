@@ -15,7 +15,6 @@ from collections import InlineArray
 from math import fma
 
 from buffer.buffer import NDBuffer
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 

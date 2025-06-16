@@ -17,7 +17,6 @@ from hashlib._ahash import AHasher
 from hashlib._hasher import _hash_with_hasher, _HashableWithHasher, _Hasher
 from pathlib import Path
 
-from memory import UnsafePointer
 from testing import assert_equal, assert_true
 
 

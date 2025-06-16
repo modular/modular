@@ -17,7 +17,6 @@
 from time import sleep, time_function
 
 from benchmark import Report, Unit, clobber_memory, keep, run
-from memory import UnsafePointer
 
 
 # CHECK-LABEL: test_benchmark

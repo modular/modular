@@ -15,8 +15,6 @@
 from collections._index_normalization import normalize_index
 from os import abort
 
-from memory import UnsafePointer
-
 
 struct Node[
     ElementType: Copyable & Movable,

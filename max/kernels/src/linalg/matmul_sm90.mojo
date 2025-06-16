@@ -80,7 +80,7 @@ from layout.tma_async import (
     create_tma_tile,
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from memory.pointer import _GPUAddressSpace
 from stdlib.bit import log2_floor
 

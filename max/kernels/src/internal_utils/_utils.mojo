@@ -30,7 +30,6 @@ from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from memory import UnsafePointer
 from stdlib.builtin.io import _snprintf
 from tensor_internal import DynamicTensor
 from testing import assert_equal, assert_true

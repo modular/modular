@@ -37,7 +37,7 @@ from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils import IndexList, StaticTuple

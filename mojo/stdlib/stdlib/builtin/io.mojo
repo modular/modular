@@ -35,7 +35,7 @@ from sys.intrinsics import _type_is_eq
 
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
-from memory import UnsafePointer, bitcast, memcpy
+from memory import bitcast, memcpy
 from utils.write import _WriteBufferHeap, _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #

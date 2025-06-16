@@ -86,7 +86,6 @@ from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from gpu.host.info import DEFAULT_GPU, H100
-from memory import UnsafePointer
 
 from utils.variant import Variant
 

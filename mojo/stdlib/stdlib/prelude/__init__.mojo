@@ -134,6 +134,6 @@ from builtin.value import (
 )
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
-from memory import AddressSpace, Pointer, Span
+from memory import AddressSpace, Pointer, Span, UnsafePointer
 
 from utils import Writable, Writer

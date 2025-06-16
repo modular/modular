@@ -17,7 +17,6 @@ from random import random_float64
 
 from buffer import NDBuffer, DimList
 from layout import LayoutTensor, Layout, RuntimeLayout, RuntimeTuple
-from memory import UnsafePointer
 from nn.softmax import softmax
 
 from utils import IndexList

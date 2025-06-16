@@ -18,7 +18,7 @@ from gpu.host._compile import _compile_code_asm
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_true
 

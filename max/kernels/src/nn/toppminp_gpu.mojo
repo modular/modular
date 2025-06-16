@@ -32,7 +32,7 @@ from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,

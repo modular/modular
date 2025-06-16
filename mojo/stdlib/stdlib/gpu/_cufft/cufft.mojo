@@ -15,7 +15,6 @@ from os import abort
 
 from complex import ComplexFloat32, ComplexFloat64
 from gpu.host._nvidia_cuda import CUstream
-from memory import UnsafePointer
 
 from .types import Compatibility, LibraryProperty, Property, Status, Type
 from .utils import _get_dylib_function

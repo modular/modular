@@ -22,7 +22,6 @@ from layout._utils import load_to_simd
 from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

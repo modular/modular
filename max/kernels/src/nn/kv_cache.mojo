@@ -29,7 +29,6 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
-from memory import UnsafePointer
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,

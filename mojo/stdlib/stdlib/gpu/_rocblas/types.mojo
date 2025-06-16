@@ -13,8 +13,6 @@
 
 from os import abort
 
-from memory import UnsafePointer
-
 
 @fieldwise_init
 @register_passable("trivial")

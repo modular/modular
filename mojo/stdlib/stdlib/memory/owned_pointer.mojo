@@ -19,7 +19,7 @@ from memory import OwnedPointer
 ```
 """
 
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 
 
 @register_passable

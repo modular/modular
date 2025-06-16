@@ -55,7 +55,6 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import UnsafePointer
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_score_mod import ScoreModTrait

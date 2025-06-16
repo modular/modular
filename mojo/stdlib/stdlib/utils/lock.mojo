@@ -16,7 +16,6 @@ from sys import external_call
 from sys.ffi import OpaquePointer
 from time import sleep
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter

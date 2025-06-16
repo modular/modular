@@ -16,7 +16,6 @@ from random import rand, randint
 from benchmark import *
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
 from nn.gather_scatter import scatter_elements
 from tensor_internal import DynamicTensor, ManagedTensorSlice
 

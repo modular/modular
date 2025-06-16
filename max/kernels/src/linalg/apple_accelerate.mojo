@@ -25,7 +25,6 @@ from algorithm.functional import (
     parallelize_over_rows,
 )
 from buffer.buffer import NDBuffer
-from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index

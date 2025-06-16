@@ -43,7 +43,6 @@ from os import PathLike
 from pathlib import Path
 from sys.info import _current_target
 
-from memory import UnsafePointer
 
 from utils import Writer
 

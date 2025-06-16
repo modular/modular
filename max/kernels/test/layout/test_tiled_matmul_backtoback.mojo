@@ -23,7 +23,7 @@ from layout.int_tuple import UNKNOWN_VALUE, IntTuple, size
 from layout.layout import coalesce, expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
 from layout.math import outer_product_acc
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from memory import memcpy, memset_zero, stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple

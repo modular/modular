@@ -21,7 +21,6 @@ from sys import external_call, os_is_windows
 from sys.ffi import c_char
 
 from builtin._location import __call_location, _SourceLocation
-from memory import UnsafePointer
 
 alias DIR_SEPARATOR = "\\" if os_is_windows() else "/"
 

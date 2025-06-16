@@ -15,7 +15,6 @@ from collections import List, OptionalReg
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
 from nn.concat import (
     _concat_parallel,
     _concat_serial,

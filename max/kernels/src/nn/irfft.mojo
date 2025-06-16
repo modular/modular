@@ -25,7 +25,6 @@ from gpu._cufft.types import Status, Type
 from gpu._cufft.utils import check_error
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
-from memory import UnsafePointer
 
 from sys.ffi import OpaquePointer, _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer

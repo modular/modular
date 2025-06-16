@@ -14,7 +14,6 @@
 
 from collections import OptionalReg
 from math import align_up, ceildiv
-from memory import UnsafePointer
 from sys import (
     alignof,
     env_get_int,

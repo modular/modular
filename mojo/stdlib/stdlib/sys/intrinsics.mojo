@@ -24,7 +24,7 @@ from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
-from memory import AddressSpace, UnsafePointer
+from memory import AddressSpace
 from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly

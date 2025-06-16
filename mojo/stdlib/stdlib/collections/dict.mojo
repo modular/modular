@@ -38,7 +38,7 @@ See the `Dict` docs for more details.
 """
 from sys.ffi import OpaquePointer
 
-from memory import UnsafePointer, bitcast, memcpy
+from memory import bitcast, memcpy
 
 
 alias KeyElement = Copyable & Movable & Hashable & EqualityComparable

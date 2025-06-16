@@ -17,7 +17,6 @@ from sys.info import alignof, has_avx512f, has_neon_int8_dotprod
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 
 from utils.index import Index, IndexList

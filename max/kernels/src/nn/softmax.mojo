@@ -35,7 +35,7 @@ from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import get_fragment_size
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 

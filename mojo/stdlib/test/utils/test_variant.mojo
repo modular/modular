@@ -14,7 +14,6 @@
 
 from sys.ffi import _Global
 
-from memory import UnsafePointer
 from test_utils import MoveCopyCounter, ObservableDel
 from testing import assert_equal, assert_false, assert_true
 

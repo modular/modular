@@ -15,7 +15,6 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.sync import barrier
-from memory import UnsafePointer
 from testing import assert_equal
 
 

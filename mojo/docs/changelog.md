@@ -39,6 +39,8 @@ what we publish.
 - Added WMMA matrix-multiplication instructions for RDNA3+ GPUs to help support
   running AI models on those GPUs.
 
+- `memory.UnsafePointer` is now implicitly included in all mojo files.
+
 ### Tooling changes
 
 ### ❌ Removed

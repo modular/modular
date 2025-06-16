@@ -14,7 +14,6 @@
 """Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a _Hasher type."""
 
 from ._hasher import _Hasher, _HashableWithHasher
-from memory import UnsafePointer
 
 
 struct Fnv1a(Defaultable, _Hasher):

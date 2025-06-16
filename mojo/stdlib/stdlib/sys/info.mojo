@@ -23,7 +23,6 @@ print(CompilationTarget.is_x86())
 
 from collections.string.string_slice import _get_kgen_string
 
-from memory import UnsafePointer
 
 from .ffi import OpaquePointer, _external_call_const, external_call
 

@@ -18,7 +18,7 @@ from random import random_ui64
 from buffer import Dim, DimList, NDBuffer
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod

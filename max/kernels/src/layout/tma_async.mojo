@@ -62,7 +62,6 @@ from gpu.sync import (
     mbarrier_try_wait_parity_shared,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from gpu.intrinsics import Scope
 from utils.index import Index, IndexList

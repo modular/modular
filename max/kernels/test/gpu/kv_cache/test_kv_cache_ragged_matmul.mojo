@@ -26,7 +26,7 @@ from kv_cache.types import (
 )
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.kv_cache_ragged import (
     _fused_qkv_matmul_kv_cache_ragged_impl,
     _matmul_k_cache_ragged_impl,

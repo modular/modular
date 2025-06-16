@@ -22,7 +22,7 @@ from sys.info import _is_amd_rdna
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 from utils import StaticTuple
 from utils.index import Index

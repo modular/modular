@@ -50,7 +50,7 @@ from gpu.host._compile import (
     _ptxas_compile,
     _to_sass,
 )
-from memory import UnsafePointer, memcpy, stack_allocation
+from memory import memcpy, stack_allocation
 from memory.unsafe import bitcast
 
 from utils import Variant

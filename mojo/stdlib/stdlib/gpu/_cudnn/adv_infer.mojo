@@ -17,7 +17,6 @@ from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
-from memory import UnsafePointer
 
 from .infer import (
     cudnnFilterStruct,

@@ -20,7 +20,6 @@ from gpu.host import (
     Dim,
 )
 from gpu.host._nvidia_cuda import CUDA, CUcontext
-from stdlib.memory import UnsafePointer
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:

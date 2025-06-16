@@ -17,7 +17,6 @@ from sys.info import num_physical_cores, simdwidthof
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from memory import UnsafePointer
 
 from utils.index import IndexList
 

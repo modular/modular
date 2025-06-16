@@ -17,7 +17,7 @@ from math import ceil, floor
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 
 from utils import IndexList, StaticTuple
 

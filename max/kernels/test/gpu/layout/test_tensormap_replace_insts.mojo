@@ -32,7 +32,7 @@ from layout.tma_async import (
     TMATensorTileArray,
     create_tma_tile,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal, assert_not_equal
 

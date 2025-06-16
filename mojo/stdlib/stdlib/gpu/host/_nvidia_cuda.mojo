@@ -22,7 +22,7 @@ from gpu.host.device_context import (
     _DeviceContextPtr,
     _DeviceStreamPtr,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple

@@ -19,7 +19,6 @@ from sys import sizeof
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer
-from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import (
     MASK_VALUE,

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import Layout, LayoutTensor
-from memory import UnsafePointer
 from nn.argsort import argsort
 from testing import assert_true
 

@@ -22,7 +22,6 @@ from gpu.host.info import A100, DEFAULT_GPU_ARCH
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index, IndexList

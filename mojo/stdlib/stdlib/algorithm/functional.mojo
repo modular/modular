@@ -102,7 +102,6 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from memory import UnsafePointer
 
     # The amount of elements to loop through
     alias size = 10
@@ -211,7 +210,6 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from memory import UnsafePointer
 
     # The amount of elements to loop through
     alias size = 10

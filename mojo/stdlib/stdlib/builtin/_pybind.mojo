@@ -14,7 +14,7 @@
 from compile.reflection import get_type_name
 
 import python._cpython as cp
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from python import (
     Python,
     PythonObject,

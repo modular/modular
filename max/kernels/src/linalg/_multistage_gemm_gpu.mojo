@@ -60,7 +60,6 @@ from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
 from utils import StaticTuple

@@ -21,7 +21,7 @@ from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import B200, DEFAULT_GPU_ARCH, Info
 from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 from utils.index import IndexList
 

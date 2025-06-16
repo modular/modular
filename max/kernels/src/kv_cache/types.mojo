@@ -24,7 +24,6 @@ This module defines two traits that define the roles of the different structs
 
 from buffer import Dim, DimList, NDBuffer
 from layout import LayoutTensor
-from memory import UnsafePointer
 
 from utils import Index, IndexList
 
