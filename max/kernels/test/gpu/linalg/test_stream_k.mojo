@@ -11,18 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from os.atomic import Atomic
-from random import random_float64
-from sys import _RegisterPackType, bitwidthof, sizeof
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import Semaphore, barrier, block_dim, block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import AddressSpace
+from gpu import Semaphore, block_dim, block_idx, thread_idx
+from gpu.host import DeviceContext
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index, IndexList

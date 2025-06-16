@@ -11,30 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simdwidthof
-
-import builtin
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 from layout import (
     LayoutTensor,
     Layout,
     RuntimeLayout,
-    RuntimeTuple,
     UNKNOWN_VALUE,
 )
 from layout._fillers import arange
-from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import (
     PoolMethod,
     avg_pool,
     avg_pool_gpu,
     max_pool,
     max_pool_gpu,
-    pool_shape_impl,
 )
 from testing import assert_almost_equal
 

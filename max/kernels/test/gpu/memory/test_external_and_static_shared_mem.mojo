@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import alignof, simdwidthof
+from sys.info import alignof
 
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.id import thread_idx

@@ -12,56 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: AMD-GPU
 # REQUIRES: H100-GPU
-from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
-from gpu.host.info import Vendor, H100
-from sys.info import is_nvidia_gpu, _is_sm_9x_or_newer
+from gpu.host.info import H100
 
 import linalg.vendor_blas
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu import WARP_SIZE, barrier
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_dim, block_idx, thread_idx
-from gpu.memory import AddressSpace, external_memory
-from gpu.mma import (
-    WGMMADescriptor,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
+from buffer.dimlist import DimList
+from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
-from layout.tensor_core_async import (
-    TensorCoreAsync,
-    tile_layout_k_major,
-    tile_layout_mn_major,
-)
-from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
 from linalg.matmul_tile_scheduler import MatmulSchedule
-from linalg.utils_gpu import (
-    MatmulConfig,
-    get_hilbert_lut_with_cache,
-)
-from memory import stack_allocation
+from linalg.utils_gpu import MatmulConfig
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from utils.index import Index
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4

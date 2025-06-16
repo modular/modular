@@ -12,22 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.memory import AddressSpace
-from gpu import (
-    WARP_SIZE,
-)
+from gpu import WARP_SIZE
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from gpu.sync import barrier
 from gpu.host import DeviceContext
 from layout._utils import ManagedLayoutTensor
-from layout import Layout, LayoutTensor, IntTuple
+from layout import Layout, LayoutTensor
 from testing import assert_almost_equal
 from gpu.id import thread_idx
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_to_descriptor,
-)
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 
 

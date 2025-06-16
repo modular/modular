@@ -15,10 +15,10 @@ from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import barrier, block_dim, block_idx, global_idx, thread_idx
+from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 
 from utils.index import Index
 

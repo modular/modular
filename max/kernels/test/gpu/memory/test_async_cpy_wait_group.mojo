@@ -17,7 +17,6 @@ from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import (
     AddressSpace,
-    Fill,
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,

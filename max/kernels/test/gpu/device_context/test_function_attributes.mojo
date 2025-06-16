@@ -14,8 +14,8 @@
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.func_attribute import Attribute
-from memory import UnsafePointer, stack_allocation
-from testing import *
+from memory import UnsafePointer
+from testing import assert_equal
 
 
 # CHECK-LABEL: test_function_attributes

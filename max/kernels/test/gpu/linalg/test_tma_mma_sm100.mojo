@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import sizeof, simdwidthof
+from sys import sizeof
 
 from gpu import WARP_SIZE, barrier
-from gpu import warp_id as get_warp_id, lane_id as get_lane_id
+from gpu import lane_id as get_lane_id
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _compile_code_asm
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
+from gpu.id import block_idx, lane_id, thread_idx
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
@@ -27,21 +25,14 @@ from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
-from layout.layout_tensor import copy_local_to_dram
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from gpu.cluster import (
-    block_rank_in_cluster,
-    cluster_sync,
-    cluster_sync_relaxed,
-)
+from gpu.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
 from linalg import vendor_blas
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
 from testing import assert_almost_equal
 
 from utils.index import Index, IndexList

@@ -38,7 +38,6 @@ from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 
 fn _compute_reg_tile_layout(layout: Layout, frag_size: Int) -> Layout:

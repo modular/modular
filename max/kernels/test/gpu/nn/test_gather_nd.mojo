@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import stack_allocation
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 from testing import assert_equal, assert_true
 

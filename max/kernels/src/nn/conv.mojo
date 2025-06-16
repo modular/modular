@@ -14,7 +14,7 @@
 from collections import OptionalReg
 from collections.string import StaticString
 from math import align_down, ceildiv
-from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys.ffi import _get_global_or_null, external_call
 from sys.info import alignof, simdwidthof
 
 from algorithm import (
@@ -62,13 +62,12 @@ from gpu._cudnn.infer import (
     cudnnTensorStruct,
     cudnnMathType_t,
 )
-from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
-from gpu.host.device_context import _DeviceBufferPtr
 from gpu.id import block_dim, block_idx, thread_idx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 

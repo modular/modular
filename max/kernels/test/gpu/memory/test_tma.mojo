@@ -13,7 +13,6 @@
 
 from builtin.io import _printf
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.host._nvidia_cuda import TMADescriptor, create_tma_descriptor
 from gpu.id import block_idx
 from gpu.memory import (
@@ -28,7 +27,6 @@ from gpu.sync import (
 from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index
-from utils.static_tuple import StaticTuple
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
