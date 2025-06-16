@@ -465,6 +465,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Stringable,
     Writable,
     _CurlyEntryFormattable,
+    _HashableWithHasher,
 ):
     """A non-owning view to encoded string data.
 

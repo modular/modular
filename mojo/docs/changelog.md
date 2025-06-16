@@ -27,6 +27,9 @@ what we publish.
   be removed in the next release of Mojo.  Please move to the `@fieldwise_init`
   and synthesized `Copyable` and `Movable` trait conformance.
 
+- Implicit trait conformance is removed. All conformances must be explicitly
+  declared.
+
 ### Standard library changes
 
 - Added support for a wider range of consumer-grade AMD hardware, including:
