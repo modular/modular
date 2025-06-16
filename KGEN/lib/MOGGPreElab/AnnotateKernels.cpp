@@ -294,16 +294,9 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
     sourceName.push_back(func.getFuncTypeGenerator().getArgName(i));
   }
 
-  // Attach the parameter mapping information to the kernel.
-  if (!observedParams.empty()) {
-    func->setDiscardableAttr(MOGG_ARG_PARAMS,
-                             builder.getArrayAttr(observedParams));
-  }
-
   // Add the result type.
   Type resultType = func.getResultTypes()[0];
   if (!isa<KGEN::NoneType>(resultType)) {
-    func->setDiscardableAttr(MOGG_RESULT_PARAMS, litTypeToParams(resultType));
     func->setDiscardableAttr(MOGG_RESULT_TYPE_NAME,
                              litTypeToSourceName(resultType));
   }
@@ -425,21 +418,18 @@ static Attribute getUnboundParametersForTensorList(KGENModule &kgenModule,
   return getUnboundParameters(kgenModule, elementTypeStruct);
 }
 
-static void labelTensorParamsInKernel(KGENModule &kgenModule,
-                                      LIT::FnOp funcOp) {
-  if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp) &&
-      !isViewMaterializeFunc(funcOp) && !isKernel(funcOp))
-    return;
-
-  Builder builder{funcOp.getContext()};
-  Attribute emptyAttr = builder.getUnitAttr();
+ArrayAttr labelParameters(MLIRContext *ctx, KGENModule &kgenModule,
+                          TypeRange types) {
+  Builder builder(ctx);
 
   SmallVector<Attribute> valueParameters;
-  for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
+  for (Type litType : types) {
     LIT::StructType asStructType = getAsStructType(litType);
 
+    Builder builder(litType.getContext());
+
     if (!asStructType) {
-      valueParameters.push_back(emptyAttr);
+      valueParameters.push_back(builder.getUnitAttr());
       continue;
     }
 
@@ -453,8 +443,24 @@ static void labelTensorParamsInKernel(KGENModule &kgenModule,
       valueParameters.push_back(parameters);
     }
   }
-  funcOp->setDiscardableAttr(kKernelValueParameterAttrName,
-                             builder.getArrayAttr(valueParameters));
+
+  return builder.getArrayAttr(valueParameters);
+}
+
+static void labelTensorParamsInKernel(KGENModule &kgenModule,
+                                      LIT::FnOp funcOp) {
+  if (!isExtensibilityFunc(funcOp) && !isElemwiseForeachFunc(funcOp) &&
+      !isViewMaterializeFunc(funcOp) && !isKernel(funcOp))
+    return;
+
+  ArrayAttr argumentParameters = labelParameters(
+      funcOp.getContext(), kgenModule, funcOp.getArgumentTypes());
+
+  ArrayAttr resultParameters =
+      labelParameters(funcOp.getContext(), kgenModule, funcOp.getResultTypes());
+
+  funcOp->setDiscardableAttr(kKernelValueParameterAttrName, argumentParameters);
+  funcOp->setDiscardableAttr(kKernelResultParameterAttrName, resultParameters);
 }
 
 namespace {

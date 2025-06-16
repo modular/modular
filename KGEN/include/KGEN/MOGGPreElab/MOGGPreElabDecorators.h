@@ -30,8 +30,6 @@ constexpr StringLiteral IS_VIEW_ATTR = "mogg.view";
 constexpr StringLiteral OUTLINED_ATTR = "mogg.outlined";
 
 /// Tracks the mojo parameter value for each of the input parameters.
-constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";
-constexpr StringLiteral MOGG_RESULT_PARAMS = "mogg.result_params";
 constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 constexpr StringLiteral MOGG_RESULT_TYPE_NAME = "mogg.result_type_name";
 constexpr StringLiteral MOGG_INPUT_PARAM_TYPES = "mogg.input_param_types";
@@ -135,6 +133,9 @@ static constexpr StringLiteral kMOGGUpdateViewFunctionLabel =
 // unit attribute.
 static constexpr StringLiteral kKernelValueParameterAttrName =
     "mogg.value_params";
+
+static constexpr StringLiteral kKernelResultParameterAttrName =
+    "mogg.value_result_params";
 
 // An array of StringAttr corresponding to each input argument type.
 //
