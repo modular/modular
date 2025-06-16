@@ -2883,6 +2883,17 @@ class ParamForContinueOp(max._core.Operation):
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
 
+class ParamForGotoElseOp(max._core.Operation):
+    """
+    The `kgen.param.for.goto.else` operation jumps to the 'else' block of a
+    `kgen.param.for`.  It only exists to help the interface between the Mojo
+    parser and the LowerSemanticCF pass work more easily.
+    """
+
+    def __init__(
+        self, builder: max._core.OpBuilder, location: Location
+    ) -> None: ...
+
 class ParamForOp(max._core.Operation):
     """
     The `kgen.param.for` operation instantiates its body with values according
