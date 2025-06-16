@@ -15,7 +15,6 @@
 from math import frexp, ldexp
 from sys import external_call
 
-from test_utils import libm_call
 from testing import assert_almost_equal, assert_equal
 
 

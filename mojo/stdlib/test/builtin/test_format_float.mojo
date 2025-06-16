@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from random import random_float64
 
 from builtin._format_float import _write_float
-from python import Python, PythonObject
+from testing import assert_equal
 from testing import assert_equal
 
 

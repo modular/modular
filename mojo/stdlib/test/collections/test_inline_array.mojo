@@ -16,7 +16,7 @@ from sys.info import sizeof
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import DelRecorder
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_true
 
 
 def test_array_unsafe_get():

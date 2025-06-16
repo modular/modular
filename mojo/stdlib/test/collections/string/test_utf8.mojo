@@ -16,7 +16,6 @@ from collections.string._utf8 import (
     _count_utf8_continuation_bytes,
     _is_valid_utf8,
 )
-from sys.info import alignof, sizeof
 
 from testing import assert_equal, assert_false, assert_raises, assert_true
 

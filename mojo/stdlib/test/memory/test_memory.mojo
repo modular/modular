@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo --debug-level full %s
 
-from sys import simdwidthof, sizeof
+from sys import simdwidthof
 
 from memory import (
     AddressSpace,
@@ -29,7 +29,6 @@ from testing import (
     assert_true,
 )
 
-from utils import Index
 from utils.numerics import nan
 
 alias void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`

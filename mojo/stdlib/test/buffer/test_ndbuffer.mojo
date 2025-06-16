@@ -13,7 +13,6 @@
 # RUN: %mojo-no-debug -debug-level full %s | FileCheck %s
 
 from math import iota
-from pathlib import Path
 from sys.intrinsics import PrefetchOptions
 from tempfile import NamedTemporaryFile
 

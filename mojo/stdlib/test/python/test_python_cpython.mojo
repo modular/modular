@@ -15,7 +15,7 @@
 
 from python import Python, PythonObject
 from python._cpython import PyObjectPtr
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import assert_equal, assert_raises
 
 
 def test_PyObject_HasAttrString(mut python: Python):

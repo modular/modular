@@ -15,8 +15,6 @@
 from buffer.dimlist import Dim, DimList
 from testing import *
 
-from utils.index import IndexList
-
 
 # CHECK-LABEL: test_dim_list
 def test_dim_list():

@@ -65,8 +65,6 @@
 #     print_matrix(c)
 
 
-from sys.info import sizeof
-
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 

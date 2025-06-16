@@ -13,8 +13,8 @@
 
 import os
 from pathlib import DIR_SEPARATOR, Path, cwd
-from sys import env_get_string, os_is_windows
-from tempfile import NamedTemporaryFile, gettempdir
+from sys import os_is_windows
+from tempfile import NamedTemporaryFile
 
 from builtin._location import __source_location
 from testing import assert_equal, assert_false, assert_not_equal, assert_true

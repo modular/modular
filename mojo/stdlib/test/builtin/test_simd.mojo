@@ -24,7 +24,7 @@ from testing import (
     assert_true,
 )
 
-from utils import IndexList, StaticTuple
+from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
 
 

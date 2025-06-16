@@ -14,7 +14,7 @@
 
 from testing import assert_equal, assert_false, assert_true
 
-from utils import IndexList, StaticTuple
+from utils import IndexList
 
 
 def test_static_int_tuple():

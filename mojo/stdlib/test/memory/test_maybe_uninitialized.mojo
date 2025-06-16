@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from os import abort
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import AbortOnDel, CopyCounter, DelRecorder, MoveCounter

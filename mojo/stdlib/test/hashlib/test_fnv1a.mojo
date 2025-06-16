@@ -16,7 +16,7 @@ from bit import pop_count
 from builtin._location import __call_location
 from hashlib._fnv1a import Fnv1a
 from hashlib._hasher import _Hasher, _HashableWithHasher
-from testing import assert_equal, assert_not_equal, assert_true
+from testing import assert_equal, assert_true
 from memory import memset_zero
 from test_utils import (
     gen_word_pairs,

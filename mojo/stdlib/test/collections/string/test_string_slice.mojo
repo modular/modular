@@ -13,9 +13,9 @@
 # RUN: %mojo %s
 
 from collections.string.string_slice import get_static_string
-from sys.info import alignof, sizeof
+from sys.info import sizeof
 
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import assert_equal, assert_false, assert_true
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data

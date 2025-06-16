@@ -18,9 +18,9 @@ from algorithm.functional import (
     elementwise,
 )
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 def test_elementwise[

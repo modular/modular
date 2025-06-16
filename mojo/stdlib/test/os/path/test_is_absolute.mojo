@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-import os
 from os.path import is_absolute
 
 from testing import assert_false, assert_true

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.host import DeviceContext
 
 
 fn main() raises:

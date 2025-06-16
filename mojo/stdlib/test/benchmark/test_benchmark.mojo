@@ -16,7 +16,7 @@
 
 from time import sleep, time_function
 
-from benchmark import Report, Unit, clobber_memory, keep, run
+from benchmark import Report, clobber_memory, keep, run
 
 
 # CHECK-LABEL: test_benchmark
