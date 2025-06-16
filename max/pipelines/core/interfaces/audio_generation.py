@@ -99,7 +99,7 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
     """Interface for audio generation models."""
 
     def next_chunk(
-        self, batch: dict[str, AudioGeneratorContext], num_tokens: int
+        self, batch: dict[str, AudioGeneratorContext]
     ) -> dict[str, AudioGenerationResponse]:
         """Computes the next audio chunk for a single batch.
 
@@ -108,7 +108,6 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
 
         Args:
             batch (dict[str, AudioGeneratorContext]): Batch of contexts.
-            num_tokens (int): Number of speech tokens to generate.
 
         Returns:
             dict[str, AudioGenerationResponse]: Dictionary mapping request IDs to
@@ -127,4 +126,11 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
     @property
     def decoder_sample_rate(self) -> int:
         """The sample rate of the decoder."""
+        ...
+
+    @property
+    def prev_num_steps(self) -> int:
+        """The number of speech tokens that were generated during the processing
+        of the previous batch.
+        """
         ...
