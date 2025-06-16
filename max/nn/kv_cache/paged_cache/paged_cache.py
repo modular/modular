@@ -191,9 +191,6 @@ class PagedKVCacheManager(KVCacheManager):
     enable_kvcache_swapping_to_host: bool
     """Flag indicating if swapping blocks to host memory is enabled."""
 
-    prefetched_seq_ids: set[int]
-    """Set of sequence IDs whose blocks have been prefetched."""
-
     @traced
     def __init__(
         self,
@@ -401,10 +398,6 @@ class PagedKVCacheManager(KVCacheManager):
             enable_runtime_checks=enable_runtime_checks,
         )
 
-        # Mapping from seq ID to blocks that have been prefetched prior to a
-        # fetch operation.
-        self.prefetched_seq_ids: set[int] = set()
-
     @classmethod
     def _block_size_per_token(
         cls, params: KVCacheParams, num_layers: int
@@ -498,27 +491,33 @@ class PagedKVCacheManager(KVCacheManager):
             params.head_dim,
         ]
 
+    def _get_num_req_slots(self, seq_id: int) -> int:
+        """Get the number of KV slots available for a request."""
+        return len(self.block_manager.req_to_blocks[seq_id]) * self.page_size
+
+    @traced
+    def _does_req_need_more_blocks(self, ctx: T, num_steps: int) -> bool:
+        """Determines if a request needs additional blocks."""
+        seq_len = ctx.current_length + num_steps - 1
+        return seq_len > self._get_num_req_slots(ctx.cache_seq_id)
+
     @traced
     def prefetch(self, data: T, num_steps: int = 1) -> bool:
         """Prepares blocks for a request prior to a subsequent fetch call.
 
         This will reuse blocks from prefix cache and allocate new blocks for the
         request. If a request is prefetched, it is guaranteed to not OOM in a
-        subsequent call to `fetch`. It is incorrect to `prefetch` a request more
-        than once prior to a call to `fetch`.
+        subsequent call to `fetch`.
 
         Returns `True` if the request was prefetched, `False` otherwise.
         """
-        seq_id = data.cache_seq_id
-        assert seq_id not in self.prefetched_seq_ids
+        self.block_manager.reuse_blocks_from_prefix_cache(data)
 
-        scheduled = self.block_manager.prefetch(data, num_steps)
-
-        if not scheduled:
+        # Allocating new blocks can fail if there are insufficient blocks.
+        try:
+            self.block_manager.allocate_new_blocks(data, num_steps)
+        except RuntimeError:
             return False
-
-        self.prefetched_seq_ids.add(seq_id)
-
         return True
 
     @traced
@@ -530,9 +529,6 @@ class PagedKVCacheManager(KVCacheManager):
 
         This can fail if there are insufficient blocks to satisfy the batch. In such a case,
         we raise a RuntimeError.
-
-        If all requests run `allocate_new_blocks` prior to `fetch`, then the requests
-        already have blocks pre-allocated and we will not run into OOM errors.
         """
 
         if self.block_copy_engine is not None:
@@ -542,8 +538,8 @@ class PagedKVCacheManager(KVCacheManager):
         for batch_idx, ctx in enumerate(batch):
             seq_id = ctx.cache_seq_id
 
-            # Prefetch blocks now for request if we have not done so prior to fetch.
-            if seq_id not in self.prefetched_seq_ids:
+            # Allocate blocks for request if we need more.
+            if self._does_req_need_more_blocks(ctx, num_steps):
                 self.block_manager.reuse_blocks_from_prefix_cache(ctx)
                 self.block_manager.allocate_new_blocks(ctx, num_steps)
 
@@ -554,8 +550,6 @@ class PagedKVCacheManager(KVCacheManager):
                     f"Request has current length ({ctx.current_length}) + num_steps ({num_steps}) - 1 = {seq_len} which exceeds model max_seq_len of {self.max_seq_len}"
                 )
             max_seq_len = max(max_seq_len, seq_len)
-
-        self.prefetched_seq_ids.clear()
 
         # Allocate the buffers containing metadata about the batch.
         # [0, total_num_pages) are the valid block ids and total_num_pages
@@ -573,7 +567,7 @@ class PagedKVCacheManager(KVCacheManager):
         for batch_idx, ctx in enumerate(batch):
             seq_id = ctx.cache_seq_id
 
-            # Get the prefetched blocks for this request.
+            # Get the blocks for this request.
             blocks = self.block_manager.get_req_blocks(seq_id)
 
             # Sanity check that we have enough blocks.
