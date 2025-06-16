@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 from collections.string import StaticString
 
 

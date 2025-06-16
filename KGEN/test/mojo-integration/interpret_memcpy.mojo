@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from memory import UnsafePointer
 from sys import llvm_intrinsic, sizeof
 
 

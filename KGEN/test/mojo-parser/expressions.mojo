@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -verify-diagnostics -import-mojo %s | FileCheck %s
 
-from memory import UnsafePointer, Pointer
+from memory import Pointer
 from collections.string import StaticString
 
 # CHECK: module {

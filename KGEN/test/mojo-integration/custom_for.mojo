@@ -6,8 +6,6 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory import UnsafePointer
-
 
 struct my_iter:
     var start: Int
