@@ -6,7 +6,10 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-struct TakesIntParam[a: Int]: pass
+
+struct TakesIntParam[a: Int]:
+    pass
+
 
 trait SomeTrait:
     pass
@@ -16,9 +19,11 @@ trait SomeTrait:
 struct ParamType[x: Index](SomeTrait):
     pass
 
+
 ##===----------------------------------------------------------------------===##
 # inferred Parameters
 ##===----------------------------------------------------------------------===##
+
 
 @register_passable("trivial")
 struct DependentParam[x: Index, y: ParamType[x]]:
@@ -112,37 +117,48 @@ fn test_inferred_params[x: Index, y: ParamType[x], z: DependentParam[x, y]]():
 
 
 # Multiply should work even though it is @always_inline("builtin")
-fn mul2_caller[n: Int, t: TakesIntParam[n * 2]](): return mul2_callee[t]()
+fn mul2_caller[n: Int, t: TakesIntParam[n * 2]]():
+    return mul2_callee[t]()
+
+
 fn mul2_callee[n: Int, //, some_t: TakesIntParam[n * 2]]():
     pass
+
 
 ##===----------------------------------------------------------------------===##
 # Inferred Self parameters
 ##===----------------------------------------------------------------------===##
 
+
 trait FancyTrait(Copyable, Movable):
-    fn __eq__(self, other: Self) -> Bool: pass
+    fn __eq__(self, other: Self) -> Bool:
+        pass
+
+
+struct MyFancyStruct(FancyTrait):
+    fn __eq__(self, other: Self) -> Bool:
+        return False
+
 
 @fieldwise_init
 struct MyOptional[T: Copyable & Movable]:
-
     fn __eq__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         pass
 
-  # CHECK-LABEL: lit.fn @"__ne__
+    # CHECK-LABEL: lit.fn @"__ne__
     fn __ne__[U: FancyTrait](self: MyOptional[U], rhs: MyOptional[U]) -> Bool:
         # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%self, %rhs)
         return not (self == rhs)
 
+
 # CHECK-LABEL: lit.fn @"testMyOptional
-fn testMyOptional(a: MyOptional[Int]):
+fn testMyOptional(a: MyOptional[MyFancyStruct]):
     # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = a.__eq__(a)
     # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = MyOptional.__eq__(a, a)
     # CHECK-NEXT: lit.call {{.*}}MyOptional::@"__eq__{{.*}}(%a, %a)
     _ = a == a
-
 
 
 # CHECK-LABEL: lit.fn @"findall

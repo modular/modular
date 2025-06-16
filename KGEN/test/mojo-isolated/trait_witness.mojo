@@ -30,7 +30,7 @@ trait R1Child(R1):
 
 @register_passable("trivial")
 # CHECK-LABEL: lit.struct.decl @S1<X: !Int>
-struct S1[X: Int](R1, R1Child, Movable):
+struct S1[X: Int](R1, R1Child, R2, Movable):
     alias N: Int = X
     alias T: AnyType = Int
 
@@ -71,12 +71,3 @@ struct S1[X: Int](R1, R1Child, Movable):
     # CHECK: kgen.conformance @{{.*}}R2
     # CHECK-NEXT: kgen.witness "T" : !AnyType = [!Int
     # CHECK-NEXT: kgen.witness "f2" : {{.*}} = {{.*}}@S1::@"f2[[F2_NAME]]"<:!Int X>
-
-
-# Check implicit conformance.
-fn useR2[T: R2]():
-    pass
-
-
-fn main():
-    useR2[S1[2]]()

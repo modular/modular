@@ -34,7 +34,7 @@ alias Traits123 = Trait1 & Trait2 & Trait3
 
 
 @fieldwise_init
-struct Struct123(Trait1, Trait2):
+struct Struct123(Trait1, Trait2, Trait3):
     fn f1(self):
         pass
 
@@ -158,13 +158,16 @@ fn main_use():
 
 # Test conditional method that refines the self type to a different trait.
 
+
 trait Trait1:
     fn f1(self):
         ...
 
+
 trait Trait2:
     fn f2(self):
         ...
+
 
 alias Traits12 = Trait1 & Trait2
 
@@ -186,7 +189,9 @@ struct Wrapper[T: AnyType]:
 
 
 # CHECK: lit.fn @"useCond1
-fn useCond1[ElementType: Traits12](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
+fn useCond1[
+    ElementType: Traits12
+](p1: Wrapper[ElementType], p2: Wrapper[ElementType]):
     # CHECK: lit.call {{.*}}@Wrapper::@"cond1
     # CHECK-SAME: <:!AnyType [!kgen.param<:!Trait1_Trait2 ElementType>,
     # CHECK-SAME:    {"__del__" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "__del__")}],
@@ -195,9 +200,11 @@ fn useCond1[ElementType: Traits12](p1: Wrapper[ElementType], p2: Wrapper[Element
     # CHECK-SAME:    {"__del__" : {{.*}}"self": !lit.ref<:!Trait1_Trait2 ElementType{{.*}}= get_vtable_entry(:!Trait1_Trait2 ElementType, "__del__")
     p1.cond1(p2)
 
+
 # // -----
 
 # Check that constructor calls work with trait compositions.
+
 
 trait Defaultable:
     fn __init__(out self):
@@ -234,17 +241,21 @@ struct MyStruct(Defaultable, IntConstructable):
 # Check that we can call parametric trait methods on types that were declared
 # with trait composition.
 
+
 trait Writer:
     fn write(self):
         ...
+
 
 trait Writable:
     fn write_to[T: Writer](self, x: T):
         ...
 
+
 trait Defaultable:
     fn __init__(out self):
         ...
+
 
 struct YourStruct:
     var x: Int
@@ -258,21 +269,26 @@ struct YourStruct:
     fn do_it[W: Writable & Defaultable](self, x: W):
         self.foo(x)  # make sure this doesn't crash
 
+
 # // -----
 
 # Check that composition works with trait parameters.
+
 
 trait Trait1:
     fn f1(self):
         ...
 
+
 trait Trait2:
     fn f2(self):
         ...
 
+
 trait Trait1C(Trait1):
     fn f1C(self):
         ...
+
 
 @fieldwise_init
 struct Struct1C(Trait1C, Trait2):

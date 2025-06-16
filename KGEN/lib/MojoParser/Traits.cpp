@@ -351,7 +351,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 /// to the specified trait type.  On failure, this may set 'diag' to an
 /// inflight diagnostic that explains why this doesn't conform.  It can be
 /// reported or abandoned based on the client's needs.
-bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
+bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
                                        std::optional<InflightDiag> &diag) {
   if (failed(shared.declResolver->resolveBody(*this, getLoc())))
     return false; // Error emitted.
@@ -405,91 +405,15 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit,
             shared.declResolver->resolveBody(*witnessTables.front(), getLoc()));
       }
     }
-
     return conforms;
   }
-
-  // Only structs can implicitly conform to traits.
-  auto structOp = dyn_cast<StructDeclOp>(*this);
-  if (!structOp || !allowImplicit)
-    return false;
-
-  // TODO(MOCO-1788): Deprecate the following logic for implicit conformance.
-  // Check if the type *implicitly* conforms to the trait.
-  DenseSet<SymbolRefAttr> newSymbols;
-  newSymbols.insert(providedSymbols.begin(), providedSymbols.end());
-
-  SmallVector<SymbolRefAttr> fullRequiredSymbols(requiredSymbols.begin(),
-                                                 requiredSymbols.end());
-  canonicalizeTraitCompositionSymbols(shared, fullRequiredSymbols);
-
-  // Check each conformance manually, instead of going through ConformanceOp
-  // ASTDecl resolution. This way a conformance failure is not an error.
-  DenseMap<SymbolRefAttr, WitnessTable> witnessTableCollection;
-  for (SymbolRefAttr symbol : fullRequiredSymbols) {
-    if (newSymbols.contains(symbol)) {
-      // This is an already provided symbol. Check explicit conformance.
-      ArrayRef<ASTDecl *> witnessTables =
-          lookupInCurrentScope(getFlattenedSymbolName(symbol));
-      if (witnessTables.empty())
-        continue;
-      assert(witnessTables.size() == 1);
-      if (failed(shared.declResolver->resolveBody(*witnessTables.front(),
-                                                  getLoc())))
-        return false;
-      continue;
-    }
-
-    if (failed(verifyConformance(*this, symbol, diag,
-                                 witnessTableCollection[symbol])))
-      return false;
-    newSymbols.insert(symbol);
-  }
-
-  // Warn against implicit conformance. Only emit on success.
-  shared.emitWarning(getLoc(), "struct '")
-      << *getNameIfOperation() << "' utilizes conformance to trait "
-      << ASTType(trait)
-      << " but does not explicitly declare it (implicit conformance is "
-         "deprecated)";
-
-  // If we succeeded, build the fully-populated conformance tables.
-  ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
-      structOp.getLoc(), &structOp.getFields().front());
-  for (auto &[symbol, witnesses] : witnessTableCollection) {
-    StringAttr name = b.getStringAttr(getFlattenedSymbolName(symbol));
-    ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-    SymbolRefArrayAttr immediateParents =
-        cast<TraitDeclOp>(parentDecl).getImmediateParentsAttr();
-    ConformanceOp witnessTable =
-        b.create<ConformanceOp>(name, symbol, immediateParents);
-    witnessTable.getBody().push_back(new Block());
-
-    OpBuilder::InsertionGuard guard(b);
-    b.setInsertionPointToStart(&witnessTable.getBody().front());
-    for (auto &[name, value] : witnesses)
-      b.create<WitnessOp>(name, value);
-
-    shared.declResolver->addFullyResolvedDecl(witnessTable, name, getLoc(),
-                                              this);
-  }
-
-  // Update canonical traits so we never check these again.
-  SmallVector<SymbolRefAttr> newSymbolsVec(newSymbols.begin(),
-                                           newSymbols.end());
-  // No need to pull in ancestors again as `newSymbols` and
-  // `fullRequiredSymbols` both contain the full ancestor chain already, so
-  // their merged set also contains the full list.
-  sortAndDeduplicateSymbols(newSymbolsVec);
-  structOp.setCanonicalTrait(
-      TraitType::get(structOp.getContext(), newSymbolsVec));
-  return true;
+  return false;
 }
 
 /// Helper for clients that don't care about the diagnostic.
-bool ASTDecl::doesNominalTypeConformTo(TraitType trait, bool allowImplicit) {
+bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
   std::optional<InflightDiag> diag;
-  auto result = doesNominalTypeConformTo(trait, allowImplicit, diag);
+  bool result = doesNominalTypeConformTo(trait, diag);
   if (diag)
     diag->abandon();
   return result;
@@ -692,7 +616,7 @@ LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
     type = cast<StructDeclOp>(typeDecl).bindReference({PValue(type)});
   }
 
-  if (!typeDecl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true)) {
+  if (!typeDecl->doesNominalTypeConformTo(trait)) {
     // Does not conform. This is the only non-error case where we return an
     // empty attr.
     return GetWitnessAttr();
@@ -788,8 +712,7 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   }
 
   std::optional<InflightDiag> checkDiag;
-  if (!metaTypeDecl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true,
-                                              checkDiag)) {
+  if (!metaTypeDecl->doesNominalTypeConformTo(trait, checkDiag)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();

@@ -10,6 +10,7 @@
 
 # Control flow related CheckLifetimes tests.
 
+
 fn use(err: Error):
     pass
 
@@ -474,7 +475,8 @@ fn testErrorReturn() raises:
     # CHECK: try
     with MyStringReturningCtx() as ctx:
         # CHECK-NOT: @MyStringReturningCtx::@"__del__
-        var x = ctx.read() # expected-warning {{assignment to 'x' was never used}}
+        # expected-warning @below {{assignment to 'x' was never used}}
+        var x = ctx.read()
         input = "hello"
     # CHECK: except
     use(input)
@@ -637,33 +639,37 @@ fn test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lifetime.end %mem3
     # CHECK-NEXT: hlcf.yield
 
+
 # https://github.com/modular/mojo/issues/3710
 # Mojo frees memory while reference to it is still in use
 # CHECK-LABEL: lit.fn @"loop_any_origin
 fn loop_any_origin(owned mem: MemExample, cond: Bool):
-  # CHECK: lit.call {{.*}}unsafe_ptr
-  ptr = mem.unsafe_ptr()
+    # CHECK: lit.call {{.*}}unsafe_ptr
+    ptr = mem.unsafe_ptr()
 
-  # The "mem" destructor must be in the loop exit, not ahead of the loop because
-  # there is an access through AnyOrigin within the loop.
-  # CHECK: hlcf.loop
-  # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_i1__
-  # CHECK-NEXT:     hlcf.if
-  # CHECK-NEXT:       hlcf.yield
-  # CHECK-NEXT:     } else {
-  # CHECK-NEXT:       lit.var.lifetime.end %ptr
-  # CHECK-NEXT:       lit.call {{.*}}MemExample::@"__del__
-  # CHECK-NEXT:       hlcf.break
-  while cond:
-    ptr[] = 4
+    # The "mem" destructor must be in the loop exit, not ahead of the loop because
+    # there is an access through AnyOrigin within the loop.
+    # CHECK: hlcf.loop
+    # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_i1__
+    # CHECK-NEXT:     hlcf.if
+    # CHECK-NEXT:       hlcf.yield
+    # CHECK-NEXT:     } else {
+    # CHECK-NEXT:       lit.var.lifetime.end %ptr
+    # CHECK-NEXT:       lit.call {{.*}}MemExample::@"__del__
+    # CHECK-NEXT:       hlcf.break
+    while cond:
+        ptr[] = 4
+
 
 # 4694: or/and handling of comparisons on PythonObject
 @register_passable
 struct PyObjLike:
     fn __copyinit__(out self, existing: Self):
         pass
+
     fn __eq__(self, other: Self) raises -> Self:
-        while True: pass;
+        while True:
+            pass
 
     fn __bool__(self) raises -> Bool:
         return True
@@ -671,10 +677,13 @@ struct PyObjLike:
     fn __del__(owned self):
         pass
 
+
 # CHECK-LABEL: lit.fn @"test4694
-fn test4694(a : PyObjLike, b: PyObjLike) raises:
+fn test4694(a: PyObjLike, b: PyObjLike) raises:
     # Just check that we don't get a verifier error.
     if a == b or b == a:
         gotit()
 
-fn gotit(): pass
+
+fn gotit():
+    pass

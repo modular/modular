@@ -67,13 +67,3 @@ fn dont_inline_me():
 @export
 fn exported_func():
     pass
-
-
-# This struct must not be checked for conformance inside the package.
-@register_passable("trivial")
-struct ImplicitlyConformingPackageTrait:
-    fn __init__(out self):
-        pass
-
-    fn method(self):
-        pass

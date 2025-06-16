@@ -221,8 +221,7 @@ bool canConvertFunctionTypes(SharedState &shared, FnTypeGeneratorType actual,
         return false;
       // Get and emit the diagnostic.
       std::optional<InflightDiag> diag = std::nullopt;
-      if (actualDeclOp->doesNominalTypeConformTo(expectedTraitType,
-                                                 /*allowImplicit=*/true, diag))
+      if (actualDeclOp->doesNominalTypeConformTo(expectedTraitType, diag))
         continue;
 
       return false;
@@ -1176,14 +1175,14 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.
   std::optional<InflightDiag> checkDiag;
-  if (!wrapperDecl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true,
-                                             checkDiag)) {
+  if (!wrapperDecl->doesNominalTypeConformTo(trait, checkDiag)) {
     InflightDiag diag =
         shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
-        << mlirType << " to trait " << ASTType(trait)
-        << " as it is unable to satisfy the following requirements";
-    if (checkDiag)
+        << mlirType << " to trait " << ASTType(trait);
+    if (checkDiag) {
+      diag << " as it is unable to satisfy the following requirements";
       diag.attachNote(wrapperDecl->getLoc()) << std::move(*checkDiag);
+    }
     return {};
   }
 
@@ -1300,8 +1299,7 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
         // Can only convert static types to traits, not existentials.
         if (ASTDecl *decl = ASTType(pval).getDecl(shared))
-          return cacheAndReturnVal(
-              decl->doesNominalTypeConformTo(trait, /*allowImplicit=*/true));
+          return cacheAndReturnVal(decl->doesNominalTypeConformTo(trait));
       }
     }
     return cacheAndReturnVal(result);
@@ -1313,8 +1311,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (auto anyTrait = dyn_cast<AnyTraitType>(requiredType)) {
     if (auto fromAnyTrait = dyn_cast<AnyTraitType>(rvType))
       if (auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared))
-        return cacheAndReturnVal(fromDecl->doesNominalTypeConformTo(
-            anyTrait.getTraitType(), /*allowImplicit=*/true));
+        return cacheAndReturnVal(
+            fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
   }
 
   // Check for non-trivial function type conversions.
@@ -1413,8 +1411,7 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
     if (auto rvAnyTrait = dyn_cast<AnyTraitType>(rvType)) {
       auto *fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
-      if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType(),
-                                             /*allowImplicit=*/true)) {
+      if (fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
         // This is just the trait itself, not a conformance, so we can use an
         // empty vtable, just upcast.
         return TypeParamAttr::get(ASTType(typePValue), anyTrait);
