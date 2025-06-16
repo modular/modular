@@ -9,7 +9,6 @@
 # RUN: MODULAR_USE_DRIVER_CUBIN_COMPILER=1 kgen -emit -kgen-debug-only=object-compiler %s -o %t 2>&1 | FileCheck %s
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from sys import argv, sizeof
 from sys.info import _current_target
 from gpu.host._compile import _get_gpu_target

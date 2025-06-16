@@ -26,8 +26,6 @@ import .foo
 TEST(DocumentSymbolTest, testDocumentSymbols) {
   Document doc("test:///foo.mojo",
                R"(
-from memory import UnsafePointer
-
 alias Value = 10
 
 fn foo(a: UnsafePointer[Float32]) -> Float32:
