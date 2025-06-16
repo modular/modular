@@ -17,6 +17,7 @@ from collections import InlineArray
 from collections.string.string_slice import _get_kgen_string
 from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
+from sys.info import _is_amd_rdna
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.mma_operand_descriptor import MMAOperandDescriptor
@@ -42,7 +43,69 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
+fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    """AMD RDNA3+ WMMA implementation for matrix multiplication.
+
+    RDNA3/4 GPUs use WMMA instructions.
+    Per https://gpuopen.com/learn/wmma_on_rdna3/
+    the following intrinsics are supported:
+    - llvm.amdgcn.wmma.f32.16x16x16.f16
+    - llvm.amdgcn.wmma.f32.16x16x16.bf16
+    - llvm.amdgcn.wmma.f16.16x16x16.f16
+    - llvm.amdgcn.wmma.bf16.16x16x16.bf16
+    - llvm.amdgcn.wmma.i32.16x16x16.iu8
+    - llvm.amdgcn.wmma.i32.16x16x16.iu4
+    """
+
+    # ===------------------------------------------------------------------===#
+    # F32 = F16 * F16 + F32 (16x16x16)
+    # ===------------------------------------------------------------------===#
+    @parameter
+    if (
+        d.dtype is DType.float32
+        and d.size == 4
+        and a.dtype is DType.float16
+        and a.size == 4
+        and b.dtype is DType.float16
+        and b.size == 4
+        and c.dtype is DType.float32
+        and c.size == 4
+    ):
+        # WMMA 16x16x16 F16 -> F32
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.wmma.f32.16x16x16.f16", SIMD[c.dtype, c.size]
+        ](a, b, c)
+        d = rebind[__type_of(d)](r)
+    # ===------------------------------------------------------------------===#
+    # F32 = BF16 * BF16 + F32 (16x16x16)
+    # ===------------------------------------------------------------------===#
+    elif (
+        d.dtype is DType.float32
+        and d.size == 4
+        and a.dtype is DType.bfloat16
+        and a.size == 4
+        and b.dtype is DType.bfloat16
+        and b.size == 4
+        and c.dtype is DType.float32
+        and c.size == 4
+    ):
+        # WMMA 16x16x16 BF16 -> F32
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.wmma.f32.16x16x16.bf16", SIMD[c.dtype, c.size]
+        ](a, b, c)
+        d = rebind[__type_of(d)](r)
+    else:
+        _unsupported_mma_op(d, a, b, c)
+
+
+@always_inline
 fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    @parameter
+    if _is_amd_rdna():
+        # Use WMMA instructions for RDNA3+ consumer GPUs.
+        _mma_wmma_rdna(d, a, b, c)
+        return
+
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#

@@ -32,6 +32,12 @@ what we publish.
 - Added support for a wider range of consumer-grade AMD hardware, including:
   - AMD Radeon RX 7xxx GPUs
   - AMD Radeon RX 9xxx GPUs
+- Compile-time checks for AMD RDNA3+ GPUs are now provided by the functions:
+  - `_is_amd_rdna3()`
+  - `_is_amd_rdna4()`
+  - `_is_amd_rdna()`
+- Added WMMA matrix-multiplication instructions for RDNA3+ GPUs to help support
+  running AI models on those GPUs.
 
 ### Tooling changes
 
