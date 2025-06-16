@@ -1104,20 +1104,30 @@ def test_endswith():
     assert_false(str.endswith("llo", 2, 3))
 
 
+# TODO: Remove the explicit conversion to `String` once #4790 is resolved.
 def test_removeprefix():
-    assert_equal(String("hello world").removeprefix(""), String("hello world"))
-    assert_equal(String("hello world").removeprefix("hello"), " world")
-    assert_equal(String("hello world").removeprefix("world"), "hello world")
-    assert_equal(String("hello world").removeprefix("hello world"), "")
-    assert_equal(String("hello world").removeprefix("llo wor"), "hello world")
+    assert_equal(String(String("hello world").removeprefix("")), "hello world")
+    assert_equal(String(String("hello world").removeprefix("hello")), " world")
+    assert_equal(
+        String(String("hello world").removeprefix("world")), "hello world"
+    )
+    assert_equal(String(String("hello world").removeprefix("hello world")), "")
+    assert_equal(
+        String(String("hello world").removeprefix("llo wor")), "hello world"
+    )
 
 
+# TODO: Remove the explicit conversion to `String` once #4790 is resolved.
 def test_removesuffix():
-    assert_equal(String("hello world").removesuffix(""), String("hello world"))
-    assert_equal(String("hello world").removesuffix("world"), "hello ")
-    assert_equal(String("hello world").removesuffix("hello"), "hello world")
-    assert_equal(String("hello world").removesuffix("hello world"), "")
-    assert_equal(String("hello world").removesuffix("llo wor"), "hello world")
+    assert_equal(String(String("hello world").removesuffix("")), "hello world")
+    assert_equal(String(String("hello world").removesuffix("world")), "hello ")
+    assert_equal(
+        String(String("hello world").removesuffix("hello")), "hello world"
+    )
+    assert_equal(String(String("hello world").removesuffix("hello world")), "")
+    assert_equal(
+        String(String("hello world").removesuffix("llo wor")), "hello world"
+    )
 
 
 def test_intable():

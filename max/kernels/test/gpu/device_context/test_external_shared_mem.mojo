@@ -50,7 +50,7 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var expected = [
+    var expected: List[Float32] = [
         0.0,
         1.0,
         2.0,
