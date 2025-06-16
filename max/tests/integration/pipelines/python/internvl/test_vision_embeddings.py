@@ -131,6 +131,37 @@ def generate_torch_outputs(
     return ref_embeddings(pixel_values)
 
 
+def prepare_embeddings_weights_for_max(
+    embeddings_weights: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    """Prepare embedding weights for MAX by converting Conv2D to Linear format.
+
+    MAX expects Linear weights, but the reference uses Conv2D weights.
+    This helper converts patch_embedding.weight from Conv2D format
+    (out_channels, in_channels, kernel_h, kernel_w) to Linear format
+    (out_channels, in_channels * kernel_h * kernel_w) and moves all
+    weights to CPU.
+
+    Args:
+        embeddings_weights: Dictionary of embedding weights.
+
+    Returns:
+        Dictionary with converted weights on CPU.
+    """
+    state_dict = {}
+    for weight_name, value in embeddings_weights.items():
+        if weight_name == "patch_embedding.weight":
+            # Convert Conv2D weights to Linear format as expected by MAX
+            # Conv2D shape: (out_channels, in_channels, kernel_h, kernel_w)
+            # Linear shape: (out_channels, in_channels * kernel_h * kernel_w)
+            out_channels, in_channels, kernel_h, kernel_w = value.shape
+            value = value.reshape(
+                out_channels, in_channels * kernel_h * kernel_w
+            )
+        state_dict[weight_name] = value.cpu()
+    return state_dict
+
+
 def generate_max_outputs(
     vision_config: VisionConfig,
     pixel_values: torch.Tensor,
@@ -150,10 +181,7 @@ def generate_max_outputs(
 
     config = MinimalConfig(vision_config)
 
-    # Prepare state dict.
-    state_dict = {}
-    for weight_name, value in embeddings_weights.items():
-        state_dict[weight_name] = value.cpu()
+    state_dict = prepare_embeddings_weights_for_max(embeddings_weights)
 
     # Create the embeddings layer.
     embeddings = InternVisionEmbeddings(config, device_ref)  # type: ignore[arg-type]
@@ -164,8 +192,11 @@ def generate_max_outputs(
     )
 
     # Build the graph with symbolic dimensions to test the TypeError fix
+    # Convert from NCHW to NHWC for MAX
+    pixel_values_nhwc = pixel_values.permute(0, 2, 3, 1).contiguous()
+
     input_type = TensorType(
-        dtype, shape=("batch", 3, "height", "width"), device=device_ref
+        dtype, shape=("batch", "height", "width", 3), device=device_ref
     )
 
     graph = Graph(
@@ -176,7 +207,7 @@ def generate_max_outputs(
     compiled = session.load(graph, weights_registry=state_dict)
 
     # Execute the model
-    result = compiled.execute(Tensor.from_dlpack(pixel_values).to(device))
+    result = compiled.execute(Tensor.from_dlpack(pixel_values_nhwc).to(device))
     # Convert result back to torch tensor
     max_tensor = result[0]
     return from_dlpack(max_tensor)
@@ -185,9 +216,10 @@ def generate_max_outputs(
 @pytest.mark.parametrize(
     "target_size",
     [
-        224,  # Downscale from 448
-        448,  # Same size
-        896,  # 2x upscale from 448
+        224,  # Downscale from 448 (16 patches)
+        448,  # Same size (32 patches)
+        896,  # 2x upscale from 448 (64 patches)
+        2688,  # Large size (192 patches)
     ],
 )
 def test_vision_embeddings(
@@ -195,7 +227,11 @@ def test_vision_embeddings(
     embeddings_weights: dict[str, torch.Tensor],
     target_size: int,
 ) -> None:
-    """Test position embedding interpolation for different resolutions."""
+    """Test position embedding interpolation for different resolutions.
+
+    Note: Image dimensions must be divisible by patch_size (14) for the
+    reshape operations to work correctly.
+    """
     # Create test inputs with target size
     batch_size = 1
     pixel_values = torch.randn(
@@ -218,6 +254,70 @@ def test_vision_embeddings(
 
     # Verify output shape
     expected_num_patches = (target_size // vision_config.patch_size) ** 2
+    expected_shape = (
+        batch_size,
+        expected_num_patches + 1,
+        vision_config.hidden_size,
+    )
+    assert max_output.shape == expected_shape, (
+        f"Expected shape {expected_shape}, got {max_output.shape}"
+    )
+
+    # Compare outputs
+    torch.testing.assert_close(
+        torch_output.to(torch.bfloat16),
+        max_output.to(torch.bfloat16),
+        rtol=1e-2,
+        atol=1e-2,
+    )
+
+
+@pytest.mark.parametrize(
+    "height,width",
+    [
+        (224, 224),  # Small square (16x16 patches)
+        (448, 672),  # Non-square, moderate size (32x48 patches)
+        (
+            2688,
+            2044,
+        ),  # Large size, adjusted to be divisible by 14 (192x146 patches)
+        (
+            1918,
+            1078,
+        ),  # HD-like resolution, adjusted to be divisible by 14 (137x77 patches)
+    ],
+)
+def test_vision_embeddings_non_square(
+    vision_config: VisionConfig,
+    embeddings_weights: dict[str, torch.Tensor],
+    height: int,
+    width: int,
+) -> None:
+    """Test position embedding interpolation for non-square images."""
+    # Create test inputs with specific height and width
+    batch_size = 1
+    pixel_values = torch.randn(
+        batch_size, 3, height, width, dtype=torch.bfloat16
+    ).to("cuda")
+
+    # Generate reference output
+    torch_output = generate_torch_outputs(
+        vision_config, pixel_values, embeddings_weights
+    )
+
+    # Generate MAX output
+    max_output = generate_max_outputs(
+        vision_config=vision_config,
+        pixel_values=pixel_values,
+        embeddings_weights=embeddings_weights,
+        dtype=DType.bfloat16,
+        device=Accelerator(),
+    )
+
+    # Verify output shape
+    expected_num_patches = (height // vision_config.patch_size) * (
+        width // vision_config.patch_size
+    )
     expected_shape = (
         batch_size,
         expected_num_patches + 1,
