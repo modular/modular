@@ -1232,30 +1232,34 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   return loopOp;
 }
 
-/// Given a struct type _ParamForIteratorWrapper instantiation, return the type
-/// that would be returned by __next__.
-static ASTType getIteratedType(IREmitter &emitter, PValue paramForGeneratorFn,
-                               SMLoc loc) {
-  // The result of parameter_for_generator is some _ParamForIteratorWrapper
-  // instantiation.
-  auto paramForIteratorWrapperType =
-      cast<FnTypeGeneratorType>(paramForGeneratorFn.getType())
-          .getUserResultType();
+/// Given the type of an iterator, return the type that would be returned by
+/// __next__.
+static ASTType getIteratedType(IREmitter &emitter, ASTType iterType,
+                               ExprNode *seqExpr) {
 
-  // Look up the value member.
-  LookupResult lookup = emitter.shared.lookupAndResolveDecl(
-      "value", loc, paramForIteratorWrapperType,
-      /*searchParentScopes=*/false);
-  ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
-  if (memberDecls.size() != 1 || !isa<StructFieldOp>(memberDecls[0])) {
-    if (!lookup.isFailure())
-      emitter.emitError(loc)
-          << "expected _ParamForIteratorWrapper to have a field named 'value'";
+  // Look up __next__ without calling it.
+  auto handleLookupFailure = [&]() {
+    emitter.emitError(seqExpr->getLoc())
+        << "expected iterator of type " << iterType
+        << " to have __next__ method" << seqExpr->getRange();
+  };
+
+  // Next is generally a mutating method, so we need a MLValue to be able to
+  // type check it.  We'll use a synthetic variable for this.
+  BlockArgument bbArg = emitter.shared.getArgumentOwningBlock().addArgument(
+      RefType::getAnyOrigin(iterType, true), seqExpr->getLocation(emitter));
+
+  ASTExprAnd<AnyValue> selfValue = {MLValue(bbArg), seqExpr};
+  CallOperands emptyOperands(selfValue);
+  PValue nextFn = OverloadSet::lookupAndResolve(
+      iterType, "__next__", emptyOperands, seqExpr, CallSyntax::kMethodCall,
+      handleLookupFailure,
+      /*shouldPrintOverloadErrors*/ true, emitter);
+  if (!nextFn)
     return {};
-  }
 
-  return cast<StructFieldOp>(memberDecls[0])
-      .getReboundType(cast<LIT::StructType>(paramForIteratorWrapperType));
+  // The result of a call to next is the iterated value type.
+  return cast<FnTypeGeneratorType>(nextFn.getType()).getUserResultType();
 }
 
 // FIXME: This needs to parse this as a target expression and then handle it
@@ -1310,6 +1314,11 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
   ASTType iterType = iterVal.getRValueType();
 
+  // Sniff the type of the induction variable and create its declaration.
+  ASTType indexType = getIteratedType(emitter, iterType, seqExpr);
+  if (!indexType)
+    return failure();
+
   // Look up __has_next__ without calling it.
   auto handleLookupFailure = [&]() {
     emitter.emitError(seqExpr->getLoc())
@@ -1340,11 +1349,6 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
                    seqExpr, CallSyntax::kDirectCall);
   PValue iterate = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
   if (!iterate)
-    return failure();
-
-  // Sniff the type of the induction variable and create its declaration.
-  ASTType indexType = getIteratedType(emitter, iterate, forLoc);
-  if (!indexType)
     return failure();
 
   StringAttr target = decodeTarget(targetExpr, shared);
