@@ -830,19 +830,20 @@ PIPELINES = {
     ),
     # TODO: Gemma-3-12B requires unusually high tolerances (atol=7.3, rtol=0.52).
     # This should be investigated to improve model accuracy.
-    # TODO(MODELS-620): Disabled because of a HF transformers bump
-    # "google/gemma-3-12b-it-float16": PipelineDef(
-    #     compatible_with=[DeviceKind.GPU],
-    #     tags=["big"],
-    #     run=_make_pipeline_runner(
-    #         pipeline="gemma3-multimodal",
-    #         encoding="bfloat16",
-    #         absolute_tolerance=7.3,
-    #         relative_tolerance=0.52,
-    #         cos_dist_threshold=1.1e-01,
-    #         kl_div_threshold=2.5e-01,
-    #     ),
-    # ),
+    # Currently broken with HF transformers 4.52.4 for torch.
+    "google/gemma-3-12b-it-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=_make_pipeline_runner(
+            pipeline="gemma3-multimodal",
+            encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation="torch_gemma3-multimodal_golden/torch_gemma3-multimodal_bfloat16_golden.json",
+            absolute_tolerance=7.3,
+            relative_tolerance=0.52,
+            cos_dist_threshold=1.1e-01,
+            kl_div_threshold=2.5e-01,
+        ),
+    ),
 }
 
 
