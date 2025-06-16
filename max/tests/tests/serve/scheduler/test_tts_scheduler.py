@@ -192,7 +192,9 @@ def create_paged_scheduler(
         ce_delay_ms=ce_delay_ms,
         enable_prioritize_first_decode=enable_prioritize_first_decode,
     )
-    token_pipeline = FakeAudioGeneratorPipeline(paged_manager)
+    token_pipeline = FakeAudioGeneratorPipeline(
+        paged_manager, max_num_steps=max_forward_steps_tg
+    )
     scheduler = AudioGenerationScheduler(
         process_control=create_process_control(),
         scheduler_config=scheduler_config,
@@ -207,12 +209,21 @@ def create_paged_scheduler(
 
 
 class FakeAudioGeneratorPipeline(AudioGenerator):
-    def __init__(self, paged_manager: PagedKVCacheManager):
+    def __init__(self, paged_manager: PagedKVCacheManager, max_num_steps: int):
         self.paged_manager = paged_manager
+        self.max_num_steps = max_num_steps
+        self._prev_num_steps: int | None = None
 
     def next_chunk(
-        self, batch: dict[str, TTSContext], num_tokens: int = 1
+        self, batch: dict[str, TTSContext]
     ) -> dict[str, AudioGenerationResponse]:
+        is_ce = next(iter(batch.values())).is_ce
+
+        if is_ce:
+            num_tokens = 1
+        else:
+            num_tokens = self.max_num_steps
+
         # Truncate num steps based on the max seq len
         for context in batch.values():
             num_available_steps = context.compute_num_available_steps(
@@ -220,7 +231,8 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
             )
             assert num_available_steps > 0
             num_tokens = min(num_tokens, num_available_steps)
-        self.prev_num_steps = num_tokens
+
+        self._prev_num_steps = num_tokens
 
         ctxs: list[TTSContext] = list(batch.values())
 
@@ -260,6 +272,11 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
     @property
     def decoder_sample_rate(self) -> int:
         return 999
+
+    @property
+    def prev_num_steps(self) -> int:
+        assert self._prev_num_steps is not None
+        return self._prev_num_steps
 
 
 @dataclass
@@ -314,7 +331,6 @@ def create_batch_and_execute(
     batch_size = batch.batch_size
     batch_type = batch.batch_type
     input_tokens = batch.input_tokens
-    num_steps = batch.num_steps
     if batch.batch_size == 0:
         return BatchInfo.empty()
 
@@ -323,10 +339,7 @@ def create_batch_and_execute(
 
     assert isinstance(scheduler.pipeline, FakeAudioGeneratorPipeline)
 
-    # Pipelines should use whatever num_steps that the scheduler computed.
-    # It should not need to truncate it.
-    assert scheduler.pipeline.prev_num_steps == num_steps
-
+    num_steps = scheduler.pipeline.prev_num_steps
     return BatchInfo(
         batch_type=batch_type,
         batch_size=batch_size,
