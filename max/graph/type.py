@@ -946,7 +946,7 @@ def _value_to_attribute(param: OpaqueParameter) -> Attribute:
     if isinstance(param, DType):
         # Wrap the MLIR type corresponding to dtype in a TypeAttr,
         # which MOToKGENLowering expects.
-        dtype = _graph.dtype_type(param)
+        dtype = _graph.dtype_to_type(param)
         return builtin.TypeAttr(dtype)
 
     msg = f"unsupported parameter type {type(param)} for custom op"
@@ -972,7 +972,7 @@ def _attribute_to_value(value: Attribute) -> OpaqueParameter:
     if isinstance(value, builtin.TypeAttr):
         val = value.value
         assert val is not None
-        return DType(val.asm)
+        return _graph.type_to_dtype(val)
 
     raise TypeError(f"unsupported attribute type {value}")
 

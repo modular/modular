@@ -34,7 +34,7 @@ def _parameter_attribute(
     elif isinstance(param, DType):
         # Wrap the MLIR type corresponding to dtype in a TypeAttr,
         # which MOToKGENLowering expects.
-        dtype = _graph.dtype_type(param)
+        dtype = _graph.dtype_to_type(param)
         attr = builtin.TypeAttr(dtype)
         return mlir.Attribute._CAPICreate(attr._CAPIPtr)  # type: ignore
     else:
