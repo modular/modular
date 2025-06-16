@@ -24,12 +24,12 @@ fn main():
     var y: Float64 = 42.5
     var d: Scalar[DType.uint8] = 9
     agnostic_user[Int, DType.uint8](
-        UnsafePointer[Int].address_of(x),
-        UnsafePointer[Scalar[DType.uint8]].address_of(d),
+        UnsafePointer[Int](to=x),
+        UnsafePointer[Scalar[DType.uint8]](to=d),
     )
     agnostic_user[Float64, DType.uint8](
-        UnsafePointer[Float64].address_of(y),
-        UnsafePointer[Scalar[DType.uint8]].address_of(d),
+        UnsafePointer[Float64](to=y),
+        UnsafePointer[Scalar[DType.uint8]](to=d),
     )
 
 

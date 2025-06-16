@@ -916,6 +916,15 @@ struct UnsafePointer[
     fn __init__(out self, value: Self._mlir_type):
         self.address = value
 
+    @always_inline("nodebug")
+    fn __init__(out self, *, ref [address_space._value.value]to: T):
+        """Constructs a Pointer from a reference to a value.
+
+        Args:
+            to: The value to construct a pointer to.
+        """
+        self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
+
     @staticmethod
     fn address_of(ref [address_space]arg: T) -> Self:
         return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))

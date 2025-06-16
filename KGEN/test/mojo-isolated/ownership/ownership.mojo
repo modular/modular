@@ -1146,7 +1146,7 @@ fn handleAnyLifetime2():
   # Make sure this keeps 'ui8' alive until after the call even though
   # the element is trivial.
   # CHECK: lit.call {{.*}}use_inner_pointer
-  use_inner_pointer(UnsafePointer.address_of(ui8))
+  use_inner_pointer(UnsafePointer(to=ui8))
   # CHECK-NEXT: lit.var.lifetime.end %ui8
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime3
@@ -1176,7 +1176,7 @@ fn take_pack[*Ts: AnyType](*values: *Ts): pass
 # https://github.com/modular/mojo/issues/3559
 fn handleAnyLifetime4():
   str = String()
-  ptr = UnsafePointer.address_of(str)
+  ptr = UnsafePointer(to=str)
 
   # Should extend the lifetime of 'str'.
   take_pack(ptr)
