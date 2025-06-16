@@ -2502,8 +2502,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
         shared.lookupBuiltinTrait(traitName, &structDecl, structDecl.getLoc()));
     if (!trait)
       return false;
-    return structDecl.doesNominalTypeConformTo(trait.bindReference(),
-                                               /*allowImplicit=*/false);
+    return structDecl.doesNominalTypeConformTo(trait.bindReference());
   };
 
   // Push the debug scope for this struct if necessary so that nested operations

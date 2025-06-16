@@ -52,14 +52,11 @@ fn test_infer_variadic():
 # callee's variadic's element trait.
 
 
-# expected-note @below {{struct 'ZInt' does not implement all requirements for 'Sprongling'}}
 struct ZInt:
     pass
 
 
-# expected-note @below {{trait 'Sprongling' declared here}}
 trait Sprongling:
-    # expected-note @below {{required function 'sprongle' is not implemented}}
     fn sprongle(self):
         ...
 

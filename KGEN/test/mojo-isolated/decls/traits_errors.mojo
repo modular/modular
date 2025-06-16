@@ -7,8 +7,8 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
-# expected-note @below {{trait 'Movable' declared here}}
-trait Movable:
+# expected-note @below {{trait 'MyMovable' declared here}}
+trait MyMovable:
     # expected-note @below {{required function '__moveinit__' is not implemented}}
     fn __moveinit__(out self, owned existing: Self, /):
         pass
@@ -47,8 +47,8 @@ trait SimpleTrait:
         pass
 
 
-# expected-note @below {{struct 'TraitStruct' does not implement all requirements for 'Movable'}}
-struct TraitStruct(SimpleTrait):
+# expected-error @below {{struct 'TraitStruct' does not implement all requirements for 'MyMovable'}}
+struct TraitStruct(SimpleTrait, MyMovable):
     fn some_method(self):
         pass
 
@@ -58,8 +58,8 @@ fn test_many_things_of_specified_trait[element_type: __type_of(AnyType),
     pass
 
 
-# expected-note @below {{'DoesNotConform' does not implement all requirements for 'SimpleTrait'}}
-struct DoesNotConform:
+# expected-error @below {{'DoesNotConform' does not implement all requirements for 'SimpleTrait'}}
+struct DoesNotConform(SimpleTrait):
     pass
 
 
@@ -68,7 +68,7 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
     test_many_things_of_specified_trait[AnyType, TraitStruct, Int]()
 
     # expected-error @+1 {{cannot bind type 'TraitStruct' to trait 'Movable'}}
-    test_many_things_of_specified_trait[Movable, TraitStruct, Int]()
+    test_many_things_of_specified_trait[Movable, TraitStruct, TraitStruct]()
 
     test_many_things_of_specified_trait[
         SimpleTrait,

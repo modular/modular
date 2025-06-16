@@ -7,11 +7,11 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # Verify that untyped mlir typed trait defined aliases get type annotations generated for them.
-# CHECK-DAG: #type_value = #kgen.type<index, {"__del__" : !lit.generator<[1]{{.*}}> = @{{.*}}"__del__{{.*}}"<:type index>}> : !Nothing
+# CHECK-DAG: #type_value = #kgen.type<index, {"__del__" : !lit.generator<[1]{{.*}}> = @{{.*}}"__del__{{.*}}"<:type index>}> : !AnyType
 
 # Binding `t` to `MainTraitT` triggers the following type constants
 # CHECK-DAG: #ImplT1 = #kgen.type<!ImplT, {"subget" : !lit.generator<("self": !ImplT) -> index> = @{{.*}}::@ImplT::@"subget{{.*}}", "__del__" : {{.*}}}> : !SubTraitT
-# CHECK-DAG: #MainImplT2 = #kgen.type<!MainImplT, {"ret_type" : !SubTraitT = #ImplT1, "anything" : !Nothing = #type_value, "get" : !lit.generator<("self": !MainImplT) -> !ImplT> = @{{.*}}::@MainImplT::@"get{{.*}}", "__del__" : {{.*}}}> : !MainTraitT
+# CHECK-DAG: #MainImplT2 = #kgen.type<!MainImplT, {"ret_type" : !SubTraitT = #ImplT1, "anything" : !AnyType = #type_value, "get" : !lit.generator<("self": !MainImplT) -> !ImplT> = @{{.*}}::@MainImplT::@"get{{.*}}", "__del__" : {{.*}}}> : !MainTraitT
 
 # Binding `t` to `MainTraitT2` triggers the following type constants
 # CHECK-DAG: #ImplT2 = #kgen.type<!ImplT, {"subget2" : !lit.generator<("self": !ImplT) -> index> = @{{.*}}::@ImplT::@"subget2{{.*}}", "__del__" : {{.*}}}> : !SubTraitT2
@@ -28,13 +28,9 @@ trait SubTraitT2:
         ...
 
 @register_passable("trivial")
-trait Nothing:
-    pass
-
-@register_passable("trivial")
 trait MainTraitT:
     alias ret_type: SubTraitT
-    alias anything: Nothing
+    alias anything: AnyType
     fn get(self) -> Self.ret_type:
         ...
 
