@@ -13,7 +13,7 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import Optional, OptionalReg
+from collections.optional import OptionalReg
 from math import ceildiv
 from sys import alignof, bitwidthof, has_nvidia_gpu_accelerator, simdwidthof
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import isclose
-from collections import InlineArray
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
 from random import random_float64

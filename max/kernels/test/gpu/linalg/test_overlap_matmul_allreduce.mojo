@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import InlineArray
 from math import floor
 from sys import sizeof
 

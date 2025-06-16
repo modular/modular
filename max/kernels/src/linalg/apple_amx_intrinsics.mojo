@@ -17,7 +17,6 @@
 #
 # ===-----------------------------------------------------------------------===#
 
-from collections.string import StaticString
 from sys._assembly import inlined_assembly
 
 from buffer import NDBuffer

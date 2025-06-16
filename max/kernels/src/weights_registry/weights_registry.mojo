@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
-
 
 @fieldwise_init
 struct WeightsRegistry(Copyable, Movable):

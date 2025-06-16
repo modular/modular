@@ -10,9 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Dict
-
-
 from utils import IndexList
 
 from .utils_gpu import (

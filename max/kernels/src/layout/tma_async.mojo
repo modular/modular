@@ -32,7 +32,6 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from collections import Optional
 from sys import alignof, llvm_intrinsic, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
 

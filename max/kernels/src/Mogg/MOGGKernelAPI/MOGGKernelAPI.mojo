@@ -15,8 +15,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import InlineArray, List, Optional, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import (
     atanh,
     ceil,
@@ -83,7 +82,6 @@ from linalg.utils import (
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
-from memory import AddressSpace
 from nn import arg_nonzero
 from nn._ragged_utils import merge_ragged_tensors
 from nn.activations import gelu, relu

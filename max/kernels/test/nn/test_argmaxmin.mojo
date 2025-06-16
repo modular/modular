@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm import sum
-from algorithm.reduction import _reduce_generator, max, min
+from algorithm.reduction import _reduce_generator
 from builtin.math import max as _max
 from builtin.math import min as _min
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout

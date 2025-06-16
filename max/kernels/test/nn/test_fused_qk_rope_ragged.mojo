@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string import StaticString
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext

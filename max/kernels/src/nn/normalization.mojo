@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
+from collections import OptionalReg
 from math import align_down, ceildiv, isqrt
 from sys.info import _is_sm_9x, alignof, simdwidthof
 

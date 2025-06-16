@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_up, ceildiv, gcd
 from sys import alignof
 from sys.info import simdwidthof

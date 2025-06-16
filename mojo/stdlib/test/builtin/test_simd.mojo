@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
 from sys import has_neon
 
 from bit import count_leading_zeros

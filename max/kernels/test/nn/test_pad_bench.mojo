@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
+from gpu.memory import AddressSpace
 
 import benchmark
 from benchmark import Unit, keep

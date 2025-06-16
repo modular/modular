@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
 from collections.string._unicode import _get_uppercase_mapping
 
 from testing import assert_equal

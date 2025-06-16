@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
-from collections.string import StaticString
-from math import ceildiv
 from sys import alignof, is_nvidia_gpu, simdwidthof, sizeof
+from collections import OptionalReg
+from math import ceildiv
 
 from bit import log2_floor
 from buffer import NDBuffer

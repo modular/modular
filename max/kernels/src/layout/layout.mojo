@@ -56,13 +56,12 @@ var tiled = blocked_product(layout, Layout([2, 2]))
 """
 
 import sys
-from collections import InlineArray, Optional
 from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 
 from buffer.dimlist import DimList
 
-from utils import Writable, Writer, IndexList
+from utils import IndexList
 
 from .int_tuple import (
     INT_TUPLE_VALIDATION,

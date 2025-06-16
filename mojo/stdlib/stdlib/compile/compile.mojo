@@ -44,8 +44,6 @@ from pathlib import Path
 from sys.info import _current_target
 
 
-from utils import Writer
-
 from .reflection import get_linkage_name
 
 # ===-----------------------------------------------------------------------===#

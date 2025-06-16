@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
 from hashlib._ahash import AHasher
 from hashlib._hasher import _hash_with_hasher as hash
 from hashlib.hash import hash as old_hash
 
 from bit import pop_count
 from builtin._location import __call_location
-from memory import Span, memset_zero
+from memory import memset_zero
 from testing import assert_equal, assert_not_equal, assert_true
 
 from test_utils import (

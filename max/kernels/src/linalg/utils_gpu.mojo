@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString, StringSlice
 from hashlib._hasher import _Hasher
 from math import ceildiv
 from sys import (

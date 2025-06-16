@@ -15,8 +15,6 @@
 
 from random import rand
 
-from memory import Span
-
 
 fn sort_test[D: DType, name: StaticString](size: Int, max: Int) raises:
     var p = UnsafePointer[SIMD[D, 1]].alloc(size)

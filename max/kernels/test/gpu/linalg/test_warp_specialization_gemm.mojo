@@ -16,7 +16,6 @@ from sys import sizeof
 import linalg.vendor_blas
 from buffer.dimlist import DimList, _make_tuple
 from gpu.host import DeviceContext
-from gpu.mma import wgmma_async
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,

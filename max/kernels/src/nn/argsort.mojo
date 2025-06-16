@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections.string import StaticString
 from math import ceildiv, iota
 from sys.info import simdwidthof
 

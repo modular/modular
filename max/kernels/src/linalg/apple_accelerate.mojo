@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import fma
 from os import abort
 from sys import os_is_macos, simdwidthof

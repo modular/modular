@@ -16,7 +16,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import InlineArray, List, Optional
 from os import abort
 
 alias _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"

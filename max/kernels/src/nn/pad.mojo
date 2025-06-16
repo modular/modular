@@ -16,7 +16,6 @@
 # pad
 # ===-----------------------------------------------------------------------===#
 
-from collections import InlineArray
 
 from layout import (
     LayoutTensor,

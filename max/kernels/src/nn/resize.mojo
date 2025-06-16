@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from math import ceil, floor
 
 from algorithm.functional import elementwise

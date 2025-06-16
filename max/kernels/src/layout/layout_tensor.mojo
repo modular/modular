@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 from math import align_up, ceildiv, exp
 from math.math import _Expable
 from sys import (
@@ -38,7 +38,7 @@ from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
 from memory import stack_allocation
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index

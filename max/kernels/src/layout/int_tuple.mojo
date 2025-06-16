@@ -56,13 +56,13 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-from collections import InlineArray, List
+import sys
 from os import abort
 
 from buffer import DimList
 from builtin.range import _StridedRange
 from memory import memcpy
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 
 from utils.numerics import max_finite
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from sys import simdwidthof
 
 from algorithm.functional import elementwise

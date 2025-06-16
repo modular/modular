@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from sys import llvm_intrinsic
 
 from memory.unsafe import bitcast

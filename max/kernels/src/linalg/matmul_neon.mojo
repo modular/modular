@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from math import fma
 
 from buffer.buffer import NDBuffer

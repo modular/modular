@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import ceildiv, exp
 from os import abort
 from sys import alignof, is_defined, simdwidthof

@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import InlineArray
 from collections.string.string_slice import get_static_string
 from sys import _libc as libc
 from sys import (

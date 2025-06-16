@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from math import ceildiv, isclose
 from random import rand, random_float64
 from sys import sizeof

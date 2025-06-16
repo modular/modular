@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from random import rand, random_float64
 from sys import argv, env_get_string
 

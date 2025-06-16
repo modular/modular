@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StringSlice
 from math import erf
 from sys.info import is_nvidia_gpu, simdwidthof
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from sys.info import has_neon, simdwidthof
 
 from algorithm.functional import vectorize

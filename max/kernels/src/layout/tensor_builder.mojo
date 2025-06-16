@@ -32,7 +32,7 @@ from layout.layout_tensor import (
     _get_index_type,
     _get_layout_type,
 )
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 
 from utils import Index, IndexList
 

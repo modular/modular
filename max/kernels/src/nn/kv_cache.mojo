@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from sys.info import _current_target
 from sys.intrinsics import _type_is_eq
 

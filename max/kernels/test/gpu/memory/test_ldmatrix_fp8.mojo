@@ -18,6 +18,7 @@ from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from gpu.mma_util import store_matrix_d
+from gpu.memory import AddressSpace
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import stack_allocation

@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from sys.intrinsics import _type_is_eq
 
 from buffer import Dim, DimList, NDBuffer

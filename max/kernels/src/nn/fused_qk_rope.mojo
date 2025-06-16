@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string import StaticString
 from math import gcd
 from sys.info import _current_target, simdwidthof
 

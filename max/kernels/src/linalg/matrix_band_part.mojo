@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements matrix band part functions."""
 
-from collections.string import StaticString
 
 from algorithm.functional import elementwise, unswitch
 from buffer import NDBuffer

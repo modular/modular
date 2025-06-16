@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
+from collections import OptionalReg
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList

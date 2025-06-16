@@ -14,8 +14,7 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-from collections import InlineArray, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import ceil, fma
 from sys import alignof, simdwidthof
 from sys.info import is_gpu

@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import align_down, align_up, ceildiv
 from sys._build import is_debug_build
 from sys.info import simdwidthof, sizeof

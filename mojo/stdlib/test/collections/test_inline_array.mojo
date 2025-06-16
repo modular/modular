@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
 from sys.info import sizeof
 
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import Optional, OptionalReg
+from collections.optional import OptionalReg
 from math import ceildiv
 from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof
 

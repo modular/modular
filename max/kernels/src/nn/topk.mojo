@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import ceildiv, exp, iota
 from sys import alignof, simdwidthof, sizeof
 
@@ -40,7 +39,7 @@ from gpu.host.dim import Dim
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from memory import Span, stack_allocation
+from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from runtime.asyncrt import DeviceContextPtr

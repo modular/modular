@@ -14,7 +14,6 @@
 # RUN: %mojo-no-debug %s
 
 
-from collections import InlineArray
 from math import erf
 from random import randn, seed
 

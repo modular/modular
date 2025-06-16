@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections import InlineArray
 
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from math import ceil
 
 from layout import Layout, LayoutTensor

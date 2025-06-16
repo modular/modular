@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from collections.optional import OptionalReg
 from math import fma
 from sys import alignof, prefetch

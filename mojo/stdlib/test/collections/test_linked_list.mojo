@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import LinkedList, Optional
+from collections import LinkedList
 
 from test_utils import (
     CopyCountedStruct,

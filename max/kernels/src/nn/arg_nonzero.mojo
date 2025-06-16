@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import LayoutTensor, RuntimeTuple, IntTuple

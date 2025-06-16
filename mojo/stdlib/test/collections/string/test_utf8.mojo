@@ -18,7 +18,6 @@ from collections.string._utf8 import (
 )
 from sys.info import alignof, sizeof
 
-from memory import Span
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 # ===----------------------------------------------------------------------=== #

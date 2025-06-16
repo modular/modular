@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
+from collections import OptionalReg
 from math import iota
 from random import rand, seed
 

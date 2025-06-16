@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
-from collections.string.string_slice import StaticString, get_static_string
+from collections import OptionalReg
+from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from sys import has_neon, simdwidthof, sizeof
 from sys.info import _current_target

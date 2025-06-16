@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from math import align_down, ceildiv, exp, exp2, log
 from sys import alignof, is_amd_gpu, is_nvidia_gpu, simdwidthof
 

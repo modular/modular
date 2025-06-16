@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv
 from sys import alignof, simdwidthof
 from nn.conv import (

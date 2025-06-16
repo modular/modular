@@ -20,7 +20,7 @@ from os import abort
 from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import Pointer, Span, memcpy
+from memory import Pointer, memcpy
 
 from .optional import Optional
 

@@ -23,6 +23,7 @@ from layout import Layout, LayoutTensor
 from testing import assert_almost_equal
 from gpu.id import thread_idx
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.memory import AddressSpace
 
 
 fn tcgen05_st_ld_roundtrip_kernel[

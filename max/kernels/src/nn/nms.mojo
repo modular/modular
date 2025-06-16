@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from math import iota
 
+from memory import UnsafePointer
 from layout import LayoutTensor, RuntimeTuple
-from memory import Span
 
 from utils import IndexList
 

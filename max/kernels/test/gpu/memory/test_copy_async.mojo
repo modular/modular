@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StringSlice
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import AddressSpace, CacheEviction, async_copy

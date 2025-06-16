@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from collections.string import StaticString
 from math import align_down, align_up, ceildiv, exp
 from sys import alignof, has_avx512f, has_neon, simdwidthof
 

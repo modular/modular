@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import assert_true
