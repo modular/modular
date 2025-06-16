@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.graph.ops.resize import InterpolationMode
 from max.graph.type import Dim, StaticDim
-from max.nn import Conv2D, Module
+from max.nn import Linear, Module
 from max.pipelines.architectures.llama3.distributed_llama import (
     DistributedLlama3,
 )
@@ -44,15 +44,14 @@ class InternVisionEmbeddings(Module):
         self.patch_size = config.vision_config.patch_size
         self.dtype = config.vision_config.dtype
 
-        self.patch_embedding = Conv2D(
-            in_channels=3,
-            out_channels=self.embed_dim,
-            kernel_size=self.patch_size,
-            stride=self.patch_size,
+        # Calculate patch dimensions
+        # Note: in_dim matches Conv2D flattening order (C*H*W)
+        self.patch_embedding = Linear(
+            in_dim=3 * self.patch_size * self.patch_size,
+            out_dim=self.embed_dim,
             dtype=self.dtype,
-            device=self.device,
-            permute=True,  # Convert from PyTorch weight format
-            has_bias=True,  # PyTorch Conv2d has bias by default
+            device=device if device else DeviceRef.CPU(),
+            has_bias=True,
         )
 
         self.num_patches = (self.image_size // self.patch_size) ** 2
@@ -121,27 +120,67 @@ class InternVisionEmbeddings(Module):
         """Compute embeddings for input pixel values.
 
         Args:
-            pixel_values: Input image tensor of shape (batch, channels, height, width).
+            pixel_values: Input image tensor of shape (batch, height, width, channels).
 
         Returns:
             Embeddings tensor of shape (batch, num_positions, embed_dim).
         """
-        # 1. Apply patch embedding convolution
-        pixel_values = pixel_values.cast(self.patch_embedding.filter.dtype)
-        patch_embeds = self.patch_embedding(pixel_values)
+        # pixel_values is in BHWC format
+        batch_size = pixel_values.shape[0]
+        img_height = pixel_values.shape[1]
+        img_width = pixel_values.shape[2]
 
-        # patch_embeds is now (B, C, H, W) where C=embed_dim, H=W=num_patches_per_side
-        batch_size = patch_embeds.shape[0]
-        height = patch_embeds.shape[2]
-        width = patch_embeds.shape[3]
+        # Calculate number of patches
+        height = img_height // self.patch_size
+        width = img_width // self.patch_size
 
-        # 2. Reshape from (B, C, H, W) to (B, H*W, C)
-        # First permute to (B, H, W, C)
-        patch_embeds = ops.permute(patch_embeds, [0, 2, 3, 1])
-        # Then reshape to (B, H*W, C)
-        patch_embeds = ops.reshape(
-            patch_embeds, [batch_size, height * width, self.embed_dim]
+        # 1. Reshape to extract patches
+        # From (B, H, W, C) to (B, H/P, P, W/P, P, C)
+        # Rebind `pixel_values` to be an explicit multiple of the `patch_size`.
+        # This is asserting that at runtime the `img_height` and `img_width`
+        # will both be divisible by `patch_size`.
+        pixel_values_rebind = ops.rebind(
+            pixel_values,
+            [
+                batch_size,
+                self.patch_size * (img_height // self.patch_size),
+                self.patch_size * (img_width // self.patch_size),
+                3,
+            ],
         )
+        pixel_values = ops.reshape(
+            pixel_values_rebind,
+            [
+                batch_size,
+                height,
+                self.patch_size,
+                width,
+                self.patch_size,
+                3,
+            ],
+        )
+
+        # 2. Permute to group patch pixels together
+        # From (B, H/P, P, W/P, P, C) to (B, H/P, W/P, P, P, C)
+        pixel_values = ops.permute(pixel_values, [0, 1, 3, 2, 4, 5])
+
+        # 2.5. Permute within each patch from HWC to CHW to match Conv2D weight layout
+        # From (B, H/P, W/P, P, P, C) to (B, H/P, W/P, C, P, P)
+        pixel_values = ops.permute(pixel_values, [0, 1, 2, 5, 3, 4])
+
+        # 3. Reshape to (B, num_patches, channels * patch_size * patch_size)
+        pixel_values = ops.reshape(
+            pixel_values,
+            [
+                batch_size,
+                height * width,
+                3 * self.patch_size * self.patch_size,
+            ],
+        )
+
+        # 4. Apply linear transformation
+        pixel_values = pixel_values.cast(self.patch_embedding.weight.dtype)
+        patch_embeds = self.patch_embedding(pixel_values)
 
         # 3. Add class token
         class_embeds = self.class_embedding.broadcast_to(
