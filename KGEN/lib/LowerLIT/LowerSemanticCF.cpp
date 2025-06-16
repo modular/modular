@@ -391,7 +391,7 @@ void LowerSemanticCF::lowerParamFor(ParamForOp paramFor,
   //    } else {
   //       kgen.unreachable
   //    }
-  bool sawGotoElse = false;
+  [[maybe_unused]] bool sawGotoElse = false;
   paramFor.getBody().front().walk<mlir::WalkOrder::PreOrder>(
       [&](Operation *op) {
         // Don't step into nested functions etc.
