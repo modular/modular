@@ -38,8 +38,7 @@ def register_request(app: FastAPI):
             logger.exception("Exception in request session : %s", request_id)
             status_code = 500
             raise HTTPException(
-                status_code=500,
-                headers={"X-Request-ID": request_id},
+                status_code=500, headers={"X-Request-ID": request_id}
             ) from e
         response.headers["X-Request-ID"] = request_id
         return response

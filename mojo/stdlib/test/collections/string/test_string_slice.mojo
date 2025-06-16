@@ -70,6 +70,18 @@ fn test_string_slice_layout() raises:
     assert_equal(second_word_ptr - base_ptr, sizeof[Int]())
 
 
+def test_constructors():
+    def some_func_immut(b: StringSlice[mut=False]):
+        assert_false(b.mut)
+
+    def some_func_mut(b: StringSlice[mut=True]):
+        assert_true(b.mut)
+
+    var a = String("123")
+    some_func_immut(a)
+    some_func_mut(StringSlice(a))
+
+
 fn test_string_literal_byte_span() raises:
     alias slc = "Hello".as_bytes()
 
@@ -498,22 +510,20 @@ def test_split():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
-    # escape secuences are accepted
-    var univ_sep_var = (
-        String(
-            " ",
-            "\t",
-            "\n",
-            "\r",
-            "\v",
-            "\f",
-            "\x1c",
-            "\x1d",
-            "\x1e",
-            String(bytes=next_line),
-            String(bytes=unicode_line_sep),
-            String(bytes=unicode_paragraph_sep),
-        )
+    # escape sequences are accepted
+    var univ_sep_var = String(
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\v",
+        "\f",
+        "\x1c",
+        "\x1d",
+        "\x1e",
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     assert_equal(StringSlice(s).split(), L("hello", "world"))
@@ -528,17 +538,13 @@ def test_split():
     assert_true(len(S("").split(" ")) == 1)
     assert_true(len(S(",").split(",")) == 2)
     assert_true(len(S(" ").split(" ")) == 2)
-    # assert_true(len(S("").split("")) == 2) # TODO(#3528)
+    assert_true(len(S("").split("")) == 2)
     assert_true(len(S("  ").split(" ")) == 3)
     assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
     assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
     assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
-
-    # TODO(#3528): delete this test
-    with assert_raises():
-        _ = S("").split("")
 
     # Split in middle
     assert_equal(S("faang").split("n"), L("faa", "g"))
@@ -568,11 +574,10 @@ def test_split():
     s3 = S("Лорем ипсум долор сит амет").split("м")
     assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
 
-    # TODO(#3528)
-    # assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
-    # assert_equal(S("").join(S("123").split("")), "123")
-    # assert_equal(S(",1,2,3,").split(","), S("123").split(""))
-    # assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
@@ -627,8 +632,7 @@ def test_splitlines():
     var unicode_line_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA8))
     var unicode_paragraph_sep = String(bytes=List[UInt8](0xE2, 0x80, 0xA9))
 
-    for i in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = i[]
+    for u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         s = StringSlice(item)
         assert_equal(s.splitlines(), hello_mojo)
@@ -1026,6 +1030,7 @@ def test_merge():
 
 def main():
     test_string_slice_layout()
+    test_constructors()
     test_string_literal_byte_span()
     test_string_byte_span()
     test_heap_string_from_string_slice()

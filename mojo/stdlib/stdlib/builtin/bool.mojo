@@ -105,16 +105,16 @@ trait ImplicitlyBoolable(Boolable):
 @register_passable("trivial")
 struct Bool(
     Comparable,
+    ConvertibleFromPython,
     Copyable,
-    Movable,
     Defaultable,
     ExplicitlyCopyable,
     Floatable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
+    Movable,
     PythonConvertible,
-    ConvertibleFromPython,
     Representable,
     Stringable,
     Writable,
@@ -541,7 +541,7 @@ struct Bool(
         """
         hasher._update_with_simd(Scalar[DType.bool](self))
 
-    fn to_python_object(self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -584,7 +584,7 @@ fn any[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
         `True` if **any** element in the list is truthy, `False` otherwise.
     """
     for item in list:
-        if item[]:
+        if item:
             return True
     return False
 
@@ -602,7 +602,7 @@ fn any[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
         `True` if **any** element in the set is truthy, `False` otherwise.
     """
     for item in set:
-        if item[]:
+        if item:
             return True
     return False
 
@@ -641,7 +641,7 @@ fn all[T: Boolable & Copyable & Movable, //](list: List[T, *_]) -> Bool:
         `True` if **all** elements in the list are truthy, `False` otherwise.
     """
     for item in list:
-        if not item[]:
+        if not item:
             return False
     return True
 
@@ -659,7 +659,7 @@ fn all[T: Boolable & KeyElement, //](set: Set[T]) -> Bool:
         `True` if **all** elements in the set are truthy, `False` otherwise.
     """
     for item in set:
-        if not item[]:
+        if not item:
             return False
     return True
 

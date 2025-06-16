@@ -20,7 +20,6 @@ from utils import IndexList
 ```
 """
 
-from collections.string.string import _calc_initial_buffer_size
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import bitwidthof
 
@@ -160,19 +159,15 @@ fn _type_of_width[bitwidth: Int, unsigned: Bool]() -> DType:
         return _int_type_of_width[bitwidth]()
 
 
-fn _is_unsigned[dtype: DType]() -> Bool:
-    return dtype in (DType.uint8, DType.uint16, DType.uint32, DType.uint64)
-
-
-@value
 @register_passable("trivial")
 struct IndexList[size: Int, *, element_type: DType = DType.int64](
+    Comparable,
+    Copyable,
+    Defaultable,
+    Movable,
     Sized,
     Stringable,
     Writable,
-    Comparable,
-    Copyable,
-    Movable,
     _HashableWithHasher,
 ):
     """A base struct that implements size agnostic index functions.

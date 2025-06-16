@@ -27,7 +27,7 @@ fn run_func[
     ref_: Scalar[type],
     ctx: DeviceContext,
 ) raises:
-    print("test trignometric functions on gpu")
+    print("test trigonometric functions on gpu")
 
     var out = ctx.enqueue_create_buffer[type](1)
 

@@ -96,9 +96,7 @@ fn wgmma_kernel_rs[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transpose_b](b_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         var a_reg = SIMD[DType.bfloat16, 8](0)
         var row = warp_id * 16 + lane_id // 4
@@ -131,9 +129,11 @@ fn wgmma_kernel_rs[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var th_local_res = c_gmem.tile[16, WMMA_N](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lane_id)
+    var th_local_res = (
+        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lane_id)
+    )
 
     for i in range(num_output_regs):
         th_local_res[(i // 2) % 2, i // 4][i % 2] = c_reg[i].cast[
@@ -198,10 +198,8 @@ fn wgmma_kernel_ss[
 
         barrier()
 
-        alias wgmma_shape = Index(WMMA_M, WMMA_N, WMMA_K)
-
-        var mat_a_desc = _lhs_descriptor[wgmma_shape](a_smem_tile)
-        var mat_b_desc = _rhs_descriptor[wgmma_shape, transpose_b](b_smem_tile)
+        var mat_a_desc = _lhs_descriptor(a_smem_tile)
+        var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         wgmma_fence_aligned()
 
@@ -218,9 +216,11 @@ fn wgmma_kernel_ss[
     var warp_id = thread_idx.x // 32
     var lane_id = thread_idx.x % 32
 
-    var th_local_res = c_gmem.tile[16, WMMA_N](warp_id, 0).vectorize[
-        1, 2
-    ]().distribute[Layout.row_major(8, 4)](lane_id)
+    var th_local_res = (
+        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        .vectorize[1, 2]()
+        .distribute[Layout.row_major(8, 4)](lane_id)
+    )
 
     for i in range(num_output_regs):
         th_local_res[(i // 2) % 2, i // 4][i % 2] = c_reg[i].cast[

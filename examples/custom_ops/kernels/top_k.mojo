@@ -27,9 +27,9 @@ from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TopKElement[T: DType](Copyable & GreaterThanComparable):
+struct TopKElement[T: DType](Copyable & GreaterThanComparable & Movable):
     """Stores the value with it's index."""
 
     var idx: Int32
@@ -56,9 +56,9 @@ struct TopK:
         K: Int,
         target: StaticString,
     ](
-        out_vals: OutputTensor[type=dtype, rank=rank],
-        out_idxs: OutputTensor[type = DType.int32, rank=rank],
-        in_vals: InputTensor[type=dtype, rank=rank],
+        out_vals: OutputTensor[dtype=dtype, rank=rank],
+        out_idxs: OutputTensor[dtype = DType.int32, rank=rank],
+        in_vals: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
         constrained[rank == 2, "rank must be 2"]()
@@ -140,7 +140,7 @@ struct TopK:
             @parameter
             fn top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
-                    var offset = (row_idx * K)
+                    var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr() + offset, K)
 
                     @parameter

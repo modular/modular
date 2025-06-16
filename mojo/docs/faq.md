@@ -230,7 +230,7 @@ For lots more information, check out our 3-part blog post series about
 Python](https://www.modular.com/blog/how-mojo-gets-a-35-000x-speedup-over-python-part-1).
 
 By the way, all the CPU and GPU graph operations that power Modular's
-[MAX Platfrom](https://www.modular.com/max) are written in Mojo.
+[MAX Platform](https://www.modular.com/max) are written in Mojo.
 We also compared our matrix multiplication implementation to other
 state-of-the-art implementations that are usually written in assembly.
 To see the results, see [our blog post about unified matrix
@@ -324,7 +324,7 @@ to build better products for you.
 
 You can opt-out of the crash report and compiler/runtime telemetry, but
 package install/update/uninstall events cannot be
-disabled (see the [MAX SDK terms](https://www.modular.com/legal/max)).
+disabled (see the [MAX SDK terms](https://www.modular.com/legal/terms)).
 
 To disable crash reports, use this command:
 

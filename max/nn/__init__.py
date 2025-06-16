@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from .attention import (
-    Attention,
     AttentionImpl,
     AttentionImplQKV,
-    AttentionQKV,
     AttentionWithRope,
     AttentionWithRopeQKV,
     AttentionWithRopeV1,
@@ -27,11 +25,10 @@ from .attention import (
 )
 from .clamp import clamp
 from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv1DV1, Conv2DV1, Conv3D, Conv3DV1
+from .conv import Conv1D, Conv1DV1, Conv2D, Conv2DV1, Conv3D, Conv3DV1
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .embedding import Embedding, EmbeddingV1, VocabParallelEmbedding
-from .kernels import MHAMaskVariant
-from .layer import Layer, LayerList, Module
+from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
     MLPV1,
@@ -58,7 +55,6 @@ from .rotary_embedding import (
     LinearScalingParams,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
-    OptimizedRotaryEmbedding,
     RotaryEmbedding,
 )
 from .sequential import Sequential
@@ -72,19 +68,19 @@ from .transformer import (
 
 __all__ = [
     "Allreduce",
-    "Attention",
     "AttentionImpl",
     "AttentionImplQKV",
-    "AttentionQKV",
     "AttentionWithRopeV1",
     "AttentionWithRopeQKV",
     "AttentionWithRope",
     "RaggedAttention",
+    "clamp",
     "Conv1DV1",
     "Conv2DV1",
     "Conv3DV1",
-    "Conv3D",
     "Conv1D",
+    "Conv2D",
+    "Conv3D",
     "ConvTranspose1d",
     "WeightNormConvTranspose1d",
     "DistributedAttentionImpl",
@@ -106,6 +102,7 @@ __all__ = [
     "GPTQLinear",
     "GroupNorm",
     "Layer",
+    "LayerList",
     "LayerNormV1",
     "LayerNorm",
     "LinearV1",
@@ -113,18 +110,17 @@ __all__ = [
     "LinearScalingParams",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
-    "MHAMaskVariant",
     "MLPV1",
     "MLP",
     "Module",
-    "LayerList",
-    "OptimizedRotaryEmbedding",
     "RMSNormV1",
     "RMSNorm",
     "RotaryEmbedding",
     "ReturnLogits",
     "Sequential",
     "Signals",
+    "Shardable",
     "Transformer",
     "TransformerBlock",
+    "VocabParallelEmbedding",
 ]

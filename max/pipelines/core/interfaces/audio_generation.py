@@ -13,152 +13,85 @@
 
 """Interfaces for text generation pipeline behaviors."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from typing import (
+    TYPE_CHECKING,
+    Any,
     Generic,
+    Optional,
     Protocol,
     TypeVar,
     runtime_checkable,
 )
 
+if TYPE_CHECKING:
+    import torch
+
+from .response import AudioGenerationResponse
+from .text_generation import SamplingParams
+
 
 @dataclass(frozen=True)
 class AudioGenerationRequest:
     id: str
-    """
-    A unique identifier for the request. This ID can be used to trace and log
+    """A unique identifier for the request. This ID can be used to trace and log
     the request throughout its lifecycle, facilitating debugging and tracking.
     """
-    input: str
-    """
-    The text to generate audio for. The maximum length is 4096 characters.
-    """
+
     index: int
-    """
-    The sequence order of this request within a batch. This is useful for
+    """The sequence order of this request within a batch. This is useful for
     maintaining the order of requests when processing multiple requests
     simultaneously, ensuring that responses can be matched back to their
     corresponding requests accurately.
     """
+
     model: str
-    """
-    The name of the model to be used for generating audio chunks. This should match
+    """The name of the model to be used for generating audio chunks. This should match
     the available models on the server and determines the behavior and
     capabilities of the response generation.
     """
-    voice: str
+
+    input: Optional[str] = None
+    """The text to generate audio for. The maximum length is 4096 characters.
     """
-    The voice to use for audio generation. Supported voices include alloy, echo, 
-    fable, onyx, nova, and shimmer.
-    """
-    instructions: str
-    """
-    Control the voice of your generated audio with additional instructions.
-    """
-    response_format: str = "mp3"
-    """
-    The format to audio in. Supported formats are mp3, opus, aac, and flac.
-    Defaults to mp3.
-    """
-    speed: float = 1.0
-    """
-    The speed of the generated audio. Select a value from 0.25 to 4.0. 
-    Defaults to 1.0.
-    """
+
+    audio_prompt_tokens: list[int] = field(default_factory=list)
+    """The prompt speech IDs to use for audio generation."""
+
+    audio_prompt_transcription: str = ""
+    """The audio prompt transcription to use for audio generation."""
+
+    sampling_params: SamplingParams = SamplingParams()
+    """Request sampling configuration options."""
+
+    _assistant_message_override: str | None = None
+    """(ONLY FOR BENCHMARKING PURPOSES) An assistant message that replaces the
+    speech token pattern."""
+
+    prompt: Optional[list[int] | str] = field(default=None)
+    """Optionally provide a preprocessed list of token ids or a prompt string to pass as input directly into the model.
+    This replaces automatically generating TokenGeneratorRequestMessages given the input, audio prompt tokens,
+    audio prompt transcription fields."""
+
+    def __post_init__(self) -> None:
+        if self.prompt is None and self.input is None:
+            raise RuntimeError("either token_ids or input must be provided.")
 
 
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
-
-# TODO: This is just copy pasted from text_geenration.py and hacked for audio
-# generation purposes. Refactor this later on.
 TokenizerEncoded = TypeVar("TokenizerEncoded")
 
+DecoderOutput = TypeVar("DecoderOutput")
 
-@runtime_checkable
-class PipelineAudioTokenizer(
-    Generic[AudioGeneratorContext, TokenizerEncoded], Protocol
-):
-    """Interface for LLM tokenizers."""
 
-    @property
-    def eos(self) -> int:
-        """The end of sequence token for this tokenizer."""
-        ...
-
-    @property
-    def expects_content_wrapping(self) -> bool:
-        """If true, this tokenizer expects messages to have a `content` property.
-
-        Text messages are formatted as:
-
-        .. code-block:: json
-
-            { "type": "text", "content": "text content" }
-
-        instead of the OpenAI spec:
-
-        .. code-block:: json
-
-            { "type": "text", "text": "text content" }
-
-        NOTE: Multimodal messages omit the `content` property.
-        Both :obj:`image_urls` and :obj:`image` content parts are converted to:
-
-        .. code-block:: json
-
-            { "type": "image" }
-
-        Their content is provided as byte arrays through the top-level property
-        on the request object, i.e., :obj:`TokenGeneratorRequest.images`.
-        """
-        ...
-
-    async def new_context(
-        self, request: AudioGenerationRequest
-    ) -> AudioGeneratorContext:
-        """Creates a new context from a request object. This is sent to the
-        worker process once and then cached locally.
-
-        Args:
-            request (AudioGenerationRequest): Incoming request.
-
-        Returns:
-            AudioGeneratorContext: Initialized context.
-        """
-        ...
-
-    async def encode(
-        self,
-        prompt: str,
-        add_special_tokens: bool,
-    ) -> TokenizerEncoded:
-        """Encodes text prompts as tokens.
-
-        Args:
-            prompt (str): Un-encoded prompt text.
-
-        Raises:
-            ValueError: If the prompt exceeds the configured maximum length.
-        """
-        ...
-
-    async def decode(
-        self,
-        context: AudioGeneratorContext,
-        encoded: TokenizerEncoded,
-        **kwargs,
-    ) -> str:
-        """Decodes response tokens to text.
-
-        Args:
-            context (AudioGeneratorContext): Current generation context.
-            encoded (TokenizerEncoded): Encoded response tokens.
-
-        Returns:
-            str: Un-encoded response text.
-        """
-        ...
+@dataclass(frozen=True)
+class AudioGeneratorOutput:
+    audio_data: torch.Tensor
+    metadata: dict[str, Any]
+    is_done: bool
 
 
 @runtime_checkable
@@ -166,16 +99,20 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
     """Interface for audio generation models."""
 
     def next_chunk(
-        self, batch: dict[str, AudioGeneratorContext], num_samples: int
-    ) -> dict[str, bytes]:
+        self, batch: dict[str, AudioGeneratorContext], num_tokens: int
+    ) -> dict[str, AudioGenerationResponse]:
         """Computes the next audio chunk for a single batch.
+
+        The new speech tokens are saved to the context. The most recently
+        generated audio is return through the `AudioGenerationResponse`.
 
         Args:
             batch (dict[str, AudioGeneratorContext]): Batch of contexts.
-            num_samples (int): Number of audio samples to generate.
+            num_tokens (int): Number of speech tokens to generate.
 
         Returns:
-            dict[str, bytes]: Dictionary mapping request IDs to PCM-encoded WAV audio chunks.
+            dict[str, AudioGenerationResponse]: Dictionary mapping request IDs to
+                audio generation responses.
         """
         ...
 
@@ -185,4 +122,9 @@ class AudioGenerator(Generic[AudioGeneratorContext], Protocol):
         Args:
             context (AudioGeneratorContext): Finished context.
         """
+        ...
+
+    @property
+    def decoder_sample_rate(self) -> int:
+        """The sample rate of the decoder."""
         ...

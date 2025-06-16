@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Defines the List type.
 
-You can import these APIs from the `collections` package. For example:
-
-```mojo
-from collections import List
-```
+These APIs are imported automatically, just like builtins.
 """
 
 
@@ -40,7 +36,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     list_origin: Origin[list_mutability],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, IteratorTrait, Movable):
     """Iterator for List.
 
     Parameters:
@@ -52,26 +48,32 @@ struct _ListIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
     alias list_type = List[T, hint_trivial_type]
 
     var index: Int
     var src: Pointer[Self.list_type, list_origin]
 
-    fn __iter__(self) -> Self:
-        return self
-
-    fn __next__(mut self, out p: Pointer[T, list_origin]):
+    fn __next_ref__(mut self) -> ref [list_origin] T:
         @parameter
         if forward:
-            p = Pointer(to=self.src[][self.index])
             self.index += 1
+            return self.src[][self.index - 1]
         else:
             self.index -= 1
-            p = Pointer(to=self.src[][self.index])
+            return self.src[][self.index]
+
+    @always_inline
+    fn __next__(mut self) -> T:
+        return self.__next_ref__()
 
     @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    @always_inline
+    fn __iter__(self) -> Self:
+        return self
 
     fn __len__(self) -> Int:
         @parameter
@@ -82,11 +84,7 @@ struct _ListIter[
 
 
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
-    Boolable,
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
-    Sized,
+    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
     """The `List` type is a dynamically-allocated list.
 
@@ -126,7 +124,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         var copy = Self(capacity=self.capacity)
         for e in self:
-            copy.append(e[])
+            copy.append(e)
         return copy^
 
     fn __init__(out self, *, capacity: Int):
@@ -191,7 +189,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         self = Self(capacity=len(span))
         for value in span:
-            self.append(value[])
+            self.append(value)
 
     @always_inline
     fn __init__(out self, *, unsafe_uninit_length: Int):
@@ -248,8 +246,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var x = List[Int](1, 2, 3)
-        var y = List[Int](1, 2, 3)
+        var x = [1, 2, 3]
+        var y = [1, 2, 3]
         print("x and y are equal" if x == y else "x and y are not equal")
         ```
         """
@@ -257,7 +255,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             return False
         var index = 0
         for element in self:
-            if element[] != other[index]:
+            if element != other[index]:
                 return False
             index += 1
         return True
@@ -281,8 +279,8 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var x = List[Int](1, 2, 3)
-        var y = List[Int](1, 2, 4)
+        var x = [1, 2, 3]
+        var y = [1, 2, 4]
         print("x and y are not equal" if x != y else "x and y are equal")
         ```
         """
@@ -306,12 +304,12 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var x = List[Int](1,2,3)
+        var x = [1, 2, 3]
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
         for i in self:
-            if i[] == value:
+            if i == value:
                 return True
         return False
 
@@ -336,7 +334,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         x is <= 0.
 
         ```mojo
-        var a = List[Int](1, 2)
+        var a = [1, 2]
         a *= 2 # a = [1, 2, 1, 2]
         ```
 
@@ -432,7 +430,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             below:
 
             ```mojo
-            var my_list = List[Int](1, 2, 3)
+            var my_list = [1, 2, 3]
             print(my_list.__str__())
             ```
 
@@ -484,7 +482,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             to call this method is a bit special. Here is an example below:
 
             ```mojo
-            var my_list = List[Int](1, 2, 3)
+            var my_list = [1, 2, 3]
             print(my_list.__repr__())
             ```
 
@@ -556,7 +554,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             memcpy(self.data + i, elements.unsafe_ptr(), elements_len)
         else:
             for elt in elements:
-                UnsafePointer(to=self[i]).init_pointee_copy(elt[])
+                UnsafePointer(to=self[i]).init_pointee_copy(elt)
                 i += 1
 
     fn insert(mut self, i: Int, owned value: T):
@@ -650,7 +648,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Args:
             value: The value to append.
-            count: The ammount of items to append. Must be less than or equal to
+            count: The amount of items to append. Must be less than or equal to
                 `value.size`.
 
         Notes:
@@ -830,7 +828,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var my_list = List[Int](1, 2, 3)
+        var my_list = [1, 2, 3]
         print(my_list.index(2)) # prints `1`
         ```
         """
@@ -909,11 +907,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Returns:
             A new list containing the list at the specified slice.
         """
-
-        var start: Int
-        var end: Int
-        var step: Int
-        start, end, step = slice.indices(len(self))
+        var start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
 
         if not len(r):
@@ -1029,7 +1023,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         var count = 0
         for elem in self:
-            if elem[] == value:
+            if elem == value:
                 count += 1
         return count
 
@@ -1043,7 +1037,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Examples:
 
         ```mojo
-        var my_list = List[Int](1, 2, 3)
+        var my_list = [1, 2, 3]
         my_list.swap_elements(0, 2)
         print(my_list.__str__()) # 3, 2, 1
         ```

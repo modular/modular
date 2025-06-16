@@ -58,9 +58,9 @@ alias _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 alias _WINDOWS_LARGE_INTEGER = Int64
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CTimeSpec(Stringable, Writable):
+struct _CTimeSpec(Copyable, Defaultable, Movable, Stringable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -84,9 +84,9 @@ struct _CTimeSpec(Stringable, Writable):
         writer.write(self.as_nanoseconds(), "ns")
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _FILETIME:
+struct _FILETIME(Copyable, Defaultable, Movable):
     var dw_low_date_time: UInt32
     var dw_high_date_time: UInt32
 
@@ -100,10 +100,10 @@ struct _FILETIME:
         # Taken from https://github.com/microsoft/STL/blob/c8d1efb6d504f6392acf8f6d01fd703f7c8826c0/stl/src/xtime.cpp#L50
         alias windows_to_unix_epoch_offset_ns: Int = 0x19DB1DED53E8000
         var interval_count: UInt64 = (
-            self.dw_high_date_time.cast[DType.uint64]() << 32
-        ) + self.dw_low_date_time.cast[
-            DType.uint64
-        ]() - windows_to_unix_epoch_offset_ns
+            (self.dw_high_date_time.cast[DType.uint64]() << 32)
+            + self.dw_low_date_time.cast[DType.uint64]()
+            - windows_to_unix_epoch_offset_ns
+        )
         return Int(interval_count * 100)
 
 

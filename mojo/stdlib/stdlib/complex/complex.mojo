@@ -20,6 +20,7 @@ from complex import ComplexSIMD
 """
 
 import math
+from math.math import _Expable
 from sys import llvm_intrinsic
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
@@ -32,7 +33,7 @@ alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 
 @register_passable("trivial")
-struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
+struct ComplexSIMD[type: DType, size: Int](Stringable, Writable, _Expable):
     """Represents a complex SIMD value.
 
     The class provides basic methods for manipulating complex values.
@@ -91,7 +92,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         """
 
         # TODO(MSTDL-700):
-        #   Add a Writer.reserve() method, to afford writer implementions
+        #   Add a Writer.reserve() method, to afford writer implementations
         #   to request reservation of additional space from `Writer`
         #   implementations that support that. Then use the logic below to
         #   call that method here.

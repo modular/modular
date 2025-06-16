@@ -25,9 +25,8 @@ from ._c.ffi import MLIR_func
 from ._c.Support import MlirLogicalResult
 
 
-@value
 @register_passable("trivial")
-struct DiagnosticSeverity:
+struct DiagnosticSeverity(Copyable, Movable):
     """Severity level of a diagnostic."""
 
     alias cType = _c.Diagnostics.MlirDiagnosticSeverity
@@ -46,8 +45,7 @@ struct DiagnosticSeverity:
         return self.c.value == other.c.value
 
 
-@value
-struct Diagnostic(Stringable, Writable):
+struct Diagnostic(Copyable, Movable, Stringable, Writable):
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 
@@ -71,9 +69,9 @@ struct Diagnostic(Stringable, Writable):
 alias DiagnosticHandlerID = _c.Diagnostics.MlirDiagnosticHandlerID
 
 
-@value
-struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
-    """Deals with attaching and detaching diagnostic funcions to an MLIRContext.
+@fieldwise_init
+struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool](Copyable, Movable):
+    """Deals with attaching and detaching diagnostic functions to an MLIRContext.
 
     Parameters:
         handler: A function that handles a given Diagnostic.
@@ -108,13 +106,13 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
         return MlirLogicalResult(1 if result else 0)
 
 
-@value
+@fieldwise_init
 struct DiagnosticHandlerWithData[
     UserDataType: AnyType,
     handler: fn (Diagnostic, mut UserDataType) -> Bool,
     delete_user_data: fn (UnsafePointer[UserDataType]) -> None,
 ](Copyable, Movable):
-    """Deals with attaching and detaching diagnostic funcions along with user data to an MLIRContext.
+    """Deals with attaching and detaching diagnostic functions along with user data to an MLIRContext.
 
     Parameters:
         UserDataType: The type of data being stored for use in the handler.
@@ -154,7 +152,7 @@ struct DiagnosticHandlerWithData[
 
 
 struct ErrorCapturingDiagnosticHandler:
-    """Captures the errors craeted via a DiagnosticHandler and raises them as mojo exceptions.
+    """Captures the errors created via a DiagnosticHandler and raises them as mojo exceptions.
     """
 
     alias Handler = DiagnosticHandlerWithData[

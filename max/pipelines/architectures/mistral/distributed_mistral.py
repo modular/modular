@@ -24,13 +24,10 @@ from max.nn import (
     DistributedRMSNorm,
     DistributedTransformer,
     DistributedTransformerBlock,
-    OptimizedRotaryEmbedding,
+    RotaryEmbedding,
     VocabParallelEmbedding,
 )
-from max.nn.kv_cache import (
-    FetchPagedKVCacheCollection,
-    KVCacheStrategy,
-)
+from max.nn.kv_cache import FetchPagedKVCacheCollection, KVCacheStrategy
 
 logger = logging.getLogger("max.pipelines")
 
@@ -43,7 +40,7 @@ class DistributedMistral(DistributedTransformer):
     def __init__(self, config: MistralConfig):
         assert len(config.devices) > 1
 
-        rope = OptimizedRotaryEmbedding(
+        rope = RotaryEmbedding(
             dim=config.num_attention_heads * config.head_dim,
             n_heads=config.num_attention_heads,
             head_dim=config.head_dim,
@@ -107,15 +104,11 @@ class DistributedMistral(DistributedTransformer):
             quantization_encoding=None,
         )
 
-        kv_collection_cls: type[FetchPagedKVCacheCollection]
-
         if config.kv_params.cache_strategy != KVCacheStrategy.PAGED:
             raise ValueError(
                 "Unsupported caching strategy "
                 + str(config.kv_params.cache_strategy)
             )
-
-        kv_collection_cls = FetchPagedKVCacheCollection
 
         super().__init__(
             dim=config.hidden_size,
@@ -125,9 +118,9 @@ class DistributedMistral(DistributedTransformer):
             output=output,
             embedding=embedding_layer,
             kv_params=config.kv_params,
-            kv_collection_constructor=kv_collection_cls(
+            kv_collection_constructor=FetchPagedKVCacheCollection(
                 config.kv_params, num_layers=config.num_hidden_layers
             ),
-            return_logits=config.return_logits,
             devices=config.devices,
+            return_logits=config.return_logits,
         )

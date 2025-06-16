@@ -51,7 +51,7 @@ fn _run_cuda_external_function(ctx: DeviceContext) raises:
     fn vec_add_sig(
         in0: UnsafePointer[Float32],
         in1: UnsafePointer[Float32],
-        out: UnsafePointer[Float32],
+        output: UnsafePointer[Float32],
         len: Int,
     ):
         pass

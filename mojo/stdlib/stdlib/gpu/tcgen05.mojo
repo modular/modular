@@ -14,6 +14,8 @@
 """This module includes utilities for working with the
 tensorcore 5th generation (tcgen05) instructions."""
 
+from os import abort
+
 from sys import _RegisterPackType, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _has_blackwell_tcgen05
@@ -21,6 +23,8 @@ from sys.info import _has_blackwell_tcgen05
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma import _str_iota  # TODO: move to a string module
 from memory import UnsafePointer, bitcast
+
+from gpu.mma_sm100 import MMASmemDescriptor
 
 alias check_blackwell_constraint = constrained[
     _has_blackwell_tcgen05(),
@@ -140,7 +144,7 @@ fn tcgen05_ld[
         repeat: The repeat factor.
         type: The data type to load.
         pack: Whether to pack two 16-bit chunks of adjacent columns into a single 32-bit register.
-        width: The nubmer elements in the result vector.
+        width: The number elements in the result vector.
 
     Args:
         tmem_addr: The address of the tensor memory to load from.
@@ -155,7 +159,11 @@ fn tcgen05_ld[
         or (datapaths == 16 and bits == 128)
         or (datapaths == 16 and bits == 256)
         or (datapaths == 32 and bits == 32),
-        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b.",
+        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b, got "
+        + String(datapaths)
+        + "x"
+        + String(bits)
+        + "b.",
     ]()
 
     constrained[
@@ -164,16 +172,21 @@ fn tcgen05_ld[
     ]()
 
     constrained[
-        width in [1, 2, 4, 8, 16, 32, 64],
-        "`width` must be a power of 2 in the range [1, 64].",
+        width in [1, 2, 4, 8, 16, 32, 64, 128],
+        "`width` must be a power of 2 in the range [1, 128].",
     ]()
 
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
         and sizeof[type]() == 4,
-        (
-            "Only support 4B data type and width must be equal to (num * n * m)"
-            " // (32 * 32)."
+        String(
+            (
+                "Only support 4B data type and width must be equal to (num * n"
+                " * m) // (32 * 32). width is "
+            ),
+            width,
+            " but need ",
+            (repeat * bits * datapaths) // (32 * 32),
         ),
     ]()
 
@@ -236,7 +249,7 @@ fn tcgen05_ld[
                                   UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
             ]
         ]()
-    else:
+    elif width == 64:
         return call_ld_intrinsic[
                 _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
                                   UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
@@ -248,6 +261,29 @@ fn tcgen05_ld[
                                   UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32
             ]
         ]()
+    elif width == 128:
+        return call_ld_intrinsic[
+                _RegisterPackType[UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+                                  UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32,
+            ]
+        ]()
+    else:
+        constrained[False, "width must be a power of 2 in the range [1, 128]."]()
+        return abort[SIMD[type, width]]()
     # fmt: on
 
 
@@ -263,7 +299,7 @@ fn tcgen05_st[
     """Stores data from registers into tensor memory.
 
     Parameters:
-        type: The data type to load.
+        type: The data type to store.
         width: The number of elements in the data vector.
         datapaths: The first dimension of the shape.
         bits: The second dimension of the shape.
@@ -290,8 +326,8 @@ fn tcgen05_st[
     ]()
 
     constrained[
-        width in [1, 2, 4, 8, 16, 32, 64],
-        "`width` must be a power of 2 in the range [1, 64].",
+        width in [1, 2, 4, 8, 16, 32, 64, 128],
+        "`width` must be a power of 2 in the range [1, 128].",
     ]()
 
     constrained[
@@ -305,9 +341,9 @@ fn tcgen05_st[
 
     alias shape_str = String(datapaths) + "x" + String(bits)
     alias num_str = String(repeat)
-    alias pack_str = ".pack::16b" if pack else ""
+    alias pack_str = ".unpack::16b" if pack else ""
     alias constraints_str = "r," * width + "r"
-    alias addr_str = "[$0]"
+    alias addr_str = "[$" + String(width) + "]"
     alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"
 
     alias asm_str = (
@@ -368,16 +404,22 @@ fn tcgen05_st[
 
 
 @always_inline
-fn tcgen05_release_allocation_lock():
+fn tcgen05_release_allocation_lock[cta_group: Int32]():
     """Releases the allocation lock for the current CTA group.
+
+    Parameters:
+        cta_group: The cooperative thread array (CTA) group ID.
 
     Note:
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
     """
     check_blackwell_constraint()
+    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
 
     inlined_assembly[
-        "tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;",
+        "tcgen05.relinquish_alloc_permit.cta_group::"
+        + String(cta_group)
+        + ".sync.aligned;",
         NoneType,
         has_side_effect=True,
         constraints="",
@@ -387,6 +429,7 @@ fn tcgen05_release_allocation_lock():
 @always_inline
 fn tcgen05_load_wait():
     """Waits for tensor memory loads to complete.
+
 
     Note:
         This function is only available on NVIDIA Blackwell GPUs (SM 100+).
@@ -416,3 +459,127 @@ fn tcgen05_store_wait():
         has_side_effect=True,
         constraints="",
     ]()
+
+
+@always_inline
+fn tcgen05_fence_before():
+    """Orders all the prior asynchronous `tcgen05` operations.
+
+    Note:
+        This function is only available on NVIDIA Blackwell GPUs (SM 100+).
+    """
+    check_blackwell_constraint()
+
+    inlined_assembly[
+        "tcgen05.fence::before_thread_sync;",
+        NoneType,
+        has_side_effect=True,
+        constraints="",
+    ]()
+
+
+@always_inline
+fn tcgen05_fence_after():
+    """Orders all the subsequent asynchronous `tcgen05` operations.
+
+    Note:
+        This function is only available on NVIDIA Blackwell GPUs (SM 100+).
+    """
+    check_blackwell_constraint()
+
+    inlined_assembly[
+        "tcgen05.fence::after_thread_sync;",
+        NoneType,
+        has_side_effect=True,
+        constraints="",
+    ]()
+
+
+@always_inline
+fn tcgen05_cp[
+    *,
+    cta_group: Int32,
+    datapaths: Int,
+    bits: Int,
+    src_fmt: String = "",
+    dst_fmt: String = "",
+    multicast: String = "",
+](tmem_addr: UInt32, s_desc: MMASmemDescriptor):
+    """Copies data from shared memory described by the matrix descriptor `s_desc` to tensor memory `tmem_addr`.
+
+    Parameters:
+        cta_group: The cooperative thread array (CTA) group ID.
+        datapaths: The first dimension of the shape.
+        bits: The second dimension of the shape.
+        src_fmt: Source format string.
+        dst_fmt: Destination format string.
+        multicast: Multicast string.
+
+    Args:
+        tmem_addr: Address of the tensor memory.
+        s_desc: Matrix descriptor for the copy operation.
+
+    Note:
+        This function is only available on NVIDIA Blackwell GPUs (SM 100+).
+    """
+    check_blackwell_constraint()
+    constrained[cta_group == 1 or cta_group == 2, "cta_group must be 1 or 2"]()
+
+    constrained[
+        (datapaths == 128 and bits == 256)
+        or (datapaths == 4 and bits == 256)
+        or (datapaths == 128 and bits == 128)
+        or (datapaths == 64 and bits == 128)
+        or (datapaths == 32 and bits == 128),
+        (
+            "`datapaths`x`bits`b must be 128x256b, 4x256b, 128x128b, 64x128b or"
+            " 32x128b."
+        ),
+    ]()
+
+    constrained[
+        src_fmt == "" or src_fmt == "b6x16_p32" or src_fmt == "b4x16_p64",
+        "src_fmt must be empty, 'b6x16_p32' or 'b4x16_p64'.",
+    ]()
+
+    constrained[
+        dst_fmt == "" or dst_fmt == "b8x16",
+        "dst_fmt must be empty or 'b8x16'.",
+    ]()
+
+    constrained[
+        not ((len(dst_fmt) == 0) ^ (len(src_fmt) == 0)),
+        "Both or none of dst_fmt and src_fmt must be provided.",
+    ]()
+
+    constrained[
+        multicast == ""
+        or multicast == "warpx2::02_13"
+        or multicast == "warpx2::01_23"
+        or multicast == "warpx4",
+        (
+            "multicast must be empty, 'warpx2::02_13', 'warpx2::01_23' or"
+            " 'warpx4'."
+        ),
+    ]()
+
+    alias asm_str = (
+        "tcgen05.cp.cta_group::"
+        + String(cta_group)
+        + "."
+        + String(datapaths)
+        + "x"
+        + String(bits)
+        + "b"
+        + ("" if (len(multicast) == 0) else "." + multicast)
+        + ("" if (len(dst_fmt) == 0) else "." + dst_fmt)
+        + ("" if (len(src_fmt) == 0) else "." + src_fmt)
+        + " [$0], $1;"
+    )
+
+    inlined_assembly[
+        asm_str,
+        NoneType,
+        has_side_effect=True,
+        constraints="r,l",
+    ](tmem_addr, s_desc)

@@ -31,14 +31,14 @@ fn test_range() raises:
     # we check that the numbers appear in order
     # and that there are not less iterations than expected
     # by ensuring the list is empty at the end.
-    var expected = List[Int](0, 1)
+    var expected = [0, 1]
     for i in range(array_size):
         assert_equal(i, expected.pop(0))
     assert_false(expected)
 
     var start: PythonObject = 0
     var end: PythonObject = 4
-    expected = List[Int](0, 1, 2, 3)
+    expected = [0, 1, 2, 3]
     for i in range(start, end):
         assert_equal(i, expected.pop(0))
     assert_false(expected)
@@ -46,7 +46,7 @@ fn test_range() raises:
     var start2: PythonObject = 5
     var end2: PythonObject = 10
     var step: PythonObject = 2
-    expected = List[Int](5, 7, 9)
+    expected = [5, 7, 9]
     for i in range(start2, end2, step):
         assert_equal(i, expected.pop(0))
     assert_false(expected)

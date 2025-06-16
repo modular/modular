@@ -34,7 +34,10 @@ from .infer import (
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_CUDNN_ADV_INFER_LIBRARY_PATHS = List[Path](
+    "libcudnn_adv_infer.so",
+    "libcudnn_adv_infer.so.9",
     "libcudnn_adv_infer.so.8",
+    "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn_adv_infer.so.8",
 )
 
@@ -93,7 +96,7 @@ struct cudnnDirectionMode_t:
     alias UNIDIRECTIONAL = Self(0)
     """Single direction network."""
     alias BIDIRECTIONAL = Self(1)
-    """Output concatination at each layer."""
+    """Output concatenation at each layer."""
 
 
 @fieldwise_init

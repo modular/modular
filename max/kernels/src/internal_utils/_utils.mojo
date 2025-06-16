@@ -44,7 +44,7 @@ from utils import Index, IndexList
 from utils.index import product
 
 
-struct ValOrDim[dim: Dim = Dim()]:
+struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
@@ -59,13 +59,13 @@ struct ValOrDim[dim: Dim = Dim()]:
         self.value = v
 
 
-@value
+@fieldwise_init
 struct HostNDBuffer[
     type: DType,
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-]:
+](Copyable, Movable):
     var tensor: NDBuffer[type, rank, MutableAnyOrigin, shape]
 
     @always_inline
@@ -134,13 +134,13 @@ struct HostNDBuffer[
         )
 
 
-@value
+@fieldwise_init
 struct DeviceNDBuffer[
     type: DType,
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-]:
+](Copyable, Movable):
     var buffer: DeviceBuffer[type]
     var tensor: NDBuffer[
         type,
@@ -240,8 +240,8 @@ struct DeviceNDBuffer[
 
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
-@value
-struct TestTensor[type: DType, rank: Int]:
+@fieldwise_init
+struct TestTensor[type: DType, rank: Int](Copyable, Movable):
     var ndbuffer: NDBuffer[type, rank, MutableAnyOrigin]
     var shape: DimList
     var num_elements: Int
@@ -281,8 +281,7 @@ struct TestTensor[type: DType, rank: Int]:
         return DynamicTensor[type, rank].Type(self.ndbuffer)
 
 
-@value
-struct InitializationType:
+struct InitializationType(Copyable, Movable):
     var _value: Int
     alias zero = InitializationType(0)
     alias one = InitializationType(1)
@@ -340,7 +339,7 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn zero(buffer: NDBuffer):
+fn zero(buffer: NDBuffer[mut=True, *_, **_]):
     buffer.zero()
 
 
@@ -619,9 +618,9 @@ fn array_equal[
         assert_equal(x_array.data[i], y_array.data[i])
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Mode(Stringable):
+struct Mode(Copyable, Movable, Stringable):
     var _value: Int
     var handle: StaticString
     alias NONE = Self(0x0, "none")
@@ -634,11 +633,11 @@ struct Mode(Stringable):
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
-            if String(Self.RUN.handle) == h[]:
+            if String(Self.RUN.handle) == h:
                 self.append(Self.RUN)
-            elif String(Self.BENCHMARK.handle) == h[]:
+            elif String(Self.BENCHMARK.handle) == h:
                 self.append(Self.BENCHMARK)
-            elif String(Self.VERIFY.handle) == h[]:
+            elif String(Self.VERIFY.handle) == h:
                 self.append(Self.VERIFY)
 
     fn append(mut self, other: Self):

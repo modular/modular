@@ -17,22 +17,67 @@ import difflib
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
-from typing import Any, Callable, Union, get_args
+from itertools import islice
+from typing import Any, Callable, Protocol, Union, get_args
 
 import numpy as np
 from max._core_types.driver import DLPackArray
 from max.driver import Tensor
 from max.dtype import DType
-from max.graph import Shape, ShapeLike, Weight
+from max.graph import (
+    DeviceRef,
+    Graph,
+    Shape,
+    ShapeLike,
+    ShardingStrategy,
+    Type,
+    Value,
+    Weight,
+)
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
 
 from .._identity import IdentitySet
 
 DLPackCompatible = Union[DLPackArray, np.ndarray]
+
+
+class Shardable(Protocol):
+    """Protocol for objects that support sharding across multiple devices.
+
+    This protocol defines the interface that all shardable components
+    (like Linear layers and Weight objects) must implement to participate
+    in distributed computation.
+    """
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Gets the weight sharding strategy."""
+        ...
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the weight sharding strategy.
+
+        Args:
+            strategy: A ShardingStrategy that defines how to shard the weight.
+        """
+        ...
+
+    def shard(self, shard_idx: int, device: DeviceRef) -> Shardable:
+        """Creates a sharded view of this object for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded instance of this object.
+        """
+        ...
 
 
 class Layer:
@@ -156,6 +201,77 @@ class Module(Layer, ABC):
         setattr(self, name, weight)
         self._shared_weights[name] = weight
 
+    def build_subgraph(
+        self,
+        name: str,
+        input_types: Sequence[Type | list[Type]],
+        weight_prefix: str = "",
+    ) -> Graph:
+        """Builds a subgraph for this module.
+
+        This method creates a subgraph that encapsulates the module's logic,
+        handling input types, weights, and creating a graph with the module's
+        computation.
+
+        Once the subgraph is built, it can be called using the :obj:`ops.call`
+        op.
+
+        Args:
+            name: The name of the subgraph to create.
+            input_types: A list of input types for the subgraph. Each element can be
+                either a single :obj:`Type` or a list of :obj:`Type` objects.
+            weight_prefix: Optional prefix for weight names in the subgraph. If provided,
+                weights with names starting with this prefix will have their names
+                modified by removing the prefix and will be marked as placeholders.
+
+        Returns:
+            :obj:`Graph`: The created subgraph containing the module's computation.
+
+        Note:
+            - Placeholder weights will require the :obj:`prefix` attribute of :obj:`ops.call` to be set.
+        """
+        layer_weights = list(self.raw_state_dict().values())
+        subgraph_input_types: list[Type] = []
+
+        def flatten(t, result):
+            if isinstance(t, (list, tuple)):
+                for item in t:
+                    flatten(item, result)
+            else:
+                result.append(t)
+
+        def take(it: Iterable[Value], n: int) -> list[Value]:
+            """Return the next *n* items from *it* as a list."""
+            return list(islice(it, n))
+
+        flatten(input_types, subgraph_input_types)
+        with Graph.current.add_subgraph(
+            name, input_types=subgraph_input_types
+        ) as subgraph:
+            subgraph_inputs = []
+            inputs = iter(subgraph.inputs)
+
+            for input_type in input_types:
+                if isinstance(input_type, list):
+                    subgraph_inputs.append(take(inputs, len(input_type)))
+                else:
+                    subgraph_inputs.append(next(inputs))
+
+            if weight_prefix:
+                for weight in filter(
+                    lambda w: w.name.startswith(weight_prefix), layer_weights
+                ):
+                    weight._placeholder = True
+                    weight.name = weight.name.removeprefix(weight_prefix)
+
+            result = self(*subgraph_inputs)
+            if isinstance(result, (list, tuple)):
+                subgraph.output(*result)
+            else:
+                subgraph.output(result)
+
+        return subgraph
+
     @property
     def sublayers(self) -> dict[str, Module]:
         return self._sublayers
@@ -166,6 +282,7 @@ class Module(Layer, ABC):
         *,
         override_quantization_encoding: bool = False,
         weight_alignment: int | None = None,
+        strict: bool = True,
     ) -> None:
         """Sets the values of all weights in this model.
 
@@ -177,10 +294,15 @@ class Module(Layer, ABC):
             weight_alignment: If specified, overrides the alignment for each
                 weight in the `Module`. If left as `None`, each value in
                 state_dict must be aligned by the default dtype alignment.
+            strict: If True, raises an error if any keys in `state_dict` were
+                not used by the `Module`.
 
         Raises:
-            Error if any weight in the model is not present in the state dict.
+            ValueError: If any weight in the model is not present in the state dict.
+            ValueError: If `strict` is True and `state_dict` contains keys
+                not used by the `Module`.
         """
+        loaded_keys = set()
         for name, layer in recursive_named_layers(self):
             weight_prefix = f"{name}." if name else ""
             for weight_name, weight in layer.layer_weights.items():
@@ -190,6 +312,7 @@ class Module(Layer, ABC):
                     continue
                 full_weight_name = f"{weight_prefix}{weight_name}"
                 if (data := state_dict.get(full_weight_name)) is not None:
+                    loaded_keys.add(full_weight_name)
                     if isinstance(data, WeightData):
                         data = _array_from_weight_loader(
                             weight,
@@ -215,6 +338,18 @@ class Module(Layer, ABC):
                     ):
                         msg += f" Did you mean '{possible_match[0]}'?"
                     raise ValueError(msg)
+
+        if strict:
+            unused_keys = state_dict.keys() - loaded_keys
+            if len(unused_keys) > 0:
+                unused_keys_str = ", ".join(sorted(unused_keys))
+                msg = (
+                    f"load_state_dict() received an unexpected key(s) in state_dict. "
+                    f"If you want to load a model with a state_dict that may "
+                    f"contain unused keys, set strict=False. "
+                    f"The unused keys are:\n {unused_keys_str}"
+                )
+                raise ValueError(msg)
 
     def state_dict(
         self, auto_initialize: bool = True
@@ -244,8 +379,7 @@ class Module(Layer, ABC):
                     )
                 # Contents of weights should be filled with zeros.
                 data = self._weight_values[full_weight_name] = Tensor.zeros(
-                    shape=weight.shape.static_dims,
-                    dtype=weight.dtype,
+                    shape=weight.shape.static_dims, dtype=weight.dtype
                 )
             state_dict[full_weight_name] = data
             weight.name = full_weight_name

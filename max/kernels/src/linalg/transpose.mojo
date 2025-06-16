@@ -19,6 +19,7 @@ from sys.intrinsics import strided_load, strided_store
 from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from layout import LayoutTensor, Layout
 from memory import UnsafePointer, memcpy
 from runtime.asyncrt import parallelism_level
 
@@ -436,6 +437,33 @@ fn _fill_strides[
         strides[axis] = curr_axis_stride
 
 
+fn _fill_strides[
+    input_layout: Layout,
+    type: DType,
+](
+    buf: LayoutTensor[type, input_layout, **_],
+    strides: LayoutTensor[
+        mut=True, DType.index, Layout.row_major(buf.rank), **_
+    ],
+):
+    """
+    Fill `strides`, which will be an array of strides indexed by axis, assuming
+    `buf` contains contiguous buf.
+
+    Note that `buf` is only used for querying its dimensions.
+    """
+    constrained[buf.rank > 0]()
+    strides[buf.rank - 1] = 1
+
+    @parameter
+    for idx in range(buf.rank - 1):
+        alias axis = buf.rank - idx - 2
+        var next_axis_stride = strides[axis + 1]
+        var next_axis_dim = buf.dim[axis + 1]()
+        var curr_axis_stride = next_axis_stride * next_axis_dim
+        strides[axis] = curr_axis_stride
+
+
 # ===------------------------------------------------------------------=== #
 # Transpose Permutation simplification
 # ===------------------------------------------------------------------=== #
@@ -686,7 +714,9 @@ fn _transpose_2d_parallel_tiled[
     var n_tiles = N // n_unit_size
     var m_tiles = M // m_unit_size
 
-    var rows_per_worker = 1  # Row in terms of tiles, i.e. we still take simd_width elements
+    var rows_per_worker = (
+        1  # Row in terms of tiles, i.e. we still take simd_width elements
+    )
     if min_work_per_task > M * simd_width:
         rows_per_worker = min_work_per_task // (M * simd_width)
 
@@ -898,9 +928,10 @@ fn transpose_3d_swap_inner[
         return
     # simplified perms must be 0, 2, 1
     var offset = 0
-    var step = simplified_input_shape[
-        simplified_rank - 2
-    ] * simplified_input_shape[simplified_rank - 1]
+    var step = (
+        simplified_input_shape[simplified_rank - 2]
+        * simplified_input_shape[simplified_rank - 1]
+    )
     # TODO: parallelize this loop
     for i in range(simplified_input_shape[0]):
         _transpose_2d_serial_tiled(

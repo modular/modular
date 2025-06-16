@@ -109,7 +109,7 @@ class PerformanceFakingPipelineTokenizer(
             raise ValueError(f"{request} does not provide messages or prompt.")
         encoded_prompt = await self.encode(prompt)
         prompt_length = len(encoded_prompt)
-        num_tokens = request.max_new_tokens or prompt_length
+        num_tokens = request.sampling_params.max_new_tokens or prompt_length
         return PerformanceFakingContext(
             prompt_length,
             0,

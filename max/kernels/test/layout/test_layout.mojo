@@ -35,6 +35,7 @@ from layout.layout import (
     zipped_divide,
 )
 from testing import assert_equal, assert_not_equal
+from utils import IndexList
 
 
 # CHECK-LABEL: test_layout_basic
@@ -78,6 +79,22 @@ fn test_layout_basic() raises:
     # Check if layout is row_major
     assert_equal(is_row_major[3](Layout.row_major(3, 2, 3)), True)
     assert_equal(is_row_major[2](Layout.col_major(3, 3)), False)
+
+    # test dynamic layout
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE),
+        Layout.row_major[3](),
+    )
+    assert_equal(
+        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+        Layout.row_major[2](),
+    )
+
+    # test index list construction
+    assert_equal(
+        Layout.row_major(IndexList[2](2, 3)),
+        Layout.row_major(2, 3),
+    )
 
 
 fn test_unknowns() raises:
@@ -566,7 +583,7 @@ def test_sublayout():
     )
 
 
-# CEHCK-LABEL: test_crd2idx
+# CHECK-LABEL: test_crd2idx
 def test_crd2idx():
     print("== test_crd2idx")
     alias l_4x4_row_major = Layout.row_major(4, 4)
@@ -591,7 +608,7 @@ def test_crd2idx():
         print(i, l_4x4_row_major.idx2crd(i), l_4x4_col_major.idx2crd(i))
 
 
-# CEHCK-LABEL: test_expand_modes_alike
+# CHECK-LABEL: test_expand_modes_alike
 def test_expand_modes_alike():
     print("== test_expand_modes_alike")
     alias layout_0 = Layout(

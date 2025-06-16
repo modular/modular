@@ -65,15 +65,15 @@ def _fused_qk_rope[
 ) -> None:
     """Wrapper that takes DeviceNDBuffer, to ensure lifetimes of data."""
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
-        q_proj=rebind[NDBuffer[type, 4, q_proj.tensor.origin, shape=q_shape]](
+        q_proj=rebind[NDBuffer[type, 4, MutableAnyOrigin, shape=q_shape]](
             q_proj.tensor
         ),
         kv_collection=kv_collection,
         freqs_cis=rebind[
-            NDBuffer[type, 2, freqs_cis.tensor.origin, shape=freqs_shape]
+            NDBuffer[type, 2, MutableAnyOrigin, shape=freqs_shape]
         ](freqs_cis.tensor),
         layer_idx=layer_idx,
-        output=rebind[NDBuffer[type, 4, output.tensor.origin, shape=q_shape]](
+        output=rebind[NDBuffer[type, 4, MutableAnyOrigin, shape=q_shape]](
             output.tensor
         ),
         context=context,

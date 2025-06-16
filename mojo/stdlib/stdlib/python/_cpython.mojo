@@ -36,7 +36,10 @@ from sys.ffi import (
 )
 
 from memory import UnsafePointer
-from python._bindings import PyMojoObject, Typed_initproc, Typed_newfunc
+from python.bindings import (
+    Typed_initproc,
+    Typed_newfunc,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Raw Bindings
@@ -124,7 +127,7 @@ struct PyKeysValuePair:
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyObjectPtr(Copyable, Movable):
+struct PyObjectPtr(Boolable, Copyable, Defaultable, Intable, Movable, Writable):
     """Equivalent to `PyObject*` in C.
 
     It is crucial that this type has the same size and alignment as `PyObject*`
@@ -161,13 +164,14 @@ struct PyObjectPtr(Copyable, Movable):
     @always_inline
     fn __init__(out self):
         """Initialize a null PyObjectPtr."""
-        self.unsized_obj_ptr = UnsafePointer[PyObject]()
+        self.unsized_obj_ptr = {}
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __eq__(self, rhs: PyObjectPtr) -> Bool:
+    @always_inline
+    fn __eq__(self, rhs: Self) -> Bool:
         """Compare two PyObjectPtr for equality.
 
         Args:
@@ -178,7 +182,8 @@ struct PyObjectPtr(Copyable, Movable):
         """
         return Int(self.unsized_obj_ptr) == Int(rhs.unsized_obj_ptr)
 
-    fn __ne__(self, rhs: PyObjectPtr) -> Bool:
+    @always_inline
+    fn __ne__(self, rhs: Self) -> Bool:
         """Compare two PyObjectPtr for inequality.
 
         Args:
@@ -190,62 +195,31 @@ struct PyObjectPtr(Copyable, Movable):
         return not (self == rhs)
 
     # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn __bool__(self) -> Bool:
+        return Bool(self.unsized_obj_ptr)
+
+    @always_inline
+    fn __int__(self) -> Int:
+        return Int(self.unsized_obj_ptr)
+
+    # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn try_cast_to_mojo_value[
-        T: AnyType,
-    ](
-        owned self,
-        # TODO: Make this part of the trait bound
-        expected_type_name: StringSlice,
-    ) -> Optional[UnsafePointer[T]]:
-        var cpython = Python().cpython()
-        var type = cpython.Py_TYPE(self)
-        var type_name = PythonObject(
-            from_owned_ptr=cpython.PyType_GetName(type)
-        )
+    fn write_to[W: Writer](self, mut writer: W):
+        """Formats to the provided Writer.
 
-        # FIXME(MSTDL-978):
-        #   Improve this check. We should do something conceptually equivalent
-        #   to:
-        #       type == T.python_type_object
-        #   where:
-        #       trait Pythonable:
-        #           var python_type_object: PyTypeObject
-        if type_name == PythonObject(expected_type_name):
-            return self.unchecked_cast_to_mojo_value[T]()
-        else:
-            return None
+        Parameters:
+            W: A type conforming to the Writable trait.
 
-    fn unchecked_cast_to_mojo_object[
-        T: AnyType
-    ](owned self) -> UnsafePointer[PyMojoObject[T]]:
-        """Assume that this Python object contains a wrapped Mojo value."""
-        return self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-
-    fn unchecked_cast_to_mojo_value[T: AnyType](owned self) -> UnsafePointer[T]:
-        var mojo_obj_ptr = self.unchecked_cast_to_mojo_object[T]()
-
-        # TODO(MSTDL-950): Should use something like `addr_of!`
-        return UnsafePointer[T](to=mojo_obj_ptr[].mojo_value)
-
-    fn is_null(self) -> Bool:
-        """Check if the pointer is null.
-
-        Returns:
-            Bool: True if the pointer is null, False otherwise.
+        Args:
+            writer: The object to write to.
         """
-        return Int(self.unsized_obj_ptr) == 0
-
-    # TODO: Consider removing this and inlining Int(p.value) into callers
-    fn _get_ptr_as_int(self) -> Int:
-        """Get the pointer value as an integer.
-
-        Returns:
-            Int: The integer representation of the pointer.
-        """
-        return Int(self.unsized_obj_ptr)
+        writer.write(self.unsized_obj_ptr)
 
 
 @fieldwise_init
@@ -303,7 +277,7 @@ fn _py_finalize(lib: DLHandle):
 
 
 @fieldwise_init
-struct PyMethodDef(Copyable, Movable):
+struct PyMethodDef(Copyable, Defaultable, Movable):
     """Represents a Python method definition. This struct is used to define
     methods for Python modules or types.
 
@@ -462,7 +436,9 @@ struct PyType_Slot(Copyable, Movable):
 
 
 @fieldwise_init
-struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
+struct PyObject(
+    Copyable, Defaultable, Movable, Representable, Stringable, Writable
+):
     """All object types are extensions of this type. This is a type which
     contains the information Python needs to treat a pointer to an object as an
     object. In a normal “release” build, it contains only the object's reference
@@ -522,48 +498,39 @@ struct PyObject(Stringable, Representable, Writable, Copyable, Movable):
 
 
 # Mojo doesn't have macros, so we define it here for ease.
-struct PyModuleDef_Base(Stringable, Representable, Writable):
+struct PyModuleDef_Base(
+    Defaultable, Movable, Representable, Stringable, Writable
+):
     """PyModuleDef_Base.
 
-    Notes:
-        [Reference 1](
-        https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L39
-        ). [Reference 2](
-        https://pyo3.rs/main/doc/pyo3/ffi/struct.pymoduledef_base
-        ). `PyModuleDef_HEAD_INIT` defaults all of its members, [Reference 3](
-        https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L60
-        ).
+    - [Reference 1](https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L39).
+    - [Reference 2](https://pyo3.rs/main/doc/pyo3/ffi/struct.pymoduledef_base).
+    - `PyModuleDef_HEAD_INIT` default inits all of its members, [Reference 3](https://github.com/python/cpython/blob/833c58b81ebec84dc24ef0507f8c75fe723d9f66/Include/moduleobject.h#L60).
     """
 
     var object_base: PyObject
     """The initial segment of every `PyObject` in CPython."""
 
     # TODO(MOCO-1138): This is a C ABI function pointer, not Mojo a function.
-    alias _init_fn_type = fn () -> UnsafePointer[PyObject]
-    """The function used to re-initialize the module."""
+    alias _init_fn_type = fn () -> PyObjectPtr
     var init_fn: Self._init_fn_type
+    """The function used to re-initialize the module."""
 
     var index: Py_ssize_t
-    """The module's index into its interpreter's modules_by_index cache."""
+    """The module's index into its interpreter's `modules_by_index` cache."""
 
-    var dict_copy: UnsafePointer[PyObject]
-    """A copy of the module's __dict__ after the first time it was loaded."""
+    var dict_copy: PyObjectPtr
+    """A copy of the module's `__dict__` after the first time it was loaded."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
     fn __init__(out self):
-        self.object_base = PyObject()
+        self.object_base = {}
         self.init_fn = _null_fn_ptr[Self._init_fn_type]()
         self.index = 0
-        self.dict_copy = UnsafePointer[PyObject]()
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.object_base = existing.object_base
-        self.init_fn = existing.init_fn
-        self.index = existing.index
-        self.dict_copy = existing.dict_copy
+        self.dict_copy = {}
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -613,38 +580,38 @@ struct PyModuleDef_Base(Stringable, Representable, Writable):
 
 @fieldwise_init
 struct PyModuleDef_Slot:
-    """[Reference](
-    https://docs.python.org/3/c-api/module.html#c.PyModuleDef_Slot).
+    """[Reference](https://docs.python.org/3/c-api/module.html#c.PyModuleDef_Slot).
     """
 
     var slot: c_int
     var value: OpaquePointer
 
 
-struct PyModuleDef(Stringable, Representable, Writable, Movable):
+struct PyModuleDef(Movable, Representable, Stringable, Writable):
     """The Python module definition structs that holds all of the information
     needed to create a module.
 
-    Notes:
-        [Reference](https://docs.python.org/3/c-api/module.html#c.PyModuleDef).
+    [Reference](https://docs.python.org/3/c-api/module.html#c.PyModuleDef).
     """
 
     var base: PyModuleDef_Base
 
     var name: UnsafePointer[c_char]
-    """[Reference](https://docs.python.org/3/c-api/structures.html#c.PyMethodDef
-    )."""
+    """Name for the new module."""
 
     var docstring: UnsafePointer[c_char]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
+    """Size of per-module data."""
 
     var methods: UnsafePointer[PyMethodDef]
-    """A pointer to a table of module-level functions.  Can be null if there
+    """A pointer to a table of module-level functions. Can be null if there
     are no functions present."""
 
     var slots: UnsafePointer[PyModuleDef_Slot]
+    """An array of slot definitions for multi-phase initialization, terminated
+    by a `{0, NULL}` entry."""
 
     # TODO(MOCO-1138): These are C ABI function pointers, not Mojo functions.
     alias _visitproc_fn_type = fn (PyObjectPtr, OpaquePointer) -> c_int
@@ -652,38 +619,30 @@ struct PyModuleDef(Stringable, Representable, Writable, Movable):
         PyObjectPtr, Self._visitproc_fn_type, OpaquePointer
     ) -> c_int
     var traverse_fn: Self._traverse_fn_type
+    """A traversal function to call during GC traversal of the module object,
+    or `NULL` if not needed."""
 
     alias _clear_fn_type = fn (PyObjectPtr) -> c_int
     var clear_fn: Self._clear_fn_type
+    """A clear function to call during GC clearing of the module object,
+    or `NULL` if not needed."""
 
     alias _free_fn_type = fn (OpaquePointer) -> OpaquePointer
     var free_fn: Self._free_fn_type
+    """A function to call during deallocation of the module object,
+    or `NULL` if not needed."""
 
-    @implicit
     fn __init__(out self, name: StaticString):
-        self.base = PyModuleDef_Base()
+        self.base = {}
         self.name = name.unsafe_ptr().bitcast[c_char]()
-        self.docstring = UnsafePointer[c_char]()
-        # means that the module does not support sub-interpreters
+        self.docstring = {}
+        # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
-        self.methods = UnsafePointer[PyMethodDef]()
-        self.slots = UnsafePointer[PyModuleDef_Slot]()
-
-        self.slots = UnsafePointer[PyModuleDef_Slot]()
+        self.methods = {}
+        self.slots = {}
         self.traverse_fn = _null_fn_ptr[Self._traverse_fn_type]()
         self.clear_fn = _null_fn_ptr[Self._clear_fn_type]()
         self.free_fn = _null_fn_ptr[Self._free_fn_type]()
-
-    fn __moveinit__(out self, owned existing: Self):
-        self.base = existing.base^
-        self.name = existing.name
-        self.docstring = existing.docstring
-        self.size = existing.size
-        self.methods = existing.methods
-        self.slots = existing.slots
-        self.traverse_fn = existing.traverse_fn
-        self.clear_fn = existing.clear_fn
-        self.free_fn = existing.free_fn
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -774,7 +733,7 @@ alias PyLong_FromSsize_t = ExternalFunction[
 
 
 @fieldwise_init
-struct CPython(Copyable, Movable):
+struct CPython(Copyable, Defaultable, Movable):
     """Handle to the CPython interpreter present in the current process."""
 
     # ===-------------------------------------------------------------------===#
@@ -837,20 +796,28 @@ struct CPython(Copyable, Movable):
             print("PYTHONEXECUTABLE:", getenv("PYTHONEXECUTABLE"))
             print("libpython selected:", python_lib)
 
+        # Note:
+        #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
+        #   is a dynamic library being loaded as a Python extension module,
+        #   and we need to find CPython symbols that are statically linked
+        #   into the `python` main executable. On those platforms where
+        #   `python` executable can be statically linked (Linux), it's
+        #   important that we don't load a second copy of CPython symbols
+        #   into the process by loading the `libpython` dynamic library.
         try:
-            # Note:
-            #   MOJO_PYTHON_LIBRARY can be "" when the current Mojo program
-            #   is a dynamic library being loaded as a Python extension module,
-            #   and we need to find CPython symbols that are statically linked
-            #   into the `python` main executable. On those paltforms where
-            #   `python` executable can be statically linked (Linux), it's
-            #   important that we don't load a second copy of CPython symbols
-            #   into the process by loading the `libpython` dynamic library.
-            self.lib = DLHandle(python_lib) if python_lib != "" else DLHandle()
+            # Try to load the library from the current process.
+            self.lib = DLHandle()
+            if not self.lib.check_symbol("Py_Initialize"):
+                try:
+                    # If the library is not present in the current process, try to load it from the environment variable.
+                    self.lib = DLHandle(python_lib)
+                except e:
+                    raise e
         except e:
             self.lib = abort[DLHandle](
                 String("Failed to load libpython from", python_lib, ":\n", e)
             )
+
         self.total_ref_count = UnsafePointer[Int].alloc(1)
         self.logging_enabled = logging_enabled
         if not self.init_error:
@@ -923,7 +890,7 @@ struct CPython(Copyable, Movable):
         # TODO(MSTDL-1479): PyErr_Fetch is deprecated since Python 3.12.
         var err_ptr = self.PyErr_Fetch()
         debug_assert(
-            not err_ptr.is_null(),
+            Bool(err_ptr),
             "Python exception occurred but PyErr_Fetch returned null",
         )
 
@@ -975,10 +942,8 @@ struct CPython(Copyable, Movable):
         #   Once Mojo argument splatting is supported, this should just
         #   be: `print(*args)`
         @parameter
-        fn print_arg[T: Writable](arg: T):
-            print(arg, sep="", end="", flush=False)
-
-        args.each[print_arg]()
+        for i in range(args.__len__()):
+            print(args[i], sep="", end="", flush=False)
 
         print(flush=True)
 
@@ -999,7 +964,7 @@ struct CPython(Copyable, Movable):
         https://docs.python.org/3/c-api/refcounting.html#c.Py_IncRef).
         """
 
-        self.log(ptr._get_ptr_as_int(), " INCREF refcnt:", self._Py_REFCNT(ptr))
+        self.log(ptr, " INCREF refcnt:", self._Py_REFCNT(ptr))
 
         self.Py_IncRef_func(ptr)
         self._inc_total_rc()
@@ -1009,7 +974,7 @@ struct CPython(Copyable, Movable):
         https://docs.python.org/3/c-api/refcounting.html#c.Py_DecRef).
         """
 
-        self.log(ptr._get_ptr_as_int(), " DECREF refcnt:", self._Py_REFCNT(ptr))
+        self.log(ptr, " DECREF refcnt:", self._Py_REFCNT(ptr))
         self.Py_DecRef_func(ptr)
         self._dec_total_rc()
 
@@ -1019,7 +984,7 @@ struct CPython(Copyable, Movable):
     # debugging. We shouldn't rely on this function anywhere - its only purpose
     # is debugging.
     fn _Py_REFCNT(self, ptr: PyObjectPtr) -> Int:
-        if ptr._get_ptr_as_int() == 0:
+        if not ptr:
             return -1
         # NOTE:
         #   The "obvious" way to write this would be:
@@ -1079,7 +1044,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PySet_New", PyObjectPtr](PyObjectPtr())
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PySet_New, refcnt:",
             self._Py_REFCNT(r),
         )
@@ -1095,9 +1060,9 @@ struct CPython(Copyable, Movable):
 
         var r = self.lib.call["PySet_Add", c_int](set, element)
         self.log(
-            set._get_ptr_as_int(),
+            set,
             " PySet_Add, element: ",
-            element._get_ptr_as_int(),
+            element,
         )
         return r
 
@@ -1113,7 +1078,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyDict_New", PyObjectPtr]()
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyDict_New, refcnt:",
             self._Py_REFCNT(r),
         )
@@ -1133,9 +1098,9 @@ struct CPython(Copyable, Movable):
 
         self.log(
             "PyDict_SetItem, key: ",
-            key._get_ptr_as_int(),
+            key,
             " value: ",
-            value._get_ptr_as_int(),
+            value,
         )
 
         return r
@@ -1150,7 +1115,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyDict_GetItemWithError", PyObjectPtr](
             dict_obj, key
         )
-        self.log("PyDict_GetItemWithError, key: ", key._get_ptr_as_int())
+        self.log("PyDict_GetItemWithError, key: ", key)
         return r
 
     fn PyDict_Check(self, maybe_dict: PyObjectPtr) -> Bool:
@@ -1159,9 +1124,8 @@ struct CPython(Copyable, Movable):
         """
 
         var my_type = self.PyObject_Type(maybe_dict)
-        var my_type_as_int = my_type._get_ptr_as_int()
         var dict_type = self.PyDict_Type()
-        var result = my_type_as_int == dict_type._get_ptr_as_int()
+        var result = my_type == dict_type
         self.Py_DecRef(my_type)
         return result
 
@@ -1188,17 +1152,17 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            dictionary._get_ptr_as_int(),
+            dictionary,
             " NEWREF PyDict_Next",
-            dictionary._get_ptr_as_int(),
+            dictionary,
             "refcnt:",
             self._Py_REFCNT(dictionary),
             " key: ",
-            key._get_ptr_as_int(),
+            key,
             ", refcnt(key):",
             self._Py_REFCNT(key),
             "value:",
-            value._get_ptr_as_int(),
+            value,
             "refcnt(value)",
             self._Py_REFCNT(value),
         )
@@ -1228,7 +1192,7 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyImport_ImportModule, str:",
             name,
             ", refcnt:",
@@ -1265,7 +1229,7 @@ struct CPython(Copyable, Movable):
         # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
         # after the caller imports said module.
 
-        # TODO: it would be nice to programatically call a CPython API to get the value here
+        # TODO: it would be nice to programmatically call a CPython API to get the value here
         # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
         # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
         # docs.
@@ -1375,11 +1339,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            result._get_ptr_as_int(),
+            result,
             " NEWREF PyRun_String, str:",
             str,
             ", ptr: ",
-            result._get_ptr_as_int(),
+            result,
             ", refcnt:",
             self._Py_REFCNT(result),
         )
@@ -1479,13 +1443,13 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyObject_GetItem", PyObjectPtr](obj, key)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_GetItem, key:",
-            key._get_ptr_as_int(),
+            key,
             ", refcnt:",
             self._Py_REFCNT(r),
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
         )
 
         self._inc_total_rc()
@@ -1504,11 +1468,11 @@ struct CPython(Copyable, Movable):
             "PyObject_SetItem result:",
             r,
             ", key:",
-            key._get_ptr_as_int(),
+            key,
             ", value:",
-            value._get_ptr_as_int(),
+            value,
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
         )
         return r
 
@@ -1541,13 +1505,13 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_GetAttrString, str:",
             name,
             ", refcnt:",
             self._Py_REFCNT(r),
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
         )
 
         self._inc_total_rc()
@@ -1572,9 +1536,9 @@ struct CPython(Copyable, Movable):
             "PyObject_SetAttrString str:",
             name,
             ", parent obj:",
-            obj._get_ptr_as_int(),
+            obj,
             ", new value:",
-            new_value._get_ptr_as_int(),
+            new_value,
             " new value ref count: ",
             self._Py_REFCNT(new_value),
         )
@@ -1595,11 +1559,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_CallObject, refcnt:",
             self._Py_REFCNT(r),
             ", callable obj:",
-            callable_obj._get_ptr_as_int(),
+            callable_obj,
         )
 
         self._inc_total_rc()
@@ -1620,11 +1584,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyObject_Call, refcnt:",
             self._Py_REFCNT(r),
             ", callable obj:",
-            callable_obj._get_ptr_as_int(),
+            callable_obj,
         )
 
         self._inc_total_rc()
@@ -1659,11 +1623,11 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            iterator._get_ptr_as_int(),
+            iterator,
             " NEWREF PyObject_GetIter, refcnt:",
             self._Py_REFCNT(iterator),
             "referencing ",
-            traversable_py_object._get_ptr_as_int(),
+            traversable_py_object,
             "refcnt of traversable: ",
             self._Py_REFCNT(traversable_py_object),
         )
@@ -1686,7 +1650,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyTuple_New", PyObjectPtr](length)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyTuple_New, refcnt:",
             self._Py_REFCNT(r),
             ", tuple size:",
@@ -1744,7 +1708,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyList_New", PyObjectPtr](length)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyList_New, refcnt:",
             self._Py_REFCNT(r),
             ", list size:",
@@ -1820,7 +1784,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyBool_FromLong", PyObjectPtr](value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyBool_FromLong, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1848,7 +1812,7 @@ struct CPython(Copyable, Movable):
         var r = self.PyLong_FromSsize_t_func(value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyLong_FromSsize_t, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1866,7 +1830,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyLong_FromSize_t", PyObjectPtr](value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyLong_FromSize_t, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1892,6 +1856,12 @@ struct CPython(Copyable, Movable):
     # Floating-Point Objects
     # ===-------------------------------------------------------------------===#
 
+    fn PyNumber_Float(self, obj: PyObjectPtr) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/number.html#c.PyNumber_Float).
+        """
+        return self.lib.call["PyNumber_Float", PyObjectPtr](obj)
+
     fn PyFloat_FromDouble(self, value: Float64) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/float.html#c.PyFloat_FromDouble).
@@ -1900,7 +1870,7 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PyFloat_FromDouble", PyObjectPtr](value)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyFloat_FromDouble, refcnt:",
             self._Py_REFCNT(r),
             ", value:",
@@ -1931,7 +1901,7 @@ struct CPython(Copyable, Movable):
         )
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyUnicode_DecodeUTF8, refcnt:",
             self._Py_REFCNT(r),
             ", str:",
@@ -1997,7 +1967,7 @@ struct CPython(Copyable, Movable):
         """[Reference](
         https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred).
         """
-        return not self.lib.call["PyErr_Occurred", PyObjectPtr]().is_null()
+        return Bool(self.lib.call["PyErr_Occurred", PyObjectPtr]())
 
     fn PyErr_Fetch(self) -> PyObjectPtr:
         """[Reference](
@@ -2015,7 +1985,7 @@ struct CPython(Copyable, Movable):
         var r = value
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PyErr_Fetch, refcnt:",
             self._Py_REFCNT(r),
         )
@@ -2079,16 +2049,16 @@ struct CPython(Copyable, Movable):
         var next_obj = self.lib.call["PyIter_Next", PyObjectPtr](iterator)
 
         self.log(
-            next_obj._get_ptr_as_int(),
+            next_obj,
             " NEWREF PyIter_Next from ",
-            iterator._get_ptr_as_int(),
+            iterator,
             ", refcnt(obj):",
             self._Py_REFCNT(next_obj),
             "refcnt(iter)",
             self._Py_REFCNT(iterator),
         )
 
-        if next_obj._get_ptr_as_int() != 0:
+        if next_obj:
             self._inc_total_rc()
         return next_obj
 
@@ -2117,15 +2087,15 @@ struct CPython(Copyable, Movable):
         var r = self.lib.call["PySlice_New", PyObjectPtr](start, stop, step)
 
         self.log(
-            r._get_ptr_as_int(),
+            r,
             " NEWREF PySlice_New, refcnt:",
             self._Py_REFCNT(r),
             ", start:",
-            start._get_ptr_as_int(),
+            start,
             ", stop:",
-            stop._get_ptr_as_int(),
+            stop,
             ", step:",
-            step._get_ptr_as_int(),
+            step,
         )
 
         self._inc_total_rc()
@@ -2157,12 +2127,17 @@ struct CPython(Copyable, Movable):
         mut self,
         capsule: PyObjectPtr,
         owned name: String,
-    ) -> OpaquePointer:
+    ) raises -> OpaquePointer:
         """Extract the pointer to another C extension from a PyCapsule `capsule` with the given `name`.
 
         [Reference](https://docs.python.org/3/c-api/capsule.html#c.PyCapsule_GetPointer).
         """
         # void *PyCapsule_GetPointer(PyObject *capsule, const char *name)
-        return self.lib.call["PyCapsule_GetPointer", OpaquePointer](
+        var ptr = self.lib.call["PyCapsule_GetPointer", OpaquePointer](
             capsule, name.unsafe_cstr_ptr()
         )
+
+        if self.PyErr_Occurred():
+            raise self.get_error()
+
+        return ptr

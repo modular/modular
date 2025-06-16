@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.graph import (
     DeviceRef,
     Dim,
-    StaticDim,
     TensorValue,
     TensorValueLike,
     ops,
@@ -308,7 +307,7 @@ class VisionModel(Layer):
         hidden_state = self.layernorm_pre(hidden_state)
 
         # Compute the number of tokens to pad
-        curr_num_patches = StaticDim(hidden_state.shape[-2]).dim
+        curr_num_patches = int(hidden_state.shape[-2])
         num_padding_patches = (8 - (curr_num_patches % 8)) % 8
         # Compute padding tuple for pad function
         padding = (
@@ -319,10 +318,7 @@ class VisionModel(Layer):
         )  # (pad_left, pad_right, pad_left for dim -2, pad_right for dim -2)
         # Pad the tensor
         hidden_state = self._manual_constant_pad_4d(
-            dtype=self.dtype,
-            input_tensor=hidden_state,
-            pad=padding,
-            value=0,
+            dtype=self.dtype, input_tensor=hidden_state, pad=padding, value=0
         )
 
         slice_index = -num_padding_patches if num_padding_patches > 0 else None
@@ -335,7 +331,7 @@ class VisionModel(Layer):
         attention_mask = self._prepare_aspect_ratio_attention_mask(
             aspect_ratio_mask=attention_mask,
             num_patches=self.num_patches,
-            target_length=StaticDim(hidden_state.shape[2]).dim,
+            target_length=int(hidden_state.shape[2]),
             dtype=self.dtype,
         )
 
@@ -515,8 +511,7 @@ def instantiate_vision_model(
         ),
         embedding=EmbeddingV1(
             weights.vision_model.pre_tile_positional_embedding.embedding.weight.allocate(
-                dtype,
-                [max_aspect_ratio_id, max_num_tiles * hidden_size],
+                dtype, [max_aspect_ratio_id, max_num_tiles * hidden_size]
             ),
             device=device,
         ),

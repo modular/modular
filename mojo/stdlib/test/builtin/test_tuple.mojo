@@ -14,7 +14,7 @@
 
 from sys import os_is_macos
 
-from testing import assert_false, assert_true
+from testing import assert_false, assert_true, assert_equal
 
 
 def test_tuple_contains():
@@ -111,5 +111,14 @@ def test_tuple_contains():
     assert_false(d_alias.__contains__(String("Hello world")))
 
 
+def test_tuple_unpack():
+    (var list) = [a + b for a, b in [(1, 2), (3, 4)]]
+    assert_equal(list, [3, 7])
+
+    var list2 = [a + b for a, b in [(1, 2), (3, 4)]]
+    assert_equal(list2, [3, 7])
+
+
 def main():
     test_tuple_contains()
+    test_tuple_unpack()

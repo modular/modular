@@ -16,8 +16,8 @@ from collections import List
 from memory import UnsafePointer
 
 
-@value
-struct WeightsRegistry:
+@fieldwise_init
+struct WeightsRegistry(Copyable, Movable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
     var names: List[String]

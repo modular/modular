@@ -39,7 +39,7 @@ from .utils import (
 )
 
 
-@value
+@fieldwise_init
 struct PackMatrixRows[
     original_mut: Bool, //,
     # original matrix shape list
@@ -51,7 +51,7 @@ struct PackMatrixRows[
     row_inner_size: Int,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-]:
+](Copyable, Movable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
@@ -280,7 +280,7 @@ struct PackMatrixRows[
             row_idx += simd_size
 
 
-@value
+@fieldwise_init
 struct PackMatrixCols[
     original_mut: Bool, //,
     # original matrix shape list
@@ -294,7 +294,7 @@ struct PackMatrixCols[
     use_i8mm: Bool,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-]:
+](Copyable, Movable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
@@ -442,11 +442,13 @@ struct PackMatrixCols[
                     @parameter
                     for l in range(vnni_cols):
                         var local_idx = Index(i + l, p + nr * j)
-                        var val = 0 if local_idx[0] >= kc or local_idx[
-                            1
-                        ] >= nc else self.original_matrix[
-                            self.global_offset + local_idx
-                        ]
+                        var val = (
+                            0 if local_idx[0] >= kc
+                            or local_idx[1]
+                            >= nc else self.original_matrix[
+                                self.global_offset + local_idx
+                            ]
+                        )
                         self.packed_matrix.store(
                             Index(j, i // vnni_cols, vnni_cols * p + l),
                             val,
@@ -466,11 +468,13 @@ struct PackMatrixCols[
                     for i2 in range(i8mm_cols):
                         for p2 in range(i8mm_rows):
                             var local_idx = Index(i + i2, nr * j + p + p2)
-                            var val = 0 if local_idx[0] >= kc or local_idx[
-                                1
-                            ] >= nc else self.original_matrix[
-                                self.global_offset + local_idx
-                            ]
+                            var val = (
+                                0 if local_idx[0] >= kc
+                                or local_idx[1]
+                                >= nc else self.original_matrix[
+                                    self.global_offset + local_idx
+                                ]
+                            )
                             self.packed_matrix.store[width=1](
                                 Index(
                                     j,
@@ -877,7 +881,7 @@ fn pack_transposed_b_ndbuffer[
     ](b_input, output_buffer, kernel_type_m)
 
 
-@value
+@fieldwise_init
 struct BTileGenerator[
     mut: Bool, //,
     config: KernelConfig,
@@ -888,7 +892,7 @@ struct BTileGenerator[
     transpose_b: Bool,
     b_packed: Bool,
     origin: Origin[mut],
-]:
+](Copyable, Movable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
     If b_packed is true, calls to get_tile will return a buffer view from B.
@@ -1034,7 +1038,7 @@ struct BTileGenerator[
                 # a bit of trickieness going on here, this works because:
                 #   1. tile_k is the same for every thread (tile_n is not) since threads
                 #       don't currently partition on the K dimension
-                #   2. the n dimension of each thread's tile is gauranteed to be an
+                #   2. the n dimension of each thread's tile is guaranteed to be an
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
                 b_flat.data.offset(

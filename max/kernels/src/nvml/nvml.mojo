@@ -41,8 +41,8 @@ fn _get_nvml_library_paths() raises -> List[Path]:
     )
     paths.append(common_path)
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
-        var path = CUDA_NVML_LIBRARY_DIR / fd[]
-        if CUDA_NVML_LIBRARY_BASE_NAME in String(fd[]):
+        var path = CUDA_NVML_LIBRARY_DIR / fd
+        if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
             paths.append(path)
     return paths
 
@@ -77,8 +77,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-@value
-struct DriverVersion:
+struct DriverVersion(Copyable, Movable, StringableRaising):
     var _value: List[String]
 
     @implicit
@@ -103,9 +102,9 @@ struct DriverVersion:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Result(Stringable, EqualityComparable):
+struct Result(Copyable, EqualityComparable, Movable, Stringable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -176,7 +175,7 @@ struct Result(Stringable, EqualityComparable):
     """No data"""
 
     alias VGPU_ECC_NOT_SUPPORTED = Self(22)
-    """The requested vgpu operation is not available on target device, becasue
+    """The requested vgpu operation is not available on target device, because
     ECC is enabled"""
 
     alias INSUFFICIENT_RESOURCES = Self(23)
@@ -311,9 +310,9 @@ fn _check_error(err: Result) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable):
+struct EnableState(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -336,9 +335,9 @@ struct EnableState(EqualityComparable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable):
+struct ClockType(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
@@ -367,9 +366,9 @@ struct ClockType(EqualityComparable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl:
+struct _DeviceImpl(Copyable, Defaultable, Movable):
     var handle: UnsafePointer[NoneType]
 
     @always_inline
@@ -449,8 +448,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32]()
-        clocks.resize(Int(num_clocks), value=0)
+        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -458,12 +456,12 @@ struct Device(Writable):
                 fn (
                     _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
                 ) -> Result,
-            ]()(self.device, UnsafePointer(to=num_clocks), clocks.data)
+            ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(Int(clock[]))
+            res.append(Int(clock))
 
         return res
 
@@ -493,8 +491,7 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32]()
-        clocks.resize(Int(num_clocks), value=0)
+        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
@@ -509,13 +506,13 @@ struct Device(Writable):
                 self.device,
                 UInt32(memory_clock_mhz),
                 UnsafePointer(to=num_clocks),
-                clocks.data,
+                clocks.unsafe_ptr(),
             )
         )
 
         var res = List[Int, hint_trivial_type=True](capacity=len(clocks))
         for clock in clocks:
-            res.append(Int(clock[]))
+            res.append(Int(clock))
 
         return res
 
@@ -623,9 +620,9 @@ struct Device(Writable):
         return String.write(self)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _EnableState:
+struct _EnableState(Copyable, Movable):
     var state: Int32
 
     alias DISABLED = _EnableState(0)  # Feature disabled

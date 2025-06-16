@@ -583,15 +583,12 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 
 fn gen_word_pairs[words: String = words_en]() -> List[String]:
     var result = List[String]()
-    try:
-        var list = words.split(",")
+    var list = words.split(",")
+    for w in list:
+        var w1 = String(w.strip())
         for w in list:
-            var w1 = String(w[].strip())
-            for w in list:
-                var w2 = w[].strip()
-                result.append(w1 + " " + w2)
-    except:
-        pass
+            var w2 = w.strip()
+            result.append(w1 + " " + w2)
     return result
 
 
@@ -606,7 +603,7 @@ fn bench_small_keys[s: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         for w in words:
-            var h = old_hash(w[])
+            var h = old_hash(w)
             keep(h)
 
     b.iter[call_fn]()
@@ -620,7 +617,7 @@ fn bench_small_keys_new_hash_function[s: String](mut b: Bencher) raises:
     @parameter
     fn call_fn():
         for w in words:
-            var h = _hash_with_hasher(w[].unsafe_ptr(), w[].byte_length())
+            var h = _hash_with_hasher(w.unsafe_ptr(), w.byte_length())
             keep(h)
 
     b.iter[call_fn]()

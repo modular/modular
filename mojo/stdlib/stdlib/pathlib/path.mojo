@@ -62,16 +62,17 @@ fn _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
     return Path(file_name[0:i])
 
 
-@value
 struct Path(
-    Stringable,
     Boolable,
-    Writable,
     Copyable,
-    Movable,
+    EqualityComparable,
     ExplicitlyCopyable,
-    PathLike,
+    Hashable,
     KeyElement,
+    Movable,
+    PathLike,
+    Stringable,
+    Writable,
     _HashableWithHasher,
 ):
     """The Path object."""

@@ -195,7 +195,7 @@ def test_scalar_range():
 
     fn append_many(mut list: List, *values: list.T):
         for value in values:
-            list.append(value[])
+            list.append(value)
 
     expected_elements = List[UInt8]()
     append_many(expected_elements, 2, 6, 10, 14)

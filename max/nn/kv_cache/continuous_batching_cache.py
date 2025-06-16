@@ -133,6 +133,7 @@ class FetchContinuousBatchingKVCacheCollection:
         return ContinuousBatchingKVCacheCollection(
             ops.custom(
                 "mo.kv_collection_ctor.continuous_batching",
+                device=blocks.device,
                 values=[
                     blocks,
                     cache_lengths,
@@ -215,10 +216,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
         **kwargs: Any,
     ) -> int:
         cache_size_per_sequence = (
-            reduce(
-                mul,
-                cls._block_shape(params, 1, max_seq_len, num_layers),
-            )
+            reduce(mul, cls._block_shape(params, 1, max_seq_len, num_layers))
             * params.dtype.size_in_bytes
         )
         return int(available_cache_memory // cache_size_per_sequence)
@@ -330,10 +328,7 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
             sequences, key/value split, layers, sequence length, attention heads, and head dimension
         """
         return self._block_shape(
-            self.params,
-            n_sequences,
-            self.max_seq_len,
-            self.num_layers,
+            self.params, n_sequences, self.max_seq_len, self.num_layers
         )
 
     @staticmethod

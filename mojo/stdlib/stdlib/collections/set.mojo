@@ -16,7 +16,7 @@ from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
 
 
 struct Set[T: KeyElement](
-    Sized, Comparable, Hashable, Boolable, Copyable, Movable, KeyElement
+    Boolable, Comparable, Copyable, Hashable, KeyElement, Movable, Sized
 ):
     """A set data type.
 
@@ -30,7 +30,7 @@ struct Set[T: KeyElement](
     set.add(4)
 
     for element in set:
-        print(element[])
+        print(element)
 
     set -= Set[Int](3, 4, 5)
     print(set == Set[Int](1, 2))  # True
@@ -62,8 +62,9 @@ struct Set[T: KeyElement](
         # and transfer them into the set to eliminate copyability.
         self._data = Dict[T, NoneType]()
         for t in ts:
-            self.add(t[])
+            self.add(t)
 
+    # TODO: Should take the list owned so we can transfer the elements out.
     @implicit
     fn __init__(out self, elements: List[T, *_]):
         """Construct a set from a List of elements.
@@ -73,7 +74,7 @@ struct Set[T: KeyElement](
         """
         self = Self()
         for e in elements:
-            self.add(e[])
+            self.add(e)
 
     fn __copyinit__(out self, other: Self):
         """Copy constructor.
@@ -110,7 +111,7 @@ struct Set[T: KeyElement](
         if len(self) != len(other):
             return False
         for e in self:
-            if e[] not in other:
+            if e not in other:
                 return False
         return True
 
@@ -290,7 +291,7 @@ struct Set[T: KeyElement](
         # Hash combination needs to be commutative so iteration order
         # doesn't impact the hash value.
         for e in self:
-            hash_value ^= hash(e[])
+            hash_value ^= hash(e)
         return hash_value
 
     @no_inline
@@ -337,7 +338,7 @@ struct Set[T: KeyElement](
         writer.write("{")
         var written = 0
         for item in self:
-            writer.write(repr(item[]))
+            writer.write(repr(item))
             if written < len(self) - 1:
                 writer.write(", ")
             written += 1
@@ -391,7 +392,7 @@ struct Set[T: KeyElement](
         if not self:
             raise "Pop on empty set"
         var iter = self.__iter__()
-        var first = iter.__next__()[]
+        var first = iter.__next_ref__()
         self.remove(first)
         return first
 
@@ -407,7 +408,7 @@ struct Set[T: KeyElement](
         """
         var result = self
         for o in other:
-            result.add(o[])
+            result.add(o)
 
         return result^
 
@@ -423,8 +424,8 @@ struct Set[T: KeyElement](
         """
         var result = Set[T]()
         for v in self:
-            if v[] in other:
-                result.add(v[])
+            if v in other:
+                result.add(v)
 
         return result^
 
@@ -440,8 +441,8 @@ struct Set[T: KeyElement](
         """
         var result = Set[T]()
         for e in self:
-            if e[] not in other:
-                result.add(e[])
+            if e not in other:
+                result.add(e)
         return result^
 
     fn update(mut self, other: Self):
@@ -454,7 +455,7 @@ struct Set[T: KeyElement](
             other: Another Set instance to union with this one.
         """
         for e in other:
-            self.add(e[])
+            self.add(e)
 
     fn intersection_update(mut self, other: Self):
         """In-place set intersection update.
@@ -480,7 +481,7 @@ struct Set[T: KeyElement](
         """
         for o in other:
             try:
-                self.remove(o[])
+                self.remove(o)
             except:
                 pass
 
@@ -497,7 +498,7 @@ struct Set[T: KeyElement](
             return False
 
         for element in self:
-            if element[] not in other:
+            if element not in other:
                 return False
 
         return True
@@ -512,7 +513,7 @@ struct Set[T: KeyElement](
             True if this set is disjoint with the `other` set, False otherwise.
         """
         for element in self:
-            if element[] in other:
+            if element in other:
                 return False
 
         return True
@@ -530,7 +531,7 @@ struct Set[T: KeyElement](
             return False
 
         for element in other:
-            if element[] not in self:
+            if element not in self:
                 return False
 
         return True
@@ -547,12 +548,12 @@ struct Set[T: KeyElement](
         var result = Set[T]()
 
         for element in self:
-            if element[] not in other:
-                result.add(element[])
+            if element not in other:
+                result.add(element)
 
         for element in other:
-            if element[] not in self:
-                result.add(element[])
+            if element not in self:
+                result.add(element)
 
         return result^
 

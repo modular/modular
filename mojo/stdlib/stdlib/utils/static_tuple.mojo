@@ -104,9 +104,10 @@ fn _static_tuple_construction_checks[size: Int]():
     constrained[size >= 0, "number of elements in `StaticTuple` must be >= 0"]()
 
 
-@value
 @register_passable("trivial")
-struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
+struct StaticTuple[element_type: AnyTrivialRegType, size: Int](
+    Copyable, Defaultable, Movable, Sized
+):
     """A statically sized tuple type which contains elements of homogeneous types.
 
     Parameters:

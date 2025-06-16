@@ -278,12 +278,12 @@ def test_matmul[
             True,
         ](b)
 
-    var padded_n = padded_n_k[1] if b_packed or (
-        not b_packed and transpose_b
-    ) else n
-    var padded_k = padded_n_k[0] if b_packed or (
-        not b_packed and transpose_b
-    ) else k
+    var padded_n = (
+        padded_n_k[1] if b_packed or (not b_packed and transpose_b) else n
+    )
+    var padded_k = (
+        padded_n_k[0] if b_packed or (not b_packed and transpose_b) else k
+    )
 
     var c0_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
 
@@ -632,8 +632,7 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
 
 
 def test_batched_matmul():
-    for batch_ref in [1, 2, 4, 9, 12]:
-        var batch = batch_ref[]
+    for batch in [1, 2, 4, 9, 12]:
         test_batched_matmul(batch, 256, 1024, 4096)
         test_batched_matmul(batch, 4, 5, 6)
         test_batched_matmul(batch, 15, 16, 17)

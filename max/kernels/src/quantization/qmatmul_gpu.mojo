@@ -234,12 +234,14 @@ fn multistage_mma_q[
 
                     # We only need one warp for copying scales...
                     if tid < WARP_SIZE:
-                        var src_fragments = scales_iter[].bitcast[
-                            scales_type, address_space = AddressSpace.GENERIC
-                        ]().vectorize[1, async_copy_scales_veclen]().distribute[
-                            async_copy_scales_layout
-                        ](
-                            Int(tid)
+                        var src_fragments = (
+                            scales_iter[]
+                            .bitcast[
+                                scales_type,
+                                address_space = AddressSpace.GENERIC,
+                            ]()
+                            .vectorize[1, async_copy_scales_veclen]()
+                            .distribute[async_copy_scales_layout](Int(tid))
                         )
                         var dst_fragments = scales_smem_tile.vectorize[
                             1, async_copy_scales_veclen
@@ -270,17 +272,30 @@ fn multistage_mma_q[
     alias c_frag_size = frag_size[2]
 
     # Register tiles.
-    var a_reg_tiles = tb[a_type]().row_major[
-        2 * num_m_mmas, a_frag_size
-    ]().local().alloc().split[2]()
+    var a_reg_tiles = (
+        tb[a_type]()
+        .row_major[2 * num_m_mmas, a_frag_size]()
+        .local()
+        .alloc()
+        .split[2]()
+    )
 
-    var b_reg_tiles = tb[a_type]().row_major[
-        2 * num_n_mmas, b_frag_size
-    ]().local().alloc().vectorize[1, b_frag_size]().split[2]()
+    var b_reg_tiles = (
+        tb[a_type]()
+        .row_major[2 * num_n_mmas, b_frag_size]()
+        .local()
+        .alloc()
+        .vectorize[1, b_frag_size]()
+        .split[2]()
+    )
 
-    var scales_reg_tiles = tb[scales_type]().row_major[
-        num_n_mmas, 1
-    ]().local().alloc().vectorize[1, 1]()
+    var scales_reg_tiles = (
+        tb[scales_type]()
+        .row_major[num_n_mmas, 1]()
+        .local()
+        .alloc()
+        .vectorize[1, 1]()
+    )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
@@ -343,7 +358,7 @@ fn multistage_mma_q[
                     b_wtile_coord0, b_wtile_coord1
                 )
 
-                # prefecth scales into regs every (group_size) rows
+                # prefetch scales into regs every (group_size) rows
                 if (k_tile_id + 1) % (group_size // BK) == 0:
                     scales_smem_iter._incr()
                     scales_warp_tile = scales_smem_iter[].tile[
@@ -425,15 +440,16 @@ fn multistage_mma_q[
 
                             # We only need one warp for copying scales...
                             if tid < WARP_SIZE:
-                                var src_fragments = scales_iter[].bitcast[
-                                    scales_type,
-                                    address_space = AddressSpace.GENERIC,
-                                ]().vectorize[
-                                    1, async_copy_scales_veclen
-                                ]().distribute[
-                                    async_copy_scales_layout
-                                ](
-                                    Int(tid)
+                                var src_fragments = (
+                                    scales_iter[]
+                                    .bitcast[
+                                        scales_type,
+                                        address_space = AddressSpace.GENERIC,
+                                    ]()
+                                    .vectorize[1, async_copy_scales_veclen]()
+                                    .distribute[async_copy_scales_layout](
+                                        Int(tid)
+                                    )
                                 )
                                 var dst_fragments = scales_smem_tile.vectorize[
                                     1, async_copy_scales_veclen
@@ -514,7 +530,9 @@ fn multistage_qgemm_kernel[
 
     var tid = thread_idx.x
     var ln_id = lane_id()
-    var warp_k_part_id = tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    var warp_k_part_id = (
+        tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+    )
     var warp_id = (tid % num_threads_per_warp_k_part) // WARP_SIZE
 
     # Only apply block swizzling for half precision types.
@@ -526,7 +544,7 @@ fn multistage_qgemm_kernel[
     ) if swizzle_block else Index(Int(block_idx.x), Int(block_idx.y))
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
@@ -619,9 +637,13 @@ fn multistage_qgemm_kernel[
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
 
-    var c_reg_tile = tb[accum_type]().row_major[
-        num_m_mmas * num_n_mmas, c_frag_size
-    ]().local().alloc().fill(0)
+    var c_reg_tile = (
+        tb[accum_type]()
+        .row_major[num_m_mmas * num_n_mmas, c_frag_size]()
+        .local()
+        .alloc()
+        .fill(0)
+    )
 
     multistage_mma_q[
         BM,
@@ -733,10 +755,11 @@ fn multistage_qgemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[c_type]().row_major[
-            WM, WN
-        ]().shared().view(
-            a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN)
+        var accum_smem_warp_tile = (
+            tb[c_type]()
+            .row_major[WM, WN]()
+            .shared()
+            .view(a_smem.bitcast[Scalar[c_type]]() + Int(warp_id * WM * WN))
         )
 
         copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
@@ -774,9 +797,9 @@ fn multistage_qgemm_kernel[
                 alias src_idx = __type_of(c_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
-                var swizzled_idx = swizzle(
-                    c_smem_frag_offset + src_idx_base
-                ) + src_idx_diff
+                var swizzled_idx = (
+                    swizzle(c_smem_frag_offset + src_idx_base) + src_idx_diff
+                )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
                 var dst_idx = 0
@@ -1048,13 +1071,15 @@ fn repack_Q4_0_for_sm8x[
             alias thd_layout = Layout.row_major(8, 4)
             # The first 2 Bytes is the scale for this Q4_0 block
             # GGUF pack elements 0-15 in the lower 4-bit of the 16 Bytes,
-            # and elments 16-31 in the higher 4-bit of the 16 Bytes.
+            # and elements 16-31 in the higher 4-bit of the 16 Bytes.
             #
             # This gets elements 0, 1, 8, 9, 16, 17, 24, 25 for
             # thread 0.
-            var thread_tile = raw_Q_tile.slice[:, 2:]().vectorize[
-                1, 2
-            ]().distribute[thd_layout](lane_id)
+            var thread_tile = (
+                raw_Q_tile.slice[:, 2:]()
+                .vectorize[1, 2]()
+                .distribute[thd_layout](lane_id)
+            )
 
             @parameter
             for i_e in range(16):
@@ -1270,11 +1295,9 @@ fn repack_GPTQ_for_sm8x[
                         2 * i + warp_y
                     )
                     var p_Qtile_idx = p_group_idx.tile[repack_tile[1]](i_Q_tile)
-                    var thd_idx = (
-                        p_Qtile_idx.vectorize[2]().distribute[
-                            thd_layout, axis=1
-                        ](lane_id)
-                    )
+                    var thd_idx = p_Qtile_idx.vectorize[2]().distribute[
+                        thd_layout, axis=1
+                    ](lane_id)
                     var n_idx = lane_id // 4
 
                     var weights_K = raw_weights.tile[BN, uint_K](

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+
 from collections._index_normalization import normalize_index
 from os import abort
 
@@ -91,7 +91,7 @@ struct _LinkedListIter[
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable, Sized):
+](Copyable, IteratorTrait, Movable, Sized):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
 
@@ -99,7 +99,9 @@ struct _LinkedListIter[
     # _LinkedListIter.__len__()
     var seen: Int
 
-    fn __init__(out self, src: Pointer[LinkedList[ElementType], origin]):
+    alias Element = ElementType  # FIXME(MOCO-2068): shouldn't be needed.
+
+    fn __init__(out self, src: Pointer[LinkedList[Self.Element], origin]):
         self.src = src
 
         @parameter
@@ -112,8 +114,8 @@ struct _LinkedListIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self, out p: Pointer[ElementType, origin]):
-        p = Pointer[ElementType, origin](to=self.curr[].value)
+    fn __next_ref__(mut self) -> ref [origin] Self.Element:
+        var old = self.curr
 
         @parameter
         if forward:
@@ -121,6 +123,12 @@ struct _LinkedListIter[
         else:
             self.curr = self.curr[].prev
         self.seen += 1
+
+        return old[].value
+
+    @always_inline
+    fn __next__(mut self) -> Self.Element:
+        return self.__next_ref__()
 
     fn __has_next__(self) -> Bool:
         return Bool(self.curr)
@@ -131,7 +139,7 @@ struct _LinkedListIter[
 
 struct LinkedList[
     ElementType: Copyable & Movable,
-](Sized, Boolable, Copyable, Movable):
+](Boolable, Copyable, Defaultable, Movable, Sized):
     """A doubly-linked list implementation.
 
     Parameters:
@@ -162,11 +170,14 @@ struct LinkedList[
         self._tail = Self._NodePointer()
         self._size = 0
 
-    fn __init__(out self, owned *elements: ElementType):
+    fn __init__(
+        out self, owned *elements: ElementType, __list_literal__: () = ()
+    ):
         """Initialize a linked list with the given elements.
 
         Args:
             elements: Variable number of elements to initialize the list with.
+            __list_literal__: Tell Mojo to use this method for list literals.
 
         Notes:
             Time Complexity: O(n) in len(elements).
@@ -345,7 +356,7 @@ struct LinkedList[
             Ownership of the indicated element.
 
         Notes:
-            Time Complexity: O(1).
+            Time Complexity: O(n) in len(self).
         """
         var current = self._get_node_ptr(Int(i))
 
@@ -373,10 +384,10 @@ struct LinkedList[
         raise String("Invalid index for pop: {}").format(Int(i))
 
     fn maybe_pop(mut self) -> Optional[ElementType]:
-        """Removes the head of the list and returns it, if it exists.
+        """Removes the tail of the list and returns it, if it exists.
 
         Returns:
-            The head of the list, if it was present.
+            The tail of the list, if it was present.
 
         Notes:
             Time Complexity: O(1).
@@ -408,7 +419,7 @@ struct LinkedList[
             The element, if it was found.
 
         Notes:
-            Time Complexity: O(1).
+            Time Complexity: O(n) in len(self).
         """
         var current = self._get_node_ptr(Int(i))
 
@@ -482,7 +493,7 @@ struct LinkedList[
             elem: The item to insert into the list.
 
         Notes:
-            Time Complexity: O(1).
+            Time Complexity: O(n) in len(self).
         """
         var i = max(0, index(idx) if Int(idx) >= 0 else index(idx) + len(self))
 

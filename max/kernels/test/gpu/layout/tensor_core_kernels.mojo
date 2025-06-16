@@ -140,14 +140,14 @@ fn mma_write_operand_kernel[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](out: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
+](output: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
     var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
     thread_reg_tile_v[0, 0] = rebind[__type_of(thread_reg_tile_v[0, 0])](
         mma.c_reg_type(thread_idx.x)
     )
-    mma.store_d(out, thread_reg_tile)
+    mma.store_d(output, thread_reg_tile)
 
 
 def test_load_and_mma_and_multiply_operands[
@@ -238,19 +238,27 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
 
     alias a_simd_width = mma.a_reg_type.size
     alias b_simd_width = mma.b_reg_type.size
-    var a_reg_tile = LayoutTensor[
-        dtype,
-        Layout.row_major(1, a_simd_width),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().vectorize[1, a_simd_width]()
+    var a_reg_tile = (
+        LayoutTensor[
+            dtype,
+            Layout.row_major(1, a_simd_width),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .vectorize[1, a_simd_width]()
+    )
 
-    var b_reg_tile = LayoutTensor[
-        dtype,
-        Layout.row_major(1, b_simd_width),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().vectorize[1, b_simd_width]()
+    var b_reg_tile = (
+        LayoutTensor[
+            dtype,
+            Layout.row_major(1, b_simd_width),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .vectorize[1, b_simd_width]()
+    )
 
     mma.load_a(a_smem, a_reg_tile)
     mma.load_b(b_smem, b_reg_tile)

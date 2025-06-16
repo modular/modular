@@ -13,9 +13,9 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
-from collections import Dict
 
 from python import Python, PythonObject
+from python.bindings import PythonModuleBuilder
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -270,50 +270,46 @@ def test_inplace_dunder_methods(mut python: Python):
     assert_equal(a, 1)
 
 
-def test_num_conversion() -> None:
+def test_num_conversion():
     alias n = UInt64(0xFEDC_BA09_8765_4321)
     alias n_str = String(n)
     assert_equal(n_str, String(PythonObject(n)))
 
 
-def test_bool_conversion() -> None:
+def test_bool_conversion():
     var x: PythonObject = 1
+    assert_true(x == 1)
+    assert_false(x == 0)
     assert_true(x == 0 or x == 1)
 
 
-fn test_string_conversions() raises -> None:
-    fn test_string_literal() -> None:
-        try:
-            var mojo_str: StaticString = "mojo"
-            var py_str = PythonObject(mojo_str)
-            var py_capitalized = py_str.capitalize()
-            var py = Python()
-            var mojo_capitalized = py.as_string_slice(py_capitalized)
-            assert_true(mojo_capitalized == "Mojo")
-        except e:
-            print("Error occurred")
+fn test_string_conversions(mut python: Python) raises -> None:
+    # static string
+    var static_str: StaticString = "mojo"
+    var py_str = PythonObject(static_str)
+    var py_capitalized = py_str.capitalize()
+    var mojo_capitalized = python.as_string_slice(py_capitalized)
+    assert_true(mojo_capitalized == "Mojo")
 
-    fn test_string() -> None:
-        try:
-            var mo_str = String("mo")
-            var jo_str = String("jo")
-            var mojo_str = mo_str + jo_str
-            var py_str = PythonObject(mojo_str)
-            var py_capitalized = py_str.capitalize()
-            var py = Python()
-            var mojo_capitalized = py.as_string_slice(py_capitalized)
-            assert_true(mojo_capitalized == "Mojo")
-        except e:
-            print("Error occurred")
+    # string object
+    var mo_str = String("mo")
+    var jo_str = String("jo")
+    var mojo_str = mo_str + jo_str
+    py_str = PythonObject(mojo_str)
+    py_capitalized = py_str.capitalize()
+    mojo_capitalized = python.as_string_slice(py_capitalized)
+    assert_true(mojo_capitalized == "Mojo")
 
-    fn test_type_object() raises -> None:
-        var py_float = PythonObject(3.14)
-        var type_obj = Python.type(py_float)
-        assert_equal(String(type_obj), "<class 'float'>")
+    # type object
+    var py_float = PythonObject(3.14)
+    var type_obj = python.type(py_float)
+    assert_equal(String(type_obj), "<class 'float'>")
 
-    test_string_literal()
-    test_string()
-    test_type_object()
+    # check that invalid utf-8 encoding raises an error
+    var buffer = InlineArray[Byte, 2](0xF0, 0x28)
+    var invalid = String(bytes=buffer)
+    with assert_raises(contains="'utf-8' codec can't decode byte"):
+        _ = PythonObject(invalid)
 
 
 def test_len():
@@ -409,7 +405,7 @@ fn test_dict() raises:
     assert_equal(String(dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
     # Test Python.dict from a Span of tuples.
-    var tuples = List((123, PythonObject("food")), (42, PythonObject("42")))
+    var tuples = [(123, PythonObject("food")), (42, PythonObject("42"))]
     dd = Python.dict(tuples)
     assert_equal(String(dd), "{123: 'food', 42: '42'}")
 
@@ -627,6 +623,34 @@ def test_contains_dunder():
     assert_true("B" in y)
 
 
+@fieldwise_init
+struct Person(Defaultable, Movable, Representable):
+    var name: String
+    var age: Int
+
+    fn __init__(out self):
+        self.name = ""
+        self.age = 0
+
+    fn __repr__(self) -> String:
+        return String("Person(", self.name, ", ", self.age, ")")
+
+
+def test_python_mojo_object_operations():
+    # Type registration
+    var b = PythonModuleBuilder("fake_module")
+    _ = b.add_type[Person]("Person")
+    _ = b.finalize()
+
+    # Alloc
+    var person_obj = PythonObject(alloc=Person("John Smith", 42))
+
+    # Downcast
+    var person_ptr = person_obj.downcast_value_ptr[Person]()
+
+    assert_equal(person_ptr[].name, "John Smith")
+
+
 def main():
     # initializing Python instance calls init_python
     var python = Python()
@@ -635,7 +659,7 @@ def main():
     test_inplace_dunder_methods(python)
     test_num_conversion()
     test_bool_conversion()
-    test_string_conversions()
+    test_string_conversions(python)
     test_len()
     test_is()
     test_iter()
@@ -648,3 +672,4 @@ def main():
     test_setitem_raises()
     test_py_slice()
     test_contains_dunder()
+    test_python_mojo_object_operations()

@@ -30,11 +30,15 @@ fn allgather[
     ngpus: Int, //,
 ](
     input_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
-    output_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    output_buffers: InlineArray[
+        NDBuffer[type, rank, MutableAnyOrigin], ngpus * ngpus
+    ],
     ctxs: List[DeviceContext],
 ) raises:
     """
-    Performs all-gather across GPUs.
+    Performs all-gather across GPUs with variadic output.
+
+    Each device receives individual copies of all input buffers.
 
     Parameters:
         type: DType - The data type of tensor elements.
@@ -43,12 +47,15 @@ fn allgather[
 
     Args:
         input_buffers: Input buffers from each GPU.
-        output_buffers: Output buffers for each GPU.
+        output_buffers: Flat array of ngpus * ngpus output buffers.
+                       Layout: output_buffers[device_idx * ngpus + input_idx]
+                       contains device_idx's copy of input_idx's data.
         ctxs: List of device contexts for participating GPUs.
     """
 
     var device_buffers = List[DeviceBuffer[type]](capacity=ngpus)
-    # Assemble input buffer structures from all devices
+
+    # Assemble input buffers from all devices.
     for device_idx in range(ngpus):
         device_buffers.append(
             DeviceBuffer(
@@ -59,26 +66,23 @@ fn allgather[
             )
         )
 
-    # Process each device
-    @parameter
     for device_idx in range(ngpus):
         var curr_ctx = ctxs[device_idx]
-        var start_index = 0
 
-        var output_device_buffer = DeviceBuffer(
-            curr_ctx,
-            output_buffers[device_idx].data,
-            output_buffers[device_idx].num_elements(),
-            owning=False,
-        )
+        # Copy each input to this device as a separate buffer.
+        for input_idx in range(ngpus):
+            # Calculate flat index for this output buffer.
+            var output_idx = device_idx * ngpus + input_idx
 
-        # Copy data from other GPUs into the output buffer.
-        for other_device_idx in range(ngpus):
-            var num_elements = input_buffers[other_device_idx].num_elements()
-            curr_ctx.enqueue_copy(
-                output_device_buffer.create_sub_buffer[type](
-                    start_index, num_elements
-                ),
-                device_buffers[other_device_idx],
+            var output_device_buffer = DeviceBuffer(
+                curr_ctx,
+                output_buffers[output_idx].data,
+                output_buffers[output_idx].num_elements(),
+                owning=False,
             )
-            start_index += num_elements
+
+            # Copy from input device to current device.
+            curr_ctx.enqueue_copy(
+                output_device_buffer,
+                device_buffers[input_idx],
+            )

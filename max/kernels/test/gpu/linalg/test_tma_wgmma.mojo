@@ -90,12 +90,11 @@ fn _load_a_reg_tile[
         @parameter
         for k_mma in range(num_wgmma_k):
             alias r_id = m_mma + k_mma * num_wgmma_m
-            var smem_wg = smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma).tile[
-                WGMMA_M // 4, WGMMA_K
-            ](wgid, 0).vectorize[1, simd_size]().distribute[
-                Layout.row_major(8, 4)
-            ](
-                lane
+            var smem_wg = (
+                smem_tile.tile[WGMMA_M, WGMMA_K](m_mma, k_mma)
+                .tile[WGMMA_M // 4, WGMMA_K](wgid, 0)
+                .vectorize[1, simd_size]()
+                .distribute[Layout.row_major(8, 4)](lane)
             )
             vret.tile[1, 4](r_id, 0).copy_from(smem_wg)
 

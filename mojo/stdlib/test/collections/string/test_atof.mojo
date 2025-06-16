@@ -82,7 +82,7 @@ def test_error_cases():
         _ = atof(".")
 
     # TODO:
-    # This should actualy work and approximate to the closest float64
+    # This should actually work and approximate to the closest float64
     # but we don't support it yet. See the section
     # 11, "Processing long numbers quickly" in the paper
     # Number Parsing at a Gigabyte per Second by Daniel Lemire
@@ -94,7 +94,7 @@ def test_error_cases():
 
 
 alias T = Tuple[Float64, String]
-alias numbers_to_test = List[T](
+alias numbers_to_test = [
     T(5e-324, "5e-324"),  # smallest value possible with float64
     T(1e-309, "1e-309"),  # subnormal float64
     T(84.5e-309, "84.5e-309"),  # subnormal float64
@@ -134,21 +134,19 @@ alias numbers_to_test = List[T](
     T(47421763.54864864647, "47421763.54864864647"),
     # TODO: Make atof work when many digits are present, e.g.
     # "47421763.548648646474532187448684",
-)
+]
 
 
 def test_atof_generate_cases():
-    for test_case in numbers_to_test:
-        number = test_case[][0]
-        number_as_str = test_case[][1]
-        for suffix in List[String]("", "f", "F"):
-            for exponent in List[String]("e", "E"):
-                for multiplier in List[String]("", "-"):
+    for number, number_as_str in numbers_to_test:
+        for suffix in [String(""), "f", "F"]:
+            for exponent in [String("e"), "E"]:
+                for multiplier in [String(""), "-"]:
                     var sign: Float64 = 1
-                    if multiplier[] == "-":
+                    if multiplier == "-":
                         sign = -1
-                    final_string = number_as_str.replace("e", exponent[])
-                    final_string = multiplier[] + final_string + suffix[]
+                    final_string = number_as_str.replace("e", exponent)
+                    final_string = multiplier + final_string + suffix
                     final_value = sign * number
 
                     assert_equal(atof(final_string), final_value)

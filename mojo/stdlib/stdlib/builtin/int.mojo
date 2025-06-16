@@ -19,9 +19,10 @@ from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
+from collections.interval import IntervalElement
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from hashlib.hash import _hash_simd
-from math import CeilDivable
+from math import CeilDivable, Ceilable, Floorable, Truncable
 from sys import bitwidthof
 
 from builtin.device_passable import DevicePassable
@@ -48,7 +49,7 @@ trait Indexer(Intable):
     The `Indexer` trait is used for types that can index into a collection or
     pointer. The type returned is the underlying __mlir_type.index, enabling
     types like `UInt` to not have to be converted to an `Int` first. This type
-    is implicitly convertable to an `Int`, so can be used anywhere an `Int` can
+    is implicitly convertible to an `Int`, so can be used anywhere an `Int` can
     e.g. for comparisons.
     """
 
@@ -210,25 +211,29 @@ trait ImplicitlyIntable(Intable):
 @register_passable("trivial")
 struct Int(
     Absable,
-    Defaultable,
     CeilDivable,
-    Copyable,
-    Movable,
+    Ceilable,
     Comparable,
+    ConvertibleFromPython,
+    Copyable,
+    Defaultable,
     DevicePassable,
     ExplicitlyCopyable,
+    Floorable,
     Hashable,
-    _HashableWithHasher,
     ImplicitlyBoolable,
     Indexer,
+    IntervalElement,
     KeyElement,
+    Movable,
     Powable,
     PythonConvertible,
     Representable,
     Roundable,
     Stringable,
+    Truncable,
     Writable,
-    ConvertibleFromPython,
+    _HashableWithHasher,
 ):
     """This type represents an integer value."""
 
@@ -360,10 +365,10 @@ struct Int(
     @always_inline("nodebug")
     @implicit
     fn __init__[I: ImplicitlyIntable](out self, value: I):
-        """Construct Int from implicitly convertable type.
+        """Construct Int from implicitly convertible type.
 
         Parameters:
-            I: The type that is implicitly convertable to an `Int`.
+            I: The type that is implicitly convertible to an `Int`.
 
         Args:
             value: The init value.
@@ -1168,7 +1173,7 @@ struct Int(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:

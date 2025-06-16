@@ -13,20 +13,14 @@
 
 import time
 from collections import Dict, Optional
-from collections.string import StaticString, StringSlice
-from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 from pathlib import Path
 from sys.arg import argv
 
 from gpu.host import DeviceContext
-from stdlib.builtin.file import FileHandle
-from stdlib.builtin.io import _snprintf
-from testing import assert_true
 
 from utils.numerics import FlushDenormals
 
-from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
 
 
@@ -124,8 +118,8 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             The selected metric.
         """
         for m in metric_list:
-            if m[].check_name(name):
-                return m[]
+            if m.check_name(name):
+                return m
 
         alias sep = StaticString("-") * 80 + "\n"
         var err = String(
@@ -136,7 +130,7 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             "Available throughput metrics (case-insensitive) in the list:\n",
         )
         for m in metric_list:
-            err += String("    metric: [" + m[].name.lower(), "]\n")
+            err += String("    metric: [" + m.name.lower(), "]\n")
         err += String(
             sep, sep, "[ERROR]: metric [", name, "] is NOT supported!\n"
         )
@@ -188,7 +182,7 @@ struct ThroughputMeasure(Copyable, Movable):
         """Gets a string representation of this `ThroughputMeasure`.
 
         Returns:
-            The string represntation.
+            The string representation.
         """
         return String(self.metric)
 
@@ -217,7 +211,7 @@ struct ThroughputMeasure(Copyable, Movable):
 
 
 @fieldwise_init
-struct Format(Writable, Stringable, Copyable, Movable):
+struct Format(Copyable, Movable, Stringable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -338,7 +332,7 @@ struct BenchConfig(Copyable, Movable):
         num_repetitions: Int = 1,
         flush_denormals: Bool = True,
     ) raises:
-        """Constructs and initializes Benchmark config object with default and inputed values.
+        """Constructs and initializes Benchmark config object with default and inputted values.
 
         Args:
             out_file: Output file to write results to.
@@ -440,6 +434,17 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = None
 
+    @implicit
+    fn __init__(out self, func_name: StringLiteral):
+        """Constructs a Benchmark Id object from input function name.
+
+        Args:
+            func_name: The target function name.
+        """
+
+        self.func_name = String(func_name)
+        self.input_id = None
+
 
 struct BenchmarkInfo(Copyable, Movable):
     """Defines a Benchmark Info struct to record execution Statistics."""
@@ -508,7 +513,7 @@ struct Mode(Copyable, Movable):
         return self.value == other.value
 
 
-struct Bench(Writable, Stringable):
+struct Bench(Stringable, Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
@@ -670,7 +675,7 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     fn bench_with_input[
@@ -680,7 +685,7 @@ struct Bench(Writable, Stringable):
         mut self,
         bench_id: BenchId,
         input: T,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function with input args of type AnyTrivialRegType.
 
@@ -728,15 +733,78 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
+
+    @always_inline
+    fn bench_function[
+        bench_fn: fn () raises capturing [_] -> None,
+    ](
+        mut self,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+        """
+
+        @parameter
+        @always_inline
+        fn bench_iter(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn call_func():
+                try:
+                    bench_fn()
+                except e:
+                    abort(String(e))
+
+            b.iter[call_func]()
+
+        self.bench_function[bench_iter](bench_id, measures=measures)
+
+    @always_inline
+    fn bench_function[
+        bench_fn: fn () capturing [_] -> None,
+    ](
+        mut self,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            bench_fn: The function to be benchmarked.
+
+        Args:
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+        """
+
+        @parameter
+        @always_inline
+        fn bench_iter(mut b: Bencher):
+            @parameter
+            @always_inline
+            fn call_func():
+                bench_fn()
+
+            b.iter[call_func]()
+
+        self.bench_function[bench_iter](bench_id, measures=measures)
 
     fn bench_function[
         bench_fn: fn (mut Bencher) capturing [_] -> None
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -768,7 +836,7 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
     # TODO (#31795): overload should not be needed
@@ -777,7 +845,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks or Tests an input function.
 
@@ -820,7 +888,7 @@ struct Bench(Writable, Stringable):
         """
         var measures_list = List[ThroughputMeasure]()
         for m in measures:
-            measures_list.append(m[])
+            measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
     fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
@@ -838,7 +906,7 @@ struct Bench(Writable, Stringable):
     ](
         mut self,
         bench_id: BenchId,
-        measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
+        measures: List[ThroughputMeasure] = {},
     ) raises:
         """Benchmarks an input function.
 
@@ -918,19 +986,26 @@ struct Bench(Writable, Stringable):
                 f.write(self)
             self.config.format = orig_format
 
-    fn pad(self, width: Int, string: String) -> String:
+    fn pad[
+        pad_str: StaticString = " "
+    ](self, width: Int, string: String) -> String:
         """Pads a string to a given width.
 
         Args:
             width: The width to pad the string to.
             string: The string to pad.
 
+        Parameters:
+            pad_str: The length 1 string to use for the padding.
+
         Returns:
             A string padded to the given width.
         """
+        constrained[len(pad_str) == 1, "pad_str must be length 1."]()
+
         if self.config.format == Format.csv:
             return ""
-        return " " * (width - len(string))
+        return pad_str * (width - len(string))
 
     fn __str__(self) -> String:
         """Returns a string representation of the benchmark results.
@@ -966,12 +1041,12 @@ struct Bench(Writable, Stringable):
         if self.config.format == Format.table and len(self.info_vec) > 0:
             for metric in metrics:
                 try:
-                    total_width += metrics[metric[]].max_width + 3
+                    total_width += metrics[metric].max_width + 3
                 except e:
                     abort(String(e))
             if self.config.verbose_timing:
                 for timing_width in timing_widths:
-                    total_width += timing_width[] + 3
+                    total_width += timing_width + 3
             else:
                 total_width += timing_widths[0] + 3
 
@@ -983,13 +1058,9 @@ struct Bench(Writable, Stringable):
         else:
             sep = ","
 
-        var first_sep = "| " if self.config.format == Format.table else StaticString(
-            ""
+        var first_sep = (
+            "| " if self.config.format == Format.table else StaticString("")
         )
-        var line_sep = "-" * total_width
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
         writer.write(first_sep, BENCH_LABEL, self.pad(name_width, BENCH_LABEL))
         writer.write(sep, MET_LABEL, self.pad(timing_widths[0], MET_LABEL))
@@ -998,20 +1069,19 @@ struct Bench(Writable, Stringable):
         # Return early if no runs were benchmarked
         if len(self.info_vec) == 0:
             if self.config.format == Format.table:
-                writer.write(" |\n", line_sep, "\nNo benchmarks recorded...")
+                writer.write("No benchmarks recorded...")
             writer.write("\n")
             return
 
         # Write the metrics labels
-        for metric in metrics:
-            name = metric[]
+        for name in metrics:
             writer.write(sep, name)
             try:
                 writer.write(self.pad(metrics[name].max_width, name))
             except e:
                 abort(String(e))
 
-        # Write the timeing labels
+        # Write the timing labels
         if self.config.verbose_timing:
             var labels = self.config.VERBOSE_TIMING_LABELS
             # skip the met label
@@ -1019,8 +1089,31 @@ struct Bench(Writable, Stringable):
                 writer.write(sep, labels[i])
                 writer.write(self.pad(timing_widths[i + 1], labels[i]))
 
+        # Write the sep line between the header and the data in MD format.
         if self.config.format == Format.table:
-            writer.write(" |\n", line_sep)
+            writer.write(" |\n| ")  # , line_sep)
+            # name, met, iters
+            writer.write(self.pad["-"](name_width, ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](timing_widths[0], ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](iters_width, ""))
+
+            for name in metrics:
+                writer.write(sep)
+                try:
+                    writer.write(self.pad["-"](metrics[name].max_width, ""))
+                except e:
+                    abort(String(e))
+
+            if self.config.verbose_timing:
+                var labels = self.config.VERBOSE_TIMING_LABELS
+                # skip the met label
+                for i in range(len(labels)):
+                    writer.write(sep)
+                    writer.write(self.pad["-"](timing_widths[i + 1], ""))
+            writer.write(" |")
+
         writer.write("\n")
 
         # Loop through the runs and write out the table rows
@@ -1046,8 +1139,7 @@ struct Bench(Writable, Stringable):
             var iters_pad = self.pad(iters_width, String(run.result.iters()))
             writer.write(sep, run.result.iters(), iters_pad)
 
-            for metric in metrics:
-                var name = metric[]
+            for name in metrics:
                 try:
                     var rates = metrics[name].rates
                     var max_width = metrics[name].max_width
@@ -1074,9 +1166,6 @@ struct Bench(Writable, Stringable):
                 writer.write(" |")
 
             writer.write("\n")
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)

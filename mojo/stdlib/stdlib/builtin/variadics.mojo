@@ -152,13 +152,11 @@ struct _VariadicListMemIter[
         self.index = index
         self.src = Pointer(to=list)
 
-    fn __next__(mut self) -> Self.variadic_list_type.reference_type:
+    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
         self.index += 1
-        # TODO: Need to make this return a dereferenced reference, not a
-        # reference that must be deref'd by the user.
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
-        )
+        )[]
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -333,6 +331,10 @@ struct VariadicPack[
 
     @doc_private
     @always_inline("nodebug")
+    # This disables nested origin exclusivity checking because it is taking a
+    # raw variadic pack which can have nested origins in it (which this does not
+    # dereference).
+    @__unsafe_disable_nested_origin_exclusivity
     fn __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicPack from the internal representation.
 
@@ -404,42 +406,6 @@ struct VariadicPack[
             self._value
         )
         return __get_litref_as_mvalue(litref_elt)
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    @always_inline
-    fn each[func: fn[T: element_trait] (T) capturing -> None](self):
-        """Apply a function to each element of the pack in order.  This applies
-        the specified function (which must be parametric on the element type) to
-        each element of the pack, from the first element to the last, passing
-        in each element as a read-only argument.
-
-        Parameters:
-            func: The function to apply to each element.
-        """
-
-        @parameter
-        for i in range(Self.__len__()):
-            func(self[i])
-
-    @always_inline
-    fn each_idx[
-        func: fn[idx: Int, T: element_trait] (T) capturing -> None
-    ](self):
-        """Apply a function to each element of the pack in order.  This applies
-        the specified function (which must be parametric on the element type) to
-        each element of the pack, from the first element to the last, passing
-        in each element as a read-only argument.
-
-        Parameters:
-            func: The function to apply to each element.
-        """
-
-        @parameter
-        for i in range(Self.__len__()):
-            func[i](self[i])
 
     # ===-------------------------------------------------------------------===#
     # C Pack Utilities

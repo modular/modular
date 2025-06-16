@@ -73,8 +73,8 @@ def matmul_qint4_pack_b[
                 var b_data_i4 = src_ptr.load[width = group_size // 2]()
                 src_ptr += group_size // 2
 
-                var b_data_i8_lo = (b_data_i4 & 15)
-                var b_data_i8_hi = (b_data_i4 >> 4)
+                var b_data_i8_lo = b_data_i4 & 15
+                var b_data_i8_hi = b_data_i4 >> 4
                 var b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
 
                 @parameter
@@ -204,9 +204,11 @@ fn _unpack_weights[
 
         @parameter
         for col in range(tile_n):
-            var b_scale = b_packed_ptr.bitcast[Float16]().load[
-                width=simd_width
-            ](col * simd_width).cast[DType.float32]()
+            var b_scale = (
+                b_packed_ptr.bitcast[Float16]()
+                .load[width=simd_width](col * simd_width)
+                .cast[DType.float32]()
+            )
             b_scale_ptr.store(col * simd_width, b_scale)
 
         b_scale_ptr += tile_n * simd_width
@@ -331,8 +333,8 @@ fn _scale_and_accumulate[
         for col in range(tile_n):
             var dot = c_int32[row, col]
 
-            # Withtout VNNI on x86 the 2-wide 8-bit to 16-bit dot
-            # product was calculed in process_group_packed.
+            # Without VNNI on x86 the 2-wide 8-bit to 16-bit dot
+            # product was calculated in process_group_packed.
             # Now complete the 4-wide 8-bit to 32-bit dot product.
             @parameter
             if has_avx2() and not has_vnni():

@@ -92,15 +92,15 @@ struct AddVectorsCustom:
         # the first argument is the output
         out: OutputTensor,
         # starting here is the list of inputs
-        x: InputTensor[type = out.type, rank = out.rank],
-        y: InputTensor[type = out.type, rank = out.rank],
+        x: InputTensor[dtype = out.dtype, rank = out.rank],
+        y: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
 
         @parameter
         @always_inline
-        fn func[width: Int](idx: IndexList[x.rank]) -> SIMD[x.type, width]:
+        fn func[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + y.load[width](idx)
 
         foreach[func, target=target](out, ctx)

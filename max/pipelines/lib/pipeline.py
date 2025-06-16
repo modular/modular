@@ -30,6 +30,7 @@ from typing import (
 )
 
 import numpy as np
+import numpy.typing as npt
 import torch
 from max.driver import Device, Tensor, load_devices
 from max.dtype import DType
@@ -67,11 +68,22 @@ if TYPE_CHECKING:
 
 from .config_enums import RepoType, SupportedEncoding
 from .hf_utils import download_weight_files
+from .lora import LoRAManager
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
 
 try:
+    # xgrammar configures the root logger, which also transitively
+    # impacts anyone using us as a library.  So let's avoid the damage here.
+    originalBasicConfig = logging.basicConfig
+
+    def basicConfig(**kwargs):
+        pass
+
+    logging.basicConfig = basicConfig
     import xgrammar as xgr
+
+    logging.basicConfig = originalBasicConfig
 except ImportError:
     pass
 
@@ -132,6 +144,21 @@ class ModelInputs:
     """
 
     kv_cache_inputs: KVCacheInputs | None = None
+
+
+@dataclass(frozen=True)
+class FrequencyData:
+    """Container for token frequency data in CSR format."""
+
+    data: Tensor
+    """data[:, 0]: 1D array of the column indices of the
+        non-zero elements in the matrix.
+    data[:, 1]: 1D array of the non-zero elements in the
+        matrix."""
+
+    offsets: Tensor
+    """Row offsets: shape [batch_size + 1] indicating start of each
+    sequence's data."""
 
 
 @dataclass(frozen=True)
@@ -227,26 +254,6 @@ class PipelineModel(ABC, Generic[T]):
             "PipelineModel must implement calculate_max_seq_len"
         )
 
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
-    @classmethod
-    @abstractmethod
-    def get_kv_params(
-        cls,
-        huggingface_config: AutoConfig,
-        n_devices: int,
-        kv_cache_config: KVCacheConfig,
-        cache_dtype: DType,
-    ) -> KVCacheParams:
-        """Returns the KV cache params for the pipeline model."""
-        ...
-
-    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
-    @classmethod
-    @abstractmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Returns the number of layers for the pipeline model."""
-        ...
-
     @classmethod
     def infer_optimal_batch_size(
         cls,
@@ -269,9 +276,7 @@ class PipelineModel(ABC, Generic[T]):
 
         # TODO we should map HF configs to a unified MAX Config object
         # this would help avoid these excessive calls to class methods.
-        n_layers = cls.get_num_layers(
-            huggingface_config=huggingface_config,
-        )
+        n_layers = cls.get_num_layers(huggingface_config=huggingface_config)
 
         kv_params = cls.get_kv_params(
             huggingface_config=huggingface_config,
@@ -282,8 +287,7 @@ class PipelineModel(ABC, Generic[T]):
         inferred_batch_size = infer_optimal_batch_size(
             params=kv_params,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=n_layers,
             available_cache_memory=available_cache_memory,
@@ -406,6 +410,26 @@ class KVCacheMixin(Protocol):
         """
         ...
 
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
+    @classmethod
+    @abstractmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        n_devices: int,
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Returns the KV cache params for the pipeline model."""
+        ...
+
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
+    @classmethod
+    @abstractmethod
+    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """Returns the number of layers for the pipeline model."""
+        ...
+
     @classmethod
     @abstractmethod
     def estimate_kv_cache_size(
@@ -484,8 +508,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             )
             self.vocab_size = len(self.tokenizer)
             tokenizer_info = xgr.TokenizerInfo.from_huggingface(
-                self.tokenizer,
-                vocab_size=self.vocab_size,
+                self.tokenizer, vocab_size=self.vocab_size
             )
 
             self._grammar_compiler = xgr.GrammarCompiler(tokenizer_info)
@@ -540,6 +563,15 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 for x in self._pipeline_config.model_config.weight_path
             ]
 
+        weights = load_weights(weight_paths)
+
+        if self._pipeline_config.lora_config is not None:
+            self._lora_manager = LoRAManager(
+                weights,
+                self._pipeline_config.lora_config.max_num_loras,
+                self._pipeline_config.lora_config.lora_paths,
+            )
+
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -561,7 +593,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             token_sampler(
                 self._pipeline_config.sampling_config,
                 device=DeviceRef.from_device(self._devices[0]),
-            ),
+            )
         )
 
     def calculate_num_steps(
@@ -597,10 +629,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         if self._pipeline_config.sampling_config.enable_structured_output:
             assert self.vocab_size is not None
             bitmask = torch.full(
-                xgr.get_bitmask_shape(
-                    len(batch),
-                    self.vocab_size,
-                ),
+                xgr.get_bitmask_shape(len(batch), self.vocab_size),
                 -1,
                 dtype=torch.int32,
             )
@@ -618,8 +647,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 try:
                     compiled_grammar = (
                         self._grammar_compiler.compile_json_schema(
-                            context.json_schema,
-                            any_whitespace=False,
+                            context.json_schema, any_whitespace=False
                         )
                     )
                     matcher = xgr.GrammarMatcher(compiled_grammar)
@@ -679,19 +707,16 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
     @traced
     def _build_token_frequency_csr(
-        self, batch: list[T], padding_size: int
-    ) -> tuple[Tensor, Tensor]:
+        self, batch: list[T], padding_size: int, include_prompt: bool = False
+    ) -> FrequencyData:
         """Build a CSR matrix of token frequency in the batch.
         The original matrix is (batch_size, vocab_size), where each element is
         the number of times a token appears in the batch.
 
-        The CSR representation consists of three arrays:
-        - frequency_row_offsets: 1D array of the starting index of each row in
-        the data array.
-        - token_frequency_pairs[:, 0]: 1D array of the column indices of the
-        non-zero elements in the data array.
-        - token_frequency_pairs[:, 1]: 1D array of the non-zero elements in the
-         matrix (data array).
+        Returns:
+            FrequencyData containing the CSR representation with:
+            - data: 2D array where each row is [token_id, count]
+            - row_offsets: 1D array of the starting index of each sequence's data
         """
         tracer: Tracer = Tracer("build_token_frequency_csr")
 
@@ -699,9 +724,15 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
         frequency_row_offsets = np.zeros(len(batch) + 1, dtype=np.uint32)
         # Calculate max size needed for token frequency pairs
-        total_tokens = sum(
-            len(context.generated_tokens) + padding_size for context in batch
-        )
+        if include_prompt:
+            total_tokens = sum(
+                context.current_length + padding_size for context in batch
+            )
+        else:
+            total_tokens = sum(
+                len(context.generated_tokens) + padding_size
+                for context in batch
+            )
         token_frequency_pairs = np.zeros((total_tokens, 2), dtype=np.int32)
 
         tracer.next("build_token_frequency_csr_loop")
@@ -733,34 +764,94 @@ class TextGenerationPipeline(TokenGenerator[T]):
             : frequency_row_offsets[-1], :
         ]
 
-        return Tensor.from_dlpack(token_frequency_pairs).to(
-            self._devices[0]
-        ), Tensor.from_dlpack(frequency_row_offsets).to(self._devices[0])
+        return FrequencyData(
+            data=Tensor.from_dlpack(token_frequency_pairs).to(self._devices[0]),
+            offsets=Tensor.from_dlpack(frequency_row_offsets).to(
+                self._devices[0]
+            ),
+        )
+
+    @traced
+    def _build_min_tokens_masks(
+        self,
+        batch: list[T],
+        num_steps: int,
+    ) -> list[Tensor] | None:
+        """Build a mask of the min tokens for the batch."""
+        if not self._pipeline_config.sampling_config.enable_min_tokens:
+            for context in batch:
+                if context.min_tokens > 0:
+                    logger.warning(
+                        "min_tokens is provided in the request, but the model was not configured with enable_min_tokens=True, ignoring"
+                    )
+            return None
+
+        min_tokens_masks: list[npt.NDArray[np.int32]] = []
+        min_tokens_masks = batch[0].get_min_token_logit_mask(num_steps)
+
+        for bs in range(1, len(batch)):
+            new_min_tokens_masks = batch[bs].get_min_token_logit_mask(num_steps)
+            for i in range(num_steps):
+                new_min_tokens_masks[i][:, 0] += bs
+                min_tokens_masks[i] = np.concatenate(
+                    (min_tokens_masks[i], new_min_tokens_masks[i])
+                )
+
+        min_tokens_masks_max = [
+            Tensor.from_dlpack(mask).to(self._devices[0])
+            for mask in min_tokens_masks
+        ]
+        return min_tokens_masks_max
 
     @traced
     def sample_logits(
         self,
         logits: Tensor,
         prev_tokens: Tensor,
-        logit_offsets: Optional[Tensor],
-        bitmask: Optional[Tensor],
+        top_k: Tensor,
+        max_k: Tensor,
+        temperature: Tensor,
+        top_p: Tensor,
+        seed: Tensor,
         *,
-        token_frequency_data: Optional[Tensor] = None,
-        token_frequency_row_offsets: Optional[Tensor] = None,
+        logit_offsets: Optional[Tensor] = None,
+        bitmask: Optional[Tensor] = None,
+        frequency_data: Optional[Sequence[FrequencyData]] = None,
+        min_tokens_mask: Optional[Tensor] = None,
+        frequency_penalty: Optional[Tensor] = None,
+        presence_penalty: Optional[Tensor] = None,
+        repetition_penalty: Optional[Tensor] = None,
     ) -> tuple[Tensor, Tensor]:
-        graph_inputs = [logits, prev_tokens]
+        base_inputs = [logits, prev_tokens]
+        opt_inputs = [logit_offsets, bitmask]
 
-        if logit_offsets:
-            graph_inputs.append(logit_offsets)
+        base_inputs = [
+            logits,
+            prev_tokens,
+            top_k,
+            max_k,
+            temperature,
+            top_p,
+            seed,
+        ]
 
-        if bitmask:
-            graph_inputs.append(bitmask)
+        # Add frequency data if provided
+        if frequency_data:
+            for freq_data in frequency_data:
+                opt_inputs.extend([freq_data.data, freq_data.offsets])
+            assert frequency_penalty is not None
+            assert presence_penalty is not None
+            assert repetition_penalty is not None
+            opt_inputs.extend(
+                [frequency_penalty, presence_penalty, repetition_penalty]
+            )
 
-        if token_frequency_data:
-            graph_inputs.append(token_frequency_data)
+        if min_tokens_mask:
+            opt_inputs.append(min_tokens_mask)
 
-        if token_frequency_row_offsets:
-            graph_inputs.append(token_frequency_row_offsets)
+        graph_inputs = base_inputs + [
+            tensor for tensor in opt_inputs if tensor is not None
+        ]
 
         a, b = self._sampler(*graph_inputs)[:2]
         assert isinstance(a, Tensor)
@@ -801,13 +892,81 @@ class TextGenerationPipeline(TokenGenerator[T]):
             device=self._devices[0],
         )
 
-        if self._pipeline_config.sampling_config.do_penalties:
-            token_frequency_data, token_frequency_row_offsets = (
-                self._build_token_frequency_csr(context_batch, num_steps)
+        temperature = Tensor.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.temperature
+                    for context in context_batch
+                ],
+                dtype=np.float32,
             )
+        ).to(self._devices[0])
+        top_k_np = np.array(
+            [context.sampling_params.top_k for context in context_batch],
+            dtype=np.int64,
+        )
+        top_k = Tensor.from_numpy(top_k_np).to(self._devices[0])
+        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
+        max_k = Tensor.from_numpy(max_k_np)
+
+        top_p = Tensor.from_numpy(
+            np.array(
+                [context.sampling_params.top_p for context in context_batch],
+                dtype=np.float32,
+            )
+        ).to(self._devices[0])
+        seed = Tensor.from_numpy(
+            np.array(
+                [context.sampling_params.seed for context in context_batch],
+                dtype=np.uint64,
+            )
+        ).to(self._devices[0])
+
+        if self._pipeline_config.sampling_config.do_penalties:
+            frequency_data = [
+                self._build_token_frequency_csr(context_batch, num_steps),
+                self._build_token_frequency_csr(
+                    context_batch, num_steps, include_prompt=True
+                ),
+            ]
+
+            frequency_penalty = Tensor.from_numpy(
+                np.array(
+                    [
+                        context.sampling_params.frequency_penalty
+                        for context in context_batch
+                    ],
+                    dtype=np.float32,
+                )
+            ).to(self._devices[0])
+            presence_penalty = Tensor.from_numpy(
+                np.array(
+                    [
+                        context.sampling_params.presence_penalty
+                        for context in context_batch
+                    ],
+                    dtype=np.float32,
+                )
+            ).to(self._devices[0])
+            repetition_penalty = Tensor.from_numpy(
+                np.array(
+                    [
+                        context.sampling_params.repetition_penalty
+                        for context in context_batch
+                    ],
+                    dtype=np.float32,
+                )
+            ).to(self._devices[0])
+
         else:
-            token_frequency_data = None
-            token_frequency_row_offsets = None
+            frequency_data = None
+            frequency_penalty = None
+            presence_penalty = None
+            repetition_penalty = None
+
+        min_tokens_masks = self._build_min_tokens_masks(
+            context_batch, num_steps
+        )
 
         curr_step_inputs = model_inputs
         batch_log_probabilities = []
@@ -817,17 +976,14 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
             # Execute the model and get next tokens.
             model_outputs = self._pipeline_model.execute(
-                model_inputs=curr_step_inputs,
+                model_inputs=curr_step_inputs
             )
 
             if bitmask is not None:
                 assert self.vocab_size is not None
                 bits = 2 ** torch.arange(32, dtype=torch.int32)
                 bitmask = (bitmask.unsqueeze(-1) & bits) != 0
-                bitmask = bitmask.reshape(
-                    len(context_batch),
-                    -1,
-                ).to(torch.bool)
+                bitmask = bitmask.reshape(len(context_batch), -1).to(torch.bool)
                 bitmask = bitmask[:, 0 : self.vocab_size]
 
                 bitmask = Tensor.from_dlpack(bitmask).to(self._devices[0])
@@ -837,10 +993,20 @@ class TextGenerationPipeline(TokenGenerator[T]):
             new_tokens, new_generated_tokens = self.sample_logits(
                 model_outputs.logits,
                 generated_tokens,
-                model_outputs.logit_offsets,
-                bitmask,
-                token_frequency_data=token_frequency_data,
-                token_frequency_row_offsets=token_frequency_row_offsets,
+                top_k,
+                max_k,
+                temperature,
+                top_p,
+                seed,
+                logit_offsets=model_outputs.logit_offsets,
+                bitmask=bitmask,
+                frequency_data=frequency_data,
+                min_tokens_mask=min_tokens_masks[i]
+                if min_tokens_masks
+                else None,
+                frequency_penalty=frequency_penalty,
+                presence_penalty=presence_penalty,
+                repetition_penalty=repetition_penalty,
             )
 
             assert isinstance(new_tokens, Tensor)
@@ -916,35 +1082,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 ):
                     log_probs = log_probs_for_step[batch_index]
 
-                # Identify completion criteria.
-                if context.ignore_eos:
-                    is_eos = False
-                else:
-                    is_eos = next_token in self._eos_token_id
-
-                # Write this token into our pre-allocated tokens array.
                 context.update(
-                    new_token=next_token,
-                    log_probabilities=log_probs,
-                    is_eos=is_eos,
+                    new_token=next_token, log_probabilities=log_probs
                 )
-
-                max_length = upper_bounded_default(
-                    upper_bound=self._pipeline_model.calculate_max_seq_len(
-                        self._pipeline_config,
-                        huggingface_config=self._pipeline_config.model_config.huggingface_config,
-                    ),
-                    default=context.max_length,
-                )
-
-                if is_eos:
-                    status = TextGenerationStatus.END_OF_SEQUENCE
-                    res[request_id].update_status(status)
-                elif context.current_length == max_length:
-                    status = TextGenerationStatus.MAXIMUM_LENGTH
-                    res[request_id].update_status(status)
-
-                if status.is_done:
+                res[request_id].update_status(context.status)
+                if context.is_done:
                     break
 
             # Walk outstanding completion tokens, and return to user.

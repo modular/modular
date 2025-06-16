@@ -14,7 +14,7 @@
 /mojo/stdlib/test/asyncrt @modular/stdlib @ehein6 @iposva
 
 # Kernel Library
-/max/max/kernels    @modular/kernels @modular/stdlib
+/max/kernels    @modular/kernels
 
 # Tracing
 /mojo/stdlib/gpu/host/_tracing.mojo @modular/stdlib @modular/kernels @ehein6 @iposva @modular/mojo-tooling

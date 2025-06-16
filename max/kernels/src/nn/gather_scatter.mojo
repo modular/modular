@@ -25,6 +25,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
+from layout import Layout, LayoutTensor
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
@@ -84,9 +85,8 @@ fn normalize_neg_index[
     raise Error("indices must be in range [-dim_size, dim_size)")
 
 
-@value
 @register_passable("trivial")
-struct Axis(Intable, Indexer):
+struct Axis(Indexer, Intable):
     var axis: Int
 
     @always_inline
@@ -324,7 +324,7 @@ fn gather[
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
-            # assumes that indices are layed out in row major order
+            # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
@@ -423,7 +423,7 @@ fn gather[
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
-            # assumes that indices are layed out in row major order
+            # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
@@ -1160,11 +1160,11 @@ fn scatter_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: ManagedTensorSlice[type=input_type, rank=rank],
-    indices: ManagedTensorSlice[type=indices_type, rank=rank],
-    updates: ManagedTensorSlice[type=input_type, rank=rank],
+    input: ManagedTensorSlice[dtype=input_type, rank=rank],
+    indices: ManagedTensorSlice[dtype=indices_type, rank=rank],
+    updates: ManagedTensorSlice[dtype=input_type, rank=rank],
     _axis: Int,
-    output: ManagedTensorSlice[type=input_type, rank=rank],
+    output: ManagedTensorSlice[dtype=input_type, rank=rank],
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1181,7 +1181,7 @@ fn scatter_elements[
 
     if indices.shape() != updates.shape():
         raise Error(
-            "inidices and updates shape in scatter_elements must be the same"
+            "indices and updates shape in scatter_elements must be the same"
         )
 
     if not (-rank <= _axis < rank):
@@ -1552,9 +1552,10 @@ fn _gather_nd_impl[
     var slice_rank = data_rank - batch_dims - indices.dim[indices_rank - 1]()
     var slice_last_dim = output.dim[output_rank - 1]() if slice_rank > 0 else 1
 
-    var use_simd = data.stride[data_rank - 1]() == 1 and (
-        slice_last_dim % target_simd_width
-    ) == 0
+    var use_simd = (
+        data.stride[data_rank - 1]() == 1
+        and (slice_last_dim % target_simd_width) == 0
+    )
 
     @parameter
     if is_cpu[target]():
@@ -1591,3 +1592,80 @@ fn _gather_nd_impl[
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output.get_shape(), cuda_ctx)
+
+
+# ===-----------------------------------------------------------------------===#
+# ScatterSetConstant
+# ===-----------------------------------------------------------------------===#
+
+
+fn scatter_set_constant[
+    data_type: DType,
+    index_type: DType, //,
+    target: StaticString,
+    single_thread_blocking_override: Bool = False,
+](
+    data: LayoutTensor[mut=True, data_type, **_],
+    indices: LayoutTensor[index_type, **_],
+    fill_value: Scalar[data_type],
+    ctx: DeviceContextPtr,
+) raises:
+    """
+    Scatter the fill_value into the data at the specified indices.
+
+    Example:
+        Suppose we have a 3x3 matrix `data` initialized to zeros:
+
+        data = [[0, 0, 0],
+                [0, 0, 0],
+                [0, 0, 0]]
+
+        And `indices` is a 2D tensor with shape [2, 2]:
+
+        indices = [[0, 1],
+                   [2, 0]]
+
+        If `fill_value` is 5, after calling `scatter_set_constant`, `data` will be:
+
+        data = [[0, 5, 0],
+                [0, 0, 0],
+                [5, 0, 0]]
+
+    Arguments:
+        data: The data to scatter the updates into.
+        indices: The indices to scatter the updates into.
+        fill_value: The value to fill the data with.
+        ctx: The device context.
+    """
+    constrained[
+        index_type.is_integral(),
+        "index_type must be an integer type",
+    ]()
+    constrained[
+        data.layout.rank() == 2,
+        "scatter_set: data must have rank 2",
+    ]()
+    constrained[
+        indices.layout.rank() == 2,
+        "scatter_set: indices must have rank 2",
+    ]()
+    debug_assert(
+        indices.dim[1]() == 2,
+        "scatter_set: indices must have shape [total_seq_len, 2]",
+    )
+
+    @always_inline
+    @parameter
+    fn scatter_set_constant_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+        constrained[rank_ == 1, "scatter_set_constant_fn: rank must be 1"]()
+
+        data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
+
+    var dispatch_shape = IndexList[1](indices.dim[0]())
+    elementwise[
+        func=scatter_set_constant_fn,
+        simd_width=1,
+        target=target,
+        use_blocking_impl=single_thread_blocking_override,
+        _trace_description="scatter_set_constant",
+    ](dispatch_shape, ctx)

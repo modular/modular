@@ -54,6 +54,6 @@ def main():
     if len(files_without_license) > 0:
         print("The following files have missing licences 💥 💔 💥")
         for file in files_without_license:
-            print(file[])
+            print(file)
         print("Please add the license to each file before committing.")
         sys.exit(1)

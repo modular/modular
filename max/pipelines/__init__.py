@@ -15,12 +15,14 @@
 
 from .architectures import register_all_models
 from .core import (
+    AudioGenerationResponse,
     EmbeddingsGenerator,
     EmbeddingsResponse,
     InputContext,
     LogProbabilities,
     PipelinesFactory,
     PipelineTask,
+    SamplingParams,
     TextAndVisionContext,
     TextContext,
     TextGenerationResponse,
@@ -34,7 +36,11 @@ from .core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
-from .lib.config import PipelineConfig
+from .lib.config import (
+    AudioGenerationConfig,
+    PipelineConfig,
+    PrependPromptSpeechTokens,
+)
 from .lib.config_enums import (
     PipelineEngine,
     PipelineRole,
@@ -64,6 +70,7 @@ from .lib.pipeline import (
 )
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
     PipelineTokenizer,
@@ -76,7 +83,9 @@ from .lib.tokenizer import (
 register_all_models()
 
 __all__ = [
+    "AudioGenerationConfig",
     "download_weight_files",
+    "AudioGenerationResponse",
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
     "EmbeddingsResponse",
@@ -98,12 +107,15 @@ __all__ = [
     "PipelineTask",
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
+    "PrependPromptSpeechTokens",
     "ProfilingConfig",
     "repo_exists_with_retry",
     "RepoType",
     "RopeType",
     "SamplingConfig",
+    "SamplingParams",
     "SpeculativeDecodingTextGenerationPipeline",
+    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionContext",

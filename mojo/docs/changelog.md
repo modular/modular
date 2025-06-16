@@ -8,6 +8,7 @@ what we publish.
 [//]: # Here's the template to use when starting a new batch of notes:
 [//]: ## UNRELEASED
 [//]: ### ✨ Highlights
+[//]: ### Language enhancements
 [//]: ### Language changes
 [//]: ### Standard library changes
 [//]: ### Tooling changes
@@ -18,148 +19,22 @@ what we publish.
 
 ### ✨ Highlights
 
-- Parts of the Kernel library continue to be progressively open sourced!
-  Packages that are open sourced now include:
-  - `kv_cache`
-  - `quantization`
-  - `nvml`
-  - Benchmarks
-  - `Mogg` directory which contains registration of kernels with the Graph
-    Compiler
-
-- Implicit trait conformance is deprecated. Each instance of implicit
-  conformance results in a warning, but compilation still goes through. Soon it
-  will be upgraded into an error. Any code currently relying on implicit
-  conformance should either declare conformances explicitly or, if appropriate,
-  replace empty, non-load-bearing traits with trait compositions.
+### Language enhancements
 
 ### Language changes
 
-- The type [`Dict`](/mojo/stdlib/collections/dict/Dict/) is now part of the
-  prelude, so there is no need to import them anymore.
-
-- The Mojo compiler will now synthesize `__moveinit__` and `__copyinit__` and
-  `copy()` methods for structs that conform to `Movable`, `Copyable`, and
-  `ExplicitlyCopyable` (respectively) but that do not implement the methods
-  explicitly.
-
-- A new `@fieldwise_init` decorator can be attached to structs to synthesize a
-  fieldwise initializer - an `__init__` method that takes the same arguments as
-  the fields in the struct.  This gives access to this helpful capability
-  without having to opt into the rest of the methods that `@value` synthesizes.
-  This decorator allows an optional `@fieldwise_init("implicit")` form for
-  single-element structs, which marks the initializer as `@implicit`.
-
-- `try` and `raise` now work at comptime.
-
-- "Initializer lists" are now supported for creating struct instances with an
-  inferred type based on context, for example:
-
-  ```mojo
-  fn foo(x: SomeComplicatedType): ...
-
-  # Example with normal initializer.
-  foo(SomeComplicatedType(1, kwarg=42))
-  # Example with initializer list.
-  foo({1, kwarg=42})
-  ```
-
-- List literals have been redesigned to work better.  They produce homogenous
-  sequences by invoking the `T(<elements>, __list_literal__: ())` constructor
-  of a type `T` that is inferred by context, or otherwise defaulting to the
-  standard library `List[Elt]` type.  The `ListLiteral` type has been removed
-  from the standard library.
-
-- Dictionary and set literals now work and default to creating instances of the
-  `Dict` and `Set` types in the collections library.
+- The `@value` decorator has been formally deprecated with a warning, it will
+  be removed in the next release of Mojo.  Please move to the `@fieldwise_init`
+  and synthesized `Copyable` and `Movable` trait conformance.
 
 ### Standard library changes
 
-- The `CollectionElement` trait has been removed.
-
-- Added support for a wider range of consumer-grade hardware, including:
-  - NVIDIA RTX 2060 GPUs
-  - NVIDIA RTX 4090 GPUs
-
-- The `bitset` datastructure was added to the `collections` package. This is a
-  fixed `bitset` that simplifies working with a set of bits and perform bit
-  operations.
-
-- Fixed GPU `sum` and `prefix_sum` implementations in `gpu.warp` and `gpu.block`
-  modules. Previously, the implementations have been incorrect and would either
-  return wrong results or hang the kernel (due to the deadlock). [PR
-  4508](https://github.com/modular/modular/pull/4508) and [PR
-  4553](https://github.com/modular/modular/pull/4553) by [Kirill
-  Bobyrev](https://github.com/kirillbobyrev) mitigate the found issues and add
-  tests to ensure correctness going forward.
-
-Changes to Python-Mojo interoperability:
-
-- Python objects are now constructible with list/set/dict literal syntax, e.g.:
-  `var list: PythonObject = [1, "foo", 2.0]` will produce a Python list
-  containing other Python objects and `var d: PythonObject = {}` will construct
-  an empty dictionary.
-
-- `Python.{unsafe_get_python_exception, throw_python_exception_if_error_state}`
-  have been removed in favor of `CPython.{unsafe_get_error, get_error}`.
-
-- Since virtually any operation on a `PythonObject` can raise, the
-  `PythonObject` struct no longer implements the `Indexer` and `Intable` traits.
-  Instead, it now conforms to `IntableRaising`, and users should convert
-  explictly to builtin types and handle exceptions as needed. In particular, the
-  `PythonObject.__int__` method now returns a Python `int` instead of a mojo
-  `Int`, so users must explicitly convert to a mojo `Int` if they need one (and
-  must handle the exception if the conversion fails, e.g. due to overflow).
-
-- `PythonObject` no longer implements `Stringable`. Instead, the
-  `PythonObject.__str__` method now returns a Python `str` object and can raise.
-  The new `Python.str` function can also be used to convert an arbitrary
-  `PythonObject` to a Python `str` object.
-
-- `PythonObject` no longer implements the `KeyElement` trait. Since Python
-  objects may not be hashable, and even if they are, could theoretically raise
-  in the `__hash__` method, `PythonObject` cannot conform to `Hashable`.
-  This has no effect on accessing Python `dict` objects with `PythonObject`
-  keys, since `__getitem__` and `__setitem__` should behave correctly and raise
-  as needed. Two overloads of the `Python.dict` factory function have been added
-  to allow constructing dictionaries from a list of key-value tuples and from
-  keyword arguments.
-
-- `String` and `Bool` now implement `ConvertibleFromPython`.
-
-- A new `def_function` API is added to `PythonModuleBuilder` to allow declaring
-  Python bindings for arbitrary functions that take and return `PythonObject`s.
-  Similarly, a new `def_method` API is added to `PythonTypeBuilder` to allow
-  declaring Python bindings for methods that take and return `PythonObject`s.
-
-- The `ConvertibleFromPython` trait is now public. This trait is implemented
-  by Mojo types that can be constructed by converting from a `PythonObject`.
-  This is the reverse operation of the `PythonConvertible` trait.
-
-- `os.abort(messages)` no longer supports generic variadic number of `Writable`
-  messages.  While this API was high-level and convenient, it generates a lot of
-  IR for simple and common cases, such as when we have a single `StringLiteral`
-  message.  We now no longer need to generate a bunch of bloated IR, and
-  instead, callers must create the `String` on their side before calling
-  `os.abort(message)`.
+- Added support for a wider range of consumer-grade AMD hardware, including:
+  - AMD Radeon RX 7xxx GPUs
+  - AMD Radeon RX 9xxx GPUs
 
 ### Tooling changes
-
-- Added support for emitting LLVM Intermediate Representation (.ll) using `--emit=llvm`.
-  - Example usage: `mojo build --emit=llvm YourModule.mojo`
-
-- Removing support for command line option `--emit-llvm` infavor of `--emit=llvm`.
-
-- Added support for emitting assembly code (.s) using `--emit-asm`.
-  - Example usage: `mojo build --emit=asm YourModule.mojo`
-
-- Added `associated alias` support for documentation generated via `mojo doc`.
 
 ### ❌ Removed
 
 ### 🛠️ Fixed
-
-- [#4352](https://github.com/modular/modular/issues/4352) - `math.sqrt`
-  products incorrect results for large inputs.
-- [#4518](https://github.com/modular/modular/issues/4518) - Try Except Causes
-  False Positive "Uninitialized Value".

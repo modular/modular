@@ -47,10 +47,7 @@ async def _run_pipeline_encode(
     req_id = str(uuid.uuid4())
     context = await tokenizer.new_context(
         TokenGeneratorRequest(
-            id=req_id,
-            index=0,
-            prompt=prompt,
-            model_name=MODEL_NAME,
+            id=req_id, index=0, prompt=prompt, model_name=MODEL_NAME
         )
     )
     pipeline_request = {req_id: context}

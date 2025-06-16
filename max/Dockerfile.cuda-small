@@ -18,7 +18,7 @@
 ARG CUDA_VERSION=12.6.0
 ARG BASE_IMAGE=nvidia/cuda:{CUDA_VERSION}-base-ubuntu24.04
 
-# Create a build image to download depedencies
+# Create a build image to download dependencies
 FROM ghcr.io/modular/magic:noble AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential git

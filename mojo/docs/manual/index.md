@@ -64,7 +64,9 @@ feedback](https://www.modular.com/community).
 
 - **GPU programming**
 
+  - [Intro to GPUs](/mojo/manual/gpu/architecture)
   - [Get started with GPU programming](/mojo/manual/gpu/intro-tutorial)
+  - [GPU programming fundamentals](/mojo/manual/gpu/fundamentals)
   - [GPU basics](/mojo/manual/gpu/basics)
 
 - **Layouts and LayoutTensor**
@@ -74,6 +76,8 @@ feedback](https://www.modular.com/community).
 - **Python**
 
   - [Python integration](/mojo/manual/python/)
+  - [Calling Python from Mojo](/mojo/manual/python/python-from-mojo)
+  - [Calling Mojo from Python](/mojo/manual/python/mojo-from-python)
   - [Python types](/mojo/manual/python/types)
 
 - **Tools**

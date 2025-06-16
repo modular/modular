@@ -1,31 +1,28 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "mojo_test")
 
-lit_tests(
-    name = "benchmarks",
-    size = "large",
-    srcs = glob(["**/*.mojo"]),
-    data = [
-        "collections/data/UN_charter_AR.html",
-        "collections/data/UN_charter_AR.txt",
-        "collections/data/UN_charter_EN.html",
-        "collections/data/UN_charter_EN.txt",
-        "collections/data/UN_charter_ES.html",
-        "collections/data/UN_charter_ES.txt",
-        "collections/data/UN_charter_RU.html",
-        "collections/data/UN_charter_RU.txt",
-        "collections/data/UN_charter_zh-CN.html",
-        "collections/data/UN_charter_zh-CN.txt",
-        "collections/string/data/canada.txt",
-        "collections/string/data/mesh.txt",
-    ],
-    env = {
-        "_START_MODULAR_INCLUDED": "bazel",  # lit config reads this and otherwise overwrites import paths
-    },
-    generate_litcfg = False,
-    mojo_deps = [
-        "@mojo//:stdlib",
-    ],
-    tools = [
-        "//KGEN/tools/mojo",
-    ],
-)
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        args = ["-t"],  # NOTE: to test changes on the current branch using run-benchmarks.sh, remove the -t flag. Remember to replace it again before pushing any code.
+        data = [
+            "collections/data/UN_charter_AR.html",
+            "collections/data/UN_charter_AR.txt",
+            "collections/data/UN_charter_EN.html",
+            "collections/data/UN_charter_EN.txt",
+            "collections/data/UN_charter_ES.html",
+            "collections/data/UN_charter_ES.txt",
+            "collections/data/UN_charter_RU.html",
+            "collections/data/UN_charter_RU.txt",
+            "collections/data/UN_charter_zh-CN.html",
+            "collections/data/UN_charter_zh-CN.txt",
+            "collections/string/data/canada.txt",
+            "collections/string/data/mesh.txt",
+        ],
+        enable_assertions = False,
+        deps = [
+            "@mojo//:stdlib",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]

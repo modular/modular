@@ -48,7 +48,6 @@ In essence, this data structure provides a fast and efficient way to manage and
 query interval data, particularly for finding overlaps.
 """
 
-from collections import Optional
 
 from builtin.string_literal import StaticString
 from memory import UnsafePointer
@@ -56,13 +55,7 @@ from memory import UnsafePointer
 from .deque import Deque
 
 
-trait IntervalElement(
-    Copyable,
-    Movable,
-    Writable,
-    Intable,
-    Comparable,
-):
+trait IntervalElement(Comparable, Copyable, Intable, Movable, Writable):
     """The trait denotes a trait composition of the `Copyable`, `Movable`,
     `Writable`, `Intable`, and `Comparable` traits. Which is also subtractable.
     """
@@ -79,7 +72,16 @@ trait IntervalElement(
         ...
 
 
-struct Interval[T: IntervalElement](Copyable, Movable, Boolable, Writable):
+struct Interval[T: IntervalElement](
+    Boolable,
+    Copyable,
+    EqualityComparable,
+    Movable,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+):
     """A half-open interval [start, end) that represents a range of values.
 
     The interval includes the start value but excludes the end value.
@@ -416,9 +418,9 @@ struct _IntervalNode[
         self.interval = interval
         self.max_end = interval.end
         self.data = data
-        self.left = left.value() if left else __type_of(self.left)()
-        self.right = right.value() if right else __type_of(self.right)()
-        self.parent = parent.value() if parent else __type_of(self.parent)()
+        self.left = left.or_else({})
+        self.right = right.or_else({})
+        self.parent = parent.or_else({})
         self._is_red = is_red
 
     fn __copyinit__(out self, existing: Self, /):
@@ -522,7 +524,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement, U: Copyable & Movable & Stringable & Comparable
-](Writable):
+](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
     Parameters:
@@ -540,7 +542,7 @@ struct IntervalTree[
 
     fn __init__(out self):
         """Initializes an empty IntervalTree."""
-        self._root = __type_of(self._root)()
+        self._root = {}
         self._len = 0
 
     fn _left_rotate(
@@ -889,7 +891,7 @@ struct IntervalTree[
         work_list.append((self._root, String(), True))
 
         while work_list:
-            node, indent, is_last = work_list.pop()
+            var node, indent, is_last = work_list.pop()
             if not node:
                 continue
             writer.write(indent)
@@ -941,7 +943,7 @@ struct IntervalTree[
 
         while work_list:
             # Recursively fills the grid with node values and connecting branches.
-            node, level, left, right = work_list.pop()
+            var node, level, left, right = work_list.pop()
             if not node:
                 continue
 
@@ -974,7 +976,7 @@ struct IntervalTree[
 
         # Output the completed grid row by row
         for row in grid:
-            var row_str = String(StaticString("").join(row[]).rstrip())
+            var row_str = String(StaticString("").join(row).rstrip())
             if row_str:
                 writer.write(row_str, "\n")
 

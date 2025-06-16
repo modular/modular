@@ -24,7 +24,7 @@ from testing import assert_true
 from utils.write import _WriteBufferStack
 
 
-struct Buffer[capacity: Int](Writer):
+struct Buffer[capacity: Int](Defaultable, Writer):
     var data: InlineArray[UInt8, capacity]
     var pos: Int
 
@@ -42,11 +42,18 @@ struct Buffer[capacity: Int](Writer):
         self.pos += len_bytes
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
-        @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
+        """Write a sequence of Writable arguments to the provided Writer.
 
-        args.each[write_arg]()
+        Parameters:
+            Ts: Types of the provided argument sequence.
+
+        Args:
+            args: Sequence of arguments to write to this Writer.
+        """
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 fn check_float[type: DType, //, expected: StaticString](f8: Scalar[type]):

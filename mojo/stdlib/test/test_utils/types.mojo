@@ -132,7 +132,7 @@ struct ImplicitCopyOnly(Copyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
+struct CopyCounter(Copyable, ExplicitlyCopyable, Movable, Writable):
     """Counts the number of copies performed on a value."""
 
     var copy_count: Int
@@ -164,9 +164,7 @@ struct CopyCounter(Copyable, Movable, ExplicitlyCopyable, Writable):
 
 
 struct MoveCounter[T: ExplicitlyCopyable & Movable](
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
+    Copyable, ExplicitlyCopyable, Movable
 ):
     """Counts the number of moves performed on a value."""
 
@@ -237,7 +235,7 @@ struct MoveCopyCounter(Copyable, Movable):
 
 
 @fieldwise_init
-struct DelRecorder(ExplicitlyCopyable, Copyable, Movable):
+struct DelRecorder(Copyable, ExplicitlyCopyable, Movable):
     var value: Int
     var destructor_counter: UnsafePointer[List[Int]]
 
@@ -274,32 +272,17 @@ struct ObservableDel[origin: MutableOrigin = MutableAnyOrigin](
 # DelCounter
 # ===----------------------------------------------------------------------=== #
 
-var g_dtor_count: Int = 0
 
-
+@fieldwise_init
 struct DelCounter(Copyable, Movable, Writable):
-    # NOTE: payload is required because LinkedList does not support zero sized structs.
-    var payload: Int
-
-    fn __init__(out self):
-        self.payload = 0
-
-    fn __init__(out self, *, other: Self):
-        self.payload = other.payload
-
-    fn __copyinit__(out self, existing: Self, /):
-        self.payload = existing.payload
-
-    fn __moveinit__(out self, owned existing: Self, /):
-        self.payload = existing.payload
-        existing.payload = 0
+    var counter: UnsafePointer[Int]
 
     fn __del__(owned self):
-        g_dtor_count += 1
+        self.counter[] += 1
 
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("DelCounter(")
-        writer.write(String(g_dtor_count))
+        writer.write(String(self.counter[]))
         writer.write(")")
 
 

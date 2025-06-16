@@ -15,10 +15,8 @@
 from sys import external_call
 from sys.ffi import OpaquePointer, _get_global
 
-from memory import UnsafePointer
 
-
-fn _init_global_runtime(ignored: OpaquePointer) -> OpaquePointer:
+fn _init_global_runtime() -> OpaquePointer:
     return external_call[
         "KGEN_CompilerRT_AsyncRT_CreateRuntime",
         OpaquePointer,
@@ -31,15 +29,13 @@ fn _destroy_global_runtime(ptr: OpaquePointer):
 
 
 @always_inline
-fn _get_current_or_global_runtime() -> OpaquePointer:
+fn _ensure_current_or_global_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", OpaquePointer
     ]()
     if current_runtime:
-        return current_runtime
-    return _get_global[
-        "Runtime", _init_global_runtime, _destroy_global_runtime
-    ]()
+        return
+    _ = _get_global["Runtime", _init_global_runtime, _destroy_global_runtime]()
 
 
 fn __wrap_and_execute_main[
@@ -51,7 +47,7 @@ fn __wrap_and_execute_main[
     """Define a C-ABI compatible entry point for non-raising main function."""
 
     # Initialize the global runtime.
-    _ = _get_current_or_global_runtime()
+    _ensure_current_or_global_runtime_init()
 
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
@@ -75,7 +71,7 @@ fn __wrap_and_execute_raising_main[
     """Define a C-ABI compatible entry point for a raising main function."""
 
     # Initialize the global runtime.
-    _ = _get_current_or_global_runtime()
+    _ensure_current_or_global_runtime_init()
 
     # Initialize the mojo argv with those provided.
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)

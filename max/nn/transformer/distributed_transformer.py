@@ -13,17 +13,17 @@
 
 from __future__ import annotations
 
-from hashlib import md5
-from typing import cast
+from collections.abc import Iterable
+from itertools import islice
 
 from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
-    Graph,
+    TensorType,
     TensorValue,
     TensorValueLike,
-    _ChainType,
+    Value,
     ops,
 )
 
@@ -39,6 +39,11 @@ from ..layer import LayerList, Module
 from ..linear import ColumnParallelLinear
 from ..norm import DistributedRMSNorm
 from .transformer import ReturnLogits
+
+
+def take(it: Iterable[Value], n: int) -> list[Value]:
+    """Return the next *n* items from *it* as a list."""
+    return list(islice(it, n))
 
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
@@ -57,7 +62,6 @@ class DistributedTransformerBlock(Module):
         attention_norm: DistributedRMSNorm,
         mlp_norm: DistributedRMSNorm,
         devices: list[DeviceRef],
-        use_subgraph: bool = False,
     ):
         super().__init__()
         self.self_attn = attention
@@ -65,115 +69,6 @@ class DistributedTransformerBlock(Module):
         self.input_layernorm = attention_norm
         self.post_attention_layernorm = mlp_norm
         self.devices = devices
-        self.use_subgraph = use_subgraph
-
-    def build_subgraph(
-        self,
-        name: str,
-    ) -> Module:
-        num_devices = len(self.devices)
-
-        raw_state_dict = self.raw_state_dict()
-        weights = [
-            value
-            for _, value in sorted(raw_state_dict.items(), key=lambda x: x[0])
-        ]
-        weight_mlir_values = [w._mlir_value for w in weights]
-
-        outer_self = self
-
-        class DistributedTransformerBlockSubgraph(Module):
-            def __call__(
-                self,
-                layer_idx: TensorValue,
-                xs: list[TensorValue],
-                signal_buffers: list[BufferValue],
-                kv_collections: list[
-                    ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-                ],
-                input_row_offsets: TensorValue,
-            ) -> list[TensorValue]:
-                input_row_offsets_type = input_row_offsets.type
-                misc_input_types = [input_row_offsets_type]
-
-                name_suffix = md5(
-                    str(tuple(t.to_mlir() for t in misc_input_types)).encode()
-                ).hexdigest()
-                subgraph = Graph.current._subgraphs.get(f"{name}_{name_suffix}")
-
-                if subgraph is None:
-                    layer_idx_type = layer_idx.type
-                    x_types = [x.type for x in xs]
-                    signal_buffers_types = [
-                        signal_buffer.type for signal_buffer in signal_buffers
-                    ]
-                    kv_collection_types = [
-                        kv_collection.type for kv_collection in kv_collections
-                    ]
-                    graph_inputs = [
-                        _ChainType(),
-                        layer_idx_type,
-                        *x_types,
-                        *signal_buffers_types,
-                        *kv_collection_types,
-                        *misc_input_types,
-                    ] + [w.type for w in weights]
-
-                    with Graph.current.add_subgraph(
-                        f"{name}_{name_suffix}", input_types=graph_inputs
-                    ) as subgraph:
-                        subgraph._current_chain._mlir_value = subgraph.inputs[
-                            0
-                        ]._mlir_value
-                        arg_layer_idx = subgraph.inputs[1]
-                        arg_xs = subgraph.inputs[2 : 2 + num_devices]
-                        arg_signal_buffers = subgraph.inputs[
-                            2 + num_devices : 2 + 2 * num_devices
-                        ]
-                        arg_kv_collections = subgraph.inputs[
-                            2 + 2 * num_devices : 2 + 3 * num_devices
-                        ]
-                        arg_input_row_offsets = subgraph.inputs[
-                            2 + 3 * num_devices
-                        ]
-                        subgraph._mlir_value_map.update(
-                            {
-                                w: subgraph_input._mlir_value
-                                for w, subgraph_input in zip(
-                                    weight_mlir_values,
-                                    subgraph.inputs[2 + 3 * num_devices + 1 :],
-                                )
-                            }
-                        )
-
-                        # prevent re-entry
-                        try:
-                            outer_self.use_subgraph = False
-                            results = outer_self(
-                                arg_layer_idx,
-                                arg_xs,
-                                arg_signal_buffers,
-                                arg_kv_collections,
-                                input_row_offsets=arg_input_row_offsets,
-                            )
-                        finally:
-                            outer_self.use_subgraph = True
-                        subgraph.output(
-                            subgraph._current_chain,
-                            *results,
-                        )
-
-                call_args = [
-                    layer_idx,
-                    *xs,
-                    *signal_buffers,
-                    *kv_collections,
-                    input_row_offsets,
-                ]
-                call_args.extend([w.tensor for w in weights])
-                return [res.tensor for res in ops.call(subgraph, *call_args)]
-
-        return DistributedTransformerBlockSubgraph()
 
     def __call__(
         self,
@@ -183,19 +78,14 @@ class DistributedTransformerBlock(Module):
         kv_collections: list[
             ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
         ],
-        **kwargs,
+        input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
-        if self.use_subgraph:
-            return self.build_subgraph(
-                "dist_transformer_block",
-            )(layer_idx, xs, signal_buffers, kv_collections, **kwargs)
-
         attn_outs = self.self_attn(
             layer_idx,
             self.input_layernorm(xs),
             signal_buffers,
             kv_collections,
-            **kwargs,
+            input_row_offsets,
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
@@ -223,6 +113,7 @@ class DistributedTransformer(Module):
         ),
         devices: list[DeviceRef],
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        use_subgraphs: bool = False,
     ):
         super().__init__()
         self.dim = dim
@@ -235,7 +126,7 @@ class DistributedTransformer(Module):
         self.kv_collection_constructor = kv_collection_constructor
         self.return_logits = return_logits
         self.devices = devices
-
+        self.use_subgraphs = use_subgraphs
         if self.return_logits == ReturnLogits.VARIABLE:
             raise ValueError(
                 "DistributedTransformer does not support variable logits."
@@ -247,7 +138,7 @@ class DistributedTransformer(Module):
         signal_buffers: list[BufferValue],
         kv_cache_inputs_per_dev: list[tuple[TensorValue, ...]],
         return_n_logits: TensorValue,
-        **kwargs,
+        input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
@@ -256,17 +147,48 @@ class DistributedTransformer(Module):
             for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
-        input_row_offsets = kwargs["input_row_offsets"]
-        root_cache_lengths = kv_cache_inputs_per_dev[0][1]
-        for idx, layer in enumerate(self.layers):
-            h = layer(
-                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                h,
-                signal_buffers,
-                kv_collections,
-                **kwargs,
+        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+
+        if self.use_subgraphs:
+            subgraph_input_types = [
+                TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
+                [hidden.type for hidden in h],
+                [signal_buffer.type for signal_buffer in signal_buffers],
+                [kv_collection.type for kv_collection in kv_collections],
+                [offset.type for offset in input_row_offsets_],
+            ]
+            subgraph_layer = self.layers[0]
+            subgraph_weight_prefix = "layers.0."
+
+            assert isinstance(subgraph_layer, DistributedTransformerBlock)
+            subgraph = subgraph_layer.build_subgraph(
+                "dist_transformer_block",
+                subgraph_input_types,
+                subgraph_weight_prefix,
             )
 
+            for idx in range(len(self.layers)):
+                h = [
+                    x.tensor
+                    for x in ops.call(
+                        subgraph,
+                        ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                        *h,
+                        *signal_buffers,
+                        *kv_collections,
+                        *input_row_offsets_,
+                        prefix=f"layers.{idx}.",
+                    )
+                ]
+        else:
+            for idx, layer in enumerate(self.layers):
+                h = layer(
+                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                    h,
+                    signal_buffers,
+                    kv_collections,
+                    input_row_offsets_,
+                )
         h0 = h[0]
         last_token_indices = input_row_offsets[1:] - 1
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
@@ -304,7 +226,7 @@ class DistributedTransformer(Module):
             )
         elif self.return_logits == ReturnLogits.ALL:
             logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
-            offsets = cast(TensorValue, kwargs["input_row_offsets"])
+            offsets = input_row_offsets
 
         if logits is not None and offsets is not None:
             return (last_logits, logits, offsets)

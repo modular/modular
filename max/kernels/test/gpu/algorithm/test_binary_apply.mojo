@@ -26,13 +26,13 @@ fn vec_func[
 ](
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],
-    out: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = op(in0[tid], in1[tid])
+    output[tid] = op(in0[tid], in1[tid])
 
 
 # Force the capture to be captured instead of inlined away.

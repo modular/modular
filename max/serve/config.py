@@ -16,12 +16,12 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 """
 
 import socket
-import tempfile
-import uuid
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Optional, Union
 
+from max.serve.kvcache_agent.dispatcher_factory import DispatcherConfig
+from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -61,10 +61,6 @@ class MetricRecordingMethod(Enum):
     PROCESS = "PROCESS"
 
 
-def generate_zmq_ipc_endpoint() -> str:
-    return f"ipc://{tempfile.gettempdir()}/{uuid.uuid4()}"
-
-
 class Settings(BaseSettings):
     # env files, direct initialization, and aliases interact in some confusing
     # ways.  this is the way:
@@ -81,10 +77,7 @@ class Settings(BaseSettings):
     #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="",
-        extra="allow",
-        populate_by_name=False,
+        env_file=".env", env_prefix="", extra="allow", populate_by_name=False
     )
 
     # Server configuration
@@ -126,7 +119,7 @@ class Settings(BaseSettings):
     )
 
     # Telemetry and logging configuration
-    logs_console_level: str = Field(
+    logs_console_level: Union[str, None] = Field(
         default="INFO",
         description="Logging level",
         alias="MAX_SERVE_LOGS_CONSOLE_LEVEL",
@@ -165,9 +158,7 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_USE_HEARTBEAT",
     )
     mw_timeout_s: float = Field(
-        default=20 * 60.0,
-        description="",
-        alias="MAX_SERVE_MW_TIMEOUT",
+        default=20 * 60.0, description="", alias="MAX_SERVE_MW_TIMEOUT"
     )
     mw_health_fail_s: float = Field(
         # TODO: we temporarily set it to 1 minute to handle long context input
@@ -234,33 +225,33 @@ class Settings(BaseSettings):
     )
 
     request_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
+        default_factory=generate_zmq_ipc_path,
         description="Expose Request ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_REQUEST_ZMQ_ENDPOINT",
     )
 
     response_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
+        default_factory=generate_zmq_ipc_path,
         description="Expose Response ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_RESPONSE_ZMQ_ENDPOINT",
     )
 
     cancel_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_endpoint,
-        description="Expose Cancel ZMQ Socket for communication betwee the API and Model Worker(s)",
+        default_factory=generate_zmq_ipc_path,
+        description="Expose Cancel ZMQ Socket for communication between the API and Model Worker(s)",
         alias="MAX_SERVE_CANCEL_ZMQ_ENDPOINT",
     )
 
-    prefill_zmq_endpoint: Optional[str] = Field(
-        default=None,
-        description="Experimental: Expose Prefill Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
-        alias="MAX_SERVE_PREFILL_ZMQ_ENDPOINT",
+    kv_cache_events_zmq_endpoint: str = Field(
+        default_factory=generate_zmq_ipc_path,
+        description="Expose KV Cache Events ZMQ Socket for communication between the KV Cache Agent and MAX Serve",
+        alias="MAX_SERVE_KV_CACHE_EVENTS_ZMQ_ENDPOINT",
     )
 
-    decode_zmq_endpoint: Optional[str] = Field(
-        default=None,
-        description="Experimental: Expose Decode Queue ZMQ Endpoint for use in Intra-Node Disaggregated Inference.",
-        alias="MAX_SERVE_DECODE_ZMQ_ENDPOINT",
+    dispatcher_config: DispatcherConfig = Field(
+        default_factory=DispatcherConfig,
+        description="Expose Dispatcher Config for use in inter-node communication.",
+        alias="MAX_SERVE_DISPATCHER_CONFIG",
     )
 
 

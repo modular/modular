@@ -28,7 +28,6 @@ There are a few main tools in this module:
 import random
 from collections import InlineArray
 from sys import bitwidthof, simdwidthof, sizeof
-from sys.ffi import _Global
 
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer, bitcast, memcpy, memset_zero
@@ -37,22 +36,9 @@ from memory import UnsafePointer, bitcast, memcpy, memset_zero
 # Implementation
 # ===----------------------------------------------------------------------=== #
 
-# This hash secret is XOR-ed with the final hash value for common hash functions.
-# Doing so can help prevent DDOS attacks on data structures relying on these
-# hash functions. See `hash(bytes, n)` documentation for more details.
-# TODO(27659): This is always 0 right now
-# var HASH_SECRET = Int(random.random_ui64(0, UInt64.MAX)
-
 
 fn _init_hash_secret() -> Int:
     return Int(random.random_ui64(0, UInt64.MAX))
-
-
-alias _HASH_SECRET_VALUE = _Global["HASH_SECRET", Int, _init_hash_secret]
-
-
-fn _HASH_SECRET() -> UInt:
-    return UInt(_HASH_SECRET_VALUE.get_or_create_ptr()[])
 
 
 trait Hashable:
@@ -67,7 +53,7 @@ trait Hashable:
     common hash map implementations.
 
     ```mojo
-    @value
+    @fieldwise_init
     struct Foo(Hashable):
         fn __hash__(self) -> UInt:
             return 4  # chosen by fair random dice roll

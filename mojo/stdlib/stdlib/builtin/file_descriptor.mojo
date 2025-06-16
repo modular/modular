@@ -77,10 +77,7 @@ struct FileDescriptor(Writer):
         )
         debug_assert(
             written == len(bytes),
-            "expected amount of bytes not written. expected: ",
-            len(bytes),
-            "but got: ",
-            written,
+            "expected amount of bytes not written",
         )
 
     @always_inline
@@ -138,6 +135,7 @@ struct FileDescriptor(Writer):
             ]()
             return abort[UInt]()
 
+    @always_inline
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
@@ -149,7 +147,5 @@ struct FileDescriptor(Writer):
         """
 
         @parameter
-        fn write_arg[T: Writable](arg: T):
-            arg.write_to(self)
-
-        args.each[write_arg]()
+        for i in range(args.__len__()):
+            args[i].write_to(self)

@@ -31,7 +31,6 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-from collections.string import StringSlice
 from sys import bitwidthof, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
@@ -83,10 +82,8 @@ fn _shuffle[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
         ](Int32(mask), val, offset, WIDTH_MASK)
     elif type in (DType.int64, DType.uint64):
-        var val_bitcast = bitcast[
-            new_type = DType.uint32, new_width = simd_width * 2
-        ](val)
-        val_half1, val_half2 = val_bitcast.deinterleave()
+        var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+        var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
             mask, val_half1, offset
         )
@@ -146,10 +143,8 @@ fn _shuffle_amd_helper[
         var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
         return _shuffle_amd_helper(dst_lane, val_splatted)[0]
     elif bitwidthof[type]() == 64:
-        var val_bitcast = bitcast[
-            new_type = DType.uint32, new_width = simd_width * 2
-        ](val)
-        val_half1, val_half2 = val_bitcast.deinterleave()
+        var val_bitcast = bitcast[DType.uint32, simd_width * 2](val)
+        var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle_amd_helper(dst_lane, val_half1)
         var shuffle2 = _shuffle_amd_helper(dst_lane, val_half2)
         var result = shuffle1.interleave(shuffle2)

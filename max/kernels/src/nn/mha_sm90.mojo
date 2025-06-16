@@ -78,15 +78,21 @@ from nn.mha_tile_scheduler import (
     WorkInfo,
 )
 from nn.mha_utils import (
+    DynamicInt,
     FlashAttentionAlgorithm,
     MHAConfig,
+    MHAPartitionScheme,
+    NoPartition,
+    OptionallyStaticInt,
+    SplitKPartition,
+    StaticInt,
     _copy_frag_to_smem,
+    _is_decoding,
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
 from nn.softmax import (
     _online_softmax_correction,
-    _online_softmax_iter_for_mma_output_sm90,
     _rowmax_online_softmax,
     _rowsum,
 )
@@ -95,128 +101,6 @@ from tensor_internal import ManagedTensorSlice
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
-
-
-# The motivation here is to be able to pass `StaticInt[1]()`
-# to indicate `decoding=True`, and have this not generate any code
-# when passing as a function argument.
-# That is, we want different specializations of a function to have
-# different numbers of arguments post-compilation.
-trait OptionallyStaticInt(Intable):
-    alias static_value: OptionalReg[Int]
-
-    fn as_uint32(self) -> UInt32:
-        ...
-
-
-# These are used to avoid generating code for passing unused values to kernels.
-# That is, if we have a static int, no argument should be passed.
-@value
-@register_passable("trivial")
-struct StaticInt[value: Int](OptionallyStaticInt):
-    alias static_value: OptionalReg[Int] = OptionalReg[Int](value)
-
-    @always_inline("nodebug")
-    fn __init__(out self):
-        pass
-
-    @always_inline("nodebug")
-    fn __int__(self) -> Int:
-        return Self.value
-
-    @always_inline("nodebug")
-    fn as_uint32(self) -> UInt32:
-        return UInt32(Self.value)
-
-
-@value
-@register_passable("trivial")
-struct DynamicInt(OptionallyStaticInt):
-    var value: UInt32
-    alias static_value: OptionalReg[Int] = None
-
-    @always_inline("nodebug")
-    fn __init__(out self, value: Int):
-        self.value = UInt32(value)
-
-    @always_inline("nodebug")
-    fn __int__(self) -> Int:
-        return Int(self.value)
-
-    @always_inline("nodebug")
-    fn as_uint32(self) -> UInt32:
-        return self.value
-
-
-@always_inline
-fn _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
-    return int_t.static_value.or_else(0) == 1
-
-
-@register_passable("trivial")
-trait MHAPartitionScheme:
-    alias do_partition: Bool
-    alias accum_dtype: DType
-
-    @always_inline
-    fn num_partitions(self) -> UInt32:
-        ...
-
-    @always_inline
-    fn get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        ...
-
-
-@value
-@register_passable("trivial")
-struct NoPartition[dtype: DType](MHAPartitionScheme):
-    alias do_partition: Bool = False
-    alias accum_dtype: DType = dtype
-
-    @always_inline
-    fn __init__(out self):
-        pass
-
-    @always_inline
-    fn num_partitions(self) -> UInt32:
-        return 1
-
-    @always_inline
-    fn get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        return UnsafePointer[Scalar[Self.accum_dtype]]()
-
-
-@value
-@register_passable("trivial")
-struct SplitKPartition[dtype: DType](MHAPartitionScheme):
-    alias do_partition: Bool = True
-    alias accum_dtype: DType = Self.dtype
-    var ptr: UnsafePointer[Scalar[Self.accum_dtype]]
-    var num_partitions_value: UInt32
-
-    @always_inline
-    fn __init__(
-        out self,
-        ptr: UnsafePointer[Scalar[Self.accum_dtype]],
-        num_partitions_value: UInt32,
-    ):
-        debug_assert(ptr != UnsafePointer[Scalar[Self.accum_dtype]]())
-        self.ptr = ptr
-        self.num_partitions_value = num_partitions_value
-
-    @always_inline
-    fn num_partitions(self) -> UInt32:
-        return self.num_partitions_value
-
-    @always_inline
-    fn get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype]]:
-        return self.ptr
 
 
 @always_inline
@@ -241,7 +125,7 @@ fn mha_sm90_dispatch[
     v: v_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
-    valid_length: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_length: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     max_prompt_len_arg: max_prompt_len_t,
     max_cache_valid_length_arg: Int,
     scale: Float32,
@@ -669,11 +553,10 @@ fn mha_sm90_dispatch[
         _ = schedule
 
 
-@value
 @register_passable("trivial")
 struct MHAPosition[
     BM: Int, BN: Int, depth: Int, num_heads: Int, group: Int, decoding: Bool
-]:
+](Copyable, Movable):
     """
     Position of the MHA-kernel.
     When `decoding=False`, `q_head_stride == num_heads`.
@@ -1068,7 +951,8 @@ fn _apply_mask[
     accum_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    reg_tile_layout: Layout, //,
+    reg_tile_layout: Layout,
+    element_layout: Layout, //,
     # last_iter: Bool,
     MMA_M: Int,
     MMA_N: Int,
@@ -1092,6 +976,7 @@ fn _apply_mask[
         reg_tile_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
+        element_layout=element_layout,
     ],
 ):
     alias num_groups_per_thread = min(2, ceildiv(group, 8)) if decoding else 2
@@ -1108,22 +993,22 @@ fn _apply_mask[
         batch_cache_valid_length = 0
 
     # Vectorize by 2.
-    p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
     var fragment_row: UInt32 = lane // 4
     var fragment_col: UInt32 = (lane * p_frag_simdwidth % MMA_N) % 8
     # Offset to current thread's fragment
     var mask_warp_row: UInt32 = mask_warp_row_arg + fragment_row
-    var mask_warp_col: UInt32 = mask_warp_col_arg + kv_tile_start_row + fragment_col
+    var mask_warp_col: UInt32 = (
+        mask_warp_col_arg + kv_tile_start_row + fragment_col
+    )
 
     @parameter
     @always_inline
     fn _apply_mask_capture[masked: Bool]():
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
-                alias mma_id = n_mma * num_m_mmas + m_mma
+            for n_mma in range(num_n_mmas):
                 # Coordinates in mask for current mma tile.
                 mask_frag_row = mask_warp_row + m_mma * MMA_M
                 mask_frag_col = mask_warp_col + n_mma * MMA_N
@@ -1158,27 +1043,28 @@ fn _apply_mask[
                     @parameter
                     for j in range(MMA_N // 8):
                         score_col = mask_frag_col + j * 8
-                        alias p_reg_col = i + j * 2
+                        alias idx = IntTuple(
+                            IntTuple(i, m_mma), IntTuple(j, n_mma)
+                        )
+                        p = p_reg_tile._get[idx=idx]()
 
                         @parameter
                         if masked:
-                            p_reg_vec2[mma_id, p_reg_col] = mask.mask(
+                            p = mask.mask(
                                 IndexList[4, element_type = DType.uint32](
                                     Int(position.prompt_idx),
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
-                                p_reg_vec2[mma_id, p_reg_col] * scale_log2e,
+                                p * scale_log2e,
                             )
                         else:
-                            p_reg_vec2[mma_id, p_reg_col] = (
-                                p_reg_vec2[mma_id, p_reg_col] * scale_log2e
-                            )
+                            p *= scale_log2e
 
                         @parameter
                         if use_score_mod:
-                            p_reg_vec2[mma_id, p_reg_col] = (
+                            p = (
                                 score_mod.score_mod(
                                     IndexList[4, element_type = DType.uint32](
                                         Int(position.prompt_idx),
@@ -1186,54 +1072,59 @@ fn _apply_mask[
                                         Int(score_row_with_start_pos),
                                         Int(score_col),
                                     ),
-                                    p_reg_vec2[mma_id, p_reg_col],
+                                    p,
                                     Int(max_seq_len),
                                 )
                                 * log2e
                             )
                         elif mask_t.apply_log2e_after_mask:
-                            p_reg_vec2[mma_id, p_reg_col] = (
-                                p_reg_vec2[mma_id, p_reg_col] * log2e
-                            )
+                            p *= log2e
+
+                        var bound: IndexList[2, element_type = DType.uint32]
 
                         @parameter
-                        if masked:
-                            var bound: IndexList[2, element_type = DType.uint32]
-
-                            @parameter
-                            if decoding:
-                                bound = IndexList[
-                                    2, element_type = DType.uint32
-                                ](
-                                    Int(position.num_keys),
-                                    Int(
-                                        min(
-                                            BN + kv_tile_start_row,
-                                            position.num_keys,
-                                        )
-                                    ),
-                                )
-                            else:
-                                bound = IndexList[
-                                    2, element_type = DType.uint32
-                                ](
-                                    Int(position.seq_len),
-                                    Int(position.num_keys),
-                                )
-                            p_reg_vec2[mma_id, p_reg_col] = _kernel_mask(
+                        if decoding:
+                            bound = IndexList[2, element_type = DType.uint32](
+                                Int(position.num_keys),
+                                Int(
+                                    min(
+                                        BN + kv_tile_start_row,
+                                        position.num_keys,
+                                    )
+                                ),
+                            )
+                            p = _kernel_mask(
                                 IndexList[2, element_type = DType.uint32](
                                     Int(score_row), Int(score_col)
                                 ),
                                 bound,
-                                p_reg_vec2[mma_id, p_reg_col],
+                                p,
                             )
+                        elif masked:
+                            bound = IndexList[2, element_type = DType.uint32](
+                                Int(position.seq_len),
+                                Int(position.num_keys),
+                            )
+                            p = _kernel_mask(
+                                IndexList[2, element_type = DType.uint32](
+                                    Int(score_row), Int(score_col)
+                                ),
+                                bound,
+                                p,
+                            )
+                        p_reg_tile._set[idx=idx](p)
 
     @parameter
     if decoding:
         _apply_mask_capture[True]()
     else:
         unswitch[_apply_mask_capture](
-            mask_status == TileMaskStatus.PARTIAL_MASK
+            (mask_status == TileMaskStatus.PARTIAL_MASK)
+            # NOTE: mask_status should be either PARTIAL_MASK or NO_MASK at
+            # this point.
+            # In the NO_MASK case, we still need to mask out the scores for the
+            # last tile, which goes beyond num_keys (for num_keys % 128 != 0).
+            or (not decoding and (BN + kv_tile_start_row > position.num_keys))
         )
 
 
@@ -1282,7 +1173,7 @@ fn _mha_sm90[
     1 Partition across B, H, and num_keys (TODO).  The last one is split-K and
       will need a separate reduction kernel at the end.
 
-    2 Frist bmm becomes gemv and second bmm becomes gevm.
+    2 First bmm becomes gemv and second bmm becomes gevm.
       TODO: use more optimized kernels for them
 
     """
@@ -1943,7 +1834,9 @@ fn _mha_sm90[
             mask_warp_col: UInt32,
             kv_tile_start_row: UInt32,
         ):
-            var max_len: UInt32 = num_keys_arg if decoding else max_seq_len.as_uint32()
+            var max_len: UInt32 = (
+                num_keys_arg if decoding else max_seq_len.as_uint32()
+            )
             _apply_mask[
                 MMA_M,
                 MMA_N,
@@ -1962,7 +1855,7 @@ fn _mha_sm90[
                 mask,
                 mask_status,
                 score_mod,
-                p_reg_tile,
+                vectorize_output(p_reg_tile),
             )
 
         @parameter
@@ -2091,7 +1984,7 @@ fn _mha_sm90[
             rowmax.copy_from(
                 _rowmax_online_softmax[
                     # threads layout by warp
-                    Layout.row_major(num_warps_m, num_warps_n),
+                    num_warps_n,
                     mma_thread_layout,
                     use_exp2=True,
                 ](vectorize_output(p_reg_tile), rowmax, init_rowmax=True)
@@ -2153,7 +2046,7 @@ fn _mha_sm90[
                     )
                     score_frag_rowmax = _rowmax_online_softmax[
                         # threads layout by warp
-                        Layout.row_major(num_warps_m, num_warps_n),
+                        num_warps_n,
                         mma_thread_layout,
                         use_exp2=True,
                     ](
@@ -2174,7 +2067,9 @@ fn _mha_sm90[
                                         partition, batch_size
                                     )
                                 )
-                                var q_head_idx = position_prev.head_idx * group + lane // 4
+                                var q_head_idx = (
+                                    position_prev.head_idx * group + lane // 4
+                                )
                                 exp_sum_ptr[q_head_idx] = rebind[
                                     Scalar[partition_t.accum_dtype]
                                 ](rowsum[0])
@@ -2327,7 +2222,7 @@ fn _mha_sm90[
 # TODO: Remove this when we're no longer using NDBuffers.
 @always_inline
 fn valid_length_managed_tensor_slice_to_ndbuffer(
-    tensor: ManagedTensorSlice[type = DType.uint32, rank=1]
+    tensor: ManagedTensorSlice[dtype = DType.uint32, rank=1]
 ) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
     var ptr = tensor._ptr.address_space_cast[AddressSpace.GENERIC]()
     return NDBuffer[DType.uint32, 1, MutableAnyOrigin](

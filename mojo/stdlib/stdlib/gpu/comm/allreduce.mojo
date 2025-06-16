@@ -364,7 +364,7 @@ fn _allreduce_naive[
         for tmp in tmp_buffers:
             curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
                 accum_buffer,
-                tmp[],
+                tmp,
                 num_elements,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
@@ -437,9 +437,9 @@ fn _multi_gpu_barrier[
         # Each thread increments its own counter
         # Technically we only need one counter, but we use
         # multiple per block to eliminate the need to share the counter via smem.
-        var internal_counter_ptr = self_sg.bitcast[
-            Scalar[_flag_t]
-        ]() + bid * MAX_GPUS + my_gpu
+        var internal_counter_ptr = (
+            self_sg.bitcast[Scalar[_flag_t]]() + bid * MAX_GPUS + my_gpu
+        )
         var val = internal_counter_ptr[] + 1
         internal_counter_ptr[] = val
 
@@ -497,6 +497,7 @@ fn _allreduce_2stage_kernel[
     *,
     BLOCK_SIZE: Int,
     outputs_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     result: NDBuffer[type, rank, MutableAnyOrigin],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[type]], ngpus],
@@ -518,6 +519,7 @@ fn _allreduce_2stage_kernel[
         my_rank: Current GPU rank.
         BLOCK_SIZE: Number of threads per block.
         outputs_lambda: An elementwise output lambda function.
+        pdl_level: Control PDL behavior for the kernel.
 
     Args:
         result: Output buffer for reduced values.
@@ -552,11 +554,11 @@ fn _allreduce_2stage_kernel[
     var largest_part = part + (num_simd_vectors % ngpus)
 
     @parameter
-    if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
     @parameter
-    if PDLLevel() > PDLLevel.OFF:
+    if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # --- Memory Pointer Configuration ---
@@ -598,9 +600,13 @@ fn _allreduce_2stage_kernel[
     for idx in range(start + global_tid, end, stride):
         # float32 accumulator for numerical stability.
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[
-            width=simd_width, alignment=alignment, invariant=True
-        ](elem_idx).cast[accum_type]()
+        var accum = (
+            ptrs[0]
+            .load[width=simd_width, alignment=alignment, invariant=True](
+                elem_idx
+            )
+            .cast[accum_type]()
+        )
 
         @parameter
         for gpu_idx in range(1, ngpus):
@@ -719,9 +725,13 @@ fn _allreduce_1stage_kernel[
     # Vectorized grid-strided loop with SIMD loads.
     for idx in range(global_tid, num_simd_vectors, stride):
         var elem_idx = idx * simd_width
-        var accum = ptrs[0].load[
-            width=simd_width, alignment=alignment, invariant=True
-        ](elem_idx).cast[accum_type]()
+        var accum = (
+            ptrs[0]
+            .load[width=simd_width, alignment=alignment, invariant=True](
+                elem_idx
+            )
+            .cast[accum_type]()
+        )
 
         @parameter
         for _id in range(1, ngpus):
@@ -749,6 +759,7 @@ fn _allreduce_p2p[
     rank: Int,
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     list_of_in_bufs: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
     list_of_out_bufs: InlineArray[
@@ -766,6 +777,7 @@ fn _allreduce_p2p[
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
         outputs_lambda: An output elementwise lambda.
+        pdl_level: Control PDL behavior for the kernel.
 
     Args:
         list_of_in_bufs: Input buffers from each GPU
@@ -857,6 +869,7 @@ fn _allreduce_p2p[
                     my_rank=i,
                     BLOCK_SIZE=BLOCK_SIZE,
                     outputs_lambda=outputs_lambda,
+                    pdl_level=pdl_level,
                 ]
             ](
                 curr_out_buf,
@@ -866,7 +879,7 @@ fn _allreduce_p2p[
                 max_num_blocks,
                 grid_dim=grid_size,
                 block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
 
 
@@ -884,6 +897,7 @@ fn allreduce[
     rank: Int,
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
     output_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
@@ -906,6 +920,7 @@ fn allreduce[
         rank: The number of dimensions in the input/output tensors.
         ngpus: The number of GPUs participating in the allreduce.
         outputs_lambda: An output elementwise lambda.
+        pdl_level: Control PDL behavior for the kernel.
 
     Args:
         input_buffers: Array of input tensors from each GPU, one per GPU.
@@ -939,6 +954,6 @@ fn allreduce[
             input_buffers, output_buffers, max_num_blocks, ctxs
         )
     else:
-        return _allreduce_p2p[outputs_lambda=outputs_lambda](
-            input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs
-        )
+        return _allreduce_p2p[
+            outputs_lambda=outputs_lambda, pdl_level=pdl_level
+        ](input_buffers, output_buffers, rank_sigs, max_num_blocks, ctxs)

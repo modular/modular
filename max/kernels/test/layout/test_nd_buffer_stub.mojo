@@ -558,9 +558,11 @@ fn test_copy_nd_buffer_to_layout_tensor():
     var buff_v_1_4_and_element_layout = vectorize[1, 4](buff)
 
     var tensor_4_1_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
-    var tensor_4_1 = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
-        tensor_4_1_storage
-    ).vectorize[1, 4]().fill(0)
+    var tensor_4_1 = (
+        LayoutTensor[DType.float32, Layout.row_major(8, 8)](tensor_4_1_storage)
+        .vectorize[1, 4]()
+        .fill(0)
+    )
 
     _copy_nd_buffer_to_layout_tensor(
         tensor_4_1,
@@ -580,9 +582,11 @@ fn test_copy_nd_buffer_to_layout_tensor():
 
     var buff_v_4_4_and_element_layout = vectorize[4, 4](buff)
     var tensor_4_4_storage = InlineArray[Float32, 8 * 8](uninitialized=True)
-    var tensor_4_4 = LayoutTensor[DType.float32, Layout.row_major(8, 8)](
-        tensor_4_4_storage
-    ).vectorize[4, 4]().fill(0)
+    var tensor_4_4 = (
+        LayoutTensor[DType.float32, Layout.row_major(8, 8)](tensor_4_4_storage)
+        .vectorize[4, 4]()
+        .fill(0)
+    )
 
     _copy_nd_buffer_to_layout_tensor(
         tensor_4_4,

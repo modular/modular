@@ -18,8 +18,14 @@
 
 from collections import InlineArray
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from layout import (
+    LayoutTensor,
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from layout.runtime_tuple import crd2idx, idx2crd
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
@@ -33,7 +39,10 @@ from utils import IndexList, StaticTuple
 fn _fill[
     type: DType
 ](dst: UnsafePointer[Scalar[type]], value: Scalar[type], count: Int):
-    _ = NDBuffer[type, 1](dst, count).fill(value)
+    alias layout = Layout.row_major(UNKNOWN_VALUE)
+    _ = LayoutTensor[type, layout](
+        dst, RuntimeLayout[layout].row_major(IndexList[1](count))
+    ).fill(value)
 
 
 # TODO: could this be deleted? maybe replaced with faster collapsed loop.
@@ -117,15 +126,18 @@ struct _NestedLoopIter[n_loops: Int]:
 
 
 fn pad_constant[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
+    output_layout: Layout,
+    input_layout: Layout,
     type: DType,
     paddings_type: DType,
     constant_type: DType,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[
+        mut=True, type, output_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    input: LayoutTensor[
+        type, input_layout, address_space = AddressSpace.GENERIC, **_
+    ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: SIMD[constant_type, 1],
 ):
@@ -154,14 +166,18 @@ fn pad_constant[
     @__copy_capture(constant_cast)
     @parameter
     fn pad_constant_wrapper(
-        output: UnsafePointer[Scalar[type]],
-        input: UnsafePointer[Scalar[type]],
+        output: UnsafePointer[
+            Scalar[type], address_space = AddressSpace.GENERIC, **_
+        ],
+        input: UnsafePointer[
+            Scalar[type], address_space = AddressSpace.GENERIC, **_
+        ],
         paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: IndexList[rank],
+        output_shape: IndexList[output_layout.rank()],
         output_strides: UnsafePointer[Scalar[DType.index]],
         input_strides: UnsafePointer[Scalar[DType.index]],
     ):
-        return _pad_constant_impl[rank, type, paddings_type](
+        return _pad_constant_impl[output_layout.rank(), type, paddings_type](
             output,
             input,
             paddings,
@@ -172,9 +188,8 @@ fn pad_constant[
         )
 
     return _do_pad[
-        rank,
-        output_shape,
-        input_shape,
+        output_layout,
+        input_layout,
         type,
         paddings_type,
         pad_constant_wrapper,
@@ -182,14 +197,17 @@ fn pad_constant[
 
 
 fn pad_reflect[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
+    output_layout: Layout,
+    input_layout: Layout,
     type: DType,
     paddings_type: DType,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[
+        mut=True, type, output_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    input: LayoutTensor[
+        type, input_layout, address_space = AddressSpace.GENERIC, **_
+    ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
@@ -217,21 +235,24 @@ fn pad_reflect[
 
     @parameter
     fn pad_reflect_wrapper(
-        output: UnsafePointer[Scalar[type]],
-        input: UnsafePointer[Scalar[type]],
+        output: UnsafePointer[
+            Scalar[type], address_space = AddressSpace.GENERIC, **_
+        ],
+        input: UnsafePointer[
+            Scalar[type], address_space = AddressSpace.GENERIC, **_
+        ],
         paddings: UnsafePointer[Scalar[paddings_type]],
-        output_shape: IndexList[rank],
+        output_shape: IndexList[output_layout.rank()],
         output_strides: UnsafePointer[Scalar[DType.index]],
         input_strides: UnsafePointer[Scalar[DType.index]],
     ):
-        return _pad_reflect_impl[rank, type, paddings_type](
+        return _pad_reflect_impl[output_layout.rank(), type, paddings_type](
             output, input, paddings, output_shape, output_strides, input_strides
         )
 
     return _do_pad[
-        rank,
-        output_shape,
-        input_shape,
+        output_layout,
+        input_layout,
         type,
         paddings_type,
         pad_reflect_wrapper,
@@ -240,20 +261,18 @@ fn pad_reflect[
 
 @always_inline
 fn pad_shape[
-    input_rank: Int,
     input_type: DType,
     paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[input_type, input_rank],
-    paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> IndexList[input_rank]:
+    input_buf: LayoutTensor[input_type, **_],
+    paddings_buf: LayoutTensor[paddings_type, **_],
+) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
 
     Parameters:
-        input_rank: Rank of the input tensor.
         input_type: Type of the input tensor.
         paddings_type: Type of the padding tensor.
         single_thread_blocking_override: If True, then the operation is run
@@ -266,58 +285,75 @@ fn pad_shape[
     Returns:
         The output shape.
     """
+    constrained[paddings_buf.rank == 1, "paddings_buf must be of rank 1"]()
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::PadLike` prevents testing this with static rank.
-    if paddings_buf.dim(0) != 2 * input_rank:
+    if Int(paddings_buf.dim[0]()) != 2 * input_buf.rank:
         raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
-    var output_shape = IndexList[input_rank]()
+    var output_shape = IndexList[input_buf.rank]()
 
-    for axis in range(input_rank):
+    @parameter
+    for axis in range(input_buf.rank):
         var pre_pad = Int(paddings_buf[2 * axis])
         var post_pad = Int(paddings_buf[2 * axis + 1])
-        output_shape[axis] = pre_pad + input_buf.dim(axis) + post_pad
+        output_shape[axis] = pre_pad + Int(input_buf.dim[axis]()) + post_pad
 
     return output_shape
 
 
 fn _do_pad[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
+    output_layout: Layout,
+    input_layout: Layout,
     type: DType,
     paddings_type: DType,
     pad_impl_fn: fn (
-        UnsafePointer[Scalar[type]],
-        UnsafePointer[Scalar[type]],
+        UnsafePointer[Scalar[type], address_space = AddressSpace.GENERIC, **_],
+        UnsafePointer[Scalar[type], address_space = AddressSpace.GENERIC, **_],
         UnsafePointer[Scalar[paddings_type]],
-        IndexList[rank],
+        IndexList[output_layout.rank()],
         UnsafePointer[Scalar[DType.index]],
         UnsafePointer[Scalar[DType.index]],
     ) capturing [_] -> None,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[
+        mut=True, type, output_layout, address_space = AddressSpace.GENERIC, **_
+    ],
+    input: LayoutTensor[
+        type, input_layout, address_space = AddressSpace.GENERIC, **_
+    ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
-    var input_strides_buf = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, rank
-    ].stack_allocation()
-    var output_strides_buf = NDBuffer[
-        DType.index, 1, MutableAnyOrigin, rank
-    ].stack_allocation()
+    var input_strides_stack = InlineArray[Scalar[DType.index], output.rank](
+        uninitialized=True
+    )
+    var input_strides_buf = LayoutTensor[
+        DType.index, Layout.row_major(input.rank)
+    ](input_strides_stack)
+    var output_strides_stack = InlineArray[Scalar[DType.index], output.rank](
+        uninitialized=True
+    )
+    var output_strides_buf = LayoutTensor[
+        DType.index, Layout.row_major(output.rank)
+    ](output_strides_stack)
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 
+    var output_shape = IndexList[output_layout.rank()]()
+
+    @parameter
+    for axis in range(output_layout.rank()):
+        output_shape[axis] = output.dim[axis]()
+
     return pad_impl_fn(
-        output.data,
-        input.data,
+        output.ptr,
+        input.ptr,
         paddings,
-        output.get_shape(),
-        output_strides_buf.data,
-        input_strides_buf.data,
+        output_shape,
+        output_strides_buf.ptr,
+        input_strides_buf.ptr,
     )
 
 
@@ -624,8 +660,12 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
         mut self,
         output_offset: Int,
         input_offset: Int,
-        output: UnsafePointer[Scalar[type]],
-        input: UnsafePointer[Scalar[type]],
+        output: UnsafePointer[
+            Scalar[type], address_space = AddressSpace.GENERIC, **_
+        ],
+        input: UnsafePointer[
+            Scalar[type], address_space = AddressSpace.GENERIC, **_
+        ],
     ):
         # no more dimensions to recurse, copy from input to unpadded region
         var non_pad_start_ptr = output.offset(output_offset + self.pre_pad)
@@ -657,8 +697,12 @@ fn _pad_reflect_axis[
     paddings_type: DType,
     axis: Int,
 ](
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[
+        Scalar[type], address_space = AddressSpace.GENERIC, **_
+    ],
+    input: UnsafePointer[
+        Scalar[type], address_space = AddressSpace.GENERIC, **_
+    ],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
     owned axis_params: StaticTuple[
@@ -713,8 +757,12 @@ fn _pad_reflect_impl[
     type: DType,
     paddings_type: DType,
 ](
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[
+        Scalar[type], address_space = AddressSpace.GENERIC, **_
+    ],
+    input: UnsafePointer[
+        Scalar[type], address_space = AddressSpace.GENERIC, **_
+    ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
@@ -749,14 +797,13 @@ fn _pad_reflect_impl[
 
 @always_inline
 fn pad_repeat[
-    rank: Int,
-    output_shape: DimList,
-    input_shape: DimList,
+    output_layout: Layout,
+    input_layout: Layout,
     type: DType,
     paddings_type: DType,
 ](
-    output: NDBuffer[mut=True, type, rank, _, output_shape],
-    input: NDBuffer[type, rank, _, input_shape],
+    output: LayoutTensor[mut=True, type, output_layout, **_],
+    input: LayoutTensor[type, input_layout, **_],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
     """
@@ -764,9 +811,8 @@ fn pad_repeat[
     values from the unpadded region.
 
     Parameters:
-        rank: Rank of the input/output buffers.
-        output_shape: Dimensions of the output buffer.
-        input_shape: Dimensions of the input buffer.
+        output_layout: Layout of the output buffer.
+        input_layout: Layout of the input buffer.
         type: DType of the input/output buffer.
         paddings_type: DType of the input, output, and padding buffers.
 
@@ -788,35 +834,51 @@ fn pad_repeat[
                   [3, 3, 4],
                   [3, 3, 4]]
     """
-    var padding_ndbuf = NDBuffer[paddings_type, 2, _, DimList(rank, 2)](
-        paddings
-    )
+    var output_shape = output.layout.shape
+    var input_shape = input.layout.shape
 
-    var pre_pads = IndexList[rank]()
-    var post_pads = IndexList[rank]()
+    var output_strides = output.layout.stride
+    var input_strides = input.layout.stride
 
-    for axis in range(rank):
+    var pre_pads = IndexList[output_layout.rank()]()
+    var post_pads = IndexList[output_layout.rank()]()
+
+    for axis in range(output_layout.rank()):
         pre_pads[axis] = Int(paddings[2 * axis])
         post_pads[axis] = Int(paddings[2 * axis + 1])
 
-    var loop_bounds = _NestedLoopIter[rank].LoopBoundSpec(rank)
+    var loop_bounds = _NestedLoopIter[output_layout.rank()].LoopBoundSpec(
+        output_layout.rank()
+    )
 
-    for i in range(rank):
-        loop_bounds[i] = IndexList[2](0, input.dim(i))
+    for i in range(output_layout.rank()):
+        loop_bounds[i] = IndexList[2](0, input.runtime_layout.shape.value[i])
 
-    var non_pad_iter = _NestedLoopIter[rank](loop_bounds)
+    var non_pad_iter = _NestedLoopIter[output_layout.rank()](loop_bounds)
 
     for input_idx in non_pad_iter:
         var output_idx = input_idx + pre_pads
-        output[output_idx] = input[input_idx]
+        var in_idx = Int(
+            input.runtime_layout(
+                RuntimeTuple[input_layout.make_shape_unknown().shape](input_idx)
+            )
+        )
+        var out_idx = Int(
+            output.runtime_layout(
+                RuntimeTuple[output_layout.make_shape_unknown().shape](
+                    output_idx
+                )
+            )
+        )
+        output.ptr[out_idx] = input.ptr[in_idx]
 
-    for axis in reversed(range(rank)):
+    for axis in reversed(range(output_layout.rank())):
         for i in range(axis):
             loop_bounds[i] = IndexList[2](
                 pre_pads[i], pre_pads[i] + input.dim(i)
             )
 
-        for i in range(axis + 1, rank):
+        for i in range(axis + 1, output_layout.rank()):
             loop_bounds[i] = IndexList[2](0, output.dim(i))
 
         # handle pre-padding of the axis
@@ -825,14 +887,24 @@ fn pad_repeat[
 
         loop_bounds[axis] = IndexList[2](pre_lower, pre_upper)
 
-        var pre_pad_iter = _NestedLoopIter[rank](loop_bounds)
+        var pre_pad_iter = _NestedLoopIter[output_layout.rank()](loop_bounds)
 
         for write_idx in pre_pad_iter:
             var read_idx = write_idx
-
             read_idx[axis] = pre_pads[axis]
 
-            output[write_idx] = output[read_idx]
+            var in_idx = Int(
+                output.runtime_layout(
+                    RuntimeTuple[input_layout.shape](read_idx)
+                )
+            )
+
+            var out_idx = Int(
+                output.runtime_layout(
+                    RuntimeTuple[output_layout.shape](write_idx)
+                )
+            )
+            output.ptr[out_idx] = output.ptr[in_idx]
 
         # and now post-padding
         var post_lower = pre_pads[axis] + input.dim(axis)
@@ -840,10 +912,20 @@ fn pad_repeat[
 
         loop_bounds[axis] = IndexList[2](post_lower, post_upper)
 
-        var post_pad_iter = _NestedLoopIter[rank](loop_bounds)
+        var post_pad_iter = _NestedLoopIter[output_layout.rank()](loop_bounds)
 
         for write_idx in post_pad_iter:
             var read_idx = write_idx
             read_idx[axis] = post_lower - 1
 
-            output[write_idx] = output[read_idx]
+            var in_idx = Int(
+                output.runtime_layout(
+                    RuntimeTuple[output_layout.shape](read_idx)
+                )
+            )
+            var out_idx = Int(
+                output.runtime_layout(
+                    RuntimeTuple[output_layout.shape](write_idx)
+                )
+            )
+            output.ptr[out_idx] = output.ptr[in_idx]

@@ -150,12 +150,10 @@ class RotaryEmbedding2D(Layer):
         _inv_freq = ops.concat(
             [
                 ops.tile(
-                    ops.unsqueeze(freqs_h, 1),
-                    (1, self.max_patches_per_side, 1),
+                    ops.unsqueeze(freqs_h, 1), (1, self.max_patches_per_side, 1)
                 ),
                 ops.tile(
-                    ops.unsqueeze(freqs_w, 0),
-                    (self.max_patches_per_side, 1, 1),
+                    ops.unsqueeze(freqs_w, 0), (self.max_patches_per_side, 1, 1)
                 ),
             ],
             axis=-1,

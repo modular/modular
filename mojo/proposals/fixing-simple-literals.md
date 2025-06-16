@@ -327,16 +327,14 @@ rhs.value”.  Mojo (still, sigh) doesn’t support initializer lists, so we hav
 utter the type once in the method signature, and then we repeat it again in the
 return line.
 
-While this is one way to write this, we can use named return slots and typeof to
-reduce the redundancy a bit.  An improved implementation of `__sub__` looks
-like:
+While this is one way to write this, Mojo supports initializer lists, which
+allow us to infer the type from context (the `return` in this case).  Using it,
+an improved implementation of `__sub__` looks like:
 
 ```mojo
  struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
-     fn __sub__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
+     fn __sub__(self, rhs: IntLiteral[_])
+        -> IntLiteral[
             __mlir_attr[
                 `#pop<int_literal_bin<sub `,
                 self.value,
@@ -344,9 +342,8 @@ like:
                 rhs.value,
                 `>> : !pop.int_literal`,
             ]
-        ],
-    ):
-        result = __type_of(result)()
+        ]:
+        return {}
 ```
 
 Before we move on, let’s look at that last line - we are **constructing the
@@ -354,10 +351,6 @@ result value, using the `()` constructor**!  Recall that `IntLiteral` has
 no runtime state - the value of the result is captured in the type - so this is
 the right thing to do.  In fact, given that it is stateless, `IntLiteral` only
 gets one constructor.
-
-While I think that adding initializer lists is a good thing to do, we could also
-pretty this up in the short term, I added this below in the “Optional Extension”
-section below.
 
 ### Mojo has full support for comptime determined parameters
 
@@ -369,8 +362,8 @@ it even works correctly!).  We have to write this function as a type function,
 and we don’t want to utter that MLIR attribute, so we can write it like this:
 
 ```mojo
-fn sub_two(a: IntLiteral[_], out result: __typeof(a-2)):
-    return __typeof(result)()
+fn sub_two(a: IntLiteral[_]) -> __typeof(a-2):
+    return {}
 
 ...
     alias four = sub_two(6)  # four has IntLiteral[4] type
@@ -391,14 +384,10 @@ are aggregates of more primitive things, for example, `-x` is just `0-x` and
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ...
     fn __neg__(self) -> __type_of(0 - self):
-        # Equivalently: return __type_of(0 - self)()
-        # Equivalently, could use the named result trick.
-        # It would be much nicer to support initializer lists though, so we could
-        # standardize on something like "return {}" someday.
-        return 0 - self
+        return {}
 
-    fn __invert__(self, out result: __type_of(self ^ -1)):
-        result = __type_of(result)()
+    fn __invert__(self) -> __type_of(self ^ -1):
+        return {}
 ```
 
 Note how this stacks up: `0` and `1` are sugar for `IntLiteral[0]()`,
@@ -443,10 +432,8 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     fn __init__(out self):
         pass
 
-    fn __sub__(
-        self,
-        rhs: FloatLiteral,
-        out result: FloatLiteral[
+    fn __sub__(self, rhs: FloatLiteral)
+        -> FloatLiteral[
             __mlir_attr[
                 `#pop<float_literal_bin<sub `,
                 value,
@@ -454,9 +441,8 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
                 rhs.value,
                 `>> : !pop.float_literal`,
             ]
-        ],
-    ):
-        result = __type_of(result)()
+        ]:
+        return {}
 ```
 
 Similarly, the comparison and other methods work the same as `IntLiteral` does.
@@ -480,10 +466,10 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
             ]
         ],
     ):
-        out = __type_of(result)()
+        return {}
 
-    fn __rsub__(self, rhs: FloatLiteral, out result: __type_of(rhs - self)):
-        result = __type_of(result)()
+    fn __rsub__(self, rhs: FloatLiteral) -> __type_of(rhs - self):
+        return {}
 ```
 
 This uses the “conditional conformance” trick to define the initializer (this
@@ -491,41 +477,6 @@ required some enhancements to parameter inference to get working) and uses
 simple composed operations to define the reversed subtract.
 
 Once these are put together, everything else just falls out.
-
-### Optional Extension: Improve the return syntax
-
-The one thing that I don’t like about this is the weird
-`result = __type_of(result)()` syntax and the named result type workaround.
-This “works” but isn’t particularly pretty.  The best solution would be to add
-support for initializer lists, so we could just write things as:
-
-```mojo
-fn __rsub__(self, rhs: FloatLiteral) -> __type_of(rhs - self):
-    return {} # Create an instance of the result type, passing no arguments
-```
-
-The Mojo compiler internally already supports initializer lists, but we haven’t
-decided what syntax to use for it, and I think it makes sense to fix collection
-literals before doing so. I tend to think it is ok to use the syntax above even
-though it is a bit ugly (it only impacts the implementation of things like
-`IntLiteral` which few people look inside.  However, if we care about sugaring
-this, it would be easy enough to fix: just add an implicit constructor from
-empty tuple, and use an empty tuple literal:
-
-```mojo
-struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
-    @implicit
-    fn __init__(out self, unused: Tuple[]): pass
-```
-
-This would allow all these functions to be written as:
-
-```mojo
-fn __rsub__(self, rhs: FloatLiteral) -> __type_of(rhs - self):
-    return ()
-```
-
-Without requiring initializer lists.
 
 ## Implications and Analysis
 
@@ -563,7 +514,7 @@ write this function like this:
 
 ```mojo
 fn test(a: IntLiteral) -> __typeof(a-1):
-    return __typeof(a-1)()
+    return {}
 ```
 
 This is perfectly valid Mojo code in the new design, and while you can’t
@@ -604,12 +555,9 @@ fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     # return -(numerator // -denominator)
     return numerator.__ceildiv__(denominator)
 
-fn ceildiv(
-    numerator: IntLiteral,
-    denominator: IntLiteral,
-    out result: __type_of(numerator.__ceildiv__(denominator)),
-):
-    result = __type_of(result)()
+fn ceildiv(numerator: IntLiteral, denominator: IntLiteral)
+  -> __type_of(numerator.__ceildiv__(denominator):
+    return {}
 ```
 
 However, while this one method was needed, it begs a question - why are we

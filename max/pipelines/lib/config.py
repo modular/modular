@@ -20,14 +20,17 @@ import logging
 import os
 import sys
 from dataclasses import MISSING, dataclass, field, fields
+from enum import Enum
 from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
 
 from .config_enums import PipelineEngine, PipelineRole
+from .lora import LoRAManager
 from .max_config import (
     KVCacheConfig,
+    LoRAConfig,
     MAXConfig,
     ProfilingConfig,
     SamplingConfig,
@@ -72,6 +75,35 @@ class PipelineConfig(MAXConfig):
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
 
+    max_queue_size_tg: Optional[int] = None
+    """Maximum number of requests in decode queue. By default, this is max-batch-size."""
+
+    min_batch_size_tg: Optional[int] = None
+    """Specifies a soft floor on the decode batch size.
+
+    If the TG batch size is larger than this value, the scheduler will continue to
+    run TG batches. If it falls below, the scheduler will prioritize CE. Note that
+    this is NOT a strict minimum! By default, this is max-queue-size-tg.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
+    ce_delay_ms: float = 0.0
+    """Duration of scheduler sleep prior to starting a prefill batch.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
+    enable_prioritize_first_decode: bool = False
+    """When enabled, the scheduler will always run a TG batch immediately after a CE batch,
+    with the same requests. This may be useful for decreasing time-to-first-chunk latency.
+
+    This is an experimental flag solely for the TTS scheduler. Do not use unless
+    you know what you are doing.
+    """
+
     enable_chunked_prefill: bool = True
     """Enable chunked prefill to split context encoding requests into multiple chunks
     based on 'target_num_new_tokens'."""
@@ -102,7 +134,7 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
-    pdl_level: str = os.environ.get("PDL_LEVEL", "1")
+    pdl_level: str = os.environ.get("PDL_LEVEL", "0")
     """Level of overlap of kernel launch via programmatic dependent grid control."""
 
     ignore_eos: bool = False
@@ -130,6 +162,12 @@ class PipelineConfig(MAXConfig):
     _profiling_config: ProfilingConfig = field(default_factory=ProfilingConfig)
     """The profiling config."""
 
+    _lora_config: Optional[LoRAConfig] = None
+    """The LoRA config."""
+
+    _lora_manager: Optional[LoRAManager] = None
+    """The LoRA Manager"""
+
     def __init__(self, **kwargs: Any) -> None:
         # Initialize all fields with their defaults first
         for curr_field in fields(self.__class__):
@@ -137,6 +175,17 @@ class PipelineConfig(MAXConfig):
                 setattr(self, curr_field.name, curr_field.default)
             elif curr_field.default_factory is not MISSING:
                 setattr(self, curr_field.name, curr_field.default_factory())
+
+        lora_kwargs = {}
+        for k, v in list(kwargs.items()):
+            if k in LoRAConfig.__dataclass_fields__:
+                lora_kwargs[k] = v
+                del kwargs[k]
+
+        if lora_kwargs.get("lora_paths", []):
+            self._lora_config = LoRAConfig(**lora_kwargs)
+        else:
+            self._lora_config = None
 
         # Check against draft model first
         draft_kwargs = {}
@@ -246,9 +295,10 @@ class PipelineConfig(MAXConfig):
                 raise ValueError(msg)
             elif len(module_parts) == 2:
                 module_path, module_name = module_parts
-                sys.path.append(module_path)
             else:
-                module_name = module_parts[0]
+                module_path = os.path.dirname(module_parts[0])
+                module_name = os.path.basename(module_parts[0])
+            sys.path.append(module_path)
             try:
                 module = importlib.import_module(module_name)
             except Exception as e:
@@ -293,19 +343,11 @@ class PipelineConfig(MAXConfig):
                     "enable_structured_output is not currently supported on CPU."
                 )
 
-        if (
-            self.sampling_config.frequency_penalty != 0
-            or self.sampling_config.presence_penalty != 0
-            or self.sampling_config.repetition_penalty != 1
-        ):
+        if self.sampling_config.do_penalties:
             if self.draft_model_config:
                 raise ValueError(
                     "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
                 )
-            if self.sampling_config.repetition_penalty <= 0:
-                raise ValueError("repetition_penalty must be greater than 0.")
-            self.sampling_config.do_penalties = True
-
         # Run Baseline Validation
         self._validate_and_resolve_remaining_pipeline_config(self.model_config)
 
@@ -333,7 +375,7 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.draft_model_config.huggingface_model_repo,
+            huggingface_repo=self.draft_model_config.huggingface_model_repo
         )
 
         if not draft_arch:
@@ -341,7 +383,7 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=self.model_config.huggingface_model_repo,
+            huggingface_repo=self.model_config.huggingface_model_repo
         )
         if not target_arch:
             msg = "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -395,7 +437,7 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            huggingface_repo=model_config.huggingface_model_repo,
+            huggingface_repo=model_config.huggingface_model_repo
         )
 
         # If nothing is provided, we should not update any more params.
@@ -416,6 +458,14 @@ class PipelineConfig(MAXConfig):
             logger.warning(msg)
             self.engine = PipelineEngine.HUGGINGFACE
             return
+
+        # TODO(E2EOPT-28): remove this constraint.
+        # Gemma has a MHA head size of 256.
+        # This requires a kv cache page size of at least 256.
+        if "Gemma3" in arch.name:
+            model_config._kv_cache_config.kv_cache_page_size = max(
+                model_config._kv_cache_config.kv_cache_page_size, 256
+            )
 
         model_config.validate_multi_gpu_supported(
             multi_gpu_supported=arch.multi_gpu_supported
@@ -521,3 +571,187 @@ class PipelineConfig(MAXConfig):
     @property
     def profiling_config(self) -> ProfilingConfig:
         return self._profiling_config
+
+    @property
+    def lora_config(self) -> Optional[LoRAConfig]:
+        return self._lora_config
+
+    @property
+    def lora_manager(self) -> Optional[LoRAManager]:
+        return self._lora_manager
+
+
+def _parse_flag_bool(value: str, flag_name: str) -> bool:
+    if value.lower() == "true":
+        return True
+    elif value.lower() == "false":
+        return False
+    else:
+        raise ValueError(
+            f"Invalid boolean value: {value} for flag: {flag_name}"
+        )
+
+
+def _parse_flag_int(value: str, flag_name: str) -> int:
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid integer value: {value} for flag: {flag_name}"
+        ) from exc
+
+
+class PrependPromptSpeechTokens(str, Enum):
+    NEVER = "never"
+    """Never prepend the prompt speech tokens sent to the audio decoder."""
+
+    ONCE = "once"
+    """Prepend the prompt speech tokens to the first block of the audio decoder."""
+
+    ALWAYS = "always"
+    """Prepend the prompt speech tokens to all blocks of speech tokens sent to
+    the audio decoder."""
+
+
+@dataclass
+class AudioGenerationConfig(PipelineConfig):
+    # TODO: Make these flags more discoverable.
+    audio_decoder: str = ""
+    """The name of the audio decoder model architecture."""
+
+    audio_decoder_weights: str = ""
+    """The path to the audio decoder weights file."""
+
+    block_sizes: list[int] | None = None
+    """The block sizes to use for streaming.
+    If this is an int, then fixed-size blocks of the given size are used
+    If this is a list, then variable block sizes are used."""
+
+    buffer: int = 0
+    """The number of previous speech tokens to pass to the audio decoder on
+    each generation step."""
+
+    block_causal: bool = False
+    """Whether prior buffered tokens should attend to tokens in the current block.
+    Has no effect if buffer is not set."""
+
+    prepend_prompt_speech_tokens: PrependPromptSpeechTokens = (
+        PrependPromptSpeechTokens.ONCE
+    )
+    """Whether the prompt speech tokens should be forwarded to the audio decoder.
+    If "never", the prompt tokens are not forwarded.
+    If "once", the prompt tokens are only forwarded on the first block.
+    If "always", the prompt tokens are forwarded on all blocks.
+    """
+
+    prepend_prompt_speech_tokens_causal: bool = False
+    """Whether the prompt speech tokens should attend to tokens in the currently
+    generated audio block.
+    Has no effect if prepend_prompt_speech_tokens is "never".
+    If False (default), the prompt tokens do not attend to the current block.
+    If True, the prompt tokens attend to the current block.
+    """
+
+    audio_decoder_config: dict[str, Any] = field(default_factory=dict)
+    """Parameters to pass to the audio decoder model."""
+
+    _run_model_test_mode: bool = False
+    """Test-only flag that indicates that test parameters have been passed to
+    the model, such as leaving the audio decoder weights empty or using a
+    dummy speech language model."""
+
+    def __init__(
+        self,
+        audio_decoder: str,
+        audio_decoder_weights: str = "",
+        block_sizes: list[int] | None = None,
+        buffer: int = 0,
+        block_causal: bool = False,
+        prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
+        prepend_prompt_speech_tokens_causal: bool = False,
+        run_model_test_mode: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        # Must call the superclass's __init__ first, otherwise PipelineConfig's
+        # init will override values defined in the AudioGenerationConfig.
+        PipelineConfig.__init__(self, **kwargs)
+        if block_causal:
+            raise NotImplementedError("Causal generation is not implemented")
+        if prepend_prompt_speech_tokens_causal:
+            raise NotImplementedError(
+                "Prepend prompt speech tokens causal is not implemented"
+            )
+
+        self.audio_decoder = audio_decoder
+        self.audio_decoder_weights = audio_decoder_weights
+        self.block_sizes = block_sizes
+        self.buffer = buffer
+        self.block_causal = block_causal
+        self.prepend_prompt_speech_tokens = prepend_prompt_speech_tokens
+        self.prepend_prompt_speech_tokens_causal = (
+            prepend_prompt_speech_tokens_causal
+        )
+        self._run_model_test_mode = run_model_test_mode
+
+        minimum_max_num_steps = 1024
+        if self.max_num_steps < minimum_max_num_steps:
+            logger.warning(
+                f"max-num-steps of {self.max_num_steps} is less than {minimum_max_num_steps},"
+                f" which is not recommended for audio generation. Overriding to {minimum_max_num_steps}."
+            )
+            self.max_num_steps = minimum_max_num_steps
+
+    @classmethod
+    def from_flags(
+        cls, audio_flags: dict[str, str], **config_flags: Any
+    ) -> AudioGenerationConfig:
+        audio_decoder = audio_flags.pop("audio_decoder", "")
+        if not audio_decoder:
+            raise ValueError(
+                "When running the audio generation task, --audio-decoder must be specified"
+            )
+        audio_decoder_weights = audio_flags.pop("audio_decoder_weights", "")
+
+        # Configuration for audio generation streaming.
+        block_sizes_str = audio_flags.pop("block_sizes", "")
+        if not block_sizes_str:
+            block_sizes = None
+        else:
+            block_sizes = [int(size) for size in block_sizes_str.split(",")]
+
+        buffer = _parse_flag_int(audio_flags.pop("buffer", "0"), "buffer")
+
+        block_causal = _parse_flag_bool(
+            audio_flags.pop("block_causal", "false"), "block_causal"
+        )
+
+        prepend_prompt_speech_tokens = PrependPromptSpeechTokens(
+            audio_flags.pop("prepend_prompt_speech_tokens", "never")
+        )
+
+        prepend_prompt_speech_tokens_causal = _parse_flag_bool(
+            audio_flags.pop("prepend_prompt_speech_tokens_causal", "false"),
+            "prepend_prompt_speech_tokens_causal",
+        )
+
+        run_model_test_mode = _parse_flag_bool(
+            audio_flags.pop("run_model_test_mode", "false"),
+            "run_model_test_mode",
+        )
+
+        if audio_flags:
+            raise ValueError(
+                f"Unknown audio generation option(s): {audio_flags}"
+            )
+
+        return cls(
+            audio_decoder=audio_decoder,
+            audio_decoder_weights=audio_decoder_weights,
+            block_sizes=block_sizes,
+            buffer=buffer,
+            block_causal=block_causal,
+            prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,
+            prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
+            run_model_test_mode=run_model_test_mode,
+            **config_flags,
+        )

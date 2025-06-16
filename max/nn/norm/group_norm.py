@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
+import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorType, TensorValue, Weight, ops
 
 from ..layer import Module
 
@@ -44,7 +44,7 @@ class GroupNorm(Module):
         num_channels: int,
         eps: float = 1e-5,
         affine: bool = True,
-        device: DeviceRef = DeviceRef.CPU(),
+        device: DeviceRef = DeviceRef.GPU(),
     ):
         super().__init__()
         self.num_groups = num_groups
@@ -94,40 +94,37 @@ class GroupNorm(Module):
                 f"Expected {self.num_channels} channels, got shape {x.shape}"
             )
 
-        input_shape = x.shape
-        N = input_shape[0]
-        C = input_shape[1]
-        HW = math.prod(input_shape[2:])  # Product of remaining dimensions.
-        G = self.num_groups
-
-        # Reshape to [N, G, C/G, HW] for normalization
-        x = ops.reshape(x, [N, G, C // G, HW])
-
-        # Compute mean and variance over C/G and HW dimensions.
-        # Keep dims for broadcasting.
-        x_reshaped = x.reshape((N, G, 1, -1))
-        mean = ops.mean(x_reshaped)
-        n_elements = (
-            ops.shape_to_tensor((C // G * HW,)).cast(x.dtype).to(x.device)
+        gamma = (
+            self.weight.cast(x.dtype).to(x.device)
+            if self.affine and self.weight
+            else ops.constant(
+                np.full((self.num_channels,), 1.0, dtype=np.float32),
+                dtype=x.dtype,
+                device=DeviceRef.CPU(),
+            ).to(x.device)
         )
-        var = ops.sum((x_reshaped - mean) ** 2) / n_elements
 
-        # Normalize
-        x = (x - mean) / ops.sqrt(var + self.eps)
-
-        # Reshape back to original shape
-        x = ops.reshape(x, [N, G, -1])
-        x = ops.reshape(x, [N, C] + list(input_shape[2:]))  # Original shape
-
-        # Apply affine transform if enabled
-        if self.affine:
-            assert self.weight is not None and self.bias is not None
-            weight = ops.reshape(
-                self.weight, [1, -1] + [1] * (len(x.shape) - 2)
+        beta = (
+            self.bias.cast(x.dtype).to(x.device)
+            if self.affine and self.bias
+            else ops.constant(
+                np.full((self.num_channels,), 0.0, dtype=np.float32),
+                dtype=x.dtype,
+                device=DeviceRef.CPU(),
             ).to(x.device)
-            bias = ops.reshape(
-                self.bias, [1, -1] + [1] * (len(x.shape) - 2)
-            ).to(x.device)
-            x = x * weight + bias
+        )
 
-        return x
+        return ops.custom(
+            "group_norm",
+            x.device,
+            [
+                x,
+                gamma,
+                beta,
+                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
+                ops.constant(
+                    self.num_groups, dtype=DType.int32, device=DeviceRef.CPU()
+                ),
+            ],
+            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+        )[0].tensor

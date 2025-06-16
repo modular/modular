@@ -1102,9 +1102,7 @@ fn _matmul_kv_cache_ragged[
     if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
-    _matmul_kv_cache_ragged_impl[
-        target=target, assert_write_mode=WRITE_MODE_REG
-    ](
+    _matmul_kv_cache_ragged_impl[target=target](
         hidden_state,
         input_row_offsets,
         weight,
@@ -1120,7 +1118,6 @@ fn _matmul_kv_cache_ragged_impl[
     cache_t: KVCacheT, //,
     *,
     target: StaticString,
-    assert_write_mode: WRITE_MODE,
 ](
     hidden_state: NDBuffer[type, 2, _, _],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
@@ -1202,12 +1199,8 @@ fn _matmul_kv_cache_ragged_impl[
         )
 
     # Cast to a register passable type so the function closure works on GPU.
-    k_cache_reg = rebind[
-        ContinuousBatchingKVCache[type, kv_params, assert_write_mode]
-    ](k_cache)
-    v_cache_reg = rebind[
-        ContinuousBatchingKVCache[type, kv_params, assert_write_mode]
-    ](v_cache)
+    k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](k_cache)
+    v_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](v_cache)
 
     @parameter
     @__copy_capture(k_cache_reg, v_cache_reg)
@@ -1857,7 +1850,7 @@ fn generic_flash_attention_kv_cache_ragged[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -1912,7 +1905,7 @@ fn _flash_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
@@ -2053,7 +2046,7 @@ fn _flare_mla_decode_kv_cache_ragged[
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
@@ -2212,7 +2205,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
         cache_offsets: The start position of each K entry in the PagedKVCacheCollection.
         input_row_offsets: The start and end position of each Q entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (total_seq_len, num_heads, kv_head_size).
@@ -2375,7 +2368,7 @@ fn _cross_attention_dispatch[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[type, 3, *_],
-    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     q_max_seq_len: UInt32,
     kv_input_row_offsets: NDBuffer[DType.uint32, 1],
     kv_cache: collection_t,
@@ -2449,7 +2442,7 @@ fn generic_cross_attention_kv_cache[
     local_window_size: Int = -1,
 ](
     q: NDBuffer[mut=True, type, 3, *_],
-    q_input_row_offsets: ManagedTensorSlice[type = DType.uint32, rank=1],
+    q_input_row_offsets: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     q_max_seq_len: NDBuffer[DType.uint32, 1, *_],
     kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
@@ -2505,7 +2498,7 @@ fn generic_cross_attention_kv_cache[
 # TODO: Remove this when we're no longer using NDBuffers.
 @always_inline
 fn valid_length_managed_tensor_slice_to_ndbuffer(
-    tensor: ManagedTensorSlice[type = DType.uint32, rank=1]
+    tensor: ManagedTensorSlice[dtype = DType.uint32, rank=1]
 ) -> NDBuffer[DType.uint32, 1, MutableAnyOrigin]:
     var ptr = tensor._ptr.address_space_cast[AddressSpace.GENERIC]()
     return NDBuffer[DType.uint32, 1, MutableAnyOrigin](

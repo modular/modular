@@ -21,12 +21,10 @@ from tempfile import gettempdir
 
 import os
 import sys
-from collections import List, Optional
 from pathlib import Path
 
 from memory import Span
-
-from utils import write_buffered
+from utils.write import _WriteBufferStack
 
 alias TMP_MAX = 10_000
 
@@ -54,7 +52,7 @@ fn _candidate_tempdir_list() -> List[String]:
 
     # First, try the environment.
     for env_var in possible_env_vars:
-        if dirname := os.getenv(String(env_var[])):
+        if dirname := os.getenv(String(env_var)):
             dirlist.append(dirname^)
 
     # Failing that, try OS-specific locations.
@@ -81,10 +79,10 @@ fn _get_default_tempdir() raises -> String:
     var dirlist = _candidate_tempdir_list()
 
     for dir_name in dirlist:
-        if not os.path.isdir(dir_name[]):
+        if not os.path.isdir(dir_name):
             continue
-        if _try_to_create_file(dir_name[]):
-            return dir_name[]
+        if _try_to_create_file(dir_name):
+            return dir_name
 
     raise Error("No usable temporary directory found")
 
@@ -182,7 +180,7 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
         raise Error("`path`can not be a symbolic link: " + path)
 
     for file_or_dir in os.listdir(path):
-        var curr_path = os.path.join(path, file_or_dir[])
+        var curr_path = os.path.join(path, file_or_dir)
         if os.path.isfile(curr_path):
             try:
                 os.remove(curr_path)
@@ -325,7 +323,9 @@ struct NamedTemporaryFile:
             self.name = name.value()
         else:
             for _ in range(TMP_MAX):
-                var potential_name = final_dir + os.sep + prefix + _get_random_name() + suffix
+                var potential_name = (
+                    final_dir + os.sep + prefix + _get_random_name() + suffix
+                )
                 if not os.path.exists(potential_name):
                     self.name = potential_name
                     break
@@ -414,7 +414,13 @@ struct NamedTemporaryFile:
             args: Sequence of arguments to write to this Writer.
         """
         var file = FileDescriptor(self._file_handle._get_raw_fd())
-        write_buffered(file, args)
+        var buffer = _WriteBufferStack(file)
+
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(buffer)
+
+        buffer.flush()
 
     @always_inline
     fn write_bytes(mut self, bytes: Span[Byte, _]):

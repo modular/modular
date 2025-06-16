@@ -79,13 +79,13 @@ fn _reduce[
     func: fn[dtype: DType, width: Int] (
         SIMD[dtype, width], SIMD[dtype, width]
     ) -> (SIMD[dtype, width]),
-](inp: LayoutTensor, out: LayoutTensor):
+](inp: LayoutTensor, outp: LayoutTensor):
     constrained[
-        inp.layout.known_shape() and out.layout.known_shape(),
+        inp.layout.known_shape() and outp.layout.known_shape(),
         "_reduce expects inputs with statically know shapes",
     ]()
     constrained[
-        inp.rank - 1 == out.rank,
+        inp.rank - 1 == outp.rank,
         "_reduce expects output of rank = inp.rank - 1",
     ]()
 
@@ -95,7 +95,7 @@ fn _reduce[
         @parameter
         if dim != axis:
             constrained[
-                inp.shape[dim]() == out.shape[dim](),
+                inp.shape[dim]() == outp.shape[dim](),
                 "_reduce expects none reduction dims to be the same",
             ]()
 
@@ -105,7 +105,7 @@ fn _reduce[
         @parameter
         if dim != axis:
             constrained[
-                inp.shape[dim]() == out.shape[dim - 1](),
+                inp.shape[dim]() == outp.shape[dim - 1](),
                 "_reduce expects none reduction dims to be the same",
             ]()
 
@@ -117,35 +117,35 @@ fn _reduce[
 
         @parameter
         for i in range(inp.shape[0]()):
-            var reduce_val = init_func[out.dtype, out.element_size]()
+            var reduce_val = init_func[outp.dtype, outp.element_size]()
 
             @parameter
             for j in range(inp.shape[1]()):
                 reduce_val = func(
                     reduce_val,
-                    rebind[out.element_type](inp[i, j].cast[out.dtype]()),
+                    rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
                 )
 
-            out[i] = reduce_val
+            outp[i] = reduce_val
 
     elif inp.rank == 2 and axis == 0:
 
         @parameter
         for j in range(inp.shape[1]()):
-            var reduce_val = init_func[out.dtype, out.element_size]()
+            var reduce_val = init_func[outp.dtype, outp.element_size]()
 
             @parameter
             for i in range(inp.shape[0]()):
                 reduce_val = func(
                     reduce_val,
-                    rebind[out.element_type](inp[i, j].cast[out.dtype]()),
+                    rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
                 )
 
-            out[j] = reduce_val
+            outp[j] = reduce_val
 
 
 @always_inline
-fn sum[axis: Int](inp: LayoutTensor, out: LayoutTensor):
+fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
     """Computes sum reduction along specified axis.
 
     Reduces the input tensor by summing elements along the specified axis
@@ -156,12 +156,12 @@ fn sum[axis: Int](inp: LayoutTensor, out: LayoutTensor):
 
     Args:
         inp: The input tensor to sum.
-        out: The output tensor to store sum results.
+        outp: The output tensor to store sum results.
 
     Constraints:
         All tensors must have statically known shapes.
-        `out.rank` must equal `inp.rank - 1`.
-        Non-reduction dimensions must match between inp and out.
+        `outp.rank` must equal `inp.rank - 1`.
+        Non-reduction dimensions must match between inp and outp.
         Currently only supports rank-2 inputs.
 
     Example:
@@ -196,11 +196,11 @@ fn sum[axis: Int](inp: LayoutTensor, out: LayoutTensor):
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return a + b
 
-    _reduce[axis, sum_init, sum_func](inp, out)
+    _reduce[axis, sum_init, sum_func](inp, outp)
 
 
 @always_inline
-fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
+fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor):
     """Computes maximum reduction along specified axis.
 
     Reduces the input tensor by taking maximum elements along the specified
@@ -211,12 +211,12 @@ fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
 
     Args:
         inp: The input tensor to reduce.
-        out: The output tensor to store maximum results.
+        outp: The output tensor to store maximum results.
 
     Constraints:
         All tensors must have statically known shapes.
-        `out.rank` must equal `inp.rank - 1`.
-        Non-reduction dimensions must match between `inp` and `out`.
+        `outp.rank` must equal `inp.rank - 1`.
+        Non-reduction dimensions must match between `inp` and `outp`.
         Currently only supports rank-2 inputs.
     """
 
@@ -228,7 +228,7 @@ fn max[axis: Int](inp: LayoutTensor, out: LayoutTensor):
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return b_max(a, b)
 
-    _reduce[axis, max_init, max_func](inp, out)
+    _reduce[axis, max_init, max_func](inp, outp)
 
 
 fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:

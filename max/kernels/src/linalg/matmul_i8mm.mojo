@@ -150,8 +150,8 @@ struct LoadStore_i8mm[
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the I8MM microkernel.
-@value
-struct Inner_matmul_i8mm(InnerMatmulKernel):
+@fieldwise_init
+struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
     # Parameters for global reference.
 
     @always_inline

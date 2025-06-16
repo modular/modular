@@ -188,10 +188,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
         return Gemma3Config.get_kv_params(
-            huggingface_config,
-            n_devices,
-            kv_cache_config,
-            cache_dtype,
+            huggingface_config, n_devices, kv_cache_config, cache_dtype
         )
 
     @classmethod
@@ -245,11 +242,10 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=Gemma3Config.get_num_layers(
-                huggingface_config=huggingface_config,
+                huggingface_config=huggingface_config
             ),
             available_cache_memory=available_cache_memory,
             devices=devices,
@@ -286,6 +282,10 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         )
         return model
 
+    # For text-only models, we should be using all the weights.  This is
+    # overridden for Gemma3 multi-modal.
+    _strict_state_dict_loading = True
+
     def _build_graph(self):
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
@@ -297,9 +297,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
         return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
         huggingface_config = self.huggingface_config
@@ -326,7 +324,11 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         nn_model = Gemma3(model_config)
-        nn_model.load_state_dict(state_dict, weight_alignment=1)
+        nn_model.load_state_dict(
+            state_dict,
+            weight_alignment=1,
+            strict=self._strict_state_dict_loading,
+        )
         self.state_dict = nn_model.state_dict(auto_initialize=False)
 
         with Graph(
@@ -412,8 +414,7 @@ class Gemma3Model(PipelineModel[TextContext], KVCacheMixin):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.active_length for ctx in context_batch],
-            dtype=np.uint32,
+            [0] + [ctx.active_length for ctx in context_batch], dtype=np.uint32
         )
 
         # Create a ragged token vector of length: sum(len(t) for t in tokens).

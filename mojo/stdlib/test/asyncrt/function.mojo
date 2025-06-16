@@ -54,14 +54,14 @@ struct OneS(DevicePassable):
 fn vec_func(
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     s: TwoS,
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
+    output[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
 
 
 fn test_function_unchecked(ctx: DeviceContext) raises:
@@ -128,7 +128,7 @@ fn test_function_checked(ctx: DeviceContext) raises:
             out_host[i] = length + i
     var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
 
-    var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
+    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
     ctx.enqueue_function_checked(
         compiled_vec_func,
         in0,

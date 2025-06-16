@@ -47,7 +47,7 @@ fn matmul[
                 C[i, j] = sum
 
 
-# TODO: Less magic numbers for dimenions, use variables
+# TODO: Less magic numbers for dimensions, use variables
 # TODO: This is technically correlation, not convolution. Clarify this.
 # TODO: Decide if B, G, and A matrices should be transposed
 # TODO: B,G,A can be static

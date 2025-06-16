@@ -14,6 +14,7 @@
 """
 from collections import Optional, OptionalReg
 from math import align_up, ceildiv, exp
+from math.math import _Expable
 from sys import (
     alignof,
     bitwidthof,
@@ -35,6 +36,7 @@ from gpu.intrinsics import buffer_load, buffer_store
 from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
+from layout._fillers import BATCH_SIZE
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -162,9 +164,7 @@ fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
     Returns:
         The number of elements in the slice for the specified dimension.
     """
-    var start: Int
-    var end: Int
-    start, end, _ = slc.indices(Int(layout.shape[dim]))
+    var start, end, _ = slc.indices(Int(layout.shape[dim]))
     return end - start
 
 
@@ -285,7 +285,7 @@ struct LayoutTensor[
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
-](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable):
+](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable, _Expable):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 
@@ -313,8 +313,9 @@ struct LayoutTensor[
     ```mojo
     from layout import Layout, LayoutTensor
 
+    # Create tensor on CPU using InlineArray to allocate storage space.
     var storage = InlineArray[Scalar[DType.float32], 5 * 4](uninitialized = True)
-    var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5,4)](storage)
+    var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5, 4)](storage)
     ```
     """
 
@@ -390,8 +391,8 @@ struct LayoutTensor[
         ]()
 
         self.ptr = span.unsafe_ptr()
-        self.runtime_layout = __type_of(self.runtime_layout)()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_layout = {}
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -423,7 +424,7 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, linear_idx_type=linear_idx_type
         ]()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -491,8 +492,8 @@ struct LayoutTensor[
         ]()
 
         self.ptr = ptr
-        self.runtime_layout = __type_of(self.runtime_layout)()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_layout = {}
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -525,7 +526,7 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, linear_idx_type=linear_idx_type
         ]()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -576,6 +577,16 @@ struct LayoutTensor[
         """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
         statically known dimensions.
 
+        Note that the device buffer memory is on the accelerator device (GPU
+        global memory). Code running on the CPU can use the
+        [`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext) to
+        allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
+        that can be accessed on the GPU. You cannot directly access data in the
+        `DeviceBuffer` or `LayoutTensor` from the CPU.
+
+        The following example shows a typical pattern for using `DeviceBuffer`
+        to construct a `LayoutTensor` that you can use on the GPU.
+
         ```mojo
         from gpu.host import DeviceContext, DeviceBuffer
         from layout import Layout, LayoutTensor
@@ -583,10 +594,21 @@ struct LayoutTensor[
         alias dtype = DType.float32
 
         var ctx = DeviceContext()
-        var dev_buf = ctx.enqueue_create_buffer[dtype](8)
+        # Allocate buffers
+        var dev_buf = ctx.enqueue_create_buffer[dtype](16)
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](16)
+        # Ensure buffers have been created
+        ctx.synchronize()
 
+        # Initialize host buffer and copy to device buffer
+        for i in range(16):
+            host_buf[i] = i
+        ctx.enqueue_copy(dev_buf, host_buf)
+
+        # Create LayoutTensor to use on device
         alias layout = Layout.row_major(4, 4)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
+        ...
         ```
 
         Constraints:
@@ -616,14 +638,16 @@ struct LayoutTensor[
         """Create a `LayoutTensor` from a `HostBuffer`. The layout must have
         statically known dimensions.
 
+        The resulting tensor's data can only be accessed on the CPU.
+
         ```mojo
-        from gpu.host import DeviceContext, DeviceBuffer
+        from gpu.host import DeviceContext, HostBuffer
         from layout import Layout, LayoutTensor
 
         alias dtype = DType.float32
 
         var ctx = DeviceContext()
-        var dev_buf = ctx.enqueue_create_buffer[dtype](8)
+        var dev_buf = ctx.enqueue_create_host_buffer[dtype](8)
 
         alias layout = Layout.row_major(4, 4)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
@@ -657,6 +681,8 @@ struct LayoutTensor[
         The runtime layout element type will be casted to the layout tensor layout
         integer type.
 
+        The resulting tensor's data can only be accessed on the GPU.
+
         Constraints:
             - Element layout must be fully static.
 
@@ -685,6 +711,8 @@ struct LayoutTensor[
         """Create a `LayoutTensor` from a `HostBuffer` and a runtime layout.
         The runtime layout element type will be casted to the layout tensor layout
         integer type.
+
+        The resulting tensor's data can only be accessed on the CPU.
 
         Constraints:
             - Element layout must be fully static.
@@ -716,6 +744,8 @@ struct LayoutTensor[
         the tensor, and the runtime layout of each element. The runtime layout
         element type will be casted to the layout tensor layout integer type.
 
+        The resulting tensor's data can only be accessed on the GPU.
+
         Args:
             device_buffer: The `DeviceBuffer` containing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
@@ -745,6 +775,8 @@ struct LayoutTensor[
         """Create a `LayoutTensor` from a `HostBuffer`, a runtime layout for the
         tensor, and the runtime layout of each element. The runtime layout
         element type will be casted to the layout tensor layout integer type.
+
+        The resulting tensor's data can only be accessed on the CPU.
 
         Args:
             host_buffer: The `HostBuffer` containing to the underlying data.
@@ -2178,7 +2210,7 @@ struct LayoutTensor[
         ]()
 
         var ptr = stack_allocation[
-            layout.size(),
+            layout.size() * element_layout.size(),
             dtype,
             alignment=alignment,
             address_space=address_space,
@@ -2334,20 +2366,52 @@ struct LayoutTensor[
         return stride[idx]
 
     @always_inline
-    fn dim[idx: Int](self) -> Int:
+    fn dim(self, idx: Int) -> Int:
         """Returns the runtime dimension size of the tensor along the specified
         axis.
 
-        Unlike the static `shape` method, this instance method provides access
-        to the tensor's actual dimension sizes at runtime, which is necessary
-        for tensors with dynamic shapes or when working with tensor slices.
+        Unlike the static `dim` method, this instance method takes a runtime
+        dimension index.
 
-        Parameters:
+        Args:
             idx: The dimension index to query (0-based).
                  For example, in a 3D tensor with shape `[10, 20, 30]`:
                  - `dim(0)` returns 10 (first dimension).
                  - `dim(1)` returns 20 (second dimension).
                  - `dim(2)` returns 30 (third dimension).
+
+        Returns:
+            The dimension of the tensor along the specified axis as an integer.
+        """
+
+        constrained[
+            0 <= depth(layout.shape) <= 1,
+            String(
+                (
+                    "This method only works with tensors that have depth-1"
+                    " layouts (no nested shapes). Received: "
+                ),
+                layout,
+            ),
+        ]()
+
+        return self.runtime_layout.shape.value[idx]
+
+    @always_inline
+    fn dim[idx: Int](self) -> Int:
+        """Returns the dimension size of the tensor along the specified
+        axis.
+
+        Unlike the static `shape` method, this instance method provides access
+        to the tensor's actual dimension sizes. If the dimension is unknown,
+        the runtime layout is used to get the dimension size.
+
+        Parameters:
+            idx: The dimension index to query (0-based).
+                 For example, in a 3D tensor with shape `[10, 20, 30]`:
+                 - `dim[0]()` returns 10 (first dimension).
+                 - `dim[1]()` returns 20 (second dimension).
+                 - `dim[2]()` returns 30 (third dimension).
 
         Constraints:
             - Only works with tensors that have depth-1 layouts (no nested
@@ -2358,8 +2422,6 @@ struct LayoutTensor[
 
         Performance:
 
-        - This is a run-time operation that accesses the tensor's runtime
-            layout information.
         - For static dimensions known at compile time, prefer the static
             `shape` method when possible for better performance.
 
@@ -2370,10 +2432,13 @@ struct LayoutTensor[
             size of the view, not the original tensor.
         """
         constrained[
-            depth(layout.shape) == 1,
-            (
-                "This method only works with tensors that have depth-1 layouts"
-                " (no nested shapes)."
+            0 <= depth(layout.shape) <= 1,
+            String(
+                (
+                    "This method only works with tensors that have depth-1"
+                    " layouts (no nested shapes). Received: "
+                ),
+                layout,
             ),
         ]()
 
@@ -2542,6 +2607,7 @@ struct LayoutTensor[
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
+            alignment=alignment,
         ],
     ):
         """Returns a the type of a tile view of the tensor with specified
@@ -2690,6 +2756,113 @@ struct LayoutTensor[
                 runtime_layout.shape.value[i] = shape_i
 
             return __type_of(result)(self.ptr.offset(offset), runtime_layout)
+
+    @always_inline
+    fn tile_with_offset[
+        *tile_sizes: Int,
+    ](
+        self,
+        *tile_coords: Int,
+        out result: Tuple[
+            __type_of(self.tile_type[*tile_sizes]()),
+            IndexList[
+                len(flatten(self.layout.shape)),
+                element_type = Self.layout_int_type,
+            ],
+            Scalar[Self.linear_idx_type],
+        ],
+    ):
+        """Similar to `tile`, but also returns the corner coordinates of the
+        tile as well as the offset.
+
+        Parameters:
+            tile_sizes: The dimensions of each tile along each axis of the
+                tensor.
+
+        Args:
+            tile_coords: The coordinates of the specific tile to extract.
+
+        Returns:
+            A tuple containing:
+                - The extracted tile as a `LayoutTensor`.
+                - The corner coordinates of the tile.
+                - The offset of the tile.
+        """
+        alias num_tiles = _get_len[*tile_sizes]()
+
+        # need to calculate this again because _tiled_layout[1] is required for the offset calculation
+        alias _tiled_layout = Self._compute_tile_layout[*tile_sizes]()
+
+        constrained[
+            _tiled_layout[1].rank() == num_tiles,
+            "Number of tiles should match the rank",
+        ]()
+
+        alias tile_type = self.tile_type[*tile_sizes]()
+
+        # Static layout tiling
+        # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
+        var corner_coords = IndexList[
+            len(flatten(self.layout.shape)), element_type = Self.layout_int_type
+        ]()
+        var offset: Scalar[Self.linear_idx_type] = 0
+        var runtime_shape = __type_of(tile_type.runtime_layout.shape)()
+        var runtime_stride = __type_of(tile_type.runtime_layout.stride)()
+
+        @parameter
+        if tile_type.layout.all_dims_known():
+
+            @parameter
+            for i in range(num_tiles):
+                alias stride = Int(_tiled_layout[1].stride[i])
+                offset += tile_coords[i] * stride
+                corner_coords[i] = tile_coords[i] * tile_sizes[i]
+
+            var runtime_layout = __type_of(tile_type.runtime_layout)(
+                runtime_shape, runtime_stride
+            )
+
+            # Adjust runtime layout, so the shape is clipped to the unmasked sizes.
+            @parameter
+            if tile_type.masked:
+
+                @parameter
+                for i in range(tile_type.layout.rank()):
+                    cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
+                    shape_i = max(0, min(tile_sizes[i], cur_dim))
+                    runtime_layout.shape.value[i] = shape_i
+
+            return (
+                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
+                corner_coords,
+                offset,
+            )
+
+        else:
+            # Dynamic layout, use strides
+            @parameter
+            for i in range(num_tiles):
+                var corner_coord = tile_coords[i] * tile_sizes[i]
+                corner_coords[i] = corner_coord
+                runtime_stride.value[i] = self.runtime_layout.stride.value[i]
+                offset += self.runtime_layout.stride.value[i] * corner_coord
+
+            var runtime_layout = __type_of(tile_type.runtime_layout)(
+                runtime_shape, runtime_stride
+            )
+
+            # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
+            @parameter
+            for i in range(tile_type.layout.rank()):
+                cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
+                shape_i = max(0, min(tile_sizes[i], cur_dim))
+                runtime_layout.shape.value[i] = shape_i
+
+            return (
+                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
+                corner_coords,
+                offset,
+            )
 
     @always_inline
     fn tiled_iterator[
@@ -3066,15 +3239,10 @@ struct LayoutTensor[
 
         return tile_shape
 
-    @always_inline
-    fn distribute[
-        threads_layout: Layout,
-        axis: OptionalReg[Int] = None,
-        swizzle: OptionalReg[Swizzle] = None,
-        submode_axis: OptionalReg[Int] = None,
+    @staticmethod
+    fn distribute_type[
+        threads_layout: Layout, axis: OptionalReg[Int] = None
     ](
-        self,
-        thread_id: UInt,
         out result: LayoutTensor[
             dtype,
             _compute_distribute_layout[
@@ -3095,6 +3263,29 @@ struct LayoutTensor[
                 masked or _distribute_is_masked[layout, threads_layout, axis]()
             ) if is_nvidia_gpu() else False,
         ],
+    ):
+        """Returns the type of the distributed tensor.
+
+        Parameters:
+            threads_layout: The layout of the threads.
+            axis: The axis to distribute along.
+
+        Returns:
+            The type of the distributed tensor.
+        """
+        while True:
+            pass
+
+    @always_inline
+    fn distribute[
+        threads_layout: Layout,
+        axis: OptionalReg[Int] = None,
+        swizzle: OptionalReg[Swizzle] = None,
+        submode_axis: OptionalReg[Int] = None,
+    ](
+        self,
+        thread_id: UInt,
+        out result: __type_of(self.distribute_type[threads_layout, axis]()),
     ):
         """Distribute tensor workload across multiple threads in a structured
         pattern.
@@ -3303,6 +3494,200 @@ struct LayoutTensor[
                         runtime_shape, runtime_stride
                     ),
                     self.runtime_element_layout,
+                )
+
+    @always_inline
+    fn distribute_with_offset[
+        threads_layout: Layout,
+        axis: OptionalReg[Int] = None,
+        swizzle: OptionalReg[Swizzle] = None,
+        submode_axis: OptionalReg[Int] = None,
+    ](
+        self,
+        thread_id: UInt,
+        out result: Tuple[
+            __type_of(self.distribute_type[threads_layout, axis]()),
+            IndexList[threads_layout.rank(), element_type=layout_int_type],
+            Scalar[linear_idx_type],
+        ],
+    ):
+        """Similar to `distribute`, but also returns the corner coordinates of
+        the tile as well as the offset.
+
+        Parameters:
+            threads_layout: The layout of the threads.
+            axis: The axis to distribute along.
+            swizzle: An optional swizzle function.
+            submode_axis: An optional submode axis.
+
+        Args:
+            thread_id: The ID of the current thread (0-based).
+
+        Returns:
+            A tuple containing:
+                - The distributed tensor.
+                - The corner coordinates of the tile.
+                - The offset of the tile.
+        """
+        alias ret_tensor_type = self.distribute_type[threads_layout, axis]()
+        alias distributed_layout = _compute_distribute_layout[
+            layout,
+            threads_layout,
+            axis,
+        ]()
+
+        @parameter
+        if ret_tensor_type.masked:
+            runtime_shape = __type_of(ret_tensor_type.runtime_layout.shape)(
+                self._clamp_distribute_shape[threads_layout](thread_id)
+            )
+        else:
+            runtime_shape = __type_of(ret_tensor_type.runtime_layout.shape)()
+
+        var runtime_stride = __type_of(ret_tensor_type.runtime_layout.stride)()
+        var offset_coords = IndexList[
+            threads_layout.rank(), element_type=layout_int_type
+        ]()
+        var offset: Scalar[linear_idx_type] = 0
+
+        # Static layout tiling
+        # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
+        @parameter
+        if layout.all_dims_known():
+            alias fragments_layout_stride = flatten(
+                distributed_layout[0].stride
+            )
+
+            # Only extract coordinates in the given axis.
+            # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
+            # coordinates since thread 2 and 3 are getting the same tile.
+            alias thread_projected_stride = flatten(
+                threads_layout.stride[
+                    axis.value()
+                ] if axis else threads_layout.stride
+            )
+            alias thread_projected_shape = flatten(
+                threads_layout.shape[
+                    axis.value()
+                ] if axis else threads_layout.shape
+            )
+
+            @parameter
+            for i in range(len(fragments_layout_stride)):
+                alias fragments_stride_i: UInt = Int(
+                    fragments_layout_stride[i]
+                ).value
+                alias shape_i: UInt = Int(thread_projected_shape[i])
+                alias stride_i: UInt = Int(thread_projected_stride[i])
+                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                offset_coords[i] = thread_coord_i
+                offset += thread_coord_i * fragments_stride_i
+
+            # Swizzling applies to the index of elements rather than scalars because
+            # the former is the unit in distribution.
+            var swizzled_offset = offset
+
+            @parameter
+            if swizzle:
+                alias swizzle_fn = swizzle.value()
+                swizzled_offset = (
+                    swizzle_fn(offset // self.element_size) * self.element_size
+                )
+
+            @parameter
+            if ret_tensor_type.masked:
+                return (
+                    __type_of(ret_tensor_type)(
+                        self.ptr.offset(Int(swizzled_offset)),
+                        __type_of(ret_tensor_type.runtime_layout)(
+                            runtime_shape, runtime_stride
+                        ),
+                    ),
+                    offset_coords,
+                    swizzled_offset,
+                )
+            else:
+                return (
+                    __type_of(ret_tensor_type)(
+                        self.ptr.offset(Int(swizzled_offset)),
+                    ),
+                    offset_coords,
+                    swizzled_offset,
+                )
+
+        else:
+            constrained[
+                layout.known_shape() and threads_layout.all_dims_known(),
+                (
+                    "Distribute expecting layout with static shapes and"
+                    " fully static threads_layout"
+                ),
+            ]()
+
+            # Only extract coordinates in the given axis.
+            # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
+            # coordinates since thread 2 and 3 are getting the same tile.
+            alias thread_projected_stride = flatten(
+                threads_layout.stride[
+                    axis.value()
+                ] if axis else threads_layout.stride
+            )
+            alias thread_projected_shape = flatten(
+                threads_layout.shape[
+                    axis.value()
+                ] if axis else threads_layout.shape
+            )
+
+            @parameter
+            for i in range(runtime_shape.scalar_length):
+                alias thread_shape_i = threads_layout[i].size()
+                runtime_stride.value[i] = (
+                    self.runtime_layout.stride.value[i] * thread_shape_i
+                )
+
+            @parameter
+            for i in range(len(flatten(Self.layout.stride))):
+                var fragments_stride_i = self.runtime_layout.stride.value[i]
+                alias shape_i: UInt = Int(thread_projected_shape[i]).value
+                alias stride_i: UInt = Int(thread_projected_stride[i]).value
+                var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
+                offset_coords[i] = thread_coord_i
+                offset += thread_coord_i * fragments_stride_i
+
+            # Swizzling applies to the index of elements rather than scalars because
+            # the former is the unit in distribution.
+            var swizzled_offset = offset
+
+            @parameter
+            if swizzle:
+                alias swizzle_fn = swizzle.value()
+                swizzled_offset = (
+                    swizzle_fn(offset // self.element_size) * self.element_size
+                )
+
+            @parameter
+            if self.element_layout.all_dims_known():
+                return (
+                    __type_of(ret_tensor_type)(
+                        self.ptr.offset(Int(swizzled_offset)),
+                        __type_of(ret_tensor_type.runtime_layout)(
+                            runtime_shape, runtime_stride
+                        ),
+                    ),
+                    offset_coords,
+                    swizzled_offset,
+                )
+            else:
+                return (
+                    __type_of(ret_tensor_type)(
+                        self.ptr.offset(Int(swizzled_offset)),
+                        __type_of(ret_tensor_type.runtime_layout)(
+                            runtime_shape, runtime_stride
+                        ),
+                        self.runtime_element_layout,
+                    ),
+                    offset_coords,
+                    swizzled_offset,
                 )
 
     @always_inline
@@ -3649,7 +4034,7 @@ struct LayoutTensor[
 
         Example:
 
-        For a 4×4 tensor with values:
+        For a 4×4 tensor, `t` with values:
 
         ```
         [1 2 3 4]
@@ -3659,7 +4044,7 @@ struct LayoutTensor[
         ```
 
         ```mojo
-        slice[Slice(1, 3), Slice(0, 2)]
+        t.slice[Slice(1, 3), Slice(0, 2)]
         ```
 
         will extract:
@@ -3751,11 +4136,11 @@ struct LayoutTensor[
 
         Example:
 
-        Given a 3×4×5 tensor, the following example extracts a 2×2 slice from
-        dimensions 0 and 2, with dimension 1 fixed at index 1.
+        Given a 3×4×5 tensor, `t`, the following example extracts a 2×2 slice
+        from dimensions 0 and 2, with dimension 1 fixed at index 1.
 
         ```mojo
-        slice = t.slice[Slice(1, 3), Slice(0, 2), IndexList[2](0, 2)](1)
+        t.slice = t.slice[Slice(1, 3), Slice(0, 2), IndexList[2](0, 2)](1)
         ```
 
         Performance:
@@ -3852,11 +4237,11 @@ struct LayoutTensor[
 
         Example:
 
-        For a 3×4×5 tensor, the following example extracts a 1D slice from
+        For a 3×4×5 tensor, `t`, the following example extracts a 1D slice from
         dimension 0, with dimensions 1 and 2 fixed at indices 1 and 2:
 
         ```mojo
-        slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)`
+        t.slice_1d[Slice(1, 3), IndexList[1](0)](1, 2)`
         ```
 
         Performance:
@@ -3987,6 +4372,7 @@ struct LayoutTensor[
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
             masked=masked,
+            alignment=alignment,
         ],
     ):
         """Create a view of the tensor with a different shape.
@@ -4007,8 +4393,8 @@ struct LayoutTensor[
 
         Example:
 
-        For a 2×6 tensor, `reshape[Layout((3, 4))]()` produces a 3×4 tensor
-        with the same elements in row-major order.
+        Given a 2×6 row-major tensor, `reshape[Layout.col_major(3, 4)]()`
+        produces a 3×4 tensor with the same elements in column-major order.
 
         Performance:
 
@@ -4238,8 +4624,18 @@ struct LayoutTensor[
         ```mojo
         from layout import LayoutTensor, Layout
 
-        var src = LayoutTensor[DType.float32, Layout((2, 3))]()
-        var dst = LayoutTensor[DType.float32, Layout((3, 2))]()
+        var src_storage = InlineArray[Float32, 2 * 3](uninitialized=True)
+        var dst_storage = InlineArray[Float32, 3 * 2](uninitialized=True)
+        var src = LayoutTensor[
+            DType.float32,
+            Layout([2, 3]),
+        ](src_storage).fill(1.0)
+
+        var dst = LayoutTensor[
+            DType.float32,
+            Layout([3, 2]),
+        ](dst_storage)
+
         dst.copy_from(src)  # Copies all elements from src to dst
         ```
 
@@ -4322,6 +4718,28 @@ struct LayoutTensor[
         leveraging hardware-specific asynchronous copy mechanisms for improved
         performance.
 
+        For optimal performance, you need to arrange the copy correctly. Use the
+        [`distribute()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#distribute)
+        method to create thread-local fragments of the source and
+        destination tensors, assigning each thread one or more elements to copy.
+
+        Optionally, use the
+        [`vectorize()`]((/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
+        method to get vectorized views of both tensors before calling
+        `distribute()`. This allows each thread to copy multiple elements of the
+        tensor. For example:
+
+        ```mojo
+        var fragment = tensor.vectorize[1, simd_width]().distribute[
+            thread_layout
+        ](thread_id)
+        ```
+
+        The copy operation is asynchronous, so you must call
+        [`async_copy_wait_all()`](/mojo/stdlib/gpu/memory/async_copy_wait_all/)
+        or
+        [`async_copy_wait_group()`](/mojo/stdlib/gpu/memory/async_copy_wait_group/)
+        to ensure the copy has completed before using the data.
 
         Constraints:
             - Destination must be in shared memory.
@@ -4347,20 +4765,43 @@ struct LayoutTensor[
         Example:
 
         ```mojo
-        from layout import LayoutTensor, Layout, AddressSpace
-        var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
-                                        address_space=AddressSpace.GLOBAL]()
-        var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                        address_space=AddressSpace.SHARED]()
-        shared_data.copy_from_async(global_data)
+        from layout import LayoutTensor, Layout
+        from gpu import thread_idx, block_idx, block_dim, global_idx, grid_dim
+        from gpu.memory import AddressSpace, async_copy_wait_all
+
+        alias dtype = DType.float32
+        alias in_size = 128
+        alias block_size = 16
+        num_blocks = in_size // block_size
+        alias input_layout = Layout.row_major(in_size, in_size)
+
+        fn kernel(tensor: LayoutTensor[dtype, input_layout, MutableAnyOrigin]):
+            # extract a tile from the input tensor.
+            var global_tile = tensor.tile[block_size, block_size](block_idx.x, block_idx.y)
+
+            # allocate a shared memory tile
+            alias tile_layout = Layout.row_major(block_size, block_size)
+            var shared_tile = LayoutTensor[
+                dtype,
+                tile_layout,
+                MutableAnyOrigin,
+                address_space = AddressSpace.SHARED,
+            ].stack_allocation()
+
+            # Create per-thread tile fragments for copying
+            var tid = thread_idx.y + thread_idx.x * block_dim.x
+            alias thread_layout = Layout.row_major(block_size, block_size)
+            var global_fragment = global_tile.distribute[thread_layout](tid)
+            var shared_fragment = shared_tile.distribute[thread_layout](tid)
+
+            # async copy to shared memory
+            shared_fragment.copy_from_async(global_fragment)
+            async_copy_wait_all()
+            # ... do something with the shared tile
         ```
 
         Performance:
 
-        - Uses hardware-accelerated asynchronous copy mechanisms for optimal
-            performance.
-        - Particularly efficient for copying data from global memory to shared
-            memory in GPU kernels.
         - Supports vectorized copies for 4, 8, or 16-byte elements for better
             throughput.
         - Can bypass L1 cache with appropriate eviction policies for specific
@@ -4462,9 +4903,10 @@ struct LayoutTensor[
 
                 @parameter
                 if is_masked:
-                    var src_copy_size = Int32(
-                        element_size_bytes
-                    ) if src_idx < src_idx_bound else 0
+                    var src_copy_size = (
+                        Int32(element_size_bytes) if src_idx
+                        < src_idx_bound else 0
+                    )
                     async_copy[element_size_bytes, fill = Scalar[dtype](0.0)](
                         src_ptr.bitcast[Scalar[dtype]]() + src_idx,
                         dst_ptr + Int(swizzled_idx),
@@ -4508,14 +4950,36 @@ struct LayoutTensor[
                 )
 
     @always_inline
-    fn fill(
+    fn fill[
+        *,
+        use_runtime_layout: Bool = (
+            not layout.all_dims_known() or layout.size() > BATCH_SIZE
+        ),
+    ](
         self: LayoutTensor[mut=True, dtype, **_], val: Scalar[dtype]
     ) -> __type_of(self):
         """Fill the entire tensor with a single value.
 
         This method sets all elements of the tensor to the specified value. It
-        works with both statically and dynamically shaped tensors, filling all
-        elements regardless of the tensor's layout.
+        works with both statically and dynamically shaped tensors.
+
+        For statically known layouts, the fill operation is unrolled at compile
+        time. For dynamic layouts, a runtime loop is used. No vectorization is
+        applied, so performance may be suboptimal for large tensors. Consider
+        using hardware-specific fill operations for better performance with
+        large tensors.
+
+        This method can be used with tensors of any rank and shape. The
+        fill operation respects the tensor's layout, filling all
+        elements regardless of how they are arranged in memory. For
+        tensors with `element_layout`, all elements within each logical element
+        are filled with the same value.
+
+        Parameters:
+            use_runtime_layout: Whether to use the runtime layout for filling.
+                This parameter is defaulted to `True` if the layout is not
+                statically known. If loop bounds are too large, it's better to
+                use the runtime layout to avoid long compilation time.
 
         Args:
             val: The value to fill the tensor with. Must be of the same data
@@ -4527,33 +4991,30 @@ struct LayoutTensor[
         Example:
 
         ```mojo
-        from layout import LayoutTensor, Layout
-        var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
-        tensor.fill(0.0)  # Sets all elements to 0.0
+        from layout import Layout, LayoutTensor
+
+        def main():
+            var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+            var tensor = LayoutTensor[
+                DType.float32,
+                Layout([3, 4]),
+            ](storage).fill(0.0)
+            print(tensor)
         ```
 
-        Performance:
+        If not using method chaining, you can either reassign the result to the
+        tensor variable, or assign the result to the discard pattern (`_`) to
+        avoid warnings about an unused value:
 
-        - For statically known layouts, the fill operation is unrolled at
-            compile time.
-        - For dynamic layouts, a runtime loop is used.
-        - No vectorization is applied, so performance may be suboptimal for
-            large tensors.
-        - Consider using hardware-specific fill operations for better
-            performance with large tensors.
-
-        Notes:
-
-        - The tensor must be mutable (`mut=True`).
-        - The fill operation respects the tensor's layout, filling all elements
-            regardless of how they are arranged in memory.
-        - This method can be used with tensors of any rank and shape.
-        - For tensors with `element_layout`, all elements within each logical
-            element are filled with the same value.
+        ```mojo
+        tensor = tensor.fill(0.0)
+        # or
+        _ = tensor.fill(0.0)
+        ```
         """
 
         @parameter
-        if layout.all_dims_known():
+        if not use_runtime_layout:
             alias num_elements = layout.size()
 
             # TODO: MSTDL-1352 we can use memory element to fill the tensor.
@@ -4615,10 +5076,15 @@ struct LayoutTensor[
         Example:
 
         ```mojo
-        from layout import LayoutTensor, Layout
-        var tensor = LayoutTensor[DType.float32, Layout((2, 3))]()
-        tensor.fill(1.0)
-        print(tensor)  # Internally calls `write_to` with a StringWriter
+        from layout import Layout, LayoutTensor
+
+        def main():
+            var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
+            var tensor = LayoutTensor[
+                DType.float32,
+                Layout([2, 3]),
+            ](storage).fill(1.0)
+            print(tensor)  # Internally calls `write_to` with a StringWriter
         ```
 
         Output for a 2×3 tensor:
@@ -4723,7 +5189,12 @@ struct LayoutTensor[
 
         ```mojo
         from layout import LayoutTensor, Layout
-        var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
+
+        var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+        var tensor = LayoutTensor[
+            DType.float32,
+            Layout([3, 4]),
+        ](storage).fill(1.0)
         var element = tensor._get[1, 2]()  # Gets the element at row 1, column 2
         ```
 
@@ -4781,7 +5252,11 @@ struct LayoutTensor[
 
         ```mojo
         from layout import LayoutTensor, Layout
-        var tensor = LayoutTensor[DType.float32, Layout((3, 4))]()
+        var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
+        var tensor = LayoutTensor[
+            DType.float32,
+            Layout([3, 4]),
+        ](storage).fill(0)
         tensor._set[1, 2](5.0)  # Sets the element at row 1, column 2 to 5.0
         ```
 
@@ -4803,6 +5278,54 @@ struct LayoutTensor[
         Element[dtype, Self.element_layout, linear_idx_type](
             val, self.runtime_element_layout
         ).store(self.ptr.offset(offset))
+
+    @always_inline("nodebug")
+    fn _get[idx: IntTuple](self) -> Self.element_type:
+        """Retrieves a single element from the tensor at the index.
+
+        The shape of the IntTuple index should conform with the layout.
+
+        Parameters:
+            idx: The coordinate specifying the element's position in each dimension. For example, in a 3D tensor, you would use (i, j, k).
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+
+        @parameter
+        if layout.all_dims_known():
+            alias offset = Self.layout(idx)
+            return self._load_offset(offset)
+        else:
+            alias crd = RuntimeTuple[idx]()
+            return self.__getitem__(crd)
+
+    @always_inline("nodebug")
+    fn _set[idx: IntTuple](self, val: Self.element_type):
+        """Sets a single element in a layout tensor.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        The shape of the IntTuple index should conform with the layout.
+
+        Parameters:
+            idx: The coordinate specifying the element's position in each dimension. For example, in a 3D tensor, you would use (i, j, k).
+        """
+
+        @parameter
+        if layout.all_dims_known():
+            alias offset = Self.layout(idx)
+            Element[index_type=linear_idx_type](
+                val, self.runtime_element_layout
+            ).store(self.ptr.offset(offset))
+        else:
+            alias crd = RuntimeTuple[idx]()
+            var offset = self.runtime_layout(crd)
+            Element[index_type=linear_idx_type](
+                val, self.runtime_element_layout
+            ).store(self.ptr.offset(offset))
 
 
 @always_inline
@@ -4861,12 +5384,18 @@ fn stack_allocation_like[
     ```mojo
     from layout import LayoutTensor, Layout
     from layout.layout_tensor import stack_allocation_like
+    from gpu.memory import AddressSpace
 
-    var global_tensor = LayoutTensor[DType.float32, Layout((10, 10)),
-                                    address_space=AddressSpace.GLOBAL]()
-    var stack_tensor: LayoutTensor[DType.float32, Layout((10, 10)),
-                                    MutableAnyOrigin, address_space=AddressSpace.GENERIC]
-    stack_allocation_like(global_tensor, stack_tensor)
+    var global_tensor = LayoutTensor[
+        DType.float32,
+        Layout([10, 10]),
+        MutableAnyOrigin,
+        address_space=AddressSpace.GLOBAL
+    ].stack_allocation()
+
+    var shared_tensor = stack_allocation_like[
+        target_address_space=AddressSpace.SHARED
+    ](global_tensor)
     ```
 
     Performance:
@@ -4889,9 +5418,8 @@ fn stack_allocation_like[
     return __type_of(result).stack_allocation()
 
 
-@value
 @register_passable("trivial")
-struct ThreadScope:
+struct ThreadScope(Copyable, Movable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -5086,19 +5614,6 @@ fn copy_dram_to_sram[
         src: The source tensor, which must be in global or generic memory
             (DRAM).
 
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
-                                    address_space=AddressSpace.GLOBAL]()
-    var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                    address_space=AddressSpace.SHARED]()
-
-    # Copy data using a 2D thread layout with 8x8 threads
-    copy_dram_to_sram[Layout((8, 8))](shared_data, global_data)
-    ```
-
     Performance:
 
     - Distributes the copy workload across multiple threads for parallel
@@ -5125,7 +5640,9 @@ fn copy_dram_to_sram[
     _copy_dram_to_sram_validate_args(dst, src)
     alias num_busy_threads = src_thread_layout.size()
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
 
     @parameter
     if num_threads > num_busy_threads:
@@ -5250,7 +5767,9 @@ fn copy_dram_to_sram[
     _copy_dram_to_sram_validate_args(dst, src_tensor)
     alias num_busy_threads = src_thread_layout.size()
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
 
     @parameter
     if num_threads > num_busy_threads:
@@ -5331,25 +5850,6 @@ fn cp_async_k_major[
         dst: The destination tensor, which must be in shared memory (SRAM).
         src: The source tensor, which must be in global or generic memory
             (DRAM).
-
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    from layout.layout_tensor import cp_async_k_major
-    from gpu.memory import async_copy_wait_all
-
-    var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
-                                    address_space=AddressSpace.GLOBAL]()
-    var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                    address_space=AddressSpace.SHARED]()
-
-    # Copy data with K-major layout optimization
-    cp_async_k_major[DType.float32](shared_data, global_data)
-
-    # Wait for the asynchronous copy to complete
-    async_copy_wait_all()
-    ```
 
     Performance:
 
@@ -5460,25 +5960,6 @@ fn cp_async_mn_major[
         dst: The destination tensor, which must be in shared memory (SRAM).
         src: The source tensor, which must be in global or generic memory
             (DRAM).
-
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    from layout.layout_tensor import cp_async_mn_major
-    from gpu.memory import async_copy_wait_all
-
-    var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
-                                    address_space=AddressSpace.GLOBAL]()
-    var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                    address_space=AddressSpace.SHARED]()
-
-    # Copy data with MN-major layout optimization
-    cp_async_mn_major[DType.float32](shared_data, global_data)
-
-    # Wait for the asynchronous copy to complete
-    async_copy_wait_all()
-    ```
 
     Performance:
 
@@ -5644,19 +6125,6 @@ fn copy_dram_to_sram[
         src: The source tensor, which must be in global or generic memory
             (DRAM).
 
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
-                                    address_space=AddressSpace.GLOBAL]()
-    var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                    address_space=AddressSpace.SHARED]()
-
-    # Copy data using a 2D thread layout with 8x8 threads
-    copy_dram_to_sram[Layout((8, 8))](shared_data, global_data)
-    ```
-
     Performance:
 
     - Simplifies API usage when the same thread layout is appropriate for both
@@ -5732,24 +6200,6 @@ fn copy_dram_to_sram_async[
     Args:
         dst: The destination tensor, which must be in shared memory (SRAM).
         src: The source tensor, which must be in global or generic memory (DRAM).
-
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
-                                    address_space=AddressSpace.GLOBAL]()
-    var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                    address_space=AddressSpace.SHARED]()
-
-    # Asynchronously copy data using thread layouts
-    copy_dram_to_sram_async[Layout((8, 8)), Layout((8, 8))](shared_data, global_data)
-
-    # Perform other computations while the copy is in progress
-
-    # Wait for the asynchronous copy to complete
-    async_copy_wait_all()
-    ```
 
     Performance:
 
@@ -5978,19 +6428,6 @@ fn copy_sram_to_dram[
             (DRAM).
         src: The source tensor, which must be in shared memory (SRAM).
 
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                    address_space=AddressSpace.SHARED]()
-    var global_data = LayoutTensor[DType.float32, Layout((128, 128)),
-                                    address_space=AddressSpace.GLOBAL]()
-
-    # Copy data using a 2D thread layout with 8x8 threads
-    copy_sram_to_dram[Layout((8, 8))](global_data, shared_data)
-    ```
-
     Performance:
 
     - Distributes the copy workload across multiple threads for parallel
@@ -6076,7 +6513,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)
@@ -6134,7 +6571,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)
@@ -6142,9 +6579,13 @@ fn copy_sram_to_dram[
                     )
 
                 if dst_idx < dst_idx_bound:
-                    var src_vec = (src.ptr).load[
-                        width=simd_size, alignment=src_align
-                    ](swizzled_idx).cast[dst.dtype]()
+                    var src_vec = (
+                        (src.ptr)
+                        .load[width=simd_size, alignment=src_align](
+                            swizzled_idx
+                        )
+                        .cast[dst.dtype]()
+                    )
 
                     @parameter
                     if binary_op:
@@ -6186,19 +6627,6 @@ fn copy_sram_to_local[
     Args:
         dst: The destination tensor, which must be in local memory (registers).
         src: The source tensor, which must be in shared memory (SRAM).
-
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    var shared_data = LayoutTensor[DType.float32, Layout((32, 32)),
-                                address_space=AddressSpace.SHARED]()
-    var local_data = LayoutTensor[DType.float32, Layout((4, 4)),
-                                address_space=AddressSpace.LOCAL]()
-
-    # Copy data using a thread layout with 8 threads
-    copy_sram_to_local[Layout(8)](local_data, shared_data)
-    ```
 
     Performance:
 
@@ -6279,7 +6707,9 @@ fn copy_local_to_dram[
     """
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     @parameter
@@ -6380,7 +6810,9 @@ fn copy_local_to_dram[
     constrained[is_amd_gpu(), "This function is only supported on AMD GPUs."]()
     _copy_local_to_dram_validate_args(dst, src)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
     var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // sizeof[dst.dtype]()
@@ -6404,8 +6836,6 @@ fn copy_local_to_dram[
             src.ptr.offset(src_idx),
             src.runtime_element_layout,
         )
-
-        alias dst_element_type = Element[dst.dtype, dst.linear_idx_type]
 
         alias element_stride = dst_fragments.element_layout.stride[1].value()
 
@@ -6480,7 +6910,9 @@ fn copy_dram_to_local[
     alias simd_width = src.element_layout.size()
     _copy_local_to_dram_validate_args(src, dst)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
     var descriptor = get_amd_buffer_descriptor(src_base)
 
@@ -6570,7 +7002,9 @@ fn copy_dram_to_local[
     alias simd_width = src_tensor.element_layout.size()
     _copy_local_to_dram_validate_args(src_tensor, dst)
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
 
     var descriptor = get_amd_buffer_descriptor(src_iter, Int(bounds))
@@ -6634,7 +7068,9 @@ fn copy_dram_to_local[
         dst: The destination tensor in register memory (LOCAL address space).
         src:  The source tensor in global memory (DRAM).
     """
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
     @parameter
@@ -6734,22 +7170,6 @@ fn copy[
         dst: The destination tensor, which must be in shared memory (SRAM).
         src: The source tensor, which must be in local memory (registers).
 
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    var register_data = LayoutTensor[DType.float32, Layout((16, 16)),
-                                    address_space=AddressSpace.LOCAL]()
-    var shared_data = LayoutTensor[DType.float32, Layout((16, 16)),
-                                    address_space=AddressSpace.SHARED]()
-
-    # Process data in registers
-    # ...
-
-    # Copy processed data to shared memory for inter-thread communication
-    copy[Layout((8, 8))](shared_data, register_data)
-    ```
-
     Performance:
 
     - Distributes the copy workload across multiple threads for parallel execution.
@@ -6777,7 +7197,9 @@ fn copy[
         "src address space must be LOCAL.",
     ]()
 
-    var worker_idx = thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    var worker_idx = (
+        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
+    )
 
     constrained[
         src.dtype == dst.dtype
@@ -6807,9 +7229,9 @@ fn copy[
                 alias dst_idx = dst_frag.layout(i)
                 alias dst_idx_base = dst_idx % swizzle_fn.size()
                 alias dst_idx_diff = dst_idx - dst_idx_base
-                var swizzled_idx = swizzle_fn(
-                    dst_frag_offset + dst_idx_base
-                ) + dst_idx_diff
+                var swizzled_idx = (
+                    swizzle_fn(dst_frag_offset + dst_idx_base) + dst_idx_diff
+                )
                 var src_vec = src.ptr.load[
                     width = src.element_size, alignment=align_src
                 ](src_idx).cast[dst.dtype]()
@@ -6884,17 +7306,27 @@ fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
     ```mojo
     from layout import LayoutTensor, Layout
     from layout.layout_tensor import copy_local_to_local
+    from gpu.memory import AddressSpace
 
-    var src_reg = LayoutTensor[DType.float32, Layout((16, 8)),
-                                address_space=AddressSpace.LOCAL]()
-    var dst_reg = LayoutTensor[DType.bfloat16, Layout((16, 8)),
-                                address_space=AddressSpace.LOCAL]()
+    fn kernel():
+        ...
+        var src_reg = LayoutTensor[DType.float32,
+            Layout.row_major(16, 8),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation().fill(1)
 
-    # Process data in float32 registers
-    # ...
+        var dst_reg = LayoutTensor[DType.bfloat16,
+            Layout.row_major(16, 8),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ].stack_allocation()
 
-    # Convert and copy to bfloat16 registers
-    copy_local_to_local(dst_reg, src_reg)
+        # Process data in float32 registers
+        # ...
+
+        # Convert and copy to bfloat16 registers
+        copy_local_to_local(dst_reg, src_reg)
     ```
 
     Performance:
@@ -7003,7 +7435,7 @@ struct LayoutTensorIter[
     layout_int_type: DType = _get_index_type(address_space),
     linear_idx_type: DType = _get_index_type(address_space),
     masked: Bool = False,
-]:
+](Defaultable):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `LayoutTensorIter` provides a way to iterate through memory according to a
@@ -7080,11 +7512,11 @@ struct LayoutTensorIter[
                 "Circular use case is not supported if an axis is defined.",
             ]()
 
-        self.ptr = __type_of(self.ptr)()
+        self.ptr = {}
         self.offset = 0
         self.stride = 0
         self.bound = 0
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
         self.dimension_bound = 0
         self.idx = 0
 
@@ -7130,7 +7562,7 @@ struct LayoutTensorIter[
         self.ptr = ptr
         self.bound = bound
         self.stride = stride
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
         self.offset = offset
         self.dimension_bound = 0
         self.idx = 0

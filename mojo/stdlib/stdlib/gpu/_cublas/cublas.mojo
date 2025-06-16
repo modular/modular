@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
@@ -2048,7 +2046,7 @@ struct Algorithm:
 
     # According to https://docs.nvidia.com/cuda/cublas/#cublasgemmalgo-t, the
     # only useful algorithm options are default and algo0 - algo23.
-    # We never specify 0-23 in pratice.
+    # We never specify 0-23 in practice.
 
     alias DEFAULT = Self(-1)
     alias ALGO0 = Self(0)

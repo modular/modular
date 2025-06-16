@@ -19,7 +19,7 @@ from algorithm import map
 ```
 """
 
-from collections.string.string_slice import StaticString, get_static_string
+from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from os import abort
 from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
@@ -452,20 +452,11 @@ fn _parallelize_impl[
     @always_inline
     @parameter
     fn coarse_grained_func(thread_idx: Int):
-        # Calculate the start for the consecutive range of work items this
-        # invocation is responsible for.
-        var start_idx = thread_idx * (
-            chunk_size + 1
-        ) if thread_idx <= extra_items else extra_items * (chunk_size + 1) + (
-            thread_idx - extra_items
-        ) * chunk_size
-        # Calculate the exclusive end of the range
-        var end_idx = start_idx + chunk_size
-        if thread_idx < extra_items:
-            # Add one work item to threads that get an extra assignment.
-            end_idx += 1
-        for i in range(start_idx, end_idx, 1):
-            func(i)
+        # Calculate the consecutive range of work items this invocation is
+        # responsible for.
+        var start_idx = thread_idx * chunk_size + min(thread_idx, extra_items)
+        for i in range(chunk_size + Int(thread_idx < extra_items)):
+            func(start_idx + i)
 
     sync_parallelize[coarse_grained_func](num_workers)
 
@@ -1221,7 +1212,7 @@ fn elementwise[
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1256,7 +1247,7 @@ fn elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1293,7 +1284,7 @@ fn elementwise[
     Parameters:
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1328,7 +1319,7 @@ fn elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1360,7 +1351,7 @@ fn elementwise[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        use_blocking_impl: Do not invoke the function using asychronous calls.
+        use_blocking_impl: Do not invoke the function using asynchronous calls.
         target: The target to run on.
         _trace_description: Description of the trace.
 
@@ -1766,29 +1757,36 @@ alias stencil_gpu = _stencil_impl_gpu
 
 
 fn _stencil_impl_cpu[
+    shape_element_type: DType,
+    input_shape_element_type: DType, //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank],
+    stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
     type: DType,
-    map_fn: fn (IndexList[stencil_rank]) capturing [_] -> (
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
+    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
+        IndexList[stencil_rank, **_],
+        IndexList[stencil_rank, **_],
     ),
     map_strides: fn (dim: Int) capturing [_] -> Int,
-    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank]) capturing [
+    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank, **_]) capturing [
         _
     ] -> SIMD[type, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
         type, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
-        IndexList[rank], SIMD[type, simd_width], SIMD[type, simd_width]
+        IndexList[rank, **_],
+        SIMD[type, simd_width],
+        SIMD[type, simd_width],
     ) capturing [_] -> SIMD[type, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank], SIMD[type, simd_width]
+        IndexList[rank, **_], SIMD[type, simd_width]
     ) capturing [_] -> None,
-](shape: IndexList[rank], input_shape: IndexList[rank]):
+](
+    shape: IndexList[rank, element_type=shape_element_type],
+    input_shape: IndexList[rank, element_type=input_shape_element_type],
+):
     """Computes stencil operation in parallel.
 
     Computes output as a function that processes input stencils, stencils are
@@ -1798,6 +1796,8 @@ fn _stencil_impl_cpu[
 
 
     Parameters:
+        shape_element_type: The element type of the shape.
+        input_shape_element_type: The element type of the input shape.
         rank: Input and output domain rank.
         stencil_rank: Rank of stencil subdomain slice.
         stencil_axis: Stencil subdomain axes.
@@ -1849,9 +1849,9 @@ fn _stencil_impl_cpu[
             @parameter
             fn func_wrapper[simd_width: Int](idx: Int):
                 indices[rank - 1] = idx
-                var stencil_indices = IndexList[stencil_rank](
-                    indices[stencil_axis[0]], indices[stencil_axis[1]]
-                )
+                var stencil_indices = IndexList[
+                    stencil_rank, element_type = stencil_axis.element_type
+                ](indices[stencil_axis[0]], indices[stencil_axis[1]])
                 var bounds = map_fn(stencil_indices)
                 var lower_bound = bounds[0]
                 var upper_bound = bounds[1]
@@ -1908,9 +1908,9 @@ fn _stencil_impl_cpu[
                         min(input_width, upper_bound[1]),
                         step_j,
                     ):
-                        var point_idx = IndexList[rank](
-                            indices[0], i, j, indices[3]
-                        )
+                        var point_idx = IndexList[
+                            rank, element_type=shape_element_type
+                        ](indices[0], i, j, indices[3])
 
                         var val = load_fn[simd_width, type](point_idx)
                         result = compute_fn[simd_width](point_idx, result, val)
@@ -1925,34 +1925,42 @@ fn _stencil_impl_cpu[
 
 
 fn _stencil_impl_gpu[
+    shape_element_type: DType,
+    input_shape_element_type: DType, //,
     rank: Int,
     stencil_rank: Int,
-    stencil_axis: IndexList[stencil_rank],
+    stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
     type: DType,
-    map_fn: fn (IndexList[stencil_rank]) capturing [_] -> (
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
+    map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
+        IndexList[stencil_rank, **_],
+        IndexList[stencil_rank, **_],
     ),
     map_strides: fn (dim: Int) capturing [_] -> Int,
-    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank]) capturing [
+    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank, **_]) capturing [
         _
     ] -> SIMD[type, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
         type, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
-        IndexList[rank], SIMD[type, simd_width], SIMD[type, simd_width]
+        IndexList[rank, **_],
+        SIMD[type, simd_width],
+        SIMD[type, simd_width],
     ) capturing [_] -> SIMD[type, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank], SIMD[type, simd_width]
+        IndexList[rank, **_], SIMD[type, simd_width]
     ) capturing [_] -> None,
 ](
-    ctx: DeviceContext, shape: IndexList[rank], input_shape: IndexList[rank]
+    ctx: DeviceContext,
+    shape: IndexList[rank, element_type=shape_element_type],
+    input_shape: IndexList[rank, element_type=input_shape_element_type],
 ) raises:
     """(Naive implementation) Computes stencil operation in parallel on GPU.
 
     Parameters:
+        shape_element_type: The element type of the shape.
+        input_shape_element_type: The element type of the input shape.
         rank: Input and output domain rank.
         stencil_rank: Rank of stencil subdomain slice.
         stencil_axis: Stencil subdomain axes.
@@ -2000,12 +2008,14 @@ fn _stencil_impl_gpu[
             return
 
         # Create output point indices with computed batch and channel
-        var indices = IndexList[rank](batch_idx, y, x, channel)
+        var indices = IndexList[rank, element_type=shape_element_type](
+            batch_idx, y, x, channel
+        )
 
         # Process stencil for this point
-        var stencil_indices = IndexList[stencil_rank](
-            indices[stencil_axis[0]], indices[stencil_axis[1]]
-        )
+        var stencil_indices = IndexList[
+            stencil_rank, element_type = stencil_axis.element_type
+        ](indices[stencil_axis[0]], indices[stencil_axis[1]])
         var bounds = map_fn(stencil_indices)
         var lower_bound = bounds[0]
         var upper_bound = bounds[1]
@@ -2034,7 +2044,9 @@ fn _stencil_impl_gpu[
                 min(input_width, upper_bound[1]),
                 step_j,
             ):
-                var point_idx = IndexList[rank](indices[0], i, j, indices[3])
+                var point_idx = IndexList[
+                    rank, element_type=shape_element_type
+                ](indices[0], i, j, indices[3])
                 var val = load_fn[simd_width, type](point_idx)
                 result = compute_fn[simd_width](point_idx, result, val)
 

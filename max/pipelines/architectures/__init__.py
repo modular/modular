@@ -28,6 +28,7 @@ def register_all_models():
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .granite import granite_arch
+    from .internvl import internvl_arch
     from .llama3 import llama_arch
     from .llama4 import llama4_arch
     from .llama_vision import llama_vision_arch
@@ -35,15 +36,19 @@ def register_all_models():
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
     from .olmo import olmo_arch
+    from .olmo2 import olmo2_arch
     from .phi3 import phi3_arch
     from .pixtral import pixtral_arch
     from .qwen2 import qwen2_arch
+    from .qwen3 import qwen3_arch
 
     architectures = [
         exaone_arch,
         deepseekV2_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
+        granite_arch,
+        internvl_arch,
         llama_arch,
         llama4_arch,
         llama_vision_arch,
@@ -51,10 +56,11 @@ def register_all_models():
         mistral3_arch,
         mpnet_arch,
         olmo_arch,
+        olmo2_arch,
         phi3_arch,
         pixtral_arch,
         qwen2_arch,
-        granite_arch,
+        qwen3_arch,
     ]
 
     for arch in architectures:

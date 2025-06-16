@@ -18,34 +18,34 @@ from testing import assert_equal, assert_false, assert_true
 
 
 def test_uint_for():
-    for i in range(UInt(5)):
-        assert_false(_type_is_eq[__type_of(i), Int]())
-        assert_true(_type_is_eq[__type_of(i), UInt]())
+    for _i in range(UInt(5)):
+        assert_false(_type_is_eq[__type_of(_i), Int]())
+        assert_true(_type_is_eq[__type_of(_i), UInt]())
 
-    for i in range(UInt(1), UInt(5)):
-        assert_false(_type_is_eq[__type_of(i), Int]())
-        assert_true(_type_is_eq[__type_of(i), UInt]())
+    for _i in range(UInt(1), UInt(5)):
+        assert_false(_type_is_eq[__type_of(_i), Int]())
+        assert_true(_type_is_eq[__type_of(_i), UInt]())
 
-    for i in range(UInt(1), UInt(5), UInt(2)):
-        assert_false(_type_is_eq[__type_of(i), Int]())
-        assert_true(_type_is_eq[__type_of(i), UInt]())
+    for _i in range(UInt(1), UInt(5), UInt(2)):
+        assert_false(_type_is_eq[__type_of(_i), Int]())
+        assert_true(_type_is_eq[__type_of(_i), UInt]())
 
 
 def test_uint_parameter_for():
     @parameter
-    for i in range(UInt(5)):
-        assert_false(_type_is_eq[__type_of(i), Int]())
-        assert_true(_type_is_eq[__type_of(i), UInt]())
+    for _i in range(UInt(5)):
+        assert_false(_type_is_eq[__type_of(_i), Int]())
+        assert_true(_type_is_eq[__type_of(_i), UInt]())
 
     @parameter
-    for i in range(UInt(1), UInt(5)):
-        assert_false(_type_is_eq[__type_of(i), Int]())
-        assert_true(_type_is_eq[__type_of(i), UInt]())
+    for _i in range(UInt(1), UInt(5)):
+        assert_false(_type_is_eq[__type_of(_i), Int]())
+        assert_true(_type_is_eq[__type_of(_i), UInt]())
 
     @parameter
-    for i in range(UInt(1), UInt(5), UInt(2)):
-        assert_false(_type_is_eq[__type_of(i), Int]())
-        assert_true(_type_is_eq[__type_of(i), UInt]())
+    for _i in range(UInt(1), UInt(5), UInt(2)):
+        assert_false(_type_is_eq[__type_of(_i), Int]())
+        assert_true(_type_is_eq[__type_of(_i), UInt]())
 
 
 def main():

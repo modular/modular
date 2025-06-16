@@ -27,7 +27,6 @@ from max.pipelines.core import (
     EmbeddingsGenerator,
     PipelineTask,
     PipelineTokenizer,
-    TokenGenerator,
 )
 from transformers import (
     AutoConfig,
@@ -37,20 +36,29 @@ from transformers import (
 )
 
 if TYPE_CHECKING:
+    from .audio_generator_pipeline import AudioGeneratorPipeline
     from .config import PipelineConfig
-from .config_enums import (
-    PipelineEngine,
-    RopeType,
-    SupportedEncoding,
-)
+
+from .audio_generator_pipeline import AudioGeneratorPipeline
+from .config_enums import PipelineEngine, RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
+from .hf_pipeline import DEFAULT_MAX_SEQ_LEN as HF_DEFAULT_MAX_SEQ_LEN
 from .hf_pipeline import HFEmbeddingsPipeline, HFTextGenerationPipeline
 from .hf_utils import HuggingFaceRepo
 from .pipeline import PipelineModel, TextGenerationPipeline
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
-from .tokenizer import TextAndVisionTokenizer, TextTokenizer
+from .speech_token_pipeline import SpeechTokenGenerationPipeline
+from .tokenizer import TextTokenizer
 
 logger = logging.getLogger("max.pipelines")
+
+PipelineTypes = Union[
+    TextGenerationPipeline,
+    EmbeddingsGenerator,
+    AudioGeneratorPipeline,
+    SpeculativeDecodingTextGenerationPipeline,
+    SpeechTokenGenerationPipeline,
+]
 
 
 def get_pipeline_for_task(
@@ -59,6 +67,8 @@ def get_pipeline_for_task(
     type[TextGenerationPipeline]
     | type[EmbeddingsPipeline]
     | type[SpeculativeDecodingTextGenerationPipeline]
+    | type[AudioGeneratorPipeline]
+    | type[SpeechTokenGenerationPipeline]
 ):
     if task == PipelineTask.TEXT_GENERATION:
         if pipeline_config.draft_model_config is not None:
@@ -67,6 +77,10 @@ def get_pipeline_for_task(
             return TextGenerationPipeline
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         return EmbeddingsPipeline
+    elif task == PipelineTask.AUDIO_GENERATION:
+        return AudioGeneratorPipeline
+    elif task == PipelineTask.SPEECH_TOKEN_GENERATION:
+        return SpeechTokenGenerationPipeline
     else:
         msg = f"PipelineTask ({task}) does not have supported Pipeline"
         raise ValueError(msg)
@@ -89,28 +103,65 @@ class SupportedArchitecture:
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
         pipeline_model: type[PipelineModel],
         task: PipelineTask,
-        tokenizer: type[Union[TextTokenizer, TextAndVisionTokenizer]],
+        tokenizer: Callable[..., PipelineTokenizer],
         default_weights_format: WeightsFormat,
         multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ):
-        """Initializes a model architecture supported by MAX pipelines.
+        """Represents a model architecture configuration for MAX pipelines.
 
-        New architectures should be registered into the :obj:`PipelineRegistry`.
+        This class defines all the necessary components and settings required to
+        support a specific model architecture within the MAX pipeline system.
+        Each `SupportedArchitecture` instance encapsulates the model implementation,
+        tokenizer, supported encodings, and other architecture-specific configuration.
 
-        args:
-            name: Architecture name.
-            example_repo_ids: Hugging Face `repo_id` which runs this architecture.
-            default_encoding: Default encoding for the model.
-            supported_encodings: Alternate encodings supported.
-            pipeline_model: :obj:`PipelineModel` class that defines the model graph
-                and execution.
-            task: Which pipeline task should the model run with.
-            tokenizer: Tokenizer used to preprocess model inputs.
-            default_weights_format: The weights format used in `pipeline_model`.
-            weight_converters: A dictionary of weight loaders to use if the
-                input checkpoint has a different format than the default.
+        New architectures should be registered into the :obj:`PipelineRegistry`
+        using the :obj:`~PipelineRegistry.register()` method.
+
+        .. code-block:: python
+
+            my_architecture = SupportedArchitecture(
+                name="MyModelForCausalLM",  # Must match your Hugging Face model class name
+                example_repo_ids=[
+                    "your-org/your-model-name",  # Add example model repository IDs
+                ],
+                default_encoding=SupportedEncoding.q4_k,
+                supported_encodings={
+                    SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
+                    SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+                    # Add other encodings your model supports
+                },
+                pipeline_model=MyModel,
+                tokenizer=TextTokenizer,
+                default_weights_format=WeightsFormat.safetensors,
+                multi_gpu_supported=True,  # Set based on your implementation capabilities
+                weight_adapters={
+                    WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+                    # Add other weight formats if needed
+                },
+                task=PipelineTask.TEXT_GENERATION,
+            )
+
+        Args:
+            name: The name of the model architecture that must match the Hugging Face
+                model class name.
+            example_repo_ids: A list of Hugging Face repository IDs that use this
+                architecture for testing and validation purposes.
+            default_encoding: The default quantization encoding to use when no
+                specific encoding is requested.
+            supported_encodings: A dictionary mapping supported quantization encodings
+                to their compatible KV cache strategies.
+            pipeline_model: The `PipelineModel` class that defines the model graph
+                structure and execution logic.
+            task: The pipeline task type that this architecture supports.
+            tokenizer: A callable that returns a `PipelineTokenizer` instance for
+                preprocessing model inputs.
+            default_weights_format: The weights format expected by the `pipeline_model`.
+            multi_gpu_supported: Whether the architecture supports multi-GPU execution.
+            rope_type: The type of RoPE (Rotary Position Embedding) used by the model.
+            weight_adapters: A dictionary of weight format adapters for converting
+                checkpoints from different formats to the default format.
         """
         self.name = name
         self.example_repo_ids = example_repo_ids
@@ -147,6 +198,13 @@ class SupportedArchitecture:
             return True
 
         return False
+
+    @property
+    def tokenizer_cls(self) -> type[PipelineTokenizer]:
+        if isinstance(self.tokenizer, type):
+            return self.tokenizer
+        # Otherwise fall back to PipelineTokenizer.
+        return PipelineTokenizer
 
 
 class PipelineRegistry:
@@ -325,20 +383,25 @@ class PipelineRegistry:
         self,
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
+        override_architecture: str | None = None,
     ) -> tuple[
         PipelineTokenizer,
-        Callable[[], TokenGenerator | EmbeddingsGenerator],
+        Callable[[], PipelineTypes],
     ]:
         tokenizer: PipelineTokenizer
-        pipeline_factory: Callable[[], TokenGenerator | EmbeddingsGenerator]
+        pipeline_factory: Callable[[], PipelineTypes]
 
         if pipeline_config.engine == PipelineEngine.MAX:
             pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
             # MAX pipeline
-            arch = self.retrieve_architecture(
-                huggingface_repo=pipeline_config.model_config.huggingface_model_repo,
-            )
+            arch: SupportedArchitecture | None = None
+            if override_architecture:
+                arch = self.architectures[override_architecture]
+            else:
+                arch = self.retrieve_architecture(
+                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                )
 
             # Load HuggingFace Config
             huggingface_config = pipeline_config.model_config.huggingface_config
@@ -349,7 +412,7 @@ class PipelineRegistry:
             logger.info(
                 self._load_logging_message(
                     pipeline_config=pipeline_config,
-                    tokenizer_type=arch.tokenizer,
+                    tokenizer_type=arch.tokenizer_cls,
                     pipeline_model=arch.pipeline_model.__name__,
                     pipeline_name=pipeline_class.__name__,
                     architecture_id=arch.name,
@@ -359,8 +422,7 @@ class PipelineRegistry:
             )
 
             max_length = arch.pipeline_model.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             )
 
             # Old Mistral model like Mistral-7B-Instruct-v0.3 uses LlamaTokenizer
@@ -386,19 +448,22 @@ class PipelineRegistry:
                 )
             else:
                 tokenizer = arch.tokenizer(
-                    pipeline_config.model_config.model_path,
+                    model_path=pipeline_config.model_config.model_path,
                     revision=pipeline_config.model_config.huggingface_model_revision,
                     max_length=max_length,
                     max_new_tokens=pipeline_config.max_new_tokens,
                     trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                    pipeline_config=pipeline_config,
                 )
-
-            pipeline_factory = functools.partial(
-                pipeline_class,
-                pipeline_config=pipeline_config,
-                pipeline_model=arch.pipeline_model,
-                eos_token_id=tokenizer.eos,
-                weight_adapters=arch.weight_adapters,
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(  # type: ignore[misc]
+                    pipeline_class,
+                    pipeline_config=pipeline_config,
+                    pipeline_model=arch.pipeline_model,
+                    eos_token_id=tokenizer.eos,
+                    weight_adapters=arch.weight_adapters,
+                ),
             )
         else:
             pipeline_config = self._set_hf_pipeline_defaults(pipeline_config)
@@ -418,7 +483,7 @@ class PipelineRegistry:
             tokenizer = TextTokenizer(
                 pipeline_config.model_config.model_path,
                 revision=pipeline_config.model_config.huggingface_model_revision,
-                max_length=pipeline_config.max_length,
+                max_length=pipeline_config.max_length or HF_DEFAULT_MAX_SEQ_LEN,
                 max_new_tokens=pipeline_config.max_new_tokens,
                 trust_remote_code=pipeline_config.model_config.trust_remote_code,
                 enable_llama_whitespace_fix=True,
@@ -435,10 +500,13 @@ class PipelineRegistry:
                     ),
                 )
             )
-            pipeline_factory = functools.partial(
-                hf_pipeline_class,
-                pipeline_config=pipeline_config,
-                torch_device_type=torch_device_type,
+            pipeline_factory = cast(
+                Callable[[], PipelineTypes],
+                functools.partial(
+                    hf_pipeline_class,
+                    pipeline_config=pipeline_config,
+                    torch_device_type=torch_device_type,
+                ),
             )
 
         if tokenizer.eos is None:
@@ -451,9 +519,10 @@ class PipelineRegistry:
         self,
         pipeline_config: PipelineConfig,
         task: PipelineTask = PipelineTask.TEXT_GENERATION,
-    ) -> tuple[PipelineTokenizer, TokenGenerator | EmbeddingsGenerator]:
+        override_architecture: str | None = None,
+    ) -> tuple[PipelineTokenizer, PipelineTypes]:
         tokenizer, pipeline_factory = self.retrieve_factory(
-            pipeline_config, task
+            pipeline_config, task, override_architecture
         )
         return tokenizer, pipeline_factory()
 

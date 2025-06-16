@@ -13,7 +13,7 @@
 
 """Types to interface with ML pipelines such as text/token generation."""
 
-from .config import PipelineConfig
+from .config import AudioGenerationConfig, PipelineConfig
 from .config_enums import (
     PipelineEngine,
     PipelineRole,
@@ -29,8 +29,10 @@ from .hf_utils import (
     generate_local_model_path,
     repo_exists_with_retry,
 )
+from .lora import LoRAManager
 from .max_config import (
     KVCacheConfig,
+    LoRAConfig,
     ProfilingConfig,
     SamplingConfig,
 )
@@ -45,9 +47,11 @@ from .pipeline import (
     get_paged_manager,
     upper_bounded_default,
 )
+from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import rejection_sampler, token_sampler
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
+from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
     PipelineTokenizer,
@@ -57,6 +61,7 @@ from .tokenizer import (
 )
 
 __all__ = [
+    "AudioGenerationConfig",
     "download_weight_files",
     "EmbeddingsPipeline",
     "generate_local_model_path",
@@ -65,6 +70,8 @@ __all__ = [
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVCacheMixin",
+    "LoRAConfig",
+    "LoRAManager",
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MEMORY_ESTIMATOR",
@@ -78,12 +85,14 @@ __all__ = [
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
+    "ragged_token_merger",
     "rejection_sampler",
     "repo_exists_with_retry",
     "RepoType",
     "RopeType",
     "SamplingConfig",
     "SpeculativeDecodingTextGenerationPipeline",
+    "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
     "TextAndVisionTokenizer",

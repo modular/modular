@@ -50,11 +50,9 @@ Note that the following features from Python's `str.format()` are
 - Accessing an indexed value from the argument (for example, `"{1[0]}"`).
 - Format specifiers for controlling output format (width, precision, and so on).
 
-Example:
+Examples:
 
 ```mojo
-from collections.string import String
-
 # Basic formatting
 var s1 = String("Hello {0}!").format("World")  # Hello World!
 
@@ -71,7 +69,7 @@ This module has no public API; its functionality is available through the
 methods.
 """
 
-from collections import Optional
+
 from collections.string.string import _chr_ascii
 
 from memory import UnsafePointer
@@ -90,11 +88,11 @@ from utils import Variant
 # NOTE(#3765): an interesting idea would be to allow custom start and end
 # characters for formatting (passed as parameters to Formatter), this would be
 # useful for people developing custom templating engines as it would allow
-# detemining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
+# determining e.g. `<mojo` [...] `>` [...] `</mojo>` html tags.
 # And going a step further it might even be worth it adding custom format
 # specification start character, and custom format specs themselves (by defining
 # a trait that all format specifications conform to)
-struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
+struct _FormatCurlyEntry(Copyable, ExplicitlyCopyable, Movable):
     """The struct that handles string formatting by curly braces entries.
     This is internal for the types: `StringSlice` compatible types.
     """
@@ -214,16 +212,14 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice[p.origin](
-                ptr=p.origin_cast[mut=False]() + start, length=end - start
-            )
+            return StringSlice(ptr=p + start, length=end - start)
 
         var auto_arg_index = 0
         for e in entries:
             debug_assert(offset < fmt_len, "offset >= fmt_src.byte_length()")
-            res += _build_slice(ptr, offset, e[].first_curly)
-            e[]._format_entry[len_pos_args](res, args, auto_arg_index)
-            offset = e[].last_curly + 1
+            res += _build_slice(ptr, offset, e.first_curly)
+            e._format_entry[len_pos_args](res, args, auto_arg_index)
+            offset = e.last_curly + 1
 
         res += _build_slice(ptr, offset, fmt_len)
         return res^
@@ -333,9 +329,7 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
         fn _build_slice(
             p: UnsafePointer[UInt8, mut=_, origin=_], start: Int, end: Int
         ) -> StringSlice[p.origin]:
-            return StringSlice[p.origin](
-                ptr=p.origin_cast[mut=False]() + start, length=end - start
-            )
+            return StringSlice(ptr=p + start, length=end - start)
 
         var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
         var field_ptr = field.unsafe_ptr()
@@ -389,8 +383,12 @@ struct _FormatCurlyEntry(Copyable, Movable, ExplicitlyCopyable):
                     return True
                 manual_indexing_count += 1
             except e:
-                alias unexp = "Not the expected error from atol"
-                debug_assert("not convertible to integer" in String(e), unexp)
+
+                @parameter
+                fn check_string() -> Bool:
+                    return "not convertible to integer" in String(e)
+
+                debug_assert[check_string]("Not the expected error from atol")
                 # field is a keyword for **kwargs:
                 # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
                 # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})

@@ -17,7 +17,7 @@ import asyncio
 import logging
 import os
 import signal
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Coroutine
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Generic, Optional, TypeVar
@@ -26,7 +26,7 @@ import numpy as np
 from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
-    PipelineAudioTokenizer,
+    AudioGeneratorOutput,
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
@@ -74,7 +74,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         model_name: str,
         tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
         self.logger.propagate = False
@@ -133,7 +133,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             with record_ms(METRICS.output_time):
                 # stop detector is stateful, so new it up here for
                 # use in the response stream
-                stop_detector = StopDetector(stop=request.stop)
+                stop_detector = StopDetector(stop=request.sampling_params.stop)
 
                 n_tokens = 0
                 async for response in self.engine_queue.stream(
@@ -178,9 +178,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             token_log_probabilities,
                             top_log_probabilities,
                         ) = await self._collect_log_probs(
-                            log_prob,
-                            context,
-                            skip_special_tokens,
+                            log_prob, context, skip_special_tokens
                         )
                         del tracer  # collect_log_probs
 
@@ -249,7 +247,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 )
         return None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> TokenGeneratorPipeline:
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
         if not self.engine_queue.is_worker_healthy():
@@ -270,14 +268,16 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()
         # await asyncio.sleep(0.1)
         # TODO: also cancel any `queue.get()` tasks
 
-    def create_background_task(self, fn: Callable):
+    def create_background_task(
+        self, fn: Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         task_name = fn.__name__
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))
@@ -290,7 +290,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             len(self._background_tasks),
         )
 
-    def log_task_done(self, task: asyncio.Task, task_name: str):
+    def log_task_done(self, task: asyncio.Task, task_name: str) -> None:
         # TODO - should gracefully shut down here.
         self._background_tasks.remove(task)
         self.logger.info(
@@ -324,7 +324,6 @@ def get_target_ce_batch_tokens(pipeline_config: PipelineConfig) -> int:
 def batch_config_from_pipeline_config(
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
-    batch_timeout: float = 0.0,
 ) -> TokenGeneratorSchedulerConfig:
     assert pipeline_config.max_batch_size is not None
     if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
@@ -348,7 +347,6 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
-            ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
@@ -362,12 +360,15 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
-            ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
+            max_queue_size_tg=pipeline_config.max_queue_size_tg,
+            min_batch_size_tg=pipeline_config.min_batch_size_tg,
+            ce_delay_ms=pipeline_config.ce_delay_ms,
+            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
         )
     else:
         raise ValueError(
@@ -398,25 +399,18 @@ def batch_config_from_pipeline_config(
     return batch_config
 
 
-@dataclass(frozen=True)
-class AudioGeneratorOutput:
-    audio_data: bytes
-    metadata: dict[str, Any]
-
-
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
 
-# TODO: Implement this
 class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     """Base class for LLM audio generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineAudioTokenizer,
+        tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
         self.logger.propagate = False
@@ -464,7 +458,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
                     )
 
                     output = AudioGeneratorOutput(
-                        audio_data=response.audio_data, metadata=audio_metadata
+                        audio_data=response.audio_data,
+                        metadata=audio_metadata,
+                        is_done=response.is_done,
                     )
 
                     yield output
@@ -481,15 +477,33 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         self, request: AudioGenerationRequest
     ) -> AudioGeneratorOutput:
         """Generates complete audio for the provided request."""
-        audio_chunks = []
+        audio_chunks: list[AudioGeneratorOutput] = []
         async for chunk in self.next_chunk(request):
-            audio_chunks.append(chunk.audio_data)
+            audio_chunks.append(chunk)
 
-        # Combine audio chunks and metadata
-        combined_audio = b"".join(audio_chunks)
+        # We import torch here so that only folks that use the
+        # AudioGeneratorPipeline will need to have it installed.
+        import torch
+
+        if len(audio_chunks) == 0:
+            return AudioGeneratorOutput(
+                audio_data=torch.tensor([]), metadata={}, is_done=True
+            )
+
+        # Combine audio chunks and metadata.
+        combined_audio = torch.concat(
+            [chunk.audio_data for chunk in audio_chunks], dim=-1
+        )
+
+        # We should only return from the next_chunk loop when the last chunk
+        # is done.
+        last_chunk = audio_chunks[-1]
+        assert last_chunk.is_done
+
         return AudioGeneratorOutput(
             audio_data=combined_audio,
-            metadata=chunk.metadata,  # Use metadata from last chunk
+            metadata=last_chunk.metadata,
+            is_done=True,
         )
 
     async def __aenter__(self):
@@ -520,7 +534,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         # await asyncio.sleep(0.1)
         # TODO: also cancel any `queue.get()` tasks
 
-    def create_background_task(self, fn: Callable):
+    def create_background_task(
+        self, fn: Callable[[], Coroutine[Any, Any, None]]
+    ) -> None:
         task_name = fn.__name__
         task = asyncio.create_task(fn())
         task.add_done_callback(partial(self.log_task_done, task_name=task_name))

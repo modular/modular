@@ -183,7 +183,7 @@ fn test_unary_scalar():
     print(tensor_4x4)
 
 
-# CHECK-LABLE: test_binary_same_rank
+# CHECK-LABEL: test_binary_same_rank
 fn test_binary_same_rank():
     print("== test_binary_same_rank")
     var tensor_4x5_storage = InlineArray[Float32, 4 * 5](uninitialized=True)
@@ -296,9 +296,11 @@ fn test_max_elemntwise():
     ].stack_allocation()
     arange(tensor_4x4_a)
 
-    var tensor_4x4_b = LayoutTensor[
-        DType.float32, Layout.row_major(4, 4), MutableAnyOrigin
-    ].stack_allocation().fill(5)
+    var tensor_4x4_b = (
+        LayoutTensor[DType.float32, Layout.row_major(4, 4), MutableAnyOrigin]
+        .stack_allocation()
+        .fill(5)
+    )
 
     # CHECK: 5.0 5.0 5.0 5.0
     # CHECK: 5.0 5.0 6.0 7.0

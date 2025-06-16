@@ -43,6 +43,11 @@ def test_stringable():
     assert_equal("AAA", String(StringSlice("AAA")))
     assert_equal("a string", String(AString()))
 
+    # Should not produce an exclusivity error.
+    # Incorrect exclusivity error when printing a StringSlice
+    # https://github.com/modular/modular/issues/4790
+    print(String("test").removeprefix(""))
+
 
 def test_constructors():
     # Default construction
@@ -66,11 +71,11 @@ def test_constructors():
 
     # Construction with capacity
     var s4 = String(capacity=1)
-    assert_equal(s4.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s4.capacity(), _StringCapacityField.INLINE_CAPACITY)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_equal(s5.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s5.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s5, "A")
 
 
@@ -679,6 +684,9 @@ def test_rfind():
 
 
 def test_split():
+    alias S = StaticString
+    alias L = List[StaticString]
+
     # empty separators default to whitespace
     var d = String("hello world").split()
     assert_true(len(d) == 2)
@@ -696,21 +704,19 @@ def test_split():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape sequences are accepted
-    var univ_sep_var = (
-        String(
-            " ",
-            "\t",
-            "\n",
-            "\r",
-            "\v",
-            "\f",
-            "\x1c",
-            "\x1d",
-            "\x1e",
-            String(bytes=next_line),
-            String(bytes=unicode_line_sep),
-            String(bytes=unicode_paragraph_sep),
-        )
+    var univ_sep_var = String(
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\v",
+        "\f",
+        "\x1c",
+        "\x1d",
+        "\x1e",
+        String(bytes=next_line),
+        String(bytes=unicode_line_sep),
+        String(bytes=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
     d = s.split()
@@ -743,11 +749,9 @@ def test_split():
     assert_true(len(String(" ").split()) == 0)
     assert_true(len(String().split(" ")) == 1)
     assert_true(len(String(" ").split(" ")) == 2)
+    assert_true(len(S("").split("")) == 2)
     assert_true(len(String("  ").split(" ")) == 3)
     assert_true(len(String("   ").split(" ")) == 4)
-
-    with assert_raises():
-        _ = String().split("")
 
     # Split in middle
     var d1 = String("n")
@@ -820,8 +824,10 @@ def test_split():
     assert_equal(res6[3], "сит")
     assert_equal(res6[4], "амет")
 
-    with assert_raises(contains="Separator cannot be empty."):
-        _ = String("1, 2, 3").split("")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
@@ -867,7 +873,7 @@ def test_splitlines():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
 
     for elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        u = String(bytes=elt[])
+        u = String(bytes=elt)
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
         assert_equal(
@@ -886,7 +892,7 @@ def test_isspace():
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
     # escape sequences are accepted
-    var univ_sep_var = List[String](
+    var univ_sep_var = [
         String(" "),
         String("\t"),
         String("\n"),
@@ -899,13 +905,13 @@ def test_isspace():
         String(bytes=next_line),
         String(bytes=unicode_line_sep),
         String(bytes=unicode_paragraph_sep),
-    )
+    ]
 
     for i in univ_sep_var:
-        assert_true(i[].isspace())
+        assert_true(i.isspace())
 
     for i in List[String]("not", "space", "", "s", "a", "c"):
-        assert_false(i[].isspace())
+        assert_false(i.isspace())
 
     for i in range(len(univ_sep_var)):
         var sep = String()
@@ -1522,7 +1528,7 @@ def test_variadic_ctors():
 def test_sso():
     # String literals are stored inline when short and not nul-terminated.
     var s: String = String("hello")
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
     assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
@@ -1536,20 +1542,22 @@ def test_sso():
 
     # Empty strings are stored inline.
     s = String()
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
     assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
-    s += "f" * _StringCapacityField.NUM_SSO_BYTES
-    assert_equal(len(s), _StringCapacityField.NUM_SSO_BYTES)
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    s += "f" * _StringCapacityField.INLINE_CAPACITY
+    assert_equal(len(s), _StringCapacityField.INLINE_CAPACITY)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
 
     # One more byte.
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (_StringCapacityField.NUM_SSO_BYTES * 2 + 7) & ~7
+    alias expected_capacity = (
+        _StringCapacityField.INLINE_CAPACITY * 2 + 7
+    ) & ~7
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._capacity_or_data.is_inline(), False)
 

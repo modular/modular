@@ -32,6 +32,8 @@ from sys.intrinsics import (
 from builtin.simd import _simd_construction_checks
 from memory.memory import _free, _malloc
 
+from python import PythonObject
+
 # ===----------------------------------------------------------------------=== #
 # UnsafePointer
 # ===----------------------------------------------------------------------=== #
@@ -72,6 +74,7 @@ struct UnsafePointer[
     Writable,
     Intable,
     Comparable,
+    Defaultable,
 ):
     """UnsafePointer[T] represents an indirect reference to one or more values of
     type T consecutively in memory, and can refer to uninitialized memory.
@@ -156,6 +159,22 @@ struct UnsafePointer[
         self.address = __mlir_op.`pop.pointer.bitcast`[_type = Self._mlir_type](
             other.address
         )
+
+    fn __init__(
+        out self: UnsafePointer[type, mut=mut, origin=origin],
+        *,
+        ref [origin]unchecked_downcast_value: PythonObject,
+    ):
+        """Downcast a `PythonObject` known to contain a Mojo object to a pointer.
+
+        This operation is only valid if the provided Python object contains
+        an initialized Mojo object of matching type.
+
+        Args:
+            unchecked_downcast_value: The Python object to downcast from.
+        """
+
+        self = unchecked_downcast_value.unchecked_downcast_value_ptr[type]()
 
     @always_inline
     fn copy(self) -> Self:

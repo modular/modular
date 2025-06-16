@@ -44,6 +44,32 @@ fn test_vectorize_2() raises:
     assert_equal(val_linear[2], 66)
     assert_equal(val_linear[3], 67)
 
+    var three_dim_tensor = LayoutTensor[
+        DType.float32,
+        Layout(IntTuple(16, 32, 4), IntTuple(32, 1, 512)),
+        MutableAnyOrigin,
+    ].stack_allocation[alignment=16]()
+
+    n = product(three_dim_tensor.layout.shape)
+    for i in range(n):
+        three_dim_tensor.ptr[i] = i
+
+    var frag_3dt = three_dim_tensor._vectorize_2[
+        __origin_of(), IntTuple(1, 4, 1)
+    ]()
+    var val_3dt = frag_3dt[crd]
+    assert_equal(val_3dt[0], 64)
+    assert_equal(val_3dt[1], 65)
+    assert_equal(val_3dt[2], 66)
+    assert_equal(val_3dt[3], 67)
+
+    var frag_linear_3dt = three_dim_tensor._vectorize_2[4]()
+    var val_linear_3dt = frag_linear_3dt[crd]
+    assert_equal(val_linear_3dt[0], 64)
+    assert_equal(val_linear_3dt[1], 65)
+    assert_equal(val_linear_3dt[2], 66)
+    assert_equal(val_linear_3dt[3], 67)
+
     alias layout = Layout(IntTuple(8, 8), IntTuple(8, 1))
     var tensor2 = LayoutTensor[
         DType.float32,

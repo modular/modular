@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import Deque, Dict
+from collections import Deque
 
 from testing import assert_equal
 
 
 def test_reversed_list():
-    var list = List[Int](1, 2, 3, 4, 5, 6)
+    var list = [1, 2, 3, 4, 5, 6]
     var check: Int = 6
 
     for item in reversed(list):
-        assert_equal(item[], check, "item[], check")
+        assert_equal(item, check, "item[], check")
         check -= 1
 
 
@@ -31,7 +31,7 @@ def test_reversed_deque():
     var check: Int = 6
 
     for item in reversed(deque):
-        assert_equal(item[], check, "item[], check")
+        assert_equal(item, check, "item[], check")
         check -= 1
 
 
@@ -45,20 +45,20 @@ def test_reversed_dict():
 
     var keys = String()
     for key in reversed(dict):
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "dcba")
 
     var check: Int = 4
     for val in reversed(dict.values()):
-        assert_equal(val[], check)
+        assert_equal(val, check)
         check -= 1
 
     keys = String()
     check = 4
     for item in reversed(dict.items()):
-        keys += item[].key
-        assert_equal(item[].value, check)
+        keys += item.key
+        assert_equal(item.value, check)
         check -= 1
 
     assert_equal(keys, "dcba")
@@ -72,27 +72,27 @@ def test_reversed_dict():
 
     keys = String()
     for key in dict:
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "bd")
 
     keys = String()
     for key in reversed(dict):
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "db")
 
     # got 4 and 2
     check = 4
     for val in reversed(dict.values()):
-        assert_equal(val[], check)
+        assert_equal(val, check)
         check -= 2
 
     keys = String()
     check = 4
     for item in reversed(dict.items()):
-        keys += item[].key
-        assert_equal(item[].value, check)
+        keys += item.key
+        assert_equal(item.value, check)
         check -= 2
 
     assert_equal(keys, "db")
@@ -108,8 +108,8 @@ def test_reversed_dict():
     keys = String()
     check = 1
     for item in reversed(dict.items()):
-        keys += item[].key
-        assert_equal(item[].value, check)
+        keys += item.key
+        assert_equal(item.value, check)
         check += 1
 
     assert_equal(keys, "acdb")
@@ -120,7 +120,7 @@ def test_reversed_dict():
 
     keys = String()
     for key in reversed(empty_dict):
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "")
 
@@ -134,8 +134,8 @@ def test_reversed_dict():
     keys = String()
     check = 0
     for item in reversed(empty_dict.items()):
-        keys += item[].key
-        check += item[].value
+        keys += item.key
+        check += item.value
 
     assert_equal(keys, "")
     assert_equal(check, 0)

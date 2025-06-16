@@ -51,11 +51,9 @@ def execute_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
-        type, kv_params, WRITE_MODE_MEM
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test (",
         batch_size,

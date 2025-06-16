@@ -19,6 +19,7 @@ from sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
 
 from gpu.host._nvidia_cuda import TensorMapSwizzle
+from gpu.mma_operand_descriptor import MMAOperandDescriptor
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
 
@@ -708,7 +709,7 @@ fn st_matrix[
 
 # Shared memory operand descriptor.
 @register_passable("trivial")
-struct WGMMADescriptor[dtype: DType]:
+struct WGMMADescriptor[dtype: DType](MMAOperandDescriptor):
     """Descriptor for shared memory operands used in warp group matrix multiply operations.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1003,12 +1004,16 @@ fn wgmma_async[
     alias layout_a_value = _get_kgen_string[layout_a]()
     alias layout_b_value = _get_kgen_string[layout_b]()
 
+    # tensor core will interpret fp32 as tf32
+    alias a_type_value = __mlir_attr.tf32 if a_type is DType.float32 else a_type.__mlir_type()
+    alias b_type_value = __mlir_attr.tf32 if b_type is DType.float32 else b_type.__mlir_type()
+
     var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
         shape_m = m.value,
         shape_n = n.value,
         shape_k = k.value,
-        type_a = a_type.__mlir_type(),
-        type_b = b_type.__mlir_type(),
+        type_a=a_type_value,
+        type_b=b_type_value,
         type_c = c_dtype.__mlir_type(),
         layout_a=layout_a_value,
         layout_b=layout_b_value,
@@ -1211,7 +1216,6 @@ fn wgmma_async[
     - Row major matrix A.
     - Column major matrix B (or row major for BF16).
     """
-
     constrained[
         (m * n // 128) * sizeof[accum_type]()
         == frag_c_width * sizeof[c_dtype](),

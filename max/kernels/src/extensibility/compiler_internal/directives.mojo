@@ -15,6 +15,7 @@ from collections import OptionalReg
 
 from buffer.dimlist import DimList
 from layout import IntTuple, Layout
+from sys import alignof
 
 from utils import IndexList, StaticTuple
 
@@ -35,25 +36,40 @@ fn view_kernel():
     return
 
 
+@always_inline
+fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
+    """Return a `DimList` of strides for data laid out in row-major order, from
+    a `DimList` representing the shape."""
+
+    @parameter
+    if rank == 1:
+        return 1
+    elif rank == 2:
+        return (shape.get[1](), 1)
+    elif rank == 3:
+        return (shape.get[2]() * shape.get[1](), shape.get[2](), 1)
+    else:
+        return -1
+
+
 # Compile time Tensor informations
-@value
 @register_passable("trivial")
 struct StaticTensorSpec[
-    type: DType,
+    dtype: DType,
     rank: Int,
-]:
+](Copyable, Movable):
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
-        type, simd_width
+        dtype, simd_width
     ]
     alias out_lambda_t = fn[simd_width: Int, element_alignment: Int = 1] (
-        IndexList[rank], SIMD[type, simd_width]
+        IndexList[rank], SIMD[dtype, simd_width]
     ) capturing -> None
 
     alias out_compute_lambda_t = fn[
         simd_width: Int, element_alignment: Int = 1
-    ] (IndexList[rank], SIMD[type, simd_width]) capturing -> SIMD[
-        type, simd_width
+    ] (IndexList[rank], SIMD[dtype, simd_width]) capturing -> SIMD[
+        dtype, simd_width
     ]
 
     var shape: DimList
@@ -87,6 +103,30 @@ struct StaticTensorSpec[
         self.out_lambda = out_lambda
         self.out_compute_lambda = out_compute_lambda
 
+    fn __init__(out self, shape: DimList):
+        constrained[
+            rank > 0,
+            (
+                "initializing `StaticTensorSpec` with just a shape only"
+                " supports rank 1 to 3"
+            ),
+        ]()
+        debug_assert(
+            len(shape) == rank,
+            (
+                "initialized `StaticTensorSpec` with a shape length not equal"
+                "to the `rank` parameter"
+            ),
+        )
+        self.shape = shape
+        self.strides = _row_major_strides[rank](shape)
+        self.alignment = alignof[dtype]()
+        self.address_space = AddressSpace.GENERIC
+        self.exclusive = False
+        self.in_lambda = None
+        self.out_lambda = None
+        self.out_compute_lambda = None
+
     @staticmethod
     fn create_unknown() -> Self:
         """
@@ -108,9 +148,9 @@ struct StaticTensorSpec[
     fn with_layout[
         new_rank: Int
     ](self, new_shape: DimList, new_strides: DimList) -> StaticTensorSpec[
-        type, new_rank
+        dtype, new_rank
     ]:
-        return StaticTensorSpec[type, new_rank](
+        return StaticTensorSpec[dtype, new_rank](
             new_shape,
             new_strides,
             self.alignment,

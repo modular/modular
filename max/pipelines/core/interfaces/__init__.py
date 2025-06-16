@@ -15,10 +15,11 @@ from .audio_generation import (
     AudioGenerationRequest,
     AudioGenerator,
     AudioGeneratorContext,
-    PipelineAudioTokenizer,
+    AudioGeneratorOutput,
 )
 from .embeddings_generation import EmbeddingsGenerator
 from .response import (
+    AudioGenerationResponse,
     EmbeddingsResponse,
     LogProbabilities,
     TextGenerationResponse,
@@ -28,6 +29,7 @@ from .response import (
 from .tasks import PipelineTask
 from .text_generation import (
     PipelineTokenizer,
+    SamplingParams,
     TokenGenerator,
     TokenGeneratorContext,
     TokenGeneratorRequest,
@@ -39,14 +41,16 @@ from .text_generation import (
 
 __all__ = [
     "AudioGenerationRequest",
+    "AudioGenerationResponse",
     "AudioGenerator",
     "AudioGeneratorContext",
+    "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsResponse",
     "LogProbabilities",
-    "PipelineAudioTokenizer",
     "PipelineTask",
     "PipelineTokenizer",
+    "SamplingParams",
     "TextGenerationResponse",
     "TextGenerationStatus",
     "TextResponse",

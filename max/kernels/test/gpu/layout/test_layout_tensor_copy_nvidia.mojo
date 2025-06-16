@@ -177,12 +177,16 @@ fn swizzle_copy[
     alias simd_size = simdwidthof[type]()
 
     # Double buffer in shared memory.
-    var a_smem_tile = LayoutTensor[
-        type,
-        Layout.row_major(BM, BK),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().fill(0)
+    var a_smem_tile = (
+        LayoutTensor[
+            type,
+            Layout.row_major(BM, BK),
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     alias thread_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
@@ -312,12 +316,16 @@ fn masked_async_copy_kernel[
         ),
     )
 
-    var smem_tile = LayoutTensor[
-        DType.float32,
-        layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().fill(-1.0)
+    var smem_tile = (
+        LayoutTensor[
+            DType.float32,
+            layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ]
+        .stack_allocation()
+        .fill(-1.0)
+    )
 
     copy_dram_to_sram_async[thread_layout=thread_layout](
         smem_tile.vectorize[1, 4](), masked_input.vectorize[1, 4]()
@@ -429,12 +437,16 @@ fn masked_copy_kernel[
         ),
     )
 
-    var smem_tile = LayoutTensor[
-        DType.float32,
-        layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().fill(0)
+    var smem_tile = (
+        LayoutTensor[
+            DType.float32,
+            layout,
+            MutableAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     copy_dram_to_sram[thread_layout=thread_layout](
         smem_tile.vectorize[1, 4](), masked_input.vectorize[1, 4]()
@@ -544,14 +556,18 @@ fn masked_copy_dram_to_local_kernel[
         ),
     )
 
-    var reg_tile = LayoutTensor[
-        DType.float32,
-        Layout.row_major(
-            layout.size() // num_threads // simd_width, simd_width
-        ),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(-1.0)
+    var reg_tile = (
+        LayoutTensor[
+            DType.float32,
+            Layout.row_major(
+                layout.size() // num_threads // simd_width, simd_width
+            ),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(-1.0)
+    )
 
     copy_dram_to_local[src_thread_layout=thread_layout](
         reg_tile.vectorize[1, simd_width](),

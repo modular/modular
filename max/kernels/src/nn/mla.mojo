@@ -346,7 +346,7 @@ fn flare_mla_decoding_dispatch[
     alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
     alias WM = BM
     alias WN = 16
-    # num warps in M and N, multipled by warp size.
+    # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
     alias accum_type = get_accum_type[q.type]()
@@ -459,8 +459,13 @@ fn mla_decoding[
 
     # split-k offsets
     var partition_idx = block_idx.x
-    var output_batch_offset = depth_v * num_heads * batch_idx + depth_v * num_heads * batch_size * partition_idx
-    var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx
+    var output_batch_offset = (
+        depth_v * num_heads * batch_idx
+        + depth_v * num_heads * batch_size * partition_idx
+    )
+    var qk_max_offset = (
+        num_heads * batch_idx + num_heads * batch_size * partition_idx
+    )
     var exp_sum_offset = qk_max_offset
 
     # split-k intermediate buffers
@@ -589,7 +594,7 @@ fn mla_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
@@ -673,12 +678,16 @@ fn mla_decoding_single_batch[
 
     alias num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
     alias num_output_rows_full = num_output_rows
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_output_rows_full, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0.0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_output_rows_full, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0.0)
+    )
 
     # Rowwise max and sum for online softmax
     alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
@@ -833,7 +842,7 @@ fn mla_decoding_single_batch[
             nope_dim // BK,
         )
 
-        # Cacluate the last `rope_dim` part of Q @ K
+        # Calculate the last `rope_dim` part of Q @ K
         multistage_mma[
             BM,
             BN,
@@ -892,7 +901,9 @@ fn mla_decoding_single_batch[
                         var score_head_idx = q_head_idx + i * MMA_M // 2
 
                         var score_row_with_start_pos = num_keys - 1
-                        var score_row = 0  # this is a decoding kernel with seq_len = 1
+                        var score_row = (
+                            0  # this is a decoding kernel with seq_len = 1
+                        )
 
                         @parameter
                         if masked:
@@ -1416,15 +1427,21 @@ fn flare_mla_prefill_dispatch[
 
     alias smem_use = (q_smem + k_smem + v_smem) * config.type.sizeof()
 
-    var softmax_info_ptr = softmax_info.value().data if softmax_info else UnsafePointer[
-        Scalar[softmax_type]
-    ]()
-    var prev_output_ptr = prev_output.value().data if prev_output else UnsafePointer[
-        Scalar[output_type]
-    ]()
-    var prev_softmax_info_ptr = prev_softmax_info.value().data if prev_softmax_info else UnsafePointer[
-        Scalar[softmax_type]
-    ]()
+    var softmax_info_ptr = (
+        softmax_info.value().data if softmax_info else UnsafePointer[
+            Scalar[softmax_type]
+        ]()
+    )
+    var prev_output_ptr = (
+        prev_output.value().data if prev_output else UnsafePointer[
+            Scalar[output_type]
+        ]()
+    )
+    var prev_softmax_info_ptr = (
+        prev_softmax_info.value().data if prev_softmax_info else UnsafePointer[
+            Scalar[softmax_type]
+        ]()
+    )
 
     alias kernel = mla_prefill[
         config.type,
@@ -1757,12 +1774,16 @@ fn mla_prefill_single_batch[
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
 
-    var output_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
-        MutableAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation().fill(0)
+    var output_reg_tile = (
+        LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
+            MutableAnyOrigin,
+            address_space = AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
     # Rowwise max and sum for online softmax
     alias row_alignment = alignof[SIMD[accum_type, simdwidthof[accum_type]()]]()
@@ -1899,7 +1920,7 @@ fn mla_prefill_single_batch[
         )
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, depth, axis=0](0, 0)
 
-        # here we set up varibles for k_rope tensor
+        # here we set up variables for k_rope tensor
         alias k_rope_gmem_layout = Layout(
             IntTuple(Int(BN), Int(cache_depth)),
             IntTuple(Int(cache_num_heads * cache_depth), 1),
@@ -2052,7 +2073,9 @@ fn mla_prefill_single_batch[
                     for i in range(2):
                         # The row in score matrix of shape seq_len x num_keys.
                         # Mask col is score col since we don't partition in col.
-                        var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                        var score_row = (
+                            mask_block_row + mask_frag_row + i * MMA_M // 2
+                        )
                         var score_col = mask_frag_col
 
                         score_row_with_start_pos = score_row + start_pos
@@ -2602,7 +2625,7 @@ fn mla_prefill_plan_kernel[
 
 
 # ===-----------------------------------------------------------------------===#
-# Helper fucntion that copies K cache to a contiguous buffer
+# Helper function that copies K cache to a contiguous buffer
 # ===-----------------------------------------------------------------------===#
 
 

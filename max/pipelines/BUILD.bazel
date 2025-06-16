@@ -20,10 +20,7 @@ modular_py_library(
         requirement("pillow"),
         requirement("torch"),
         requirement("transformers"),
-    ] + select({
-        "//:has_gpu": [requirement("xgrammar")],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 pkg_files(

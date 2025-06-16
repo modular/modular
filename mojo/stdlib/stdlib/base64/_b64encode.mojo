@@ -24,7 +24,6 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from collections import InlineArray
 from math import iota
 from sys import llvm_intrinsic
 
@@ -248,10 +247,10 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
             result_vector, equal_vector
         )
 
-        var nb_of_elements_to_store = _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
-            simd_width
-        ](
-            nb_of_elements_to_load
+        var nb_of_elements_to_store = (
+            _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
+                simd_width
+            ](nb_of_elements_to_load)
         )
 
         var v_ptr = UnsafePointer(to=result_vector_with_equals).bitcast[Byte]()

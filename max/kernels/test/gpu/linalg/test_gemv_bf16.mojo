@@ -86,7 +86,7 @@ fn run_matvec[
     var kernelType = "GEMV"
     var nstime = ctx.execution_time[run_func_gemv](iterations)
     var flops = 2 * M * N * K
-    var sectime = ((nstime / iterations) / 1000000000)
+    var sectime = (nstime / iterations) / 1000000000
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
     print(flops * 1e-9 / sectime, " GFLOPS")
@@ -122,7 +122,7 @@ fn run_matvec[
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = ((nstime / iterations) / 1000000000)
+    var sectime2 = (nstime / iterations) / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")
     print(flops * 1e-9 / sectime2, " GFLOPS")

@@ -27,9 +27,9 @@ fn apply_penalties_to_logits[
     logits: LayoutTensor[mut=True, logit_type, **_],
     compressed_frequency_data: LayoutTensor[DType.int32, **_],
     frequency_offsets: LayoutTensor[DType.uint32, **_],
-    frequency_penalty: Scalar[penalty_type],
-    presence_penalty: Scalar[penalty_type],
-    repetition_penalty: Scalar[penalty_type],
+    frequency_penalty: LayoutTensor[penalty_type, **_],
+    presence_penalty: LayoutTensor[penalty_type, **_],
+    repetition_penalty: LayoutTensor[penalty_type, **_],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -50,6 +50,9 @@ fn apply_penalties_to_logits[
         var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
         var token = Int(compressed_frequency_data[idx[0], 0])
 
+        var repetition_penalty_val = repetition_penalty[batch_id][0]
+        var presence_penalty_val = presence_penalty[batch_id][0]
+        var frequency_penalty_val = frequency_penalty[batch_id][0]
         # skip padding tokens
         if token >= 0:
             var count = rebind[Scalar[DType.int32]](
@@ -59,13 +62,13 @@ fn apply_penalties_to_logits[
             var logit = logits[batch_id, token]
 
             if logit > 0:
-                logit = logit / repetition_penalty.cast[logit_type]()
+                logit = logit / repetition_penalty_val.cast[logit_type]()
             else:
-                logit = logit * repetition_penalty.cast[logit_type]()
+                logit = logit * repetition_penalty_val.cast[logit_type]()
 
             logit -= (
-                frequency_penalty.cast[logit_type]() * count
-                + presence_penalty.cast[logit_type]()
+                frequency_penalty_val.cast[logit_type]() * count
+                + presence_penalty_val.cast[logit_type]()
             )
 
             logits[batch_id, token] = logit

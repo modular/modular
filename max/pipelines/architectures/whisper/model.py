@@ -98,8 +98,7 @@ class Whisper(PipelineModel):
             DeviceRef.from_device(self.devices[0]),
         )
         model = session.load(
-            graph,
-            weights_registry=self.weights.allocated_weights,
+            graph, weights_registry=self.weights.allocated_weights
         )
         after = time.perf_counter()
         logger.info(

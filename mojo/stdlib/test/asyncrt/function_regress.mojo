@@ -31,7 +31,7 @@ trait MaybeZeroSized:
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZeroSized(MaybeZeroSized, DevicePassable):
+struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):
@@ -61,7 +61,7 @@ struct ZeroSized(MaybeZeroSized, DevicePassable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct NotZeroSized(MaybeZeroSized, DevicePassable):
+struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
     fn _to_device_type(self, target: UnsafePointer[NoneType]):
@@ -98,26 +98,26 @@ fn _vec_func_zero(
     zs: ZeroSized,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn _vec_func_not_zero(
     zs: NotZeroSized,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn _vec_func[
@@ -126,13 +126,13 @@ fn _vec_func[
     zs: zero_sized_t,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn test_function_compilation(ctx: DeviceContext) raises:

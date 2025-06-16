@@ -121,14 +121,14 @@ def download_artifacts(
     shell(f"mkdir -p {output_dir}/main")
     shell(f"mkdir -p {output_dir}/branch")
 
-    artifcat_name = "result-dir"
+    artifact_name = "result-dir"
     shell(
         f"argo cp {ref_main_yaml[0]['metadata']['name']} --artifact-name"
-        f" {artifcat_name} {output_dir}/main"
+        f" {artifact_name} {output_dir}/main"
     )
     shell(
         f"argo cp {ref_branch_yaml[0]['metadata']['name']} --artifact-name"
-        f" {artifcat_name} {output_dir}/branch"
+        f" {artifact_name} {output_dir}/branch"
     )
 
     result_main = shell(f"find {output_dir}/main/argo/|grep result-dir.tgz")

@@ -16,7 +16,7 @@ the same basic problem.
 In dynamically-typed languages like Python, you don't need to explicitly declare
 that two classes are similar. This is easiest to show by example:
 
-```python
+```python title="🐍 Python"
 class Duck:
     def quack(self):
         print("Quack.")
@@ -46,7 +46,7 @@ Mojo functions require you to
 specify the type of each argument. If you wanted to write this example in Mojo
 *without* traits, you'd need to write a function overload for each input type.
 
-```mojo
+```mojo title="🔥 Mojo"
 @value
 struct Duck:
     fn quack(self):
@@ -223,7 +223,7 @@ trait DuckTrait(Quackable, Flyable):
 ```
 
 The difference is that using the `trait` keyword defines a new, named
-trait. For a struct to *explictly* conform to this trait, you need to include
+trait. For a struct to *explicitly* conform to this trait, you need to include
 it in the struct's signature. On the other hand, the `DuckLike` alias represents
 a composition of two separate traits, `Quackable` and `Flyable`, and anything
 that conforms to those two traits conforms to `DuckLike`. For example, our
@@ -551,9 +551,7 @@ generic container. A single `List` can only hold a single type of data.
 For example, you can create a list of integer values like this:
 
 ```mojo
-from collections import List
-
-var list = List[Int](1, 2, 3)
+var list = List[Int](1, 2, 3)  # or: var list = [1, 2, 3]
 for i in range(len(list)):
     print(list[i], sep=" ", end="")
 ```
@@ -648,7 +646,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
 
     fn dump[WritableEltType: Writable & Copyable & Movable](self: MyStack[WritableEltType]):
         for item in self.list:
-            print(item[])
+            print(item)
 ```
 
 The `MyStack` type adds a `dump()` method that prints the contents of the stack.

@@ -53,7 +53,7 @@ def test_assert_messages():
 
 
 @fieldwise_init
-struct DummyStruct:
+struct DummyStruct(EqualityComparable, Stringable):
     var value: Int
 
     fn __eq__(self, other: Self) -> Bool:
@@ -129,8 +129,6 @@ def test_assert_almost_equal():
             lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
         )
 
-    _should_succeed[DType.bool, 1](True, True)
-    _should_succeed(SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, 1))
     _should_succeed(
         SIMD[float_type, 2](-_inf, _inf), SIMD[float_type, 2](-_inf, _inf)
     )
@@ -167,10 +165,6 @@ def test_assert_almost_equal():
                 lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
             )
 
-    _should_fail[DType.bool, 1](True, False)
-    _should_fail(
-        SIMD[DType.int32, 2](0, 1), SIMD[DType.int32, 2](0, -1), atol=5
-    )
     _should_fail(
         SIMD[float_type, 2](-_inf, 0.0),
         SIMD[float_type, 2](_inf, 0.0),
@@ -248,9 +242,9 @@ def test_assert_equal_stringslice():
             ptr=value.unsafe_ptr() + start, length=end - start
         )
 
-    l1 = List(_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12))
-    l2 = List(_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12))
-    l3 = List(_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12))
+    l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
+    l2 = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
+    l3 = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
     assert_equal(l1, l1)
     assert_equal(l2, l2)
     assert_equal(l1, l2)

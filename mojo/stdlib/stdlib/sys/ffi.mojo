@@ -164,7 +164,7 @@ struct _OwnedDLHandle(Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
+struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
     """Represents a dynamically linked library that can be loaded and unloaded.
 
     The library is loaded on initialization and unloaded by `close`.
@@ -178,11 +178,12 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
         """Initialize a dynamic library handle to all global symbols in the
         current process.
 
-        On POXIX-compatible operating systems, this performs
-        `dlopen(nullptr, flags)`.
-
         Args:
             flags: The flags to load the dynamic library.
+
+        Notes:
+            On POSIX-compatible operating systems, this performs
+            `dlopen(nullptr, flags)`.
         """
         self = Self._dlopen(UnsafePointer[c_char](), flags)
 
@@ -446,9 +447,11 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
             The result.
         """
 
-        debug_assert(
-            self.check_symbol(String(name)), String("symbol not found: ") + name
-        )
+        @parameter
+        fn _check_symbol() -> Bool:
+            return self.check_symbol(String(name))
+
+        debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
         return self.get_function[fn (__type_of(v)) -> return_type](
             String(name)
@@ -504,7 +507,7 @@ fn _try_find_dylib[
         # We can't check the existence of the path ahead of time, we have to
         # call the function and check for an error.
         try:
-            return _OwnedDLHandle(String(path[]))
+            return _OwnedDLHandle(String(path))
         except:
             # If the call to DLOpen fails, we should just try the next path
             # in the list. It's only a fatal error if the library cannot be
@@ -525,7 +528,7 @@ fn _try_find_dylib[
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
     for path in paths:
-        paths_list.append(path[])
+        paths_list.append(path)
     return _try_find_dylib[name](paths_list)
 
 
@@ -556,7 +559,7 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
     for path in paths:
-        paths_list.append(path[])
+        paths_list.append(path)
     return _find_dylib[name](paths_list)
 
 
@@ -565,21 +568,22 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
 # ===-----------------------------------------------------------------------===#
 
 
+# NOTE: This is vending shared mutable pointers to the client without locking.
+# This is not guaranteeing any sort of thread safety.
 struct _Global[
     name: StaticString,
-    storage_type: Movable,
-    init_fn: fn () -> storage_type,
-]:
+    StorageType: Movable,
+    init_fn: fn () -> StorageType,
+](Defaultable):
+    alias ResultType = UnsafePointer[StorageType]
+
     fn __init__(out self):
         pass
 
     @staticmethod
-    fn _init_wrapper(payload: OpaquePointer) -> OpaquePointer:
-        # Struct-based globals don't get to take arguments to their initializer.
-        debug_assert(not payload)
-
+    fn _init_wrapper() -> OpaquePointer:
         # Heap allocate space to store this "global"
-        var ptr = UnsafePointer[storage_type].alloc(1)
+        var ptr = UnsafePointer[StorageType].alloc(1)
 
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -589,29 +593,45 @@ struct _Global[
         return ptr.bitcast[NoneType]()
 
     @staticmethod
-    fn _deinit_wrapper(self_: OpaquePointer):
-        var ptr: UnsafePointer[storage_type] = self_.bitcast[storage_type]()
-
-        # Deinitialize and deallocate the global
+    fn _deinit_wrapper(opaque_ptr: OpaquePointer):
+        # Deinitialize and deallocate the storage.
+        var ptr = opaque_ptr.bitcast[StorageType]()
         ptr.destroy_pointee()
         ptr.free()
 
     @staticmethod
-    fn get_or_create_ptr() -> UnsafePointer[storage_type]:
+    fn get_or_create_ptr() -> Self.ResultType:
         return _get_global[
             name, Self._init_wrapper, Self._deinit_wrapper
-        ]().bitcast[storage_type]()
+        ]().bitcast[StorageType]()
+
+    # Currently known values for get_or_create_indexed_ptr.  See
+    # NUM_INDEXED_GLOBALS in CompilerRT.
+    alias _python_idx = 0
+    alias _unused = 1  # Intentionally unused (enabled for prototyping).
+
+    # This accesses a well-known global with a fixed index rather than using a
+    # name to unique the value.  The index table is above.
+    @staticmethod
+    fn get_or_create_indexed_ptr(idx: Int) -> Self.ResultType:
+        var ptr = external_call[
+            "KGEN_CompilerRT_GetOrCreateGlobalIndexed", OpaquePointer
+        ](
+            idx,
+            Self._init_wrapper,
+            Self._deinit_wrapper,
+        )
+        return ptr.bitcast[StorageType]()
 
 
 @always_inline
 fn _get_global[
     name: StaticString,
-    init_fn: fn (OpaquePointer) -> OpaquePointer,
+    init_fn: fn () -> OpaquePointer,
     destroy_fn: fn (OpaquePointer) -> None,
-](payload: OpaquePointer = OpaquePointer()) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrCreate", OpaquePointer](
+]() -> OpaquePointer:
+    return external_call["KGEN_CompilerRT_GetOrCreateGlobal", OpaquePointer](
         name,
-        payload,
         init_fn,
         destroy_fn,
     )

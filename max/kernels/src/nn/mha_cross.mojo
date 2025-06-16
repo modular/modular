@@ -61,9 +61,7 @@ fn _bmm0_bs[
     alias kv_num_heads = cache_t.kv_params.num_heads
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var cur_kv_len: Int
@@ -160,9 +158,7 @@ fn _bmm1_bs[
     var y = global_idx.y
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var cur_kv_len: Int

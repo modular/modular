@@ -929,7 +929,7 @@ fn get_dispatch_table[
     insert(
         "2048_6144_4096",
         block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 128, 64),
+        warp_tile_shape=(64, 64, 64),
         num_pipeline_stages=3,
         num_k_partitions=1,
         num_warp_k_partitions=1,

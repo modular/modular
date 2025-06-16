@@ -390,7 +390,7 @@ def main():
 
         print("===> bfloat16-float32 mma with epilogue")
         # Our default split-k reduction precision is output precision. For
-        # bfloat16, we need a larger tolerance since the referece may reduce
+        # bfloat16, we need a larger tolerance since the reference may reduce
         # in float32.
         test[
             DType.bfloat16,

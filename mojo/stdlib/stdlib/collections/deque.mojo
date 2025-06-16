@@ -21,7 +21,6 @@ from collections import Deque
 ```
 """
 
-from collections import Optional
 
 from bit import next_power_of_two
 from memory import UnsafePointer
@@ -32,10 +31,7 @@ from memory import UnsafePointer
 
 
 struct Deque[ElementType: Copyable & Movable](
-    Boolable,
-    ExplicitlyCopyable,
-    Movable,
-    Sized,
+    Boolable, ExplicitlyCopyable, Movable, Sized
 ):
     """Implements a double-ended queue.
 
@@ -135,11 +131,14 @@ struct Deque[ElementType: Copyable & Movable](
         if elements is not None:
             self.extend(elements.value())
 
-    fn __init__(out self, owned *values: ElementType):
+    fn __init__(
+        out self, owned *values: ElementType, __list_literal__: () = ()
+    ):
         """Constructs a deque from the given values.
 
         Args:
             values: The values to populate the deque with.
+            __list_literal__: Tell Mojo to use this method for list literals.
         """
         self = Self(elements=values^)
 
@@ -223,7 +222,7 @@ struct Deque[ElementType: Copyable & Movable](
         """
         new = self.copy()
         for element in other:
-            new.append(element[])
+            new.append(element)
         return new^
 
     fn __iadd__(mut self, other: Self):
@@ -233,7 +232,7 @@ struct Deque[ElementType: Copyable & Movable](
             other: Deque whose elements will be appended to self.
         """
         for element in other:
-            self.append(element[])
+            self.append(element)
 
     fn __mul__(self, n: Int) -> Self:
         """Concatenates `n` deques of `self` and returns a new deque.
@@ -254,7 +253,7 @@ struct Deque[ElementType: Copyable & Movable](
         new = self.copy()
         for _ in range(n - 1):
             for element in self:
-                new.append(element[])
+                new.append(element)
         return new^
 
     fn __imul__(mut self, n: Int):
@@ -270,7 +269,7 @@ struct Deque[ElementType: Copyable & Movable](
         orig = self.copy()
         for _ in range(n - 1):
             for element in orig:
-                self.append(element[])
+                self.append(element)
 
     fn __eq__[
         T: EqualityComparable & Copyable & Movable, //
@@ -559,8 +558,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             values: List whose elements will be added at the right side of the deque.
         """
-        n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = (
-            self._compute_pop_and_move_counts(len(self), len(values))
+        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
+            len(self), len(values)
         )
 
         # pop excess `self` elements
@@ -593,8 +592,8 @@ struct Deque[ElementType: Copyable & Movable](
         Args:
             values: List whose elements will be added at the left side of the deque.
         """
-        n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = (
-            self._compute_pop_and_move_counts(len(self), len(values))
+        var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
+            len(self), len(values)
         )
 
         # pop excess `self` elements
@@ -1007,14 +1006,18 @@ struct _DequeIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self, out p: Pointer[ElementType, deque_lifetime]):
+    fn __next_ref__(mut self) -> ref [deque_lifetime] ElementType:
         @parameter
         if forward:
-            p = Pointer(to=self.src[][self.index])
+            var idx = self.index
             self.index += 1
+            return self.src[][idx]
         else:
             self.index -= 1
-            p = Pointer(to=self.src[][self.index])
+            return self.src[][self.index]
+
+    fn __next__(mut self) -> ElementType:
+        return self.__next_ref__()
 
     fn __len__(self) -> Int:
         @parameter

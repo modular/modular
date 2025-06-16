@@ -86,9 +86,10 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     # Set the total buffer allocation to be 4x L3 cache.
     alias MB = 1024 * 1024
     alias L3_cache = env_get_int["L3SIZE", 24]() * MB
-    var size_per_copy = input_alloc_size * sizeof[
-        input_type
-    ]() + filter_alloc_size * sizeof[filter_type]()
+    var size_per_copy = (
+        input_alloc_size * sizeof[input_type]()
+        + filter_alloc_size * sizeof[filter_type]()
+    )
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
@@ -205,8 +206,8 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     output_ptr.free()
 
 
-@value
-struct ConvSpecStatic:
+@fieldwise_init
+struct ConvSpecStatic(Copyable, Movable):
     # Conv rank, 1d, 2d, or 3d. The input rank is rank + 2.
     var rank: Int
     var input_type: DType
@@ -214,8 +215,8 @@ struct ConvSpecStatic:
     var output_type: DType
 
 
-@value
-struct ConvSpec[static_info: ConvSpecStatic](Stringable):
+@fieldwise_init
+struct ConvSpec[static_info: ConvSpecStatic](Copyable, Movable, Stringable):
     var n: Int
     var input_dims: IndexList[static_info.rank]
     var c: Int

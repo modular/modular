@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import Dict, KeyElement, Optional
+from collections import KeyElement
 from collections.dict import OwnedKwargsDict
 from os import abort
 
@@ -37,7 +37,7 @@ def test_dict_literals():
 
 
 def test_dict_fromkeys():
-    alias keys = List[String]("a", "b")
+    alias keys = [String("a"), "b"]
     var expected_dict = Dict[String, Int]()
     expected_dict["a"] = 1
     expected_dict["b"] = 1
@@ -46,14 +46,14 @@ def test_dict_fromkeys():
     assert_equal(len(dict), len(expected_dict))
 
     for k_v in expected_dict.items():
-        var k = k_v[].key
-        var v = k_v[].value
+        var k = k_v.key
+        var v = k_v.value
         assert_true(k in dict)
         assert_equal(dict[k], v)
 
 
 def test_dict_fromkeys_optional():
-    alias keys = List[String]("a", "b", "c")
+    alias keys = [String("a"), "b", "c"]
     var expected_dict: Dict[String, Optional[Int]] = {
         "a": None,
         "b": None,
@@ -64,8 +64,8 @@ def test_dict_fromkeys_optional():
     assert_equal(len(dict), len(expected_dict))
 
     for k_v in expected_dict.items():
-        var k = k_v[].key
-        var v = k_v[].value
+        var k = k_v.key
+        var v = k_v.value
         assert_true(k in dict)
         assert_false(v)
 
@@ -189,7 +189,7 @@ def test_iter():
 
     var keys = String()
     for key in dict:
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -201,7 +201,7 @@ def test_iter_keys():
 
     var keys = String()
     for key in dict.keys():
-        keys += key[]
+        keys += key
 
     assert_equal(keys, "ab")
 
@@ -213,7 +213,7 @@ def test_iter_values():
 
     var sum = 0
     for value in dict.values():
-        sum += value[]
+        sum += value
 
     assert_equal(sum, 3)
 
@@ -223,8 +223,8 @@ def test_iter_values_mut():
     dict["a"] = 1
     dict["b"] = 2
 
-    for value in dict.values():
-        value[] += 1
+    for ref value in dict.values():
+        value += 1
 
     assert_equal(2, dict["a"])
     assert_equal(3, dict["b"])
@@ -239,8 +239,8 @@ def test_iter_items():
     var keys = String()
     var sum = 0
     for entry in dict.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry.key
+        sum += entry.value
 
     assert_equal(keys, "ab")
     assert_equal(sum, 3)
@@ -489,12 +489,12 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
 
     var keys = String()
     for key in kwargs.keys():
-        keys += key[]
+        keys += key
     assert_equal(keys, "fruitdessert")
 
     var sum = 0
     for val in kwargs.values():
-        sum += val[]
+        sum += val
     assert_equal(sum, 17)
 
     assert_false(kwargs.find("salad").__bool__())
@@ -512,8 +512,8 @@ def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
     keys = String()
     sum = 0
     for entry in kwargs.items():
-        keys += entry[].key
-        sum += entry[].value
+        keys += entry.key
+        sum += entry.value
     assert_equal(keys, "dessertsalad")
     assert_equal(sum, 19)
 
@@ -628,6 +628,32 @@ def test_compile_time_dict():
         assert_equal(val, i)
 
 
+# FIXME: Dictionaries should be equatable when their keys/values are.
+def is_equal[
+    K: KeyElement, V: EqualityComparable & Copyable & Movable
+](a: Dict[K, V], b: Dict[K, V]) -> Bool:
+    if len(a) != len(b):
+        return False
+    for k in a.keys():
+        if a[k] != b[k]:
+            return False
+    return True
+
+
+def test_dict_comprehension():
+    var d1 = {x: x * x for x in range(10) if x & 1}
+    assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
+
+    var s2 = {a * b: b for a in [String("foo"), String("bar")] for b in [1, 2]}
+    var d1reference = {
+        String("foo"): 1,
+        String("bar"): 1,
+        String("foofoo"): 2,
+        String("barbar"): 2,
+    }
+    assert_true(is_equal(s2, d1reference))
+
+
 def main():
     test_dict()
     test_dict_literals()
@@ -643,3 +669,4 @@ def main():
     test_init_initial_capacity()
     test_dict_setdefault()
     test_compile_time_dict()
+    test_dict_comprehension()

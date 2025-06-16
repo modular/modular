@@ -28,7 +28,7 @@ from max.graph import (
     DeviceRef,
     Dim,
     Graph,
-    Shape,
+    SymbolicDim,
     TensorType,
     TensorValue,
     ops,
@@ -247,7 +247,7 @@ class MultimodalKVCacheManager(KVCacheManager):
         assert "max_vision_seq_len" in kwargs, "max_vision_seq_len must be set"
         max_vision_seq_len = kwargs["max_vision_seq_len"]
 
-        # figure out the relative sizes of caches based on KV Cach settings
+        # figure out the relative sizes of caches based on KV Cache settings
         text_size_per_token = num_layers * max_seq_len
         vision_size_per_token = num_vision_layers * max_vision_seq_len
         text_to_vision_ratio = text_size_per_token / (
@@ -260,11 +260,7 @@ class MultimodalKVCacheManager(KVCacheManager):
 
         # infer the optimal batch size for each modality based on its cache size
         text_batch_size = infer_optimal_batch_size(
-            params,
-            max_seq_len,
-            num_layers,
-            text_cache_size,
-            devices,
+            params, max_seq_len, num_layers, text_cache_size, devices
         )
         vision_batch_size = (
             ContinuousBatchingKVCacheManager.infer_optimal_batch_size(
@@ -346,45 +342,33 @@ class MultimodalKVCacheManager(KVCacheManager):
     ) -> Sequence[MultimodalKVCacheInputSymbols]:
         """Returns concatenated input symbols for text and vision KV managers.
 
-        This has to rename input symbols that aren't necessarily the same:
-        `num_layers` and `max_seq_len` differ in general between text and
-        vision modalities.
+        This renames symbolic dimensions to avoid conflicts between text and
+        vision modalities which may have different numbers of pages/layers.
         """
+        # Get input symbols from both managers
+        text_symbols = self.text_kv_manager.input_symbols()[0]
+        vision_symbols = self.vision_kv_manager.input_symbols()[0]
 
-        def _input_symbols(
-            manager: KVCacheManager,
-            num_layers_key: str,
-            max_seq_len_key: str | int,
-        ) -> KVCacheInputSymbols:
-            input_symbols = manager.input_symbols()[0]
-            # Get first element from input_symbols sequence
-            first_input_symbols = input_symbols[0]
-            assert isinstance(first_input_symbols, TensorType)
-            first_input_symbols.shape = Shape(
-                [
-                    "num_blocks",
-                    2,
-                    num_layers_key,
-                    max_seq_len_key,
-                    "num_kv_heads",
-                    "head_dim",
-                ]
-            )
+        # Rename conflicting symbolic dimensions in text symbols
+        text_symbols.kv_blocks.shape[0] = SymbolicDim("text_total_num_pages")
+        text_symbols.lookup_table.shape[1] = SymbolicDim("text_max_num_pages")
 
-            return input_symbols
+        # Rename conflicting symbolic dimensions in vision symbols
+        vision_symbols.kv_blocks.shape[0] = SymbolicDim(
+            "vision_total_num_pages"
+        )
+        vision_symbols.lookup_table.shape[1] = SymbolicDim(
+            "vision_max_num_pages"
+        )
+
+        # Also rename the num_layers dimension which differs between modalities
+        text_symbols.kv_blocks.shape[2] = SymbolicDim("text_num_layers")
+        vision_symbols.kv_blocks.shape[2] = SymbolicDim("vision_num_layers")
 
         return [
             MultimodalKVCacheInputSymbols(
-                text_kv_input_symbols=_input_symbols(
-                    self.text_kv_manager,
-                    "text_num_layers",
-                    self.text_kv_manager.page_size,
-                ),
-                vision_kv_input_symbols=_input_symbols(
-                    self.vision_kv_manager,
-                    "vision_num_layers",
-                    self.vision_kv_manager.page_size,
-                ),
+                text_kv_input_symbols=text_symbols,
+                vision_kv_input_symbols=vision_symbols,
             )
         ]
 
@@ -938,11 +922,11 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Batches up pixel_values, aspect_ratio_ids, and aspect_ratio_masks."""
         images = []
-        aspect_ratio_ids_list = []
-        aspect_ratio_mask_list = []
+        aspect_ratio_ids_list: list[np.ndarray] = []
+        aspect_ratio_mask_list: list[np.ndarray] = []
         for context in context_batch:
             # Get first image in first batch and permute the order to (HWC).
-            image = np.transpose(context.pixel_values, (0, 1, 3, 4, 2))
+            image = np.transpose(context.pixel_values[0], (0, 1, 3, 4, 2))
 
             # Add batch_size, num_concurrent_media, and max_num_tiles dimensions
             # [1, num_concurrent_media, max_num_tiles, H, W, C]
@@ -1061,7 +1045,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # Unset the context's pixel values so that subsequent next_token
         # calls reusing the same context won't run the vision encoder.
         for ctx in context_batch:
-            ctx.pixel_values = []
+            ctx.pixel_values = tuple()
 
         return LlamaVisionInputs(
             input_id_values=input_id_values,
@@ -1103,8 +1087,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # batch_size * num_concurrent_media * max_num_tiles * num_patches
         # are set to 0 here to imitate a dummy tensor (used in text-only mode).
         cross_attention_states = Tensor.zeros(
-            shape=[0, self.text_config.hidden_size],
-            dtype=self.dtype,
+            shape=[0, self.text_config.hidden_size], dtype=self.dtype
         ).to(self.devices[0])
 
         model_inputs = cast(LlamaVisionInputs, model_inputs)

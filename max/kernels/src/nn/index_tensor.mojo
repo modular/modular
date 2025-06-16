@@ -146,9 +146,9 @@ fn index_tensor_shape[
 # FOLLOW-UP: See example with [:, indA] indexing.
 # FOLLOW-UP: Simplify if not needed to be that complex.
 # Note: We could have used original gather_nd but then would need to materialize
-# an unneded huge index tensor (would broadcast to : dimension(s)).
-# Note: Currently, the `_index_tensor_1d` is retained as the CPU implemetation
-# (see PR #38365). The `_index_tensor_impl` is introduced as the gpu implemetation.
+# an unneeded huge index tensor (would broadcast to : dimension(s)).
+# Note: Currently, the `_index_tensor_1d` is retained as the CPU implementation
+# (see PR #38365). The `_index_tensor_impl` is introduced as the gpu implementation.
 # We intend to merge `index_tensor` with the `gather_nd` operations in the future.
 
 
@@ -363,9 +363,10 @@ fn _index_tensor_impl[
     var slice_rank = data_rank - batch_dims - indices.dim[indices_rank - 1]()
     var slice_last_dim = output.dim[output_rank - 1]() if slice_rank > 0 else 1
 
-    var use_simd = data.stride[data_rank - 1]() == 1 and (
-        slice_last_dim % target_simd_width
-    ) == 0
+    var use_simd = (
+        data.stride[data_rank - 1]() == 1
+        and (slice_last_dim % target_simd_width) == 0
+    )
 
     @parameter
     if is_cpu[target]():

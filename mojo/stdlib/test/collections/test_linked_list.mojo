@@ -13,13 +13,13 @@
 # RUN: %mojo %s
 
 from collections import LinkedList, Optional
+from memory import UnsafePointer
 
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
     MoveCounter,
-    g_dtor_count,
 )
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
@@ -33,6 +33,22 @@ def test_construction():
     assert_equal(l2[0], 1)
     assert_equal(l2[1], 2)
     assert_equal(l2[2], 3)
+
+
+def test_linkedlist_literal():
+    var l: LinkedList[Int] = [1, 2, 3]
+    assert_equal(3, len(l))
+    assert_equal(1, l[0])
+    assert_equal(2, l[1])
+    assert_equal(3, l[2])
+
+    var l2: LinkedList[Float64] = [1, 2.5]
+    assert_equal(2, len(l2))
+    assert_equal(1.0, l2[0])
+    assert_equal(2.5, l2[1])
+
+    var l3: LinkedList[Int] = []
+    assert_equal(0, len(l3))
 
 
 def test_append():
@@ -522,26 +538,17 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def inner_test_list_dtor():
-    # explicitly reset global counter
-    g_dtor_count = 0
+def test_list_dtor():
+    var dtor_count = 0
 
     var l = LinkedList[DelCounter]()
-    assert_equal(g_dtor_count, 0)
+    assert_equal(dtor_count, 0)
 
-    l.append(DelCounter())
-    assert_equal(g_dtor_count, 0)
+    l.append(DelCounter(UnsafePointer(to=dtor_count)))
+    assert_equal(dtor_count, 0)
 
     l^.__del__()
-    assert_equal(g_dtor_count, 1)
-
-
-def test_list_dtor():
-    # call another function to force the destruction of the list
-    inner_test_list_dtor()
-
-    # verify we still only ran the destructor once
-    assert_equal(g_dtor_count, 1)
+    assert_equal(dtor_count, 1)
 
 
 def test_iter():
@@ -549,36 +556,37 @@ def test_iter():
     var iter = l.__iter__()
     assert_true(iter.__has_next__(), "Expected iter to have next")
     assert_equal(len(iter), 3)
-    assert_equal(iter.__next__()[], 1)
-    assert_equal(iter.__next__()[], 2)
+    assert_equal(iter.__next_ref__(), 1)
+    assert_equal(iter.__next_ref__(), 2)
     assert_equal(len(iter), 1)
-    assert_equal(iter.__next__()[], 3)
+    assert_equal(iter.__next_ref__(), 3)
     assert_equal(len(iter), 0)
     assert_false(iter.__has_next__(), "Expected iter to not have next")
 
     var riter = l.__reversed__()
     assert_true(riter.__has_next__(), "Expected iter to have next")
     assert_equal(len(riter), 3)
-    assert_equal(riter.__next__()[], 3)
-    assert_equal(riter.__next__()[], 2)
+    assert_equal(riter.__next_ref__(), 3)
+    assert_equal(riter.__next_ref__(), 2)
     assert_equal(len(riter), 1)
-    assert_equal(riter.__next__()[], 1)
+    assert_equal(riter.__next_ref__(), 1)
     assert_equal(len(riter), 0)
     assert_false(riter.__has_next__(), "Expected iter to not have next")
 
     var i = 0
     for el in l:
-        assert_equal(el[], l[i])
+        assert_equal(el, l[i])
         i += 1
 
     i = 2
     for el in l.__reversed__():
-        assert_equal(el[], l[i])
+        assert_equal(el, l[i])
         i -= 1
 
 
 def main():
     test_construction()
+    test_linkedlist_literal()
     test_append()
     test_prepend()
     test_copy()

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
+    ShardingStrategy,
     TensorType,
     TensorValue,
     TensorValueLike,
@@ -43,6 +44,7 @@ class RMSNormV1(Layer):
     def __call__(self, x: TensorValue) -> TensorValue:
         return ops.custom(
             "rms_norm",
+            x.device,
             [
                 x,
                 TensorValue(self.weight).cast(x.dtype),
@@ -91,6 +93,7 @@ class RMSNorm(Module):
 
         return ops.custom(
             "rms_norm",
+            x.device,
             [
                 x,
                 weight,
@@ -109,8 +112,9 @@ class DistributedRMSNorm(RMSNorm):
         super().__init__(*args, **kwargs)
         self.num_devices = len(devices)
 
-        clone_weight = lambda weight, i: weight
-        self.weight.set_sharding_strategy(clone_weight)
+        self.weight.sharding_strategy = ShardingStrategy.replicate(
+            self.num_devices
+        )
         # Create a separate RMS layer for each device.
         self.rms_norms = []
         for n, device in enumerate(devices):

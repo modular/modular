@@ -20,7 +20,6 @@ from builtin._location import __call_location, _SourceLocation
 from testing import assert_equal
 
 from utils import IndexList
-from utils.write import WritableVariadicPack
 
 
 @always_inline
@@ -142,18 +141,7 @@ def test_print_sep():
         checker.check_line("a/1/2xx")
 
 
-fn foo[*Ts: Writable](*messages: *Ts) -> String:
-    return String("message:", WritableVariadicPack(messages), "[end]", sep=" ")
-
-
-def test_writable_variadic_pack[*Ts: Writable]():
-    var x = 42
-    res = foo("'x = ", x, "'")
-    assert_equal(res, "message: 'x = 42' [end]")
-
-
 def main():
     test_print()
     test_print_end()
     test_print_sep()
-    test_writable_variadic_pack()

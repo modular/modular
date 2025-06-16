@@ -54,12 +54,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
-from layout.tensor_core_async import (
-    TensorCoreAsync,
-    _lhs_descriptor,
-    _rhs_descriptor,
-    tile_layout_k_major,
-)
+from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
 from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
 from linalg.matmul_tile_scheduler import MatmulSchedule
@@ -192,24 +187,20 @@ fn test_warp_specialize_gemm_with_multicasting[
 
     debug_assert(
         (ceildiv(M, BM) % (CLUSTER_M)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. M",
-            "(M // BM=",
-            String(M // BM),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M),
-        ),
+        "Number of blocks on M axis should be multiple of cluster dim. M",
+        "(M // BM=",
+        M // BM,
+        ") CLUSTER SIZE:",
+        CLUSTER_M,
     )
 
     debug_assert(
         (ceildiv(N, BN) % (CLUSTER_N)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. N",
-            "N // BN=(",
-            String(N // BN),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N),
-        ),
+        "Number of blocks on M axis should be multiple of cluster dim. N",
+        "N // BN=(",
+        N // BN,
+        ") CLUSTER SIZE:",
+        CLUSTER_N,
     )
 
     alias matmul_config = MatmulConfig[
@@ -782,7 +773,7 @@ fn main() raises:
                     static[128](),
                 )
 
-            alias wgmma_n = List[Int](64, 128, 256)
+            alias wgmma_n = [64, 128, 256]
 
             print("# 2x1 warp specialized gemm with multicasting tests")
 

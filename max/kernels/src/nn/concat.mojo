@@ -108,9 +108,9 @@ fn memcpy_or_fuse[
         elementwise[epilogue_wrapper, simd_width=1](shape_1d)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _Span:
+struct _Span(Copyable, Movable):
     var start: Int
     var end: Int
 
@@ -123,9 +123,9 @@ struct _Span:
         return Self(max(self.start, other.start), min(self.end, other.end))
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CanonicallyReshapedBuffer:
+struct _CanonicallyReshapedBuffer(Copyable, Movable):
     var data: UnsafePointer[Int8]
     var h: Int
     var w: Int
@@ -258,7 +258,10 @@ fn _concat_parallel[
                     # Now, fully-aligned sections:
                     var in_ptr = input_data.offset(overlap_full_rel_start)
                     var end_in_ptr = input_data.offset(overlap_full_rel_end)
-                    var out_ptr_offset = output_wc_offset + overlap_full_rel_start // input_wc * output_wc
+                    var out_ptr_offset = (
+                        output_wc_offset
+                        + overlap_full_rel_start // input_wc * output_wc
+                    )
 
                     while in_ptr < end_in_ptr:
                         memcpy_or_fuse[rank, type, epilogue_fn](
@@ -430,7 +433,7 @@ fn _concat_small[
     @parameter
     @always_inline
     fn concat_lambda[simd_width: Int, rank: Int](out_index: IndexList[rank]):
-        # Concating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
+        # Concatenating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
         # [:, 60, :] so when the target dim is:
         #   0 >= target_dim < 10: We are loading from first input.
         #   10 >= target_dim < 20: We are loading from second input.

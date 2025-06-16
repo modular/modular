@@ -77,12 +77,7 @@ class RotaryEmbedding(Module):
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
         iota = ops.range(
-            0,
-            n - 1,
-            2,
-            out_dim=n // 2,
-            dtype=DType.float64,
-            device=self.device,
+            0, n - 1, 2, out_dim=n // 2, dtype=DType.float64, device=self.device
         )
         inv_freq = ops.cast(1.0 / (self.theta ** (iota / n)), DType.float32)
 
@@ -120,7 +115,11 @@ class RotaryEmbedding(Module):
 
     @cached_property
     def freqs_cis(self) -> TensorValue:
-        self._freqs_cis = self.freqs_cis_base()
+        # self._freqs_cis = self.freqs_cis_base()
+        freqs = self.freqs_cis_base()
+        d1, d2, d3 = freqs.shape  # (max_seq_len * 2, head_dim // 2, 2)
+        new_f_shape = [d1, d2 * d3]  # (max_seq_len * 2, head_dim)
+        self._freqs_cis = ops.reshape(freqs, new_f_shape)
         return self._freqs_cis
 
     def compute_scale(self, user_scale: Optional[float] = None) -> float:
@@ -134,7 +133,7 @@ class RotaryEmbedding(Module):
     def __call__(
         self,
         x: TensorValueLike,
-        start_pos: Optional[TensorValue] = None,
+        start_pos: Optional[Dim] = None,
         seq_len: Optional[Dim] = None,
     ) -> TensorValue:
         """Applies rotary positional embeddings (RoPE) to `x`.
@@ -156,27 +155,18 @@ class RotaryEmbedding(Module):
             x_im = complex[..., 1]
         else:
             head_dim = v.shape[-1]
-            head_dim_val = TensorValue(head_dim)
             half_dim = head_dim // 2
-            half_dim_val = TensorValue(half_dim)
-            slice_re = (slice(0, half_dim_val), half_dim)
-            slice_im = (slice(half_dim_val, head_dim_val), half_dim)
-            x_re = v[..., slice_re]
-            x_im = v[..., slice_im]
+            x_re = v[..., :half_dim]
+            x_im = v[..., half_dim:head_dim]
 
         if start_pos is None:
-            start_pos = ops.constant(
-                0, dtype=DType.int64, device=DeviceRef.CPU()
-            )
+            start_pos = Dim(0)
         if seq_len is None:
             seq_len = v.shape[-3]
 
-        seq_len_val = TensorValue(seq_len)
-        freqs_cis_sliced = self.freqs_cis[
-            (slice(start_pos, start_pos + seq_len_val), seq_len),
-        ]
+        freqs_cis_sliced = self.freqs_cis[start_pos : start_pos + seq_len]
         # Handle optimized case that flattens freqs_cis.
-        # This is needed so naive llama3 can still use Llama3RotaryEmbedding with correct freq_cis.
+        # This is needed so naive llama3 can still use Llama3RotaryEmbedding with correct freqs_cis.
         if len(freqs_cis_sliced.shape) == 2:
             d0, d1 = freqs_cis_sliced.shape
             freqs_cis_sliced = freqs_cis_sliced.reshape((d0, d1 // 2, 2))
@@ -204,20 +194,6 @@ class RotaryEmbedding(Module):
         return ops.cast(ops.reshape(rope_complex, v.shape), v.dtype)
 
 
-class OptimizedRotaryEmbedding(RotaryEmbedding):
-    """
-    Optimized version of RotaryEmbedding using 2D frequency tensor representation.
-    """
-
-    @cached_property
-    def freqs_cis(self):
-        freqs = self.freqs_cis_base()
-        d1, d2, d3 = freqs.shape  # (max_seq_len * 2, head_dim // 2, 2)
-        new_f_shape = [d1, d2 * d3]  # (max_seq_len * 2, head_dim)
-        self._freqs_cis = ops.reshape(freqs, new_f_shape)
-        return self._freqs_cis
-
-
 @dataclass
 class Llama3RopeScalingParams:
     factor: float
@@ -230,7 +206,7 @@ class Llama3RopeScalingParams:
     """The original maximum position length supported by the model."""
 
 
-class Llama3RotaryEmbedding(OptimizedRotaryEmbedding):
+class Llama3RotaryEmbedding(RotaryEmbedding):
     """
     RotaryEmbedding for Llama3 that takes rope scaling into account.
     """
@@ -288,10 +264,10 @@ class Llama3RotaryEmbedding(OptimizedRotaryEmbedding):
                 )
             else:
                 smooth = ops.constant(0, DType.float32, device=self.device)
-            inv_freqs = ops.select(
+            inv_freqs = ops.where(
                 wave_len < high_freq_wavelen,
                 inv_freqs,
-                ops.select(
+                ops.where(
                     wave_len > low_freq_wavelen,
                     inv_freqs / self.scaling_params.factor,
                     (1 - smooth) * inv_freqs / self.scaling_params.factor
@@ -317,7 +293,7 @@ class DeepseekYarnRopeScalingParams:
     """Scaling factor applied to all dimensions."""
 
 
-class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
+class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
     """
     Deepseek's YaRN (Yet another RoPE eNhancement) Rotary Position Embedding layer.
 
@@ -397,8 +373,7 @@ class DeepseekYarnRotaryEmbedding(OptimizedRotaryEmbedding):
         assert self.scaling_params
         scale = super().compute_scale(user_scale)
         mscale = self._yarn_get_mscale(
-            self.scaling_params.scaling_factor,
-            self.scaling_params.mscale,
+            self.scaling_params.scaling_factor, self.scaling_params.mscale
         )
 
         return scale * mscale * mscale

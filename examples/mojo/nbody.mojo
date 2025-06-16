@@ -17,7 +17,6 @@
 # This sample implements the nbody benchmarking in
 # https://benchmarksgame-team.pages.debian.net/benchmarksgame/performance/nbody.html
 
-from collections import List
 from math import sqrt
 
 from benchmark import keep, run
@@ -28,21 +27,11 @@ alias SOLAR_MASS = 4 * PI * PI
 alias DAYS_PER_YEAR = 365.24
 
 
-@value
-struct Planet:
+@fieldwise_init
+struct Planet(Copyable, Movable):
     var pos: SIMD[DType.float64, 4]
     var velocity: SIMD[DType.float64, 4]
     var mass: Float64
-
-    fn __init__(
-        out self,
-        pos: SIMD[DType.float64, 4],
-        velocity: SIMD[DType.float64, 4],
-        mass: Float64,
-    ):
-        self.pos = pos
-        self.velocity = velocity
-        self.mass = mass
 
 
 alias Sun = Planet(
@@ -123,7 +112,7 @@ fn offset_momentum(mut bodies: List[Planet]):
     var p = SIMD[DType.float64, 4]()
 
     for body in bodies:
-        p += body[].velocity * body[].mass
+        p += body.velocity * body.mass
 
     var body = bodies[0]
     body.velocity = -p / SOLAR_MASS
@@ -147,8 +136,8 @@ fn advance(mut bodies: List[Planet], dt: Float64):
             bodies[i] = body_i
             bodies[j + i + 1] = body_j
 
-    for body in bodies:
-        body[].pos += dt * body[].velocity
+    for ref body in bodies:
+        body.pos += dt * body.velocity
 
 
 @always_inline

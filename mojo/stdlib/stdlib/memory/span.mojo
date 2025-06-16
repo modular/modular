@@ -27,7 +27,7 @@ from memory import Pointer, UnsafePointer
 from memory.unsafe_pointer import _default_alignment
 
 
-@value
+@fieldwise_init
 struct _SpanIter[
     mut: Bool, //,
     T: Copyable & Movable,
@@ -35,7 +35,7 @@ struct _SpanIter[
     forward: Bool = True,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[T](),
-]:
+](Copyable, Movable):
     """Iterator for Span.
 
     Parameters:
@@ -56,16 +56,14 @@ struct _SpanIter[
         return self
 
     @always_inline
-    fn __next__(
-        mut self, out p: Pointer[T, origin, address_space=address_space]
-    ):
+    fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
-            p = Pointer(to=self.src[self.index])
             self.index += 1
+            return self.src[self.index - 1]
         else:
             self.index -= 1
-            p = Pointer(to=self.src[self.index])
+            return self.src[self.index]
 
     @always_inline
     fn __has_next__(self) -> Bool:
@@ -80,7 +78,7 @@ struct _SpanIter[
             return self.index
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct Span[
     mut: Bool, //,
@@ -89,7 +87,7 @@ struct Span[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[T](),
-](ExplicitlyCopyable, Copyable, Movable, Sized):
+](ExplicitlyCopyable, Copyable, Movable, Sized, Boolable, Defaultable):
     """A non-owning view of contiguous data.
 
     Parameters:
@@ -122,7 +120,7 @@ struct Span[
     @always_inline("nodebug")
     fn __init__(out self):
         """Create an empty / zero-length span."""
-        self._data = __type_of(self._data)()
+        self._data = {}
         self._len = 0
 
     @doc_private
@@ -143,7 +141,13 @@ struct Span[
     fn __init__(
         out self,
         *,
-        ptr: UnsafePointer[T, address_space=address_space, alignment=alignment],
+        ptr: UnsafePointer[
+            T,
+            address_space=address_space,
+            alignment=alignment,
+            mut=mut,
+            origin=origin, **_,
+        ],
         length: UInt,
     ):
         """Unsafe construction from a pointer and length.
@@ -172,7 +176,11 @@ struct Span[
         Args:
             list: The list to which the span refers.
         """
-        self._data = list.data.address_space_cast[address_space]()
+        self._data = (
+            list.data.address_space_cast[address_space]()
+            .static_alignment_cast[alignment]()
+            .origin_cast[mut, origin]()
+        )
         self._len = list._len
 
     @always_inline
@@ -193,6 +201,8 @@ struct Span[
             UnsafePointer(to=array)
             .bitcast[T]()
             .address_space_cast[address_space]()
+            .static_alignment_cast[alignment]()
+            .origin_cast[mut, origin]()
         )
         self._len = size
 
@@ -237,10 +247,7 @@ struct Span[
             This function allocates when the step is negative, to avoid a memory
             leak, take ownership of the value.
         """
-        var start: Int
-        var end: Int
-        var step: Int
-        start, end, step = slc.indices(len(self))
+        var start, end, step = slc.indices(len(self))
 
         # TODO: Introduce a new slice type that just has a start+end but no
         # step.  Mojo supports slice type inference that can express this in the
@@ -293,7 +300,7 @@ struct Span[
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
-    @always_inline
+    @always_inline("builtin")
     fn __len__(self) -> Int:
         """Returns the length of the span. This is a known constant value.
 
@@ -359,7 +366,7 @@ struct Span[
         """
         return rebind[Self.Immutable](self)
 
-    @always_inline
+    @always_inline("builtin")
     fn unsafe_ptr(
         self,
     ) -> UnsafePointer[
@@ -483,8 +490,8 @@ struct Span[
         Args:
             value: The value to assign to each element.
         """
-        for element in self:
-            element[] = value
+        for ref element in self:
+            element = value
 
     fn swap_elements(
         self: Span[mut=True, T, alignment=alignment], a: UInt, b: UInt
@@ -540,4 +547,7 @@ struct Span[
         Returns:
             A pointer merged with the specified `other_type`.
         """
-        return __type_of(result)(self._data, self._len)
+        return __type_of(result)(
+            ptr=self._data.origin_cast[result.mut, result.origin](),
+            length=self._len,
+        )

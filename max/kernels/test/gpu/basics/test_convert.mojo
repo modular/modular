@@ -72,7 +72,7 @@ fn convert_kernel[
 
 
 fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
-    """Test the convertion ptx instruction.
+    """Test the conversion ptx instruction.
 
     We can't verify this just by compilation. The instruction converts two values
      and swaps their reorder, which should be verified by checking runtime results.
@@ -93,5 +93,5 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
 fn main() raises:
     with DeviceContext() as ctx:
         test_convert_asm()
-        # Only support 2xFP32 -> 2xBF16 convertion via ptx.
+        # Only support 2xFP32 -> 2xBF16 conversion via ptx.
         test_convert[DType.float32, DType.bfloat16](ctx)

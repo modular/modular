@@ -125,9 +125,8 @@ fn vectorize_distribute_layout[
     return append_layout(vlayout[0], dlayout)
 
 
-@value
 @register_passable
-struct WaveFrontSummary:
+struct WaveFrontSummary(Copyable, Defaultable, Movable):
     var total_wavefronts: Int
     var expected_wavefronts: Int
 
@@ -213,9 +212,10 @@ fn count_wavefronts[
                     )
                     var idx = tidx + elt_idx_base
                     for l in range(num_phases):
-                        var sidx = swizzle(
-                            idx + (l + j * num_phases) * vars_per_bank
-                        ) // vars_per_bank
+                        var sidx = (
+                            swizzle(idx + (l + j * num_phases) * vars_per_bank)
+                            // vars_per_bank
+                        )
                         # print(sidx, end=" ")
                         # print(sidx%32, end=" ")
                         banks[sidx % num_banks] += 1

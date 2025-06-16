@@ -73,9 +73,8 @@ struct KernelConfig:
         self.packed_shape = packed_shape
 
 
-@value
 @register_passable("trivial")
-struct MicroKernelShape:
+struct MicroKernelShape(Copyable, Movable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
@@ -87,9 +86,9 @@ struct MicroKernelShape:
         self.simd_cols = cols
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct GemmShape:
+struct GemmShape(Copyable, Movable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
@@ -333,7 +332,7 @@ fn get_matmul_prefetch_b_distance_k() -> Int:
 
 
 # Min task size. This is copied from MLAS.
-# TODO: Replase this magic number with a heuristic based on arch.
+# TODO: Replace this magic number with a heuristic based on arch.
 fn get_min_task_size() -> Int:
     return 65536
 
@@ -378,8 +377,8 @@ fn get_matmul_num_tasks[
     return num_tasks
 
 
-@value
-struct SubMatmulConfig:
+@fieldwise_init
+struct SubMatmulConfig(Copyable, Movable):
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
@@ -681,9 +680,9 @@ fn packA_i8mm[
     vectorize[packA_helper, 2](t1 - t0)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct InnerKernelID:
+struct InnerKernelID(Copyable, Movable):
     alias DEFAULT = InnerKernelID(0)
     alias VNNI = InnerKernelID(1)
     alias NEON = InnerKernelID(2)
@@ -743,7 +742,7 @@ fn apply_epilogue[
             for j in range(num_copies):
                 alias src_idx = src_offset + src.element_layout(j)
                 alias dst_idx = dst_offset + dst_element_layout(j)
-                # C matrix dimension. For 2D simd tile, element_layout perserves
+                # C matrix dimension. For 2D simd tile, element_layout preserves
                 # the matrix dimension, layout doesn't.
                 alias N = dst_element_layout.stride[0].value()
 

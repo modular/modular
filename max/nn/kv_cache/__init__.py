@@ -32,9 +32,12 @@ from .manager import (
 from .paged_cache import (
     BlockCopyType,
     FetchPagedKVCacheCollection,
+    KVTransferEngine,
+    KVTransferEngineMetadata,
     PagedKVCacheCollection,
     PagedKVCacheManager,
     PagedKVCacheType,
+    XferReqData,
 )
 from .registry import (
     estimate_kv_cache_size,
@@ -68,4 +71,7 @@ __all__ = [
     "estimate_kv_cache_size",
     "infer_optimal_batch_size",
     "build_max_lengths_tensor",
+    "KVTransferEngine",
+    "XferReqData",
+    "KVTransferEngineMetadata",
 ]

@@ -133,12 +133,7 @@ struct TensorMapInterleave:
 @fieldwise_init("implicit")
 @register_passable("trivial")
 struct TensorMapSwizzle(
-    Copyable,
-    Movable,
-    EqualityComparable,
-    Intable,
-    Stringable,
-    Writable,
+    Copyable, EqualityComparable, Intable, Movable, Stringable, Writable
 ):
     var _value: Int32
 
@@ -230,27 +225,21 @@ fn create_tma_descriptor[
 ) raises -> TMADescriptor:
     """Create a tensor map descriptor object representing tiled memory region.
     """
-    # Enforces host-side aligment
+    # Enforces host-side alignment
     var tma_descriptor = stack_allocation[1, TMADescriptor, alignment=64]()[0]
     var tensor_map_ptr = UnsafePointer(to=tma_descriptor).bitcast[NoneType]()
 
-    var global_dim_arg = stack_allocation[5, Int64]()
-    var global_strides_arg = stack_allocation[5, Int64]()
-    var box_dim_arg = stack_allocation[5, Int32]()
-    var element_stride_arg = stack_allocation[5, Int32]()
-
-    @parameter
-    for i in range(5):
-        global_dim_arg[i] = 1
-        global_strides_arg[i] = 0
-        element_stride_arg[i] = 1
-        box_dim_arg[i] = 1
+    # NOTE: These are initialized in the comptime loop below.
+    var global_dim_arg = InlineArray[Int64, rank](uninitialized=True)
+    var global_strides_arg = InlineArray[Int64, rank](uninitialized=True)
+    var box_dim_arg = InlineArray[Int32, rank](uninitialized=True)
+    var element_stride_arg = InlineArray[Int32, rank](fill=1)
 
     @parameter
     for i in range(rank):
         global_dim_arg[i] = global_shape[rank - i - 1]
-        box_dim_arg[i] = shared_mem_shape[rank - i - 1]
         global_strides_arg[i] = global_strides[rank - i - 1] * sizeof[dtype]()
+        box_dim_arg[i] = shared_mem_shape[rank - i - 1]
 
     debug_assert(
         global_strides_arg[0] == sizeof[dtype](),
@@ -287,11 +276,11 @@ fn create_tma_descriptor[
             TensorMapDataType.from_dtype[dtype]()._value,
             rank,
             global_buf._handle,
-            global_dim_arg,
+            global_dim_arg.unsafe_ptr(),
             # global_strides_arg[0] is implicitly sizeof[dtype]()
-            global_strides_arg + 1,
-            box_dim_arg,
-            element_stride_arg,
+            global_strides_arg.unsafe_ptr() + 1,
+            box_dim_arg.unsafe_ptr(),
+            element_stride_arg.unsafe_ptr(),
             TensorMapInterleave.INTERLEAVE_NONE._value,
             swizzle_mode._value,
             TensorMapL2Promotion.NONE._value,

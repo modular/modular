@@ -13,8 +13,7 @@ compiler technologies, and more. As such, Mojo also has a lot in common with
 languages like C++ and Rust.
 
 If you prefer to learn by doing, follow the [Get started with
-Mojo](/mojo/manual/get-started) tutorial. You'll install the [Magic](/magic)
-CLI, create a Mojo project and write your first Mojo program.
+Mojo](/mojo/manual/get-started) tutorial.
 
 On this page, we'll introduce the essential Mojo syntax, so you can start
 coding quickly and understand other Mojo code you encounter. Subsequent
@@ -196,7 +195,7 @@ so they do not allow dynamic dispatch or any runtime changes to the structure.
 For example, here's a basic struct:
 
 ```mojo
-struct MyPair:
+struct MyPair(Copyable):
     var first: Int
     var second: Int
 
@@ -229,12 +228,14 @@ and `__copyinit__()`, the copy constructor. _Lifecycle methods_ like this
 control how a struct is created, copied, moved, and destroyed.
 
 For most simple types, you don't need to write the lifecycle methods. You can
-use the `@value` decorator to generate the boilerplate code for you. So the
+use the `@fieldwise_init` decorator to generate the boilerplate fieldwise
+initializer for you, and Mojo will synthesize copy and move constructors if you
+ask for them with trait conformance. So the
 `MyPair` struct can be simplified to this:
 
 ```mojo
-@value
-struct MyPair:
+@fieldwise_init
+struct MyPair(Copyable, Movable):
     var first: Int
     var second: Int
 
@@ -269,7 +270,7 @@ the method is not implemented.
 Here's a struct that conforms to `SomeTrait`:
 
 ```mojo
-@value
+@fieldwise_init
 struct SomeStruct(SomeTrait):
     fn required_method(self, x: Int):
         print("hello traits", x)
@@ -380,8 +381,7 @@ def main():
 ```
 
 You must have the Python module (such as `numpy`) installed in the environment
-where you're using Mojo. You can install Python packages into your virtual
-environment using [Magic](/magic/) or [Conda](/magic/conda).
+where you're using Mojo.
 
 For more details, see the page on
 [Python integration](/mojo/manual/python/).

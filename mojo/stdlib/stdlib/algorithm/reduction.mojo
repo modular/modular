@@ -19,11 +19,8 @@ from algorithm import map_reduce
 ```
 """
 
-from collections import OptionalReg
-from collections.string import StaticString
-from math import align_down, ceildiv, iota
-from os import abort
-from sys.info import bitwidthof, is_nvidia_gpu, simdwidthof, sizeof
+from math import align_down, ceildiv
+from sys.info import simdwidthof, sizeof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -35,7 +32,6 @@ from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from memory.unsafe import bitcast
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -52,7 +48,7 @@ from ._gpu.reduction import reduce_launch
 fn _get_nd_indices_from_flat_index(
     flat_index: Int, shape: IndexList, skip_dim: Int
 ) -> __type_of(shape):
-    """Converts a flat index into ND indices but skip over one of the dimensons.
+    """Converts a flat index into ND indices but skip over one of the dimensions.
 
     The ND indices will iterate from right to left. I.E
 
@@ -820,18 +816,8 @@ fn _reduce_along_inner_dimension[
 
         @parameter
         for i in range(num_reductions):
-
-            @always_inline
-            @parameter
-            fn simd_reduce_wrapper[
-                type: DType, width: Int
-            ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
-                type, width
-            ]:
-                return reduce_function[type, width, i](lhs, rhs)
-
             out_acc_tup[i] = in_acc_tup[i].reduce[
-                simd_reduce_wrapper, out_width
+                reduce_function[init_type, reduction_idx=i], out_width
             ]()
 
         return out_acc_tup
@@ -997,7 +983,7 @@ fn _reduce_along_outer_dimension[
 
     # parallelize across slices of the input, where a slice is [reduce_dim, inner_dim]
     # the slice is composed of [reduce_dim, simd_width] chunks
-    # these chunks are reduced simaltaneously across the reduce_dim using simd instructions
+    # these chunks are reduced simultaneously across the reduce_dim using simd instructions
     # and accumulation
     var parallelism_size: Int = total_size // (reduce_dim_size * inner_dim)
 

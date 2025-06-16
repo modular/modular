@@ -49,6 +49,7 @@ if __name__ == "__main__":
         lhs, rhs = graph.inputs
         output = ops.custom(
             name="vector_addition",
+            device=DeviceRef.from_device(device),
             values=[lhs, rhs],
             out_types=[
                 TensorType(

@@ -207,7 +207,7 @@ struct Attribute(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct FuncAttribute(Copyable, Movable, EqualityComparable):
+struct FuncAttribute(Copyable, EqualityComparable, Movable):
     """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.
 
     This struct represents function attributes that can be set or queried for GPU kernels,
