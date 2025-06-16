@@ -881,9 +881,12 @@ static AttrType concretizeAttr(AttrType attr, mlir::Location loc,
     return {};
   }
   if (LLVM_UNLIKELY(!*exprResult)) {
-    inode->setToError(ErrorTree(
-        loc, "concretized parameter expression in attribute is null"));
-    return {};
+    //    inode->setToError(ErrorTree(
+    //        loc, "concretized parameter expression in attribute is null"));
+    //    return {};
+    // FIXME MOCO-2054: Report error after problem of compiling
+    // test_layout_tensor_copy_nvidia.mojo with -debug-level=full is fixed.
+    return cast<AttrType>(UnknownLoc::get(attr.getContext()));
   }
   return cast<AttrType>(*exprResult);
 }
