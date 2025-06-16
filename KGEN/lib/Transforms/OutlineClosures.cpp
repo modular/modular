@@ -72,6 +72,7 @@ void OutlineClosuresPass::runOnOperation() {
   // Walk over all the param.declare.region ops and create structs with the SSA
   // captures, use BindParamsAttr to deal with parameter captures.
   unsigned counter = 0;
+  DenseSet<GeneratorOp> outlinedGenerators;
   for (auto generator : theModule.getOps<GeneratorOp>()) {
     unsigned varCounter = 0;
 
@@ -190,6 +191,7 @@ void OutlineClosuresPass::runOnOperation() {
           regionDecl.getLLVMMetadataArray(),
           regionDecl.getLLVMArgMetadataArray());
       symtab.insert(liftedWrapper);
+      outlinedGenerators.insert(liftedWrapper);
       auto wrapperSymbol = SymbolConstantAttr::get(liftedWrapper);
 
       // Take the body from the param region.
@@ -257,10 +259,24 @@ void OutlineClosuresPass::runOnOperation() {
         MLIRContext *ctx = scope.getContext();
         Location regionLoc = regionDecl->getLoc();
         // The region may not include a scope if it's always_inline_no_debug.
-        if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(regionLoc))
-          b.setLoc(FusedLoc::get(ctx, fusedLoc.getLocations(), scope));
-        else
+        if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(regionLoc)) {
+          if (outlinedGenerators.contains(
+                  regionDecl->getParentOfType<GeneratorOp>()) ||
+              !isa<mlir::CallSiteLoc>(regionDecl->getParentOp()->getLoc())) {
+            b.setLoc(FusedLoc::get(ctx, fusedLoc.getLocations(), scope));
+          } else {
+            // FIXME MOCO-2052: DebugInfo should be set correctly when outlining
+            // outermost closure within previously inlined scope.
+            // For now set it to unknown as it could cause to a scope location
+            // mismatch. Specifically, the problem is that `extractScope`
+            // function will return `callee` scope, not `caller` scope, which is
+            // expected by the verifier.
+            // Using `caller` scope causes Elaborator to fail.
+            b.setLoc(UnknownLoc::get(ctx));
+          }
+        } else {
           b.setLoc(FusedLoc::get(ctx, regionLoc, scope));
+        }
       }
 
       // Set the insertion point to the regionDecl.
