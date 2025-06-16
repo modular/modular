@@ -446,3 +446,17 @@ kgen.func @lifetime_markers() {
   pop.stack_alloc.lifetime.end(%0, %1) : !kgen.pointer<struct<(index, index)>>, !kgen.pointer<f32>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @non_integer_index_array
+kgen.func @non_integer_index_array_get() {
+  // CHECK: %[[ARRAY_0:.*]] = pop.stack_allocation 1 x scalar<si64> marked
+  // CHECK: %[[ARRAY_1:.*]] = pop.stack_allocation 1 x scalar<si64> marked
+  %0 = pop.stack_allocation 1 x array<2, scalar<si64>> marked
+  // CHECK: %[[LOAD_0:.*]] = pop.load %[[ARRAY_0]] : !kgen.pointer<scalar<si64>>
+  // CHECK: %[[LOAD_1:.*]] = pop.load %[[ARRAY_1]] : !kgen.pointer<scalar<si64>>
+  %1 = pop.load %0 : !kgen.pointer<array<2, scalar<si64>>>
+  // CHECK: %[[ARRAY_CREATE:.*]] = pop.array.create [%[[LOAD_0]], %[[LOAD_1]]] : !pop.array<2, scalar<si64>>
+  // CHECK: %[[ARRAY_GET:.*]] = pop.array.get %[[ARRAY_CREATE]][*"i`2x7"] : !pop.array<2, scalar<si64>>
+  %2 = pop.array.get %1[*"i`2x7"] : !pop.array<2, scalar<si64>>
+  kgen.return
+}
