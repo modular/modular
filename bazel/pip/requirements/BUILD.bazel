@@ -1,4 +1,4 @@
-load("@module_versions//:config.bzl", "TORCH_VERSIONS")
+load("@module_versions//:config.bzl", "TORCH_DEFAULT_VERSION", "TORCH_VERSIONS")
 load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_uv//uv:pip.bzl", "pip_compile")
 
@@ -46,7 +46,7 @@ exports_files(glob(["**/*-requirements*.txt"]))
             "--universal",
             "--config-file",
             "bazel/pip/requirements/default-uv.toml",
-        ],
+        ] + ([] if version == TORCH_DEFAULT_VERSION else ["--no-deps"]),
         data = [
             "default-uv.toml",
             "requirements.in",
