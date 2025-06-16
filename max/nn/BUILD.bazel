@@ -9,6 +9,7 @@ modular_py_library(
         requirement("gguf"),
         requirement("torch"),
         requirement("transformers"),
+        requirement("msgspec"),
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/graph",
