@@ -134,6 +134,11 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
         self.ce_delay_ms = ce_delay_ms
         self.enable_prioritize_first_decode = enable_prioritize_first_decode
 
+        if self.enable_in_flight_batching:
+            raise ValueError(
+                "In-flight batching is not supported with TTS Scheduler"
+            )
+
 
 class AudioGenerationSchedulerOutput:
     def __init__(
@@ -336,7 +341,6 @@ class AudioGenerationScheduler(Scheduler):
 
         ce_batch: dict[str, TTSContext] = {}
         max_batch_size_ce = self.scheduler_config.max_batch_size_ce
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
         max_queue_size_tg = self.scheduler_config.max_queue_size_tg
         max_input_len = (
             self.scheduler_config.target_tokens_per_batch_ce or float("inf")
@@ -356,19 +360,6 @@ class AudioGenerationScheduler(Scheduler):
                 raise RuntimeError("Ran out of KV cache")
             ce_batch[req_id] = req_data
             input_len += req_data.active_length
-
-        if ce_batch and self.scheduler_config.enable_in_flight_batching:
-            num_decode_reqs = 0
-            for req_id, req_data in self.decode_reqs.items():
-                if (
-                    len(ce_batch) == max_batch_size_ce
-                    or num_decode_reqs > max_batch_size_tg
-                ):
-                    break
-                num_decode_reqs += 1
-                ce_batch[req_id] = req_data
-                if not self.paged_manager.prefetch(req_data, num_steps=1):
-                    raise RuntimeError("Ran out of KV cache")
 
         return AudioGenerationSchedulerOutput(
             ce_batch, num_steps=1, batch_type=BatchType.ContextEncoding
