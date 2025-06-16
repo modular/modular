@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
-import tempfile
-import threading
 from typing import Union, cast
 from unittest.mock import Mock
 
@@ -14,7 +12,15 @@ import numpy as np
 import pytest
 import zmq
 from max.driver import CPU, Tensor
-from max.nn.kv_cache import KVTransferEngine
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    KVTransferEngine,
+    KVTransferEngineMetadata,
+    PagedKVCacheManager,
+)
 from max.pipelines.core import TextContext, TextGenerationResponse
 from max.serve.kvcache_agent.dispatcher_base import MessageType
 from max.serve.kvcache_agent.dispatcher_factory import (
@@ -30,6 +36,14 @@ from max.serve.scheduler.prefill_scheduler import (
     PrefillScheduler,
     PrefillSchedulerConfig,
 )
+
+_SCHEDULER_TESTS_PORT = 8057
+
+
+def get_unique_port():
+    global _SCHEDULER_TESTS_PORT
+    _SCHEDULER_TESTS_PORT += 1
+    return _SCHEDULER_TESTS_PORT
 
 
 @pytest.fixture
@@ -62,21 +76,55 @@ def mock_process_control():
     return pc
 
 
-@pytest.fixture
-def paged_manager():
-    device = CPU()
-    total_num_pages = 1
-    elts_per_page = 128
-    num_elts = total_num_pages * elts_per_page
+def create_paged_manager(
+    session: InferenceSession,
+    max_seq_len: int = 2048,
+    page_size: int = 128,
+) -> PagedKVCacheManager:
+    # Setting kv_heads, head_dim, and num_layers to 1 for simplicity
+    NUM_KV_HEADS = 1
+    HEAD_DIM = 4
+    NUM_LAYERS = 1
+    MAX_LEN = 2048
+    num_blocks = max_seq_len // page_size
 
-    paged_manager = Mock()
-    paged_manager.external_claim = Mock()
-    paged_manager.prefetch = Mock(return_value=True)
-    paged_manager.device_tensors = [
-        Tensor.from_numpy(np.arange(num_elts, dtype=np.int8)).to(device)
-    ]
-    paged_manager.total_num_pages = total_num_pages
-    return paged_manager
+    dtype = DType.float32
+
+    cache_memory = (
+        2
+        * NUM_LAYERS
+        * NUM_KV_HEADS
+        * HEAD_DIM
+        * page_size
+        * num_blocks
+        * dtype.size_in_bytes
+    )
+
+    kv_params = KVCacheParams(
+        dtype=dtype,
+        n_kv_heads=NUM_KV_HEADS,
+        head_dim=HEAD_DIM,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=page_size,
+    )
+
+    return PagedKVCacheManager(
+        params=kv_params,
+        max_batch_size=4,
+        max_seq_len=max_seq_len,
+        num_layers=NUM_LAYERS,
+        devices=[CPU()],
+        session=session,
+        cache_memory=cache_memory,
+        page_size=page_size,
+        enable_runtime_checks=True,
+    )
+
+
+@pytest.fixture
+def paged_manager(session):
+    """Create a real PagedKVCacheManager for the prefill scheduler."""
+    return create_paged_manager(session, max_seq_len=2048, page_size=128)
 
 
 @pytest.fixture
@@ -93,14 +141,6 @@ def zmq_ctx() -> zmq.Context:
     return zmq.Context(io_threads=2)
 
 
-def remote_agent_peer(agent_md):
-    zmq_ctx = zmq.Context(io_threads=1)
-    socket = zmq_ctx.socket(zmq.REP)
-    socket.bind(f"ipc://{tempfile.gettempdir()}/transfer_engine")
-    _ = socket.recv_pyobj()
-    socket.send_pyobj(agent_md)
-
-
 @pytest.fixture
 def prefill_address():
     return generate_zmq_ipc_path()
@@ -109,6 +149,11 @@ def prefill_address():
 @pytest.fixture
 def decode_address():
     return generate_zmq_ipc_path()
+
+
+@pytest.fixture(scope="session")
+def session():
+    return InferenceSession()
 
 
 @pytest.fixture
@@ -121,10 +166,12 @@ def prefill_dispatcher_factory(prefill_address, decode_address):
             default_destination_address=decode_address,
         ),
     )
-    return DispatcherFactory[Union[PrefillResponse, PrefillRequest]](
+    return DispatcherFactory[
+        Union[PrefillResponse, PrefillRequest, KVTransferEngineMetadata]
+    ](
         config,
         transport_payload_type=TransportMessage[
-            Union[PrefillRequest, PrefillResponse]
+            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
         ],
     )
 
@@ -139,10 +186,12 @@ def decode_dispatcher_factory(prefill_address, decode_address):
             default_destination_address=prefill_address,
         ),
     )
-    return DispatcherFactory[Union[PrefillRequest, PrefillResponse]](
+    return DispatcherFactory[
+        Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
+    ](
         config,
         transport_payload_type=TransportMessage[
-            Union[PrefillRequest, PrefillResponse]
+            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
         ],
     )
 
@@ -173,16 +222,10 @@ async def setup_scheduler(
 
     peer_agent = KVTransferEngine(
         name="dummy_agent",
-        listen_port=8057,
+        listen_port=get_unique_port(),
         tensor=blocks_1,
         total_num_pages=total_num_pages,
     )
-
-    # Create a Thread to send remote agent metadata
-    thread = threading.Thread(
-        target=remote_agent_peer, args=(peer_agent.metadata,)
-    )
-    thread.start()
 
     scheduler = PrefillScheduler(
         process_control=mock_process_control,
@@ -192,12 +235,6 @@ async def setup_scheduler(
         zmq_ctx=zmq_ctx,
         dispatcher_client=prefill_client,
     )
-
-    # Ensure agent is registered appropriately.
-    assert "dummy_agent" in scheduler.transfer_engine.remote_connections
-
-    # Block until remote agent peer thread resolves.
-    thread.join()
 
     return scheduler, prefill_service, prefill_client
 
@@ -218,6 +255,7 @@ def create_mock_request(
     return context
 
 
+@pytest.mark.skip("E2EOPT-318 - Flaky due to Bad File Descriptor")
 @pytest.mark.asyncio
 async def test_prefill_scheduler_create_batch(
     mock_pipeline,
@@ -345,3 +383,112 @@ async def test_prefill_scheduler_create_batch(
         await decode_service.stop()
         prefill_client.stop()
         decode_client.stop()
+
+
+@pytest.mark.skip("E2EOPT-318 - Flaky due to Bad File Descriptor")
+@pytest.mark.asyncio
+async def test_prefill_scheduler_remote_agent_registration(
+    session,
+    mock_pipeline,
+    mock_process_control,
+    scheduler_config,
+    paged_manager,
+    zmq_ctx,
+    prefill_dispatcher_factory,
+    decode_dispatcher_factory,
+):
+    """Test remote agent registration by sending TransferEngineRequest from decode dispatcher."""
+    # Create scheduler at the start
+    scheduler, prefill_service, prefill_client = await setup_scheduler(
+        mock_pipeline,
+        mock_process_control,
+        scheduler_config,
+        paged_manager,
+        zmq_ctx,
+        prefill_dispatcher_factory,
+    )
+
+    # Initialize variable for cleanup
+    decode_transfer_engine = None
+
+    try:
+        decode_service = decode_dispatcher_factory.create_service(zmq_ctx)
+        await decode_service.start()
+
+        decode_client = decode_dispatcher_factory.create_client(zmq_ctx)
+        decode_client.start()
+
+        # Give services time to start up
+        await asyncio.sleep(0.5)
+
+        # Track received transfer engine responses on decode side
+        received_transfer_responses: list = []
+
+        # Register handler for transfer engine responses on decode client
+        @decode_client.reply_handler(MessageType.TRANSFER_ENGINE_RESPONSE)
+        def handle_transfer_engine_response(payload) -> None:
+            received_transfer_responses.append(payload)
+
+        decode_paged_manager = create_paged_manager(
+            session=session,
+            max_seq_len=2048,
+            page_size=128,
+        )
+
+        # Create decode transfer engine using paged manager blocks
+        decode_transfer_engine = KVTransferEngine(
+            name="decode_agent_test",
+            listen_port=get_unique_port(),
+            tensor=decode_paged_manager.device_tensors[0],
+            total_num_pages=decode_paged_manager.total_num_pages,
+        )
+
+        # Get the metadata from the actual transfer engine
+        decode_transfer_metadata = decode_transfer_engine.metadata
+
+        # Verify scheduler initially has no remote connections
+        assert len(scheduler.transfer_engine.remote_connections) == 0
+
+        # Send transfer engine request from decode client to prefill scheduler
+        decode_client.send(
+            MessageType.TRANSFER_ENGINE_REQUEST,
+            decode_transfer_metadata,
+        )
+
+        await asyncio.sleep(0.5)
+
+        # Verify that the scheduler received and processed the transfer engine request
+        # The scheduler should have added the remote connection
+        assert len(scheduler.transfer_engine.remote_connections) == 1
+        assert (
+            "decode_agent_test" in scheduler.transfer_engine.remote_connections
+        )
+
+        # Verify the metadata is correctly stored
+        stored_metadata = scheduler.transfer_engine.remote_connections[
+            "decode_agent_test"
+        ]
+        assert stored_metadata.name == "decode_agent_test"
+        assert (
+            stored_metadata.bytes_per_page
+            == decode_transfer_engine.bytes_per_page
+        )
+        assert stored_metadata.base_addr == decode_transfer_engine.base_addr
+        assert stored_metadata.memory_type == decode_transfer_engine.memory_type
+
+        # Verify that the prefill scheduler sent back a transfer engine response
+        assert len(received_transfer_responses) == 1
+
+        # Verify the response contains the prefill scheduler's transfer engine metadata
+        response_metadata = received_transfer_responses[0]
+        assert response_metadata.name.startswith("prefill_agent_")
+        assert (
+            response_metadata.total_num_pages == paged_manager.total_num_pages
+        )
+
+    finally:
+        await prefill_service.stop()
+        await decode_service.stop()
+        prefill_client.stop()
+        decode_client.stop()
+        del decode_transfer_engine

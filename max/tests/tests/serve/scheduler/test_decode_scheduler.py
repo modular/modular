@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
-import threading
 from typing import Union, cast
 from unittest.mock import Mock
 
@@ -106,21 +105,8 @@ def cancel_zmq_endpoint():
 
 
 @pytest.fixture
-def transfer_engine_zmq_endpoint():
-    return generate_zmq_ipc_path()
-
-
-@pytest.fixture
 def zmq_ctx() -> zmq.Context:
     return zmq.Context(io_threads=2)
-
-
-def remote_agent_peer(transfer_engine_zmq_endpoint, agent_md):
-    zmq_ctx = zmq.Context(io_threads=1)
-    socket = zmq_ctx.socket(zmq.REQ)
-    socket.connect(transfer_engine_zmq_endpoint)
-    socket.send_pyobj(agent_md)
-    _ = socket.recv_pyobj()
 
 
 @pytest.fixture
@@ -176,7 +162,6 @@ async def setup_scheduler(
     request_zmq_endpoint,
     response_zmq_endpoint,
     cancel_zmq_endpoint,
-    transfer_engine_zmq_endpoint,
     paged_manager,
     zmq_ctx,
     decode_dispatcher_factory,
@@ -205,16 +190,6 @@ async def setup_scheduler(
         total_num_pages=total_num_pages,
     )
 
-    # Create a Thread to send remote agent metadata
-    thread = threading.Thread(
-        target=remote_agent_peer,
-        args=(
-            transfer_engine_zmq_endpoint,
-            dummy_agent.metadata,
-        ),
-    )
-    thread.start()
-
     scheduler = DecodeScheduler(
         process_control=mock_process_control,
         scheduler_config=scheduler_config,
@@ -223,16 +198,9 @@ async def setup_scheduler(
         response_zmq_endpoint=response_zmq_endpoint,
         cancel_zmq_endpoint=cancel_zmq_endpoint,
         paged_manager=paged_manager,
-        transfer_engine_zmq_endpoint=transfer_engine_zmq_endpoint,
         zmq_ctx=zmq_ctx,
         dispatcher_client=decode_client,
     )
-
-    # Ensure agent is registered appropriately.
-    assert "dummy_agent" in scheduler.transfer_engine.remote_connections
-
-    # Block until remote agent peer thread resolves.
-    thread.join()
 
     return scheduler, decode_service, decode_client
 
@@ -262,7 +230,6 @@ async def test_decode_scheduler(
     request_zmq_endpoint,
     response_zmq_endpoint,
     cancel_zmq_endpoint,
-    transfer_engine_zmq_endpoint,
     paged_manager,
     zmq_ctx,
     decode_dispatcher_factory,
@@ -276,7 +243,6 @@ async def test_decode_scheduler(
         request_zmq_endpoint,
         response_zmq_endpoint,
         cancel_zmq_endpoint,
-        transfer_engine_zmq_endpoint,
         paged_manager,
         zmq_ctx,
         decode_dispatcher_factory,
