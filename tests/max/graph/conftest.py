@@ -174,7 +174,9 @@ def valid_broadcast_rank(shape_st, max_size: int | None = None):
     return shape_st.flatmap(lambda shape: st.integers(len(shape), max_size))
 
 
-def tensor_types(dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()):
+def tensor_types(
+    dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()
+) -> st.Strategy[TensorType]:
     return st.builds(TensorType, dtypes, shapes, st.just(device))
 
 
@@ -193,7 +195,9 @@ def opaque_types():
     return st.builds(_OpaqueType, names, parameters)
 
 
-def buffer_types(dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()):
+def buffer_types(
+    dtypes=dtypes, shapes=shapes(), device=DeviceRef.CPU()
+) -> st.Strategy[BufferType]:
     return st.builds(BufferType, dtypes, shapes, st.just(device))
 
 
@@ -205,14 +209,19 @@ def axes(shapes):
     return shapes.flatmap(strategy)
 
 
-def axes_of(shapes, pred):
+def axes_of(
+    shapes: st.Strategy[Shape | TensorType], pred: Callable[[Dim], bool]
+):
     """Samples the axes satisfying the given predicate for the  dimensions of
     the given shapes.
     """
 
-    def strategy(shape):
+    def strategy(shape: Shape | TensorType):
+        if isinstance(shape, TensorType):
+            shape = shape.shape
+
         rank = shape.rank
-        positives = [i for i, x in enumerate(shape.shape) if pred(x)]
+        positives = [i for i, x in enumerate(shape) if pred(x)]
         negatives = [i - rank for i in positives]
 
         return (

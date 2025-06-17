@@ -14,7 +14,7 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import DeviceRef, Dim, DimLike
+from ..type import DeviceRef, Dim, DimLike, Shape
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 
@@ -28,7 +28,8 @@ def split(
         x: The input symbolic tensor to split.
         split_sizes: Sizes of each output tensor. Must add up to the split
             dimension `axis`.
-        axis: Dimension to split the input tensor.
+        axis: Dimension to split the input tensor. Must have a statically
+            known dimension size.
 
     Returns:
         A list of tensors with the same length as `split_sizes`, where each
@@ -36,31 +37,38 @@ def split(
         `axis`, where the size is given by the corresponding element in
         `split_sizes`.
     """
-    v = TensorValue(x)
+    x = TensorValue(x)
+    split_sizes = [Dim(size) for size in split_sizes]
+
+    if not (-x.rank <= axis < x.rank):
+        raise IndexError(f"Axis out of range {axis=}, {x.rank=}")
+
+    if axis < 0:
+        axis += x.rank
+
+    if sum(int(size) for size in split_sizes) != x.shape[axis]:
+        raise ValueError(
+            "Split sizes must sum to dimension value; "
+            f"{x.shape[axis]=} != sum({split_sizes=})"
+        )
+
+    if any(int(size) < 0 for size in split_sizes):
+        raise ValueError(f"Split sizes must be positive: {split_sizes=}")
+
+    def split_type(dim: Dim):
+        shape = Shape(x.shape)
+        shape[axis] = dim
+        return TensorType(x.dtype, shape, x.device)
+
+    result_types = [split_type(Dim(size)) for size in split_sizes]
+
     if not split_sizes:
-        return [v]
+        return []  # op will assert on empty splits
 
-    if not (-v.rank <= axis < v.rank):
-        raise ValueError(
-            f"Split axis must be within the input rank ({v.rank}), got {axis}"
-        )
-    elif axis < 0:
-        axis += v.rank
-
-    if sum(int(size) for size in split_sizes) != v.shape[axis]:
-        raise ValueError(
-            f"The split_sizes values should sum to {v.shape[axis]} (input tensor's size at dimension {axis}), but got split_sizes={split_sizes}"
-        )
-
-    result_types = []
-    for size in split_sizes:
-        new_shape = v.shape.copy()
-        new_shape[axis] = Dim(size)
-        result_types.append(TensorType(v.dtype, new_shape, v.device).to_mlir())
     outputs = Graph.current._add_op(
         mo.split,
         result_types,
-        v,
+        x,
         constant(np.array(split_sizes), DType.int64, DeviceRef.CPU()),
         constant(axis, DType.int64, DeviceRef.CPU()),
     )
