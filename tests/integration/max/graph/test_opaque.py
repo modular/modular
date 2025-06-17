@@ -7,6 +7,7 @@
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 from max.driver import Tensor
 from max.dtype import DType
@@ -143,3 +144,56 @@ def test_pyobject_opaque(
     for _ in range(5):
         counter = bumper_compiled.execute(counter)[0]  # type: ignore
     assert counter.a == 10 and counter.b == 55
+
+
+def test_opaque_type_parameterization(
+    session: InferenceSession,
+    custom_ops_mojopkg: Path,
+    monkeypatch,
+):
+    # Opaque parameterization is only supported using the new MOGG dialect based
+    # compilation path.
+    monkeypatch.setenv("MOGG_USE_EXP_KERNELS", "1")
+
+    result_type = TensorType(DType.int32, [12], device=DeviceRef.CPU())
+
+    with Graph(
+        "test_opaque_type_parameterization",
+        input_types=[],
+        output_types=[result_type],
+        custom_extensions=[custom_ops_mojopkg],
+    ) as graph:
+        simd_pair_type = _OpaqueType("SIMDPair", {"S0": 4, "S1": 8})
+
+        # Create the SIMD pair using make_simd_pair custom op
+        pair = ops.custom(
+            "make_simd_pair",
+            device=DeviceRef.CPU(),
+            values=[],
+            out_types=[simd_pair_type],
+            parameters={"P0": 4, "P1": 8},
+        )[0]
+
+        # Process the pair with kernel_with_parameterized_opaque
+        out = ops.inplace_custom(
+            "kernel_with_parameterized_opaque",
+            device=DeviceRef.CPU(),
+            values=[pair],
+            out_types=[result_type],
+        )[0]
+
+        graph.output(out)
+
+    # Compile and execute the graph
+    model = session.load(graph)
+    result = model.execute()[0]
+
+    # Verify the result
+    assert isinstance(result, Tensor)
+    assert result.shape == (12,)
+    assert result.dtype == DType.int32
+
+    # `make_simd_pair` performs an iota operation, validate that the values
+    # in the result tensor match the expected result.
+    array = result.to_numpy()
+    assert np.all(array == np.arange(12, dtype=np.int32))
