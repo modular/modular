@@ -353,6 +353,29 @@ class Graph:
         path: Optional[Path] = None,
         custom_extensions: list[Path] = [],
     ) -> Graph:
+        """Creates and adds a subgraph to the current graph.
+
+        Creates a new :obj:`Graph` instance configured as a subgraph of the current
+        graph. The subgraph inherits the parent graph's MLIR context, module, and
+        symbolic parameters. A chain type is automatically appended to the input
+        types to enable proper operation sequencing within the subgraph.
+
+        The created subgraph is marked with special MLIR attributes to identify it
+        as a subgraph and is registered in the parent graph's subgraph registry.
+
+        Args:
+            name: The name identifier for the subgraph.
+            forward: The optional callable that defines the sequence of operations
+                for the subgraph's forward pass. If provided, the subgraph will be
+                built immediately using this callable.
+            input_types: The data types for the subgraph's input tensors. A chain
+                type will be automatically added to these input types.
+            path: The optional path to a saved subgraph definition to load from
+                disk instead of creating a new one.
+            custom_extensions: The list of paths to custom operation libraries
+                to load for the subgraph. Supports ``.mojopkg`` files and Mojo
+                source directories.
+        """
         subgraph = Graph(
             name=name,
             forward=forward,
@@ -393,6 +416,19 @@ class Graph:
 
     @contextlib.contextmanager
     def local_weights_and_chain(self):
+        """Creates a local scope for weights and chain state modifications.
+
+        Provides a context manager that creates an isolated scope where the
+        graph's weights dictionary and current chain state can be modified
+        without affecting the parent scope. Upon entering the context, the
+        current weights and chain state are saved. Any modifications made
+        within the context are automatically reverted when exiting the context,
+        restoring the original state.
+
+        This is particularly useful for operations that need to temporarily
+        modify graph state, such as building subgraphs or executing operations
+        within isolated blocks where state changes should not persist.
+        """
         weights = self._weights.copy()
         current_chain = self._current_chain
         try:
@@ -449,6 +485,14 @@ class Graph:
 
     @_classproperty
     def current(cls) -> Graph:
+        """Gets the currently active graph from the execution context.
+
+        Retrieves the :obj:`Graph` instance that is currently active within
+        the execution context. The current graph is automatically set when
+        entering a graph's context using a ``with`` statement or when the
+        graph is being built. This provides access to the active graph from
+        within operation definitions and other graph construction code.
+        """
         try:
             current = CURRENT_GRAPH.get()
         except LookupError as exc:
