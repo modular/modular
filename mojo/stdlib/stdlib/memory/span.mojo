@@ -363,6 +363,10 @@ struct Span[
         Returns:
             An immutable version of the same `Span`.
         """
+        # NOTE: We use a rebind and not the constructor here because otherwise
+        # we get "argument of '__init__' call allows reading a memory location
+        # previously writable through another aliased argument" when used with
+        # a mutable value in the same scope
         return rebind[Self.Immutable](self)
 
     @always_inline("builtin")

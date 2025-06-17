@@ -19,7 +19,7 @@ from layout.tensor_builder import LayoutTensorBuild as tb
 
 fn test_svg_nvidia_shape() raises:
     # nvidia tensor core a matrix fragment
-    var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
+    var tensor = tb[DType.float32]().row_major[16, 16]().alloc().get_immutable()
     var tensor_dist = tensor.vectorize[1, 2]().distribute[
         Layout.row_major(8, 4)
     ](0)
@@ -51,35 +51,35 @@ fn test_svg_nvidia_shape() raises:
 
 fn test_svg_nvidia_tile() raises:
     # nvidia tensor core a matrix fragment
-    var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
+    var tensor = tb[DType.float32]().row_major[16, 16]().alloc().get_immutable()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
     print_svg(tensor, [tensor_dist])
 
 
 fn test_svg_nvidia_tile_memory_bank() raises:
     # nvidia tensor core a matrix fragment
-    var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
+    var tensor = tb[DType.float32]().row_major[16, 16]().alloc().get_immutable()
     var tensor_dist = tensor.vectorize[2, 2]().tile[4, 4](0, 1)
     print_svg[memory_bank= (4, 32)](tensor, [tensor_dist])
 
 
 fn test_svg_amd_shape_a() raises:
     # amd tensor core a matrix fragment
-    var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
+    var tensor = tb[DType.float32]().row_major[16, 16]().alloc().get_immutable()
     var tensor_dist = tensor.distribute[Layout.col_major(16, 4)](0)
     print_svg(tensor, [tensor_dist])
 
 
 fn test_svg_amd_shape_b() raises:
     # amd tensor core a matrix fragment
-    var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
+    var tensor = tb[DType.float32]().row_major[16, 16]().alloc().get_immutable()
     var tensor_dist = tensor.distribute[Layout.row_major(4, 16)](0)
     print_svg(tensor, [tensor_dist])
 
 
 fn test_svg_amd_shape_d() raises:
     # amd tensor core a matrix fragment
-    var tensor = tb[DType.float32]().row_major[16, 16]().alloc()
+    var tensor = tb[DType.float32]().row_major[16, 16]().alloc().get_immutable()
     var tensor_dist = tensor.vectorize[4, 1]().distribute[
         Layout.row_major(4, 16)
     ](10)
@@ -98,7 +98,7 @@ fn test_svg_wgmma_shape() raises:
 
     var tensor = LayoutTensor[
         DType.float32, layout, MutableAnyOrigin
-    ].stack_allocation()
+    ].stack_allocation().get_immutable()
     var tensor_dist = tensor.vectorize[1, 1]().distribute[
         Layout.col_major(8, 4)
     ](0)
@@ -122,11 +122,7 @@ fn test_svg_wgmma_shape() raises:
         ]
         return String(colors[t])
 
-    print_svg(
-        tensor,
-        List[__type_of(tensor_dist)](tensor_dist, tensor_dist2),
-        color_map,
-    )
+    print_svg(tensor, [tensor_dist, tensor_dist2], color_map)
 
 
 fn test_svg_swizzle() raises:
@@ -134,7 +130,7 @@ fn test_svg_swizzle() raises:
     alias swizzle = Swizzle(3, 0, 3)
     var tensor = LayoutTensor[
         DType.float32, layout, MutableAnyOrigin
-    ].stack_allocation()
+    ].stack_allocation().get_immutable()
 
     # the figure generated here is identical to
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/async-warpgroup-smem-layout-128B-k.png
@@ -151,11 +147,7 @@ fn test_svg_swizzle() raises:
         ]
         return String(colors[t % len(colors)])
 
-    print_svg[swizzle](
-        tensor,
-        List[__type_of(tensor)](),
-        color_map=color_map,
-    )
+    print_svg[swizzle](tensor, List[__type_of(tensor)](), color_map=color_map)
 
 
 fn main() raises:

@@ -403,6 +403,10 @@ struct Pointer[
         Notes:
             This does **not** copy the underlying data.
         """
+        # NOTE: We use a rebind and not the constructor here because otherwise
+        # we get "argument of '__init__' call allows reading a memory location
+        # previously writable through another aliased argument" when used with
+        # a mutable value in the same scope
         return rebind[Self.Immutable](self)
 
     # ===------------------------------------------------------------------===#
