@@ -21,6 +21,7 @@ from max.dtype import DType
 class KVCacheStrategy(str, Enum):
     MODEL_DEFAULT = "model_default"
     CONTINUOUS = "continuous"
+    """Deprecated. Use ``PAGED`` instead."""
     PAGED = "paged"
 
     def kernel_substring(self) -> str:
