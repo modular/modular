@@ -60,9 +60,12 @@ IndexRefRemapper::IndexRefRemapper(ArrayRef<ParamDeclAttr> inputParams,
 //===----------------------------------------------------------------------===//
 
 Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
+  // TODO(MOCO-2081): Change this to a dyn_cast<IndexRefAttrInterface>, per
+  // https://github.com/modularml/modular/pull/62096#discussion_r2114820075.
   if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
     if (ref.getDepth() < depth)
       return ref;
+    // Per STCHDDDOS, we adjust the depth by `adjustDepth` so it's now correct.
     return ParamIndexRefAttr::get(ref.getDepth() + adjustDepth, ref.getIndex(),
                                   replaceImpl(ref.getType(), depth));
   }
@@ -119,6 +122,7 @@ void ParameterCollector::collectUsesFromAttrImpl(
   }
 
   // Verify index parameter references.
+  // TODO(MOCO-2080): Should this be dyn_cast<IndexRefAttrInterface>?
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
     collectUsesFromType(indexRef.getType(), uses, hasConstExpr);
     maybeVerify(
@@ -126,6 +130,10 @@ void ParameterCollector::collectUsesFromAttrImpl(
           if (signatures.empty())
             return emitError() << "index reference has no contextual signature";
           if (indexRef.getDepth() >= signatures.size()) {
+            // An index-based param-ref's depth is the number of signatures
+            // between it and the param-decl it's pointing at. `signatures` has
+            // all the (directly+indirectly) containing signatures, therefore
+            // depth can't be more than signatures.size(). See IRAIDAI for more.
             return emitError()
                    << "index reference depth " << indexRef.getDepth()
                    << " exceeds depth of contextual signatures: "
@@ -139,9 +147,10 @@ void ParameterCollector::collectUsesFromAttrImpl(
                                << types.size() << " input parameters";
           }
           // The index parameter reference can exist in a different scope than
-          // the one in which the referenced parameter was declared. This means
-          // the type of the reference and the type of the declaration can also
-          // exist in different scopes, and thus have different relative depths.
+          // the one in which the referenced parameter was declared (see
+          // PSTIAIRAID). This means the type of the reference and the type of
+          // the declaration can also exist in different scopes, and thus have
+          // different relative depths (see STCHDDDOS).
           // In order to correctly compare the types, we have to map the types
           // into the same scope. If there are currently N scopes, and the index
           // reference depth is M where M <= N, then the type of the declaration

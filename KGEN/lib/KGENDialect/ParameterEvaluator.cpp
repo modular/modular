@@ -135,7 +135,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
     ++rootDepth;
 
   // If a parameter got rebound to an index reference, we need to increase its
-  // depth based on the current signature.
+  // depth based on the current signature, per STCHDDDOS.
   // FIXME: Is there a better way around this? This previously manifested as
   // unintentional name shadowing problems, but walking here is inefficient.
   auto upbindValue = [&](Attribute value) {
@@ -325,7 +325,7 @@ PartiallySpecializedInputParams::from(
     } else {
       // We must remap the value type being provided as well, because it may
       // be referring to outer-context indexed parameters, whose depth will be
-      // increased when substituted into this signature.
+      // increased when substituted into this signature, per STCHDDDOS.
       Type reboundType = plusOneAdjuster.replace(value.getType());
       if (reboundType != remappedDeclType) {
         if (!emitErrorFn)

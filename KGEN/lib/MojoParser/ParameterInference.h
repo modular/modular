@@ -156,9 +156,19 @@ private:
   /// non-null, we've already inferred a value for that parameter.
   SmallVector<TypedAttr> inferredParams;
 
-  /// The signature type of parameter infernece. This is how many signature
-  /// types deep inference is inside parameter expressions and determines which
-  /// index references we match against.
+  /// This is how many signature types deep inference is inside parameter
+  /// expressions and determines which index references we match against.
+  ///
+  /// As we search for param-refs, recursively, we'll be recursing past
+  /// `FnTypeGeneratorType`s (and other `ParameterScopeTimeInterface`s),
+  /// which changes what param-ref depths we're watching for; the param-refs'
+  /// depths would be greater (have to reach further outward so to speak, past
+  /// more generator types) to reference param-decls in the
+  /// ParameterInferenceState's original scope. paramIndexRefDepth tracks that
+  /// number.
+  ///
+  /// In other words, these paramIndexRefDepth adjustments are for
+  /// depth-aware searching, see PSTIAIRAID.
   size_t paramIndexRefDepth = 0;
 
   /// The current set of parameter inference diagnostics.

@@ -894,6 +894,9 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     if (parseParamValue(p, operands.emplace_back(), sigGen))
       return failure();
     // Parse each operand, inferring its type from the signature type.
+    // This adjuster is because the argument types in the signature have a
+    // different depth than what the actual given arguments' types will be, see
+    // STCHDDDOS.
     IndexDepthAdjuster adjuster(/*adjustDepth=*/-1);
     for (Type type : sigGen.getBody().getArguments())
       if (p.parseComma() ||

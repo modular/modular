@@ -42,10 +42,14 @@ FnOp StructEmitter::createFunction(
   llvm::MapVector<ImplicitOriginRefAttr, ParamDeclRefAttr>
       implicitOriginToNewParamRef;
 
+  // Replace all `ImplicitOriginRefAttr` with `ParamRefDeclAttr`s that point to
+  // explicitly *named* parameter-decls.
   struct ImplicitOriginRefAttrReplacer
       : IndexParameterReplacer<ImplicitOriginRefAttrReplacer> {
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
+      // Check if we found an ImplicitOriginRefAttr that's pointing all the way
+      // up the original function's root scope, see PSTIAIRAID.
       if (auto implicitOriginRef = ::dyn_cast<ImplicitOriginRefAttr>(attr);
           implicitOriginRef && implicitOriginRef.getDepth() == depth) {
 

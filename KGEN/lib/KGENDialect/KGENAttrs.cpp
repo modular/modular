@@ -1146,7 +1146,8 @@ ParamOperatorAttr::getFromBytecode(POC opcode, ArrayRef<TypedAttr> operands,
 /// parameter expression. Therefore, it is the only place where an index
 /// parameter reference can cross upwards across a signature. We need to
 /// decrement any index references in the result type of the signature because
-/// we are pulling it out of the signature.
+/// we are pulling it out of the signature. See STCHDDDOS for more. This is
+/// STCHDDDOS-A.
 static Type upbindApplyResult(Type resultType) {
   IndexDepthAdjuster adjuster(/*adjustDepth=*/-1);
   return adjuster.replace(resultType);

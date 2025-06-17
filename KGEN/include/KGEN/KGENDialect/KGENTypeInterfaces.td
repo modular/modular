@@ -58,6 +58,23 @@ def ParameterScopeTypeInterface : TypeInterface<"ParameterScopeTypeInterface"> {
     The `ParameterScopeTypeInterface` describes a type that declares a nested
     parameter scope within a type expression. It enables `ParamIndexRefAttr`
     values inside the type to reference parameters declared in a scope.
+
+    For example, if we have this Mojo code:
+
+    ```mojo
+    fn foo[T: AnyType]():
+      alias bork: fn[
+        T: AnyType,
+        inner_f: fn[Y: AnyType](t: T, y: Y) -> None
+      ] -> None = ...
+    ```
+
+    The `fn` after `bork:` is a `kgen.generator` which is a
+    `ParameterScopeTypeInterface`.
+
+    `ParameterScopeTypeInterface` also causes the `depth` fields of
+    `ParamIndexRefAttr`/`ImplicitOriginRefAttr`/etc that are contained (even
+    indirectly) within this object to be higher, see PSTIAIRAID.
   }];
 
   let cppNamespace = "::M::KGEN";

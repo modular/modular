@@ -26,7 +26,8 @@ namespace M::KGEN {
 // IndexRefRemapper
 //===----------------------------------------------------------------------===//
 
-/// Utility class for remapping named parameter references to index references.
+/// Utility class for remapping named parameter references to index references,
+/// see DCRTODS.
 class IndexRefRemapper : public IndexParameterReplacer<IndexRefRemapper> {
 public:
   /// Populate the remapper with named input and result parameters.
@@ -49,7 +50,8 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// This class is used exclusively to adjust the depths of index references that
-/// reference signatures outside the current scope.
+/// reference signatures outside the current scope. See STCHDDDOS for more and
+/// for why this is needed.
 class IndexDepthAdjuster : public IndexParameterReplacer<IndexDepthAdjuster> {
 public:
   explicit IndexDepthAdjuster(int64_t adjustDepth) : adjustDepth(adjustDepth) {}

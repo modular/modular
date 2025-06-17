@@ -643,13 +643,60 @@ def ImplicitOriginRefAttr
   let summary = "Reference to an unbound implicit origin parameter.";
   let description = [{
     The `#lit.origin.ref` attribute is a reference to an unbound implicit
-    origin parameter.
+    origin parameter decl of an enclosing signature.
 
-    Example:
+    This attribute can only be used inside a `GeneratorType`.
+
+    This attribute is largely based on `ParamIndexRefAttr`, see
+    `ParamIndexRefAttr`'s comments for background.
+
+    It contains two fields:
+
+    - depth: Which containing signature contains the parameter we're referring
+      to. Non-negative integer. Zero means the nearest containing signature, one
+      means the signature containing that one, etc.
+      Note they cannot refer to any op's parameter-decls, and you cannot always
+      use a depth to refer to surrounding scopes, see DCRTODS.
+    - index: index of the parameter decl in that signature (non-negative
+      integer).
+
+    Examples:
 
     ```mlir
+    // Second implicit origin parameter-decl of the nearest signature.
     #lit.origin.ref<0, 1>
+    // First implicit origin parameter-decl of next enclosing signature.
+    #lit.origin.ref<1, 0>
     ```
+
+    The latter would appear in something like this:
+
+    ```
+    alias bar: fn[
+      X: AnyType,
+      f: fn[Y: AnyType](X, Y)->None
+    ] = ...
+    ```
+
+    That `fn[Y: AnyType](X, Y)->None`'s mention of `X` is actually a lit.ref
+    whose origin is a #lit.origin.ref<1, 0> to refer to an implicit origin on
+    the outermost `fn`.
+
+    But, per DCRTODS, it can NOT be used inside a generator's body to refer to
+    one of the generator's origin parameters, like this:
+
+    ```
+    fn foo[X: AnyType](x: X):
+        alias zork: fn[...](
+          # Cannot have: #lit.origin.ref<1, 0>
+        )->None = ...
+    ```
+
+    In this case, it needs to use a ParamDeclRefAttr to refer to an op's
+    parameter-decl origin, in this case probably named x`. See DCRTODS for more.
+
+    These depths must be carefully handled and adjusted when dealing with
+    multiple signatures or scopes, see STCHDDDOS.
   }];
 
   let parameters = (ins "size_t":$depth, "size_t":$index,
