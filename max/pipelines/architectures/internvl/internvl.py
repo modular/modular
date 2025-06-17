@@ -14,26 +14,299 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.dtype import DType
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    TensorValueLike,
+    Weight,
+    ops,
+)
 from max.graph.ops.resize import InterpolationMode
 from max.graph.type import Dim, StaticDim
-from max.nn import Linear, Module, Shardable
-from max.pipelines.architectures.llama3.distributed_llama import (
-    DistributedLlama3,
+from max.nn import (
+    ColumnParallelLinear,
+    DistributedAttentionWithRope,
+    DistributedMLP,
+    DistributedRMSNorm,
+    LayerList,
+    Linear,
+    Llama3RotaryEmbedding,
+    Module,
+    Shardable,
+    VocabParallelEmbedding,
+)
+from max.nn.kv_cache import (
+    FetchPagedKVCacheCollection,
+    PagedKVCacheCollection,
 )
 
 from .model_config import InternVLConfig
 
 
-class InternVLLanguageModel(DistributedLlama3):
-    """The InternVL language model for text generation with image embeddings.
+def distribute_value(
+    v: TensorValue, devices: Sequence[DeviceRef]
+) -> list[TensorValue]:
+    """Distributes a tensor value across multiple devices.
 
-    The model is actually Qwen 2, which in turn has the same architecture as
-    Llama 3, but with `attention_bias=True`.
-    That config is handled at the callsite in the InternVLPipelineModel.
+    Args:
+        v: The tensor value to distribute.
+        devices: The list of devices to distribute the tensor across.
+
+    Returns:
+        A list of tensor values, one per device.
     """
+    return [v.to(device) for device in devices]
+
+
+class InternVLDecoderLayer(Module):
+    """Represents a single decoder layer in the InternVL language model.
+
+    This layer follows the Qwen2 architecture, which is similar to Llama3 but
+    includes attention bias. Each layer contains:
+
+    - Self-attention with RoPE (Rotary Position Embeddings)
+    - Feed-forward network (MLP)
+    - RMS normalization before attention and MLP
+    - Residual connections
+    """
+
+    def __init__(
+        self,
+        layer_idx: int,
+        rope: Llama3RotaryEmbedding,
+        config: InternVLConfig,
+    ):
+        """Initializes a decoder layer.
+
+        Args:
+            layer_idx: The index of this layer in the model.
+            rope: The rotary position embedding module.
+            config: The InternVL configuration containing model parameters.
+        """
+        super().__init__()
+        llm_config = config.llm_config
+        devices = config.devices
+
+        self.self_attn = DistributedAttentionWithRope(
+            stacked_qkv=llm_config.stacked_qkv,
+            scale=llm_config.attention_multiplier,
+            clip_qkv=llm_config.clip_qkv,
+            num_attention_heads=llm_config.num_attention_heads,
+            num_key_value_heads=llm_config.num_key_value_heads,
+            hidden_size=llm_config.hidden_size,
+            kv_params=llm_config.kv_params,
+            dtype=llm_config.dtype,
+            rope=rope,
+            linear_cls=Linear,
+            devices=devices,
+            has_bias=True,  # Qwen2 uses attention bias
+        )
+
+        self.mlp = DistributedMLP(
+            llm_config.dtype,
+            quantization_encoding=None,
+            hidden_dim=llm_config.hidden_size,
+            feed_forward_length=llm_config.intermediate_size,
+            devices=devices,
+            linear_cls=Linear,
+        )
+
+        self.input_layernorm = DistributedRMSNorm(
+            dim=llm_config.hidden_size,
+            dtype=llm_config.dtype,
+            eps=llm_config.rms_norm_eps,
+            devices=devices,
+        )
+        self.post_attention_layernorm = DistributedRMSNorm(
+            dim=llm_config.hidden_size,
+            dtype=llm_config.dtype,
+            eps=llm_config.rms_norm_eps,
+            devices=devices,
+        )
+
+    def __call__(
+        self,
+        layer_idx: TensorValue,
+        xs: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: Sequence[PagedKVCacheCollection],
+        input_row_offsets: Sequence[TensorValue],
+    ) -> list[TensorValue]:
+        """Processes input through the decoder layer.
+
+        Args:
+            layer_idx: The index of this layer in the model.
+            xs: The input hidden states, one per device.
+            signal_buffers: Communication buffers for distributed execution.
+            kv_collections: Key-value cache collections for each device.
+            input_row_offsets: Offsets for flattened input sequences.
+
+        Returns:
+            The output hidden states after attention and MLP, one per device.
+        """
+        attn_outs = self.self_attn(
+            layer_idx,
+            self.input_layernorm(xs),
+            signal_buffers,
+            kv_collections,
+            input_row_offsets,
+        )
+
+        # Add residual.
+        hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
+
+        mlp_outs = self.mlp(self.post_attention_layernorm(hs), signal_buffers)
+
+        # Add residual.
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
+
+        return hs
+
+
+class InternVLLanguageModel(Module):
+    """Implements the language model component of InternVL.
+
+    This model is based on Qwen2.5 architecture and is designed to process
+    text tokens and generate language outputs. It supports multimodal inputs
+    through embedding merging (implemented separately).
+
+    The model consists of:
+    - Token embeddings
+    - Multiple decoder layers with attention and feed-forward networks
+    - RoPE position embeddings
+    - Final layer normalization and output projection
+
+    Note:
+        This implementation assumes:
+        - Multiple device execution (distributed)
+        - Paged KV cache only
+        - No quantization
+        - No tied embeddings
+        - Last token logits only (no variable logits)
+    """
+
+    def __init__(self, config: InternVLConfig):
+        """Initializes the InternVL language model.
+
+        Args:
+            config: The InternVL configuration containing model parameters,
+                including the language model config, devices, and other settings.
+
+        Raises:
+            ValueError: If tied embeddings are requested (not supported).
+        """
+        super().__init__()
+        llm_config = config.llm_config
+        self.devices = config.devices
+
+        if config.llm_config.tie_word_embeddings:
+            raise ValueError("tied embeddings unsupported by InternVL")
+
+        # Create RoPE embeddings.
+        self.rope = Llama3RotaryEmbedding(
+            dim=llm_config.hidden_size,
+            n_heads=llm_config.num_attention_heads,
+            theta=llm_config.rope_theta,
+            max_seq_len=llm_config.max_seq_len,
+            interleaved=llm_config.interleaved_rope_weights,
+            scaling_params=llm_config.rope_scaling_params,
+            device=self.devices[0],
+        )
+
+        # Create decoder layers.
+        self.layers = LayerList(
+            [
+                InternVLDecoderLayer(layer_idx, self.rope, config)
+                for layer_idx in range(llm_config.num_hidden_layers)
+            ]
+        )
+
+        self.norm = DistributedRMSNorm(
+            dim=llm_config.hidden_size,
+            dtype=llm_config.dtype,
+            eps=llm_config.rms_norm_eps,
+            devices=self.devices,
+        )
+
+        self.embed_tokens = VocabParallelEmbedding(
+            llm_config.vocab_size,
+            llm_config.hidden_size,
+            llm_config.dtype,
+            self.devices,
+            quantization_encoding=None,
+        )
+
+        self.lm_head = ColumnParallelLinear(
+            llm_config.hidden_size,
+            llm_config.vocab_size,
+            llm_config.dtype,
+            devices=self.devices,
+            quantization_encoding=None,
+        )
+
+        # Always assume paged KV cache for InternVL.
+        self.kv_collection_constructor = FetchPagedKVCacheCollection(
+            llm_config.kv_params,
+            num_layers=llm_config.num_hidden_layers,
+        )
+
+    def __call__(
+        self,
+        tokens: TensorValueLike,
+        signal_buffers: Iterable[BufferValue],
+        kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+    ) -> tuple[TensorValue, ...]:
+        """Executes the language model forward pass.
+
+        Args:
+            tokens: Input token IDs to process.
+            signal_buffers: Communication buffers for distributed execution.
+            kv_cache_inputs_per_dev: KV cache inputs for each device.
+            return_n_logits: Number of logits to return (unused, always returns last).
+            input_row_offsets: Offsets for flattened input sequences.
+
+        Returns:
+            A tuple containing the output logits for the last token positions.
+        """
+        # Get embeddings.
+        h = self.embed_tokens(tokens, signal_buffers)
+
+        # Create KV cache collections.
+        kv_collections = [
+            self.kv_collection_constructor(*kv_cache_inputs)
+            for kv_cache_inputs in kv_cache_inputs_per_dev
+        ]
+
+        # Distribute input row offsets
+        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+
+        # Run through decoder layers
+        for idx, layer in enumerate(self.layers):
+            h = layer(
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                h,
+                signal_buffers,
+                kv_collections,
+                input_row_offsets_,
+            )
+
+        # Get last token logits only (no variable logits support)
+        h0 = h[0]
+        last_token_indices = input_row_offsets[1:] - 1
+        last_token_h = ops.gather(h0, last_token_indices, axis=0)
+        last_token_distributed = distribute_value(last_token_h, self.devices)
+        last_logits = ops.cast(
+            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
+        )
+
+        return (last_logits,)
 
 
 class InternVisionEmbeddings(Module, Shardable):

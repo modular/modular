@@ -390,7 +390,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             "internvl_language", input_types=self._language_graph_input_types()
         ) as graph:
             # Build language model architecture.
-            language_model = InternVLLanguageModel(config.llm_config)
+            language_model = InternVLLanguageModel(config)
             language_model.load_state_dict(
                 state_dict=state_dict,
                 override_quantization_encoding=True,
