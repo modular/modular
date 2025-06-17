@@ -1,0 +1,550 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+"""Integration test for InternVL multimodal embedding merging execution."""
+
+from __future__ import annotations
+
+from functools import partial
+
+import torch
+from max.driver import CPU, Tensor
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import DeviceRef, Graph, TensorType
+from max.pipelines.architectures.internvl.embedding_utils import (
+    merge_multimodal_embeddings,
+)
+
+
+def merge_multimodal_embeddings_torch_reference(
+    input_ids: torch.Tensor,
+    inputs_embeds: torch.Tensor,
+    multimodal_embeddings: torch.Tensor,
+    image_context_token_id: int,
+) -> torch.Tensor:
+    """Reference PyTorch implementation for testing with flattened tensors."""
+    # Expect already flattened tensors.
+    # input_ids shape: [num_tokens]
+    # inputs_embeds shape: [num_tokens, hidden_size]
+    # multimodal_embeddings shape: [num_multimodal_tokens, hidden_size]
+
+    # Find image context token positions.
+    selected = input_ids == image_context_token_id
+
+    # Verify count.
+    num_image_context_tokens = selected.sum().item()
+    num_embeddings = multimodal_embeddings.shape[0]
+    if num_image_context_tokens != num_embeddings:
+        raise ValueError(
+            f"Image context token count mismatch: {num_image_context_tokens} image context tokens "
+            f"but {num_embeddings} multimodal embeddings provided"
+        )
+
+    # Replace image context tokens with multimodal embeddings
+    result = inputs_embeds.clone()
+    if selected.sum() > 0:
+        result[selected] = multimodal_embeddings
+
+    return result
+
+
+def test_single_image_merge_execution() -> None:
+    """Test execution of embedding merge for a single image with flattened tensors."""
+    seq_len = 10
+    hidden_size = 768
+    img_context_token_id = 100
+    num_image_tokens = 4
+    device = CPU()
+    device_ref = DeviceRef.CPU()
+
+    # Create test inputs with image context tokens at positions 3-6 (flattened).
+    input_ids = torch.tensor(
+        [1, 2, 3, 100, 100, 100, 100, 4, 5, 6], dtype=torch.int32
+    )
+    text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+    vision_embeds = torch.randn(
+        num_image_tokens, hidden_size, dtype=torch.float32
+    )
+
+    # Get reference output
+    expected_output = merge_multimodal_embeddings_torch_reference(
+        input_ids, text_embeds, vision_embeds, img_context_token_id
+    )
+
+    # Build the graph
+    graph = Graph(
+        "test_merge_execution",
+        forward=partial(
+            merge_multimodal_embeddings,
+            image_context_token_id=img_context_token_id,
+        ),
+        input_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(seq_len,),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(seq_len, hidden_size),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(num_image_tokens, hidden_size),
+                device=device_ref,
+            ),
+        ],
+    )
+
+    # Create session and compile
+    session = InferenceSession(devices=[device])
+    compiled = session.load(graph)
+
+    # Convert inputs to MAX tensors
+    input_ids_tensor = Tensor.from_numpy(input_ids.numpy()).to(device)
+    text_embeds_tensor = Tensor.from_numpy(text_embeds.numpy()).to(device)
+    vision_embeds_tensor = Tensor.from_numpy(vision_embeds.numpy()).to(device)
+
+    # Execute
+    results = compiled.execute(
+        input_ids_tensor,
+        text_embeds_tensor,
+        vision_embeds_tensor,
+    )
+
+    # Convert result back to torch
+    result_tensor = results[0]
+    assert isinstance(result_tensor, Tensor)
+    actual_output = torch.from_numpy(result_tensor.to_numpy())
+
+    # Verify the output matches the reference implementation
+    torch.testing.assert_close(
+        actual_output, expected_output, rtol=1e-5, atol=1e-5
+    )
+
+    # Specifically verify that vision embeddings replaced placeholders
+    assert torch.allclose(actual_output[3:7], vision_embeds)
+
+    # And that other positions remained unchanged
+    assert torch.allclose(actual_output[:3], text_embeds[:3])
+    assert torch.allclose(actual_output[7:], text_embeds[7:])
+
+
+def test_batch_merge_variable_positions_execution():
+    """Test merging embeddings for batch with different placeholder positions using flattened tensors."""
+    hidden_size = 768
+    img_context_token_id = 100
+    device = CPU()
+    device_ref = DeviceRef.CPU()
+
+    # Flatten batch with different image context token positions
+    # First sequence: [1, 2, 100, 100, 100, 100, 3, 4, 5, 6]  # img at pos 2-5
+    # Second sequence: [1, 2, 3, 4, 100, 100, 100, 100, 5, 6]  # img at pos 4-7
+    input_ids = torch.tensor(
+        [
+            1,
+            2,
+            100,
+            100,
+            100,
+            100,
+            3,
+            4,
+            5,
+            6,  # first sequence
+            1,
+            2,
+            3,
+            4,
+            100,
+            100,
+            100,
+            100,
+            5,
+            6,
+        ],  # second sequence
+        dtype=torch.int32,
+    )
+
+    # Total 20 tokens, 8 are image context tokens
+    seq_len = 20
+    num_image_tokens = 8
+
+    text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+    vision_embeds = torch.randn(
+        num_image_tokens, hidden_size, dtype=torch.float32
+    )
+
+    # Get reference output
+    expected_output = merge_multimodal_embeddings_torch_reference(
+        input_ids, text_embeds, vision_embeds, img_context_token_id
+    )
+
+    # Build and execute graph
+    graph = Graph(
+        "test_batch_merge",
+        forward=partial(
+            merge_multimodal_embeddings,
+            image_context_token_id=img_context_token_id,
+        ),
+        input_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(seq_len,),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(seq_len, hidden_size),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(num_image_tokens, hidden_size),
+                device=device_ref,
+            ),
+        ],
+    )
+
+    session = InferenceSession(devices=[device])
+    compiled = session.load(graph)
+
+    # Execute
+    results = compiled.execute(
+        Tensor.from_numpy(input_ids.numpy()).to(device),
+        Tensor.from_numpy(text_embeds.numpy()).to(device),
+        Tensor.from_numpy(vision_embeds.numpy()).to(device),
+    )
+
+    # Convert result back to torch
+    result_tensor = results[0]
+    assert isinstance(result_tensor, Tensor)
+    actual_output = torch.from_numpy(result_tensor.to_numpy())
+
+    # Verify against reference
+    torch.testing.assert_close(
+        actual_output, expected_output, rtol=1e-5, atol=1e-5
+    )
+
+    # Verify first sequence (positions 0-9)
+    assert torch.allclose(actual_output[2:6], vision_embeds[0:4])
+    assert torch.allclose(actual_output[:2], text_embeds[:2])
+    assert torch.allclose(actual_output[6:10], text_embeds[6:10])
+
+    # Verify second sequence (positions 10-19)
+    assert torch.allclose(actual_output[14:18], vision_embeds[4:8])
+    assert torch.allclose(actual_output[10:14], text_embeds[10:14])
+    assert torch.allclose(actual_output[18:20], text_embeds[18:20])
+
+
+def test_ragged_multimodal_embeddings_execution():
+    """Test merging with ragged sequences of multimodal embeddings using flattened tensors."""
+    hidden_size = 768
+    img_context_token_id = 100
+    device = CPU()
+    device_ref = DeviceRef.CPU()
+
+    # Flatten ragged sequences with different number of image context tokens
+    # First: [1, 2, 100, 100, 100, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]  # 3 image context tokens
+    # Second: [1, 2, 3, 4, 5, 100, 100, 100, 100, 100, 6, 7, 8, 9, 10]  # 5 image context tokens
+    input_ids = torch.tensor(
+        [
+            1,
+            2,
+            100,
+            100,
+            100,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,  # first
+            1,
+            2,
+            3,
+            4,
+            5,
+            100,
+            100,
+            100,
+            100,
+            100,
+            6,
+            7,
+            8,
+            9,
+            10,
+        ],  # second
+        dtype=torch.int32,
+    )
+
+    # Total 30 tokens, 8 image context tokens
+    seq_len = 30
+    num_image_tokens = 8
+
+    text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+
+    # Ragged embeddings as a list that we'll concatenate
+    vision_embeds_list = [
+        torch.randn(3, hidden_size, dtype=torch.float32),  # For first sequence
+        torch.randn(5, hidden_size, dtype=torch.float32),  # For second sequence
+    ]
+    vision_embeds = torch.cat(
+        vision_embeds_list, dim=0
+    )  # Shape: (8, hidden_size)
+
+    # Get reference output
+    expected_output = merge_multimodal_embeddings_torch_reference(
+        input_ids, text_embeds, vision_embeds, img_context_token_id
+    )
+
+    # Build graph
+    graph = Graph(
+        "test_ragged_merge",
+        forward=partial(
+            merge_multimodal_embeddings,
+            image_context_token_id=img_context_token_id,
+        ),
+        input_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(seq_len,),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(seq_len, hidden_size),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(num_image_tokens, hidden_size),
+                device=device_ref,
+            ),
+        ],
+    )
+
+    session = InferenceSession(devices=[device])
+    compiled = session.load(graph)
+
+    # Execute
+    results = compiled.execute(
+        Tensor.from_numpy(input_ids.numpy()).to(device),
+        Tensor.from_numpy(text_embeds.numpy()).to(device),
+        Tensor.from_numpy(vision_embeds.numpy()).to(device),
+    )
+
+    # Convert result back to torch
+    result_tensor = results[0]
+    assert isinstance(result_tensor, Tensor)
+    actual_output = torch.from_numpy(result_tensor.to_numpy())
+
+    # Verify against reference
+    torch.testing.assert_close(
+        actual_output, expected_output, rtol=1e-5, atol=1e-5
+    )
+
+
+def test_no_image_context_tokens_fast_path_execution():
+    """Test fast path when no image context tokens are present."""
+    seq_len = 10
+    hidden_size = 768
+    img_context_token_id = 100
+    device = CPU()
+    device_ref = DeviceRef.CPU()
+
+    # No image context tokens
+    input_ids = torch.ones(seq_len, dtype=torch.int32) * 50
+    text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+    vision_embeds = torch.empty(0, hidden_size, dtype=torch.float32)
+
+    # Build graph
+    graph = Graph(
+        "test_no_placeholders",
+        forward=partial(
+            merge_multimodal_embeddings,
+            image_context_token_id=img_context_token_id,
+        ),
+        input_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(seq_len,),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(seq_len, hidden_size),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(0, hidden_size),  # Empty multimodal embeddings
+                device=device_ref,
+            ),
+        ],
+    )
+
+    session = InferenceSession(devices=[device])
+    compiled = session.load(graph)
+
+    # Execute
+    results = compiled.execute(
+        Tensor.from_numpy(input_ids.numpy()).to(device),
+        Tensor.from_numpy(text_embeds.numpy()).to(device),
+        Tensor.from_numpy(vision_embeds.numpy()).to(device),
+    )
+
+    # Convert result back to torch
+    result_tensor = results[0]
+    assert isinstance(result_tensor, Tensor)
+    actual_output = torch.from_numpy(result_tensor.to_numpy())
+
+    # Should return inputs_embeds unchanged
+    torch.testing.assert_close(actual_output, text_embeds, rtol=1e-5, atol=1e-5)
+
+
+def test_count_mismatch_error():
+    """Test that count mismatch is handled gracefully."""
+    seq_len = 10
+    hidden_size = 768
+    img_context_token_id = 100
+    device = CPU()
+    device_ref = DeviceRef.CPU()
+
+    input_ids = torch.tensor(
+        [1, 2, 100, 100, 100, 3, 4, 5, 6, 7], dtype=torch.int32
+    )  # 3 image context tokens
+    text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+    vision_embeds = torch.randn(
+        2, hidden_size, dtype=torch.float32
+    )  # Only 2 embeddings!
+
+    # Build graph - note that we don't validate count at graph construction time
+    graph = Graph(
+        "test_count_mismatch",
+        forward=partial(
+            merge_multimodal_embeddings,
+            image_context_token_id=img_context_token_id,
+        ),
+        input_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(seq_len,),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(seq_len, hidden_size),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(2, hidden_size),
+                device=device_ref,
+            ),
+        ],
+    )
+
+    session = InferenceSession(devices=[device])
+    compiled = session.load(graph)
+
+    # Execute - the mismatch will be handled by masked_scatter
+    # It will use the first 2 embeddings for the first 2 image context token positions
+    results = compiled.execute(
+        Tensor.from_numpy(input_ids.numpy()).to(device),
+        Tensor.from_numpy(text_embeds.numpy()).to(device),
+        Tensor.from_numpy(vision_embeds.numpy()).to(device),
+    )
+
+    # Convert result back to torch
+    result_tensor = results[0]
+    assert isinstance(result_tensor, Tensor)
+    actual_output = torch.from_numpy(result_tensor.to_numpy())
+
+    # Check that first two image context tokens were replaced
+    assert not torch.allclose(actual_output[2:4], text_embeds[2:4])
+
+
+def test_large_sequence_performance():
+    """Test performance with large sequence lengths using flattened tensors."""
+    seq_len = 2048
+    hidden_size = 4096
+    img_context_token_id = 100
+    num_placeholders = 256
+    device = CPU()
+    device_ref = DeviceRef.CPU()
+
+    # Create flattened input with scattered image context tokens
+    input_ids = torch.ones(seq_len, dtype=torch.int32) * 50
+
+    # Place image context tokens at regular intervals
+    image_context_positions = torch.arange(
+        0, seq_len, seq_len // num_placeholders
+    )[:num_placeholders]
+    input_ids[image_context_positions] = img_context_token_id
+
+    text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
+    vision_embeds = torch.randn(
+        num_placeholders, hidden_size, dtype=torch.float32
+    )
+
+    # Get reference output
+    expected_output = merge_multimodal_embeddings_torch_reference(
+        input_ids, text_embeds, vision_embeds, img_context_token_id
+    )
+
+    # Build and execute graph
+    graph = Graph(
+        "test_large_sequence",
+        forward=partial(
+            merge_multimodal_embeddings,
+            image_context_token_id=img_context_token_id,
+        ),
+        input_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(seq_len,),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(seq_len, hidden_size),
+                device=device_ref,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=(num_placeholders, hidden_size),
+                device=device_ref,
+            ),
+        ],
+    )
+
+    session = InferenceSession(devices=[device])
+    compiled = session.load(graph)
+
+    # Execute
+    results = compiled.execute(
+        Tensor.from_numpy(input_ids.numpy()).to(device),
+        Tensor.from_numpy(text_embeds.numpy()).to(device),
+        Tensor.from_numpy(vision_embeds.numpy()).to(device),
+    )
+
+    # Convert result back to torch
+    result_tensor = results[0]
+    assert isinstance(result_tensor, Tensor)
+    actual_output = torch.from_numpy(result_tensor.to_numpy())
+
+    # Verify against reference
+    torch.testing.assert_close(
+        actual_output, expected_output, rtol=1e-5, atol=1e-5
+    )
