@@ -12,6 +12,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/custom-kernels-pytorch.mdx
+
 from pathlib import Path
 
 import numpy as np

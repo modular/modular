@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/build-custom-ops.mdx
+
 import compiler
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import (

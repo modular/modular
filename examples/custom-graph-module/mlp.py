@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/build-an-mlp-block.mdx
+
 from __future__ import annotations
 
 from typing import Any, Callable, Optional

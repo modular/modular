@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/get-started-with-max-graph-in-python.md
 
 import numpy as np
 from max import engine

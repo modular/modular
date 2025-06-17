@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/serve/offline-inference.mdx
+
 from __future__ import annotations
 
 import os

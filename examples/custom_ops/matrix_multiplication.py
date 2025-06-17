@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/custom-ops-matmul.mdx
+
 from pathlib import Path
 
 import numpy as np

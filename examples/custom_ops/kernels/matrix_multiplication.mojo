@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/custom-ops-matmul.mdx
+
 import compiler
 from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx, warp_id
 from gpu.host import DeviceBuffer, DeviceContext

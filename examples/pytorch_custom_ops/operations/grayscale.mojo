@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/custom-kernels-pytorch.mdx
+
 import compiler
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import (

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/build-an-mlp-block.mdx
+
 from max.graph import DeviceRef, ops
 from mlp import MLPBlock
 
