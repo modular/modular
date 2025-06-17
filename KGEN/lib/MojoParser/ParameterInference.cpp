@@ -148,12 +148,6 @@ ParameterInferenceState::matchFunctionTypes(FnTypeGeneratorType actual,
           matchTypes(actual.getUserResultType(), expected.getUserResultType())))
     return failure();
 
-  for (auto [actualResult, expectedResult] :
-       llvm::zip(actual.getResults(), expected.getResults()))
-    if (failed(matchTypes(actualResult, expectedResult))) {
-      return failure();
-    }
-
   if (failed(matchParams(actual.getCaptureOrigins(),
                          expected.getCaptureOrigins()))) {
     return failure();
