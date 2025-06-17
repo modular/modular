@@ -226,7 +226,7 @@ kgen.func @func() {
 
 kgen.func @load_atomic(%p: !kgen.pointer<scalar<f32>>) {
   // expected-error @below {{invalid combination of volatile or invariant with atomic load}}
-  pop.load volatile atomic acquire %p: !kgen.pointer<scalar<f32>>
+  pop.load volatile<1> atomic acquire %p: !kgen.pointer<scalar<f32>>
   kgen.return
 }
 

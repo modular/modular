@@ -566,12 +566,12 @@ kgen.generator @pop_load_store<DT: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1: 
   %0 = pop.load %p0 : !kgen.pointer<scalar<f32>>
   // CHECK: %[[V1:.*]] = pop.load %{{.*}} : !kgen.pointer<scalar<DT>>
   %1 = pop.load %p1 : !kgen.pointer<scalar<DT>>
-  // CHECK: %[[V2:.*]] = pop.load volatile %{{.*}} : !kgen.pointer<scalar<f32>>
-  %2 = pop.load volatile %p0 : !kgen.pointer<scalar<f32>>
-  // CHECK: %[[V3:.*]] = pop.load volatile %{{.*}} : !kgen.pointer<scalar<DT>>
-  %3 = pop.load volatile %p1 : !kgen.pointer<scalar<DT>>
-  // CHECK: %[[V4:.*]] = pop.load invariant %{{.*}} : !kgen.pointer<scalar<DT>>
-  %4 = pop.load invariant %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: %[[V2:.*]] = pop.load volatile<1> %{{.*}} : !kgen.pointer<scalar<f32>>
+  %2 = pop.load volatile<1> %p0 : !kgen.pointer<scalar<f32>>
+  // CHECK: %[[V3:.*]] = pop.load volatile<1> %{{.*}} : !kgen.pointer<scalar<DT>>
+  %3 = pop.load volatile<1> %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: %[[V4:.*]] = pop.load invariant<1> %{{.*}} : !kgen.pointer<scalar<DT>>
+  %4 = pop.load invariant<1> %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: [[V5:%.*]] = pop.load atomic acquire %{{.*}} : !kgen.pointer<scalar<DT>>
   %5 = pop.load atomic acquire %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: pop.store %[[V0]], %{{.*}} : !kgen.pointer<scalar<f32>>

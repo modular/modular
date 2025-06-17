@@ -760,22 +760,22 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     %0 = pop.load %ptr0 : !kgen.pointer<scalar<f32>>
     %1 = pop.load %ptr1 : !kgen.pointer<simd<4, type>>
     %2 = pop.load %ptr0 align<8> : !kgen.pointer<scalar<f32>>
-    %3 = pop.load volatile %ptr0 align<8> : !kgen.pointer<scalar<f32>>
-    %4 = pop.load volatile invariant %ptr0 align<8> : !kgen.pointer<scalar<f32>>
+    %3 = pop.load volatile<1> %ptr0 align<8> : !kgen.pointer<scalar<f32>>
+    %4 = pop.load volatile<1> invariant<1> %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     %5 = pop.load atomic acquire %ptr0 : !kgen.pointer<scalar<f32>>
     ```
   }];
 
   let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       UnitAttr:$isVolatile,
-                       UnitAttr:$isInvariant,
+                       OptionalAttr<AttrOfType<I1>>:$isVolatile,
+                       OptionalAttr<AttrOfType<I1>>:$isInvariant,
                        DefaultValuedAttr<
                         POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    (`volatile` $isVolatile^)?
-    (`invariant` $isInvariant^)?
+    (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
+    (`invariant` `<` custom<I1ParamValue>($isInvariant)^ `>`)?
     (`atomic` $ordering^)?
     $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`

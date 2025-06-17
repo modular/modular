@@ -208,7 +208,8 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
                    std::optional<unsigned> alignment, bool isVolatile,
                    bool isInvariant, AtomicOrdering ordering) {
   build(b, state, ptr, alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
-        isVolatile, isInvariant, ordering);
+        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(),
+        isInvariant ? b.getBoolAttr(isInvariant) : TypedAttr(), ordering);
 }
 
 LogicalResult LoadOp::verify() {

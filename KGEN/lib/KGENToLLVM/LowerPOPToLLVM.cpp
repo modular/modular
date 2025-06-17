@@ -1309,10 +1309,18 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
     Type elementType = typeConverter->convertType(ptrType.getElementType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
+    TypedAttr isInvariantAttr = adaptor.getIsInvariantAttr();
+    bool isInvariant =
+        isInvariantAttr ? cast<BoolAttr>(isInvariantAttr).getValue() : false;
+    TypedAttr isVolatileAttr = adaptor.getIsVolatileAttr();
+    bool isVolatile =
+        isVolatileAttr ? cast<BoolAttr>(isVolatileAttr).getValue() : false;
+
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/adaptor.getIsVolatile(), /*isNonTemporal=*/false,
-        /*isInvariant=*/adaptor.getIsInvariant(),
+        /*isVolatile=*/isVolatile,
+        /*isNonTemporal=*/false,
+        /*isInvariant=*/isInvariant,
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
     return success();

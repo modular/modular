@@ -1485,10 +1485,10 @@ kgen.func @load_bitcast_func_ptr(%arg0: !kgen.generator<() -> ()>) ->
   %0 = pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load %0
   %1 = pop.load %0 : !kgen.pointer<pointer<index>>
-  // CHECK-NEXT: pop.load volatile %0
-  %2 = pop.load volatile %0 : !kgen.pointer<pointer<index>>
-  // CHECK-NEXT: pop.load volatile invariant %0
-  %3 = pop.load volatile invariant %0 : !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: pop.load volatile<1> %0
+  %2 = pop.load volatile<1> %0 : !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: pop.load volatile<1> invariant<1> %0
+  %3 = pop.load volatile<1> invariant<1> %0 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: pop.load atomic acquire %0
   %4 = pop.load atomic acquire %0 : !kgen.pointer<pointer<index>>
   kgen.return %1, %2, %3, %4 : !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>
