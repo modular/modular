@@ -140,6 +140,7 @@ trait TraitWithAliasArgMethod:
     fn lork(self, thing: SIMD[T]):
         ...
 
+
 @fieldwise_init
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
     alias T: ATrait = ZInt
@@ -211,6 +212,7 @@ struct ZInt(ATrait):
 
 trait ATrait:
     pass
+
 
 @fieldwise_init
 struct SIMD[T: ATrait]:
@@ -288,6 +290,7 @@ struct ZInt(ATrait):
 
 trait ATrait:
     pass
+
 
 @fieldwise_init
 struct SIMD[T: ATrait]:
@@ -440,7 +443,7 @@ trait ASubTrait(ATrait):
 
 
 @register_passable("trivial")
-struct ZInt(ATrait, ASubTrait):
+struct ZInt(ASubTrait, ATrait):
     pass
 
 
@@ -493,6 +496,49 @@ trait FooTrait:
 fn bar[foo: FooTrait]():
     p0 = Zcalar[foo.dtype]()
     foo.foo(p0)
+
+
+# // -----
+
+# Sub-Trait Alias Type Can Be More Specific (STATCBMS):
+# This test shows that a sub-trait's alias can have a more specific type than
+# the super-trait's alias.
+# See original bug:
+# https://linear.app/modularml/issue/MOCO-1869/bug-trait-refinement-does-not-correctly-propagate-associated-type
+
+
+# This is the important check, it makes sure that we:
+#  * Pull it out of the vtable as a BB
+#  * Upcast it to an AA
+# CHECK: #[[BTypeAsAATypeValue:.*]] = #kgen.type<!kgen.param<:!B T>, {"Type" : !AA = upcast(:!BB get_vtable_entry(:!B T, "Type"))}> : !A
+
+
+trait AA:
+    fn __init__(out self):
+        ...
+
+
+trait BB:
+    fn __init__(out self):
+        ...
+
+
+trait A:
+    alias Type: AA
+
+
+trait B(A):
+    alias Type: BB
+
+
+fn fa[T: A]() -> T.Type:
+    return T.Type()
+
+
+# CHECK-LABEL: lit.fn @"fb
+fn fb[T: B]() -> T.Type:
+    # CHECK: lit.call{{.*}}fa{{.*}}#[[BTypeAsAATypeValue]]
+    return fa[T]()
 
 
 # TODO(MOCO-1143): Make this work:
