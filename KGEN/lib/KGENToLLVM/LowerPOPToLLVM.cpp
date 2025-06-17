@@ -1295,6 +1295,12 @@ static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
   llvm_unreachable("unknown atomic ordering");
 }
 
+static bool getBoolAttrValue(TypedAttr attr) {
+  if (attr)
+    return cast<BoolAttr>(attr).getValue();
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // ConvertPOPLoad
 //===----------------------------------------------------------------------===//
@@ -1309,18 +1315,12 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
     Type elementType = typeConverter->convertType(ptrType.getElementType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
-    TypedAttr isInvariantAttr = adaptor.getIsInvariantAttr();
-    bool isInvariant =
-        isInvariantAttr ? cast<BoolAttr>(isInvariantAttr).getValue() : false;
-    TypedAttr isVolatileAttr = adaptor.getIsVolatileAttr();
-    bool isVolatile =
-        isVolatileAttr ? cast<BoolAttr>(isVolatileAttr).getValue() : false;
 
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/isVolatile,
+        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr()),
         /*isNonTemporal=*/false,
-        /*isInvariant=*/isInvariant,
+        /*isInvariant=*/getBoolAttrValue(adaptor.getIsInvariantAttr()),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
     return success();
@@ -1341,9 +1341,11 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
     auto ptrType = cast<PointerType>(op.getPtr().getType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
+
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/adaptor.getIsVolatile(), /*isNonTemporal=*/false,
+        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr()),
+        /*isNonTemporal=*/false,
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
     return success();

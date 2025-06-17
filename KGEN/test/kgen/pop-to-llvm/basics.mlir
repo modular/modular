@@ -308,7 +308,7 @@ kgen.func @store_with_volatile(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<
   // CHECK-DAG: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
   // CHECK-DAG: %[[VAL:.*]] = builtin.unrealized_conversion_cast %[[ARG1]]
   // CHECK: llvm.store volatile %[[VAL]], %[[PTR]] {alignment = 128 : i64}
-  pop.store volatile %v, %p align<128> : !kgen.pointer<scalar<si32>>
+  pop.store volatile<1> %v, %p align<128> : !kgen.pointer<scalar<si32>>
   kgen.return
 }
 

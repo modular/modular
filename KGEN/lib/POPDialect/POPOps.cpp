@@ -239,8 +239,8 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
                     std::optional<unsigned> alignment, bool isVolatile,
                     AtomicOrdering ordering) {
   build(b, state, arg, ptr,
-        alignment ? b.getIndexAttr(*alignment) : TypedAttr(), isVolatile,
-        ordering);
+        alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
+        isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(), ordering);
 }
 
 LogicalResult StoreOp::verify() {
