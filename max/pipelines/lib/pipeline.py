@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import unittest.mock
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -75,15 +76,8 @@ from .sampling import token_sampler
 try:
     # xgrammar configures the root logger, which also transitively
     # impacts anyone using us as a library.  So let's avoid the damage here.
-    originalBasicConfig = logging.basicConfig
-
-    def basicConfig(**kwargs):
-        pass
-
-    logging.basicConfig = basicConfig
-    import xgrammar as xgr
-
-    logging.basicConfig = originalBasicConfig
+    with unittest.mock.patch("logging.basicConfig"):
+        import xgrammar as xgr
 except ImportError:
     pass
 
