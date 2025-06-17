@@ -97,7 +97,7 @@ def replicate_sharding_strategy(
     Returns:
         A :obj:`TensorValue` representing the full weight tensor.
     """
-    return weight
+    return weight[:]
 
 
 @dataclass(frozen=True)
