@@ -683,9 +683,9 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 /// Check to see if any of the parameters of the specified signature are
 /// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
-static FuncTypeGeneratorType
+static GeneratorType
 removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
-                      FuncTypeGeneratorType signature) {
+                      GeneratorType signature) {
   llvm::SmallVector<TypedAttr> paramsToBind;
   size_t numRemoved = 0;
 
@@ -751,7 +751,7 @@ static void lowerAttributesAndTypes(
         WalkResult::skip());
   });
 
-  replacer.addReplacement([&](FuncTypeGeneratorType gen) {
+  replacer.addReplacement([&](GeneratorType gen) {
     // Remove uses of any singleton attributes.
     SmallVector<Type> paramTypes;
     for (auto ty : gen.getInputParamTypes())
