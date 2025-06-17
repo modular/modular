@@ -24,7 +24,7 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from transformers import AutoConfig
+from transformers.models.auto.configuration_auto import AutoConfig
 
 
 @dataclass
@@ -61,6 +61,12 @@ class VisionConfig:
     qk_normalization: bool
     """Whether to use QK normalization in attention."""
 
+    num_hidden_layers: int
+    """Number of hidden layers in the vision encoder."""
+
+    use_mean_pooling: bool
+    """Whether to use mean pooling instead of final layernorm."""
+
     @staticmethod
     def generate(vision_config: AutoConfig, dtype: DType) -> VisionConfig:
         """Generate VisionConfig from HuggingFace vision config.
@@ -86,6 +92,10 @@ class VisionConfig:
             head_dim=head_dim,
             layer_norm_eps=getattr(vision_config, "layer_norm_eps", 1e-6),
             qk_normalization=getattr(vision_config, "qk_normalization", True),
+            num_hidden_layers=getattr(vision_config, "num_hidden_layers", 32),
+            use_mean_pooling=getattr(
+                vision_config, "use_mean_pooling", True
+            ),  # Default to True for InternVL
         )
 
 
@@ -103,13 +113,13 @@ class InternVLConfigBase:
     num_image_token: int
     """Number of image tokens per patch."""
 
-    # Composed language model configuration.
-    llm_config: Llama3Config
-    """Language model configuration using Llama3 architecture."""
-
     # Vision encoder configuration.
     vision_config: VisionConfig
     """Vision encoder configuration."""
+
+    # Composed language model configuration.
+    llm_config: Llama3Config
+    """Language model configuration using Llama3 architecture."""
 
 
 @dataclass
@@ -134,7 +144,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
             huggingface_config, "llm_config", huggingface_config
         )
         return Llama3Config.get_kv_params(
-            huggingface_config=huggingface_config.llm_config,
+            huggingface_config=llm_config,
             n_devices=n_devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
@@ -159,7 +169,7 @@ class InternVLConfig(MAXModelConfig, InternVLConfigBase):
         )
         return Llama3Config.calculate_max_seq_len(
             pipeline_config=pipeline_config,
-            huggingface_config=huggingface_config.llm_config,
+            huggingface_config=llm_config,
         )
 
     @staticmethod

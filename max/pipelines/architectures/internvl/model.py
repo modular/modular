@@ -47,7 +47,7 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
-from transformers import AutoConfig
+from transformers.models.auto.configuration_auto import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
@@ -157,7 +157,10 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return max_seq_len
 
         # Get `max_position_embeddings` from the `llm_config`.
-        return huggingface_config.llm_config.max_position_embeddings
+        llm_config = getattr(
+            huggingface_config, "llm_config", huggingface_config
+        )
+        return getattr(llm_config, "max_position_embeddings", 4096)
 
     @classmethod
     def get_kv_params(
@@ -313,16 +316,12 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             (pixel_values,) = graph.inputs
 
             # Execute vision model: pixel_values -> image_embeddings.
-            image_embeddings = vision_model(
-                [
-                    # Transfer pixel values to each device.
-                    pixel_values.tensor.to(DeviceRef.from_device(dev))
-                    for dev in self.devices
-                ]
-            )
+            # The vision model expects a single TensorValue and returns a single TensorValue
+            # TODO: need to implement distributed to do multiple.
+            image_embeddings = vision_model(pixel_values.tensor)
 
             # Set graph outputs.
-            graph.output(*image_embeddings)
+            graph.output(image_embeddings)
 
             return graph, vision_model.state_dict()
 
@@ -474,8 +473,12 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             image_embeddings = vision_outputs[0]
         else:
             # Initialize image embeddings as empty tensor for text-only mode
+            llm_config = getattr(
+                self.huggingface_config, "llm_config", self.huggingface_config
+            )
+            hidden_size = getattr(llm_config, "hidden_size", 4096)
             image_embeddings = Tensor.zeros(
-                shape=[0, self.huggingface_config.llm_config.hidden_size],
+                shape=[0, hidden_size],
                 dtype=self.dtype,
             ).to(self.devices[0])
 

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import Union
 
 from max.dtype import DType
 from max.graph import (
@@ -34,9 +35,11 @@ from max.nn import (
     DistributedMLP,
     DistributedRMSNorm,
     LayerList,
+    LayerNorm,
     Linear,
     Llama3RotaryEmbedding,
     Module,
+    RMSNorm,
     Shardable,
     VocabParallelEmbedding,
 )
@@ -45,6 +48,7 @@ from max.nn.kv_cache import (
     PagedKVCacheCollection,
 )
 
+from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
 
 
@@ -531,12 +535,228 @@ class InternVisionEmbeddings(Module, Shardable):
         return embeddings
 
 
-class InternVLVisionModel(Module):
-    """The InternVL vision model for processing images."""
+class InternVLVisionMLP(Module):
+    """Multi-layer perceptron (MLP) for the InternVL vision model.
+
+    A simple 2-layer feed-forward network used within the
+    vision transformer encoder layers. The MLP consists of:
+
+    - First linear projection expanding hidden size to intermediate size
+    - GELU activation function
+    - Second linear projection back to hidden size
+
+    This follows the standard transformer FFN architecture but uses GELU
+    activation.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        intermediate_size: int,
+        dtype: DType,
+        device: DeviceRef,
+        has_bias: bool = True,
+    ) -> None:
+        super().__init__()
+        self.fc1 = Linear(
+            in_dim=hidden_size,
+            out_dim=intermediate_size,
+            dtype=dtype,
+            device=device,
+            has_bias=has_bias,
+        )
+        self.fc2 = Linear(
+            in_dim=intermediate_size,
+            out_dim=hidden_size,
+            dtype=dtype,
+            device=device,
+            has_bias=has_bias,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Simple forward: fc1 -> GELU -> fc2"""
+        x = self.fc1(x)
+        x = ops.gelu(x)
+        x = self.fc2(x)
+        return x
+
+
+class InternVisionEncoderLayer(Module):
+    """Single encoder layer for the InternVL vision transformer.
+
+    Each encoder layer implements the standard transformer architecture with
+    some InternVL-specific modifications:
+
+    - Multi-head self-attention with optional QK normalization
+    - Layer scaling (learnable per-layer scaling factors)
+    - Feed-forward network (MLP) with GELU activation
+    - Pre-normalization using either LayerNorm or RMSNorm
+    - Residual connections around both attention and MLP blocks
+    """
 
     def __init__(self, config: InternVLConfig) -> None:
         super().__init__()
         self.config = config
+
+        self.embed_dim = config.vision_config.hidden_size
+        self.intermediary_size = config.vision_config.intermediate_size
+        self.norm_type = config.vision_config.norm_type
+
+        # Use custom simple MLP instead of SwiGLU MLP
+        default_device = (
+            config.llm_config.devices[0]
+            if config.llm_config.devices
+            else DeviceRef.CPU()
+        )
+        self.mlp = InternVLVisionMLP(
+            hidden_size=self.embed_dim,
+            intermediate_size=self.intermediary_size,
+            dtype=config.llm_config.dtype,
+            device=default_device,
+            has_bias=True,
+        )
+
+        layer_norm_eps = config.vision_config.layer_norm_eps
+
+        if self.norm_type == "rms_norm":
+            self.norm1: Union[RMSNorm, LayerNorm] = RMSNorm(
+                dim=self.embed_dim,
+                dtype=config.llm_config.dtype,
+                eps=layer_norm_eps,
+                multiply_before_cast=False,  # Match PyTorch behavior: cast first, then multiply
+            )
+            self.norm2: Union[RMSNorm, LayerNorm] = RMSNorm(
+                dim=self.embed_dim,
+                dtype=config.llm_config.dtype,
+                eps=layer_norm_eps,
+                multiply_before_cast=False,  # Match PyTorch behavior: cast first, then multiply
+            )
+        else:  # layer_norm
+            self.norm1 = LayerNorm(
+                dims=self.embed_dim,
+                device=default_device,
+                dtype=config.llm_config.dtype,
+                eps=layer_norm_eps,
+            )
+            self.norm2 = LayerNorm(
+                dims=self.embed_dim,
+                device=default_device,
+                dtype=config.llm_config.dtype,
+                eps=layer_norm_eps,
+            )
+
+        self.ls1 = Weight(
+            "ls1",
+            config.llm_config.dtype,
+            [self.embed_dim],
+            device=DeviceRef.CPU(),
+        )
+        self.ls2 = Weight(
+            "ls2",
+            config.llm_config.dtype,
+            [self.embed_dim],
+            device=DeviceRef.CPU(),
+        )
+
+        # Use InternVL-specific attention with QK normalization
+        vision_config = config.vision_config
+        # TODO: Add proper multi-device support for vision model
+        # For now, use only the first device to avoid distributed attention issues
+        if config.llm_config.devices:
+            # Use only the first device until multi-device vision support is added
+            devices_list = [config.llm_config.devices[0]]
+        else:
+            raise ValueError("Devices must be provided")
+
+        self.attn = InternVLMultiheadAttention(
+            num_attention_heads=vision_config.num_attention_heads,
+            hidden_size=vision_config.hidden_size,
+            devices=devices_list,
+            dtype=config.llm_config.dtype,
+            qk_normalization=vision_config.qk_normalization,
+            layer_norm_eps=vision_config.layer_norm_eps,
+            has_bias=False,
+            stacked_qkv=True,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        # Store original input for residual connections (PyTorch style)
+        original_hidden_states = x
+
+        # 1. Apply first normalization and attention
+        norm1_out = self.norm1(x)
+
+        attn_out = self.attn(norm1_out)
+
+        # 2. Apply layer scaling BEFORE residual (PyTorch style)
+        ls1_tensor: TensorValue = self.ls1
+        if x.device:
+            ls1_tensor = ls1_tensor.to(x.device)
+        attn_out = attn_out * ls1_tensor
+
+        # 3. First residual connection
+        hidden_states = attn_out + original_hidden_states
+
+        # 4. Apply second normalization
+        layer_output = self.norm2(hidden_states)
+
+        # 5. Apply MLP with reshaping
+        batch_size, seq_len, hidden_dim = layer_output.shape
+        layer_output_reshaped = layer_output.reshape(
+            (batch_size * seq_len, hidden_dim)
+        )
+        mlp_out_2d = self.mlp(layer_output_reshaped)
+        layer_output = mlp_out_2d.reshape((batch_size, seq_len, hidden_dim))
+
+        # 7. Apply second layer scaling BEFORE residual
+        ls2_tensor: TensorValue = self.ls2
+        if layer_output.device:
+            ls2_tensor = ls2_tensor.to(layer_output.device)
+        layer_output = layer_output * ls2_tensor
+
+        # 8. Second residual connection (back to hidden_states after first residual, not original)
+        layer_output = layer_output + hidden_states
+
+        return layer_output
+
+
+class InternVLVisionModel(Module):
+    """Vision transformer model for processing images in InternVL.
+
+    This implements the vision encoder component of InternVL, which processes
+    input images and produces visual embeddings that can be consumed by the
+    language model. The architecture follows a standard Vision Transformer (ViT)
+    design with InternVL-specific enhancements:
+
+    Key components:
+    - Patch embedding layer that converts image patches to embeddings
+    - Positional embeddings with interpolation support for varying resolutions
+    - Stack of transformer encoder layers
+    - Optional final layer normalization (when not using mean pooling, occurs in larger variants)
+
+    Note:
+        Currently limited to single-device execution for the vision component,
+        multi-gpu coming shortly.
+    """
+
+    packed_modules_mapping = {
+        "qkv": ["qkv"],
+    }
+
+    def __init__(
+        self,
+        config: InternVLConfig,
+    ) -> None:
+        super().__init__()
+        self.config = config
+
+        # TODO: Add support for multiple devices
+        # Use the first device for single-device components
+        default_device = (
+            config.llm_config.devices[0]
+            if config.llm_config.devices
+            else DeviceRef.CPU()
+        )
 
         self.embeddings = InternVisionEmbeddings(config)
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
@@ -548,25 +768,59 @@ class InternVLVisionModel(Module):
             for n, dev in enumerate(config.devices)
         ]
 
-    def __call__(
-        self, pixel_values: Sequence[TensorValue]
-    ) -> Sequence[TensorValue]:
-        """Process pixel values to image embeddings.
-
-        Args:
-            pixel_values: Input pixel values tensor.
-
-        Returns:
-            Image embeddings tensor.
-        """
-        hidden_states = [
-            # Call one forward per device -- embeddings are replicated.
-            embed(pixels)
-            for embed, pixels in zip(self.embeddings_list, pixel_values)
+        # Use LayerList for proper weight scoping, similar to other MAX models
+        encoder_layers = [
+            InternVisionEncoderLayer(config)
+            for _ in range(config.vision_config.num_hidden_layers)
         ]
 
-        # TODO: Implement vision encoder
-        # 1. Process pixel values through InternViT encoder
-        # 2. Apply multimodal projector
+        self.encoder_layers = LayerList(encoder_layers)
 
+        # Add final layer normalization to match PyTorch reference implementation
+        # In PyTorch: self.layernorm = nn.Identity() if config.use_mean_pooling else nn.LayerNorm(...)
+        vision_config = config.vision_config
+
+        # Only create layernorm if use_mean_pooling is False
+        self.layernorm: Union[RMSNorm, LayerNorm, None]
+        if not getattr(vision_config, "use_mean_pooling", False):
+            if vision_config.norm_type == "rms_norm":
+                self.layernorm = RMSNorm(
+                    dim=vision_config.hidden_size,
+                    dtype=config.llm_config.dtype,
+                    eps=vision_config.layer_norm_eps,
+                    multiply_before_cast=False,  # Match PyTorch behavior: cast first, then multiply
+                )
+            else:  # layer_norm
+                self.layernorm = LayerNorm(
+                    dims=vision_config.hidden_size,
+                    device=default_device,
+                    dtype=config.llm_config.dtype,
+                    eps=vision_config.layer_norm_eps,
+                )
+        else:
+            # Use identity (no-op) when mean pooling is used
+            self.layernorm = None
+
+    def __call__(
+        self,
+        pixel_values: TensorValue,
+    ) -> TensorValue:
+        """Forward pass through the vision model."""
+
+        # Single device for now
+        hidden_states = self.embeddings_list[0](pixel_values)
+
+        # Pass through all encoder layers using LayerList
+        for encoder_layer in self.encoder_layers:
+            hidden_states = encoder_layer(hidden_states)
+
+        if hidden_states is None:
+            raise ValueError("Hidden states are None")
+
+        # Apply layernorm if it exists (when use_mean_pooling is False)
+        if self.layernorm is not None:
+            hidden_states = self.layernorm(hidden_states)
+
+        # Ensure we always return a TensorValue
+        assert isinstance(hidden_states, TensorValue)
         return hidden_states

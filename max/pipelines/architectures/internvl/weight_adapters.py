@@ -32,6 +32,11 @@ INTERNVL_VISION_MODEL_MAPPING = {
     # Strip the vision_model. prefix, since InternVisionEmbeddings expects
     # "embeddings.class_embedding", for example.
     "vision_model.": "",
+    # Map encoder.layers to encoder_layers to match LayerList attribute naming
+    "encoder.layers.": "encoder_layers.",
+    # Map attention weight names: checkpoint has "qkv" but model expects "qkv_proj"
+    ".attn.qkv.": ".attn.qkv_proj.",
+    ".attn.proj.": ".attn.o_proj.",
 }
 
 

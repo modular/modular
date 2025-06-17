@@ -66,6 +66,7 @@ class MultiheadAttention(Module):
                 f"hidden_size ({hidden_size}) must be divisible by "
                 f"num_attention_heads ({num_attention_heads})"
             )
+
         if devices is not None and len(devices) == 0:
             raise ValueError("Devices cannot be empty")
 
