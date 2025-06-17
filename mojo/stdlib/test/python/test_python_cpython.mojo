@@ -61,7 +61,9 @@ def test_PyCapsule(mut python: Python):
     with assert_raises(
         contains="PyCapsule_GetPointer called with incorrect name"
     ):
-        _ = cpython_env.PyCapsule_GetPointer(capsule, "some_other_name")
+        _ = cpython_env.PyCapsule_GetPointer(
+            capsule, "this name does not exist in the capsule"
+        )
 
 
 def main():
