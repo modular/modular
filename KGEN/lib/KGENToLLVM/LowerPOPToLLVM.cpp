@@ -1603,13 +1603,14 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
     }
 
     auto asmOp = rewriter.create<LLVM::InlineAsmOp>(
-        op.getLoc(), types,
+        op.getLoc(), types.empty() ? Type() : types.front(),
         expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
-        adaptor.getHasSideEffectsAttr(), adaptor.getIsStackAlignedAttr(),
-        LLVM::TailCallKindAttr::get(op.getContext(), LLVM::TailCallKind::None),
-        LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
+        getBoolAttrValue(adaptor.getHasSideEffectsAttr()),
+        getBoolAttrValue(adaptor.getIsStackAlignedAttr()),
+        LLVM::TailCallKind::None,
+        LLVM::AsmDialectAttr::get(op->getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());
 
     if (op.getNumResults() <= 1) {
