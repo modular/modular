@@ -857,16 +857,18 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         Vector containing result of performing log base 2 on x.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    if not is_compile_time():
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
-            return log2(x.cast[DType.float32]()).cast[dtype]()
-        elif dtype is DType.float32:
-            return _call_ptx_intrinsic[
-                instruction="lg2.approx.f32", constraints="=f,f"
-            ](x)
+        if is_nvidia_gpu():
+
+            @parameter
+            if sizeof[dtype]() < sizeof[DType.float32]():
+                return log2(x.cast[DType.float32]()).cast[dtype]()
+            elif dtype is DType.float32:
+                return _call_ptx_intrinsic[
+                    instruction="lg2.approx.f32", constraints="=f,f"
+                ](x)
 
     return _log_base[2](x)
 
