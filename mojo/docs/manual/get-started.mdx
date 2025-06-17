@@ -262,7 +262,7 @@ As originally envisioned by John Conway, the game's "world" is an infinite,
 two-dimensional grid of square cells, but for our implementation we'll constrain
 the grid to a finite size. A drawback to making the edges of the grid a hard
 boundary is that there are fewer neighboring cells around the edges compared to
-the interior, which tends to cause die offs. Therefore, we'll model the world as
+the interior, which tends to cause die-offs. Therefore, we'll model the world as
 a toroid (a donut shape), where the top row is considered adjacent to the bottom
 row, and the left column is considered adjacent to the right column. This will
 come into play later when we implement the algorithm for calculating each
@@ -301,10 +301,16 @@ names = List[String]()
 ```
 
 We can also create a `List` with an initial set of values and let the compiler
-infer the type.
+infer the type. We can either pass multiple values directly to the `List`
+constructor, or we can use the *list literal* syntax and simply enclose the
+values in square brackets (`[]`).
 
 ```mojo
-nums = [12, -7, 64]  # A List[Int] containing 3 Int values
+# Create a List[Int] with the List constructor, inferring the type
+nums1 = List(12, -7, 64)
+
+# Create a List[Int] with the list literal syntax, inferring the type
+nums2 = [12, -7, 64]
 ```
 
 The Mojo `List` type includes the ability to append to the list, pop values out
@@ -379,7 +385,8 @@ that we can print to the terminal.
 There are actually two different keywords that we can use to define functions in
 Mojo: `def` and `fn`. Using `fn` gives us finer level control over the function
 definition, whereas `def` provides a good set of default behaviors for most use
-cases.
+cases. See [Functions](/mojo/manual/functions) for more information on defining
+and using functions in Mojo.
 
 Let's add the following definition of a function named `grid_str()` to our
 program. The Mojo compiler doesn't care whether we add our function before or
@@ -403,15 +410,10 @@ def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     return str
 ```
 
-When we pass a value to a Mojo function, the default behavior for `def` is that
-an argument is treated as a read-only reference to the value. However, if the
-Mojo compiler determines that there is code in the function that can change the
-value, then the argument gets a copy of the original value assigned to it. As
-we'll see later, we can specify a different behavior by including an explicit
-[argument convention](/mojo/manual/values/ownership#argument-conventions). In
-contrast, when you define a function with `fn` Mojo simply treats each argument
-as a read-only reference by default unless you provide an explicit argument
-convention.
+When we pass a value to a Mojo function, the default behavior is that an
+argument is treated as a read-only reference to the value. As we'll see later,
+we can specify a different behavior by including an explicit [argument
+convention](/mojo/manual/values/ownership#argument-conventions).
 
 Each argument name is followed by a type annotation indicating the type of value
 you can pass to the argument. Just like when you're assigning a value to a
@@ -516,23 +518,37 @@ struct Grid(Copyable, Movable):
 
 Mojo requires you to declare all of the fields in the struct definition. You
 can't add fields dynamically at run-time. You must declare the type for each
-field, but you cannot assign a value as part of the field declaration. Instead,
-the [constructor](/mojo/manual/lifecycle/life#constructor) is responsible for
-initializing the value of all fields.
+field, but you cannot assign a value as part of the field declaration.
 
-Mojo structs support several different [lifecycle
-methods](/mojo/manual/lifecycle/) defining the behavior when an instance of the
-struct is created, moved, copied, and destroyed. For structs that are basic
-aggregations of other types and don't require custom resource management or
-lifecycle behaviors, you can simply add the
-[`@value`](/mojo/manual/structs#value-decorator) decorator to your struct
-definition to have the Mojo compiler automatically generate lifecycle methods
-for you.
+The [constructor](/mojo/manual/lifecycle/life#constructor) is responsible for
+initializing the value of all fields, as well as allocating additional resources
+and performing any other configuration required by a new instance of the struct.
+You implement a constructor by defining a method named `__init__()` in the
+struct definition. Here is an example of how we could implement the constructor
+for `Grid`:
 
-Because we used the `@fieldwise_init` decorator, `Grid` includes a "field-wise"
-[constructor](/mojo/manual/lifecycle/life#constructor) . The constructor's
-arguments are the same names and types as the struct's fields and appear in the
-same order. So this means that we can create an instance of `Grid` like this:
+```mojo
+    fn __init__(out self, rows: Int, cols: Int, data: List[List[Int]]):
+        self.rows = rows
+        self.cols = cols
+        self.data = data
+```
+
+The first argument of a constructor is the newly created instance of the struct,
+which by convention is named `self`. The Mojo compiler automatically passes the
+instance to the constructor when you create a new instance of the struct. Note
+that in a constructor, you must include the `out` [argument
+convention](/mojo/manual/values/ownership#argument-conventions) to the `self`
+argument. The values of the remaining arguments are assigned to the
+corresponding fields of the new instance.
+
+To reduce the amount of boilerplate code you need to write, Mojo provides a
+decorator called [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init)
+that automatically generates a constructor for you that performs "field-wise"
+initialization. The constructor's arguments are the same names and types as the
+struct's fields and appear in the same order. So this means that given our
+original definition of `Grid`, we can can create an instance of `Grid` like
+this:
 
 ```mojo
 my_grid = Grid(2, 2, [[0, 1], [1, 1]])
@@ -547,6 +563,28 @@ print("Rows:", my_grid.rows)
 ```output
 Rows: 2
 ```
+
+However, we also need to be able to copy and move instances of `Grid`, for
+example when we pass an instance of `Grid` to a function or method. Mojo structs
+support several different [lifecycle methods](/mojo/manual/lifecycle/) defining
+the behavior when an instance of the struct is created, moved, copied, and
+destroyed.
+
+Structs that conform to the [`Movable`](/mojo/stdlib/builtin/value/Movable/)
+[trait](/mojo/manual/traits) denote a type whose value can be moved, and structs
+that conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable/) trait
+denote a type whose value can be copied. You can then implement custom move and
+copy constructors that perform the necessary operations to move or copy the
+instance.
+
+But as a convenience for structs that are basic aggregations of other types and
+don't require custom resource management or lifecycle behaviors, you can simply
+indicate that the struct conforms to the `Movable` and `Copyable` traits and not
+implement the corresponding lifecycle methods. In that case, the Mojo compiler
+automatically generates the missing methods for you. So for our simple `Grid`
+struct, indicating that it conforms to the `Movable` and `Copyable` traits is
+enough to have the Mojo compiler automatically generate the missing methods for
+us.
 
 ## 7. Import a module and use our custom `Grid` type
 
@@ -640,7 +678,7 @@ struct Grid(Copyable, Movable):
 ```
 
 So aside from moving the code from one source file to another, there are a few
-other changes that we made.
+other changes that we've made.
 
 - The function definition is indented to indicate that it's a method defined by
   the `Grid` struct. This also changes the way that we invoke the function.
@@ -652,13 +690,28 @@ other changes that we made.
 - We've deleted the argument's type annotation. The compiler knows that the
   first argument of the method is an instance of the struct, so it doesn't
   require an explicit type annotation.
+- We don't need to add an explicit [argument
+  convention](/mojo/manual/values/ownership#argument-conventions) to the `self`
+  argument because we're using it as a read-only reference to the instance,
+  which is the default behavior for a method argument.
 
 Now that we've refactored the function into an instance method, we also need to
 update the code in `life.mojo` where we invoke it from `main()`:
 
 ```mojo title="life.mojo"
+from gridv1 import Grid
+
 def main():
-    ...
+    glider = [
+        [0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+    ]
     start = Grid(8, 8, glider)
     print(start.grid_str())
 ```
@@ -684,13 +737,14 @@ any type that conform to a specified trait. (This type of function is sometimes
 referred to as a [*generic*
 function](/mojo/manual/parameters/#parameters-and-generics).)
 
-In the case of `String()`, it requires a type to conform to either the `Stringable`
-or `StringableRaising` trait. Each trait requires a conforming type to implement
-a `__str__()` method that returns a `String` representation. The only difference
-between the two traits is that `Stringable` requires that the method *cannot*
-raise an error, whereas `StringableRaising` indicates that the method *might*
-raise an error. (To learn more, read [The `Stringable`, `Representable`, and
-`Writable`
+In the case of `String()`, it requires a type to conform to either the
+[`Stringable`](/mojo/stdlib/builtin/str/Stringable) or
+[`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) trait. Each
+trait requires a conforming type to implement a `__str__()` method that returns
+a `String` representation. The only difference between the two traits is that
+`Stringable` requires that the method *cannot* raise an error, whereas
+`StringableRaising` indicates that the method *might* raise an error. (To learn
+more, read [The `Stringable`, `Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
@@ -707,7 +761,7 @@ the type conforms to `StringableRaising` and rename the `grid_str()` method to
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(StringableRaising, Copyable, Movable):
+struct Grid(Copyable, Movable, StringableRaising):
     ...
     def __str__(self) -> String:
         ...
@@ -767,7 +821,7 @@ of the built-in operators for a custom type by implementing special *dunder*
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(StringableRaising, Copyable, Movable):
+struct Grid(Copyable, Movable, StringableRaising):
     ...
     def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
@@ -781,8 +835,8 @@ The implementation of `__getitem__()` is easy. For the given values of `row` and
 nested `List[List[Int]]` stored in the `data` field of the instance.
 
 The body of `__setitem__()` is similarly straightforward. We just take the given
-`value` and store it in the corresponding `row` and `col` in `data`. One thing
-new in the declaration is that we set the return type to `None` to indicate that
+`value` and store it in the corresponding `row` and `col` in `data`. One new thing
+in the declaration is that we set the return type to `None` to indicate that
 the method doesn't have a return value. But more notable is that we've added the
 `mut` [argument convention](/mojo/manual/values/ownership#argument-conventions)
 to the `self` argument to explicitly tell the Mojo compiler that we want to
@@ -795,7 +849,7 @@ indexing syntax to access the cell value.
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(StringableRaising, Copyable, Movable):
+struct Grid(Copyable, Movable, StringableRaising):
     ...
     def __str__(self) -> String:
         ...
@@ -810,7 +864,7 @@ struct Grid(StringableRaising, Copyable, Movable):
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(StringableRaising, Copyable, Movable):
+struct Grid(Copyable, Movable, StringableRaising):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
@@ -859,7 +913,7 @@ function. We indicate that a method is a static method by using the
 import random
 
 @fieldwise_init
-struct Grid(StringableRaising, Copyable, Movable):
+struct Grid(Copyable, Movable, StringableRaising):
     ...
     @staticmethod
     def random(rows: Int, cols: Int) -> Self:
@@ -868,9 +922,9 @@ struct Grid(StringableRaising, Copyable, Movable):
 
         var data: List[List[Int]] = []
 
-        for row in range(rows):
+        for _ in range(rows):
             var row_data: List[Int] = []
-            for col in range(cols):
+            for _ in range(cols):
                 # Generate a random 0 or 1 and append it to the row.
                 row_data.append(Int(random.random_si64(0, 1)))
             data.append(row_data)
@@ -908,6 +962,15 @@ or includes parameters.
 
 The last line uses `Self()` to invoke the struct's constructor and return a
 newly created instance with random data.
+
+:::note
+
+The `for` loops in the code above assign the loop value to "`_`", the [*discard
+pattern*](/mojo/manual/lifecycle/death#explicit-lifetime-extension), to indicate
+that they're intentionally not used. Without this, the Mojo compiler would
+report a warning that the loop variable is unused.
+
+:::
 
 Now we can update the `main()` function in `life.mojo` to create a random `Grid`
 and print it.
@@ -947,7 +1010,7 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 
 ```mojo title="gridv1.mojo"
 ...
-struct Grid(StringableRaising):
+struct Grid(Copyable, Movable, StringableRaising):
     ...
     def evolve(self) -> Self:
         next_generation = List[List[Int]]()
@@ -996,13 +1059,13 @@ generation.
 
 For each cell in the grid we need to count the number of populated neighboring
 cells. Because we're modeling the world as a toroid, we need to consider the top
-and bottom rows as adjacent and the left-most and right-most columns as
+and bottom rows as adjacent and the leftmost and rightmost columns as
 adjacent. So as we iterate through each row and column, we're using the modulo
 operator, `%`, to handle "wrap-around" when we calculate the indices of the rows
 above and below and the columns to the left and right of the current cell. (For
 example, if there are 8 rows, then `-1 % 8` is 7.)
 
-Then we apply the Game of Life rules that determines if the current cell is
+Then we apply the Game of Life rules that determine if the current cell is
 populated (1) or unpopulated (0) for the next generation:
 
 - A populated cell with either 2 or 3 populated neighbors remains populated in
@@ -1011,7 +1074,7 @@ populated (1) or unpopulated (0) for the next generation:
   the next generation
 - All other cells become unpopulated in the next generation
 
-After calculating the state of the next generation, we use `Self()` to create an
+After calculating the state of the next generation, we use `Self()` to create a
 new instance of `Grid`, and return the newly created instance.
 
 Now that we can evolve the grid, let's use it in `life.mojo`. We'll add a
@@ -1263,7 +1326,7 @@ steps:
 
 - Explore more Mojo
   [examples](https://github.com/modular/modular/tree/main/examples/mojo) in the
-  public [MAX GitHub repository](https://github.com/modular/modular).
+  public [Modular GitHub repository](https://github.com/modular/modular).
 
 import TutorialStack from '@site/src/components/TutorialStack';
 
