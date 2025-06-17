@@ -84,12 +84,17 @@ struct _DeviceTimerCpp:
     pass
 
 
+struct _DeviceContextScopeCpp:
+    pass
+
+
 alias _DeviceContextPtr = UnsafePointer[_DeviceContextCpp]
 alias _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp]
 alias _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp]
 alias _DeviceMulticastBufferPtr = UnsafePointer[_DeviceMulticastBufferCpp]
 alias _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
 alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
+alias _DeviceContextScopePtr = UnsafePointer[_DeviceContextScopeCpp]
 alias _CharPtr = UnsafePointer[UInt8]
 alias _IntPtr = UnsafePointer[Int32]
 alias _SizeT = UInt
@@ -4364,6 +4369,37 @@ struct DeviceContext(Copyable, Movable):
         )
         return elapsed_nanos
 
+    fn push_context(self) raises -> _DeviceContextScope:
+        """Returns a context manager that ensures this device's driver context is active.
+
+        This method returns a context manager that pushes this device's driver
+        context as the current context on entry and restores the previous context
+        on exit. This is useful for operations that require a specific GPU context
+        to be active, such as cuDNN operations on multi-GPU systems.
+
+        Returns:
+            A context manager that manages the driver context stack.
+
+        Raises:
+            If there's an error switching contexts.
+
+        Example:
+
+        ```mojo
+        var ctx = DeviceContext(device_id=1)
+        # Ensure GPU 1's context is active for these operations.
+        with ctx.push_context():
+            # All GPU operations here will use GPU 1's context.
+            ...  # call external stateful APIs, such as cudnn.
+        # Previous context is automatically restored
+        ```
+        """
+        constrained[
+            not is_gpu(),
+            "DeviceContext is not supported on GPUs",
+        ]()
+        return _DeviceContextScope(self)
+
     @always_inline
     fn execution_time[
         func: fn () raises capturing [_] -> None
@@ -5501,3 +5537,52 @@ struct _HostMappedBuffer[type: DType]:
         self._ctx.synchronize()
         self._cpu_buf.enqueue_copy_to(self._dev_buf)
         self._ctx.synchronize()
+
+
+struct _DeviceContextScope:
+    var _ctx: DeviceContext
+    var _handle: _DeviceContextScopePtr
+
+    fn __init__(out self, ctx: DeviceContext):
+        self._ctx = ctx
+        self._handle = _DeviceContextScopePtr()
+
+    fn __del__(owned self):
+        # Ensure that the C++ scope is removed in all cases.
+        if self._handle:
+            self._release()
+
+    fn __enter__(mut self) raises -> DeviceContext:
+        # Create a C++ DeviceContextScope
+        var cpp_handle = _DeviceContextScopePtr()
+
+        # const char *AsyncRT_DeviceContextScope_create(const DeviceContextScope **result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContextScope_create",
+                _CharPtr,
+                UnsafePointer[_DeviceContextScopePtr],
+                _DeviceContextPtr,
+            ](
+                UnsafePointer(to=cpp_handle),
+                self._ctx._handle,
+            )
+        )
+        self._handle = cpp_handle
+
+        return self._ctx
+
+    fn __exit__(mut self) raises:
+        # Release the C++ DeviceContextScope
+        self._release()
+        self._handle = _DeviceContextScopePtr()
+
+    fn _release(mut self):
+        # void AsyncRT_DeviceContextScope_release(const DeviceContextScope *scope)
+        external_call[
+            "AsyncRT_DeviceContextScope_release",
+            NoneType,
+            _DeviceContextScopePtr,
+        ](
+            self._handle,
+        )

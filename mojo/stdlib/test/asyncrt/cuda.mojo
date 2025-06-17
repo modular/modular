@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context
+from asyncrt_test_utils import create_test_device_context, expect_eq
 from gpu.host import (
     DeviceAttribute,
     DeviceBuffer,
@@ -19,14 +19,56 @@ from gpu.host import (
     DeviceStream,
     Dim,
 )
-from gpu.host._nvidia_cuda import CUDA, CUcontext
+from gpu.host._nvidia_cuda import CUDA, CUDA_get_current_context, CUcontext
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:
     print("-")
     print("_run_cuda_context()")
+    var initial_ctx: CUcontext = CUDA_get_current_context()
     var cuda_ctx: CUcontext = CUDA(ctx)
+
+    with ctx.push_context() as cur_ctx:
+        # cur_ctx is still equivalent to the ctx passed in.
+        expect_eq(CUDA(ctx), CUDA(cur_ctx))
+        expect_eq(CUDA(ctx.stream()), CUDA(cur_ctx.stream()))
+        # Make sure that the current CUcontext matches the pushed CUcontext
+        expect_eq(cuda_ctx, CUDA_get_current_context())
+
+    expect_eq(initial_ctx, CUDA_get_current_context())
+    print("initial CUcontext:", initial_ctx)
     print("CUcontext:", cuda_ctx)
+
+
+fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
+    print("-")
+    print("_run_cuda_multi_context()")
+    var initial_ctx: CUcontext = CUDA_get_current_context()
+    var cuda_ctx0: CUcontext = CUDA(ctx0)
+    var cuda_ctx1: CUcontext = CUDA(ctx1)
+
+    with ctx0.push_context() as cur_ctx0:
+        # cur_ctx is still equivalent to the ctx passed in.
+        expect_eq(CUDA(ctx0), CUDA(cur_ctx0))
+        expect_eq(CUDA(ctx0.stream()), CUDA(cur_ctx0.stream()))
+        # Make sure that the current CUcontext matches the pushed CUcontext
+        expect_eq(cuda_ctx0, CUDA_get_current_context())
+
+        # Nested context pushes save, push and restore
+        with ctx1.push_context() as cur_ctx1:
+            # cur_ctx is still equivalent to the ctx passed in.
+            expect_eq(CUDA(ctx1), CUDA(cur_ctx1))
+            expect_eq(CUDA(ctx1.stream()), CUDA(cur_ctx1.stream()))
+            # Make sure that the current CUcontext matches the pushed CUcontext
+            expect_eq(cuda_ctx1, CUDA_get_current_context())
+
+        # Make sure that the previously pushed CUcontext has been restored.
+        expect_eq(cuda_ctx0, CUDA_get_current_context())
+
+    expect_eq(initial_ctx, CUDA_get_current_context())
+    print("initial CUcontext:", initial_ctx)
+    print("CUcontext(id: 0):", cuda_ctx0)
+    print("CUcontext(id: 1):", cuda_ctx1)
 
 
 fn _run_cuda_stream(ctx: DeviceContext) raises:
@@ -149,5 +191,8 @@ fn main() raises:
     _run_cuda_context(ctx)
     _run_cuda_stream(ctx)
     _run_cuda_external_function(ctx)
+
+    if DeviceContext.number_of_devices() > 1:
+        _run_cuda_multi_context(ctx, create_test_device_context(device_id=1))
 
     print("Done.")

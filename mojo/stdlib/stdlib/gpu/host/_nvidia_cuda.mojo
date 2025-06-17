@@ -80,6 +80,17 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
     return result
 
 
+fn CUDA_get_current_context() raises -> CUcontext:
+    var result = CUcontext()
+    # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
+    _checked(
+        external_call["AsyncRT_DeviceContext_cuda_current_context", _CharPtr,](
+            UnsafePointer(to=result),
+        )
+    )
+    return result
+
+
 # ===----------------------------------------------------------------------=== #
 # TMA
 # ===----------------------------------------------------------------------=== #
