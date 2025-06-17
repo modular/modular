@@ -11,7 +11,7 @@
 from gpu.host import DeviceContext
 from sys import argv, sizeof
 from sys.info import _current_target
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from collections.string.string_slice import StaticString, _get_kgen_string
 
 
@@ -38,7 +38,7 @@ fn _compile_info[
     /,
     emission_kind: Int = 0,
     compile_options: StaticString = "nvptx-short-ptr=true",
-    compile_target: __mlir_type.`!kgen.target` = _get_gpu_target(),
+    compile_target: __mlir_type.`!kgen.target` = get_gpu_target(),
 ]() -> Info:
     var info = __mlir_op.`kgen.compile_offload`[
         target_type=compile_target,
