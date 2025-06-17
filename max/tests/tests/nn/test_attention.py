@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Union, cast
+from typing import cast
 from unittest import mock
 
 import pytest
@@ -16,7 +16,6 @@ from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Graph, ops
 from max.nn.attention import AttentionWithRope, DistributedAttentionWithRope
 from max.nn.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     PagedKVCacheCollection,
@@ -207,12 +206,7 @@ def test_distributed_attention_with_rope_call_validation(
                 x,
                 cast(list[BufferValue], signal_buffers),
                 cast(
-                    list[
-                        Union[
-                            ContinuousBatchingKVCacheCollection,
-                            PagedKVCacheCollection,
-                        ]
-                    ],
+                    list[PagedKVCacheCollection],
                     kv_collections,
                 ),
                 input_row_offsets=[dummy_tensor],
@@ -228,12 +222,7 @@ def test_distributed_attention_with_rope_call_validation(
                 x,
                 cast(list[BufferValue], signal_buffers),
                 cast(
-                    list[
-                        Union[
-                            ContinuousBatchingKVCacheCollection,
-                            PagedKVCacheCollection,
-                        ]
-                    ],
+                    list[PagedKVCacheCollection],
                     kv_collections,
                 ),
                 input_row_offsets=[dummy_tensor, "not-a-tensor-value"],  # type: ignore
