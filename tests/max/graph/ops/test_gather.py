@@ -128,7 +128,12 @@ def test_gather_nd__mismatching_batch_dims(
     input_batch: Shape,
     indices_batch: Shape,
 ):
-    assume(len(input_batch) >= len(indices_batch))
+    # We require that len(input_batch) >= len(indices_batch), but using assume
+    # to enforce that constraint results in a high rejection rate, so we just
+    # swap the two.
+    if len(input_batch) < len(indices_batch):
+        input_batch, indices_batch = indices_batch, input_batch
+
     for i in range(len(indices_batch)):
         assume(input_batch[i] != indices_batch[i])
 
