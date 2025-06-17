@@ -473,20 +473,13 @@ struct ParametricInliningGraph
     return shouldInline(node);
   }
 
-  /// Return number of operations within a call
-  uint64_t getNumOperations(ParametricInliningGraphNode *node) const;
-
-  /// Return true if it's profitable to inline the call
-  bool isProfitableToInline(ParametricInliningGraphNode *node,
-                            uint64_t threshold) const;
-
   /// Only inline functions that satisfy the inlining level.
   bool shouldInline(ParametricInliningGraphNode *node) const {
     assert(node->level == node->func.getInlineLevel());
 
     bool shouldInlineAutomatically =
         node->level == InlineLevel::Always &&
-        this->getNumOperations(node) < getInlineThreshold();
+        getNumOperations(node->func) < getInlineThreshold();
 
     bool shouldAlwaysInline =
         (node->level >= level && node->level != InlineLevel::Never);
@@ -546,65 +539,19 @@ bool ParametricInliningGraph::prepareForInlining(
 uint64_t ParametricInliningGraph::getInlineThreshold() const {
   if (auto clOpt = KGENPassCLOptions::parametricInlineThreshold())
     return *clOpt;
+  // TODO: add better heuristics
   switch (optimizationLevel) {
   case 0:
-    // TODO: refine this threshold
     return 0;
   case 1:
-    // TODO: refine this threshold
     return 2;
   case 2:
-    // TODO: refine this threshold
     return 5;
   case 3:
-    // That threshold value shows the best compile time on matmul benchmark for
-    // a given isProfitableToInline heuristic and optimization level.
-    // It may need to be refined in the future if isProfitableToInline changes.
-    return 35;
+    return 8;
   default:
     return 0;
   }
-}
-
-uint64_t ParametricInliningGraph::getNumOperations(
-    ParametricInliningGraphNode *node) const {
-  // Estimated trip count of the `param.for` loop.
-  const uint64_t avgLoopIters =
-      *KGENPassCLOptions::parametricInlineEstimatedLoopTripCount();
-
-  std::function<uint64_t(Operation *)> walker =
-      [&](Operation *operation) -> uint64_t {
-    if (!operation)
-      return 0;
-    uint64_t count = 0;
-    operation->walk([&](Operation *op) {
-      if (auto loop = dyn_cast<ParamForOp>(op)) {
-        // At this point trip count is not known, therefore use some heuristic
-        // to estimate number of iterations.
-        uint64_t loopSize = 0;
-        for (Operation &oper : loop.getBody().front())
-          loopSize += walker(&oper);
-        count += avgLoopIters * loopSize;
-        // No need to traverse the loop body as it has been already visited.
-        return WalkResult::skip();
-      }
-
-      if (!isa_and_nonnull<DebugInfo::DebugInfoDialect>(op->getDialect()))
-        ++count;
-
-      return WalkResult::advance();
-    });
-    return count;
-  };
-
-  return walker(node->func);
-}
-
-bool ParametricInliningGraph::isProfitableToInline(
-    ParametricInliningGraphNode *node, uint64_t threshold) const {
-  const uint64_t numOps = getNumOperations(node);
-  const uint64_t numCalls = node->callsites.size();
-  return numCalls == 1 || numCalls * numOps < threshold;
 }
 
 void ParametricInliningGraph::performInlining(
@@ -667,8 +614,6 @@ void InlineParametricPass::runOnOperation() {
     for (auto [call, callee] : caller.callsites) {
       // Skip nodes that are not complete.
       if (callee->numProcessedCalls != callee->callsites.size())
-        continue;
-      if (!graph.isProfitableToInline(callee, graph.getInlineThreshold()))
         continue;
       inlineGeneratorCall(caller.func, call, callee->func, callee->level,
                           callerParams, callee->calleeParamGraph,
