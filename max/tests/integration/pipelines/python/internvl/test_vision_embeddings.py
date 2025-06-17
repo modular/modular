@@ -195,9 +195,12 @@ def generate_max_outputs(
         weight_alignment=1,
     )
 
-    # Build the graph with symbolic dimensions to test the TypeError fix
+    # Build the graph with symbolic batch dim.
+    # Get actual image dimensions from pixel_values.
+    batch_size, height, width, channels = pixel_values.shape
+    # InternVisionEmbeddings expects BHWC format.
     input_type = TensorType(
-        dtype, shape=("batch", "height", "width", 3), device=device_ref
+        dtype, shape=(batch_size, height, width, channels), device=device_ref
     )
 
     graph = Graph(
