@@ -27,6 +27,7 @@ import { MojoLSPServer } from './MojoLSPServer';
 import {
   Client,
   ExitStatus,
+  JSONObject,
   Optional,
   RequestParamsWithDocument,
   URI,
@@ -214,6 +215,14 @@ export class MojoLSPProxy {
       },
       onNotification: (method: string, params: any) =>
         this.client.sendNotification(method, params),
+      onOutgoingRequest: async (
+        id: any,
+        method: string,
+        params: JSONObject,
+      ) => {
+        let result = await this.client.sendRequest(method, params);
+        this.server!.sendResponse(id, result);
+      },
     });
     return this.server!.sendRequest(
       params,

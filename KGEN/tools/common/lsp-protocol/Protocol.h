@@ -460,6 +460,62 @@ bool fromJSON(const llvm::json::Value &value, RenameParams &params,
               llvm::json::Path path);
 
 //===----------------------------------------------------------------------===//
+// Progress reporting
+//===----------------------------------------------------------------------===//
+
+template <typename T>
+struct ProgressParams {
+  std::string token;
+  T value;
+};
+
+template <typename T>
+llvm::json::Value toJSON(const ProgressParams<T> &params) {
+  return llvm::json::Object{
+      {"token", params.token},
+      {"value", params.value},
+  };
+}
+
+template <typename T>
+bool fromJSON(const llvm::json::Value &value, ProgressParams<T> &params,
+              llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("token", params.token) && o.map("value", params.value);
+}
+
+struct WorkDoneProgressParams {
+  std::string token;
+};
+llvm::json::Value toJSON(const WorkDoneProgressParams &params);
+bool fromJSON(const llvm::json::Value &value, WorkDoneProgressParams &params,
+              llvm::json::Path path);
+
+struct WorkDoneProgressBeginParams {
+  /// The title of the progress operation, used to communicate what kind of
+  /// operation is being performed.
+  std::string title;
+
+  /// An optional message containing more details.
+  std::optional<std::string> message;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const WorkDoneProgressBeginParams &params);
+bool fromJSON(const llvm::json::Value &value,
+              WorkDoneProgressBeginParams &params, llvm::json::Path path);
+
+struct WorkDoneProgressEndParams {
+  /// An optional message describing the final result of the operation.
+  std::optional<std::string> message;
+};
+
+/// Add support for JSON serialization.
+llvm::json::Value toJSON(const WorkDoneProgressEndParams &params);
+bool fromJSON(const llvm::json::Value &value, WorkDoneProgressEndParams &params,
+              llvm::json::Path path);
+
+//===----------------------------------------------------------------------===//
 // Serialization methods not available in the upstream MLIR code
 //===----------------------------------------------------------------------===//
 

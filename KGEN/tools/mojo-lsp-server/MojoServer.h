@@ -25,6 +25,14 @@ template <typename T>
 using OnSemanticTokensResultFn =
     llvm::unique_function<void(T result, bool outdated, bool invalid)>;
 
+template <typename T>
+using SendProgressFn =
+    llvm::unique_function<void(const mlir::lsp::ProgressParams<T> &)>;
+
+template <typename T>
+using SendProgressFnRef =
+    function_ref<void(const mlir::lsp::ProgressParams<T> &)>;
+
 /// This class implements all of the Mojo related functionality necessary for a
 /// language server. This class allows for keeping the Mojo specific logic
 /// separate from the logic that involves LSP server/client communication.
@@ -38,7 +46,7 @@ public:
 
   /// Create a new MojoServer instance.
   static ErrorOr<MojoServer> create(bool singleThreaded, bool waitOnShutdown,
-                                    SendDiagnosticsFn sendDiagnosticsFn,
+                                    mlir::lsp::MessageHandler &messageHandler,
                                     ArrayRef<std::string> includeDirs);
 
   // Get the telemetry context for this server.
@@ -46,6 +54,9 @@ public:
 
   /// Begin the shutdown sequence for the server.
   void shutdown();
+
+  /// Receive client capabilities from the LSPServer transport layer.
+  void receiveCapabilities(bool workDoneProgress);
 
   //===--------------------------------------------------------------------===//
   // Document Management

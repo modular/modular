@@ -54,6 +54,7 @@ export class JSONRPCStream {
     rawStream: NodeJS.ReadableStream,
     onResponse: (response: JSONObject) => void,
     onNotification: (notification: JSONObject) => void,
+    onOutgoingRequest: (request: JSONObject) => void,
   ) {
     rawStream.on('data', (chunk: any) => {
       if (!this.enabled) {
@@ -65,7 +66,12 @@ export class JSONRPCStream {
       let packet: Optional<JSONObject>;
       while ((packet = this.tryProcessPacket()) != undefined) {
         if ('id' in packet) {
-          onResponse(packet);
+          // Differentiate between a response to a client request or a request from the server to the client.
+          if ('method' in packet) {
+            onOutgoingRequest(packet);
+          } else {
+            onResponse(packet);
+          }
         } else {
           onNotification(packet);
         }
@@ -79,12 +85,9 @@ export class JSONRPCStream {
    */
   private tryProcessPacket(): Optional<JSONObject> {
     // We process first the protocol header.
-
-    // We process first the protocol header.
     if (!this.buffer.startsWith(JSONRPCStream.protocolHeader)) {
       return undefined;
     }
-    // Then we parse the content length.
     // Then we parse the content length.
     let index = JSONRPCStream.protocolHeader.length;
     let contentLength = 0;
@@ -97,8 +100,6 @@ export class JSONRPCStream {
       contentLength = contentLength * 10 + parseInt(c);
     }
     // Then we parse the line separator.
-
-    // Then we parse the line separator.
     if (
       !this.buffer
         .substring(index)
@@ -106,8 +107,6 @@ export class JSONRPCStream {
     ) {
       return undefined;
     }
-
-    // Then we extract the contents of the packet.
 
     // Then we extract the contents of the packet.
     const contentBegPos = index + JSONRPCStream.protocolLineSeparator.length;

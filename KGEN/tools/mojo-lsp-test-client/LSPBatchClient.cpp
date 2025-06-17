@@ -34,10 +34,19 @@ LSPBatchClient::LSPBatchClient(
     std::function<void(const ExecutionResult &)> onExecuteCallback)
     : onExecuteCallback(std::move(onExecuteCallback)),
       serverJSONInputOS(serverJSONInput), attachDebugger(attachDebugger) {
-  llvm::json::Value initialize = llvm::json::Object{{"processId", 123},
-                                                    {"rootPath", "mojo"},
-                                                    {"capabilities", {}},
-                                                    {"trace", "off"}};
+  llvm::json::Value initialize =
+      llvm::json::Object{{"processId", 123},
+                         {"rootPath", "mojo"},
+                         {
+                             "capabilities",
+                             {
+                                 {
+                                     "window",
+                                     {"workDoneProgress", false},
+                                 },
+                             },
+                         },
+                         {"trace", "off"}};
   request("initialize", initialize, std::function(doNothing));
 }
 
