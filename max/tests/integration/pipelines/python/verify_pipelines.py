@@ -25,7 +25,8 @@ from max.entrypoints.cli import DevicesOptionType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
-from verify import DiscrepancyReport, ModelModality, verify
+from verify import DiscrepancyReport, verify
+from verify import ModelModality as Modality
 
 # This is far from a universal standard, but this is the closest to a standard
 # that I could find: BSD-derived programs sometimes use exit codes from
@@ -128,8 +129,58 @@ def load_verdicts_from_json(filepath: Path) -> dict[str, VerificationVerdict]:
         return {}
 
 
+def display_name(name: str) -> str:
+    """Remove the org name from the model name for display purposes.
+
+    Args:
+        name: Full model name (e.g., "meta-llama/Llama-3.1-8B-Instruct")
+
+    Returns:
+        Display name with org prefix removed (e.g., "Llama-3.1-8B-Instruct")
+    """
+    return name.split("/", 1)[-1]
+
+
+def compute_diff(
+    current_verdict: VerificationVerdict,
+    previous_verdict: VerificationVerdict,
+) -> str:
+    """Compute the difference between current and previous metric values.
+
+    Args:
+        current_verdict: Current verification verdict
+        previous_verdict: Previous verification verdict
+        metric_type: Either "kl_div" or "mae"
+
+    Returns:
+        Formatted diff string (+X.XXe-XX if worse results,
+          -X.XXe-XX if better results,
+          ---- if no change)
+    """
+    # Early return if discrepancy reports missing
+    if (
+        current_verdict.discrepancy_report is None
+        or previous_verdict.discrepancy_report is None
+    ):
+        return "N/A"
+
+    prev_val = previous_verdict.discrepancy_report.default_metric
+    curr_val = current_verdict.discrepancy_report.default_metric
+
+    # Calculate diff on displayed values to avoid precision confusion
+    diff = float(f"{curr_val:.2e}") - float(f"{prev_val:.2e}")
+
+    if diff == 0:
+        return "-"
+
+    return f"{diff:+.2e}"
+
+
 def dump_results(
-    verdicts: Mapping[str, VerificationVerdict], *, to: TextIO = sys.stdout
+    verdicts: Mapping[str, VerificationVerdict],
+    *,
+    to: TextIO = sys.stdout,
+    previous_verdicts: Optional[Mapping[str, VerificationVerdict]] = None,
 ) -> None:
     # Even if verdicts is empty, we want to make sure to call write.  When we
     # call this from 'main', click passes us a LazyFile, and if we don't write
@@ -140,29 +191,24 @@ def dump_results(
     # using grep/awk.
     # Please verify that this doesn't break before changing the output format
 
-    # Remove the org name from the model name
-    verdicts = {x.split("/", 1)[-1]: v for x, v in verdicts.items()}
-
     any_logit, any_embedding, any_failed = False, False, False
-    logit: ModelModality = "logit"
-    embedding: ModelModality = "embedding"
     for verdict in verdicts.values():
         if verdict.discrepancy_report is None:
             any_failed = True
-        elif verdict.discrepancy_report.model_modality == logit:
+        elif verdict.discrepancy_report.model_modality == Modality.LOGIT:
             any_logit = True
-        elif verdict.discrepancy_report.model_modality == embedding:
+        elif verdict.discrepancy_report.model_modality == Modality.EMBEDDING:
             any_embedding = True
 
     if any_failed:
         to.write("\n\n## Failed/Crashed Models\n")
         to.write("| Status | Model |\n")
-        to.write("|:------:|:---------|\n")
+        to.write("| :---:  | :---  |\n")
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is not None:
                 continue
-            to.write(f"| {verdict.emoji} | {name} |\n")
+            to.write(f"| {verdict.emoji} | {display_name(name)} | N/A |\n")
 
     if any_logit:
         to.write("\n\n## LLMs\n")
@@ -170,29 +216,43 @@ def dump_results(
             "NOTE: KL Div here is the average over each prompt. "
             "_Not_ the max used for pass/fail checks. \n"
         )
-        to.write("| Status | Model | KL Div |\n")
-        to.write("|:------:|:---------|:------:|\n")
+        to.write("| Status | Model | KL Div | Diff |\n")
+        to.write("| :----: | :---  | :---:  | :---:|\n")
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is None:
                 continue
-            if verdict.discrepancy_report.model_modality != logit:
+            if verdict.discrepancy_report.model_modality != Modality.LOGIT:
                 continue
             kl = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
-            to.write(f"| {verdict.emoji} | {name} | {kl} |\n")
+
+            diff_str = "N/A"
+            if previous_verdicts and name in previous_verdicts:
+                diff_str = compute_diff(verdict, previous_verdicts[name])
+
+            to.write(
+                f"| {verdict.emoji} | {display_name(name)} | {kl} | {diff_str} |\n"
+            )
 
     if any_embedding:
         to.write("\n\n## Embedding Models\n")
-        to.write("| Status | Model | MAE |\n")
-        to.write("|:------:|:---------|:----:|\n")
+        to.write("| Status | Model | MAE | Diff |\n")
+        to.write("| :----: | :---  |:---:| :---:|\n")
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is None:
                 continue
-            if verdict.discrepancy_report.model_modality != embedding:
+            if verdict.discrepancy_report.model_modality != Modality.EMBEDDING:
                 continue
             mae = f"{verdict.discrepancy_report.avg_mae:.2e}"
-            to.write(f"| {verdict.emoji} | {name} | {mae} |\n")
+
+            diff_str = "N/A"
+            if previous_verdicts and name in previous_verdicts:
+                diff_str = compute_diff(verdict, previous_verdicts[name])
+
+            to.write(
+                f"| {verdict.emoji} | {display_name(name)} | {mae} | {diff_str} |\n"
+            )
 
 
 @dataclass
@@ -950,17 +1010,16 @@ def main(
             print_suggested_tolerances,
         )
 
+    # Load previous verdicts if provided
+    previous_verdicts = None
+    if load_verdicts_json:
+        previous_verdicts = load_verdicts_from_json(load_verdicts_json)
+
     if report:
-        dump_results(verdicts, to=report)
+        dump_results(verdicts, to=report, previous_verdicts=previous_verdicts)
 
     if store_verdicts_json:
         save_verdicts_to_json(verdicts, store_verdicts_json)
-
-    if load_verdicts_json:
-        previous_verdicts = load_verdicts_from_json(load_verdicts_json)
-        if previous_verdicts:
-            # TODO: Implement logic
-            pass
 
     print()
     print("-" * 40)
@@ -972,7 +1031,7 @@ def main(
             sum(v.status == status for v in verdicts.values()),
         )
     print()
-    dump_results(verdicts)
+    dump_results(verdicts, previous_verdicts=previous_verdicts)
 
     if any(v.status != VerificationStatus.OK for v in verdicts.values()):
         if all(

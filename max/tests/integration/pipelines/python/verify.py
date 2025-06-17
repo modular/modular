@@ -37,8 +37,9 @@ Then, run `verify` with the logit files:
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Literal, Optional, TypeVar
+from typing import Optional, TypeVar
 
 import click
 import numpy as np
@@ -49,9 +50,12 @@ from model.utils.logging import CONSOLE
 from test_common.distance_metrics import kl_divergence_from_logits
 from test_common.evaluate import ModelOutput, TokenInfo, compare_values
 from test_common.numpy_encoder import NumpyDecoder
-from typing_extensions import TypeAlias
 
-ModelModality: TypeAlias = Literal["logit", "embedding"]
+
+class ModelModality(str, Enum):
+    LOGIT = "logit"
+    EMBEDDING = "embedding"
+
 
 # Shared defaults between CLI and verify function
 DEFAULT_EVAL_METRIC = ["tol"]
@@ -193,6 +197,17 @@ class DiscrepancyReport:
         if self.kl_div_per_prompt is None:
             return None
         return sum(self.kl_div_per_prompt) / len(self.kl_div_per_prompt)
+
+    @property
+    def default_metric(self) -> float:
+        """A default avg error metric for the type of model (KL Div for LLM)"""
+        if self.model_modality == ModelModality.LOGIT:
+            assert self.avg_kl_div is not None
+            return self.avg_kl_div
+        elif self.model_modality == ModelModality.EMBEDDING:
+            return self.avg_mae
+        else:
+            raise ValueError(f"Unknown model modality: {self.model_modality}")
 
 
 @dataclass(frozen=True)
@@ -390,12 +405,12 @@ def compute_discrepancy_report(
                 result["embeddings"].astype(np.float64),
                 reference["embeddings"].astype(np.float64),
             )
-            model_modality = "embedding"
+            model_modality = ModelModality.EMBEDDING
         elif "values" in result and "values" in reference:
             mae, rmse, kl_div = calculate_logit_discrepancies(
                 result["values"], reference["values"]
             )
-            model_modality = "logit"
+            model_modality = ModelModality.LOGIT
         else:
             raise ValueError(
                 "Unknown model modality, did not find embeddings or values"
@@ -505,7 +520,9 @@ def print_discrepancy_report(report: DiscrepancyReport) -> None:
         formatter(error) for error in report.rmse_per_prompt
     )
 
-    CONSOLE.print(f"\n===== {report.model_modality} discrepancy report =====\n")
+    CONSOLE.print(
+        f"\n===== {report.model_modality.value} discrepancy report =====\n"
+    )
 
     if report.kl_div_per_prompt is not None:
         formatted_kl_div = ", ".join(
