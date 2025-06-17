@@ -17,7 +17,7 @@ from sys import sizeof
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from gpu.id import block_idx, thread_idx
 from gpu.memory import ReduceOp, tma_store_fence
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group

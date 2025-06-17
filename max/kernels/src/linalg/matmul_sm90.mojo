@@ -30,7 +30,7 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm, get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.id import (

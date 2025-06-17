@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from compile import compile_info
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from layout import Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 

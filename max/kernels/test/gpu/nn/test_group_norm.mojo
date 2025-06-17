@@ -20,7 +20,7 @@ from gpu.host import DeviceContext
 from nn.normalization import *
 from testing import assert_almost_equal, assert_true
 
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 
 from utils.index import Index, IndexList
 

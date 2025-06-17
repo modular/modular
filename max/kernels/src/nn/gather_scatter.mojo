@@ -23,7 +23,7 @@ from algorithm.functional import tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from layout import LayoutTensor
 from memory import memcpy

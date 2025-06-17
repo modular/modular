@@ -25,7 +25,7 @@ from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_partially_static_index_list
 from builtin.device_passable import DevicePassable
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor

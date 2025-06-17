@@ -16,7 +16,7 @@
 
 from sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
 
-from gpu.host._compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm, get_gpu_target
 from testing import *
 
 

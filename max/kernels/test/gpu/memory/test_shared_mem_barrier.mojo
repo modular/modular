@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm, get_gpu_target
 from gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 from memory import stack_allocation

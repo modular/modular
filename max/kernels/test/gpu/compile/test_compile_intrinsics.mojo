@@ -13,7 +13,7 @@
 
 from math import exp2
 
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code_asm
 from gpu.host.info import A100
 from gpu.intrinsics import *
 

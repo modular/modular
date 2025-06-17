@@ -13,7 +13,7 @@
 
 from sys.intrinsics import strided_load
 
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code_asm
 from gpu.memory import AddressSpace
 from testing import assert_true
 

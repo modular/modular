@@ -19,7 +19,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from nn.normalization import *
 from testing import assert_almost_equal
 

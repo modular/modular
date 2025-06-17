@@ -17,7 +17,7 @@ from gpu import barrier
 from gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
-from gpu.host._compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm, get_gpu_target
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (

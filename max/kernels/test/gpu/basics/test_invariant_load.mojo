@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm, get_gpu_target
 from gpu.intrinsics import ldg
 from layout import Layout, LayoutTensor
 from testing import assert_true

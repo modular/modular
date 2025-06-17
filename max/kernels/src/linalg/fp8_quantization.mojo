@@ -25,7 +25,7 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from gpu.memory import AddressSpace
 from linalg.matmul import matmul
 from linalg.utils_gpu import MatmulConfig

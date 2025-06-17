@@ -17,7 +17,7 @@ from sys import sizeof
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, grid_dim, thread_idx
 from gpu.memory import tma_store_fence

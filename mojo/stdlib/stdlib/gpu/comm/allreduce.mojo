@@ -60,7 +60,7 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace

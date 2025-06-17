@@ -42,7 +42,7 @@ from sys.param_env import _is_bool_like
 from builtin._location import __call_location, _SourceLocation
 from builtin.device_passable import DevicePassable
 from compile.compile import Info
-from gpu.host._compile import (
+from gpu.host.compile import (
     _compile_code,
     _compile_code_asm,
     _cross_compilation,

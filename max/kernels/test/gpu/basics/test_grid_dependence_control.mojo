@@ -17,7 +17,7 @@ from gpu.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host._compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm, get_gpu_target
 from testing import assert_true
 
 

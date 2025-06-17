@@ -13,7 +13,7 @@
 
 from sys.param_env import is_defined
 
-from gpu.host._compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm, get_gpu_target
 from gpu.mma import mma
 from testing import *
 
