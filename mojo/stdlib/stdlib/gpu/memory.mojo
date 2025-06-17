@@ -1163,7 +1163,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             ](
                 Int32(Int(dst_mem)),
                 tma_descriptor,
-                Int32(Int(mem_bar)),
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 Int32(coords[0]),
                 Int32(coords[1]),
                 Int32(coords[2]),
@@ -1189,7 +1189,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             ](
                 Int32(Int(dst_mem)),
                 tma_descriptor,
-                Int32(Int(mem_bar)),
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 Int32(coords[0]),
                 Int32(coords[1]),
             )
@@ -1213,7 +1213,7 @@ fn cp_async_bulk_tensor_shared_cluster_global[
             ](
                 Int32(Int(dst_mem)),
                 tma_descriptor,
-                Int32(Int(mem_bar)),
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 Int32(coords[0]),
             )
 
@@ -1303,7 +1303,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 Int32(Int(dst_mem)),
                 tma_descriptor,
-                Int32(Int(mem_bar)),
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 multicast_mask,
                 Int32(coords[0]),
                 Int32(coords[1]),
@@ -1329,7 +1329,7 @@ fn cp_async_bulk_tensor_shared_cluster_global_multicast[
             ](
                 Int32(Int(dst_mem)),
                 tma_descriptor,
-                Int32(Int(mem_bar)),
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
                 multicast_mask,
                 Int32(coords[0]),
             )
