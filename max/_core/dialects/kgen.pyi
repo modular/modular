@@ -89,13 +89,40 @@ class GeneratorMetadataAttrInterface(Protocol):
 class IndexRefAttrInterface(Protocol):
     """
     Index-based parameter references are a relative parameter referencing scheme
-    that uses a pair of integers to reference parameters in a name-agnostic way.
-    They contain a depth and an index. The depth indicates how many parameter
-    scopes exist between the parameter being referenced and the reference
-    itself. The index is simply the parameter number at the referenced scope.
+    that uses a pair of integers to reference parameters in a way that doesn't
+    involve names. This is useful for later knowing if two types are equal, even
+    if they have different parameter names.
 
-    This interface allows other kinds (see `LIT::ImplicitOriginRefAttr`) of
-    index-based references to interplay with parts of the KGEN parameter system.
+    For example, these two aliases have equal types:
+
+    ```mojo
+    alias A: fn[T: AnyType](x: T)->None = ...
+    alias B: fn[Y: AnyType](x: Y)->None = ...
+    ```
+
+    ...if those param-refs use indexes instead of names like:
+
+    ```mojo
+    alias A: fn[_: AnyType](x: *(0,0))->None = ...
+    alias B: fn[_: AnyType](x: *(0,0))->None = ...
+    ```
+
+    All types in Mojo use `IndexRefAttrInterface` instead of parameter names.
+    The above are `ParamIndexRefAttr` specifically.
+
+    All `IndexRefAttrInterface` have two fields: a depth and an index.
+
+    - depth: Which containing signature contains the parameter we're referring
+      to. Non-negative integer. Zero means the nearest containing signature
+      (like above), one means the signature containing that one, etc.
+      Note they cannot refer to any op's parameter-decls, and you cannot always
+      use a depth to refer to surrounding scopes, see DCRTODS.
+    - index: index of the parameter decl in that signature (non-negative integer).
+
+    See IRAIDAI for more details, context, and examples.
+
+    These depths must be carefully handled and adjusted when dealing with
+    multiple signatures or scopes, see STCHDDDOS.
     """
 
     @property
@@ -726,6 +753,9 @@ class ParamDeclRefAttr(max._core.Attribute):
     // A reference to parameter "p" with type "i1".
     #kgen.param.decl.ref<"p"> : i1
     ```
+
+    There are special rules governing when these can appear, or when
+    ParamIndexRefAttr must be used instead, see DCRTODS.
     """
 
     @overload
@@ -749,9 +779,15 @@ class ParamIndexRefAttr(max._core.Attribute):
     """
     The `#kgen.param.index.ref` attribute is a reference to an input
     parameter of an enclosing signature. This attribute can only be used inside
-    a `GeneratorType`. This attribute contains two fields: the depth of the
-    referenced signature relative to the nearest signature (non-negative
-    integer), and the index of the parameter (non-negative integer).
+    a `GeneratorType`. This attribute contains two fields:
+
+    - depth: Which containing signature contains the parameter we're referring
+      to. Non-negative integer. Zero means the nearest containing signature, one
+      means the signature containing that one, etc.
+      Note they cannot refer to any op's parameter-decls, and you cannot always
+      use a depth to refer to surrounding scopes, see DCRTODS.
+    - index: index of the parameter decl in that signature (non-negative
+      integer).
 
     Example:
 
@@ -761,6 +797,31 @@ class ParamIndexRefAttr(max._core.Attribute):
     // First input parameter of next enclosing signature.
     #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
     ```
+
+    The latter would appear in something like this:
+
+    ```
+    alias bar: fn[
+      D: DType,
+      N: Int,
+      f: fn[Y: AnyType](Y, SIMD[N, D])->None
+    ](...) = ...
+    ```
+
+    The `SIMD[N, D]`'s `N` is a #kgen.param.index.ref<1, 0> : !lit.struct<@Int>.
+
+    But, per DCRTODS, it can NOT be used inside a generator's body to refer to
+    one of the generator's parameters, like this:
+
+    ```
+    fn foo[X: AnyType](x: X):
+        alias zork: fn[...](
+          # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
+        )->None = ...
+    ```
+
+    These depths must be carefully handled and adjusted when dealing with
+    multiple signatures or scopes, see STCHDDDOS.
     """
 
     @overload
@@ -3616,6 +3677,23 @@ class ParameterScopeTypeInterface(Protocol):
     The `ParameterScopeTypeInterface` describes a type that declares a nested
     parameter scope within a type expression. It enables `ParamIndexRefAttr`
     values inside the type to reference parameters declared in a scope.
+
+    For example, if we have this Mojo code:
+
+    ```mojo
+    fn foo[T: AnyType]():
+      alias bork: fn[
+        T: AnyType,
+        inner_f: fn[Y: AnyType](t: T, y: Y) -> None
+      ] -> None = ...
+    ```
+
+    The `fn` after `bork:` is a `kgen.generator` which is a
+    `ParameterScopeTypeInterface`.
+
+    `ParameterScopeTypeInterface` also causes the `depth` fields of
+    `ParamIndexRefAttr`/`ImplicitOriginRefAttr`/etc that are contained (even
+    indirectly) within this object to be higher, see PSTIAIRAID.
     """
 
     @property
