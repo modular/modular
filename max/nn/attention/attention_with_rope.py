@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Callable, Optional, Union
 
@@ -162,7 +163,7 @@ class AttentionWithRope(Module):
         num_key_value_heads: int,
         hidden_size: int,
         kv_params: KVCacheParams,
-        devices: list[DeviceRef] | None = None,
+        devices: Sequence[DeviceRef] | None = None,
         dtype: DType = DType.float32,
         linear_cls: Callable[..., Linear] = Linear,
         stacked_qkv: bool = False,
@@ -863,7 +864,7 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         num_key_value_heads: int,
         hidden_size: int,
         kv_params: KVCacheParams,
-        devices: list[DeviceRef] | None = None,
+        devices: Sequence[DeviceRef] | None = None,
         dtype: DType = DType.float32,
         linear_cls: Callable[..., Linear] = Linear,
         stacked_qkv: bool = False,
@@ -974,12 +975,13 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
     def __call__(  # type: ignore[override]
         self,
         layer_idx: TensorValue,
-        x: list[TensorValue],
-        signal_buffers: list[BufferValue],
-        kv_collections: list[
-            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
-        ],
-        input_row_offsets: list[TensorValue],
+        x: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+        kv_collections: (
+            Sequence[ContinuousBatchingKVCacheCollection]
+            | Sequence[PagedKVCacheCollection]
+        ),
+        input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")

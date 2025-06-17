@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
@@ -1111,7 +1111,7 @@ class DistributedMLP(MLP):
         self.allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def __call__(  # type: ignore[override]
-        self, x: list[TensorValue], signal_buffers: list[BufferValue]
+        self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 

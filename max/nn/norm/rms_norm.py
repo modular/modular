@@ -13,6 +13,7 @@
 
 """Normalization layer."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from max.dtype import DType
@@ -108,7 +109,7 @@ class RMSNorm(Module):
 
 
 class DistributedRMSNorm(RMSNorm):
-    def __init__(self, *args, devices: list[DeviceRef], **kwargs):
+    def __init__(self, *args, devices: Sequence[DeviceRef], **kwargs):
         super().__init__(*args, **kwargs)
         self.num_devices = len(devices)
 
@@ -122,5 +123,5 @@ class DistributedRMSNorm(RMSNorm):
             layer.weight = self.weight.shard(n, device)
             self.rms_norms.append(layer)
 
-    def __call__(self, xs: list[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
+    def __call__(self, xs: Sequence[TensorValue]) -> list[TensorValue]:  # type: ignore[override]
         return [self.rms_norms[i](xs[i]) for i in range(self.num_devices)]
