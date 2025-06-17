@@ -48,6 +48,9 @@ what we publish.
 
 ### Tooling changes
 
+- Added progress reporting support to the Mojo language server. This will emit progress
+  notifications in your editor when the server is currently parsing a document.
+
 ### ❌ Removed
 
 ### 🛠️ Fixed
