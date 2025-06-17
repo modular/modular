@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 from memory import stack_allocation
@@ -36,5 +36,5 @@ fn test_shared_mem_barrier():
 def main():
     print("== test_shared_mem_barrier")
     alias kernel = test_shared_mem_barrier
-    asm = _compile_code_asm[kernel, target = _get_gpu_target["sm_90a"]()]()
+    asm = _compile_code_asm[kernel, target = get_gpu_target["sm_90a"]()]()
     print(asm)

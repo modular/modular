@@ -18,7 +18,7 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from linalg.fast_div import FastDiv
 from testing import *
 

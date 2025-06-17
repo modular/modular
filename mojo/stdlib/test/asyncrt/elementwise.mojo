@@ -18,7 +18,7 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 
 from utils import IndexList
 from utils.index import Index
@@ -28,7 +28,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     print("-")
     print("run_elementwise[", type, "]:")
 
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
     alias rank = 2
     alias dim_x = 2

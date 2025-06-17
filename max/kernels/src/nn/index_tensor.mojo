@@ -18,7 +18,7 @@ from sys.info import _current_target
 from algorithm import elementwise, sync_parallelize
 from buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host.info import is_cpu
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
@@ -348,7 +348,7 @@ fn _index_tensor_impl[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     # Only use SIMD if:
@@ -551,7 +551,7 @@ fn advanced_indexing_getitem[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank
@@ -776,7 +776,7 @@ fn advanced_indexing_setitem_inplace[
     alias last_indexed_dim = start_axis + num_index_tensors - 1
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank

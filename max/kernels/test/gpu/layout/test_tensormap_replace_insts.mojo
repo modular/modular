@@ -17,7 +17,7 @@ from sys import sizeof
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
 from gpu.id import block_idx, thread_idx
 from gpu.sync import syncwarp

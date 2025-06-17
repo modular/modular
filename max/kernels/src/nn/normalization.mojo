@@ -37,7 +37,7 @@ from gpu import (
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.host.launch_attribute import (
     LaunchAttribute,
@@ -459,7 +459,7 @@ fn layer_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -912,7 +912,7 @@ fn rms_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
@@ -1468,7 +1468,7 @@ fn group_norm_gpu[
 
         return input_fn[simd_width, rank](indices)
 
-    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
     if num_cols < simd_width:
         raise Error(
             "group_norm_gpu requires num_cols >= simd_width; got num_cols="

@@ -20,7 +20,7 @@ from sys import argv, simdwidthof
 import benchmark
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -121,7 +121,7 @@ fn naive_dual_gemm[
         ](c01, a, b01, ctx)
 
         alias simd_width = simdwidthof[
-            c_type, target = _get_gpu_target["sm_80"]()
+            c_type, target = get_gpu_target["sm_80"]()
         ]()
         alias align = alignof[SIMD[c_type, simd_width]]()
 

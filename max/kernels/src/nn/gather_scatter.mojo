@@ -23,7 +23,7 @@ from algorithm.functional import tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from layout import LayoutTensor
 from memory import memcpy
@@ -713,7 +713,7 @@ fn gather[
     """
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
 
     gather_guards(axis, input_shape, indices_shape, output_shape)
     with Trace[TraceLevel.OP, target=target]("gather"):
@@ -1540,7 +1540,7 @@ fn _gather_nd_impl[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     # Only use SIMD if:

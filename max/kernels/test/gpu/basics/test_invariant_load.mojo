@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from gpu.intrinsics import ldg
 from layout import Layout, LayoutTensor
 from testing import assert_true
@@ -29,7 +29,7 @@ def test_ldg_kernel[emission_kind: StaticString]() -> String:
     return _compile_code_asm[
         ldg_kernel,
         emission_kind=emission_kind,
-        target = _get_gpu_target["sm_90a"](),
+        target = get_gpu_target["sm_90a"](),
     ]()
 
 
@@ -44,7 +44,7 @@ def test_layout_kernel[emission_kind: StaticString]() -> String:
     return _compile_code_asm[
         layout_kernel,
         emission_kind=emission_kind,
-        target = _get_gpu_target["sm_90a"](),
+        target = get_gpu_target["sm_90a"](),
     ]()
 
 

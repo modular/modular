@@ -46,7 +46,7 @@ from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,
     _cross_compilation,
-    _get_gpu_target,
+    get_gpu_target,
     _ptxas_compile,
     _to_sass,
 )
@@ -1475,7 +1475,7 @@ struct DeviceFunction[
     func: func_type,
     declared_arg_types: Optional[__mlir_type[`!kgen.variadic<`, AnyType, `>`]],
     *,
-    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
+    target: __mlir_type.`!kgen.target` = get_gpu_target(),
     _ptxas_info_verbose: Bool = False,
 ]:
     """Represents a compiled device function for GPU execution.

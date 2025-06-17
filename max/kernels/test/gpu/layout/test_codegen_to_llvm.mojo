@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from compile import compile_info
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from layout import Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 
@@ -45,7 +45,7 @@ fn test_no_alloca_fill():
         compile_info[
             layout_tensor_kernel,
             emission_kind="llvm",
-            target = _get_gpu_target(),
+            target = get_gpu_target(),
         ]()
     )
 

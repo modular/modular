@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from testing import assert_true
 
 
@@ -50,7 +50,7 @@ def test_operation[
     scalar = prefix + suffix
     pairwise = scalar + "x2 "
 
-    alias target = _get_gpu_target[target_arch]()
+    alias target = get_gpu_target[target_arch]()
     assert_true(scalar in _compile_code_asm[op_fn[width=1], target=target]())
     assert_true(pairwise in _compile_code_asm[op_fn[width=2], target=target]())
     assert_true(pairwise in _compile_code_asm[op_fn[width=8], target=target]())

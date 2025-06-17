@@ -28,7 +28,7 @@ from .info import Info as HardwareInfo
 
 
 @always_inline
-fn _get_gpu_target[
+fn get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = DEFAULT_GPU_ARCH,
 ]() -> __mlir_type.`!kgen.target`:
@@ -53,7 +53,7 @@ fn _compile_code[
     /,
     *,
     emission_kind: StaticString = "asm",
-    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
+    target: __mlir_type.`!kgen.target` = get_gpu_target(),
     compile_options: StaticString = HardwareInfo.from_target[
         target
     ]().compile_options,
@@ -73,7 +73,7 @@ fn _compile_code_asm[
     /,
     *,
     emission_kind: StaticString = "asm",
-    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
+    target: __mlir_type.`!kgen.target` = get_gpu_target(),
     compile_options: StaticString = HardwareInfo.from_target[
         target
     ]().compile_options,
@@ -94,7 +94,7 @@ fn _compile_code_asm[
 
 @no_inline
 fn _to_sass[
-    target: __mlir_type.`!kgen.target` = _get_gpu_target()
+    target: __mlir_type.`!kgen.target` = get_gpu_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
     if not nvdisasm_path.exists():
@@ -120,7 +120,7 @@ fn _to_sass[
 
 @no_inline
 fn _ptxas_compile[
-    target: __mlir_type.`!kgen.target` = _get_gpu_target()
+    target: __mlir_type.`!kgen.target` = get_gpu_target()
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
 ) raises -> String:

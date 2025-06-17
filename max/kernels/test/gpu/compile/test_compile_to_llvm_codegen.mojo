@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import thread_idx
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from gpu.memory import AddressSpace, external_memory
 
 
@@ -41,7 +41,7 @@ fn test_case_thread_id_nvidia():
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
     print(
         _compile_code_asm[
-            kernel, emission_kind="llvm", target = _get_gpu_target["sm_80"]()
+            kernel, emission_kind="llvm", target = get_gpu_target["sm_80"]()
         ]()
     )
 
@@ -56,7 +56,7 @@ fn test_case_thread_id_mi300x():
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(
         _compile_code_asm[
-            kernel, emission_kind="llvm", target = _get_gpu_target["mi300x"]()
+            kernel, emission_kind="llvm", target = get_gpu_target["mi300x"]()
         ]()
     )
 

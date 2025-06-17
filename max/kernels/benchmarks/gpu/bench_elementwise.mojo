@@ -29,7 +29,7 @@ from buffer import DimList, NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
 from buffer.dimlist import _make_tuple
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
 from testing import assert_equal
 
@@ -123,9 +123,9 @@ fn run_elementwise[
     name: StaticString,
     ctx: DeviceContext,
 ) raises:
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
     alias align = alignof[
-        SIMD[type, pack_size], target = _get_gpu_target()
+        SIMD[type, pack_size], target = get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 

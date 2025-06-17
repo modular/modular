@@ -18,7 +18,7 @@ from builtin.io import _printf
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.id import block_idx, cluster_idx, thread_idx
 from gpu.memory import fence_mbarrier_init, tma_store_fence
 from gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group

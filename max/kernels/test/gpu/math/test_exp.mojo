@@ -18,7 +18,7 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from testing import *
 
 from utils import Index, IndexList
@@ -27,7 +27,7 @@ from utils import Index, IndexList
 def run_elementwise[type: DType](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[type](length)
     var out_device = ctx.enqueue_create_buffer[type](length)

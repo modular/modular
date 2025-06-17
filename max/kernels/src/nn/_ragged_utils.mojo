@@ -15,7 +15,7 @@ from sys.info import _current_target, simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import LayoutTensor
 from runtime.asyncrt import DeviceContextPtr
@@ -145,7 +145,7 @@ fn merge_ragged_tensors[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
     alias kernel_simd_width = 1 if rank == 1 else target_simd_width
 

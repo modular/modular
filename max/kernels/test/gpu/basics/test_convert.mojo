@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from testing import *
 
 
@@ -28,7 +28,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = _get_gpu_target["sm_80"](),
+            target = get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -37,7 +37,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = _get_gpu_target["mi300x"](),
+            target = get_gpu_target["mi300x"](),
         ]()
     )
 
@@ -46,7 +46,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = _get_gpu_target["sm_80"](),
+            target = get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -55,7 +55,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = _get_gpu_target["mi300x"](),
+            target = get_gpu_target["mi300x"](),
         ]()
     )
 

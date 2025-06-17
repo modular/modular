@@ -16,7 +16,7 @@ from sys.info import _is_sm_8x, _is_sm_9x
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.id import thread_idx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace

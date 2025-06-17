@@ -20,7 +20,7 @@ from gpu.host import DeviceContext
 from nn.normalization import *
 from testing import assert_almost_equal, assert_true
 
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 
 from utils.index import Index, IndexList
 
@@ -136,7 +136,7 @@ fn run_group_norm_gpu[
 def main():
     with DeviceContext() as ctx:
         alias default_simd = simdwidthof[
-            DType.float32, target = _get_gpu_target()
+            DType.float32, target = get_gpu_target()
         ]()
 
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===

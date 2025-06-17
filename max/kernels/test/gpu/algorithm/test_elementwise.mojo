@@ -18,7 +18,7 @@ from sys import is_nvidia_gpu, simdwidthof
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from testing import assert_equal
 
 from utils import IndexList
@@ -26,7 +26,7 @@ from utils.index import Index
 
 
 fn run_elementwise[type: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
         type, 2, MutableAnyOrigin, DimList(2, 8)
@@ -97,7 +97,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
     var in_host = NDBuffer[
         type, 2, MutableAnyOrigin, DimList(3, 3)
     ].stack_allocation()
@@ -151,7 +151,7 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
 
 
 fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
     var in_host = NDBuffer[
         type, 3, MutableAnyOrigin, DimList(2, 4, 5)
     ].stack_allocation()

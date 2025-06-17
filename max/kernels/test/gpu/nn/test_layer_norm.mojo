@@ -19,7 +19,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from nn.normalization import *
 from testing import assert_almost_equal
 
@@ -29,7 +29,7 @@ from utils.index import Index, IndexList
 fn run_layer_norm_block[
     type: DType,
     *,
-    simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
+    simd_width: Int = simdwidthof[type, target = get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
@@ -202,7 +202,7 @@ fn run_layer_norm_gpu[
 fn run_layer_norm_warp_tiling[
     type: DType,
     *,
-    simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
+    simd_width: Int = simdwidthof[type, target = get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 

@@ -16,7 +16,7 @@ from sys import sizeof
 from gpu import barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, cluster_dim, cluster_idx, thread_idx
 from gpu.memory import fence_mbarrier_init, tma_store_fence

@@ -13,7 +13,7 @@
 
 from sys.param_env import is_defined
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from gpu.mma import mma
 from testing import *
 
@@ -87,7 +87,7 @@ fn SM80_m16n8k32_F8E4M3F8E4M_TN(
 
 def test_SM80_m16n8k8_F8E4M3F8E4M3_TN():
     var asm = _compile_code_asm[
-        SM80_m16n8k32_F8E4M3F8E4M_TN, target = _get_gpu_target["sm_90"]()
+        SM80_m16n8k32_F8E4M3F8E4M_TN, target = get_gpu_target["sm_90"]()
     ]()
     assert_true("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32" in asm)
     assert_true("{%r1, %r2, %r3, %r4}" in asm)

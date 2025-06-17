@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.cluster import elect_one_sync
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from gpu.memory import (
     CacheEviction,
     ReduceOp,
@@ -53,7 +53,7 @@ fn test_async_copy_asm():
     print(
         _compile_code_asm[
             test_async_copy_kernel,
-            target = _get_gpu_target["sm_90"](),
+            target = get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -89,7 +89,7 @@ fn test_async_store_asm():
     print(
         _compile_code_asm[
             test_async_store_kernel,
-            target = _get_gpu_target["sm_90"](),
+            target = get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -127,7 +127,7 @@ fn test_async_bulk_tensor_reduce_asm():
     print(
         _compile_code_asm[
             test_async_bulk_tensor_reduce_asm,
-            target = _get_gpu_target["sm_90"](),
+            target = get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -145,7 +145,7 @@ fn test_tma_fence_proxy():
     print(
         _compile_code_asm[
             test_tma_fence_proxy_kernel,
-            target = _get_gpu_target["sm_90"](),
+            target = get_gpu_target["sm_90"](),
         ]()
     )
 
@@ -161,7 +161,7 @@ fn test_elect_one_sync():
     print(
         _compile_code_asm[
             test_elect_one_sync_kernel,
-            target = _get_gpu_target["sm_90"](),
+            target = get_gpu_target["sm_90"](),
         ]()
     )
 

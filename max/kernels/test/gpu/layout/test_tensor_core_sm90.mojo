@@ -13,7 +13,7 @@
 
 from builtin.io import _printf
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.id import thread_idx
 from gpu.mma import mma
 from layout import Layout, LayoutTensor

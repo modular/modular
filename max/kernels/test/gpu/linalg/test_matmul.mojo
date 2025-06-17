@@ -22,7 +22,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import (
     DeviceNDBuffer,
@@ -231,7 +231,7 @@ fn test[
     )
 
     var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)

@@ -17,7 +17,7 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random

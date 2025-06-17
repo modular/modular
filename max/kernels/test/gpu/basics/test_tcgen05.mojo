@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from gpu.memory import AddressSpace
 from gpu.tcgen05 import (
     TensorMemory,
@@ -41,11 +41,11 @@ fn alloc_test_fn[cta_group: Int32]():
 fn test_tcgen05_alloc() raises:
     var asm1 = _compile_code_asm[
         alloc_test_fn[1],
-        target = _get_gpu_target["sm_100a"](),
+        target = get_gpu_target["sm_100a"](),
     ]()
     var asm2 = _compile_code_asm[
         alloc_test_fn[2],
-        target = _get_gpu_target["sm_100a"](),
+        target = get_gpu_target["sm_100a"](),
     ]()
     assert_true(
         "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32" in asm1
@@ -69,7 +69,7 @@ fn alloc_dealloc_test_fn():
 fn test_tcgen05_dealloc() raises:
     var asm = _compile_code_asm[
         alloc_dealloc_test_fn,
-        target = _get_gpu_target["sm_100a"](),
+        target = get_gpu_target["sm_100a"](),
     ]()
     assert_true(
         "tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;" in asm
@@ -99,7 +99,7 @@ fn ld_test_fn():
 fn test_tcgen05_ld() raises:
     var asm = _compile_code_asm[
         ld_test_fn,
-        target = _get_gpu_target["sm_100a"](),
+        target = get_gpu_target["sm_100a"](),
     ]()
     assert_true("tcgen05.ld.sync.aligned.32x32b.x64.b32" in asm)
     assert_true("tcgen05.wait::ld.sync.aligned;" in asm)
@@ -126,7 +126,7 @@ fn st_test_fn():
 fn test_tcgen05_st() raises:
     var asm = _compile_code_asm[
         st_test_fn,
-        target = _get_gpu_target["sm_100a"](),
+        target = get_gpu_target["sm_100a"](),
     ]()
     assert_true("tcgen05.st.sync.aligned.32x32b.x64.b32" in asm)
     assert_true("tcgen05.wait::st.sync.aligned;" in asm)
@@ -163,7 +163,7 @@ fn cp_test_fn():
 fn test_tcgen05_cp() raises:
     var asm = _compile_code_asm[
         cp_test_fn,
-        target = _get_gpu_target["sm_100a"](),
+        target = get_gpu_target["sm_100a"](),
     ]()
     assert_true(
         "tcgen05.cp.cta_group::1.128x256b.warpx2::01_23.b8x16.b6x16_p32" in asm

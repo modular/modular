@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from testing import *
 
@@ -23,7 +23,7 @@ fn register_intrinsics():
 
 def test_register_intrinsics_sm80():
     var asm = _compile_code_asm[
-        register_intrinsics, target = _get_gpu_target["sm_80"]()
+        register_intrinsics, target = get_gpu_target["sm_80"]()
     ]()
     assert_false("setmaxnreg.inc.sync.aligned.u32" in asm)
     assert_false("setmaxnreg.dec.sync.aligned.u32" in asm)
@@ -31,7 +31,7 @@ def test_register_intrinsics_sm80():
 
 def test_register_intrinsics_sm90():
     var asm = _compile_code_asm[
-        register_intrinsics, target = _get_gpu_target["sm_90a"]()
+        register_intrinsics, target = get_gpu_target["sm_90a"]()
     ]()
     assert_true("setmaxnreg.inc.sync.aligned.u32" in asm)
     assert_true("setmaxnreg.dec.sync.aligned.u32" in asm)

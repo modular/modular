@@ -39,7 +39,7 @@ from gpu import (
 )
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (
@@ -2518,7 +2518,7 @@ fn split_k_reduce[
     work_space: NDBuffer[work_space_type, 3, _, work_space_shape],
     ctx: DeviceContext,
 ) raises:
-    alias simd_width = simdwidthof[c_type, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[c_type, target = get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()

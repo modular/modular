@@ -25,7 +25,7 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.memory import AddressSpace
 from linalg.matmul import matmul
 from linalg.utils_gpu import MatmulConfig
@@ -87,7 +87,7 @@ fn quantize_static_scaled_fp8[
         var scaled_in_vec = in_vec_f32.cast[out_dtype]()
         out_buffer.store(idx, rebind[SIMD[out_dtype, width]](scaled_in_vec))
 
-    alias compile_target = _get_gpu_target()
+    alias compile_target = get_gpu_target()
     alias target_simd_width = simdwidthof[in_dtype, target=compile_target]()
 
     _elementwise_impl_gpu[func=scaled_fp8_quant, simd_width=target_simd_width](
@@ -126,7 +126,7 @@ fn quantize_dynamic_scaled_fp8[
         1
     ]() if group_size_or_per_token == -1 else group_size_or_per_token
     alias n_groups = input.shape.get[1]() // group_size
-    alias simd_width = simdwidthof[in_dtype, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[in_dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
     alias warps_per_block = min(
         ceildiv(group_size // simd_width, WARP_SIZE), max_warps_per_block

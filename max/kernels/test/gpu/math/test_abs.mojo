@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host._compile import _compile_code_asm, get_gpu_target
 from testing import assert_false, assert_true
 
-alias A100_TARGET = _get_gpu_target["sm_80"]()
-alias MI300X_TARGET = _get_gpu_target["mi300x"]()
+alias A100_TARGET = get_gpu_target["sm_80"]()
+alias MI300X_TARGET = get_gpu_target["mi300x"]()
 
 
 def test_abs():

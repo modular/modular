@@ -38,7 +38,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from gpu.host import FuncAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host._compile import get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,
@@ -2672,7 +2672,7 @@ fn _k_cache_to_buffer[
         Int(length),
         buffer.dim[1](),
     )
-    alias compile_target = _get_gpu_target()
+    alias compile_target = get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
