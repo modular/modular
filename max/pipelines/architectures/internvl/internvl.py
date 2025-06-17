@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the InternVL multimodal model."""
+"""Implements the InternVL multimodal model architecture."""
 
 from __future__ import annotations
 
@@ -310,9 +310,25 @@ class InternVLLanguageModel(Module):
 
 
 class InternVisionEmbeddings(Module, Shardable):
+    """Implements patch embeddings for the InternVL vision model.
+
+    This module converts input images into patch embeddings by:
+    - Dividing images into fixed-size patches
+    - Projecting each patch to an embedding vector
+    - Adding learnable class and position embeddings
+
+    The module supports sharding across multiple devices for distributed execution.
+    """
+
     def __init__(
         self, config: InternVLConfig, device: DeviceRef | None = None
     ) -> None:
+        """Initializes the vision embeddings module.
+
+        Args:
+            config: The InternVL configuration containing vision model parameters.
+            device: The device to place weights on. Defaults to CPU if not specified.
+        """
         self.config = config
         self.devices = config.devices
         self.embed_dim = config.vision_config.hidden_size
@@ -398,11 +414,14 @@ class InternVisionEmbeddings(Module, Shardable):
         return sharded
 
     def _get_position_embedding(self, H: Dim, W: Dim) -> TensorValue:
-        """Get position embeddings, interpolating if needed for different resolutions.
+        """Gets position embeddings, interpolating if needed for different resolutions.
 
         Args:
-            H: Height in patches (can be int or symbolic Dim)
-            W: Width in patches (can be int or symbolic Dim)
+            H: Height in patches (can be int or symbolic Dim).
+            W: Width in patches (can be int or symbolic Dim).
+
+        Returns:
+            Position embeddings tensor of shape [1, H*W+1, embed_dim].
         """
         # For static dimensions, check if we need interpolation.
         if isinstance(H, StaticDim) and isinstance(W, StaticDim):
@@ -443,7 +462,7 @@ class InternVisionEmbeddings(Module, Shardable):
         return ops.concat([class_pos_embed, patch_pos_embed], axis=1)
 
     def __call__(self, pixel_values: TensorValue) -> TensorValue:
-        """Compute embeddings for input pixel values.
+        """Computes embeddings for input pixel values.
 
         Args:
             pixel_values: Input image tensor of shape (batch, height, width, channels).
