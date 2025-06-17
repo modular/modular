@@ -571,37 +571,20 @@ struct UnsafePointer[
 
             # intentionally don't unroll, otherwise the compiler vectorizes
             for i in range(width):
-
-                @parameter
-                if volatile:
-                    v[i] = __mlir_op.`pop.load`[
-                        alignment = alignment.value,
-                        isVolatile = __mlir_attr.unit,
-                    ]((self + i).address)
-                elif invariant:
-                    v[i] = __mlir_op.`pop.load`[
-                        alignment = alignment.value,
-                        isInvariant = __mlir_attr.unit,
-                    ]((self + i).address)
-                else:
-                    v[i] = __mlir_op.`pop.load`[alignment = alignment.value](
-                        (self + i).address
-                    )
+                v[i] = __mlir_op.`pop.load`[
+                    alignment = alignment.value,
+                    isVolatile = volatile.value,
+                    isInvariant = invariant.value,
+                ]((self + i).address)
             return v
 
         var address = self.bitcast[SIMD[dtype, width]]().address
 
-        @parameter
-        if volatile:
-            return __mlir_op.`pop.load`[
-                alignment = alignment.value, isVolatile = __mlir_attr.unit
-            ](address)
-        elif invariant:
-            return __mlir_op.`pop.load`[
-                alignment = alignment.value, isInvariant = __mlir_attr.unit
-            ](address)
-        else:
-            return __mlir_op.`pop.load`[alignment = alignment.value](address)
+        return __mlir_op.`pop.load`[
+            alignment = alignment.value,
+            isVolatile = volatile.value,
+            isInvariant = invariant.value,
+        ](address)
 
     @always_inline("nodebug")
     fn load[
