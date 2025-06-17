@@ -19,7 +19,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import freqs_cis_table_input
 from testing import assert_almost_equal

@@ -22,7 +22,7 @@ from sys.intrinsics import (
 )
 from time import sleep
 
-from memory import Span, UnsafePointer
+from memory import Span
 from memory.pointer import _GPUAddressSpace
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM

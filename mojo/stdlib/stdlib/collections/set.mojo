@@ -392,7 +392,7 @@ struct Set[T: KeyElement](
         if not self:
             raise "Pop on empty set"
         var iter = self.__iter__()
-        var first = iter.__next__()
+        var first = iter.__next_ref__()
         self.remove(first)
         return first
 

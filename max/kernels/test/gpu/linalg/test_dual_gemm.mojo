@@ -30,7 +30,6 @@ from linalg._multistage_gemm_gpu import distance, multistage_gemm_kernel
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import StaticTuple

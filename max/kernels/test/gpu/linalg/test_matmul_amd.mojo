@@ -24,7 +24,6 @@ from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index

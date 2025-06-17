@@ -73,7 +73,7 @@ var ascii_str = ascii("Hello")  # ASCII-only string
 ```
 """
 
-from collections import KeyElement, List, Optional
+from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
@@ -94,13 +94,12 @@ from os import PathLike, abort
 from os.atomic import Atomic
 from sys import bitwidthof, is_compile_time, sizeof
 from sys.ffi import c_char
-from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer, memcpy, memset
+from memory import memcpy, memset
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
-from utils import IndexList, Variant, Writable, Writer
+from utils import IndexList, Variant
 from utils._select import _select_register_value as select
 from utils.write import _WriteBufferStack
 

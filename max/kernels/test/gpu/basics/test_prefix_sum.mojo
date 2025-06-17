@@ -15,7 +15,7 @@ from math import ceildiv
 
 from gpu import block, global_idx, warp
 from gpu.host import DeviceContext
-from memory import UnsafePointer, memset
+from memory import memset
 from gpu.host import DeviceContext
 from gpu.globals import WARP_SIZE
 from math import ceildiv

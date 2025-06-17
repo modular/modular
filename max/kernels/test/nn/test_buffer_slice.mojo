@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 
 from algorithm import elementwise
 from buffer import NDBuffer

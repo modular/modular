@@ -14,8 +14,7 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
-from python import Python, PythonObject
-from testing import assert_equal
+from python import Python
 
 
 def test_create_module():

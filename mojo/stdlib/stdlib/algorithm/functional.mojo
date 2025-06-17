@@ -102,7 +102,6 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from memory import UnsafePointer
     from sys import simdwidthof
 
     # The amount of elements to loop through
@@ -212,7 +211,6 @@ fn vectorize[
 
     ```mojo
     from algorithm.functional import vectorize
-    from memory import UnsafePointer
     from sys import simdwidthof
 
     # The amount of elements to loop through

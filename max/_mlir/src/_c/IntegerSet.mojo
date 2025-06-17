@@ -20,7 +20,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 
 from utils.write import _WriteBufferStack
 
@@ -53,7 +52,7 @@ from .ffi import MLIR_func
 
 @register_passable("trivial")
 struct MlirIntegerSet:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 fn mlirIntegerSetGetContext(set: MlirIntegerSet) -> MlirContext:

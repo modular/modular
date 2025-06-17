@@ -11,10 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from nn.topk import topk_gpu
 

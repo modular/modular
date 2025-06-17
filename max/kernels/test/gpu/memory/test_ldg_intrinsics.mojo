@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StringSlice
 
 from gpu import thread_idx
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import ldg
-from memory import UnsafePointer
 from testing import *
 
 

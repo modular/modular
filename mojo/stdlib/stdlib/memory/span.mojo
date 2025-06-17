@@ -20,10 +20,9 @@ from memory import Span
 ```
 """
 
-from collections import InlineArray
 from sys.info import simdwidthof
 
-from memory import Pointer, UnsafePointer
+from memory import Pointer
 from memory.unsafe_pointer import _default_alignment
 
 
@@ -56,7 +55,7 @@ struct _SpanIter[
         return self
 
     @always_inline
-    fn __next__(mut self) -> ref [origin, address_space] T:
+    fn __next_ref__(mut self) -> ref [origin, address_space] T:
         @parameter
         if forward:
             self.index += 1

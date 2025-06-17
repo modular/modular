@@ -24,7 +24,7 @@ from layout.layout_tensor import (
     RuntimeTuple,
 )
 from linalg.qr_factorization import apply_q, form_q, qr_factorization
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from testing import assert_almost_equal
 
 

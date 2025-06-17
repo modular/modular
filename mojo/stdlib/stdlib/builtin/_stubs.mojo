@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.range import _StridedRangeIterator, _UIntStridedRangeIterator
 
 # ===-----------------------------------------------------------------------===#
 # __MLIRType
@@ -31,43 +30,19 @@ struct __MLIRType[T: AnyTrivialRegType](Copyable, ExplicitlyCopyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-trait _ParamForIterator(Copyable):
-    alias _IndexType: Copyable
+# This type is tightly bound to the internals of "@parameter for" emission.
+struct _ParamForWrapper[Iter: IteratorTrait & Copyable]:
+    var next_it: Iter
+    var value: Iter.Element
 
-    fn __has_next__(self) -> Bool:
-        ...
-
-    fn __next__(mut self) -> _IndexType:
-        ...
-
-
-struct _ParamForIteratorWrapper[IteratorT: _ParamForIterator]:
-    var next_it: IteratorT
-    var value: IteratorT._IndexType
-    var stop: Bool
-
-    fn __init__(
-        out self,
-        next_it: IteratorT,
-        owned value: IteratorT._IndexType,
-        stop: Bool,
-    ):
-        self.next_it = next_it
-        self.value = value^
-        self.stop = stop
+    fn __init__(out self, it: Iter):
+        self.next_it = it
+        self.value = self.next_it.__next__()
 
 
 fn parameter_for_generator[
-    IteratorT: _ParamForIterator
-](it: IteratorT) -> _ParamForIteratorWrapper[IteratorT]:
-    if it.__has_next__():
-        var next_it = it
-        return _ParamForIteratorWrapper(next_it, next_it.__next__(), False)
-
-    var next_iter: IteratorT
-    __mlir_op.`lit.ownership.mark_initialized`(
-        __get_mvalue_as_litref(next_iter)
-    )
-    var next_val: IteratorT._IndexType
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(next_val))
-    return _ParamForIteratorWrapper(next_iter^, next_val^, True)
+    Iter: IteratorTrait & Copyable
+](it: Iter) -> _ParamForWrapper[Iter]:
+    # NOTE: This function is called by the compiler's elaborator only when
+    # __has_next__ returns true.
+    return _ParamForWrapper(it)

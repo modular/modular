@@ -50,7 +50,6 @@ query interval data, particularly for finding overlaps.
 
 
 from builtin.string_literal import StaticString
-from memory import UnsafePointer
 
 from .deque import Deque
 

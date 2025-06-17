@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv, isqrt
 from sys.info import _is_sm_9x, alignof, simdwidthof
 
@@ -39,7 +38,7 @@ from gpu import (
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.info import H100, is_cpu, is_gpu
+from gpu.host.info import is_cpu, is_gpu
 from gpu.host.launch_attribute import (
     LaunchAttribute,
     LaunchAttributeID,
@@ -292,7 +291,7 @@ fn layer_norm_gpu_warp_tiling[
 
             # every thread computes its own simd width of mean and variance
             @parameter
-            for i in range(Int(simd_width)):
+            for i in range(simd_width):
                 welford_update(
                     vec_data[i], thread_mean, thread_m2, thread_count
                 )
@@ -360,7 +359,7 @@ fn layer_norm_gpu_block[
                 ]()
 
                 @parameter
-                for i in range(Int(simd_width)):
+                for i in range(simd_width):
                     welford_update(
                         vec_data[i], thread_mean, thread_m2, thread_count
                     )
@@ -1293,7 +1292,7 @@ fn group_norm_gpu_warp_tiling[
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
 
             @parameter
-            for i in range(Int(simd_width)):
+            for i in range(simd_width):
                 welford_update(
                     vec_data[i], thread_mean, thread_m2, thread_count
                 )
@@ -1309,7 +1308,7 @@ fn group_norm_gpu_warp_tiling[
             var g = row % num_groups
             var c_base = g * channels_per_group
             var norm_val = SIMD[accum_type, simd_width]()
-            for i in range(Int(simd_width)):
+            for i in range(simd_width):
                 var offset = (idx + i) // spatial
                 var c = c_base + offset
                 var gamma_val = gamma_fn[1](Index(c))
@@ -1364,7 +1363,7 @@ fn group_norm_gpu_block[
                 ]()
 
                 @parameter
-                for i in range(Int(simd_width)):
+                for i in range(simd_width):
                     welford_update(
                         vec_data[i], thread_mean, thread_m2, thread_count
                     )
@@ -1392,7 +1391,7 @@ fn group_norm_gpu_block[
                 var c_base = g * channels_per_group
 
                 var norm_val = SIMD[accum_type, simd_width]()
-                for i in range(Int(simd_width)):
+                for i in range(simd_width):
                     var offset_c = (offset + i) // spatial
                     var c = c_base + offset_c
                     var gamma_val = gamma_fn[1](Index(c))

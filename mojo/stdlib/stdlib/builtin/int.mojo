@@ -27,7 +27,6 @@ from sys import bitwidthof
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, Powable
-from memory import UnsafePointer
 from python import (
     Python,
     PythonConvertible,
@@ -35,7 +34,6 @@ from python import (
     ConvertibleFromPython,
 )
 
-from utils import Writable, Writer
 from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -240,7 +238,7 @@ struct Int(
     alias device_type: AnyTrivialRegType = Self
     """Int is remapped to the same type when passed to accelerator devices."""
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         """Device type mapping is the identity function."""
         target.bitcast[Self.device_type]()[] = self
 

@@ -31,7 +31,6 @@ from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 

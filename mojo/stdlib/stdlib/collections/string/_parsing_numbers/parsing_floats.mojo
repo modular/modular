@@ -29,7 +29,6 @@ from math import ceil, log10
 
 import bit
 import memory
-from memory import UnsafePointer
 from testing import assert_equal
 
 from .constants import (

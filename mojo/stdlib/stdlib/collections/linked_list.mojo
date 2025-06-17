@@ -15,8 +15,6 @@
 from collections._index_normalization import normalize_index
 from os import abort
 
-from memory import UnsafePointer
-
 
 struct Node[
     ElementType: Copyable & Movable,
@@ -91,7 +89,7 @@ struct _LinkedListIter[
     ElementType: Copyable & Movable,
     origin: Origin[mut],
     forward: Bool = True,
-](Copyable, Movable, Sized):
+](Copyable, IteratorTrait, Movable, Sized):
     var src: Pointer[LinkedList[ElementType], origin]
     var curr: UnsafePointer[Node[ElementType]]
 
@@ -99,7 +97,9 @@ struct _LinkedListIter[
     # _LinkedListIter.__len__()
     var seen: Int
 
-    fn __init__(out self, src: Pointer[LinkedList[ElementType], origin]):
+    alias Element = ElementType  # FIXME(MOCO-2068): shouldn't be needed.
+
+    fn __init__(out self, src: Pointer[LinkedList[Self.Element], origin]):
         self.src = src
 
         @parameter
@@ -112,7 +112,7 @@ struct _LinkedListIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> ref [origin] ElementType:
+    fn __next_ref__(mut self) -> ref [origin] Self.Element:
         var old = self.curr
 
         @parameter
@@ -123,6 +123,10 @@ struct _LinkedListIter[
         self.seen += 1
 
         return old[].value
+
+    @always_inline
+    fn __next__(mut self) -> Self.Element:
+        return self.__next_ref__()
 
     fn __has_next__(self) -> Bool:
         return Bool(self.curr)

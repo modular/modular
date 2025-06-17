@@ -21,7 +21,6 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import UnsafePointer
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
 from algorithm.reduction import max as reduce_max

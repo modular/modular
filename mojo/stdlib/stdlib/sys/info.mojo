@@ -23,9 +23,8 @@ print(CompilationTarget.is_x86())
 
 from collections.string.string_slice import _get_kgen_string
 
-from memory import UnsafePointer
 
-from .ffi import OpaquePointer, _external_call_const, external_call
+from .ffi import _external_call_const, external_call
 
 alias _TargetType = __mlir_type.`!kgen.target`
 
@@ -576,6 +575,30 @@ fn is_nvidia_gpu[subarch: StaticString]() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_amd_rdna3() -> Bool:
+    return (
+        is_amd_gpu["amdgpu:gfx1100"]()
+        or is_amd_gpu["amdgpu:gfx1101"]()
+        or is_amd_gpu["amdgpu:gfx1102"]()
+        or is_amd_gpu["amdgpu:gfx1103"]()
+        # These last two are technically RDNA3.5, but we'll treat them as RDNA3
+        # for now.
+        or is_amd_gpu["amdgpu:gfx1150"]()
+        or is_amd_gpu["amdgpu:gfx1151"]()
+    )
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna4() -> Bool:
+    return is_amd_gpu["amdgpu:gfx1200"]() or is_amd_gpu["amdgpu:gfx1201"]()
+
+
+@always_inline("nodebug")
+fn _is_amd_rdna() -> Bool:
+    return _is_amd_rdna3() or _is_amd_rdna4()
+
+
+@always_inline("nodebug")
 fn is_amd_gpu() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
     False otherwise.
@@ -584,6 +607,17 @@ fn is_amd_gpu() -> Bool:
         True if the triple target is amdgpu and False otherwise.
     """
     return is_triple["amdgcn-amd-amdhsa"]()
+
+
+@always_inline("nodebug")
+fn is_amd_gpu[subarch: StaticString]() -> Bool:
+    """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
+    and we are compiling for the specified sub-architecture, False otherwise.
+
+    Returns:
+        True if the triple target is amdgpu and False otherwise.
+    """
+    return is_amd_gpu() and _accelerator_arch() == subarch
 
 
 @always_inline("nodebug")

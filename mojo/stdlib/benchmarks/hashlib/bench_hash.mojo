@@ -28,7 +28,6 @@ from hashlib.hash import hash as old_hash
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from bit import byte_swap, rotate_bits_left
-from memory import UnsafePointer
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/
 alias words_ar = """

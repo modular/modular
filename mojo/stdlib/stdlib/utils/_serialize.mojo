@@ -13,7 +13,7 @@
 
 from pathlib import Path
 
-from memory import AddressSpace, UnsafePointer, bitcast
+from memory import AddressSpace, bitcast
 
 alias _kStartTensorMarker = "["
 alias _kEndTensorMarker = "]"

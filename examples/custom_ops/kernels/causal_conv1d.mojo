@@ -39,8 +39,6 @@ from python import Python, PythonObject
 from os import abort
 from sys import argv
 
-from memory import UnsafePointer
-
 
 @register("causal_conv1d_cpu")
 struct CausalConv1Dcpu:

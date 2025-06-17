@@ -32,7 +32,6 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import elementwise_epilogue_type
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils.index import Index, IndexList

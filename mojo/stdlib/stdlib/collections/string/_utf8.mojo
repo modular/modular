@@ -18,7 +18,7 @@ from sys import is_compile_time, simdwidthof
 from sys.intrinsics import likely, llvm_intrinsic
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer
+from memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8

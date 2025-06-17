@@ -14,7 +14,7 @@
 
 
 from os import Atomic
-from time import sleep, time_function
+from time import time_function
 
 from runtime.asyncrt import TaskGroup
 from testing import assert_equal

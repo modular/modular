@@ -38,7 +38,7 @@ from algorithm import vectorize
 from bit import count_leading_zeros, count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
-from memory import Span, UnsafePointer
+from memory import Span
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan

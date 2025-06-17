@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implement a generic unsafe pointer type.
 
-You can import these APIs from the `memory` package. For example:
-
-```mojo
-from memory import UnsafePointer
-```
+These APIs are imported automatically, just like builtins.
 """
 
 from sys import alignof, is_gpu, is_nvidia_gpu, sizeof
@@ -1223,3 +1219,7 @@ struct UnsafePointer[
         __get_address_as_uninit_lvalue(
             dst.address
         ) = __get_address_as_owned_value(self.address)
+
+
+alias OpaquePointer = UnsafePointer[NoneType]
+"""An opaque pointer, equivalent to the C `void*` type."""

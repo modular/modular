@@ -29,7 +29,7 @@ vectorization.
 
 from builtin.math import max as _max
 from builtin.math import min as _min
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from math import align_up
 
 from .globals import WARP_SIZE

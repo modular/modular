@@ -23,7 +23,7 @@ from sys import (
 
 import gpu.warp as warp
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import Dim
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -34,7 +34,6 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import FuncAttribute
 from gpu.memory import (
     CacheEviction,
     Fill,
@@ -42,9 +41,8 @@ from gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from gpu.mma import ld_matrix, mma
+from gpu.mma import mma
 from gpu.semaphore import Semaphore
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -62,7 +60,6 @@ from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
 from utils import StaticTuple
@@ -70,9 +67,8 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 from ._amd_gemm_gpu import gemm_kernel as amd_gemm_kernel
-from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, MatmulKernels, block_swizzle
+from .utils_gpu import MatmulConfig, block_swizzle
 
 
 @always_inline

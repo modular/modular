@@ -72,7 +72,6 @@ methods.
 
 from collections.string.string import _chr_ascii
 
-from memory import UnsafePointer
 
 from utils import Variant
 

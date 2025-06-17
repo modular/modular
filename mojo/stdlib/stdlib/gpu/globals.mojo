@@ -24,6 +24,7 @@ are used to optimize code generation and ensure hardware compatibility.
 from sys.info import (
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
+    _is_amd_rdna,
     is_amd_gpu,
     is_nvidia_gpu,
 )
@@ -41,7 +42,8 @@ alias WARP_SIZE = _resolve_warp_size()
 This constant represents the hardware warp size, which is the number of threads that execute
 instructions synchronously as a unit. The value is architecture-dependent:
 - 32 threads per warp on NVIDIA GPUs
-- 64 threads per warp on AMD GPUs
+- 32 threads per warp on AMD RDNA GPUs
+- 64 threads per warp on AMD CDNA GPUs
 - 0 if no GPU is detected
 
 The warp size is a fundamental parameter that affects:
@@ -55,6 +57,8 @@ The warp size is a fundamental parameter that affects:
 fn _resolve_warp_size() -> Int:
     @parameter
     if is_nvidia_gpu():
+        return 32
+    elif _is_amd_rdna():
         return 32
     elif is_amd_gpu():
         return 64

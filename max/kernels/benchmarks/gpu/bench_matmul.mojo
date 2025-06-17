@@ -31,7 +31,6 @@ from internal_utils._utils import (
     static,
 )
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 
 from utils import IndexList
 

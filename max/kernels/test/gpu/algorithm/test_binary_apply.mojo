@@ -17,7 +17,6 @@ from sys.info import is_nvidia_gpu
 
 from gpu import *
 from gpu.host import DeviceContext, Dim
-from memory import UnsafePointer
 from testing import assert_equal
 
 
@@ -75,7 +74,18 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     ctx.synchronize()
 
     with out.map_to_host() as out_host:
-        expected = [4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5]
+        expected: List[Float32] = [
+            4.5,
+            5.5,
+            6.5,
+            7.5,
+            8.5,
+            9.5,
+            10.5,
+            11.5,
+            12.5,
+            13.5,
+        ]
         for i in range(10):
             print("at index", i, "the value is", out_host[i])
             assert_equal(out_host[i], expected[i])

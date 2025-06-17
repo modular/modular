@@ -32,7 +32,6 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from collections import Optional
 from sys import alignof, llvm_intrinsic, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
 
@@ -43,7 +42,6 @@ from gpu.host._nvidia_cuda import (
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
-from gpu.id import block_idx, thread_idx
 from gpu.memory import (
     AddressSpace,
     ReduceOp,
@@ -63,11 +61,9 @@ from gpu.sync import (
     mbarrier_try_wait_parity_shared,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from memory import UnsafePointer, stack_allocation
 from memory.pointer import _GPUAddressSpace
 from gpu.intrinsics import Scope
 from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
 
 
 # Returns an IntTuple of variadic Int values.

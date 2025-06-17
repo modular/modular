@@ -14,7 +14,6 @@
 from math import iota
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 
 # CHECK-LABEL: test_memset_async

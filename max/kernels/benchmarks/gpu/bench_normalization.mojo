@@ -18,7 +18,6 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 from buffer import NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, env_get_shape, int_list_to_tuple
-from memory import UnsafePointer
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
 from utils.index import Index, IndexList, StaticTuple

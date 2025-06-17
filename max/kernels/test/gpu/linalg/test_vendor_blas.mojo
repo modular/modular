@@ -19,7 +19,6 @@ from buffer import DimList, NDBuffer
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index

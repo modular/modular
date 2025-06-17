@@ -16,7 +16,6 @@ from sys import env_get_int
 
 from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 

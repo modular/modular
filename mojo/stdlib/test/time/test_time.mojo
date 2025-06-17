@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from sys import os_is_windows
 from time import monotonic, perf_counter, perf_counter_ns, sleep, time_function
 
 from testing import assert_true

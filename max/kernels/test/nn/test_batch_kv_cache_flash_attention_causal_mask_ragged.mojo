@@ -21,7 +21,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
 from testing import assert_almost_equal

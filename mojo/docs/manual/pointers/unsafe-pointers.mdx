@@ -28,8 +28,6 @@ point to any type of value, and the value type is specified as a parameter. The
 value pointed to by a pointer is sometimes called a *pointee*.
 
 ```mojo
-from memory import UnsafePointer
-
 # Allocate memory to hold a value
 var ptr = UnsafePointer[Int].alloc(1)
 # Initialize the allocated memory
@@ -399,7 +397,6 @@ data using a Mojo pointer:
 
 ```mojo
 from python import Python
-from memory import UnsafePointer
 
 def share_array():
     np = Python.import_module("numpy")

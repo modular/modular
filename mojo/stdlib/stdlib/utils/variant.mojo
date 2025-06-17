@@ -42,7 +42,6 @@ from os import abort
 from sys import alignof, sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # Variant

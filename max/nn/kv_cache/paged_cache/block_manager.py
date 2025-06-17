@@ -195,21 +195,6 @@ class BlockManager(Generic[T]):
         hashes.extend(new_hashes)
 
     @traced
-    def prefetch(self, data: T, num_steps: int = 1) -> bool:
-        """Reuses blocks from prefix cache and allocates new blocks for a request.
-
-        Returns `True` if the request was prefetched, `False` otherwise.
-        """
-        self.reuse_blocks_from_prefix_cache(data)
-
-        # Allocating new blocks can fail if there are insufficient blocks.
-        try:
-            self.allocate_new_blocks(data, num_steps)
-        except RuntimeError:
-            return False
-        return True
-
-    @traced
     def reuse_blocks_from_prefix_cache(self, ctx: T) -> None:
         """Reuse blocks from prefix cache.
 

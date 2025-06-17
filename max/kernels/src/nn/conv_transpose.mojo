@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv
 from sys import alignof, simdwidthof
 from nn.conv import (
@@ -23,7 +22,6 @@ from nn.conv import (
 from .conv_utils import elementwise_simd_epilogue_type
 
 from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA
 from gpu._cudnn.cnn_infer import (
     cudnnConvolutionForward,
     cudnnConvolutionMode_t,
@@ -66,8 +64,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import UnsafePointer
-from register import register_internal
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -1649,16 +1645,16 @@ fn conv_transposed_cudnn[
             cudnn_handle[].ptr_handle,
             UnsafePointer(to=alpha).bitcast[NoneType](),
             cudnn_handle[].ptr_filter_desc,
-            rebind[UnsafePointer[NoneType]](filter.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](filter.data.bitcast[NoneType]()),
             cudnn_handle[].ptr_input_desc,
-            rebind[UnsafePointer[NoneType]](input.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](input.data.bitcast[NoneType]()),
             cudnn_handle[].ptr_conv_desc,
             algo,
             UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
             0,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,
-            rebind[UnsafePointer[NoneType]](output.data.bitcast[NoneType]()),
+            rebind[OpaquePointer](output.data.bitcast[NoneType]()),
         )
     )
 

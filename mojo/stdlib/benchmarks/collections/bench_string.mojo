@@ -242,11 +242,13 @@ fn bench_write_utf8[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var data = stack_allocation[4, Byte]()
+        var data = InlineArray[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):
-                var res = codepoints.unsafe_get(i).unsafe_write_utf8(data)
+                var res = codepoints.unsafe_get(i).unsafe_write_utf8(
+                    data.unsafe_ptr()
+                )
                 keep(Bool(res))
 
     b.iter[call_fn]()

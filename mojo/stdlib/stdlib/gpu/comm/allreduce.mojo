@@ -40,7 +40,7 @@ Limitations:
 from collections import InlineArray
 from math import ceildiv
 from sys import alignof, env_get_int, simdwidthof, sizeof
-from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys.ffi import _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 
 from buffer import NDBuffer
@@ -62,7 +62,7 @@ from gpu.grid_controls import (
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple

@@ -13,13 +13,12 @@
 
 from collections import OptionalReg
 from math import iota
-from sys import bitwidthof, is_nvidia_gpu
+from sys import is_nvidia_gpu
 
 from buffer import DimList, NDBuffer
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 
 from utils.index import IndexList
-from utils.numerics import min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#
 # MaskName

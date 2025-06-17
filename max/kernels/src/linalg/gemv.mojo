@@ -39,7 +39,7 @@ from gpu.host._compile import _get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.tensor_ops import tc_reduce_gevm_8x
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 
 from utils import IndexList
 from utils.index import Index

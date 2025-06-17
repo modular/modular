@@ -15,7 +15,6 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 alias T = DType.float64
 alias S = Scalar[T]
@@ -34,7 +33,7 @@ struct TwoS:
 struct OneS(DevicePassable):
     alias device_type: AnyTrivialRegType = TwoS
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
 
     @staticmethod

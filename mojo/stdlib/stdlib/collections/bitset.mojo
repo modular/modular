@@ -125,7 +125,7 @@ struct BitSet[size: UInt](
         self._words = __type_of(self._words)(0)
 
         @parameter
-        for i in range(Int(size)):
+        for i in range(size):
             if init[i]:
                 self.set(i)
 
@@ -147,7 +147,7 @@ struct BitSet[size: UInt](
         var total: UInt = 0
 
         @parameter
-        for i in range(Int(self._words_size)):
+        for i in range(self._words_size):
             total += UInt(pop_count(self._words.unsafe_get(i)))
 
         return total
@@ -319,7 +319,7 @@ struct BitSet[size: UInt](
         else:
             # For small bitsets, use a simple scalar implementation
             @parameter
-            for i in range(Int(Self._words_size)):
+            for i in range(Self._words_size):
                 res._words.unsafe_get(i) = func(
                     left._words.unsafe_get(i),
                     right._words.unsafe_get(i),

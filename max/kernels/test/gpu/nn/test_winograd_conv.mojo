@@ -30,7 +30,6 @@ from gpu.id import block_dim, block_idx, thread_idx
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from memory import UnsafePointer
 from nn.conv import conv_gpu
 from testing import assert_almost_equal, assert_true
 

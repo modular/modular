@@ -14,7 +14,6 @@
 from sys.intrinsics import prefetch
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from memory import UnsafePointer
 from testing import assert_true
 
 

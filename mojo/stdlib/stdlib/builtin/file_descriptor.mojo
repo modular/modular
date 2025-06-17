@@ -36,7 +36,7 @@ from sys._amdgpu import printf_append_string_n, printf_begin
 from sys.ffi import c_ssize_t, external_call
 
 from builtin.io import _printf
-from memory import Span, UnsafePointer
+from memory import Span
 
 
 @register_passable("trivial")

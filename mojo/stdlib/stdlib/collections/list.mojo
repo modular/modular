@@ -20,7 +20,7 @@ from os import abort
 from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import Pointer, Span, UnsafePointer, memcpy
+from memory import Pointer, memcpy
 
 from .optional import Optional
 
@@ -36,7 +36,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     list_origin: Origin[list_mutability],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, IteratorTrait, Movable):
     """Iterator for List.
 
     Parameters:
@@ -48,15 +48,13 @@ struct _ListIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
     alias list_type = List[T, hint_trivial_type]
 
     var index: Int
     var src: Pointer[Self.list_type, list_origin]
 
-    fn __iter__(self) -> Self:
-        return self
-
-    fn __next__(mut self) -> ref [list_origin] T:
+    fn __next_ref__(mut self) -> ref [list_origin] T:
         @parameter
         if forward:
             self.index += 1
@@ -66,8 +64,16 @@ struct _ListIter[
             return self.src[][self.index]
 
     @always_inline
+    fn __next__(mut self) -> T:
+        return self.__next_ref__()
+
+    @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    @always_inline
+    fn __iter__(self) -> Self:
+        return self
 
     fn __len__(self) -> Int:
         @parameter

@@ -22,7 +22,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod

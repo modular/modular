@@ -18,7 +18,7 @@ from os.env import getenv, setenv
 from os.path import expanduser, join
 from sys.info import os_is_windows
 
-from testing import assert_equal, assert_raises, assert_true
+from testing import assert_equal
 
 
 fn get_user_path() -> String:

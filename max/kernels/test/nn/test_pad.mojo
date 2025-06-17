@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import Layout, RuntimeLayout, LayoutTensor
-from memory import UnsafePointer
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 from testing import assert_equal
 

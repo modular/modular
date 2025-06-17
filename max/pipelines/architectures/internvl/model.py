@@ -21,7 +21,7 @@ from typing import cast
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import DLPackCompatible, InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
 from max.graph.weights import (
     SafetensorWeights,
@@ -51,7 +51,10 @@ from transformers import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
-from .weight_adapters import convert_internvl_language_model_state_dict
+from .weight_adapters import (
+    convert_internvl_language_model_state_dict,
+    convert_internvl_vision_model_state_dict,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -203,26 +206,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             devices=devices,
         )
 
-    def _get_state_dict(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter,
-    ) -> dict[str, WeightData]:
-        """Get processed state dict for language model loading.
-
-        Args:
-            weights: Raw InternVL checkpoint weights
-            adapter: Weight adapter for name mapping (required)
-
-        Returns:
-            Processed state dict ready for DistributedLlama3.load_state_dict()
-        """
-        return adapter(
-            dict(weights.items()),
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-        )
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled InternVL models into the MAX Engine session.
 
@@ -243,16 +226,22 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 "InternVL currently only supports safetensors weights"
             )
 
-        # Get processed state dict for language model.
-        state_dict = self._get_state_dict(
-            self.weights, convert_internvl_language_model_state_dict
+        # Get processed state dict for language and vision models.
+        # NOTE: use weights_dict to mean WeightData, and state dict to mean
+        # DLPack arrays, since state dict is overloaded.
+        weights_dict = dict(self.weights.items())
+        llm_weights_dict = convert_internvl_language_model_state_dict(
+            weights_dict
+        )
+        vision_model_weights_dict = convert_internvl_vision_model_state_dict(
+            weights_dict
         )
 
         # Generate InternVL config from HuggingFace config
         internvl_config = InternVLConfig.generate(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
-            state_dict=state_dict,
+            llm_state_dict=llm_weights_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
             logits_postprocessor=None,
@@ -264,9 +253,11 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Build and compile vision model
         logger.info("Building and compiling vision model...")
         before = time.perf_counter()
-        vision_graph = self._build_vision_graph(internvl_config)
+        vision_graph, vision_model_state_dict = self._build_vision_graph(
+            internvl_config, vision_model_weights_dict
+        )
         vision_model = session.load(
-            vision_graph, weights_registry=self.weights.allocated_weights
+            vision_graph, weights_registry=vision_model_state_dict
         )
         after = time.perf_counter()
         logger.info(
@@ -276,9 +267,11 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Build and compile language model
         logger.info("Building and compiling language model...")
         before = time.perf_counter()
-        language_graph = self._build_language_graph(internvl_config, state_dict)
+        language_graph, language_model_state_dict = self._build_language_graph(
+            internvl_config, llm_weights_dict
+        )
         language_model = session.load(
-            language_graph, weights_registry=self.state_dict
+            language_graph, weights_registry=language_model_state_dict
         )
         after = time.perf_counter()
         logger.info(
@@ -287,12 +280,15 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         return vision_model, language_model
 
-    def _build_vision_graph(self, config: InternVLConfig) -> Graph:
+    def _build_vision_graph(
+        self, config: InternVLConfig, state_dict: dict[str, WeightData]
+    ) -> tuple[Graph, dict[str, DLPackCompatible]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
         pixel_values_type = TensorType(
             DType.float32,
-            shape=["batch_size", "height", "width", "num_channels"],
+            # Expect channels last and exactly 3 (RGB).
+            shape=["batch_size", "height", "width", 3],
             # Expect the input image on device 0.
             device=DeviceRef.GPU(),
         )
@@ -301,6 +297,14 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         with Graph("internvl_vision", input_types=[pixel_values_type]) as graph:
             # Build vision model architecture.
             vision_model = InternVLVisionModel(config)
+            vision_model.load_state_dict(
+                state_dict=state_dict,
+                override_quantization_encoding=True,
+                weight_alignment=1,
+                # TODO(MODELS-565): make `strict=True` once the VisionEncoder
+                # lands.
+                strict=False,
+            )
 
             # Unpack inputs.
             (pixel_values,) = graph.inputs
@@ -317,7 +321,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             # Set graph outputs.
             graph.output(*image_embeddings)
 
-            return graph
+            return graph, vision_model.state_dict()
 
     def _language_graph_input_types(self) -> tuple[Type, ...]:
         # Generate DeviceRef.
@@ -379,7 +383,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def _build_language_graph(
         self, config: InternVLConfig, state_dict: dict[str, WeightData]
-    ) -> Graph:
+    ) -> tuple[Graph, dict[str, DLPackCompatible]]:
         """Build the language model graph for text generation with image embeddings."""
         # Initialize graph with input types.
         with Graph(
@@ -392,7 +396,6 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 override_quantization_encoding=True,
                 weight_alignment=1,
             )
-            self.state_dict = language_model.state_dict()
 
             # Unpack inputs
             tokens, input_row_offsets, return_n_logits, *variadic_args = (
@@ -418,7 +421,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             graph.output(*outputs)
 
-            return graph
+            return graph, language_model.state_dict()
 
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]

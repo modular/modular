@@ -24,7 +24,7 @@ Key components:
 - Helper functions for dimension specification and layout creation
 """
 
-from sys import bitwidthof, is_gpu
+from sys import is_gpu
 
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import (
@@ -32,10 +32,9 @@ from layout.layout_tensor import (
     _get_index_type,
     _get_layout_type,
 )
-from memory import UnsafePointer
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 
-from utils import Index, IndexList, StaticTuple
+from utils import Index, IndexList
 
 from .int_tuple import UNKNOWN_VALUE
 

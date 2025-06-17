@@ -29,9 +29,7 @@ coordinate transformations (`idx2crd`, `crd2idx`), and specialized tensor operat
 like shape division and prefix products.
 """
 
-from collections import InlineArray
 from os import abort
-from sys import bitwidthof
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten

@@ -13,7 +13,7 @@
 
 from random import randn
 
-from layout import Layout, LayoutTensor
+from layout import LayoutTensor
 
 
 fn random_normal[

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from random import random_ui64
 
 from buffer import NDBuffer

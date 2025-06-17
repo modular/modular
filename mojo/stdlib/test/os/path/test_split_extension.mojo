@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-import os
 from os.path.path import _split_extension, split_extension
 
 from testing import assert_equal

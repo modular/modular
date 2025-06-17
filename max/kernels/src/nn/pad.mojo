@@ -16,7 +16,6 @@
 # pad
 # ===-----------------------------------------------------------------------===#
 
-from collections import InlineArray
 
 from layout import (
     LayoutTensor,
@@ -25,12 +24,10 @@ from layout import (
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
-from layout.runtime_tuple import crd2idx, idx2crd
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
-from memory import UnsafePointer, memcpy
-from register import register_internal
+from memory import memcpy
 
 from utils import IndexList, StaticTuple
 

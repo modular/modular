@@ -10,14 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Dict, Optional
 from pathlib import Path
 from sys import sizeof
 
 from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
-
-from utils import Writer
 
 
 fn print_svg[

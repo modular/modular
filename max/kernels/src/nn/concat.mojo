@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import align_down, align_up, ceildiv
 from sys._build import is_debug_build
-from sys.info import bitwidthof, simdwidthof, sizeof
+from sys.info import simdwidthof, sizeof
 
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
@@ -27,8 +26,7 @@ from buffer import NDBuffer
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from memory import UnsafePointer, memcpy
-from register import register_internal
+from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
 

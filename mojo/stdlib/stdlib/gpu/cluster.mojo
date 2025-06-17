@@ -24,7 +24,6 @@ from sys import is_nvidia_gpu, llvm_intrinsic
 from sys.info import _is_sm_9x_or_newer
 from sys.info import _is_sm_100x_or_newer
 from sys._assembly import inlined_assembly
-from memory import UnsafePointer
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from sys import sizeof, _RegisterPackType
 

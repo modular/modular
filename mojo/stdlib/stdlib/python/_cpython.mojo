@@ -26,7 +26,6 @@ from sys import external_call
 from sys.arg import argv
 from sys.ffi import (
     DLHandle,
-    OpaquePointer,
     c_char,
     c_int,
     c_long,
@@ -35,7 +34,6 @@ from sys.ffi import (
     c_uint,
 )
 
-from memory import UnsafePointer
 from python.bindings import (
     Typed_initproc,
     Typed_newfunc,

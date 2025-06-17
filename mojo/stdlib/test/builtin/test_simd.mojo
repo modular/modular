@@ -12,12 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
 from sys import has_neon
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
-from memory import UnsafePointer
 from testing import (
     assert_almost_equal,
     assert_equal,
@@ -26,7 +24,7 @@ from testing import (
     assert_true,
 )
 
-from utils import IndexList, StaticTuple
+from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
 
 
