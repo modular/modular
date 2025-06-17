@@ -17,7 +17,7 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession, Model, TensorSpec
+from max.engine import InferenceSession, Model
 from max.graph import (
     DeviceRef,
     Graph,
@@ -409,19 +409,6 @@ def test_list_io(session: InferenceSession, mo_listio_model_path: Path) -> None:
     assert np.allclose(output_list_any[0], np.zeros(2))
     assert np.allclose(output_list_any[1], np.array([1.0, 2.0, 3.0]))
     assert np.allclose(output_list_any[2], np.ones(5))
-
-
-def test_dynamic_rank_spec() -> None:
-    input_spec = TensorSpec(None, DType.float64, "dynamic")
-    assert input_spec.shape is None
-    assert input_spec.dtype == DType.float64
-    assert input_spec.name == "dynamic"
-
-    assert (
-        repr(input_spec)
-        == "TensorSpec(shape=None, dtype=DType.float64, name=dynamic)"
-    )
-    assert str(input_spec) == "None x float64"
 
 
 @dataclass
