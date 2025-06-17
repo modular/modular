@@ -1541,8 +1541,8 @@ kgen.func @store_bitcast(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<point
   // CHECK-NEXT: pop.store %0, %arg1 : !kgen.pointer<pointer<none>>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
   // CHECK-NEXT: %1 = pop.pointer.bitcast %arg0 : !kgen.pointer<index> to !kgen.pointer<none>
-  // CHECK-NEXT: pop.store volatile %1, %arg1 : !kgen.pointer<pointer<none>>
-  pop.store volatile %arg0, %0 : !kgen.pointer<pointer<index>>
+  // CHECK-NEXT: pop.store volatile<1> %1, %arg1 : !kgen.pointer<pointer<none>>
+  pop.store volatile<1> %arg0, %0 : !kgen.pointer<pointer<index>>
   kgen.return
 }
 

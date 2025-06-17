@@ -819,7 +819,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     pop.store %0, %ptr0 : !kgen.pointer<scalar<f32>>
     pop.store %1, %ptr1 : !kgen.pointer<simd<4, type>>
     pop.store %1, %ptr1 align 8 : !kgen.pointer<simd<4, type>>
-    pop.store volatile %1, %ptr1 align 8: !kgen.pointer<simd<4, type>>
+    pop.store volatile<1> %1, %ptr1 align 8: !kgen.pointer<simd<4, type>>
     pop.store atomic release %1, %ptr1 : !kgen.pointer<simd<4, type>>
     ```
   }];
@@ -827,11 +827,11 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
   let arguments = (ins AnyType:$arg,
                        Arg<PointerType, "", [MemWrite]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       UnitAttr:$isVolatile,
+                       OptionalAttr<AttrOfType<I1>>:$isVolatile,
                        DefaultValuedAttr<
                         POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering);
   let assemblyFormat = [{
-    (`volatile` $isVolatile^)?
+    (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
     (`atomic` $ordering^)?
     $arg `,` $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?

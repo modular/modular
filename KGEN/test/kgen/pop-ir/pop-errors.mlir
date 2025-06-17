@@ -242,7 +242,7 @@ kgen.func @store_atomic_invalid_ordering(%p: !kgen.pointer<scalar<f32>>, %v: !po
 
 kgen.func @store_volatile_atomic(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar<f32>) {
   // expected-error @below {{volatile stores cannot be atomic}}
-  pop.store volatile atomic release %v, %p : !kgen.pointer<scalar<f32>>
+  pop.store volatile<1> atomic release %v, %p : !kgen.pointer<scalar<f32>>
   kgen.return
 }
 
