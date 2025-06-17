@@ -11,7 +11,7 @@
 from gpu.host import DeviceContext
 from sys import argv, sizeof
 from sys.info import _current_target
-from gpu.host._compile import get_gpu_target
+from gpu.host.compile import get_gpu_target
 from collections.string.string_slice import StaticString, _get_kgen_string
 
 
