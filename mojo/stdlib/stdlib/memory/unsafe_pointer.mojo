@@ -767,15 +767,9 @@ struct UnsafePointer[
             alignment > 0, "alignment must be a positive integer value"
         ]()
 
-        @parameter
-        if volatile:
-            __mlir_op.`pop.store`[
-                alignment = alignment.value, isVolatile = __mlir_attr.unit
-            ](val, self.bitcast[SIMD[dtype, width]]().address)
-        else:
-            __mlir_op.`pop.store`[alignment = alignment.value](
-                val, self.bitcast[SIMD[dtype, width]]().address
-            )
+        __mlir_op.`pop.store`[
+            alignment = alignment.value, isVolatile = volatile.value
+        ](val, self.bitcast[SIMD[dtype, width]]().address)
 
     @always_inline("nodebug")
     fn strided_load[
