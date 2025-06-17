@@ -29,6 +29,51 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+/// When dealing with a trait method that mentions an associated alias T, like
+///
+///     trait MyTrait[_Self: AnyType]: # Implicit _Self param-decl shown
+///         alias T: AnyType
+///         fn foo(self: _Self, x: Self.T) -> Int:
+///             ...
+///     struct MyStruct(MyTrait):
+///         alias T = Bool
+///         fn foo(self, x: Bool) -> Int:
+///             ...
+///
+/// At some point verifyConformance will verify that MyStruct conforms to
+/// MyTrait. During that, it'll look at the trait's
+/// `fn foo(self: _Self, x: Self.T) -> Int` signature, to see if the same thing
+/// exists in the struct.
+///
+/// To do that, we first need to substitute _Self and Self, to make
+/// `fn foo(self: MyStruct, x: MyStruct.T)`
+/// but we'll still need to simplify the `MyStruct.T` to get our desired
+/// signature:
+///
+/// `fn foo(self: MyStruct, x: Bool)`
+///
+/// This last step is accomplished by this function here.
+static FnTypeGeneratorType
+simplifyGetVTableEntryOnSelf(PValue selfType,
+                             const DenseMap<StringAttr, TypedAttr> *aliasValues,
+                             FnTypeGeneratorType signature) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
+    if (paramOp.getOpcode() == POC::GetVTableEntry &&
+        paramOp.getOperand(0) == PValue(selfType).get()) {
+      auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
+      // The vtable entries have type !kgen.string, but the entries from the
+      // trait decl have a StringAttr with no type.  Reunique them to look up.
+      aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
+      auto iter = aliasValues->find(aliasName);
+      if (iter != aliasValues->end())
+        return iter->second;
+    }
+    return paramOp;
+  });
+  return cast<FnTypeGeneratorType>(replacer.replace(signature));
+}
+
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
@@ -59,22 +104,8 @@ getTraitFunctionSignature(IREmitter &emitter, FnOp traitFn,
 
   auto selfStructAsTrait = TypeParamAttr::get(structSelfType, trait);
 
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
-    if (paramOp.getOpcode() == POC::GetVTableEntry &&
-        paramOp.getOperand(0) == selfStructAsTrait) {
-      auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
-      // The vtable entries have type !kgen.string, but the entries from the
-      // trait decl have a StringAttr with no type.  Reunique them to look up.
-      aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
-      auto iter = aliasValues.find(aliasName);
-      if (iter != aliasValues.end())
-        return iter->second;
-    }
-    return paramOp;
-  });
-  newSignature =
-      cast<KGEN::FuncTypeGeneratorType>(replacer.replace(newSignature));
+  newSignature = simplifyGetVTableEntryOnSelf(selfStructAsTrait, &aliasValues,
+                                              newSignature);
   newSignature = traitAliasReplacer.replace(newSignature);
   return {newSignature, bindings};
 }
@@ -552,21 +583,8 @@ createRequirementSignature(FnOp traitFn, ASTType newSelfType,
   // requirementFn is really more like: get_vtable_entry(MyStruct, "T").
   // We'll manually replace those entire get_vtable_entry calls.
   if (aliasValues) {
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
-      if (paramOp.getOpcode() == POC::GetVTableEntry &&
-          paramOp.getOperand(0) == PValue(newSelfType).get()) {
-        auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
-        // The vtable entries have type !kgen.string, but the entries from the
-        // trait decl have a StringAttr with no type.  Reunique them to look up.
-        aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
-        auto iter = aliasValues->find(aliasName);
-        if (iter != aliasValues->end())
-          return iter->second;
-      }
-      return paramOp;
-    });
-    signature = cast<FnTypeGeneratorType>(replacer.replace(signature));
+    signature = simplifyGetVTableEntryOnSelf(PValue(newSelfType), aliasValues,
+                                             signature);
   }
 
   // At this point, signature's `self` argument's type is the struct or
