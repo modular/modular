@@ -33,19 +33,6 @@ class TensorSpec:
     For usage examples, see :obj:`Model.input_metadata`.
     """
 
-    def __init__(
-        self,
-        shape: Sequence[int | None] | None,
-        dtype: max._core.dtype.DType,
-        name: str,
-    ) -> None:
-        """
-        Args:
-            shape: The tensor shape.
-            dtype: The tensor data type.
-            name: The tensor name.
-        """
-
     @property
     def dtype(self) -> max._core.dtype.DType:
         """A tensor data type."""
@@ -63,9 +50,7 @@ class TensorSpec:
         value is ``None``.
         """
 
-    def __getstate__(self) -> tuple: ...
     def __repr__(self) -> str: ...
-    def __setstate__(self, arg: tuple, /) -> None: ...
     def __str__(self) -> str: ...
 
 class TensorData:
