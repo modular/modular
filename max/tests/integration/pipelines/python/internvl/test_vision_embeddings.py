@@ -6,7 +6,7 @@
 
 import pytest
 import torch
-from max.driver import Accelerator, Device, Tensor
+from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -174,10 +174,14 @@ def generate_max_outputs(
     pixel_values = pixel_values.cuda() if is_gpu else pixel_values.cpu()
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
 
+    # Convert from PyTorch's NCHW to MAX's NHWC format
+    pixel_values = pixel_values.permute(0, 2, 3, 1).contiguous()
+
     # Create a minimal config object for InternVisionEmbeddings
     class MinimalConfig:
         def __init__(self, vision_config: VisionConfig):
             self.vision_config = vision_config
+            self.devices = [device_ref]  # Add devices attribute
 
     config = MinimalConfig(vision_config)
 
@@ -192,9 +196,6 @@ def generate_max_outputs(
     )
 
     # Build the graph with symbolic dimensions to test the TypeError fix
-    # Convert from NCHW to NHWC for MAX
-    pixel_values_nhwc = pixel_values.permute(0, 2, 3, 1).contiguous()
-
     input_type = TensorType(
         dtype, shape=("batch", "height", "width", 3), device=device_ref
     )
@@ -207,7 +208,8 @@ def generate_max_outputs(
     compiled = session.load(graph, weights_registry=state_dict)
 
     # Execute the model
-    result = compiled.execute(Tensor.from_dlpack(pixel_values_nhwc).to(device))
+    result = compiled.execute(Tensor.from_dlpack(pixel_values).to(device))
+
     # Convert result back to torch tensor
     max_tensor = result[0]
     return from_dlpack(max_tensor)
@@ -333,4 +335,197 @@ def test_vision_embeddings_non_square(
         max_output.to(torch.bfloat16),
         rtol=1e-2,
         atol=1e-2,
+    )
+
+
+@pytest.mark.parametrize("n_devices", [2, 4])
+def test_vision_embeddings_multi_gpu(
+    vision_config: VisionConfig,
+    embeddings_weights: dict[str, torch.Tensor],
+    n_devices: int,
+) -> None:
+    """Test InternVisionEmbeddings sharding with multiple GPUs."""
+    if n_devices > accelerator_count():
+        pytest.skip(f"Not enough GPUs to run test with {n_devices} GPUs.")
+
+    # Test with multiple devices configuration
+    class MultiGPUConfig:
+        def __init__(
+            self, vision_config: VisionConfig, devices: list[DeviceRef]
+        ):
+            self.vision_config = vision_config
+            self.devices = devices
+
+    devices = [DeviceRef.GPU(i) for i in range(n_devices)]
+    config = MultiGPUConfig(vision_config, devices)
+
+    state_dict = prepare_embeddings_weights_for_max(embeddings_weights)
+
+    # Build graph to test sharding
+    batch_size = 2
+    input_type = TensorType(
+        vision_config.dtype,
+        shape=(
+            batch_size,
+            vision_config.image_size,
+            vision_config.image_size,
+            3,
+        ),
+        device=DeviceRef.GPU(0),
+    )
+
+    with Graph(
+        "test_sharding",
+        input_types=(input_type,),
+    ):
+        # Create embeddings and set sharding strategy
+        embeddings = InternVisionEmbeddings(config, DeviceRef.GPU(0))  # type: ignore[arg-type]
+        embeddings.load_state_dict(
+            state_dict=state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+        )
+
+        # Set sharding strategy for replication across devices
+        from max.graph import ShardingStrategy
+
+        embeddings.sharding_strategy = ShardingStrategy.replicate(
+            num_devices=n_devices
+        )
+
+        # Test that we can shard to each device
+        for shard_idx in range(n_devices):
+            device = DeviceRef.GPU(shard_idx)
+            sharded = embeddings.shard(shard_idx, device)
+
+            # Verify sharded embeddings maintain configuration
+            assert isinstance(sharded, InternVisionEmbeddings)
+            assert sharded.embed_dim == vision_config.hidden_size
+            assert sharded.image_size == vision_config.image_size
+            assert sharded.patch_size == vision_config.patch_size
+
+    # Test passes if sharding completes without errors
+    print(f"Successfully tested sharding with {n_devices} devices")
+
+
+def test_vision_embeddings_multi_gpu_execution(
+    vision_config: VisionConfig,
+    embeddings_weights: dict[str, torch.Tensor],
+) -> None:
+    """Test InternVisionEmbeddings execution on 2 GPUs with large image."""
+    n_devices = 2
+    if n_devices > accelerator_count():
+        pytest.skip(f"Not enough GPUs to run test with {n_devices} GPUs.")
+
+    # Use large image dimensions to stress test
+    # Dimensions must be divisible by patch_size (14)
+    height, width = 2688, 2044
+    batch_size = 1
+
+    # Create f32 inputs to match the failing case
+    pixel_values = torch.randn(
+        batch_size, 3, height, width, dtype=torch.float32
+    ).to("cuda")
+
+    # Convert to NHWC for MAX
+    pixel_values_nhwc = pixel_values.permute(0, 2, 3, 1).contiguous()
+
+    # Create multi-GPU config
+    class MultiGPUConfig:
+        def __init__(
+            self, vision_config: VisionConfig, devices: list[DeviceRef]
+        ):
+            self.vision_config = vision_config
+            self.devices = devices
+
+    devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+    config = MultiGPUConfig(vision_config, devices)
+
+    state_dict = prepare_embeddings_weights_for_max(embeddings_weights)
+
+    # Build graph with f32 input
+    input_type_gpu0 = TensorType(
+        DType.float32,  # f32 input
+        shape=("batch_size", height, width, 3),
+        device=DeviceRef.GPU(0),
+    )
+
+    # Create embeddings for each GPU
+    embeddings_gpu0 = InternVisionEmbeddings(config, DeviceRef.GPU(0))  # type: ignore[arg-type]
+    embeddings_gpu0.load_state_dict(
+        state_dict=state_dict,
+        override_quantization_encoding=True,
+        weight_alignment=1,
+    )
+
+    embeddings_gpu1 = InternVisionEmbeddings(config, DeviceRef.GPU(1))  # type: ignore[arg-type]
+    embeddings_gpu1.load_state_dict(
+        state_dict=state_dict,
+        override_quantization_encoding=True,
+        weight_alignment=1,
+    )
+
+    # Build separate graphs for each GPU
+    graph0 = Graph(
+        "InternVisionEmbeddings_GPU0",
+        forward=embeddings_gpu0,
+        input_types=(input_type_gpu0,),
+    )
+
+    input_type_gpu1 = TensorType(
+        DType.float32,
+        shape=("batch_size", height, width, 3),
+        device=DeviceRef.GPU(1),
+    )
+
+    graph1 = Graph(
+        "InternVisionEmbeddings_GPU1",
+        forward=embeddings_gpu1,
+        input_types=(input_type_gpu1,),
+    )
+
+    # Create sessions and compile
+    session0 = InferenceSession(devices=[Accelerator(0)])
+    session1 = InferenceSession(devices=[Accelerator(1)])
+
+    compiled0 = session0.load(graph0, weights_registry=state_dict)
+    compiled1 = session1.load(graph1, weights_registry=state_dict)
+
+    # Execute on GPU 0
+    input_tensor0 = Tensor.from_dlpack(pixel_values_nhwc).to(Accelerator(0))
+    result0 = compiled0.execute(input_tensor0)[0]
+    assert isinstance(result0, Tensor)
+    result0 = result0.to(CPU())
+
+    # Copy input to GPU 1 and execute
+    pixel_values_gpu1 = pixel_values.to("cuda:1")
+    pixel_values_nhwc_gpu1 = pixel_values_gpu1.permute(0, 2, 3, 1).contiguous()
+    input_tensor1 = Tensor.from_dlpack(pixel_values_nhwc_gpu1).to(
+        Accelerator(1)
+    )
+    result1 = compiled1.execute(input_tensor1)[0]
+    assert isinstance(result1, Tensor)
+    result1 = result1.to(CPU())
+
+    output0 = from_dlpack(result0)
+    output1 = from_dlpack(result1)
+
+    # Verify output shape
+    expected_num_patches = (height // vision_config.patch_size) * (
+        width // vision_config.patch_size
+    )
+    expected_shape = (
+        batch_size,
+        expected_num_patches + 1,
+        vision_config.hidden_size,
+    )
+
+    assert output0.shape == expected_shape
+    assert output1.shape == expected_shape
+
+    # Compare outputs from both GPUs.
+    torch.testing.assert_close(output0, output1, rtol=1e-2, atol=1e-2)
+
+    print(
+        f"Successfully tested execution on 2 GPUs with {height}x{width} image"
     )
