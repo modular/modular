@@ -285,10 +285,13 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> tuple[Graph, dict[str, DLPackCompatible]]:
         """Build the vision model graph for processing images."""
         # Define input types for the vision model
+        # Use static dimensions from the vision config
+        image_size = config.vision_config.image_size
         pixel_values_type = TensorType(
             DType.float32,
             # Expect channels last and exactly 3 (RGB).
-            shape=["batch_size", "height", "width", 3],
+            # Use static dimensions for height and width
+            shape=["batch_size", image_size, image_size, 3],
             # Expect the input image on device 0.
             device=DeviceRef.GPU(),
         )

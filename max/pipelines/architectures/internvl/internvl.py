@@ -479,30 +479,20 @@ class InternVisionEmbeddings(Module, Shardable):
         height = img_height // self.patch_size
         width = img_width // self.patch_size
 
+        # Check that we have static dimensions for height and width
+        if not isinstance(height, StaticDim) or not isinstance(
+            width, StaticDim
+        ):
+            raise ValueError(
+                f"InternVisionEmbeddings requires static image dimensions, "
+                f"got height={height}, width={width}"
+            )
+
         # 1. Reshape to extract patches
         # From (B, H, W, C) to (B, H/P, P, W/P, P, C)
-        # Rebind `pixel_values` to be an explicit multiple of the `patch_size`.
-        # This is asserting that at runtime the `img_height` and `img_width`
-        # will both be divisible by `patch_size`.
-        pixel_values_rebind = ops.rebind(
-            pixel_values,
-            [
-                batch_size,
-                self.patch_size * (img_height // self.patch_size),
-                self.patch_size * (img_width // self.patch_size),
-                3,
-            ],
-        )
         pixel_values = ops.reshape(
-            pixel_values_rebind,
-            [
-                batch_size,
-                height,
-                self.patch_size,
-                width,
-                self.patch_size,
-                3,
-            ],
+            pixel_values,
+            [batch_size, height, self.patch_size, width, self.patch_size, 3],
         )
 
         # 2. Permute to group patch pixels together
