@@ -27,8 +27,6 @@ from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import MHAConfig, FlashAttentionAlgorithm
 from testing import assert_almost_equal
 
-from bit import count_trailing_zeros
-
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
 
@@ -171,7 +169,7 @@ fn test[
         num_heads,
         depth,
         BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
-        num_pipeline_stages=4 if ctx.device_info is H100 else 2,
+        num_pipeline_stages=2,
     )
 
     @parameter
@@ -271,38 +269,31 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
-        alias min_depth = 64
-        alias max_depth = 256 if ctx.device_info is H100 else 128
 
         @parameter
-        for d in range(
-            count_trailing_zeros(min_depth), count_trailing_zeros(max_depth) + 1
-        ):
-            alias depth = 1 << d
+        for d in range(2):
+            alias depth = 64 * (d + 1)
+            # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
+            test[
+                DType.float32,
+                DType.float32,
+                depth,
+                1,
+            ](128, 128, ctx, is_benchmark())
 
-            @parameter
-            if depth <= 128:
-                # fp32 tf32-fp32 mma
-                test[
-                    DType.float32,
-                    DType.float32,
-                    depth,
-                    1,
-                ](128, 128, ctx, is_benchmark())
+            test[
+                DType.float32,
+                DType.float32,
+                depth,
+                3,
+            ](14, 14, ctx, is_benchmark())
 
-                test[
-                    DType.float32,
-                    DType.float32,
-                    depth,
-                    3,
-                ](14, 14, ctx, is_benchmark())
-
-                test[
-                    DType.float32,
-                    DType.float32,
-                    depth,
-                    1,
-                ](178, 178, ctx, is_benchmark())
+            test[
+                DType.float32,
+                DType.float32,
+                depth,
+                1,
+            ](178, 178, ctx, is_benchmark())
 
             # bf16 depth == 128, bf16-fp32 mma
             test[
@@ -393,7 +384,7 @@ def main():
             test[
                 DType.bfloat16,
                 DType.bfloat16,
-                depth,
+                64,
                 32,
                 group=4,
             ](201, 600, ctx)

@@ -46,8 +46,6 @@ from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
 
-from bit import prev_power_of_two
-
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
 # ===-----------------------------------------------------------------------===#
@@ -154,29 +152,22 @@ struct MHAConfig(Copyable, Movable, Writable):
             + self.num_producer_threads[producer_consumer_kernel]()
         )
 
-    fn q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> UInt:
-        q_size = self.block_m() * self.depth
-        num_q = 2 if fa3 and persistent else 1
-        return num_q * q_size
+    fn q_smem_size(self, fa3: Bool = False) -> UInt:
+        q_smem = self.block_m() * self.depth
+        return UInt(2) * q_smem if fa3 else q_smem
 
     fn kv_smem_size(self, fa3: Bool = False) -> UInt:
-        if fa3:
-            return self.num_pipeline_stages * self.block_n() * self.depth
-        else:
-            return self.block_n() * self.depth
+        kv_smem = self.block_n() * self.depth
+        return kv_smem * self.num_pipeline_stages if fa3 else kv_smem
 
-    fn k_smem_size(self, fa3: Bool = False) -> UInt:
-        if fa3:
-            return self.kv_smem_size(True)
-        else:
-            return self.block_n() * self.depth
+    fn k_smem_size(self, sm_90: Bool = False) -> UInt:
+        k_smem = self.block_n() * self.depth
+        return k_smem * self.num_pipeline_stages if sm_90 else k_smem
 
-    fn v_smem_size(self, fa3: Bool = False) -> UInt:
-        if fa3:
-            return self.kv_smem_size(True)
-        else:
-            BN = self.block_n()
-            return BN * BN
+    fn v_smem_size(self, sm_90: Bool = False) -> UInt:
+        BN = self.block_n()
+        kv_smem = BN * BN
+        return kv_smem * self.num_pipeline_stages if sm_90 else kv_smem
 
     fn p_smem_size(self) -> UInt:
         return self.block_m() * self.block_n()
@@ -191,21 +182,18 @@ struct MHAConfig(Copyable, Movable, Writable):
         if not has_nvidia_gpu_accelerator():
             return 0
 
-        alias persistent = (
-            env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
-        ) and sm_90
         sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
         @parameter
         if shared_kv:
             num_smem_elements = (
-                self.q_smem_size(sm_90_fa3, persistent)
+                self.q_smem_size()
                 + self.kv_smem_size(sm_90_fa3)
                 + self.warp_scratch_smem_size()
             )
         else:
             num_smem_elements = (
-                self.q_smem_size(sm_90_fa3, persistent)
+                self.q_smem_size(sm_90_fa3)
                 + self.k_smem_size(sm_90_fa3)
                 + self.v_smem_size(sm_90_fa3)
                 + self.warp_scratch_smem_size()
@@ -216,7 +204,8 @@ struct MHAConfig(Copyable, Movable, Writable):
 
         num_smem_bytes = self.type.sizeof() * num_smem_elements
         if sm_90_fa3:
-            num_smem_bytes += (2 * self.num_pipeline_stages + 4) * sizeof[
+            alias persistent = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+            num_smem_bytes += (4 * self.num_pipeline_stages + 4) * sizeof[
                 DType.int64
             ]() + (2 * sizeof[DType.uint32]() if persistent != 0 else 0)
         return num_smem_bytes
@@ -231,7 +220,7 @@ struct MHAConfig(Copyable, Movable, Writable):
         BK: OptionalReg[UInt] = None,
         WM: OptionalReg[UInt] = None,
         WN: OptionalReg[UInt] = None,
-        num_pipeline_stages: UInt = 4,
+        num_pipeline_stages: UInt = 2 if is_sm90or100 else 4,
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(),
     ):
@@ -243,40 +232,16 @@ struct MHAConfig(Copyable, Movable, Writable):
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
-        if (
-            is_sm90or100
-            and type.is_half_float()
-            and algorithm == FlashAttentionAlgorithm(3)
-        ):
+        # BN
+        self.num_keys_per_block = num_keys_per_block.or_else(depth)
+
+        if is_sm90or100 and type.is_half_float():
             # BM
-            self.num_queries_per_block = num_queries_per_block.or_else(128)
-            smem_per = (1 << 16) // num_pipeline_stages
-            reg_per = 224 if self.num_queries_per_block > 64 else 256
-            # reg use per warp is at least
-            # BN*16 // 32 + 16*depth // 32 + BN*16//64 + 4
-            # reg_per >= BN*16 // 32 + 16*depth // 32 + BN*16//64 + 4
-            # (reg_per - depth // 2 - 4) >= 3*BN // 4
-            # BN <= (4*reg_per - 2*depth - 16)//3
-            reg_upper_bound = (((4 * reg_per - 2 * depth - 16) // 3) // 8) * 8
-            # BN
-            # FIXME: add support for non-power-of-twos?
-            self.num_keys_per_block = num_keys_per_block.or_else(
-                max(
-                    prev_power_of_two(
-                        min(
-                            reg_upper_bound,
-                            min(smem_per // depth, 256) if (smem_per % depth)
-                            == 0 else 64,
-                        )
-                    ),
-                    64,
-                )
+            self.num_queries_per_block = num_queries_per_block.or_else(
+                128 if algorithm == 3 else 64
             )
             self.BK = BK.or_else(64)
-            self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
-            # BN
-            self.num_keys_per_block = num_keys_per_block.or_else(depth)
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 32 if type
@@ -287,11 +252,11 @@ struct MHAConfig(Copyable, Movable, Writable):
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
             ) if has_nvidia_gpu_accelerator() else 32
-            self.WN = WN.or_else(32 if type is DType.float32 else depth)
         self.WM = WM.or_else(
             32 if type
             is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
         )
+        self.WN = WN.or_else(32 if type is DType.float32 else depth)
         self.algorithm = algorithm
 
     fn __str__(self) -> String:
