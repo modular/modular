@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.graph.ops.resize import InterpolationMode
 from max.graph.type import Dim, StaticDim
-from max.nn import Linear, Module
+from max.nn import Linear, Module, Shardable
 from max.pipelines.architectures.llama3.distributed_llama import (
     DistributedLlama3,
 )
@@ -36,9 +36,12 @@ class InternVLLanguageModel(DistributedLlama3):
     """
 
 
-class InternVisionEmbeddings(Module):
-    def __init__(self, config: InternVLConfig, device: DeviceRef) -> None:
-        self.device = device
+class InternVisionEmbeddings(Module, Shardable):
+    def __init__(
+        self, config: InternVLConfig, device: DeviceRef | None = None
+    ) -> None:
+        self.config = config
+        self.devices = config.devices
         self.embed_dim = config.vision_config.hidden_size
         self.image_size = config.vision_config.image_size
         self.patch_size = config.vision_config.patch_size
@@ -61,15 +64,65 @@ class InternVisionEmbeddings(Module):
             "class_embedding",
             dtype=self.dtype,
             shape=(1, 1, self.embed_dim),
-            device=device,
+            device=DeviceRef.CPU() if not device else device,
         )
 
         self.position_embedding = Weight(
             "position_embedding",
             dtype=self.dtype,
             shape=(1, self.num_positions, self.embed_dim),
-            device=device,
+            device=DeviceRef.CPU() if not device else device,
         )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the embedding sharding strategy."""
+        return self.patch_embedding.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the patch, class, and position
+        embeddings.
+
+        Args:
+            strategy: The strategy describing the embeddings' sharding.
+        """
+        if not strategy.is_replicate:
+            raise ValueError(
+                "only replicate is supported for InternVisionEmbeddings, "
+                "currently"
+            )
+
+        self.patch_embedding.sharding_strategy = strategy
+        self.class_embedding.sharding_strategy = strategy
+        self.position_embedding.sharding_strategy = strategy
+
+    def shard(
+        self, shard_idx: int, device: DeviceRef
+    ) -> InternVisionEmbeddings:
+        """Creates a sharded view of this Linear layer for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded Linear instance.
+        """
+        # This should be set unconditionally in the constructor.
+        assert self.sharding_strategy
+
+        # Create the new sharded embedding.
+        sharded = InternVisionEmbeddings(self.config, device)
+
+        # Shard the embedding fields.
+        sharded.patch_embedding = self.patch_embedding.shard(shard_idx, device)
+        sharded.class_embedding = self.class_embedding.shard(shard_idx, device)
+        sharded.position_embedding = self.position_embedding.shard(
+            shard_idx, device
+        )
+
+        return sharded
 
     def _get_position_embedding(self, H: Dim, W: Dim) -> TensorValue:
         """Get position embeddings, interpolating if needed for different resolutions.
@@ -203,8 +256,14 @@ class InternVLVisionModel(Module):
         super().__init__()
         self.config = config
 
-        self.embeddings = [
-            InternVisionEmbeddings(config, dev) for dev in config.devices
+        self.embeddings = InternVisionEmbeddings(config)
+        self.embeddings.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+
+        self.embeddings_list = [
+            self.embeddings.shard(n, dev)
+            for n, dev in enumerate(config.devices)
         ]
 
     def __call__(
@@ -218,26 +277,14 @@ class InternVLVisionModel(Module):
         Returns:
             Image embeddings tensor.
         """
-        # TODO: need Shardable to enable this.
-        # hidden_states = [
-        #     # Call one forward per device -- embeddings are replicated.
-        #     embed(pixels)
-        #     for embed, pixels in zip(self.embeddings, pixel_values)
-        # ]
-        # return hidden_states
+        hidden_states = [
+            # Call one forward per device -- embeddings are replicated.
+            embed(pixels)
+            for embed, pixels in zip(self.embeddings_list, pixel_values)
+        ]
 
         # TODO: Implement vision encoder
         # 1. Process pixel values through InternViT encoder
         # 2. Apply multimodal projector
 
-        return tuple(
-            ops.constant(
-                0.0, self.config.llm_config.dtype, device
-            ).broadcast_to(
-                shape=(
-                    pixel_values[0].shape[0],
-                    self.config.vision_config.hidden_size,
-                )
-            )
-            for device in self.config.llm_config.devices
-        )
+        return hidden_states
