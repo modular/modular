@@ -24,7 +24,7 @@ modular_py_library(
 modular_py_test(
     name = "internvl",
     size = "large",
-    srcs = glob(["*.py"]),
+    srcs = glob(["test_*.py"]) + ["conftest.py"],
     data = [
         "//ModularFramework/tools/max",
     ],
@@ -34,6 +34,7 @@ modular_py_test(
         "no-sandbox",
     ],
     deps = [
+        ":torch_utils",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",

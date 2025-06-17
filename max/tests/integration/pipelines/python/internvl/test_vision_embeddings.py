@@ -115,11 +115,12 @@ def generate_torch_outputs(
         .to("cuda")
     )
     if "patch_embedding.bias" in embeddings_weights:
-        ref_embeddings.patch_embedding.bias.data = (
-            embeddings_weights["patch_embedding.bias"]
-            .to(torch.bfloat16)
-            .to("cuda")
-        )
+        if ref_embeddings.patch_embedding.bias is not None:
+            ref_embeddings.patch_embedding.bias.data = (
+                embeddings_weights["patch_embedding.bias"]
+                .to(torch.bfloat16)
+                .to("cuda")
+            )
     ref_embeddings.class_embedding.data = (
         embeddings_weights["class_embedding"].to(torch.bfloat16).to("cuda")
     )
