@@ -692,7 +692,7 @@ fn mla_decoding_single_batch[
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
     @parameter
-    for i in range(Int(WM)):
+    for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
@@ -736,7 +736,7 @@ fn mla_decoding_single_batch[
     )
 
     @parameter
-    for q_id in range(Int(depth // BK)):
+    for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -803,7 +803,7 @@ fn mla_decoding_single_batch[
         )
 
         @parameter
-        for k_id in range(Int(rope_dim // BK)):
+        for k_id in range(rope_dim // BK):
             var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -873,10 +873,10 @@ fn mla_decoding_single_batch[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -1030,12 +1030,12 @@ fn mla_decoding_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(Int(WN_O // 8)):
+        for n_mma in range(WN_O // 8):
 
             @parameter
             for i in range(p_frag_size // 2):
@@ -1827,7 +1827,7 @@ fn mla_prefill_single_batch[
     )
 
     @parameter
-    for q_id in range(Int(q_depth // BK)):
+    for q_id in range(q_depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -1981,7 +1981,7 @@ fn mla_prefill_single_batch[
 
         # load K tile into smem
         @parameter
-        for k_id in range(Int(depth // BK)):
+        for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -1998,7 +1998,7 @@ fn mla_prefill_single_batch[
             k_gmem_iter._incr()
 
         @parameter
-        for k_id in range(Int(depth // BK), Int(q_depth // BK), 1):
+        for k_id in range(depth // BK, q_depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -2052,10 +2052,10 @@ fn mla_prefill_single_batch[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -2177,7 +2177,7 @@ fn mla_prefill_single_batch[
 
         # load V tile into smem
         @parameter
-        for v_id in range(Int(BN // BK)):
+        for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
             @parameter
@@ -2350,7 +2350,7 @@ fn mla_prefill_single_batch[
 
         # and add them together.
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             alias row_0 = 2 * m_mma
             alias row_1 = 2 * m_mma + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
@@ -2398,7 +2398,7 @@ fn mla_prefill_single_batch[
             rowmax[row_1] = max(prev_rowmax_1, rowmax[row_1])
 
             @parameter
-            for n_mma in range(Int(num_n_mmas_output)):
+            for n_mma in range(num_n_mmas_output):
                 var mma_id = n_mma * num_m_mmas + m_mma
 
                 @parameter
@@ -2421,7 +2421,7 @@ fn mla_prefill_single_batch[
     if write_softmax_info:
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             alias row_0 = 2 * m_mma
             alias row_1 = 2 * m_mma + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
@@ -2437,12 +2437,12 @@ fn mla_prefill_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(Int(num_n_mmas_output)):
+        for n_mma in range(num_n_mmas_output):
 
             @parameter
             for i in range(p_frag_size // 2):

@@ -1278,7 +1278,7 @@ fn mha_single_batch[
     )
 
     @parameter
-    for q_id in range(Int(depth // BK)):
+    for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -1396,7 +1396,7 @@ fn mha_single_batch[
 
         # load K tile into smem
         @parameter
-        for k_id in range(Int(depth // BK)):
+        for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -1449,10 +1449,10 @@ fn mha_single_batch[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -1565,7 +1565,7 @@ fn mha_single_batch[
 
         # load V tile into smem
         @parameter
-        for v_id in range(Int(BN // BK)):
+        for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
             @parameter
@@ -1658,12 +1658,12 @@ fn mha_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(Int(num_n_mmas)):
+        for n_mma in range(num_n_mmas):
 
             @parameter
             for i in range(p_frag_size // 2):
@@ -2118,10 +2118,10 @@ fn mha_single_batch_pipelined[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -2350,12 +2350,12 @@ fn mha_single_batch_pipelined[
     if is_nvidia_gpu():
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             var rowsum_inv0 = recip(rowsum[2 * m_mma])
             var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
+            for n_mma in range(num_n_mmas):
 
                 @parameter
                 for i in range(p_frag_size // 2):
@@ -2368,10 +2368,10 @@ fn mha_single_batch_pipelined[
     else:
         # Apply softmax denumerator.
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
+            for n_mma in range(num_n_mmas):
 
                 @parameter
                 for i in range(p_frag_size):
@@ -2713,7 +2713,7 @@ fn _scale_and_mask_helper_nvidia[
     alias num_groups_per_thread = ceildiv(group, 8)
 
     @parameter
-    for n_mma in range(Int(num_n_mmas)):
+    for n_mma in range(num_n_mmas):
         # offset in fragment
         var frag_offset = n_mma * MMA_N
         # Current thread's offset mapped in num_keys dim
@@ -2822,7 +2822,7 @@ fn _scale_and_mask_helper_amd[
     var warp_offset = warp * WN
 
     @parameter
-    for n_mma in range(Int(num_n_mmas)):
+    for n_mma in range(num_n_mmas):
         # offset in fragment
         var frag_offset = n_mma * MMA_N
         # Current thread's offset mapped in num_keys dim
@@ -3111,7 +3111,7 @@ fn mha_decoding_single_batch[
     var rowsum = stack_allocation[WM, accum_type]()
 
     @parameter
-    for i in range(Int(WM)):
+    for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
@@ -3186,7 +3186,7 @@ fn mha_decoding_single_batch[
         )
 
     @parameter
-    for q_id in range(Int(depth // BK)):
+    for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -3240,7 +3240,7 @@ fn mha_decoding_single_batch[
 
         # load K tile into smem
         @parameter
-        for k_id in range(Int(depth // BK)):
+        for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             @parameter
@@ -3375,7 +3375,7 @@ fn mha_decoding_single_batch[
 
         # load V tile into smem
         @parameter
-        for v_id in range(Int(BN // BK)):
+        for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
             @parameter
@@ -3505,7 +3505,7 @@ fn mha_decoding_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv = Scalar[accum_type](1.0)
 
         @parameter
@@ -3513,7 +3513,7 @@ fn mha_decoding_single_batch[
             rowsum_inv = recip(rowsum[2 * m_mma])
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
+            for n_mma in range(num_n_mmas):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 0] *= rowsum_inv
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 1] *= rowsum_inv
 
@@ -3522,7 +3522,7 @@ fn mha_decoding_single_batch[
             rowsum_inv = recip(rowsum[2 * m_mma + 1])
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
+            for n_mma in range(num_n_mmas):
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 2] *= rowsum_inv
                 output_reg_tile[n_mma * num_m_mmas + m_mma, 3] *= rowsum_inv
 
@@ -3749,7 +3749,7 @@ fn mha_decoding_single_batch_pipelined[
     var rowsum = stack_allocation[WM, accum_type]()
 
     @parameter
-    for i in range(Int(WM)):
+    for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
@@ -4004,24 +4004,24 @@ fn mha_decoding_single_batch_pipelined[
     if is_nvidia_gpu():
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
+            for n_mma in range(num_n_mmas):
                 output_reg_tile[n_mma, 0] *= rowsum_inv0
                 output_reg_tile[n_mma, 1] *= rowsum_inv0
 
     else:
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
 
             @parameter
-            for n_mma in range(Int(num_n_mmas)):
+            for n_mma in range(num_n_mmas):
 
                 @parameter
-                for i in range(Int(p_frag_simdwidth)):
+                for i in range(p_frag_simdwidth):
                     var rowsum_inv0 = 1.0 / rowsum[4 * m_mma + i]
                     output_reg_tile[
                         n_mma * num_m_mmas + m_mma, i
