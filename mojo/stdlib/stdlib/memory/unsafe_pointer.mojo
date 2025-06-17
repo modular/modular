@@ -12,10 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implement a generic unsafe pointer type.
 
-You can import these APIs from the `memory` package. For example:
-
-```mojo
-```
+These APIs are imported automatically, just like builtins.
 """
 
 from sys import alignof, is_gpu, is_nvidia_gpu, sizeof
