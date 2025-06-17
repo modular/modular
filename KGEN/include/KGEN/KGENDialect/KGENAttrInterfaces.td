@@ -98,13 +98,40 @@ def ContextuallyEvaluatedAttrInterface :
 def IndexRefAttrInterface : AttrInterface<"IndexRefAttrInterface"> {
   let description = [{
     Index-based parameter references are a relative parameter referencing scheme
-    that uses a pair of integers to reference parameters in a name-agnostic way.
-    They contain a depth and an index. The depth indicates how many parameter
-    scopes exist between the parameter being referenced and the reference
-    itself. The index is simply the parameter number at the referenced scope.
+    that uses a pair of integers to reference parameters in a way that doesn't
+    involve names. This is useful for later knowing if two types are equal, even
+    if they have different parameter names.
 
-    This interface allows other kinds (see `LIT::ImplicitOriginRefAttr`) of
-    index-based references to interplay with parts of the KGEN parameter system.
+    For example, these two aliases have equal types:
+
+    ```mojo
+    alias A: fn[T: AnyType](x: T)->None = ...
+    alias B: fn[Y: AnyType](x: Y)->None = ...
+    ```
+
+    ...if those param-refs use indexes instead of names like:
+
+    ```mojo
+    alias A: fn[_: AnyType](x: *(0,0))->None = ...
+    alias B: fn[_: AnyType](x: *(0,0))->None = ...
+    ```
+
+    All types in Mojo use `IndexRefAttrInterface` instead of parameter names.
+    The above are `ParamIndexRefAttr` specifically.
+
+    All `IndexRefAttrInterface` have two fields: a depth and an index.
+
+    - depth: Which containing signature contains the parameter we're referring
+      to. Non-negative integer. Zero means the nearest containing signature
+      (like above), one means the signature containing that one, etc.
+      Note they cannot refer to any op's parameter-decls, and you cannot always
+      use a depth to refer to surrounding scopes, see DCRTODS.
+    - index: index of the parameter decl in that signature (non-negative integer).
+
+    See IRAIDAI for more details, context, and examples.
+
+    These depths must be carefully handled and adjusted when dealing with
+    multiple signatures or scopes, see STCHDDDOS.
   }];
 
   let cppNamespace = "::M::KGEN";

@@ -101,6 +101,8 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
   struct IndexRefFinder : IndexParameterReplacer<IndexRefFinder> {
     Attribute tryReplace(Attribute attr, size_t depth) {
       if (auto ref = dyn_cast<ParamIndexRefAttr>(attr)) {
+        // This check means it's referring to a param-decl *outside* `attr`, see
+        // PSTIAIRAID.
         if (ref.getDepth() >= depth) {
           escapingReference = true;
           return attr;

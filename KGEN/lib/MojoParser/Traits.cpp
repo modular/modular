@@ -505,6 +505,9 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
     // Replace a reference to $(0,0) with the new selfValue.
     auto paramRef = dyn_cast<ParamIndexRefAttr>(attr);
     if (!paramRef || paramRef.getIndex() != 0 ||
+        // Check to see if this is a param ref referring to our Self or some
+        // other Self (perhaps in a signature parameter-value that declares its
+        // own self or something), see PSTIAIRAID.
         paramRef.getDepth() + 1 != depth)
       return {};
     return selfValue;

@@ -1127,6 +1127,8 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
     // positional arguments, but we have to check each of them.
     if (signature.isPosVarArg(expectedArgIdx)) {
       auto expectedVariadic = cast<VariadicType>(expectedType);
+      // TODO: Do we need to decrement any depths in this thing? (See STCHDDDOS
+      // this is STCHDDDOS-B).
       auto varArgsEltType = expectedVariadic.getElementType();
       while (posOperandIdx != numPosOperands) {
         if (auto result = processPositionalOperand(

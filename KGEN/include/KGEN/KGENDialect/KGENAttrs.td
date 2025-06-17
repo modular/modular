@@ -206,6 +206,9 @@ def KGEN_ParamDeclRefAttr : KGEN_ExprAttr<"ParamDeclRef", "param.decl.ref",
     // A reference to parameter "p" with type "i1".
     #kgen.param.decl.ref<"p"> : i1
     ```
+
+    There are special rules governing when these can appear, or when
+    ParamIndexRefAttr must be used instead, see DCRTODS.
   }];
 
   let parameters = (ins "StringAttr":$name,
@@ -236,9 +239,15 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
   let description = [{
     The `#kgen.param.index.ref` attribute is a reference to an input
     parameter of an enclosing signature. This attribute can only be used inside
-    a `GeneratorType`. This attribute contains two fields: the depth of the
-    referenced signature relative to the nearest signature (non-negative
-    integer), and the index of the parameter (non-negative integer).
+    a `GeneratorType`. This attribute contains two fields:
+
+    - depth: Which containing signature contains the parameter we're referring
+      to. Non-negative integer. Zero means the nearest containing signature, one
+      means the signature containing that one, etc.
+      Note they cannot refer to any op's parameter-decls, and you cannot always
+      use a depth to refer to surrounding scopes, see DCRTODS.
+    - index: index of the parameter decl in that signature (non-negative
+      integer).
 
     Example:
 
@@ -248,6 +257,31 @@ def KGEN_ParamIndexRefAttr : KGEN_ExprAttr<"ParamIndexRef", "param.index.ref",
     // First input parameter of next enclosing signature.
     #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
     ```
+
+    The latter would appear in something like this:
+
+    ```
+    alias bar: fn[
+      D: DType,
+      N: Int,
+      f: fn[Y: AnyType](Y, SIMD[N, D])->None
+    ](...) = ...
+    ```
+
+    The `SIMD[N, D]`'s `N` is a #kgen.param.index.ref<1, 0> : !lit.struct<@Int>.
+
+    But, per DCRTODS, it can NOT be used inside a generator's body to refer to
+    one of the generator's parameters, like this:
+
+    ```
+    fn foo[X: AnyType](x: X):
+        alias zork: fn[...](
+          # Cannot have: #kgen.param.index.ref<1, 0> : !lit.struct<@Int>
+        )->None = ...
+    ```
+
+    These depths must be carefully handled and adjusted when dealing with
+    multiple signatures or scopes, see STCHDDDOS.
   }];
 
   let parameters = (ins "size_t":$depth,"size_t":$index,

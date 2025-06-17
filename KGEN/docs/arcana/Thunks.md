@@ -36,7 +36,7 @@ If you want to see more gnarly cases… proceed.
 
 # A Simple Thunk
 
-Here’s a case which *seems* simple, but is actually really complicated under the
+Here’s a case which _seems_ simple, but is actually really complicated under the
 hood, because it needs a thunk:
 
 ```mojo
@@ -142,7 +142,7 @@ fn test_1():
     # accepts_mut_ship(z)
 ```
 
-We can write a *generic* manual thunk instead:
+We can write a _generic_ manual thunk instead:
 
 ```mojo
 struct Ship:
@@ -226,7 +226,7 @@ fn generic_ship_func_wrapper[callee: fn(read Ship)->None](mut s: Ship):
 
 # Param Refs Don’t Cause Thunks
 
-This is a snippet that *doesn’t* cause a thunk. It’ll serve as good context for
+This is a snippet that _doesn’t_ cause a thunk. It’ll serve as good context for
 the next section.
 
 ```mojo
@@ -377,7 +377,7 @@ so it conservatively requires the caller to pass in a reference (it can’t
 require the caller pass in something via register, it might not be a
 register-passable type).
 
-In other words, functions can only take *references* to "direct" generic
+In other words, functions can only take _references_ to "direct" generic
 arguments (of the form `x: T` where `T` is an input-parameter). Note that other
 generic arguments (like `x: Scalar[D]`) will still be register passable; those
 work as expected because the generic function knows whether `Scalar` is
@@ -403,7 +403,7 @@ so the argument type
 
 `!lit.ref<:!AnyType T, imm *"s`"> read_mem` becomes:
 
-`!lit.ref<!Int, imm *[0,0]> read_mem`. In other words, a *reference* to an Int.
+`!lit.ref<!Int, imm *[0,0]> read_mem`. In other words, a _reference_ to an Int.
 
 This means `read_ship[Int]`'s signature `fn(ref Int)->None` isn’t a subtype of
 `my_func_alias`'s expected signature `fn(Int) -> None` and therefore requires a
@@ -431,7 +431,7 @@ And suddenly no thunk is generated.
 
 # Partial Function Application Doesn’t Need Thunks
 
-This is a snippet that *doesn’t* cause a thunk. It’ll serve as good context for
+This is a snippet that _doesn’t_ cause a thunk. It’ll serve as good context for
 the next section.
 
 ```mojo
@@ -454,7 +454,7 @@ not its remaining input-parameters like `read_ship[42, True]`.
 `fn[Y: Bool](Ship[42, Y]) -> None`.
 
 This is sometimes called "partial function application", since we’re kind of
-*half* calling ("apply"ing) a function.
+_half_ calling ("apply"ing) a function.
 
 Anyway, as it turns out, this does **not** require a thunk. The compiler is
 smart enough to treat that the same way as a normal mention of

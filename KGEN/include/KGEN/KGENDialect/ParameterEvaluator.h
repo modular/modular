@@ -176,7 +176,7 @@ private:
 
   /// The relative depth from the signature where the input parameters are from.
   /// This is zero for most applications, but should be set accordingly when
-  /// substituting attributes or types inside a signature.
+  /// substituting attributes or types inside a signature, see PSTIAIRAID.
   size_t inputDepth = 0;
 
   /// The optional context to use for evaluating contexually evaluated

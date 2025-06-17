@@ -428,12 +428,14 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // Handle FuncTypeGeneratorType
   if (auto actual = dyn_cast<FnTypeGeneratorType>(actualType)) {
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType)) {
+      // See paramIndexRefDepth's comments for what this increment is for.
       ++paramIndexRefDepth;
-
       if (succeeded(matchFunctionTypes(actual, expected))) {
+        // The increment was solely for the matchFunctionTypes call, so undo it.
         --paramIndexRefDepth;
         return success();
       } else {
+        // The increment was solely for the matchFunctionTypes call, so undo it.
         --paramIndexRefDepth;
         return failure();
       }
@@ -509,6 +511,9 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 
   // If the expected value is the parameter declaration remember the binding!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
+    // Check if this ParamIndexRefAttr is referring to a param-decl in the
+    // ParameterInferenceState's original scope. See paramIndexRefDepth's
+    // comments for more about this.
     if (ire.getDepth() == paramIndexRefDepth &&
         // We need to infer in lexical order because we may have dependent types
         // between parameters.  The evaluator implicitly keeps track of how many
@@ -751,6 +756,10 @@ static bool usesUnboundParameters(TypedAttr paramValue,
                                   ArrayRef<TypedAttr> bindingsSoFar) {
   return paramValue
       .walk([&](ParamIndexRefAttr ref) -> WalkResult {
+        // TODO(MOCO-2080): Fix this == 0, it seems weird... it would catch
+        // things inside vtables and stuff, but those wouldn't be represented in
+        // bindingsSoFar. See
+        // https://github.com/modularml/modular/pull/62096#discussion_r2114820425
         if (ref.getDepth() == 0 && ref.getIndex() >= bindingsSoFar.size())
           return WalkResult::interrupt();
         return WalkResult::advance();
@@ -791,6 +800,13 @@ ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
     // If this is simply a reference to the enclosing parameter (as in a normal
     // Self) init, then we can't infer anything from it.
     if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param))
+      // If this == 0 seems weird, it's probably okay because the returnedType
+      // always comes from the result type of a FnTypeGeneratorType. So this
+      // depth 0 always means it refers to the FnTypeGeneratorType that we're
+      // trying to run parameter inference on. It's only when we're walking that
+      // we have no idea what depth we are. Here we're always at the surface.
+      // See
+      // https://github.com/modularml/modular/pull/62096#discussion_r2114820565
       if (indexRef.getDepth() == 0 && indexRef.getIndex() == idx)
         continue;
 
@@ -848,8 +864,30 @@ getPartiallySpecializedSignature(ArrayRef<TypedAttr> bindingsSoFar,
 
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
+      // Original comment from Jeff:
       // Depth-1 because we're matching against the signature parameters,
       // and that pushes level of depth immediately.
+      //
+      // Evan's interpretation, take with grain of salt:
+      // If `signatureScoped` is true, then we do depth-1 because we're
+      // substituting parameter-values from an outside scope into the "inner"
+      // scope that's defined by the signature, which is 1 different, see
+      // PSTIAIRAID for more.
+      // So `signatureScoped` must mean that the `args` are in a signature's
+      // scope, not in the same scope that the `bindingsSoFar` are from.
+      //
+      // TODO(MOCO-2080): ...should this be dyn_cast<IndexRefAttrInterface>?
+      //
+      // Billy: Yeah I think you're right. Also, perhaps signatureScoped isn't
+      // the right name. It should really just be determined by the "relative"
+      // depth difference between where the evaluator was set up at, and where
+      // the args come from.
+      // When doing parameter inference on a particular signature S, the
+      // evaluator is set up relative to S. This means it works naturally with
+      // anything inside S (as is the case with "non-signature-scoped" calls).
+      // But if we want the evaluator to operate on S itself, then everything is
+      // off by 1 because the signature S itself will increment the depth when
+      // we walk inside it.
       auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
       if (!ref || ref.getDepth() != depth - signatureScoped ||
           ref.getIndex() >= bindingsSoFar.size())

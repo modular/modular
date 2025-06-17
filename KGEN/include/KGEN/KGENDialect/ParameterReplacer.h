@@ -86,7 +86,17 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// A subclass of parameter replacer that contains even more common logic for
-/// working with index references.
+/// working with index references, see PSTIAIRAID and STCHDDDOS.
+///
+/// Subclasses should define a replaceImpl method.
+///
+/// Handing this `depth` to replaceImpl is the main point of this class,
+/// it enables the replaceImpl implementation to know how deep into
+/// signature scopes we currently are in our recursive walk.
+/// For example, they can check `depth == 0` to know if they're in the
+/// original scope, or they can check that an
+/// `indexRef.getDepth() == depth` to know if that indexRef is referring to
+/// a parameter-decl from the original scope.
 template <typename DerivedT>
 class IndexParameterReplacer
     : public ParameterReplacer<IndexParameterReplacer<DerivedT>> {
@@ -96,6 +106,7 @@ class IndexParameterReplacer
     if (auto result = static_cast<DerivedT *>(this)->tryReplace(value, depth))
       return result;
 
+    // Increment depth when looking inside signatures, see PSTIAIRAID.
     if constexpr (std::is_base_of_v<Attribute, T>)
       if (isa<ParameterScopeAttrInterface>(value))
         ++depth;

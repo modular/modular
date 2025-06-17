@@ -1116,6 +1116,9 @@ FunctionType FnType::substituteImplicitOriginsIntoValues(
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
+      // This checks to see if we found an ImplicitOriginRefAttr that's pointing
+      // back to the current scope (the scope containing `values`), see
+      // `IndexParameterReplacer` and
       if (auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
           ref && ref.getDepth() == depth) {
         if (ref.getIndex() >= values.size()) {
@@ -1357,9 +1360,9 @@ unsigned FnTypeGeneratorType::getErrorSlotOffset() {
 /// with index-based references.  originDecls specifies the names of the
 /// implicit origin decls to replace.
 ///
-/// If indexOffset is subtracted from depth when set.
+/// depthOffset is subtracted from depth when set.
 Type FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
-    Type origType, ArrayRef<ParamDeclAttr> originDecls, size_t indexOffset) {
+    Type origType, ArrayRef<ParamDeclAttr> originDecls, size_t depthOffset) {
 
   // If there are no implicit origins, then this is a noop.
   if (originDecls.empty())
@@ -1368,25 +1371,29 @@ Type FnTypeGeneratorType::replaceImplicitOriginsWithIndexes(
   // Replace named implicit origin parameter references with index-based
   // references in the signature.
   struct OriginDeclRemapper : IndexParameterReplacer<OriginDeclRemapper> {
-    OriginDeclRemapper(size_t indexOffset) : indexOffset(indexOffset) {}
+    OriginDeclRemapper(size_t depthOffset) : depthOffset(depthOffset) {}
 
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
       if (auto ref = ::dyn_cast<ParamDeclRefAttr>(attr)) {
+        // If it's in the mapping, then we know it's an *origin* param ref, so
+        // no need to check its type.
         if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
-          // Subtract indexOffset because we may be replacing the signature
+          // Subtract depthOffset because we may be replacing the signature
           // directly.
+          // Theories on what that means:
+          // https://github.com/modularml/modular/pull/62096#discussion_r2114820289
           size_t index = it->second;
-          return ImplicitOriginRefAttr::get(depth - indexOffset, index,
+          return ImplicitOriginRefAttr::get(depth - depthOffset, index,
                                             ref.getType());
         }
       }
       return nullptr;
     }
 
-    size_t indexOffset;
+    size_t depthOffset;
     DenseMap<StringAttr, size_t> mapping;
-  } remapper(indexOffset);
+  } remapper(depthOffset);
   for (auto [i, decl] : llvm::enumerate(originDecls))
     remapper.mapping.try_emplace(decl.getName(), i);
   return remapper.replace(origType);
