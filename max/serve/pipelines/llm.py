@@ -329,7 +329,7 @@ def batch_config_from_pipeline_config(
     assert pipeline_config.max_batch_size is not None
     if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
         logger.info(
-            "Server configured with no cache and batch size %s",
+            "Scheduler configured with no cache and batch size %s",
             pipeline_config.max_batch_size,
         )
         return TokenGeneratorSchedulerConfig.no_cache(
@@ -376,7 +376,7 @@ def batch_config_from_pipeline_config(
             f"{cache_strategy} caching strategy is not supported by Serving."
         )
 
-    log_str = "Server configured with:\n"
+    log_str = "Scheduler configured with:\n\n"
     log_str += f"\tCache Strategy: {cache_strategy}\n"
     if cache_strategy == KVCacheStrategy.PAGED:
         log_str += f"\tKVCache Page Size: {kv_cache_config.kv_cache_page_size} Tokens\n"
