@@ -2018,6 +2018,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
             context, state.location, state.operands, attributes, properties,
             state.regions, state.types)))
       return failure();
+
     return success(
         llvm::all_of(state.types, [](Type t) { return t != Type(); }));
   };
