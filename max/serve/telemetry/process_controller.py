@@ -34,7 +34,7 @@ from max.serve.telemetry.metrics import (
 )
 from uvicorn import Config, Server
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 # Unused class so that SHUTDOWNS is not empty

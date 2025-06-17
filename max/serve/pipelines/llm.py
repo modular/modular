@@ -75,9 +75,10 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
     ) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(
+            "max.serve.pipelines.TokenGeneratorPipeline"
+        )
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
         self.logger.info("%s: Constructed", model_name)
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
@@ -411,9 +412,9 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
         tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
     ) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
-        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
+        self.logger = logging.getLogger(
+            "max.serve.pipelines.AudioGeneratorPipeline"
+        )
         self.logger.info("%s: Constructed", model_name)
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 

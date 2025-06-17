@@ -37,9 +37,7 @@ from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
-logger = logging.getLogger(__name__)
-# This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-logger.propagate = False
+logger = logging.getLogger("max.serve.pipelines.model_worker")
 
 
 def _set_pdeathsig(pdeathsig: int) -> None:

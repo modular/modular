@@ -116,9 +116,9 @@ class OpenAIResponseGenerator(ABC):
         self,
         pipeline: TokenGeneratorPipeline,
     ):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
+        self.logger = logging.getLogger(
+            "max.serve.router.OpenAIResponseGenerator"
+        )
         self.pipeline = pipeline
 
     @abstractmethod
@@ -432,7 +432,9 @@ class OpenAISpeechResponseGenerator:
         self,
         pipeline: AudioGeneratorPipeline,
     ):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(
+            "max.serve.router.OpenAISpeechResponseGenerator"
+        )
         self.pipeline = pipeline
 
     async def synthesize_speech(

@@ -43,7 +43,7 @@ from max.serve.pipelines.performance_fake import (
 from transformers import AutoTokenizer
 from uvicorn import Server
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
 
 
 def sigterm_handler(sig, frame):

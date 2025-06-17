@@ -23,7 +23,7 @@ from typing import Callable, NoReturn, Optional
 from max.serve.config import MetricLevel
 from max.serve.telemetry.metrics import MaxMeasurement, MetricClient
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 if sys.version_info >= (3, 13):

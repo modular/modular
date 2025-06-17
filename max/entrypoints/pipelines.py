@@ -20,7 +20,7 @@ from typing import Any
 
 import click
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
 
 
 class WithLazyPipelineOptions(click.Command):

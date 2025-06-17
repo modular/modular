@@ -34,7 +34,7 @@ from max.pipelines.core import (
 
 from .metrics import TextGenerationMetrics
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
 
 MODEL_NAME = "model"
 

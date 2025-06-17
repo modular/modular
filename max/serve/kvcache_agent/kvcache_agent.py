@@ -32,7 +32,7 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
 )
 from max.serve.queue.zmq_queue import ZmqPullSocket
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 @dataclass

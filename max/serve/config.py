@@ -144,6 +144,11 @@ class Settings(BaseSettings):
         description="Structured logging for deployed services",
         alias="MODULAR_STRUCTURED_LOGGING",
     )
+    logs_enable_components: Union[str, None] = Field(
+        default=None,
+        description="Comma separated list of additional components to enable for logging",
+        alias="MAX_SERVE_LOGS_ENABLE_COMPONENTS",
+    )
 
     disable_telemetry: bool = Field(
         default=False,
