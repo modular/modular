@@ -914,13 +914,13 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
   // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
   %1 = pop.inline_asm "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  // CHECK: pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
+  // CHECK: pop.inline_asm side_effecting<1> "something", "anotherthing", (%arg0, %arg1) :
   // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  %2 = pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
+  %2 = pop.inline_asm side_effecting<1> "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  // CHECK: pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
+  // CHECK: pop.inline_asm stack_aligned<1> "something", "anotherthing", (%arg0, %arg1) :
   // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  %3 = pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
+  %3 = pop.inline_asm stack_aligned<1> "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<index>) -> i8
   // CHECK: pop.inline_asm "foo", "=r,=r,r", (%arg0) : (!pop.scalar<si32>) ->
   // CHECK: !kgen.struct<(ty, scalar<dt>)>

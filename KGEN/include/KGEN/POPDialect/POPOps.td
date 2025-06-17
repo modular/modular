@@ -1779,16 +1779,16 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     Variadic<AnyType>:$operands,
     AttrOfType<KGEN_StringType>:$assembly,
     AttrOfType<KGEN_StringType>:$constraints,
-    UnitAttr:$hasSideEffects,
-    UnitAttr:$isStackAligned,
+    OptionalAttr<AttrOfType<I1>>:$hasSideEffects,
+    OptionalAttr<AttrOfType<I1>>:$isStackAligned,
     OptionalAttr<ArrayAttr>:$operandAttrs
   );
 
   let results = (outs Variadic<AnyType>:$res);
 
   let assemblyFormat = [{
-    (`side_effecting` $hasSideEffects^)?
-    (`stack_aligned` $isStackAligned^)?
+    (`side_effecting` `<` custom<I1ParamValue>($hasSideEffects)^ `>`)?
+    (`stack_aligned` `<` custom<I1ParamValue>($isStackAligned)^ `>`)?
     (`operand_attrs` `=` $operandAttrs^)?
     attr-dict
     custom<ParamValue>($assembly, "StringType::get($_ctxt)") `,`
