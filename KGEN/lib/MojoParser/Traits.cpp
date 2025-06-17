@@ -806,13 +806,23 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
         newValue = emitPValue({newValue, value.expr}, EC_Trait,
                               traitAliasDecl.getType());
       } else {
-        // Must come from a child trait. Simply forward the alias value with the
-        // child trait alias' type.
+        // Must come from a child trait. Pull the alias value out of the vtable
+        // of the child trait alias' type.
         newValue = ParamOperatorAttr::get(
             POC::GetVTableEntry,
             {PValue(type),
              StringAttr::get(name.getValue(), StringType::get(getContext()))},
             implAlias.getType());
+
+        if (implAlias.getType() != traitAliasDecl.getType()) {
+          // If the overriding alias's type is more specific than the
+          // super-trait's type (see STATCBMS), we'll need to cast it.
+          newValue =
+              UpcastAttr::get(traitAliasDecl.getType(), newValue,
+                              // This vtable can be empty because the vtable
+                              // should come from the newValue.
+                              VTableAttr::get(traitAliasDecl.getContext(), {}));
+        }
       }
 
       if (!newValue)
