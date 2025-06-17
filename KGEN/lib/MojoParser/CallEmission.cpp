@@ -207,6 +207,27 @@ static CallKind getCallKind(CallSyntax syntax) {
   llvm_unreachable("invalid call syntax");
 }
 
+// This is for those weird cases where we detect we've printed out that X != X,
+// in other words, the actual and expected types look the same to the user,
+// which is confusing.
+// The temporarily solution is to call this function to print out the kgen type
+// as well.
+// TODO(MOCO-2080): Make this irrelevant by improving the original error
+// message that wasn't detailed enough.
+static void printSimilarTypesNote(InflightDiag &diag, llvm::SMLoc smLoc,
+                                  Type actualMlirType, Type expectedMlirType) {
+  std::string actualRaw;
+  llvm::raw_string_ostream(actualRaw) << actualMlirType;
+  std::string expectedRaw;
+  llvm::raw_string_ostream(expectedRaw) << expectedMlirType;
+  diag.attachNote(smLoc)
+      << "More detailed comparison:"
+      << "\nActual:   " // Extra space to line it up
+      << actualRaw << "\nExpected: " << expectedRaw
+      << "\n(If you see this, please file an issue to improve this "
+         "error message!)";
+}
+
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
 /// candidate that works with the specified parameter bindings on the overload
 /// set. If so, return the single entry that works.  If not, generate a
@@ -413,17 +434,30 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       // This is true if passing Int type to Int instead of Int() to Int.
       bool isConvertingTypeValue =
           initResType.getMetaType() == singleOperandType;
-      diag << "cannot implicitly convert ";
-      if (isConvertingTypeValue)
-        diag << initResType << " type as a";
-      else
-        diag << singleOperandType;
-      diag << " value to ";
-      diag << (isConvertingTypeValue ? "an instance of " : "") << initResType;
+      if (isConvertingTypeValue) {
+        diag << "cannot implicitly convert " << initResType
+             << " type as a value to an instance of " << initResType
+             << "; did you mean to instantiate " << initResType << "?"
+             << expr->getRange();
+      } else {
+        std::string singleOperandTypeAsString =
+            "'" + singleOperandType.getAsString(&getShared()) + "'";
+        std::string initResTypeAsString =
+            "'" + initResType.getAsString(&getShared()) + "'";
 
-      if (isConvertingTypeValue)
-        diag << "; did you mean to instantiate " << initResType << "?";
-      diag << expr->getRange();
+        diag << "cannot implicitly convert " << singleOperandTypeAsString
+             << " value to " << initResTypeAsString << expr->getRange();
+
+        if (singleOperandTypeAsString == initResTypeAsString) {
+          // Print out the internal representation of the types.
+          // TODO(MOCO-2080): Make this irrelevant by making the above type
+          // printing smarter.
+          printSimilarTypesNote(diag, expr->getLoc(),
+                                singleOperandType.mlirType,
+                                initResType.mlirType);
+        }
+      }
+
       return {};
     }
 
@@ -684,21 +718,11 @@ PValue OverloadSet::filterOverloadSetForValueType(
     diag.attachNote(candidate->getLoc())
         << "candidate declared here with type " << candidateTypeAsString;
     if (functionTypeAsString == candidateTypeAsString) {
-      std::string candidateRaw;
-      llvm::raw_string_ostream(candidateRaw) << candidateType.mlirType;
-      std::string expectedRaw;
-      llvm::raw_string_ostream(expectedRaw) << functionType.mlirType;
-
-      // This is a weird case where the expected function and the candidate
-      // function serialize to the same string, leading to confusing error
-      // messages for uses. Print out the kgen type as well.
-      diag.attachNote(candidate->getLoc())
-          << "More detailed comparison of candidate and expected function:"
-          << "\nCandidate full internal type: " << candidateRaw
-          << "\nExpected full internal type:  " // Extra space to line it up
-          << expectedRaw
-          << "\n(If you see this, please file an issue to improve this error "
-          << "message!)";
+      // Print out the internal representation of the types.
+      // TODO(MOCO-2080): Make this irrelevant by making the above type
+      // printing smarter.
+      printSimilarTypesNote(diag, expr->getLoc(), candidateType.mlirType,
+                            functionType.mlirType);
     }
   }
   return {};
