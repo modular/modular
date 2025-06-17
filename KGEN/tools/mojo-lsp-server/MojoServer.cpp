@@ -417,6 +417,126 @@ SymbolRef *SymbolIndex::getSymbolAt(SMLoc loc) const {
 }
 
 //===----------------------------------------------------------------------===//
+// Progress management
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+class ProgressManager {
+public:
+  ProgressManager(mlir::lsp::MessageHandler &handler) {
+    // window/workDoneProgress/create is intended to return a null result on
+    // success; we use optional<std::string> to represent that in C++. We don't
+    // actually care about the body, just that the request comes back without
+    // an error.
+    createTokenFn = handler.outgoingRequest<mlir::lsp::WorkDoneProgressParams,
+                                            std::optional<std::string>>(
+        "window/workDoneProgress/create",
+        [&](llvm::json::Value id,
+            llvm::Expected<std::optional<std::string>> response) {
+          auto token = id.getAsString();
+          // This should always be true, because the only ID being passed to the
+          // outgoing request function should be a string.
+          assert(token);
+          if (!token)
+            return;
+
+          std::lock_guard<std::mutex> respondersLock(respondersMutex);
+          auto responder = responders.find(*token);
+
+          assert(responder != responders.end());
+          if (responder == responders.end())
+            return;
+
+          if (response) {
+            responder->getValue()(success());
+          } else {
+            responder->getValue()(failure());
+          }
+        });
+
+    startProgressFn = handler.outgoingNotification<
+        mlir::lsp::ProgressParams<mlir::lsp::WorkDoneProgressBeginParams>>(
+        "$/progress");
+    endProgressFn = handler.outgoingNotification<
+        mlir::lsp::ProgressParams<mlir::lsp::WorkDoneProgressEndParams>>(
+        "$/progress");
+  }
+
+  void withProgress(llvm::unique_function<void()> callback, std::string title,
+                    std::optional<std::string> message = std::nullopt) {
+
+    // If the client doesn't want progress reporting, just invoke the callback
+    // immediately.
+    if (!enabled)
+      callback();
+
+    auto token = generateToken();
+    std::string tokenCopy = token;
+
+    {
+      std::lock_guard<std::mutex> respondersLock(respondersMutex);
+      responders[token] =
+          [&, callback = std::move(callback), token = std::move(tokenCopy),
+           title = std::move(title),
+           message = std::move(message)](LogicalResult result) mutable {
+            if (result.succeeded()) {
+              // Send the initial progress notification now.
+              startProgressFn({
+                  token,
+                  {
+                      title,
+                      message,
+                  },
+              });
+            }
+
+            callback();
+
+            if (result.succeeded()) {
+              endProgressFn({
+                  token,
+                  {
+                      std::nullopt,
+                  },
+              });
+            }
+          };
+    }
+
+    createTokenFn(mlir::lsp::WorkDoneProgressParams{token}, token);
+  }
+
+  void setEnabled(bool newEnabled) { enabled = newEnabled; }
+
+private:
+  SendProgressFn<mlir::lsp::WorkDoneProgressBeginParams> startProgressFn;
+  SendProgressFn<mlir::lsp::WorkDoneProgressEndParams> endProgressFn;
+
+  /// Generates a new progress token.
+  std::string generateToken() {
+    return "server-" + std::to_string(tokenCounter++);
+  }
+
+  /// Monotonically increasing counter used to generate server-side progress
+  /// tokens. An overflow of this counter violates the LSP, but should happen
+  /// infrequently, if ever.
+  uint64_t tokenCounter = 0;
+
+  llvm::StringMap<llvm::unique_function<void(LogicalResult)>> responders;
+  std::mutex respondersMutex;
+
+  llvm::unique_function<void(const mlir::lsp::WorkDoneProgressParams &,
+                             llvm::json::Value)>
+      createTokenFn;
+
+  /// Used to enable/disable progress reporting based on client capabilities.
+  bool enabled = false;
+};
+
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // LSPParserListener
 //===----------------------------------------------------------------------===//
 
@@ -618,13 +738,11 @@ struct MojoDocument::Context {
 // MojoDocument
 //===----------------------------------------------------------------------===//
 
-MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
-                           int64_t version,
-                           SendDiagnosticsFnRef sendDiagnosticsFn,
-                           AsyncRT::Runtime &runtime,
-                           AsyncRT::AnyAsyncValueRef chain,
-                           ArrayRef<std::string> includeDirs,
-                           LSPTelemetryContext &telemetryCtx)
+MojoDocument::MojoDocument(
+    Kind kind, ArrayRef<lsp::URIForFile> uris, int64_t version,
+    SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
+    AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs,
+    LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
       isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)),
@@ -638,100 +756,108 @@ MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
   getSourceMgr().setIncludeDirs(allIncludeDirs);
 
   // Start a task to resolve the document.
-  chain.andThenAsync([doc = MojoDocumentRef::copy(this), &telemetryCtx] {
-    doc->parseDocument(telemetryCtx);
-  });
+  chain.andThenAsync(
+      [doc = MojoDocumentRef::copy(this), &telemetryCtx, &progressMgr] {
+        doc->parseDocument(telemetryCtx, progressMgr);
+      });
 }
 
-void MojoDocument::parseDocument(LSPTelemetryContext &ctx) {
-  KGEN::CompilerTimeTraceScope traceScope(
-      "parseDocument", [&]() { return getURIs().front().uri().str(); });
+void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
+                                 ProgressManager &progressMgr) {
+  progressMgr.withProgress(
+      [&]() {
+        KGEN::CompilerTimeTraceScope traceScope(
+            "parseDocument", [&]() { return getURIs().front().uri().str(); });
 
-  // If we've already been invalidated, bail out early.
-  if (isInvalidated)
-    return markDocumentParsed();
+        // If we've already been invalidated, bail out early.
+        if (isInvalidated)
+          return markDocumentParsed();
 
-  // Build a wrapper diagnostic handler for the source manager to capture
-  // diagnostics emitted when parsing the mojo file.
-  struct DiagHandlerContext {
-    DiagHandlerContext(MojoDocument &doc) : doc(doc) {}
+        // Build a wrapper diagnostic handler for the source manager to capture
+        // diagnostics emitted when parsing the mojo file.
+        struct DiagHandlerContext {
+          DiagHandlerContext(MojoDocument &doc) : doc(doc) {}
 
-    /// A reference to the document.
-    MojoDocument &doc;
-    /// A set of diagnostic groups, where the first diagnostic is the main
-    /// diagnostic and the rest are notes.
-    std::vector<std::vector<llvm::SMDiagnostic>> smDiagnostics;
-  };
-  auto handlerFn = [](const llvm::SMDiagnostic &diag, void *ctx) {
-    auto &handlerCtx = *static_cast<DiagHandlerContext *>(ctx);
+          /// A reference to the document.
+          MojoDocument &doc;
+          /// A set of diagnostic groups, where the first diagnostic is the main
+          /// diagnostic and the rest are notes.
+          std::vector<std::vector<llvm::SMDiagnostic>> smDiagnostics;
+        };
+        auto handlerFn = [](const llvm::SMDiagnostic &diag, void *ctx) {
+          auto &handlerCtx = *static_cast<DiagHandlerContext *>(ctx);
 
-    // If this is a note, add it to the last diagnostic group.
-    if (diag.getKind() == llvm::SourceMgr::DK_Note) {
-      if (!handlerCtx.smDiagnostics.empty())
-        handlerCtx.smDiagnostics.back().push_back(diag);
-      return;
-    }
-    // Remember errors found during parsing.
-    if (diag.getKind() == llvm::SourceMgr::DK_Error)
-      handlerCtx.doc.hasParserErrors = true;
+          // If this is a note, add it to the last diagnostic group.
+          if (diag.getKind() == llvm::SourceMgr::DK_Note) {
+            if (!handlerCtx.smDiagnostics.empty())
+              handlerCtx.smDiagnostics.back().push_back(diag);
+            return;
+          }
+          // Remember errors found during parsing.
+          if (diag.getKind() == llvm::SourceMgr::DK_Error)
+            handlerCtx.doc.hasParserErrors = true;
 
-    handlerCtx.smDiagnostics.push_back({diag});
-  };
-  DiagHandlerContext handlerCtx(*this);
-  sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
-  context = std::make_unique<Context>(*this);
+          handlerCtx.smDiagnostics.push_back({diag});
+        };
+        DiagHandlerContext handlerCtx(*this);
+        sourceMgr.setDiagHandler(handlerFn, &handlerCtx);
+        context = std::make_unique<Context>(*this);
 
-  auto started = std::chrono::steady_clock::now();
-  size_t parsedSize = parseDocumentImpl();
-  auto end = std::chrono::steady_clock::now();
-  ctx.recordParseTime(
-      std::chrono::duration_cast<std::chrono::microseconds>(end - started),
-      parsedSize, kind == Kind::kNotebookDocument);
+        auto started = std::chrono::steady_clock::now();
+        size_t parsedSize = parseDocumentImpl();
+        auto end = std::chrono::steady_clock::now();
+        ctx.recordParseTime(
+            std::chrono::duration_cast<std::chrono::microseconds>(end -
+                                                                  started),
+            parsedSize, kind == Kind::kNotebookDocument);
 
-  // If we've already been invalidated, bail out early.
-  if (isInvalidated)
-    return markDocumentParsed();
+        // If we've already been invalidated, bail out early.
+        if (isInvalidated)
+          return markDocumentParsed();
 
-  // Process the collected diagnostics.
-  llvm::StringMap<std::optional<lsp::PublishDiagnosticsParams>> fileToDiags;
-  for (auto &uri : uris)
-    fileToDiags[uri.file()].emplace(uri, version);
+        // Process the collected diagnostics.
+        llvm::StringMap<std::optional<lsp::PublishDiagnosticsParams>>
+            fileToDiags;
+        for (auto &uri : uris)
+          fileToDiags[uri.file()].emplace(uri, version);
 
-  for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
-    // Skip diagnostics that weren't emitted within the main file.
-    if (!containsLocation(diags.front().getLoc()))
-      continue;
-    // Get the URI for the file this diagnostic is in. In the case of a text
-    // document, this is always the main URI.
-    lsp::URIForFile diagUri = uris.front();
-    if (uris.size() > 1) {
-      std::optional<lsp::URIForFile> optDiagUri =
-          getURIFromLoc(diags.front().getLoc());
-      if (!optDiagUri)
-        continue;
-      diagUri = *optDiagUri;
-    }
+        for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
+          // Skip diagnostics that weren't emitted within the main file.
+          if (!containsLocation(diags.front().getLoc()))
+            continue;
+          // Get the URI for the file this diagnostic is in. In the case of a
+          // text document, this is always the main URI.
+          lsp::URIForFile diagUri = uris.front();
+          if (uris.size() > 1) {
+            std::optional<lsp::URIForFile> optDiagUri =
+                getURIFromLoc(diags.front().getLoc());
+            if (!optDiagUri)
+              continue;
+            diagUri = *optDiagUri;
+          }
 
-    // Build the LSP diagnostic.
-    if (auto lspDiag =
-            buildLspDiagnosticFromSMDiagnostic(sourceMgr, diags, diagUri))
-      fileToDiags[diagUri.file()]->diagnostics.push_back(*lspDiag);
-  }
-  for (auto &params : llvm::make_second_range(fileToDiags))
-    sendDiagnosticsFn(*params);
+          // Build the LSP diagnostic.
+          if (auto lspDiag =
+                  buildLspDiagnosticFromSMDiagnostic(sourceMgr, diags, diagUri))
+            fileToDiags[diagUri.file()]->diagnostics.push_back(*lspDiag);
+        }
+        for (auto &params : llvm::make_second_range(fileToDiags))
+          sendDiagnosticsFn(*params);
 
-  // Process the fixit actions, using a custom title for certain actions.
-  auto missingDocFixitsIt = fixits.find(kMissingDocMessage);
-  if (missingDocFixitsIt != fixits.end()) {
-    for (auto &[range, actions] : missingDocFixitsIt->second)
-      actions[0].title = "Generate documentation";
-  }
+        // Process the fixit actions, using a custom title for certain actions.
+        auto missingDocFixitsIt = fixits.find(kMissingDocMessage);
+        if (missingDocFixitsIt != fixits.end()) {
+          for (auto &[range, actions] : missingDocFixitsIt->second)
+            actions[0].title = "Generate documentation";
+        }
 
-  // Sort any inlay hints computed during parsing.
-  llvm::stable_sort(inlayHints);
+        // Sort any inlay hints computed during parsing.
+        llvm::stable_sort(inlayHints);
 
-  // Mark the document as fully parsed now that we're done.
-  markDocumentParsed();
+        // Mark the document as fully parsed now that we're done.
+        markDocumentParsed();
+      },
+      "Parsing document", getURIs().front().file().str());
 }
 
 const KGEN::CompilationOptions &MojoDocument::getCompilationOptions() const {
@@ -1794,15 +1920,14 @@ MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
 // MojoTextDocument
 //===----------------------------------------------------------------------===//
 
-MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
-                                   std::string &&contents, int64_t version,
-                                   SendDiagnosticsFnRef sendDiagnosticsFn,
-                                   AsyncRT::Runtime &runtime,
-                                   AsyncRT::AnyAsyncValueRef chain,
-                                   ArrayRef<std::string> includeDirs,
-                                   LSPTelemetryContext &telemetryCtx)
+MojoTextDocument::MojoTextDocument(
+    const lsp::URIForFile &uri, std::string &&contents, int64_t version,
+    SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
+    AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs,
+    LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
-                   runtime, std::move(chain), includeDirs, telemetryCtx),
+                   runtime, std::move(chain), includeDirs, telemetryCtx,
+                   progressMgr),
       contents(std::move(contents)) {
   // We add the main doc to the SourceMgr here to ensure it's considered the
   // "main" file.
@@ -1933,10 +2058,10 @@ MojoNotebookDocument::MojoNotebookDocument(
     ArrayRef<lsp::TextDocumentItem> cellDocuments,
     SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
     AsyncRT::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs,
-    LSPTelemetryContext &telemetryCtx)
+    LSPTelemetryContext &telemetryCtx, ProgressManager &progressMgr)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
                    sendDiagnosticsFn, runtime, std::move(chain), includeDirs,
-                   telemetryCtx) {
+                   telemetryCtx, progressMgr) {
   for (unsigned i = 0, e = cellInfos.size(); i < e; ++i) {
     if (cellInfos[i].kind != lsp::NotebookCellKind::Code)
       continue;
@@ -2130,13 +2255,17 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 struct MojoServer::Impl {
-  Impl(ContextRef ctx, bool waitOnShutdown, SendDiagnosticsFn sendDiagnosticsFn,
+  Impl(ContextRef ctx, bool waitOnShutdown,
+       mlir::lsp::MessageHandler &messageHandler,
        ArrayRef<std::string> includeDirs)
       : ctx(ctx.copy()),
         lspTelemetryContext(*ctx->get<M::Telemetry::TelemetryContext>()),
-        waitOnShutdown(waitOnShutdown),
-        sendDiagnosticsFn(std::move(sendDiagnosticsFn)),
-        includeDirs(includeDirs) {}
+        waitOnShutdown(waitOnShutdown), messageHandler(messageHandler),
+        sendDiagnosticsFn(
+            messageHandler
+                .outgoingNotification<mlir::lsp::PublishDiagnosticsParams>(
+                    "textDocument/publishDiagnostics")),
+        progressMgr(messageHandler), includeDirs(includeDirs) {}
 
   /// Begin the shutdown process for the server.
   void shutdown() {
@@ -2192,8 +2321,13 @@ struct MojoServer::Impl {
   /// shutdown, and instead wait for them to complete.
   bool waitOnShutdown;
 
+  mlir::lsp::MessageHandler &messageHandler;
+
   /// The function used to send diagnostics to the client.
   SendDiagnosticsFn sendDiagnosticsFn;
+
+  /// The progress manager for the server.
+  ProgressManager progressMgr;
 
   /// The files held by the server, mapped by their URI file name.
   llvm::StringMap<MojoDocumentRef> files;
@@ -2201,7 +2335,8 @@ struct MojoServer::Impl {
   /// A mapping from individual notebook cells to their documents.
   llvm::StringMap<MojoDocumentRef> notebookCellToFile;
 
-  /// A mapping from file to the last set of semantic tokens sent to the client.
+  /// A mapping from file to the last set of semantic tokens sent to the
+  /// client.
   llvm::StringMap<lsp::SemanticTokens> prevSemanticTokensForFile;
   std::mutex lastSemanticTokensMutex;
 
@@ -2216,9 +2351,10 @@ struct MojoServer::Impl {
 MojoServer::MojoServer(std::unique_ptr<Impl> &&impl) : impl(std::move(impl)) {}
 MojoServer::MojoServer(MojoServer &&) = default;
 
-ErrorOr<MojoServer> MojoServer::create(bool singleThreaded, bool waitOnShutdown,
-                                       SendDiagnosticsFn sendDiagnosticsFn,
-                                       ArrayRef<std::string> includeDirs) {
+ErrorOr<MojoServer>
+MojoServer::create(bool singleThreaded, bool waitOnShutdown,
+                   mlir::lsp::MessageHandler &messageHandler,
+                   ArrayRef<std::string> includeDirs) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-lsp-server",
       Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
@@ -2227,7 +2363,7 @@ ErrorOr<MojoServer> MojoServer::create(bool singleThreaded, bool waitOnShutdown,
   if (ctxOr.isError())
     return ctxOr.takeError();
   auto impl = std::make_unique<Impl>(ctxOr->copy(), waitOnShutdown,
-                                     std::move(sendDiagnosticsFn), includeDirs);
+                                     messageHandler, includeDirs);
   MojoServer server(std::move(impl));
   return server;
 }
@@ -2241,6 +2377,10 @@ LSPTelemetryContext &MojoServer::getLSPTelemetryContext() {
 void MojoServer::shutdown() {
   if (impl)
     impl->shutdown();
+}
+
+void MojoServer::receiveCapabilities(bool workDoneProgress) {
+  impl->progressMgr.setEnabled(workDoneProgress);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2266,7 +2406,8 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   // Create a new document.
   it->second = MojoTextDocumentRef::create(
       uri, std::move(contents), version, impl->sendDiagnosticsFn, runtime,
-      std::move(chain), impl->includeDirs, getLSPTelemetryContext());
+      std::move(chain), impl->includeDirs, getLSPTelemetryContext(),
+      impl->progressMgr);
 }
 
 void MojoServer::updateDocument(
@@ -2340,7 +2481,8 @@ void MojoServer::addNotebookDocument(
   // Create a new document.
   file = MojoNotebookDocumentRef::create(
       docURIs, version, cells, cellDocuments, impl->sendDiagnosticsFn, runtime,
-      std::move(chain), impl->includeDirs, getLSPTelemetryContext());
+      std::move(chain), impl->includeDirs, getLSPTelemetryContext(),
+      impl->progressMgr);
   for (const lsp::TextDocumentItem &cell : cellDocuments)
     impl->notebookCellToFile[cell.uri.file()] = file.copy();
 }

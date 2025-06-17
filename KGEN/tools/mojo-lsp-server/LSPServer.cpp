@@ -182,6 +182,8 @@ void LSPServer::onInitialize(const InitializeParams &params,
        params.capabilities.hierarchicalDocumentSymbol},
   };
 
+  server.receiveCapabilities(params.capabilities.workDoneProgress);
+
   // Per LSP, codeActionProvider can be either boolean or CodeActionOptions.
   // CodeActionOptions is only valid if the client supports action literal
   // via textDocument.codeAction.codeActionLiteralSupport.
@@ -270,10 +272,7 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                                std::unique_ptr<KGEN::TraceProfiler> profiler) {
   MessageHandler messageHandler(transport);
   ErrorOr<MojoServer> serverOr = MojoServer::create(
-      singleThreaded, waitOnShutdown,
-      messageHandler.outgoingNotification<PublishDiagnosticsParams>(
-          "textDocument/publishDiagnostics"),
-      includeDirs);
+      singleThreaded, waitOnShutdown, messageHandler, includeDirs);
   if (serverOr.isError()) {
     auto error = llvm::make_error<llvm::StringError>(
         serverOr.getError(), llvm::inconvertibleErrorCode());

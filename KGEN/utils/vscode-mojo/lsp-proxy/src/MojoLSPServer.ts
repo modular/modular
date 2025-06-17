@@ -50,11 +50,13 @@ export class MojoLSPServer extends DisposableContext {
     logger,
     onExit,
     onNotification,
+    onOutgoingRequest,
   }: {
     initializationOptions: InitializationOptions;
     logger: (message: string) => void;
     onExit: (status: ExitStatus) => void;
     onNotification: (method: string, params: JSONObject) => void;
+    onOutgoingRequest: (id: any, method: string, params: JSONObject) => void;
   }) {
     super();
 
@@ -77,6 +79,8 @@ export class MojoLSPServer extends DisposableContext {
           this.pendingRequests.get(response.id)!.responseStream.next(response),
         (notification: JSONObject) =>
           onNotification(notification.method, notification.params),
+        (request: JSONObject) =>
+          onOutgoingRequest(request.id, request.method, request.params),
       ),
     );
     this.pushSubscription(new ProcessExitStream(this.serverProcess, onExit));
@@ -119,6 +123,20 @@ export class MojoLSPServer extends DisposableContext {
   public sendNotification<T>(params: T, method: string): void {
     const notification = this.wrapNotification(params, method);
     this.sendPacket(notification);
+  }
+
+  /**
+   * Send a response to a server -> client request, given a response body and a
+   * request ID.
+   */
+  public sendResponse(id: any, result: unknown): void {
+    const response = this.wrapResponse(id, result);
+    this.sendPacket(response);
+  }
+
+  public sendError(id: any, error: unknown): void {
+    const response = this.wrapResponse(id, undefined, error);
+    this.sendPacket(response);
   }
 
   /**
@@ -166,6 +184,18 @@ export class MojoLSPServer extends DisposableContext {
       jsonrpc: '2.0',
       method: method,
       params: params,
+    };
+  }
+
+  /**
+   * Wraps an ID and params as a response object,
+   */
+  private wrapResponse(id: any, result?: unknown, error?: unknown): JSONObject {
+    return {
+      jsonrpc: '2.0',
+      id,
+      result,
+      error,
     };
   }
 

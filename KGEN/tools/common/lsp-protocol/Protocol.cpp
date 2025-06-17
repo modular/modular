@@ -406,6 +406,53 @@ bool lsp::fromJSON(const llvm::json::Value &value, RenameParams &params,
 }
 
 //===----------------------------------------------------------------------===//
+// Progress reporting
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value mlir::lsp::toJSON(const WorkDoneProgressParams &params) {
+  return llvm::json::Object{{"token", params.token}};
+}
+
+bool mlir::lsp::fromJSON(const llvm::json::Value &value,
+                         WorkDoneProgressParams &params,
+                         llvm::json::Path path) {
+
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("token", params.token);
+}
+
+llvm::json::Value mlir::lsp::toJSON(const WorkDoneProgressBeginParams &params) {
+  return llvm::json::Object{
+      {"kind", "begin"},
+      {"title", params.title},
+      {"message", params.message},
+  };
+}
+
+bool mlir::lsp::fromJSON(const llvm::json::Value &value,
+                         WorkDoneProgressBeginParams &params,
+                         llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("title", params.title) &&
+         o.mapOptional("message", params.message);
+}
+
+llvm::json::Value mlir::lsp::toJSON(const WorkDoneProgressEndParams &params) {
+  return llvm::json::Object{
+      {"kind", "end"},
+      {"message", params.message},
+  };
+}
+
+bool mlir::lsp::fromJSON(const llvm::json::Value &value,
+                         WorkDoneProgressEndParams &params,
+                         llvm::json::Path path) {
+
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.mapOptional("message", params.message);
+}
+
+//===----------------------------------------------------------------------===//
 // Serialization methods not available in the upstream MLIR code
 //===----------------------------------------------------------------------===//
 
