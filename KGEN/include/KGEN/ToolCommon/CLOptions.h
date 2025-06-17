@@ -199,7 +199,6 @@ public:
 
   DEFINE_CL_OPTION_GETTER(uint64_t, automaticInlineThreshold);
   DEFINE_CL_OPTION_GETTER(uint64_t, parametricInlineThreshold);
-  DEFINE_CL_OPTION_GETTER(uint64_t, parametricInlineEstimatedLoopTripCount);
   DEFINE_CL_OPTION_GETTER(size_t, stackReusePromoteToGlobalThreshold);
 
 private:
@@ -213,13 +212,6 @@ private:
                      "kgen-parametric-inline-threshold",
                      "The threshold to inline parametric functions. "
                      "It has higher priority over pass's heuristic.");
-
-    DEFINE_CL_OPTION_WITH_DEFAULT(uint64_t,
-                                  parametricInlineEstimatedLoopTripCount,
-                                  "kgen-parametric-inline-avg-loop-trip-count",
-                                  "Estimated loop trip count that will be used "
-                                  "in InlineParametric pass's heuristic.",
-                                  4);
 
     DEFINE_CL_OPTION_WITH_DEFAULT(
         size_t, stackReusePromoteToGlobalThreshold,
