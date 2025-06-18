@@ -1,7 +1,7 @@
 """Define bazel dependencies common to the internal and external repos."""
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
-bazel_dep(name = "aspect_rules_js", version = "2.3.7")
+bazel_dep(name = "aspect_rules_js", version = "2.3.8")
 
 # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "aspect_rules_py", version = "1.4.0")
