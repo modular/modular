@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 import max.driver as md
 import pytest
 import torch
@@ -16,99 +17,107 @@ from max.pipelines.architectures.internvl.internvl import (
 )
 from max.pipelines.architectures.internvl.model_config import (
     InternVLConfig,
-    VisionConfig,
 )
 from torch.utils.dlpack import from_dlpack
-from transformers.configuration_utils import PretrainedConfig
-from transformers.models.internvl.modeling_internvl import (
-    InternVLVisionModel as HFInternVLVisionModel,
+from transformers.models.internvl.configuration_internvl import (
+    InternVLConfig as HFInternVLConfig,
 )
+from transformers.models.internvl.configuration_internvl import (
+    InternVLVisionConfig,
+)
+from transformers.models.internvl.modeling_internvl import InternVLModel
 
 
 @torch.no_grad()
 def generate_torch_outputs(
-    vision_config: VisionConfig,
+    internvl_config: InternVLConfig,
     pixel_values: torch.Tensor,
     vision_model_weights: dict[str, torch.Tensor],
 ) -> torch.Tensor:
-    """Generate reference outputs using HuggingFace InternVL Vision Model implementation."""
+    """Generate reference outputs using HuggingFace InternVLModel implementation."""
 
     # Permute from [batch, height, width, channels] to [batch, channels, height, width]
     pixel_values = pixel_values.permute(0, 3, 1, 2)
 
-    # Create a minimal config object that matches what InternVLVisionModel expects
-    class MinimalVisionConfig(PretrainedConfig):
-        def __init__(self, vision_config: VisionConfig):
-            super().__init__()
-            self.hidden_size = vision_config.hidden_size
-            self.num_attention_heads = vision_config.num_attention_heads
-            self.intermediate_size = vision_config.intermediate_size
-            self.use_qk_norm = vision_config.qk_normalization
-            self.layer_norm_eps = vision_config.layer_norm_eps
-            self._attn_implementation = "eager"  # Use eager attention
-            self.attention_dropout = 0.0
-            self.projection_dropout = 0.0
-            self.attention_bias = False
-            self.hidden_dropout_prob = (
-                0.0  # Our implementation doesn't have dropout
-            )
-            self.layer_scale_init_value = 1.0  # Default layer scale value
-            self.chunk_size_feed_forward = 0  # Not used in our case
-            self.norm_type = vision_config.norm_type
-            self.hidden_act = "gelu"  # Default activation for MLP
-            self.num_hidden_layers = vision_config.num_hidden_layers
-            # HuggingFace expects these as tuples/lists with (height, width)
-            self.image_size = (
-                vision_config.image_size,
-                vision_config.image_size,
-            )
-            self.patch_size = (
-                vision_config.patch_size,
-                vision_config.patch_size,
-            )
-            self.num_channels = 3
-            self.use_absolute_position_embeddings = True
-            self.use_mask_token = False
-            self.use_mean_pooling = False
-            self.initializer_range = 0.02
-            self.output_attentions = False
-            self.output_hidden_states = False
+    # Create HuggingFace InternVL configs.
+    vision_config = InternVLVisionConfig(
+        hidden_size=internvl_config.vision_config.hidden_size,
+        intermediate_size=internvl_config.vision_config.intermediate_size,
+        num_attention_heads=internvl_config.vision_config.num_attention_heads,
+        num_hidden_layers=internvl_config.vision_config.num_hidden_layers,
+        image_size=internvl_config.vision_config.image_size,
+        patch_size=internvl_config.vision_config.patch_size,
+        use_qk_norm=internvl_config.vision_config.qk_normalization,
+        layer_norm_eps=internvl_config.vision_config.layer_norm_eps,
+        norm_type=internvl_config.vision_config.norm_type,
+        attention_dropout=0.0,
+        projection_dropout=0.0,
+        hidden_dropout_prob=0.0,
+        attention_bias=False,
+        layer_scale_init_value=1.0,
+        use_mean_pooling=False,
+    )
 
-    config = MinimalVisionConfig(vision_config)
+    # Create a minimal text config dict.
+    # This is required by InternVLModel but not used.
+    text_config_dict = {
+        "model_type": "qwen2",
+        "hidden_size": internvl_config.llm_config.hidden_size,
+        "num_hidden_layers": 1,  # Minimal layers since we won't use it.
+        "num_attention_heads": 8,
+        "num_key_value_heads": 8,
+        "intermediate_size": 256,
+        "vocab_size": 1000,
+        "max_position_embeddings": 2048,
+        "rms_norm_eps": 1e-6,
+    }
 
-    # Create the HuggingFace vision model
-    model = HFInternVLVisionModel(config).to(torch.bfloat16).to("cuda")
+    # Create the full InternVL config.
+    hf_config = HFInternVLConfig(
+        vision_config=vision_config,
+        text_config=text_config_dict,
+        downsample_ratio=internvl_config.downsample_ratio,
+        vision_feature_layer=-1,  # Use last layer
+        vision_feature_select_strategy="default",  # Remove CLS token
+        projector_hidden_act="gelu",
+    )
+
+    # Create the InternVLModel.
+    model = InternVLModel(hf_config).to(torch.bfloat16).to("cuda").eval()
+
+    # Load vision tower weights.
+    vision_tower = model.vision_tower
 
     # Load embeddings weights
-    model.embeddings.cls_token.data = (
+    vision_tower.embeddings.cls_token.data = (
         vision_model_weights["embeddings.class_embedding"]
         .squeeze(0)
         .to(torch.bfloat16)
         .to("cuda")
     )
 
-    # Load patch embeddings (Conv2d projection)
-    model.embeddings.patch_embeddings.projection.weight.data = (
+    # Load patch embeddings
+    vision_tower.embeddings.patch_embeddings.projection.weight.data = (
         vision_model_weights["embeddings.patch_embedding.filter"]
         .to(torch.bfloat16)
         .to("cuda")
     )
-    model.embeddings.patch_embeddings.projection.bias.data = (
+    vision_tower.embeddings.patch_embeddings.projection.bias.data = (
         vision_model_weights["embeddings.patch_embedding.bias"]
         .to(torch.bfloat16)
         .to("cuda")
     )
 
-    # Load position embeddings - ensure correct shape without squeezing
-    model.embeddings.position_embeddings.data = (
+    # Load position embeddings
+    vision_tower.embeddings.position_embeddings.data = (
         vision_model_weights["embeddings.position_embedding"]
         .to(torch.bfloat16)
         .to("cuda")
     )
 
     # Load encoder layer weights
-    for layer_idx in range(config.num_hidden_layers):
-        layer = model.encoder.layer[layer_idx]
+    for layer_idx in range(vision_config.num_hidden_layers):
+        layer = vision_tower.encoder.layer[layer_idx]
 
         # Load attention weights - handle stacked QKV weight splitting
         qkv_weight = (
@@ -137,7 +146,7 @@ def generate_torch_outputs(
             .to("cuda")
         )
 
-        # Set normalization weights for attention
+        # Set normalization weights
         layer.attention.q_norm.weight.data = (
             vision_model_weights[
                 f"encoder_layers.{layer_idx}.attn.q_norm.weight"
@@ -165,7 +174,7 @@ def generate_torch_outputs(
             .to("cuda")
         )
 
-        # Set MLP weights (HuggingFace uses fc1/fc2 naming)
+        # Set MLP weights
         layer.mlp.fc1.weight.data = (
             vision_model_weights[f"encoder_layers.{layer_idx}.mlp.fc1.weight"]
             .to(torch.bfloat16)
@@ -203,15 +212,63 @@ def generate_torch_outputs(
             .to("cuda")
         )
 
+    # Load final layernorm weight if not using mean pooling
+    if hasattr(vision_tower, "layernorm") and hasattr(
+        vision_tower.layernorm, "weight"
+    ):
+        if "layernorm.weight" in vision_model_weights:
+            vision_tower.layernorm.weight.data = (
+                vision_model_weights["layernorm.weight"]
+                .to(torch.bfloat16)
+                .to("cuda")
+            )
+
     # Zero out biases if they exist (to match MAX implementation)
-    for module in model.modules():
+    for module in vision_tower.modules():
         if hasattr(module, "bias") and module.bias is not None:
             module.bias.data.zero_()
 
-    # Forward pass
-    output = model(pixel_values=pixel_values)
+    # Load multimodal projector weights
+    projector = model.multi_modal_projector
 
-    return output.last_hidden_state
+    # Load mlp1 weights into the projector
+    projector.layer_norm.weight.data = (
+        vision_model_weights["mlp1.layer_norm.weight"]
+        .to(torch.bfloat16)
+        .to("cuda")
+    )
+    projector.layer_norm.bias.data = (
+        vision_model_weights["mlp1.layer_norm.bias"]
+        .to(torch.bfloat16)
+        .to("cuda")
+    )
+    projector.linear_1.weight.data = (
+        vision_model_weights["mlp1.fc1.weight"].to(torch.bfloat16).to("cuda")
+    )
+    projector.linear_1.bias.data = (
+        vision_model_weights["mlp1.fc1.bias"].to(torch.bfloat16).to("cuda")
+    )
+    projector.linear_2.weight.data = (
+        vision_model_weights["mlp1.fc2.weight"].to(torch.bfloat16).to("cuda")
+    )
+    projector.linear_2.bias.data = (
+        vision_model_weights["mlp1.fc2.bias"].to(torch.bfloat16).to("cuda")
+    )
+
+    # Use the model's get_image_features method which handles everything
+    vision_features = model.get_image_features(
+        pixel_values=pixel_values,
+        vision_feature_layer=-1,
+        vision_feature_select_strategy="default",
+    )
+
+    # Flatten to match MAX output format
+    # [batch, seq_len, hidden_dim] -> [batch * seq_len, hidden_dim]
+    batch_size = vision_features.shape[0]
+    seq_len = vision_features.shape[1]
+    vision_features = vision_features.reshape(batch_size * seq_len, -1)
+
+    return vision_features
 
 
 def generate_max_outputs(
@@ -293,16 +350,16 @@ def generate_max_outputs(
 
     with Graph("InternVLVisionModel", input_types=(input_type,)) as graph:
         pixel_values_input = graph.inputs[0]
-        output = vision_model(pixel_values_input.tensor)
-        graph.output(output)
+        output = vision_model([pixel_values_input.tensor])
+        graph.output(*output)
 
     compiled = session.load(graph, weights_registry=vision_model.state_dict())
 
     # Execute the model and get the first result
-    result = compiled.execute(Tensor.from_dlpack(pixel_values).to(device))
+    result = compiled.execute(Tensor.from_dlpack(pixel_values).to(device))[0]
+    assert isinstance(result, Tensor)
     # Convert result back to torch tensor
-    max_tensor = result[0]
-    return from_dlpack(max_tensor)
+    return from_dlpack(result)
 
 
 def test_vision_model(
@@ -317,7 +374,7 @@ def test_vision_model(
 
     # Generate reference output
     torch_output = generate_torch_outputs(
-        internvl_config.vision_config,
+        internvl_config,
         vision_pixel_values,
         vision_model_weights,
     )

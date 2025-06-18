@@ -605,4 +605,55 @@ def vision_model_weights(
             }
         )
 
+    # ===== MLP1 WEIGHTS (Multimodal Projector) =====
+    # Calculate mlp1 dimensions
+    downsample_ratio = 0.5  # From internvl_config fixture
+    mlp_input_size = int(hidden_size * (1 / downsample_ratio) ** 2)
+    llm_hidden_size = 5120  # From llm_config fixture
+
+    # MLP1 standard deviations (estimated)
+    MLP1_NORM_WEIGHT_MEAN = 1.0
+    MLP1_NORM_WEIGHT_STD = 0.005
+    MLP1_NORM_BIAS_MEAN = 0.0
+    MLP1_NORM_BIAS_STD = 0.002
+    # Linear layers have mean close to zero due to their initialization.
+    MLP1_FC_STD = 0.01
+
+    # Layer norm for mlp1
+    weights["mlp1.layer_norm.weight"] = (
+        torch.ones(mlp_input_size, dtype=torch.bfloat16) * MLP1_NORM_WEIGHT_MEAN
+        + torch.randn(mlp_input_size, dtype=torch.bfloat16)
+        * MLP1_NORM_WEIGHT_STD
+    )
+    weights["mlp1.layer_norm.bias"] = (
+        torch.ones(mlp_input_size, dtype=torch.bfloat16) * MLP1_NORM_BIAS_MEAN
+        + torch.randn(mlp_input_size, dtype=torch.bfloat16) * MLP1_NORM_BIAS_STD
+    )
+
+    # FC1: mlp_input_size -> llm_hidden_size
+    weights["mlp1.fc1.weight"] = (
+        torch.randn(
+            llm_hidden_size,
+            mlp_input_size,
+            dtype=torch.bfloat16,
+        )
+        * MLP1_FC_STD
+    )
+    weights["mlp1.fc1.bias"] = (
+        torch.randn(llm_hidden_size, dtype=torch.bfloat16) * MLP1_FC_STD
+    )
+
+    # FC2: llm_hidden_size -> llm_hidden_size
+    weights["mlp1.fc2.weight"] = (
+        torch.randn(
+            llm_hidden_size,
+            llm_hidden_size,
+            dtype=torch.bfloat16,
+        )
+        * MLP1_FC_STD
+    )
+    weights["mlp1.fc2.bias"] = (
+        torch.randn(llm_hidden_size, dtype=torch.bfloat16) * MLP1_FC_STD
+    )
+
     return weights
