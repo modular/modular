@@ -34,6 +34,9 @@ build --test_summary=terse
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
+# Use the target platform for tests to correctly resolve GPU settings
+build --use_target_platform_for_tests
+
 # Buildbuddy cache optimization recommendations
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
@@ -42,8 +45,52 @@ build --legacy_important_outputs=false
 build --remote_cache_compression
 build --slim_profile=false
 
-# TODO: Disable remote caching for now.
-# build:ci --bes_results_url=https://modular-public.buildbuddy.io/invocation/
-# build:ci --bes_backend=grpcs://modular-public.buildbuddy.io
-# build:ci --remote_cache=grpcs://modular-public.buildbuddy.io
+build --remote_download_outputs=toplevel
+build --remote_download_regex='.*\.(inc|h)$'
+build --experimental_remote_cache_eviction_retries=3
+build --grpc_keepalive_time=30s
+build --remote_upload_local_results
+build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
+build --remote_instance_name=modular-public
+
+build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
+build:cache --bes_backend=grpcs://modular.buildbuddy.io
+build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
+
+build:remote --config=cache
+build:remote --remote_executor=grpcs://modular.buildbuddy.io
+build:remote --local_test_jobs=HOST_CPUS
+build:remote --jobs=1000
+
+# Separate CI config that doesn't affect build output for verifing we share caches
+build:ci-no-config --build_metadata=ROLE=PUBLIC-CI
+build:ci-no-config --config=cache
+build:ci-no-config --disk_cache=
+build:ci-no-config --ui_event_filters=+WARNING
+build:ci-no-config --verbose_failures
+
 build:ci --remote_timeout=10m
+
+build:ci-gpu-common --config=ci
+build:ci-gpu-common --test_tag_filters=gpu,-clang-tidy,-mojo-docs
+
+build:remote-h100 --config=remote
+build:remote-h100 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-h100 --platforms=//:h100-platform
+build:remote-h100 --extra_execution_platforms=//:m7i-platform,//:h100-platform,@mojo_host_platform
+
+build:ci-remote-h100 --config=ci-gpu-common
+build:ci-remote-h100 --config=remote-h100
+
+build:remote-mi300 --config=remote
+build:remote-mi300 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
+build:remote-mi300 --platforms=//:mi300-platform
+build:remote-mi300 --extra_execution_platforms=//:m7i-platform,//:mi300-platform,@mojo_host_platform
+
+build:ci-remote-mi300 --config=ci-gpu-common
+build:ci-remote-mi300 --config=remote-mi300
+
+test:ci-test --config=ci-no-config
+test:ci-test --remote_download_outputs=minimal
+
+test:ci-gpu-common --config=ci-test

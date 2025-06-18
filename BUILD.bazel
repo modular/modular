@@ -75,3 +75,58 @@ alias(
     actual = "//bazel/lint:fix",
     tags = ["top-level"],
 )
+
+platform(
+    name = "m7i-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    exec_properties = {
+        "Pool": "m7i-large-executors",
+        "OSFamily": "Linux",
+        "container-image": "docker://466483404629.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204",
+        "dockerNetwork": "off",
+    },
+)
+
+platform(
+    name = "h100-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":has_multi_gpu",
+        ":h100_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "oci-h100-executors",
+        "container-image": "docker://us-ashburn-1.ocir.io/idiy4j6eayc0/modular-build-env:ubuntu2204-gpu",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
+    name = "mi300-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":amd_gpu",
+        ":has_gpu",
+        ":mi300x_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "mi300-executors",
+        "container-image": "docker://us-ashburn-1.ocir.io/idiy4j6eayc0/modular-build-env:ubuntu2204-rocm",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": "1",
+        "test.resources:gpu-1": "0.01",
+    },
+)
