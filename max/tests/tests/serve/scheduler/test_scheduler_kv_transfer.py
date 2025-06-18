@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
-import time
+from datetime import datetime
+from multiprocessing import Process, Queue
 from typing import Callable, Union, cast
 from unittest.mock import Mock
 
@@ -15,12 +16,18 @@ import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    KVTransferEngineMetadata,
+    load_kv_manager,
+)
 from max.pipelines.core import (
     InputContext,
     TextContext,
     TextGenerationResponse,
     TextResponse,
+    msgpack_numpy_encoder,
 )
 from max.serve.kvcache_agent.dispatcher_factory import (
     DispatcherConfig,
@@ -79,7 +86,7 @@ def mock_process_control():
 def decode_paged_manager():
     params = KVCacheParams(
         dtype=DType.float16,
-        n_kv_heads=32,
+        n_kv_heads=8,
         head_dim=128,
         cache_strategy=KVCacheStrategy.PAGED,
         enable_prefix_caching=False,
@@ -88,12 +95,12 @@ def decode_paged_manager():
     )
     return load_kv_manager(
         params=params,
-        max_batch_size=16,
+        max_batch_size=4,
         max_seq_len=512,
-        num_layers=32,
+        num_layers=1,
         devices=[CPU()],
         session=InferenceSession(),
-        available_cache_memory=500 * 2**20,
+        available_cache_memory=500 * 2**24,
         page_size=128,
     )
 
@@ -124,20 +131,25 @@ def decode_dispatch_endpoint():
 
 
 @pytest.fixture
-def decode_dispatcher_factory(decode_dispatch_endpoint):
+def decode_dispatcher_factory(
+    decode_dispatch_endpoint, prefill_dispatch_endpoint
+):
     config = DispatcherConfig(
         transport=TransportType.DYNAMIC_ZMQ,
         transport_config=TransportFactory.DynamicZmqTransportConfig(
             bind_address=decode_dispatch_endpoint,
             instance_id="decode_service",
+            default_destination_address=prefill_dispatch_endpoint,
         ),
     )
     return DispatcherFactory[
-        TransportMessage[Union[PrefillRequest, PrefillResponse]]
+        TransportMessage[
+            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
+        ]
     ](
         config,
         transport_payload_type=TransportMessage[
-            Union[PrefillRequest, PrefillResponse]
+            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
         ],
     )
 
@@ -158,10 +170,11 @@ def decode_scheduler(
         decode_client = decode_dispatcher_factory.create_client(
             decode_client_zmq_ctx
         )
+        decode_client.start()
 
         # Initialize scheduler config
         config = DecodeSchedulerConfig(
-            max_batch_size_tg=16,
+            max_batch_size_tg=4,
             max_forward_steps_tg=8,
         )
 
@@ -191,35 +204,35 @@ def prefill_dispatch_endpoint():
 
 
 @pytest.fixture
-def prefill_dispatcher_factory(prefill_dispatch_endpoint):
+def prefill_dispatcher_factory(
+    prefill_dispatch_endpoint, decode_dispatch_endpoint
+):
     config = DispatcherConfig(
         transport=TransportType.DYNAMIC_ZMQ,
         transport_config=TransportFactory.DynamicZmqTransportConfig(
             bind_address=prefill_dispatch_endpoint,
             instance_id="prefill_service",
+            default_destination_address=decode_dispatch_endpoint,
         ),
     )
     return DispatcherFactory[
-        TransportMessage[Union[PrefillRequest, PrefillResponse]]
+        TransportMessage[
+            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
+        ]
     ](
         config,
         transport_payload_type=TransportMessage[
-            Union[PrefillRequest, PrefillResponse]
+            Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
         ],
     )
 
 
 @pytest.fixture
 def prefill_paged_manager():
-    device = CPU()
-    total_num_pages = 1
-    elts_per_page = 128
-    num_elts = total_num_pages * elts_per_page
-
     params = KVCacheParams(
         dtype=DType.float16,
-        n_kv_heads=1,
-        head_dim=64,
+        n_kv_heads=8,
+        head_dim=128,
         cache_strategy=KVCacheStrategy.PAGED,
         enable_prefix_caching=False,
         enable_kvcache_swapping_to_host=False,
@@ -228,13 +241,13 @@ def prefill_paged_manager():
 
     manager = load_kv_manager(
         params=params,
-        max_batch_size=16,
+        max_batch_size=4,
         max_seq_len=512,
         num_layers=1,
-        devices=[device],
+        devices=[CPU()],
         session=InferenceSession(),
-        available_cache_memory=500 * 2**20,
-        page_size=elts_per_page,
+        available_cache_memory=500 * 2**24,
+        page_size=128,
     )
 
     return manager
@@ -253,10 +266,11 @@ def prefill_scheduler(
         prefill_client = prefill_dispatcher_factory.create_client(
             prefill_client_zmq_ctx
         )
+        prefill_client.start()
 
         # Initialize scheduler config
         config = PrefillSchedulerConfig(
-            max_batch_size_ce=16,
+            max_batch_size_ce=4,
             target_tokens_per_batch_ce=128,
             enable_chunked_prefill=True,
         )
@@ -273,8 +287,6 @@ def prefill_scheduler(
     return create_scheduler
 
 
-@pytest.mark.skip("NOT YET Functional")
-@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_transfer_between_prefill_and_decode_scheduler(
     prefill_scheduler,
@@ -285,68 +297,325 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     decode_dispatcher_factory,
     prefill_dispatcher_factory,
 ):
-    # Create separate ZMQ contexts for each service
-    decode_zmq_ctx = zmq.Context()
-    prefill_zmq_ctx = zmq.Context()
-
-    # Create and start decode service thread
-    decode_service = decode_dispatcher_factory.create_service(decode_zmq_ctx)
-    await decode_service.start()
-
-    # Create and start prefill service thread
-    prefill_service = prefill_dispatcher_factory.create_service(prefill_zmq_ctx)
-    await prefill_service.start()
-
     # Create request push socket
+    zmq_ctx = zmq.Context()
     request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        decode_zmq_ctx, zmq_endpoint=decode_request_zmq_path
+        zmq_ctx,
+        zmq_endpoint=decode_request_zmq_path,
+        serialize=msgpack_numpy_encoder(),
     )
 
     # Create response pull socket
     response_pull_socket = ZmqPullSocket[tuple[str, TextResponse]](
-        decode_zmq_ctx, zmq_endpoint=decode_response_zmq_path
+        zmq_ctx, zmq_endpoint=decode_response_zmq_path
     )
 
     # Create cancel push socket
     cancel_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-        decode_zmq_ctx, zmq_endpoint=decode_cancel_zmq_path
+        zmq_ctx, zmq_endpoint=decode_cancel_zmq_path
+    )
+
+    # Create queues for assertion results
+    decode_queue: Queue[Union[bool, Exception]] = Queue()
+    prefill_queue: Queue[Union[bool, Exception]] = Queue()
+
+    def run_decode_scheduler_tests(decode_result_queue):
+        asyncio.run(_run_decode_scheduler_tests(decode_result_queue))
+
+    async def _run_decode_scheduler_tests(decode_result_queue):
+        try:
+            # Create separate ZMQ contexts for each service
+            decode_zmq_ctx = zmq.Context()
+
+            # Create and start decode service thread
+            print(
+                f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: creating dispatcher service"
+            )
+            decode_service = decode_dispatcher_factory.create_service(
+                decode_zmq_ctx
+            )
+            print(
+                f"decode service {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: pull endpoint {decode_service.local_pull_socket.zmq_endpoint}"
+            )
+            await decode_service.start()
+            print(
+                f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: decode dispatcher service started"
+            )
+
+            # Create decode scheduler
+            print(
+                f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: initializing scheduler"
+            )
+            scheduler_instance = decode_scheduler()
+            print(
+                f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler initialized successfully"
+            )
+
+            # Try and Forward the First Request to the Prefill Scheduler
+            i = 0
+            sent = False
+            while i < 5:
+                print(
+                    f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: reserving memory and sending to prefill"
+                )
+                scheduler_instance.reserve_memory_and_send_to_prefill()
+
+                if len(scheduler_instance.reserved_cache_indices) > 0:
+                    sent = True
+                    print(
+                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: memory reserved and sent to prefill"
+                    )
+                    break
+
+                print(
+                    f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: no request available, waiting for 1s"
+                )
+                await asyncio.sleep(1)
+                i += 1
+
+            if not sent:
+                raise RuntimeError(
+                    "Request not received on Decode node, and not sent to prefill"
+                )
+
+            # Check if the prefill scheduler, sent back transfer metadata, then
+            # registered with the Decode scheduler
+            engine_registered = False
+            i = 0
+            while i < 5:
+                if (
+                    len(scheduler_instance.transfer_engine.remote_connections)
+                    > 0
+                ):
+                    engine_registered = True
+                    print(
+                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: remote transfer engine registered with decode scheduler"
+                    )
+                    break
+                await asyncio.sleep(1)
+                i += 1
+
+            if not engine_registered:
+                raise RuntimeError(
+                    "no remote transfer engine registered with decode scheduler"
+                )
+
+            # Check if the Prefill scheduler, executed prefill, initiated the transfer
+            # and replied
+            transfer_complete = False
+            i = 0
+            while i < 5:
+                scheduler_instance.update_batch()
+                if len(scheduler_instance.active_batch) > 0:
+                    transfer_complete = True
+                    print(
+                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler received a prefill response and transfer"
+                    )
+                    break
+                print(
+                    f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler waiting for transfer to be completed"
+                )
+                await asyncio.sleep(1)
+                i += 1
+
+            if not transfer_complete:
+                raise RuntimeError(
+                    "decode scheduler did not receive a reply and complete transfer"
+                )
+
+            # Signal success
+            print(
+                f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: all tests successful"
+            )
+            decode_result_queue.put_nowait(True)
+        except Exception as e:
+            # Send the exception back to the main process
+            decode_result_queue.put_nowait(e)
+
+        print(
+            f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: exiting"
+        )
+
+    def run_prefill_scheduler_tests():
+        asyncio.run(_run_prefill_scheduler_tests())
+
+    async def _run_prefill_scheduler_tests():
+        try:
+            prefill_zmq_ctx = zmq.Context()
+
+            # Create and start prefill service thread
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: creating dispatcher service"
+            )
+            prefill_service = prefill_dispatcher_factory.create_service(
+                prefill_zmq_ctx
+            )
+            await prefill_service.start()
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: prefill dispatcher service started"
+            )
+
+            # Create prefill scheduler
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: initializing scheduler"
+            )
+            scheduler_instance = prefill_scheduler()
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}:  scheduler initialized successfully"
+            )
+
+            # Check if the new request has been added to the batch
+            i = 0
+            received = False
+            while i < 5:
+                print(
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: trying to update batch"
+                )
+                scheduler_instance.update_batch()
+                print(
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: updated batch successfully"
+                )
+
+                if len(scheduler_instance.active_batch) > 0:
+                    received = True
+                    print(
+                        f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: request added to active prefill batch"
+                    )
+                    break
+
+                print(
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: no request in active prefill batch, waiting 1s"
+                )
+                await asyncio.sleep(1)
+                i += 1
+
+            if not received:
+                raise RuntimeError(
+                    "no request received on the prefill scheduler"
+                )
+
+            # Wait a few seconds to ensure everything is processed.
+            transfer_engine_registered = False
+            i = 0
+            while i < 5:
+                if (
+                    len(scheduler_instance.transfer_engine.remote_connections)
+                    > 0
+                ):
+                    transfer_engine_registered = True
+                    break
+
+                await asyncio.sleep(1)
+                i += 1
+
+            if not transfer_engine_registered:
+                raise RuntimeError(
+                    "remote transfer engine does not appear to be registered with the prefill scheduler"
+                )
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: transfer engine registered"
+            )
+
+            # Run Prefill and Initiate the Transfer
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executing prefill and initiating transfer"
+            )
+            scheduler_instance.schedule()
+            assert len(scheduler_instance.active_batch) == 0
+            assert "request_1" in scheduler_instance.active_transfers
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executed prefill and transfer in progress"
+            )
+
+            # Check that the transfer completes successfully and cleansup.
+            i = 0
+            transfer_complete = False
+            while i < 5:
+                print(
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: checking that transfer completes"
+                )
+                scheduler_instance.cleanup_active_transfers()
+                if "request_1" not in scheduler_instance.active_transfers:
+                    transfer_complete = True
+                    break
+
+                await asyncio.sleep(1)
+                i += 1
+
+            if not transfer_complete:
+                raise RuntimeError(
+                    "prefill scheduler never completed transfer successfully"
+                )
+
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: transfer appears to complete successfully"
+            )
+
+            print(
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: all tests successful"
+            )
+            prefill_queue.put(True)
+        except Exception as e:
+            # Send the exception back to the main process
+            prefill_queue.put(e)
+
+        print(
+            f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: exiting"
+        )
+
+    # Run both schedulers concurrently in separate processes
+    decode_process = Process(
+        target=run_decode_scheduler_tests, args=(decode_queue,)
+    )
+    prefill_process = Process(target=run_prefill_scheduler_tests)
+
+    print(
+        f"test process: starting decode process at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+    decode_process.start()
+    print(
+        f"test process: decode process started at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+    print(
+        f"test process: starting prefill process at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+    prefill_process.start()
+    print(
+        f"test process: prefill process started at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
     )
 
     # Create a mock text context
     mock_request_1 = TextContext(
-        cache_seq_id=0,
         prompt=[1, 2, 3, 4, 5],  # Sample token sequence
-        max_length=None,
+        max_length=100,
         tokens=np.array([1, 2, 3, 4, 5], dtype=np.int32),
     )
+    mock_request_1.assign_to_cache(0)
 
-    # Create a thread to manage decode scheduler tests
-    def run_decode_scheduler_tests():
-        # Create decode scheduler
-        scheduler_instance = decode_scheduler()
-        print("Created decode scheduler")
+    # Send the request to the decode scheduler
+    print(
+        f"test process: sending request to decode worker at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+    request_push_socket.put_nowait(("request_1", mock_request_1))
+    print(
+        f"test process: sent request to decode worker successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
 
-    # Create a thread to manage prefill decode scheduler tests
-    def run_prefill_scheduler_tests():
-        # We are sleeping here to give the decode scheduler time to bind to the transfer engine endpoint
-        # This is temporary until we have dynamic remote transfer engine registration within each scheduler
-        time.sleep(15)
+    # Wait for both processes to complete
+    print(
+        f"test process: waiting for decode process to complete at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+    decode_process.join()
+    print(
+        f"test process: decode process complete at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+    prefill_process.join()
 
-        # Create prefill scheduler
-        scheduler_instance = prefill_scheduler()
-        print("Created prefill scheduler")
+    # Check for any exceptions from the subprocesses
+    decode_result = decode_queue.get_nowait()
+    prefill_result = prefill_queue.get_nowait()
 
-    # Run both schedulers concurrently
-    loop = asyncio.get_event_loop()
-    decode_task = loop.run_in_executor(None, run_decode_scheduler_tests)
-    prefill_task = loop.run_in_executor(None, run_prefill_scheduler_tests)
-
-    # Wait for both tasks to complete
-    await asyncio.gather(decode_task, prefill_task)
-
-    await decode_service.stop()
-    await prefill_service.stop()
-
-    # Clean up ZMQ contexts
-    decode_zmq_ctx.term()
-    prefill_zmq_ctx.term()
+    if isinstance(decode_result, Exception):
+        raise decode_result
+    if isinstance(prefill_result, Exception):
+        raise prefill_result
