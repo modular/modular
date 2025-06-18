@@ -3308,10 +3308,6 @@ fn _convert_f32_to_float8_scaler[
 # bfloat16
 # ===----------------------------------------------------------------------=== #
 
-alias _fp32_bf16_mantissa_diff = FPUtils[
-    DType.float32
-].mantissa_width() - FPUtils[DType.bfloat16].mantissa_width()
-
 
 @always_inline
 fn _bfloat16_to_f32_scalar(
@@ -3356,48 +3352,29 @@ fn _bfloat16_to_f32[
     return _simd_apply[wrapper_fn, DType.float32, size](val)
 
 
-@always_inline
-fn _f32_to_bfloat16_scalar(
-    val: Float32,
-) -> BFloat16:
-    @parameter
-    if has_neon():
-        # TODO(KERN-228): support BF16 on neon systems.
-        return _unchecked_zero[DType.bfloat16, 1]()
-
-    if _isnan(val):
-        return _nan[DType.bfloat16]()
-
-    var float_bits = FPUtils[DType.float32].bitcast_to_integer(val)
-
-    var lsb = (float_bits >> _fp32_bf16_mantissa_diff) & 1
-    var rounding_bias = 0x7FFF + lsb
-    float_bits += rounding_bias
-
-    var bfloat_bits = float_bits >> _fp32_bf16_mantissa_diff
-
-    return FPUtils[DType.bfloat16].bitcast_from_integer(bfloat_bits)
+alias _f32_bf16_mantissa_diff = (
+    FPUtils[DType.float32].mantissa_width()
+    - FPUtils[DType.bfloat16].mantissa_width()
+)
 
 
+# float_to_bfloat16_rtne<true> from gitlab.com/libeigen/eigen/-/blob/master/Eigen/src/Core/arch/Default/BFloat16.h
 @always_inline
 fn _f32_to_bfloat16[
-    size: Int
-](val: SIMD[DType.float32, size]) -> SIMD[DType.bfloat16, size]:
+    width: Int, //
+](f32: SIMD[DType.float32, width]) -> SIMD[DType.bfloat16, width]:
     @parameter
     if has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
-        return _unchecked_zero[DType.bfloat16, size]()
-
-    @always_inline
-    @parameter
-    fn wrapper_fn[
-        input_dtype: DType, result_dtype: DType
-    ](val: Scalar[input_dtype]) capturing -> Scalar[result_dtype]:
-        return rebind[Scalar[result_dtype]](
-            _f32_to_bfloat16_scalar(rebind[Float32](val))
-        )
-
-    return _simd_apply[wrapper_fn, DType.bfloat16, size](val)
+        return _unchecked_zero[DType.bfloat16, width]()
+    var f32_bits = f32.to_bits()
+    var lsb = (f32_bits >> _f32_bf16_mantissa_diff) & 1
+    var rounding_bias = 0x7FFF + lsb
+    var bf16_bits = (f32_bits + rounding_bias) >> _f32_bf16_mantissa_diff
+    var bf16 = SIMD[DType.bfloat16, width].from_bits(
+        bf16_bits.cast[DType.uint16]()
+    )
+    return _isnan(f32).select(_nan[DType.bfloat16](), bf16)
 
 
 # ===----------------------------------------------------------------------=== #
