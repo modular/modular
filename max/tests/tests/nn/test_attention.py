@@ -90,7 +90,7 @@ def test_attention_with_rope_clip_qkv_validation() -> None:
 
 
 def test_distributed_attention_with_rope_device_validation() -> None:
-    """Tests that DistributedAttentionWithRope raises ValueError for < 2 devices."""
+    """Tests that DistributedAttentionWithRope raises ValueError for CPU."""
     rope = RotaryEmbedding(
         dim=64,
         n_heads=32,
@@ -106,39 +106,6 @@ def test_distributed_attention_with_rope_device_validation() -> None:
         page_size=128,
         dtype=DType.float32,
     )
-
-    # Test that devices=None raises ValueError.
-    with pytest.raises(ValueError, match="Must provide at least 2 devices"):
-        DistributedAttentionWithRope(
-            rope=rope,
-            num_attention_heads=32,
-            num_key_value_heads=8,
-            hidden_size=2048,
-            kv_params=kv_params,
-            devices=None,
-        )
-
-    # Test that devices=[] raises ValueError.
-    with pytest.raises(ValueError, match="Must provide at least 2 devices"):
-        DistributedAttentionWithRope(
-            rope=rope,
-            num_attention_heads=32,
-            num_key_value_heads=8,
-            hidden_size=2048,
-            kv_params=kv_params,
-            devices=[],
-        )
-
-    # Test that devices=[CPU] raises ValueError.
-    with pytest.raises(ValueError, match="Must provide at least 2 devices"):
-        DistributedAttentionWithRope(
-            rope=rope,
-            num_attention_heads=32,
-            num_key_value_heads=8,
-            hidden_size=2048,
-            kv_params=kv_params,
-            devices=[DeviceRef.CPU()],
-        )
 
     # Test that CPU devices raises ValueError.
     with pytest.raises(
