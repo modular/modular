@@ -15,11 +15,13 @@ from sys.info import simdwidthof
 
 from algorithm import stencil, stencil_gpu
 from gpu.host import DeviceContext
+from gpu.host.info import is_cpu, is_gpu
 from layout import LayoutTensor, RuntimeTuple
 from layout.int_tuple import fill_like
 
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
+from runtime.asyncrt import DeviceContextPtr
 
 from .shapes import get_sliding_window_out_dim
 
@@ -176,7 +178,7 @@ fn pool_shape_impl[
 
 
 @always_inline
-fn max_pool[
+fn max_pool_cpu[
     type: DType, int_type: DType
 ](
     input: LayoutTensor[type, **_],
@@ -555,7 +557,7 @@ fn max_pool_gpu[
 
 
 @always_inline
-fn avg_pool[
+fn avg_pool_cpu[
     type: DType,
     int_type: DType,
     rank: Int = 4,
@@ -1180,3 +1182,62 @@ fn avg_pool_gpu[
                     IndexList[output.rank, element_type = input.layout_int_type]
                 ](input.runtime_layout.shape.value),
             )
+
+
+@always_inline
+fn avg_pool[
+    type: DType,
+    int_type: DType,
+    count_boundary: Bool = False,
+    target: StaticString = "cpu",
+](
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
+    ceil_mode: Bool = False,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    @parameter
+    if is_cpu[target]():
+        avg_pool_cpu[count_boundary=count_boundary](
+            input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
+        avg_pool_gpu[count_boundary=count_boundary](
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    else:
+        constrained[False, String("Unknown target ") + target]()
+
+
+@always_inline
+fn max_pool[
+    type: DType,
+    int_type: DType,
+    target: StaticString = "cpu",
+](
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
+    ceil_mode: Bool = False,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    @parameter
+    if is_cpu[target]():
+        max_pool_cpu(
+            input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
+        max_pool_gpu(
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    else:
+        constrained[False, String("Unknown target ") + target]()

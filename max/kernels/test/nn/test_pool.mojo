@@ -31,7 +31,7 @@ fn pool[
 ](
     pool_method: PoolMethod,
     output_tensor: LayoutTensor[mut=True, DType.float32, **_],
-):
+) raises:
     alias in_layout = Layout.row_major(2, 5, 7, 2)
 
     var in_heap = List[Float32](capacity=in_layout.size())

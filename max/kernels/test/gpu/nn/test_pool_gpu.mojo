@@ -21,9 +21,9 @@ from layout import (
 from layout._fillers import arange
 from nn.pool import (
     PoolMethod,
-    avg_pool,
+    avg_pool_cpu,
     avg_pool_gpu,
-    max_pool,
+    max_pool_cpu,
     max_pool_gpu,
 )
 from testing import assert_almost_equal
@@ -194,7 +194,7 @@ fn pool[
             paddings_tensor,
             d_output,
         )
-        max_pool[int_type = DType.int32](
+        max_pool_cpu[int_type = DType.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -212,7 +212,7 @@ fn pool[
             paddings_tensor,
             d_output,
         )
-        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool_cpu[int_type = DType.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -332,7 +332,7 @@ fn pool_ceil_test[
             d_output,
             ceil_mode,
         )
-        max_pool[int_type = DType.int32](
+        max_pool_cpu[int_type = DType.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -352,7 +352,7 @@ fn pool_ceil_test[
             d_output,
             ceil_mode,
         )
-        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool_cpu[int_type = DType.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -473,7 +473,7 @@ fn test_avg_pool_2d_with_padding_gpu[
         paddings_tensor,
         d_output,
     )
-    avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+    avg_pool_cpu[int_type = DType.int32, count_boundary=count_boundary](
         input_tensor,
         filter_tensor,
         stride_tensor,
@@ -592,7 +592,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
         paddings_tensor,
         d_output,
     )
-    max_pool[int_type = DType.int32](
+    max_pool_cpu[int_type = DType.int32](
         input_tensor,
         filter_tensor,
         stride_tensor,

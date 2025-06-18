@@ -3726,6 +3726,7 @@ struct AvgPool:
         count_boundary: Bool,
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3733,8 +3734,9 @@ struct AvgPool:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        avg_pool[count_boundary=count_boundary](
+        ctx: DeviceContextPtr,
+    ) raises:
+        avg_pool[count_boundary=count_boundary, target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3742,6 +3744,7 @@ struct AvgPool:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             False,
+            ctx,
         )
 
     @staticmethod
@@ -3773,6 +3776,7 @@ struct AvgPoolCeilModeTrue:
         count_boundary: Bool,
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3780,8 +3784,9 @@ struct AvgPoolCeilModeTrue:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        avg_pool[count_boundary=count_boundary](
+        ctx: DeviceContextPtr,
+    ) raises:
+        avg_pool[count_boundary=count_boundary, target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3789,6 +3794,7 @@ struct AvgPoolCeilModeTrue:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             True,
+            ctx,
         )
 
     @staticmethod
@@ -3801,7 +3807,6 @@ struct AvgPoolCeilModeTrue:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-        ctx: DeviceContextPtr,
     ) raises -> IndexList[input.rank]:
         return rebind[IndexList[input.rank]](
             pool_shape_ceil[single_thread_blocking_override=True](
@@ -3820,6 +3825,7 @@ struct MaxPool:
     fn execute[
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3827,8 +3833,9 @@ struct MaxPool:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        max_pool(
+        ctx: DeviceContextPtr,
+    ) raises:
+        max_pool[target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3836,6 +3843,7 @@ struct MaxPool:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             False,
+            ctx,
         )
 
     @staticmethod
@@ -3866,6 +3874,7 @@ struct MaxPoolCeilModeTrue:
     fn execute[
         dtype: DType,
         int_type: DType,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
         input: InputTensor[dtype=dtype, rank=4],
@@ -3873,8 +3882,9 @@ struct MaxPoolCeilModeTrue:
         strides: InputTensor[dtype=int_type, rank=1],
         dilations: InputTensor[dtype=int_type, rank=1],
         paddings: InputTensor[dtype=int_type, rank=1],
-    ):
-        max_pool(
+        ctx: DeviceContextPtr,
+    ) raises:
+        max_pool[target=target](
             input.to_layout_tensor(),
             filter.to_layout_tensor(),
             strides.to_layout_tensor(),
@@ -3882,6 +3892,7 @@ struct MaxPoolCeilModeTrue:
             paddings.to_layout_tensor(),
             output.to_layout_tensor(),
             True,
+            ctx,
         )
 
     @staticmethod
