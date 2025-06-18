@@ -15,15 +15,14 @@
 #include "mlir/Bindings/Python/NanobindAdaptors.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/StorageUniquerSupport.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 #include "nanobind/nanobind.h"
-#include "nanobind/stl/string.h"
-#include "nanobind/stl/string_view.h"
+#include "nanobind/stl/string.h"      // IWYU pragma: keep (type caster)
+#include "nanobind/stl/string_view.h" // IWYU pragma: keep (type caster)
 #include "nanobind/stl/unique_ptr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"

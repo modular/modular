@@ -7,11 +7,8 @@
 #ifndef SDK_GRAPHAPI_PYTHON_SEQUENCEVIEW_H
 #define SDK_GRAPHAPI_PYTHON_SEQUENCEVIEW_H
 
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/BuiltinAttributes.h"
 #include "nanobind/nanobind.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/Support/raw_ostream.h"
 #include <utility>
 
 namespace M::Graph::Python {
