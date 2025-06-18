@@ -4473,7 +4473,7 @@ fn _bmm0_bs[
             for d in range(depth):
                 var q_val = q[y * num_heads * depth + d]
                 var k_val = k_ptr[d]
-                accum += (q_val.cast[k_type]() * k_val).cast[p_type]()
+                accum += q_val.cast[p_type]() * k_val.cast[p_type]()
 
     var score_row = y + cur_cache_len - cur_query_len
     var score_col = x
@@ -4559,9 +4559,10 @@ fn _bmm1_bs[
 
     for i in range(cur_cache_len):
         var v_ptr = v.block_paged_ptr[1](batch, i, kv_head, x)
-        accum += (p[y * padded_num_keys + i].cast[v_type]() * v_ptr[0]).cast[
-            DType.float32
-        ]()
+        accum += (
+            p[y * padded_num_keys + i].cast[DType.float32]()
+            * v_ptr[0].cast[DType.float32]()
+        )
 
     output[y * num_heads * depth + x] = accum.cast[output_type]()
 
