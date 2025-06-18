@@ -335,32 +335,6 @@ fn _output_fusion_hook_impl[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_internal(
-    "rebuild_mix_precision_static_tensor_specs_with_output_lambda"
-)
-@no_inline
-fn rebuild_mix_precision_static_tensor_specs_with_output_lambda[
-    func_type: AnyTrivialRegType, //,
-    src_rank: Int,
-    src_shape: DimList,
-    src_type: DType,
-](
-    spec: StaticTensorSpec,
-    out_lambda: func_type,
-    out result: StaticTensorSpec[src_type, src_rank],
-):
-    return StaticTensorSpec[src_type, src_rank](
-        shape=src_shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=None,
-        out_lambda=rebind[result.out_lambda_t](out_lambda),
-        out_compute_lambda=None,
-    )
-
-
 @__mogg_intrinsic_attr("mogg.dps_mixed_precision_output_fusion_hook")
 @register_internal("mogg.dps_mixed_precision_output_fusion_hook")
 @no_inline
@@ -389,11 +363,20 @@ fn _mixed_precision_output_fusion_hook_impl[
             element_alignment=_elem_align,
         ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_type, _w]](v))
 
+    alias mixed_in_spec = StaticTensorSpec[src_type, src_rank](
+        shape=src_shape,
+        strides=static_spec.strides,
+        alignment=static_spec.alignment,
+        address_space=static_spec.address_space,
+        exclusive=static_spec.exclusive,
+        in_lambda=None,
+        out_lambda=None,
+        out_compute_lambda=None,
+    )
+
     return _extract_tensor_spec[
-        rebuild_mix_precision_static_tensor_specs_with_output_lambda[
-            src_rank, src_shape, src_type
-        ](
-            static_spec,
+        rebuild_static_tensor_specs_with_output_lambda[src_type, src_rank](
+            mixed_in_spec,
             _output_lambda,
         )
     ]()
