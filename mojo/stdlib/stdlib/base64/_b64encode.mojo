@@ -269,7 +269,7 @@ fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
     @parameter
     if width == v.size:
-        return rebind[SIMD[v.dtype, width]](v)
+        return v._refine[size=width]()
     return _repeat_until[width](v.join(v))
 
 

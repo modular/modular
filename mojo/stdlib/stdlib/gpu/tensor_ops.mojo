@@ -131,7 +131,7 @@ fn tc_reduce[
 
     @parameter
     if simd_width == 1:
-        return _tc_reduce_scalar[out_type](rebind[Scalar[in_type]](val))
+        return _tc_reduce_scalar[out_type](val._refine[size=1]())
     else:
         return _tc_reduce_vector[out_type](val)
 

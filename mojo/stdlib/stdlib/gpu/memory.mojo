@@ -1633,7 +1633,7 @@ fn _load_impl[
         eviction_policy=eviction_policy,
         alignment=alignment,
     ](ptr + width // 2)
-    return rebind[SIMD[type, width]](lhs.join(rhs))
+    return lhs.join(rhs)._refine[size=width]()
 
 
 @always_inline

@@ -202,7 +202,7 @@ fn reduce[
     fn input_fn[
         _type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](src.load[width=width](idx[0]))
+        return src.load[width=width](idx[0])._refine[_type]()
 
     var out: Scalar[init.element_type] = 0
 
@@ -211,7 +211,7 @@ fn reduce[
     fn output_fn[
         _type: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_type, width]):
-        out = rebind[Scalar[init.element_type]](value)
+        out = value._refine[init.dtype, 1]()
 
     @always_inline
     @parameter
@@ -650,7 +650,7 @@ fn _reduce_generator_wrapper[
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+        return input_fn[width, rank](idx)._refine[_type]()
 
     @always_inline
     @parameter
@@ -659,19 +659,17 @@ fn _reduce_generator_wrapper[
         width: Int,
         rank: Int,
     ](indices: IndexList[rank], value: SIMD[_type, width]):
-        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_fn[width, rank](indices, value._refine[type]())
 
     @always_inline
     @parameter
     fn reduce_fn[
         ty: DType, width: Int
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
-        return rebind[SIMD[ty, width]](
-            reduce_function(
-                rebind[SIMD[type, width]](v1),
-                rebind[SIMD[type, width]](v2),
-            )
-        )
+        return reduce_function(
+            v1._refine[type](),
+            v2._refine[type](),
+        )._refine[ty]()
 
     _reduce_generator[
         input_fn_wrapper,
@@ -1151,14 +1149,14 @@ fn max[
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+        return input_fn[width, rank](idx)._refine[_type]()
 
     @always_inline
     @parameter
     fn output_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_type, width]):
-        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_fn[width, rank](indices, value._refine[type]())
 
     @always_inline
     @parameter
@@ -1274,14 +1272,14 @@ fn min[
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+        return input_fn[width, rank](idx)._refine[_type]()
 
     @always_inline
     @parameter
     fn output_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_type, width]):
-        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_fn[width, rank](indices, value._refine[type]())
 
     @always_inline
     @parameter
@@ -1397,14 +1395,14 @@ fn sum[
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+        return input_fn[width, rank](idx)._refine[_type]()
 
     @always_inline
     @parameter
     fn output_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_type, width]):
-        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_fn[width, rank](indices, value._refine[type]())
 
     @always_inline
     @parameter
@@ -1520,14 +1518,14 @@ fn product[
     fn input_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+        return input_fn[width, rank](idx)._refine[_type]()
 
     @always_inline
     @parameter
     fn output_fn_wrapper[
         _type: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_type, width]):
-        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+        output_fn[width, rank](indices, value._refine[type]())
 
     @always_inline
     @parameter
@@ -1679,7 +1677,7 @@ fn mean[
         fn input_fn_wrapper[
             _type: DType, width: Int, rank: Int
         ](idx: IndexList[rank]) -> SIMD[_type, width]:
-            return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+            return input_fn[width, rank](idx)._refine[_type, width]()
 
         # For floats apply the reciprocal as a multiply.
         @parameter
@@ -1694,9 +1692,7 @@ fn mean[
                 _type: DType, width: Int, rank: Int
             ](indices: IndexList[rank], value: SIMD[_type, width]):
                 var mean_val = value * reciprocal.cast[_type]()
-                output_fn[width, rank](
-                    indices, rebind[SIMD[type, width]](mean_val)
-                )
+                output_fn[width, rank](indices, mean_val._refine[type, width]())
 
             _reduce_generator[
                 input_fn_wrapper,
@@ -1722,9 +1718,7 @@ fn mean[
                 _type: DType, width: Int, rank: Int
             ](indices: IndexList[rank], value: SIMD[_type, width]):
                 var mean_val = value / dim_size
-                output_fn[width, rank](
-                    indices, rebind[SIMD[type, width]](mean_val)
-                )
+                output_fn[width, rank](indices, mean_val._refine[type, width]())
 
             _reduce_generator[
                 input_fn_wrapper,
@@ -1775,7 +1769,7 @@ fn variance(
         var mean_simd = SIMD[mean_value.dtype, width](mean_value).cast[_type]()
         var x = src.load[width=width](idx[0])
         var diff = x.cast[_type]() - mean_simd
-        return rebind[SIMD[_type, width]](diff * diff)
+        return (diff * diff)._refine[_type]()
 
     var out: Scalar[src.type] = 0
 
@@ -1784,7 +1778,7 @@ fn variance(
     fn output_fn[
         _type: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_type, width]):
-        out = rebind[Scalar[src.type]](value)
+        out = value._refine[src.type, 1]()
 
     @always_inline
     @parameter

@@ -75,7 +75,7 @@ fn test_fused_reductions_inner() raises:
         type: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[type, width]:
         var loaded_val = vector.load[width=width](indices[0])
-        return rebind[SIMD[type, width]](loaded_val)
+        return loaded_val._refine[type]()
 
     var out = StaticTuple[Scalar[test_type], num_reductions]()
 
@@ -160,7 +160,7 @@ fn test_fused_reductions_outer() raises:
         type: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[type, width]:
         var loaded_val = vector.load[width=width](indices[0] * 2 + indices[1])
-        return rebind[SIMD[type, width]](loaded_val)
+        return loaded_val._refine[type]()
 
     @always_inline
     @parameter

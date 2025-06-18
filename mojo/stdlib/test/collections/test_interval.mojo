@@ -169,8 +169,8 @@ def test_interval_floating():
     var interval = Interval(MyType(2.4), MyType(3.5))
 
     # Verify the interval start and end values are correctly set.
-    assert_equal(rebind[Float64](interval.start.value), 2.4)
-    assert_equal(rebind[Float64](interval.end.value), 3.5)
+    assert_equal(interval.start.value, 2.4)
+    assert_equal(interval.end.value, 3.5)
 
     # Test union operation with overlapping interval.
     var union = interval.union(Interval(MyType(3.0), MyType(4.5)))
