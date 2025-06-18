@@ -19,6 +19,9 @@ logger = logging.getLogger("max.pipelines")
 
 @pytest.mark.skip("AITLIB-342: Failing on H100")
 def test_pipelines_cli__smollm_bfloat16(capsys):
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError as e:
@@ -51,6 +54,9 @@ def test_pipelines_cli__smollm_bfloat16(capsys):
 
 @pytest.mark.skip("AITLIB-342: Failing on H100")
 def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(capsys):
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError as e:

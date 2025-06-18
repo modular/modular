@@ -31,6 +31,9 @@ def test_mock_text_tokenizer():
     tokenizer = MockTextTokenizer()
     test_prompt = "This is a test prompt"
 
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError:
@@ -65,6 +68,9 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
     max_length = 512
     eos_token = 998
 
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError:

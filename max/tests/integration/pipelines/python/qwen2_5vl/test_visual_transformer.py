@@ -557,18 +557,21 @@ def test_get_rope_index():
     vision_start_token_id = 151652
     tokens_per_second = 2
 
+    repo_id = "Qwen/Qwen2.5-VL-3B-Instruct"
+    revision = hf_repo_lock.revision_for_hf_repo(
+        repo_id,
+    )
+    assert isinstance(revision, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     local_model_path = generate_local_model_path(
-        "Qwen/Qwen2.5-VL-3B-Instruct",
-        hf_repo_lock.revision_for_hf_repo(
-            "Qwen/Qwen2.5-VL-3B-Instruct",
-        ),
+        repo_id,
+        revision,
     )
 
     processor = AutoProcessor.from_pretrained(
         local_model_path,
-        revision=hf_repo_lock.revision_for_hf_repo(
-            "Qwen/Qwen2.5-VL-3B-Instruct",
-        ),
+        revision=revision,
     )
     messages = [
         {

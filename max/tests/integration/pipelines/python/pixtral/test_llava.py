@@ -67,10 +67,16 @@ ACCURACY_ATOL = 1e-1
 VOCAB_SIZE = 131072
 REPO_ID = "mistral-community/pixtral-12b"
 REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
+assert isinstance(REVISION, str), (
+    "REVISION must be a string and present in hf-repo-lock.tsv"
+)
 
 
 @pytest.fixture
 def pytorch_pixtral_processor() -> PixtralProcessor:
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     local_model_path = generate_local_model_path(REPO_ID, REVISION)
     # returns a dict with the following keys: input_ids, attention_mask, pixel_values
     # input_ids and attention_mask map to tensors of the same size = (num_prompts, sequence_length)
@@ -81,6 +87,9 @@ def pytorch_pixtral_processor() -> PixtralProcessor:
 
 @pytest.fixture
 def pytorch_pixtral() -> LlavaForConditionalGeneration:
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     local_model_path = generate_local_model_path(REPO_ID, REVISION)
     model = LlavaForConditionalGeneration.from_pretrained(local_model_path)
     return model

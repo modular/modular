@@ -24,6 +24,9 @@ def test_pipelines_lm_eval_smollm(tmp_path: Path):
     runner = CliRunner()
     output_dir = tmp_path / "lm-eval-output"
 
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError as e:

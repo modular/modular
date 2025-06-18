@@ -75,6 +75,9 @@ def pytorch_mistral_and_config() -> tuple[MistralForCausalLM, MistralConfig]:
     """Loads the language model in PyTorch pixtral model. Using the community
     pixtral version. It also returns pixtral_model.config.text_config
     """
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     local_model_path = generate_local_model_path(REPO_ID, REVISION)
     model = LlavaForConditionalGeneration.from_pretrained(local_model_path)
     return model.language_model, model.config.text_config

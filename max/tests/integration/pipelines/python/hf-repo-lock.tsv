@@ -46,6 +46,7 @@ mistral-community/pixtral-12b	c2756cbbb9422eba9f6c5c439a214b0392dfc998
 mistralai/Mistral-Nemo-Instruct-2407	8aedd450f2583e9c67fae1929f6936b8fc5aef9c
 mistralai/Mistral-Small-3.1-24B-Instruct-2503	4b8dd8aae705887db5295fcbff4aedbb92d682eb
 modularai/Llama-3.1-8B-Instruct-GGUF	966694508430d1177f6d585de779250e7a34bc3a
+modularai/Llama-3.2-1B-Instruct-Extended-Vocab	3fbafaf0d01d34f5fc9967e217bcbda45a5ebe95
 modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
 modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1

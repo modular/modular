@@ -25,7 +25,6 @@ LLAMA_3_1_HF_REVISION = hf_repo_lock.revision_for_hf_repo(LLAMA_3_1_HF_REPO_ID)
 # used in cases where float32 is needed. SmolLM3 is bfloat16.
 SMOLLM_HF_REPO_ID = "HuggingFaceTB/SmolLM-135M"
 SMOLLM_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM_HF_REPO_ID)
-
 SMOLLM2_HF_REPO_ID = "HuggingFaceTB/SmolLM2-135M"
 SMOLLM2_HF_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM2_HF_REPO_ID)
 
@@ -40,6 +39,7 @@ DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
 DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
 )
+
 
 TINY_RANDOM_LLAMA_HF_REPO_ID = (
     "trl-internal-testing/tiny-random-LlamaForCausalLM"
@@ -182,6 +182,9 @@ def graph_testdata() -> Path:
 
 @pytest.fixture
 def llama_3_1_8b_instruct_local_path():
+    assert isinstance(LLAMA_3_1_HF_REVISION, str), (
+        "LLAMA_3_1_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             LLAMA_3_1_HF_REPO_ID, LLAMA_3_1_HF_REVISION
@@ -197,6 +200,9 @@ def llama_3_1_8b_instruct_local_path():
 
 @pytest.fixture
 def smollm_135m_local_path():
+    assert isinstance(SMOLLM_HF_REVISION, str), (
+        "SMOLLM_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             SMOLLM_HF_REPO_ID, SMOLLM_HF_REVISION
@@ -212,6 +218,9 @@ def smollm_135m_local_path():
 
 @pytest.fixture
 def smollm2_135m_local_path():
+    assert isinstance(SMOLLM2_HF_REVISION, str), (
+        "SMOLLM2_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             SMOLLM2_HF_REPO_ID, SMOLLM2_HF_REVISION
@@ -227,6 +236,9 @@ def smollm2_135m_local_path():
 
 @pytest.fixture
 def exaone_2_4b_local_path():
+    assert isinstance(EXAONE_2_4B_HF_REVISION, str), (
+        "EXAONE_2_4B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             EXAONE_2_4B_HF_REPO_ID, EXAONE_2_4B_HF_REVISION
@@ -242,6 +254,9 @@ def exaone_2_4b_local_path():
 
 @pytest.fixture
 def deepseek_r1_distill_llama_8b_local_path():
+    assert isinstance(DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION, str), (
+        "DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID,
@@ -258,6 +273,9 @@ def deepseek_r1_distill_llama_8b_local_path():
 
 @pytest.fixture
 def modular_ai_llama_3_1_local_path():
+    assert isinstance(MODULAR_AI_LLAMA_3_1_HF_REVISION, str), (
+        "MODULAR_AI_LLAMA_3_1_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             MODULAR_AI_LLAMA_3_1_HF_REPO_ID, MODULAR_AI_LLAMA_3_1_HF_REVISION
@@ -273,6 +291,9 @@ def modular_ai_llama_3_1_local_path():
 
 @pytest.fixture
 def tiny_random_llama_local_path():
+    assert isinstance(TINY_RANDOM_LLAMA_HF_REVISION, str), (
+        "TINY_RANDOM_LLAMA_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             TINY_RANDOM_LLAMA_HF_REPO_ID, TINY_RANDOM_LLAMA_HF_REVISION
@@ -288,6 +309,9 @@ def tiny_random_llama_local_path():
 
 @pytest.fixture
 def gemma_3_1b_it_local_path():
+    assert isinstance(GEMMA_3_1B_IT_HF_REVISION, str), (
+        "GEMMA_3_1B_IT_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             GEMMA_3_1B_IT_HF_REPO_ID, GEMMA_3_1B_IT_HF_REVISION
@@ -303,6 +327,9 @@ def gemma_3_1b_it_local_path():
 
 @pytest.fixture
 def llama_3_1_8b_lora_local_path():
+    assert isinstance(LLAMA_3_1_LORA_HF_REVISION, str), (
+        "LLAMA_3_1_LORA_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             LLAMA_3_1_LORA_HF_REPO_ID, LLAMA_3_1_LORA_HF_REVISION

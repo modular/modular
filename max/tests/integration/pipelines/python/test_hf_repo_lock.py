@@ -24,10 +24,25 @@ def test_load_db() -> None:
     assert EXAMPLE_NONEXISTENT_KEY not in db
 
 
-def test_revision_for_hf_repo() -> None:
+def test_revision_for_hf_repo(caplog: pytest.LogCaptureFixture) -> None:
     assert hf_repo_lock.revision_for_hf_repo(EXAMPLE_KEY) == EXAMPLE_VALUE
-    with pytest.raises(KeyError):
-        hf_repo_lock.revision_for_hf_repo(EXAMPLE_NONEXISTENT_KEY)
+
+    with caplog.at_level(logging.WARNING):
+        assert (
+            hf_repo_lock.revision_for_hf_repo(EXAMPLE_NONEXISTENT_KEY) is None
+        )
+
+    assert len(caplog.records) == 1
+    warning_record = caplog.records[0]
+    assert warning_record.levelname == "WARNING"
+    assert (
+        f"No lock revision available for Hugging Face repo {EXAMPLE_NONEXISTENT_KEY!r}"
+        in warning_record.message
+    )
+    assert (
+        "Add a row to hf-repo-lock.tsv to resolve this error"
+        in warning_record.message
+    )
 
 
 def test_apply_to_config() -> None:
@@ -41,3 +56,17 @@ def test_apply_to_config() -> None:
     assert config.model_config.huggingface_model_revision == "main"
     hf_repo_lock.apply_to_config(config)
     assert config.model_config.huggingface_model_revision == EXAMPLE_VALUE
+
+
+def test_apply_to_config_raises_on_missing_revision() -> None:
+    config = DummyPipelineConfig(
+        model_path=EXAMPLE_NONEXISTENT_KEY,
+        max_batch_size=None,
+        max_length=None,
+        device_specs=[],
+        quantization_encoding=DUMMY_ARCH.default_encoding,
+    )
+    with pytest.raises(
+        ValueError, match="No locked revision found for model repository"
+    ):
+        hf_repo_lock.apply_to_config(config)

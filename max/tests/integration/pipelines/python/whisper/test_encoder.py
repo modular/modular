@@ -41,6 +41,9 @@ logger = logging.getLogger("max.pipelines")
 
 @pytest.fixture
 def whisper_large_v3_local_path():
+    assert isinstance(WHISPER_LARGE_V3_HF_REVISION, str), (
+        "WHISPER_LARGE_V3_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(
             WHISPER_LARGE_V3_HF_REPO_ID, WHISPER_LARGE_V3_HF_REVISION

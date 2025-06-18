@@ -52,6 +52,9 @@ def retrieve_mock_text_generation_pipeline(
     if not device_specs:
         device_specs = scan_available_devices()
 
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     mock_config = DummyPipelineConfig(
         model_path=generate_local_model_path(REPO_ID, REVISION),
         max_length=max_length,

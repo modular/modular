@@ -30,6 +30,9 @@ logger = logging.getLogger("max.pipelines")
 
 @pytest.fixture(scope="session")
 def pipeline_config() -> PipelineConfig:
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError as e:
@@ -47,6 +50,9 @@ def pipeline_config() -> PipelineConfig:
 
 @pytest.fixture(scope="session")
 def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError as e:

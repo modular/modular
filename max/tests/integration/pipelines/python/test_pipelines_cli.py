@@ -19,6 +19,9 @@ logger = logging.getLogger("max.pipelines")
 
 
 def test_pipelines_cli__smollm_float32(capsys):
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
     except FileNotFoundError as e:
@@ -50,6 +53,9 @@ def test_pipelines_cli__smollm_float32(capsys):
 
 
 def test_pipelines_cli__custom_model():
+    assert isinstance(REVISION, str), (
+        "REVISION must be a string and present in hf-repo-lock.tsv"
+    )
     path = os.getenv("PIPELINES_CUSTOM_ARCHITECTURE")
     try:
         local_model_path = generate_local_model_path(REPO_ID, REVISION)
