@@ -21,7 +21,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
     ],
 )
 def test_max_pool(session, input_shape, kernel_size, stride, ceil_mode):
-    device_ref = DeviceRef.CPU()
+    device_ref = DeviceRef.from_device(session.devices[0])
     torch_device = "cpu"
 
     dilation = (1, 1)
@@ -58,7 +58,8 @@ def test_max_pool(session, input_shape, kernel_size, stride, ceil_mode):
         graph.output(output)
 
     model = session.load(graph)
-    model_output = model(input_tensor)[0]
+    max_input = Tensor.from_numpy(input_tensor.numpy()).to(session.devices[0])
+    model_output = model(max_input)[0]
     assert isinstance(model_output, Tensor)
     actual = model_output.to_numpy()
     np.testing.assert_equal(actual, expected.numpy(force=True))
@@ -80,7 +81,7 @@ def test_avg_pool(
     ceil_mode,
     count_boundary,
 ):
-    device_ref = DeviceRef.CPU()
+    device_ref = DeviceRef.from_device(session.devices[0])
     torch_device = "cpu"
 
     dilation = (1, 1)
@@ -117,7 +118,8 @@ def test_avg_pool(
         graph.output(output)
 
     model = session.load(graph)
-    model_output = model(input_tensor)[0]
+    avg_input = Tensor.from_numpy(input_tensor.numpy()).to(session.devices[0])
+    model_output = model(avg_input)[0]
     assert isinstance(model_output, Tensor)
     actual = model_output.to_numpy()
     np.testing.assert_almost_equal(actual, expected.numpy(force=True))
