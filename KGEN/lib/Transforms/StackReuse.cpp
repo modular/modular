@@ -588,7 +588,7 @@ static void optimizeReadOnlyMemory(Region &funcBody, PassInfo &pass) {
     // expected threshold.
     if (!constantSize ||
         (size_t)*constantSize <
-            KGENPassCLOptions::stackReusePromoteToGlobalThreshold()) {
+            *KGENPassCLOptions::stackReusePromoteToGlobalThreshold()) {
       KGEN_DEBUG(0, {
         llvm::dbgs() << KGEN_DEBUG_TYPE << ": ";
         constant.print(llvm::dbgs());

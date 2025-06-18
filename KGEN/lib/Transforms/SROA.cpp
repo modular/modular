@@ -414,8 +414,8 @@ struct ReplaceArray : public Replacer<ReplaceArray, POP::ArrayType> {
       // canonicalize & cse to be run again before mem2reg / more sroa.
       for (Operation *loadUser : llvm::make_early_inc_range(load->getUsers())) {
         if (auto get = dyn_cast<POP::ArrayGetOp>(loadUser)) {
-          auto attr = cast<IntegerAttr>(get.getIndex());
-          if (attr.getInt() < 0 || attr.getInt() > sizeOfArray)
+          auto attr = dyn_cast<IntegerAttr>(get.getIndex());
+          if (!attr || attr.getInt() < 0 || attr.getInt() > sizeOfArray)
             continue;
 
           Value newVal = getOrCreateLoad(attr.getInt());

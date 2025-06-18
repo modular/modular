@@ -1610,7 +1610,7 @@ FrameData::FrameData(
 
     int j = 0;
     while (!paths.empty()) {
-      if (j > 10000)
+      if (j > 20000)
         llvm_unreachable("infinite loop");
 
       j++;
