@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import uuid
 from typing import Union, cast
 from unittest.mock import Mock
 
@@ -12,7 +13,15 @@ import numpy as np
 import pytest
 import zmq
 from max.driver import CPU, Tensor
-from max.nn.kv_cache import KVTransferEngine
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    KVTransferEngine,
+    XferReqData,
+    load_kv_manager,
+)
 from max.pipelines.core import (
     TextContext,
     TextGenerationResponse,
@@ -71,14 +80,28 @@ def paged_manager():
     elts_per_page = 128
     num_elts = total_num_pages * elts_per_page
 
-    paged_manager = Mock()
-    paged_manager.external_claim = Mock()
-    paged_manager.prefetch = Mock(return_value=True)
-    paged_manager.device_tensors = [
-        Tensor.from_numpy(np.arange(num_elts, dtype=np.int8)).to(device)
-    ]
-    paged_manager.total_num_pages = total_num_pages
-    return paged_manager
+    params = KVCacheParams(
+        dtype=DType.float16,
+        n_kv_heads=1,
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.PAGED,
+        enable_prefix_caching=False,
+        enable_kvcache_swapping_to_host=False,
+        page_size=128,
+    )
+
+    manager = load_kv_manager(
+        params=params,
+        max_batch_size=16,
+        max_seq_len=512,
+        num_layers=1,
+        devices=[device],
+        session=InferenceSession(),
+        available_cache_memory=500 * 2**20,
+        page_size=elts_per_page,
+    )
+
+    return manager
 
 
 @pytest.fixture
@@ -268,14 +291,33 @@ async def test_decode_scheduler(
         ) -> None:
             received_prefill_requests.append(payload)
             # Send back a mock response
+            mock_transfer_data = XferReqData(
+                dst_name="",
+                src_name="",
+                xfer_name=f"transfer_{uuid.uuid4()}",
+                xfer_id=0,
+                src_idxs=[0],
+                dst_idxs=[0],
+            )
+
             prefill_client.send_reply(
                 MessageType.PREFILL_RESPONSE,
-                PrefillResponse(id=payload.id, context=payload.context),
+                PrefillResponse(
+                    id=payload.id,
+                    context=payload.context,
+                    transfer_metadata=mock_transfer_data,
+                ),
                 reply_context,
             )
 
         request_push_socket = ZmqPushSocket[tuple[str, TextContext]](
             zmq_ctx, request_zmq_endpoint, serialize=msgpack_numpy_encoder()
+        )
+        response_push_socket = ZmqPushSocket[
+            tuple[str, TextGenerationResponse]
+        ](zmq_ctx, response_zmq_endpoint)
+        cancel_push_socket = ZmqPushSocket[list[str]](
+            zmq_ctx, cancel_zmq_endpoint
         )
 
         # Create mock requests
