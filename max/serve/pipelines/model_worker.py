@@ -37,7 +37,7 @@ from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 
-logger = logging.getLogger("max.serve.pipelines.model_worker")
+logger = logging.getLogger("max.serve")
 
 
 def _set_pdeathsig(pdeathsig: int) -> None:
@@ -111,7 +111,7 @@ class ModelWorker:
         # Configure Logging
         configure_logging(settings)
         pid = os.getpid()
-        logger.info("Starting model worker on process %d!", pid)
+        logger.debug("Starting model worker on process %d!", pid)
 
         # Configure Metrics
         async with metric_client_factory() as metric_client:
@@ -241,7 +241,7 @@ async def start_model_worker(
         zmq_ctx=zmq_ctx,
     )
 
-    logger.info("Starting worker: %s", worker_name)
+    logger.debug("Starting worker: %s", worker_name)
     worker = mp_context.Process(
         name=worker_name,
         target=ModelWorker(),
