@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+import time
 from datetime import datetime
 from multiprocessing import Process, Queue
 from typing import Callable, Union, cast
@@ -351,77 +352,97 @@ async def test_transfer_between_prefill_and_decode_scheduler(
                 f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler initialized successfully"
             )
 
-            # Try and Forward the First Request to the Prefill Scheduler
-            i = 0
-            sent = False
-            while i < 5:
-                print(
-                    f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: reserving memory and sending to prefill"
-                )
-                scheduler_instance.reserve_memory_and_send_to_prefill()
-
-                if len(scheduler_instance.reserved_cache_indices) > 0:
-                    sent = True
+            async def _verify_request_forwarded_to_prefill(
+                request_id: str,
+            ) -> None:
+                # Try and Forward the First Request to the Prefill Scheduler
+                i = 0
+                sent = False
+                while i < 5:
                     print(
-                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: memory reserved and sent to prefill"
+                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: reserving memory for {request_id} and sending to prefill"
                     )
-                    break
+                    scheduler_instance.reserve_memory_and_send_to_prefill()
 
-                print(
-                    f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: no request available, waiting for 1s"
-                )
-                await asyncio.sleep(1)
-                i += 1
+                    if request_id in scheduler_instance.reserved_cache_indices:
+                        sent = True
+                        print(
+                            f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: memory reserved for {request_id} and sent to prefill"
+                        )
+                        break
 
-            if not sent:
-                raise RuntimeError(
-                    "Request not received on Decode node, and not sent to prefill"
-                )
-
-            # Check if the prefill scheduler, sent back transfer metadata, then
-            # registered with the Decode scheduler
-            engine_registered = False
-            i = 0
-            while i < 5:
-                if (
-                    len(scheduler_instance.transfer_engine.remote_connections)
-                    > 0
-                ):
-                    engine_registered = True
                     print(
-                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: remote transfer engine registered with decode scheduler"
+                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {request_id} not available, waiting for 1s"
                     )
-                    break
-                await asyncio.sleep(1)
-                i += 1
+                    await asyncio.sleep(1)
+                    i += 1
 
-            if not engine_registered:
-                raise RuntimeError(
-                    "no remote transfer engine registered with decode scheduler"
-                )
+                if not sent:
+                    raise RuntimeError(
+                        "f{request_id} not received on decode worker, and not sent to prefill"
+                    )
 
-            # Check if the Prefill scheduler, executed prefill, initiated the transfer
-            # and replied
-            transfer_complete = False
-            i = 0
-            while i < 5:
-                scheduler_instance.update_batch()
-                if len(scheduler_instance.active_batch) > 0:
-                    transfer_complete = True
+            async def _verify_transfer_engine_registered() -> None:
+                # Check if the prefill scheduler, sent back transfer metadata, then
+                # registered with the Decode scheduler
+                engine_registered = False
+                i = 0
+                while i < 5:
+                    if (
+                        len(
+                            scheduler_instance.transfer_engine.remote_connections
+                        )
+                        == 1
+                    ):
+                        engine_registered = True
+                        print(
+                            f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: remote transfer engine registered with decode scheduler"
+                        )
+                        break
+                    await asyncio.sleep(1)
+                    i += 1
+
+                if not engine_registered:
+                    raise RuntimeError(
+                        "no remote transfer engine registered with decode scheduler"
+                    )
+
+            async def _verify_prefill_executed_and_transfer_complete(
+                request_id: str,
+            ) -> None:
+                # Check if the Prefill scheduler, executed prefill, initiated the transfer
+                # and replied
+                transfer_complete = False
+                i = 0
+                while i < 5:
+                    scheduler_instance.update_batch()
+                    if request_id in scheduler_instance.active_batch:
+                        transfer_complete = True
+                        print(
+                            f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler received a prefill response for {request_id} and transfer"
+                        )
+                        break
                     print(
-                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler received a prefill response and transfer"
+                        f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler waiting for transfer for {request_id} to be completed"
                     )
-                    break
-                print(
-                    f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler waiting for transfer to be completed"
-                )
-                await asyncio.sleep(1)
-                i += 1
+                    await asyncio.sleep(1)
+                    i += 1
 
-            if not transfer_complete:
-                raise RuntimeError(
-                    "decode scheduler did not receive a reply and complete transfer"
-                )
+                if not transfer_complete:
+                    raise RuntimeError(
+                        f"decode scheduler did not receive a reply and complete transfer for {request_id}"
+                    )
+
+            # Verify the first request
+            await _verify_request_forwarded_to_prefill("request_1")
+            await _verify_transfer_engine_registered()
+            await _verify_prefill_executed_and_transfer_complete("request_1")
+
+            # # Verify the second request
+            await asyncio.sleep(5)
+            await _verify_request_forwarded_to_prefill("request_2")
+            await _verify_transfer_engine_registered()
+            await _verify_prefill_executed_and_transfer_complete("request_2")
 
             # Signal success
             print(
@@ -461,95 +482,120 @@ async def test_transfer_between_prefill_and_decode_scheduler(
             )
             scheduler_instance = prefill_scheduler()
             print(
-                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}:  scheduler initialized successfully"
+                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: scheduler initialized successfully"
             )
 
             # Check if the new request has been added to the batch
-            i = 0
-            received = False
-            while i < 5:
-                print(
-                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: trying to update batch"
-                )
-                scheduler_instance.update_batch()
-                print(
-                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: updated batch successfully"
-                )
-
-                if len(scheduler_instance.active_batch) > 0:
-                    received = True
+            async def _verify_prefill_request_received(request_id: str):
+                i = 0
+                received = False
+                while i < 5:
                     print(
-                        f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: request added to active prefill batch"
+                        f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: checking prefill request queue for {request_id}"
                     )
-                    break
+                    scheduler_instance.update_batch()
+
+                    if request_id in scheduler_instance.active_batch:
+                        received = True
+                        print(
+                            f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {request_id} added to active prefill batch"
+                        )
+
+                        # Check that prefill_request has an appropriate dst_idx
+                        prefill_request = scheduler_instance.pending_transfers[
+                            request_id
+                        ]
+                        assert len(prefill_request.block_ids) > 0, (
+                            f"prefill_request.block_ids must be longer than 0: {prefill_request.block_ids}"
+                        )
+
+                        break
+
+                    print(
+                        f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: {request_id} not in active prefill batch, waiting 1s"
+                    )
+                    await asyncio.sleep(1)
+                    i += 1
+
+                if not received:
+                    raise RuntimeError(
+                        f"{request_id} not received on the prefill scheduler"
+                    )
+
+            async def _verify_transfer_engine_registered():
+                # Wait a few seconds to ensure everything is processed.
+                transfer_engine_registered = False
+                i = 0
+                while i < 5:
+                    if (
+                        len(
+                            scheduler_instance.transfer_engine.remote_connections
+                        )
+                        > 0
+                    ):
+                        transfer_engine_registered = True
+                        break
+
+                    await asyncio.sleep(1)
+                    i += 1
+
+                if not transfer_engine_registered:
+                    raise RuntimeError(
+                        "remote transfer engine does not appear to be registered with the prefill scheduler"
+                    )
+                print(
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: transfer engine registered"
+                )
+
+            async def _verify_transfer_initiated(request_id: str):
+                # Run Prefill and Initiate the Transfer
+                print(
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executing prefill for {request_id} and initiating transfer"
+                )
+                scheduler_instance.schedule()
+                assert len(scheduler_instance.active_batch) == 0
+                assert request_id in scheduler_instance.active_transfers
+                print(
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executed prefill for {request_id} and transfer in progress"
+                )
+
+            async def _verify_transfer_cleanup(request_id: str):
+                # Check that the transfer completes successfully and cleansup.
+                i = 0
+                transfer_complete = False
+                while i < 5:
+                    print(
+                        f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: checking that transfer for {request_id} completes"
+                    )
+                    scheduler_instance.cleanup_active_transfers()
+                    if request_id not in scheduler_instance.active_transfers:
+                        transfer_complete = True
+                        break
+
+                    await asyncio.sleep(1)
+                    i += 1
+
+                if not transfer_complete:
+                    raise RuntimeError(
+                        "prefill scheduler never completed transfer successfully"
+                    )
 
                 print(
-                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: no request in active prefill batch, waiting 1s"
-                )
-                await asyncio.sleep(1)
-                i += 1
-
-            if not received:
-                raise RuntimeError(
-                    "no request received on the prefill scheduler"
+                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: transfer for {request_id} appears to complete successfully"
                 )
 
-            # Wait a few seconds to ensure everything is processed.
-            transfer_engine_registered = False
-            i = 0
-            while i < 5:
-                if (
-                    len(scheduler_instance.transfer_engine.remote_connections)
-                    > 0
-                ):
-                    transfer_engine_registered = True
-                    break
+            # Verify Request 1
+            await _verify_prefill_request_received("request_1")
+            await _verify_transfer_engine_registered()
+            await _verify_transfer_initiated("request_1")
+            await _verify_transfer_cleanup("request_1")
 
-                await asyncio.sleep(1)
-                i += 1
-
-            if not transfer_engine_registered:
-                raise RuntimeError(
-                    "remote transfer engine does not appear to be registered with the prefill scheduler"
-                )
-            print(
-                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: transfer engine registered"
-            )
-
-            # Run Prefill and Initiate the Transfer
-            print(
-                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executing prefill and initiating transfer"
-            )
-            scheduler_instance.schedule()
-            assert len(scheduler_instance.active_batch) == 0
-            assert "request_1" in scheduler_instance.active_transfers
-            print(
-                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executed prefill and transfer in progress"
-            )
-
-            # Check that the transfer completes successfully and cleansup.
-            i = 0
-            transfer_complete = False
-            while i < 5:
-                print(
-                    f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: checking that transfer completes"
-                )
-                scheduler_instance.cleanup_active_transfers()
-                if "request_1" not in scheduler_instance.active_transfers:
-                    transfer_complete = True
-                    break
-
-                await asyncio.sleep(1)
-                i += 1
-
-            if not transfer_complete:
-                raise RuntimeError(
-                    "prefill scheduler never completed transfer successfully"
-                )
-
-            print(
-                f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: transfer appears to complete successfully"
-            )
+            # Verify Request 2
+            # Note we dont have to test the transfer engine is re-registered.
+            await asyncio.sleep(5)
+            await _verify_prefill_request_received("request_2")
+            await _verify_transfer_initiated("request_2")
+            await _verify_transfer_cleanup("request_2")
 
             print(
                 f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: all tests successful"
@@ -597,6 +643,25 @@ async def test_transfer_between_prefill_and_decode_scheduler(
         f"test process: sending request to decode worker at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
     )
     request_push_socket.put_nowait(("request_1", mock_request_1))
+    print(
+        f"test process: sent request to decode worker successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+
+    # Wait and just process the first request
+    time.sleep(5)
+
+    mock_request_2 = TextContext(
+        prompt=[1, 2, 3],
+        max_length=100,
+        tokens=np.array([1, 2, 3], dtype=np.int32),
+    )
+    mock_request_2.assign_to_cache(0)
+
+    # Send the request to the decode scheduler
+    print(
+        f"test process: sending request to decode worker at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
+    )
+    request_push_socket.put_nowait(("request_2", mock_request_2))
     print(
         f"test process: sent request to decode worker successfully at {datetime.now().strftime('%H:%M:%S.%f')[:-3]}"
     )
