@@ -1753,10 +1753,11 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
     AttrOfType<KGEN_StringType>:$intrin, Variadic<AnyType>:$args,
     DefaultValuedAttr<POP_FastmathFlagsAttr,
                       "FastmathFlags::none">:$fastmathFlags,
-    DefaultValuedAttr<BoolAttr, "true">:$hasSideEffects);
+    OptionalAttr<AttrOfType<I1>>:$hasSideEffects);
+
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
-    (`side_effecting` $hasSideEffects^)?
+    (`side_effecting` `<` custom<I1ParamValue>($hasSideEffects)^ `>`)?
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
     attr-dict `:` functional-type($args, $results)
   }];

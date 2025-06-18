@@ -1295,10 +1295,10 @@ static LLVM::AtomicOrdering getAtomicOrdering(AtomicOrdering ordering) {
   llvm_unreachable("unknown atomic ordering");
 }
 
-static bool getBoolAttrValue(TypedAttr attr) {
+static bool getBoolAttrValue(TypedAttr attr, bool defaultValue) {
   if (attr)
     return cast<BoolAttr>(attr).getValue();
-  return false;
+  return defaultValue;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1318,9 +1318,9 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr()),
+        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr(), false),
         /*isNonTemporal=*/false,
-        /*isInvariant=*/getBoolAttrValue(adaptor.getIsInvariantAttr()),
+        /*isInvariant=*/getBoolAttrValue(adaptor.getIsInvariantAttr(), false),
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
     return success();
@@ -1344,7 +1344,7 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
 
     rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
         op, adaptor.getArg(), adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr()),
+        /*isVolatile=*/getBoolAttrValue(adaptor.getIsVolatileAttr(), false),
         /*isNonTemporal=*/false,
         /*isInvariantGroup=*/false,
         /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
@@ -1607,8 +1607,8 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
         expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
         cast<StringAttr>(adaptor.getAssembly()),
         cast<StringAttr>(adaptor.getConstraints()),
-        getBoolAttrValue(adaptor.getHasSideEffectsAttr()),
-        getBoolAttrValue(adaptor.getIsStackAlignedAttr()),
+        getBoolAttrValue(adaptor.getHasSideEffectsAttr(), false),
+        getBoolAttrValue(adaptor.getIsStackAlignedAttr(), false),
         LLVM::TailCallKind::None,
         LLVM::AsmDialectAttr::get(op->getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());
