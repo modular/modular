@@ -238,6 +238,7 @@ mojo.gpu_toolchains(
         "Laptop GPU": "",
         "RTX 4070 Ti": "",
         "RTX 4080 SUPER": "",
+        "RTX 4090": "rtx4090",
         "NVIDIA GeForce RTX 3090": "",
         "MI300X": "mi300x",
         "MI325": "mi325",
@@ -257,6 +258,7 @@ mojo.gpu_toolchains(
         "l4": "nvidia:89",
         "mi300x": "amdgpu:gfx942",
         "mi325": "amdgpu:gfx942",
+        "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
     },
 )
