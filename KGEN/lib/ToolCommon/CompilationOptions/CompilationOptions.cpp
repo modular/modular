@@ -119,7 +119,9 @@ void CompilationOptions::print(raw_ostream &os) const {
 }
 
 bool M::KGEN::isGPUTriple(const llvm::Triple &triple) {
-  return triple.isNVPTX() || triple.isAMDGPU();
+  // llvm::Triple defines isAMDGPU and isAMDGCN functions. The main difference
+  // is that isAMDGPU checks for TeraScale muarch, which we don't support.
+  return triple.isNVPTX() || triple.isAMDGCN();
 }
 
 bool M::KGEN::isGPUBackend(const CompilationOptions &options) {
@@ -128,9 +130,11 @@ bool M::KGEN::isGPUBackend(const CompilationOptions &options) {
 }
 
 bool M::KGEN::isNVPTXBackend(const CompilationOptions &options) {
-  return llvm::Triple(options.targetTriple).isNVPTX();
+  llvm::Triple triple(options.targetTriple);
+  return triple.isNVPTX();
 }
 
-bool M::KGEN::isAMDBackend(const CompilationOptions &options) {
-  return llvm::Triple(options.targetTriple).isAMDGCN();
+bool M::KGEN::isAMDGPUBackend(const CompilationOptions &options) {
+  llvm::Triple triple(options.targetTriple);
+  return triple.isAMDGCN();
 }

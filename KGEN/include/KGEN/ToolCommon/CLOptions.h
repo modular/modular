@@ -201,6 +201,7 @@ public:
   DEFINE_CL_OPTION_GETTER(uint64_t, parametricInlineThreshold);
   DEFINE_CL_OPTION_GETTER(uint64_t, parametricInlineEstimatedLoopTripCount);
   DEFINE_CL_OPTION_GETTER(size_t, stackReusePromoteToGlobalThreshold);
+  DEFINE_CL_OPTION_GETTER(size_t, kgenVerifierMaxErrors);
 
 private:
   struct PassOptions {
@@ -227,6 +228,12 @@ private:
         "Threshold in byte above which a read-only stack "
         "allocations are promoted to global.",
         1024);
+
+    DEFINE_CL_OPTION_WITH_DEFAULT(size_t, kgenVerifierMaxErrors,
+                                  "kgen-verifier-max-errors",
+                                  "Specify maximum number of errors "
+                                  "KGENVerifier pass can emit at once.",
+                                  10);
   };
 
   static llvm::ManagedStatic<PassOptions> passOptions;

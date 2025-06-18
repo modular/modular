@@ -697,25 +697,23 @@ kgen.generator export @call_result_slot() {
 
 // COM: Load/Store IndexTypes
 
-module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_80", features = "+ptx81", data_layout = "e-p32:64:64-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{__OPTIMIZATION_LEVEL = 0 : index}>} {
-  kgen.generator @writeIndexType(%arg0: index) -> !kgen.pointer<index> {
-    %index1 = kgen.param.constant = <1>
-    %2 = index.sub %arg0, %index1
-    %idx8 = index.constant 8
-    %idx-1 = index.constant -1
-    %3 = pop.aligned_alloc %idx-1, %idx8 : <index>
-    pop.store %2, %3 : !kgen.pointer<index>
-    kgen.return %3 : !kgen.pointer<index>
-  }
+kgen.generator @writeIndexType(%arg0: index) -> !kgen.pointer<index> {
+  %index1 = kgen.param.constant = <1>
+  %2 = index.sub %arg0, %index1
+  %idx8 = index.constant 8
+  %idx-1 = index.constant -1
+  %3 = pop.aligned_alloc %idx-1, %idx8 : <index>
+  pop.store %2, %3 : !kgen.pointer<index>
+  kgen.return %3 : !kgen.pointer<index>
+}
 
-  // CHECK-LABEL: kgen.func export @readIndexType() -> index
-  kgen.generator export @readIndexType() -> index {
-    kgen.param.apply PTR = [(index) -> !kgen.pointer<index>: @writeIndexType](0)
+// CHECK-LABEL: kgen.func export @readIndexType() -> index
+kgen.generator export @readIndexType() -> index {
+  kgen.param.apply PTR = [(index) -> !kgen.pointer<index>: @writeIndexType](0)
 
-    // CHECK-NEXT: %index-1 = kgen.param.constant = <-1>
-    %0 = kgen.param.constant: index = <load_from_mem(PTR)>
-    kgen.return %0 :  index
-  }
+  // CHECK-NEXT: %index-1 = kgen.param.constant = <-1>
+  %0 = kgen.param.constant: index = <load_from_mem(PTR)>
+  kgen.return %0 :  index
 }
 
 // -----

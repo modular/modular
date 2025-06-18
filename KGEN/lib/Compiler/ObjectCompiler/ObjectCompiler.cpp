@@ -909,7 +909,7 @@ static std::string getAsmFilePostfix(const CompilationOptions &options) {
   if (isNVPTXBackend(options))
     return ".ptx";
 
-  if (isAMDBackend(options))
+  if (isAMDGPUBackend(options))
     return ".amdgcn";
 
   return ".s";
@@ -1417,7 +1417,8 @@ static LogicalResult linkBitcodeLibraries(Location loc,
                                           llvm::Module &llvmModule,
                                           const CompilationOptions &options) {
   // AMD GPU only needs additional linking if address sanitizer is needed.
-  if (isAMDBackend(options) && options.sanitizers.has(Sanitizers::kAddress)) {
+  if (isAMDGPUBackend(options) &&
+      options.sanitizers.has(Sanitizers::kAddress)) {
     mlir::MLIRContext *ctx = loc.getContext();
     mlir::OpBuilder b(ctx);
     OwningOpRef<ModuleOp> mlirModule(b.create<ModuleOp>(loc, "dummy"));

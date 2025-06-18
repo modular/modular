@@ -797,6 +797,7 @@ modular_cc_library(
         ":POPDialectBytecodeIncGen",
         ":POPDialectIncGen",
         ":POPEnumsIncGen",
+        ":ToolCommon.headers",
         "//Support:ADT",
         "//Support:Base",
         "//Support:Compiler",
