@@ -907,10 +907,6 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             float8_config=float8_config,
             clip_qkv=clip_qkv,
         )
-        if not self.devices or len(self.devices) < 2:
-            raise ValueError(
-                f"Must provide at least 2 devices to `DistributedAttentionWithRope`, got {self.devices}"
-            )
         if DeviceRef.CPU() in self.devices:
             raise ValueError(
                 "DistributedAttentionWithRope does not support CPU devices"
