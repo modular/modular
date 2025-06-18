@@ -133,10 +133,26 @@ Great! Now let's write our first Mojo program.
 
 You can use any editor or IDE that you like. If you're using [Visual Studio
 Code](https://code.visualstudio.com/) you can take advantage of the [Mojo for
-Visual Studio Code
-extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
+Visual Studio Code - Nightly
+extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo-nightly),
 which provides features like syntax highlighting, code completion, and debugging
 support.
+
+:::caution
+
+Currently there are two versions of the Mojo for Visual Studio Code extension:
+the nightly version and the stable version. The nightly version, linked above,
+is intended for projects using the nightly build of Mojo. If you are working on
+a project using a stable release of Mojo, you should install the [stable release
+of the Mojo for Visual Studio Code
+extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+instead. Please note that you should have only one version of the extension
+enabled at a time.
+
+In the future, we plan to consolidate the two versions of the extension into a
+single version that supports both the nightly and stable builds of Mojo.
+
+:::
 
 In the project directory, create a file named `life.mojo` containing the
 following lines of code:
@@ -191,7 +207,7 @@ build`](/mojo/cli/build) like this:
 mojo build life.mojo
 ```
 
-By default, this saves an executable file to the current directory named `life`.
+By default, this saves an executable file named `life` to the current directory.
 
 ```bash
 ./life
