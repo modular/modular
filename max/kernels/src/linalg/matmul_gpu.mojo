@@ -2206,6 +2206,45 @@ fn _matmul_gpu[
                         )
                         return
 
+                @parameter
+                if (
+                    a_is_bfloat16_or_float32
+                    and static_N == 3840
+                    and static_K in (15360, 4096)
+                ):
+                    if m <= 512:
+                        alias M512_N3840_K15360_config = MatmulConfig[
+                            a_type,
+                            b_type,
+                            c_type,
+                            transpose_b,
+                            mma_shape = Index(64, 128 // size_factor, mma_k),
+                        ](
+                            block_tile_shape=Index(128, 128 // size_factor, BK),
+                            cluster_shape=Index(2, 1, 1),
+                            num_pipeline_stages=4,
+                            num_consumer=2,
+                            partitioned_multicast=False,
+                            pdl_level=pdl_level,
+                        )
+                        warp_specialize_gemm_with_multicasting[
+                            transpose_b=transpose_b,
+                            elementwise_lambda_fn=elementwise_lambda_fn,
+                            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                            config=M512_N3840_K15360_config,
+                            schedule = MatmulSchedule.NONE,
+                        ](
+                            rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                            rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                            rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                            m,
+                            n,
+                            k,
+                            ctx,
+                        )
+
+                        return
+
                 alias BN = _find_largest_bn_for_sm90_matmul[
                     a_type, static_N
                 ]() // size_factor
