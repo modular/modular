@@ -37,7 +37,7 @@ from math import (
     trunc,
     ulp,
 )
-from sys.info import has_neon
+from sys import CompilationTarget
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
@@ -53,7 +53,7 @@ fn test_cos() raises:
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(cos(BFloat16(2.0)), -0.416015625)
 
 
@@ -420,7 +420,7 @@ def test_frexp():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
@@ -430,7 +430,7 @@ def test_log():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
@@ -440,7 +440,7 @@ def test_log2():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 

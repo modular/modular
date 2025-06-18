@@ -14,8 +14,8 @@
 from collections import OptionalReg
 from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
-from sys import has_neon, simdwidthof, sizeof
-from sys.info import _current_target
+from sys import simdwidthof, sizeof
+from sys.info import CompilationTarget, _current_target
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
@@ -211,13 +211,13 @@ fn gather_reduce[
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
         alias k_tile_sizes = VariadicList[Int](
             2 * simd_width, 1
-        ) if has_neon() else VariadicList[Int](
+        ) if CompilationTarget.has_neon() else VariadicList[Int](
             8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
         )
         # unroll the j loop on neon because it benefits from vectorized
         # blend instructions and avoids conditional flag dependencies
         # does not appear to help on other archs
-        alias j_tile_size = 4 if has_neon() else 1
+        alias j_tile_size = 4 if CompilationTarget.has_neon() else 1
 
         for i in range(out_vec_start, out_vec_end):
 

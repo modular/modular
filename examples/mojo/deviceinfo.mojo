@@ -16,8 +16,6 @@ from collections.string import StaticString
 from sys import (
     CompilationTarget,
     has_intel_amx,
-    has_neon,
-    has_vnni,
     is_apple_m1,
     is_apple_m2,
     is_apple_m3,
@@ -52,14 +50,14 @@ def main():
         cpu_features += " avx2"
     if CompilationTarget.has_avx512f():
         cpu_features += " avx512f"
-    if has_vnni():
+    if CompilationTarget.has_vnni():
         if CompilationTarget.has_avx512f():
             cpu_features += " avx512_vnni"
         else:
             cpu_features += " avx_vnni"
     if has_intel_amx():
         cpu_features += " intel_amx"
-    if has_neon():
+    if CompilationTarget.has_neon():
         cpu_features += " neon"
     if is_apple_m1():
         cpu_features += " Apple M1"

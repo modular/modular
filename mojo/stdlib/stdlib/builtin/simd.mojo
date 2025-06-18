@@ -57,7 +57,6 @@ from sys import (
     _RegisterPackType,
     alignof,
     bitwidthof,
-    has_neon,
     is_amd_gpu,
     is_big_endian,
     is_gpu,
@@ -215,7 +214,7 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
     ]()
     constrained[size.is_power_of_two(), "simd width must be power of 2"]()
     constrained[
-        not (dtype is DType.bfloat16 and has_neon()),
+        not (dtype is DType.bfloat16 and CompilationTarget.has_neon()),
         "bf16 is not supported for ARM architectures",
     ]()
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
@@ -913,7 +912,7 @@ struct SIMD[dtype: DType, size: Int](
         # TODO(KERN-228): support BF16 on neon systems.
         # As a workaround, we roll our own implementation
         @parameter
-        if has_neon() and dtype is DType.bfloat16:
+        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
             return self.to_bits() == rhs.to_bits()
         else:
             return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
@@ -936,7 +935,7 @@ struct SIMD[dtype: DType, size: Int](
         # TODO(KERN-228): support BF16 on neon systems.
         # As a workaround, we roll our own implementation.
         @parameter
-        if has_neon() and dtype is DType.bfloat16:
+        if CompilationTarget.has_neon() and dtype is DType.bfloat16:
             return self.to_bits() != rhs.to_bits()
         else:
             return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
@@ -1840,7 +1839,9 @@ struct SIMD[dtype: DType, size: Int](
             return _convert_float8_to_f32(self).cast[target]()
 
         @parameter
-        if has_neon() and (dtype is DType.bfloat16 or target is DType.bfloat16):
+        if CompilationTarget.has_neon() and (
+            dtype is DType.bfloat16 or target is DType.bfloat16
+        ):
             # TODO(KERN-228): support BF16 on neon systems.
             return _unchecked_zero[target, size]()
 
@@ -2007,7 +2008,7 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if dtype.is_integral() or dtype is DType.bool:
             return self
-        elif has_neon() and dtype is DType.bfloat16:
+        elif CompilationTarget.has_neon() and dtype is DType.bfloat16:
             # TODO(KERN-228): support BF16 on neon systems.
             # As a workaround, we cast to float32.
             return (
@@ -2256,7 +2257,7 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if (
             # TODO: Allow SSE3 when we have sys.has_sse3()
-            (CompilationTarget.has_sse4() or sys.has_neon())
+            (CompilationTarget.has_sse4() or CompilationTarget.has_neon())
             and dtype is DType.uint8
             and size == 16
         ):
@@ -2923,7 +2924,7 @@ fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
     @parameter
     if CompilationTarget.has_sse4():
         return _pshuf(lookup_table, indices)
-    elif sys.has_neon():
+    elif CompilationTarget.has_neon():
         return _tbl1(lookup_table, indices)
     else:
         # TODO: Change the error message when we allow SSE3
@@ -3314,7 +3315,7 @@ fn _bfloat16_to_f32_scalar(
     val: BFloat16,
 ) -> Float32:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.float32, 1]()
 
@@ -3336,7 +3337,7 @@ fn _bfloat16_to_f32[
     size: Int
 ](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.float32, size]()
 
@@ -3364,7 +3365,7 @@ fn _f32_to_bfloat16[
     width: Int, //
 ](f32: SIMD[DType.float32, width]) -> SIMD[DType.bfloat16, width]:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # TODO(KERN-228): support BF16 on neon systems.
         return _unchecked_zero[DType.bfloat16, width]()
     var f32_bits = f32.to_bits()

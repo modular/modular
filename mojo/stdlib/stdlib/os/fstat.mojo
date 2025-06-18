@@ -19,7 +19,7 @@ from os import stat
 ```
 """
 
-from sys import has_neon, os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget, os_is_linux, os_is_macos, os_is_windows
 from time.time import _CTimeSpec
 
 from . import PathLike
@@ -218,7 +218,7 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     @parameter
     if os_is_macos():
         return _stat_macos(fspath^)._to_stat_result()
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return _stat_linux_arm(fspath^)._to_stat_result()
     else:
         return _stat_linux_x86(fspath^)._to_stat_result()
@@ -246,7 +246,7 @@ fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     @parameter
     if os_is_macos():
         return _lstat_macos(fspath^)._to_stat_result()
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return _lstat_linux_arm(fspath^)._to_stat_result()
     else:
         return _lstat_linux_x86(fspath^)._to_stat_result()

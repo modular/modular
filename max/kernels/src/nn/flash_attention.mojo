@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv, exp
-from sys import alignof, has_neon, simdwidthof
+from sys import alignof, simdwidthof
 from sys.info import CompilationTarget
 
 from algorithm import sync_parallelize, tile, vectorize
@@ -60,7 +60,7 @@ struct _MatmulConfig:
     @staticmethod
     fn _get_config() -> _MatmulConfig:
         @parameter
-        if has_neon():
+        if CompilationTarget.has_neon():
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),
@@ -205,7 +205,7 @@ struct _Matmul[
                     c_tile.init(0.0)
 
                 @parameter
-                if has_neon():
+                if CompilationTarget.has_neon():
                     Self._inner_loop_a_lane(
                         K, am_ptr, a_stride, bn_ptr, N, c_tile
                     )

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from sys import has_neon
+from sys.info import CompilationTarget
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
@@ -56,7 +56,7 @@ def test_cast():
     assert_equal(Int(b.cast[DType.int16]()), 128)
 
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(
             BFloat16(33.0).cast[DType.float32]().cast[DType.bfloat16](), 33
         )
@@ -329,7 +329,7 @@ def test_truthy():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_dtype[DType.bfloat16]()
 
 
@@ -355,7 +355,7 @@ def test_len():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         alias BF16 = SIMD[DType.bfloat16, 2]
         var f1 = BF16(0.0)
         assert_equal(2, f1.__len__())
@@ -496,7 +496,7 @@ def test_ceil():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(BFloat16.__ceil__(BFloat16(2.5)), 3.0)
 
     alias F = SIMD[DType.float32, 4]
@@ -524,7 +524,7 @@ def test_floor():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(BFloat16.__floor__(BFloat16(2.5)), 2.0)
 
     alias F = SIMD[DType.float32, 4]
@@ -1409,7 +1409,7 @@ def test_reduce():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_dtype[DType.bfloat16]()
 
 
@@ -1853,7 +1853,7 @@ def test_comparison():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_dtype[DType.bfloat16]()
 
 

@@ -13,7 +13,7 @@
 
 from math import align_down
 from sys import prefetch
-from sys.info import CompilationTarget, alignof, has_neon_int8_dotprod
+from sys.info import CompilationTarget, alignof
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load
@@ -153,7 +153,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 ]()
 
                 @parameter
-                if has_neon_int8_dotprod():
+                if CompilationTarget.has_neon_int8_dotprod():
                     var a_val2 = SIMD[c_type, simd_size](a_val)
                     c_val = _neon_dotprod(
                         c_val,

@@ -16,9 +16,6 @@ from sys import alignof
 from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
     is_neoverse_n1,
     os_is_macos,
     simdwidthof,
@@ -304,7 +301,7 @@ fn get_matmul_kernel_shape[
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         return get_matmul_kernel_shape_ARM[
             a_type, b_type, c_type, kernel_type
         ]()
@@ -324,7 +321,7 @@ fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
 # prefetching at least on the Graviton 2 performs worse than without.
 fn get_matmul_prefetch_b_distance_k() -> Int:
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         return 0
     return 4
 
@@ -535,7 +532,7 @@ fn get_pack_data_size[type: DType]() -> Int:
         return 64 * KB // sizeof[type]()
 
     @parameter
-    if has_neon() or CompilationTarget.has_avx512f():
+    if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
         # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
         # return half the cache size as 4 byte elements
@@ -573,7 +570,10 @@ fn get_kernel_config[
 @always_inline
 fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     @parameter
-    if has_neon_int8_dotprod() and not has_neon_int8_matmul():
+    if (
+        CompilationTarget.has_neon_int8_dotprod()
+        and not CompilationTarget.has_neon_int8_matmul()
+    ):
         return (
             (a_type is DType.int8 and b_type is DType.int8)
             or (a_type is DType.uint8 and b_type is DType.uint8)
@@ -593,7 +593,7 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # u8u8, u8s8, s8s8, but not s8u8
     return (
         # Return False for now until i8mm is fully ready.
-        has_neon_int8_matmul()
+        CompilationTarget.has_neon_int8_matmul()
         and (
             (a_type is DType.uint8 and b_type is DType.uint8)
             or (a_type is DType.uint8 and b_type is DType.int8)
@@ -609,7 +609,7 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
     @parameter
     if CompilationTarget.has_avx512f():
         return m > 0 and m <= 32
-    elif has_neon():
+    elif CompilationTarget.has_neon():
 
         @parameter
         if is_neoverse_n1():
@@ -703,9 +703,9 @@ fn select_inner_kernel[
     @parameter
     if use_i8mm:
         return InnerKernelID.I8MM
-    elif has_neon() and not use_vnni and not use_i8mm:
+    elif CompilationTarget.has_neon() and not use_vnni and not use_i8mm:
         return InnerKernelID.NEON
-    elif not use_vnni and not has_neon():
+    elif not use_vnni and not CompilationTarget.has_neon():
         return InnerKernelID.DEFAULT
     else:
         return InnerKernelID.VNNI

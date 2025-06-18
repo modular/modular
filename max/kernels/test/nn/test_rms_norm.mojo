@@ -16,7 +16,7 @@ from math import sqrt
 from buffer import NDBuffer
 from nn.normalization import *
 from testing import assert_almost_equal
-from sys import has_neon
+from sys.info import CompilationTarget
 
 from utils.index import Index, IndexList
 
@@ -117,5 +117,5 @@ def main():
     run_rms_norm_tests[DType.float32]()
 
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         run_rms_norm_tests[DType.bfloat16](rtol=1e-2)

@@ -15,13 +15,14 @@
 # REQUIRES: system-darwin
 # RUN: %mojo %s
 
-from sys import has_avx512f, has_neon, simdbitwidth
+from sys import has_avx512f, simdbitwidth
+from sys.info import CompilationTarget
 
 from testing import assert_equal, assert_false, assert_true
 
 
 def test_arch_query():
-    assert_true(has_neon())
+    assert_true(CompilationTarget.has_neon())
 
     assert_equal(simdbitwidth(), 128)
 

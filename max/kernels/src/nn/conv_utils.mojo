@@ -16,7 +16,6 @@ from sys._build import is_debug_build
 from sys.info import (
     CompilationTarget,
     has_avx2,
-    has_neon,
     is_neoverse_n1,
     os_is_macos,
     simdwidthof,
@@ -423,7 +422,7 @@ fn get_conv_tile_size[type: DType]() -> Int:
         return 64 * KB // sizeof[type]()
 
     @parameter
-    if has_neon() or CompilationTarget.has_avx512f():
+    if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         #  Graviton 2 and Skylake server
         # have a 1 MiB L2 cache
         return 576 * KB // sizeof[type]()
@@ -596,7 +595,7 @@ fn get_direct_conv_micro_kernel_height() -> Int:
         return 6
     elif is_neoverse_n1():
         return 8
-    elif has_neon():  # neon other than neoverse-N1
+    elif CompilationTarget.has_neon():  # neon other than neoverse-N1
         return 6
     return 4
 
@@ -607,7 +606,7 @@ fn get_direct_conv_micro_kernel_width() -> Int:
         return 4
     elif is_neoverse_n1():
         return 2
-    elif has_neon():  # neon other than neoverse-N1
+    elif CompilationTarget.has_neon():  # neon other than neoverse-N1
         return 4
     return 3
 
@@ -687,7 +686,7 @@ fn get_micro_kernel_shape[
         @parameter
         if is_neoverse_n1():
             return Index(8, 2)
-        elif has_neon():  # neon other than neoverse-N1
+        elif CompilationTarget.has_neon():  # neon other than neoverse-N1
             return Index(6, 4)
 
         return Index(6, 2)
@@ -699,7 +698,7 @@ fn get_micro_kernel_shape[
             return Index(6, 4)
         elif is_neoverse_n1():
             return Index(8, 2)
-        elif has_neon():  # neon other than neoverse-N1
+        elif CompilationTarget.has_neon():  # neon other than neoverse-N1
             return Index(6, 4)
         # default, including AVX2
         else:

@@ -103,6 +103,112 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
     # Platforms
 
     @staticmethod
+    fn has_fma() -> Bool:
+        """Returns True if the target has FMA (Fused Multiply-Add) support,
+        otherwise returns False.
+
+        Returns:
+            True if the target has FMA support, otherwise returns False.
+        """
+        return Self._has_feature["fma"]()
+
+    @staticmethod
+    fn has_vnni() -> Bool:
+        """Returns True if the target has avx512_vnni, otherwise returns False.
+
+        Returns:
+            True if the target has avx512_vnni, otherwise returns False.
+        """
+        return (
+            Self._has_feature["avx512vnni"]() or Self._has_feature["avxvnni"]()
+        )
+
+    @staticmethod
+    fn has_neon() -> Bool:
+        """Returns True if the target has Neon support, otherwise returns
+        False.
+
+        Returns:
+            True if the target support the Neon instruction set.
+        """
+        alias neon_flag: Bool = Self._has_feature["neon"]()
+
+        @parameter
+        if neon_flag:
+            return True
+        # For Apple Silicon, we need to check the architecture differently
+        return (
+            __mlir_attr[
+                `#kgen.param.expr<eq,`,
+                __mlir_attr[
+                    `#kgen.param.expr<target_get_field,`,
+                    Self.value,
+                    `, "arch" : !kgen.string`,
+                    `> : !kgen.string`,
+                ],
+                `, "apple-m1" : !kgen.string`,
+                `> : i1`,
+            ]
+            or __mlir_attr[
+                `#kgen.param.expr<eq,`,
+                __mlir_attr[
+                    `#kgen.param.expr<target_get_field,`,
+                    Self.value,
+                    `, "arch" : !kgen.string`,
+                    `> : !kgen.string`,
+                ],
+                `, "apple-m2" : !kgen.string`,
+                `> : i1`,
+            ]
+            or __mlir_attr[
+                `#kgen.param.expr<eq,`,
+                __mlir_attr[
+                    `#kgen.param.expr<target_get_field,`,
+                    Self.value,
+                    `, "arch" : !kgen.string`,
+                    `> : !kgen.string`,
+                ],
+                `, "apple-m3" : !kgen.string`,
+                `> : i1`,
+            ]
+            or __mlir_attr[
+                `#kgen.param.expr<eq,`,
+                __mlir_attr[
+                    `#kgen.param.expr<target_get_field,`,
+                    Self.value,
+                    `, "arch" : !kgen.string`,
+                    `> : !kgen.string`,
+                ],
+                `, "apple-m4" : !kgen.string`,
+                `> : i1`,
+            ]
+        )
+
+    @staticmethod
+    fn has_neon_int8_dotprod() -> Bool:
+        """Returns True if the target has the Neon int8 dot product extension,
+        otherwise returns False.
+
+        Returns:
+            True if the target support the Neon int8 dot product extension and
+            False otherwise.
+        """
+        return Self.has_neon() and Self._has_feature["dotprod"]()
+
+    @staticmethod
+    fn has_neon_int8_matmul() -> Bool:
+        """Returns True if the target has the Neon int8 matrix multiplication
+        extension (I8MM), otherwise returns False.
+
+        Returns:
+            True if the target support the Neon int8 matrix multiplication
+            extension (I8MM) and False otherwise.
+        """
+        return Self.has_neon() and Self._has_feature["i8mm"]()
+
+    # Platforms
+
+    @staticmethod
     fn is_x86() -> Bool:
         """Checks if the target is an x86 architecture.
 
@@ -190,6 +296,7 @@ fn has_avx512f() -> Bool:
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_fma()` instead.")
 fn has_fma() -> Bool:
     """Returns True if the host system has FMA (Fused Multiply-Add) support,
     otherwise returns False.
@@ -197,38 +304,22 @@ fn has_fma() -> Bool:
     Returns:
         True if the host system has FMA support, otherwise returns False.
     """
-    return __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "fma" : !kgen.string`,
-        `> : i1`,
-    ]
+    return CompilationTarget.has_fma()
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_vnni()` instead.")
 fn has_vnni() -> Bool:
     """Returns True if the host system has avx512_vnni, otherwise returns False.
 
     Returns:
         True if the host system has avx512_vnni, otherwise returns False.
     """
-    return (
-        __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "avx512vnni" : !kgen.string`,
-            `> : i1`,
-        ]
-        or __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "avxvnni" : !kgen.string`,
-            `> : i1`,
-        ]
-    )
+    return CompilationTarget.has_vnni()
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_neon()` instead.")
 fn has_neon() -> Bool:
     """Returns True if the host system has Neon support, otherwise returns
     False.
@@ -236,20 +327,11 @@ fn has_neon() -> Bool:
     Returns:
         True if the host system support the Neon instruction set.
     """
-    alias neon_flag: Bool = __mlir_attr[
-        `#kgen.param.expr<target_has_feature,`,
-        _current_target(),
-        `, "neon" : !kgen.string`,
-        `> : i1`,
-    ]
-
-    @parameter
-    if neon_flag:
-        return True
-    return is_apple_silicon()
+    return CompilationTarget.has_neon()
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_neon_int8_dotprod()` instead.")
 fn has_neon_int8_dotprod() -> Bool:
     """Returns True if the host system has the Neon int8 dot product extension,
     otherwise returns False.
@@ -258,18 +340,11 @@ fn has_neon_int8_dotprod() -> Bool:
         True if the host system support the Neon int8 dot product extension and
         False otherwise.
     """
-    return (
-        has_neon()
-        and __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "dotprod" : !kgen.string`,
-            `> : i1`,
-        ]
-    )
+    return CompilationTarget.has_neon_int8_dotprod()
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_neon_int8_matmul()` instead.")
 fn has_neon_int8_matmul() -> Bool:
     """Returns True if the host system has the Neon int8 matrix multiplication
     extension (I8MM), otherwise returns False.
@@ -278,15 +353,7 @@ fn has_neon_int8_matmul() -> Bool:
         True if the host system support the Neon int8 matrix multiplication
         extension (I8MM) and False otherwise.
     """
-    return (
-        has_neon()
-        and __mlir_attr[
-            `#kgen.param.expr<target_has_feature,`,
-            _current_target(),
-            `, "i8mm" : !kgen.string`,
-            `> : i1`,
-        ]
-    )
+    return CompilationTarget.has_neon_int8_matmul()
 
 
 @always_inline("nodebug")

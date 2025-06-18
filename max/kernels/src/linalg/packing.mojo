@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from math import align_down, align_up
-from sys import alignof, has_neon, simdwidthof
+from sys import alignof, simdwidthof
+from sys.info import CompilationTarget
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import unswitch
@@ -411,7 +412,7 @@ struct PackMatrixCols[
 
         @parameter
         if skip_row_bound:
-            if not has_neon():
+            if not CompilationTarget.has_neon():
 
                 @parameter
                 for i in range(unroll_factor):

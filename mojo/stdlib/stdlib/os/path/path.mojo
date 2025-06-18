@@ -22,7 +22,7 @@ from os.path import isdir
 
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import has_neon, os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget, os_is_linux, os_is_macos, os_is_windows
 
 
 from .. import PathLike
@@ -51,7 +51,7 @@ fn _get_stat_st_mode(owned path: String) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_stat_macos(path^).st_mode)
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
     else:
         return Int(_stat_linux_x86(path^).st_mode)
@@ -62,7 +62,7 @@ fn _get_lstat_st_mode(owned path: String) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_lstat_macos(path^).st_mode)
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)
     else:
         return Int(_lstat_linux_x86(path^).st_mode)

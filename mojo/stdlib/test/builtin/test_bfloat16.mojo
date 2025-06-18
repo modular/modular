@@ -13,7 +13,7 @@
 # RUN: %mojo %s
 
 from random import randn_float64
-from sys import has_neon
+from sys import CompilationTarget
 
 from testing import assert_almost_equal, assert_equal
 
@@ -83,7 +83,7 @@ def main():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_methods()
 
         test_bf_primitives()

@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import alignof, has_neon
+from sys import alignof
+from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -200,7 +201,7 @@ fn main() raises:
 
     # TODO(KERN-228): Re-enable after we resolve llvm lowering issues.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](
             M, N, K
         )
