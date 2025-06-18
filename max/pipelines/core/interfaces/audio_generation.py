@@ -75,6 +75,9 @@ class AudioGenerationRequest:
     This replaces automatically generating TokenGeneratorRequestMessages given the input, audio prompt tokens,
     audio prompt transcription fields."""
 
+    streaming: bool = True
+    """Whether to stream the audio generation."""
+
     def __post_init__(self) -> None:
         if self.prompt is None and self.input is None:
             raise RuntimeError("either token_ids or input must be provided.")

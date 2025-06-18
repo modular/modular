@@ -237,6 +237,11 @@ class InputContext(Protocol):
         ...
 
     @property
+    def is_streaming(self) -> bool:
+        """Returns True if the context is a streaming context, False otherwise."""
+        ...
+
+    @property
     def is_ce(self) -> bool:
         """Returns True if the context is a context encoding context, False otherwise."""
         ...
@@ -297,6 +302,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     sampling_params: SamplingParams = msgspec.field(
         default_factory=SamplingParams
     )
+    streaming: bool = msgspec.field(default=False)
     _matcher: Any | None = msgspec.field(default=None)
     _status: TextGenerationStatus = msgspec.field(
         default=TextGenerationStatus.ACTIVE
@@ -822,6 +828,11 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             bool: True if in CE mode (active_length > 1), False otherwise.
         """
         return self.active_length > 1
+
+    @property
+    def is_streaming(self) -> bool:
+        """Returns True if the context is a streaming context, False otherwise."""
+        return self.streaming
 
     @property
     def is_initial_prompt(self) -> bool:
