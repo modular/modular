@@ -130,6 +130,33 @@ fn _raise_checked_impl(
     raise Error(location.prefix(err + ((" " + msg) if msg else "")))
 
 
+# Checks that the given `dim` has only positive integers in them.
+fn _check_dim[
+    func_name_for_msg: StringLiteral, dim_name_for_msg: StringLiteral
+](dim: Dim) raises:
+    if dim.x() <= 0:
+        raise Error(
+            func_name_for_msg
+            + ": Dim value "
+            + dim_name_for_msg
+            + ".x must be a positive number."
+        )
+    if dim.y() <= 0:
+        raise Error(
+            func_name_for_msg
+            + ": Dim value "
+            + dim_name_for_msg
+            + ".y must be a positive number."
+        )
+    if dim.z() <= 0:
+        raise Error(
+            func_name_for_msg
+            + ": Dim value "
+            + dim_name_for_msg
+            + ".z must be a positive number."
+        )
+
+
 struct _DeviceTimer:
     var _handle: _DeviceTimerPtr
 
@@ -3419,6 +3446,9 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
@@ -3512,6 +3542,13 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
+        _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
+            block_dim
+        )
+
         var gpu_kernel = self.compile_function[
             func,
             dump_asm=dump_asm,
@@ -3590,8 +3627,10 @@ struct DeviceContext(Copyable, Movable):
             ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
-
         """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+
         constrained[
             not f.declared_arg_types,
             (
@@ -3669,8 +3708,14 @@ struct DeviceContext(Copyable, Movable):
             ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
-
         """
+        _check_dim["DeviceContext.enqueue_function_unchecked", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_unchecked", "block_dim"](
+            block_dim
+        )
+
         constrained[
             not f.declared_arg_types,
             (
@@ -3748,8 +3793,14 @@ struct DeviceContext(Copyable, Movable):
             ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
-
         """
+        _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
+            block_dim
+        )
+
         constrained[
             Bool(f.declared_arg_types), "Calling a non-checked function."
         ]()
@@ -3844,6 +3895,13 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
+        _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
+            block_dim
+        )
+
         var gpu_kernel = self.compile_function_checked[
             func,
             signature_func,
@@ -3938,6 +3996,13 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
+        _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
+            block_dim
+        )
+
         var gpu_kernel = self.compile_function_experimental[
             func,
             dump_asm=dump_asm,
@@ -4038,6 +4103,13 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
+        _check_dim["DeviceContext.enqueue_function_checked", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_checked", "block_dim"](
+            block_dim
+        )
+
         var gpu_kernel = self.compile_function_checked[
             func,
             signature_func,
@@ -4133,6 +4205,13 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
+        _check_dim["DeviceContext.enqueue_function_experimental", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_function_experimental", "block_dim"](
+            block_dim
+        )
+
         var gpu_kernel = self.compile_function_experimental[
             func,
             dump_asm=dump_asm,
@@ -4262,6 +4341,9 @@ struct DeviceContext(Copyable, Movable):
             ctx.synchronize()
         ```
         """
+        _check_dim["DeviceContext.enqueue_function", "grid_dim"](grid_dim)
+        _check_dim["DeviceContext.enqueue_function", "block_dim"](block_dim)
+
         self._enqueue_external_function(
             f,
             args,
@@ -4288,6 +4370,13 @@ struct DeviceContext(Copyable, Movable):
         owned attributes: List[LaunchAttribute] = [],
         owned constant_memory: List[ConstantMemoryMapping] = [],
     ) raises:
+        _check_dim["DeviceContext.enqueue_external_function", "grid_dim"](
+            grid_dim
+        )
+        _check_dim["DeviceContext.enqueue_external_function", "block_dim"](
+            block_dim
+        )
+
         f._call_with_pack(
             self,
             args,
