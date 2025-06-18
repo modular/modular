@@ -1116,13 +1116,26 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
 
   // Generate the series of values.
   auto iterator = cast<TypedAttr>(initial);
+
   SmallVector<TypedAttr> values;
   int64_t loopUnrollCount = 0;
   while (true) {
     // Check to see if we are supposed to stop here.
     parent->getEvaluator().setErrorLoc(op.getLoc());
+
+    // Check if hasNextFunc takes a pointer input or not (memory type?).
+    // If so, create a StoreToMemAttr so that the input will be internalized to
+    // the interpreter memory and become a pointer type argument for the
+    // hasNextFunc.
+    FuncOp func = *hasNextFunc;
+    TypedAttr hasNextInput = iterator;
+    if (isa<PointerType>(func.getFunctionType().getInput(0))) {
+      hasNextInput =
+          StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
+    }
+
     ErrorTreeOr<TypedAttr> hasNextResult =
-        parent->getEvaluator().evaluateFunction(*hasNextFunc, iterator);
+        parent->getEvaluator().evaluateFunction(*hasNextFunc, hasNextInput);
     if (hasNextResult.isError()) {
       parent->setToError(hasNextResult.takeError());
       return failure();
