@@ -57,6 +57,7 @@ from .nonzero import nonzero
 from .outer import outer
 from .pad import pad
 from .permute import permute
+from .pooling import avg_pool2d, max_pool2d
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
