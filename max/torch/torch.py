@@ -435,7 +435,7 @@ def compile_custom_op(op: CustomOp) -> CustomOpDef:
     parameters = op.parameters or {}
 
     # Keep the mlir context around for sharing graphs between op models
-    context = mlir.Context()
+    context = op.context
 
     # Compile the model if it has not been compiled already.
     def compile_model(*args: torch.Tensor) -> Model:
