@@ -130,7 +130,7 @@ fn capture_call_loc[depth: Int = 1](cond: Bool = False) -> _SourceLocation:
     if (
         not cond
     ):  # NOTE: we test that __call_location works even in a nested scope.
-        return __call_location[depth]()
+        return __call_location[inline_count=depth]()
     return _SourceLocation(-1, -1, "")
 
 
@@ -141,7 +141,7 @@ fn capture_call_loc_nodebug[
     if (
         not cond
     ):  # NOTE: we test that __call_location works even in a nested scope.
-        return __call_location[depth]()
+        return __call_location[inline_count=depth]()
     return _SourceLocation(-1, -1, "")
 
 

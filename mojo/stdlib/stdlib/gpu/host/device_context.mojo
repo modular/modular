@@ -119,7 +119,7 @@ fn _checked(
     location: OptionalReg[_SourceLocation] = None,
 ) raises:
     if err:
-        _raise_checked_impl(err, msg, location.or_else(__call_location[1]()))
+        _raise_checked_impl(err, msg, location.or_else(__call_location()))
 
 
 @no_inline

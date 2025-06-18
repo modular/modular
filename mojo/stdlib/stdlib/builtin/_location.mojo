@@ -77,7 +77,7 @@ fn __source_location() -> _SourceLocation:
 
 
 @always_inline("nodebug")
-fn __call_location[inline_count: Int = 1]() -> _SourceLocation:
+fn __call_location[*, inline_count: Int = 1]() -> _SourceLocation:
     """Returns the location for where the caller of this function is called. An
     optional `inline_count` parameter can be specified to skip over that many
     levels of calling functions.
