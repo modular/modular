@@ -187,6 +187,15 @@ class MultiModalPipelineOracle(PipelineOracle):
 
 
 class InternVLPipelineOracle(MultiModalPipelineOracle):
+    """Pipeline oracle for InternVL3 architectures."""
+
+    hf_repo_id: str
+    """ID of the Hugging Face repository."""
+
+    def __init__(self, hf_repo_id: str) -> None:
+        super().__init__()
+        self.hf_repo_id = hf_repo_id
+
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
         return {
@@ -208,12 +217,11 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         for device_spec in device_specs:
             assert self.is_supported(encoding=encoding, device_spec=device_spec)
 
-        hf_repo_id = "OpenGVLab/InternVL3-8B-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
 
         # Compute the max sequence length for InternVL
         hf_config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision, trust_remote_code=True
+            self.hf_repo_id, revision=revision, trust_remote_code=True
         )
         # InternVL uses dynamic image sizing, so use a reasonable default
         max_length = 8192
@@ -222,7 +230,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.PAGED,
-            model_path=hf_repo_id,
+            model_path=self.hf_repo_id,
             huggingface_model_revision=revision,
             max_length=max_length,
             trust_remote_code=True,
@@ -239,19 +247,18 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
     def create_torch_pipeline(
         self, *, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "OpenGVLab/InternVL3-8B-Instruct"
-        revision = hf_repo_lock.revision_for_hf_repo(hf_repo_id)
+        revision = hf_repo_lock.revision_for_hf_repo(self.hf_repo_id)
         tokenizer = transformers.AutoTokenizer.from_pretrained(
-            hf_repo_id,
+            self.hf_repo_id,
             revision=revision,
             trust_remote_code=True,
             use_fast=False,
         )
         config = transformers.AutoConfig.from_pretrained(
-            hf_repo_id, revision=revision, trust_remote_code=True
+            self.hf_repo_id, revision=revision, trust_remote_code=True
         )
         model = transformers.AutoModel.from_pretrained(
-            hf_repo_id,
+            self.hf_repo_id,
             revision=revision,
             config=config,
             device_map=device,
@@ -724,7 +731,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["bfloat16"]},
         auto_model_cls=transformers.AutoModelForImageTextToText,
     ),
-    "internvl": InternVLPipelineOracle(),
+    "internvl3-1b-instruct": InternVLPipelineOracle(
+        "OpenGVLab/InternVL3-1B-Instruct"
+    ),
+    "internvl3-8b-instruct": InternVLPipelineOracle(
+        "OpenGVLab/InternVL3-8B-Instruct"
+    ),
     "llama3-vision": LlamaVisionPipelineOracle(),
     "pixtral": PixtralPipelineOracle(),
     "qwen": GenericOracle(

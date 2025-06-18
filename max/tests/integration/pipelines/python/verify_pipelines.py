@@ -762,13 +762,25 @@ PIPELINES = {
             kl_div_threshold=5.4e-3,
         ),
     ),
+    "OpenGVLab/InternVL3-1B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        # TODO(KERN-1861): MI300x: Memory access fault by GPU node-2.
+        tags=["nvidia-only"],
+        run=_make_pipeline_runner(
+            pipeline="internvl3-1b-instruct",
+            encoding="bfloat16",
+            # TODO(MODELS-565): Fix InternVL correctness.
+            cos_dist_threshold=float("inf"),
+            kl_div_threshold=float("inf"),
+        ),
+    ),
     "OpenGVLab/InternVL3-8B-Instruct-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["h100-multi"],
         run=_make_pipeline_runner(
-            pipeline="internvl",
+            pipeline="internvl3-8b-instruct",
             encoding="bfloat16",
-            # TODO(MODELS-565): Implement InternVL.
+            # TODO(MODELS-565): Fix InternVL correctness.
             cos_dist_threshold=float("inf"),
             kl_div_threshold=float("inf"),
         ),
