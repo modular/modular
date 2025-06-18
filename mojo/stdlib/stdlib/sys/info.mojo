@@ -142,28 +142,6 @@ fn _current_arch() -> StaticString:
 
 
 @always_inline("nodebug")
-@deprecated("Use `CompilationTarget.is_x86()` instead.")
-fn is_x86() -> Bool:
-    """Returns True if the host system architecture is X86 and False otherwise.
-
-    Returns:
-        True if the host system architecture is X86 and False otherwise.
-    """
-    return CompilationTarget.has_sse4()
-
-
-@always_inline("nodebug")
-@deprecated("Use `CompilationTarget.has_sse4()` instead.")
-fn has_sse4() -> Bool:
-    """Returns True if the host system has sse4, otherwise returns False.
-
-    Returns:
-        True if the host system has sse4, otherwise returns False.
-    """
-    return CompilationTarget.has_sse4()
-
-
-@always_inline("nodebug")
 @deprecated("Use `CompilationTarget.has_avx()` instead.")
 fn has_avx() -> Bool:
     """Returns True if the host system has AVX, otherwise returns False.

@@ -53,6 +53,11 @@ what we publish.
 
 ### ❌ Removed
 
+- Various functions from the `sys.info` have been removed.  Use the appropriate method
+  on `CompilationTarget` from `sys.info` instead.
+  - `is_x86()`
+  - `has_sse4()`
+
 ### 🛠️ Fixed
 
 - [#4820](https://github.com/modular/modular/issues/4820) - `math.exp2` picks
