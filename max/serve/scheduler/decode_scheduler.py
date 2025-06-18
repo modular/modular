@@ -225,6 +225,7 @@ class DecodeScheduler(Scheduler):
             try:
                 # Pop off request queue
                 request_id, request_context = self.pull_from_request_socket()
+                logger.info("request received from api worker.")
 
                 # If we pop off a request successfully.
                 # Grab new cache index, claim the slot with the paged manager
@@ -257,8 +258,9 @@ class DecodeScheduler(Scheduler):
                 # If successful, mark as reserved and send to prefill socket.
                 self.reserved_cache_indices[request_id] = cache_seq_id
 
-                # TODO E2EOPT-219 - Eagerly reserve memory prior to sending to prefill.
-                dst_idx = [0]
+                dst_idx = self.paged_manager.block_manager.get_req_blocks(
+                    cache_seq_id
+                )
 
                 # Send to the Prefill Node
                 self.send_prefill_request(request_id, request_context, dst_idx)
@@ -282,6 +284,12 @@ class DecodeScheduler(Scheduler):
                 # Retrieve new item from the decode queue.
                 # We can assume that everything in the decode queue, already has cache space.
                 prefill_response = self.get_decode_request()
+
+                # Check that the transfer is complete, this will wait.
+                logger.info("waiting for transfer to complete.")
+                self.transfer_engine.recv_xfer_sync(
+                    prefill_response.transfer_metadata
+                )
 
                 # Assume that we've already claimed this memory in our cache.
                 # However, this seq id, may have been updated by the prefill worker.

@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from typing import Union
 
 import msgspec
+from max.nn.kv_cache import XferReqData
 from max.pipelines.core import TextAndVisionContext, TextContext
 
 
@@ -91,3 +92,4 @@ class PrefillResponse(
 
     id: str
     context: Union[TextContext, TextAndVisionContext]
+    transfer_metadata: XferReqData

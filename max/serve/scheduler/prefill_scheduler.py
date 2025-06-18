@@ -18,10 +18,12 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 import zmq
+from max._core import nixl
 from max.nn.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
+    XferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext, TokenGenerator
 from max.pipelines.lib.pipeline import get_paged_manager
@@ -68,9 +70,12 @@ class PrefillScheduler(Scheduler):
         self.paged_manager = paged_manager
 
         # Initialize Scheduler state.
-        self.pending_transfers: dict[str, tuple[str, list[int]]] = {}
         self.active_batch: dict[
             str, Union[TextAndVisionContext, TextContext]
+        ] = {}
+        self.pending_transfers: dict[str, PrefillRequest] = {}
+        self.active_transfers: dict[
+            str, tuple[Union[TextAndVisionContext, TextContext], XferReqData]
         ] = {}
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_ce)
@@ -118,7 +123,10 @@ class PrefillScheduler(Scheduler):
         self.request_id_to_reply_context[message.id] = reply_context
 
     def send_prefill_complete_response(
-        self, request_id: str, data: Union[TextAndVisionContext, TextContext]
+        self,
+        request_id: str,
+        data: Union[TextAndVisionContext, TextContext],
+        xfer_data: XferReqData,
     ) -> None:
         if request_id not in self.request_id_to_reply_context:
             logger.error(
@@ -129,7 +137,9 @@ class PrefillScheduler(Scheduler):
 
         self.dispatcher_client.send_reply(
             MessageType.PREFILL_RESPONSE,
-            PrefillResponse(id=request_id, context=data),
+            PrefillResponse(
+                id=request_id, context=data, transfer_metadata=xfer_data
+            ),
             reply_context,
         )
 
@@ -163,6 +173,26 @@ class PrefillScheduler(Scheduler):
         self.pipeline.release(prefill_request.context)
         prefill_request.context.reset()
         self.preempted_prefill.put(prefill_request)
+
+    def cleanup_active_transfers(self) -> None:
+        """Cleans up completed transfers from the active transfers dictionary.
+
+        Checks the status of all active transfers. For any transfer that is no longer in progress:
+        - Returns the cache index back to the available pool
+        - Releases pipeline resources
+        - Removes the transfer from active_transfers
+        """
+        to_be_deleted = []
+        for req_id, (context, transfer) in self.active_transfers.items():
+            status = self.transfer_engine.get_transfer_status(transfer)
+
+            if status != nixl.Status.IN_PROG:
+                self.available_cache_indices.add(context.cache_seq_id)
+                self.pipeline.release(context)
+                to_be_deleted.append(req_id)
+
+        for id in to_be_deleted:
+            del self.active_transfers[id]
 
     def update_batch(self) -> None:
         """Updates the active batch by pulling requests from the prefill queue.
@@ -216,45 +246,7 @@ class PrefillScheduler(Scheduler):
 
             batch_token_length += prefill_request.context.active_length
             self.active_batch[prefill_request.id] = prefill_request.context
-            self.pending_transfers[prefill_request.id] = (
-                prefill_request.transfer_engine_name,
-                prefill_request.block_ids,
-            )
-
-    def _handle_chunked_requests(
-        self,
-    ) -> None:
-        """Handles chunked requests by either sending them back to the preempted queue or to decode.
-
-        For the last request in the active batch:
-        - If it was chunked (active_idx - start_idx > 1), sends it back to preempted queue
-        - If not chunked, resets indices and sends to decode socket
-        """
-
-        # Always pop the last item.
-        # If its chunked, we should response the associated item from the responses dict.
-        # If not, we simple add it back into the dictionary.
-        # Both popitem, and putting the same value in a dictionary are O(1)
-        # Which should be faster than creating a list to retrieve the last dictionary item
-        # and then conditionally popping which is O(n).
-        last_request_id, last_request = self.active_batch.popitem()
-        remote_name, dst_idx = self.pending_transfers.pop(last_request_id)
-
-        # Check if its chunked.
-        if last_request.active_idx - last_request.start_idx > 1:
-            # If its chunked, add it back to the start of the request queue.
-            self.preempted_prefill.put(
-                PrefillRequest(
-                    id=last_request_id,
-                    context=last_request,
-                    transfer_engine_name=remote_name,
-                    block_ids=dst_idx,
-                )
-            )
-        else:
-            # Send to decode if not chunked
-            last_request.bump_token_indices(start_idx=-last_request.start_idx)
-            self.send_prefill_complete_response(last_request_id, last_request)
+            self.pending_transfers[prefill_request.id] = prefill_request
 
     def schedule(self) -> None:
         """Executes the current batch of requests and sends completed requests to decode.
@@ -265,17 +257,41 @@ class PrefillScheduler(Scheduler):
         # Execute the Batch
         _ = self.pipeline.next_token(self.active_batch, num_steps=1)
 
-        if self.scheduler_config.enable_chunked_prefill:
-            self._handle_chunked_requests()
-
         # Send completed requests to decode queue.
+        # TODO: E2EOPT-275 Handle chunked requests.
         while self.active_batch:
             req_id, input_context = self.active_batch.popitem()
-            # Reset this - This is a workaround until we successfully transfer the KV Cache.
-            input_context.bump_token_indices(start_idx=-input_context.start_idx)
-            # TODO: E2EOPT-231
+            logger.info("received request from decode node.")
+
+            # Get Remote Metadata.
+            prefill_request = self.pending_transfers.pop(req_id)
+            remote_metadata = self.transfer_engine.remote_connections[
+                prefill_request.transfer_engine_name
+            ]
+
+            # Retrieve source block ids.
+            src_idx = self.paged_manager.block_manager.get_req_blocks(
+                prefill_request.context.cache_seq_id,
+            )
+
+            # Bump this back, so the token is returned.
             input_context._completion_start_idx -= 1
-            self.send_prefill_complete_response(req_id, input_context)
+
+            logger.info("initiating transfer from prefill worker.")
+            xfer_data = self.transfer_engine.initiate_send_xfer(
+                remote_metadata,
+                src_idx,
+                prefill_request.block_ids,
+            )
+            self.active_transfers[prefill_request.id] = (
+                prefill_request.context,
+                xfer_data,
+            )
+
+            logger.info("returning response to decode node")
+            self.send_prefill_complete_response(
+                req_id, input_context, xfer_data
+            )
 
     def run(self) -> None:
         """Main scheduling loop that processes prefill requests.
@@ -292,6 +308,9 @@ class PrefillScheduler(Scheduler):
 
             # Try and receive any request from the prefill node.
             try:
+                # Cleanup active transfers.
+                self.cleanup_active_transfers()
+
                 # Create a new batch
                 self.update_batch()
 

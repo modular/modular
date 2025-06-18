@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from dataclasses import dataclass
 from uuid import uuid4
 
 import msgspec
@@ -51,8 +50,7 @@ class KVTransferEngineMetadata(
     memory_type: nixl.MemoryType
 
 
-@dataclass
-class XferReqData:
+class XferReqData(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     """Metadata associated with a transfer request.
 
     This is safe to send between threads/processes."""
@@ -389,6 +387,9 @@ class KVTransferEngine:
                 raise ValueError(
                     f"Transfer request failed with status {status}"
                 )
+
+    def get_transfer_status(self, xfer_req_data: XferReqData) -> nixl.Status:
+        return self.agent.get_transfer_status(xfer_req_data.xfer_id)
 
     def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
         """Wait for a transfer initiated by remote engine to complete."""
