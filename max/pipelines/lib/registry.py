@@ -379,6 +379,75 @@ class PipelineRegistry:
         )
         return pipeline_config
 
+    def retrieve_tokenizer(
+        self,
+        pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
+    ) -> PipelineTokenizer:
+        """Retrieves a tokenizer for the given pipeline configuration.
+
+        Args:
+            pipeline_config: Configuration for the pipeline
+            override_architecture: Optional architecture override string
+
+        Returns:
+            PipelineTokenizer: The configured tokenizer
+
+        Raises:
+            ValueError: If no architecture is found or if engine is not MAX
+        """
+        if pipeline_config.engine == PipelineEngine.MAX:
+            # MAX pipeline
+            arch: SupportedArchitecture | None = None
+            if override_architecture:
+                arch = self.architectures[override_architecture]
+            else:
+                arch = self.retrieve_architecture(
+                    huggingface_repo=pipeline_config.model_config.huggingface_model_repo
+                )
+
+            if arch is None:
+                raise ValueError(
+                    f"No architecture found for {pipeline_config.model_config.huggingface_model_repo.repo_id}"
+                )
+
+            # Calculate Max Length
+            huggingface_config = pipeline_config.model_config.huggingface_config
+            max_length = arch.pipeline_model.calculate_max_seq_len(
+                pipeline_config, huggingface_config=huggingface_config
+            )
+
+            tokenizer: PipelineTokenizer
+            if (
+                arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
+                and arch.tokenizer is TextTokenizer
+            ):
+                text_tokenizer = cast(type[TextTokenizer], arch.tokenizer)
+                tokenizer = text_tokenizer(
+                    pipeline_config.model_config.model_path,
+                    revision=pipeline_config.model_config.huggingface_model_revision,
+                    max_length=max_length,
+                    max_new_tokens=pipeline_config.max_new_tokens,
+                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                    enable_llama_whitespace_fix=True,
+                )
+            else:
+                tokenizer = arch.tokenizer(
+                    model_path=pipeline_config.model_config.model_path,
+                    revision=pipeline_config.model_config.huggingface_model_revision,
+                    max_length=max_length,
+                    max_new_tokens=pipeline_config.max_new_tokens,
+                    trust_remote_code=pipeline_config.model_config.trust_remote_code,
+                    pipeline_config=pipeline_config,
+                )
+
+            return tokenizer
+
+        else:
+            raise ValueError(
+                "PipelineTokenizer's can only be retrieved for MAX Models"
+            )
+
     def retrieve_factory(
         self,
         pipeline_config: PipelineConfig,
