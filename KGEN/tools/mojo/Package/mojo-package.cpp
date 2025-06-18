@@ -221,6 +221,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   // "input-directory-name.mojopkg".
   std::string inputDirName =
       std::filesystem::path(pkgArgs.inputPath).filename().string();
+
   if (args.hasArg(options::OPT_o)) {
     pkgArgs.outputPath = args.getLastArgValue(options::OPT_o);
     if (pkgArgs.outputPath == "-") {
@@ -252,6 +253,11 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   } else {
     pkgArgs.outputPath = inputDirName + extension;
     pkgArgs.name = inputDirName;
+    // If the input dir is `.` for current directory, get the directory name.
+    if (inputDirName == ".") {
+      pkgArgs.name = std::filesystem::current_path().filename().string();
+      pkgArgs.outputPath = pkgArgs.name + extension;
+    }
   }
 
   // Set up the compilation options now, so we can use them as a single source
