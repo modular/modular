@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
@@ -30,22 +29,19 @@ def test_op_with_int_parameter_passed_as_string(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_int_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"IntParameter": "Not an int!"},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "failed to convert custom op 'op_with_int_parameter' attribute 'IntParameter' with value '\"Not an int!\"' to the proper Mojo parameter type: expected an integer type"
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="""failed to convert custom op 'op_with_int_parameter' attribute 'IntParameter' with value '"Not an int!"' to the proper Mojo parameter type: expected an integer type""",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_int_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"IntParameter": "Not an int!"},
+                )[0]
+            )
 
 
 def test_op_with_int_parameter_passed_as_dtype(
@@ -59,22 +55,19 @@ def test_op_with_int_parameter_passed_as_dtype(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_int_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"IntParameter": DType.int32},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "failed to convert custom op 'op_with_int_parameter' attribute 'IntParameter' with value 'si32' to the proper Mojo parameter type: expected an integer type"
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="failed to convert custom op 'op_with_int_parameter' attribute 'IntParameter' with value 'si32' to the proper Mojo parameter type: expected an integer type",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_int_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"IntParameter": DType.int32},
+                )[0]
+            )
 
 
 def test_op_with_dtype_parameter_passed_as_string(
@@ -88,22 +81,19 @@ def test_op_with_dtype_parameter_passed_as_string(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_dtype_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"DTypeParameter": "Not a dtype!"},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "failed to convert custom op 'op_with_dtype_parameter' attribute 'DTypeParameter' with value '\"Not a dtype!\"' to the proper Mojo parameter type: expected a DType"
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="failed to convert custom op 'op_with_dtype_parameter' attribute 'DTypeParameter' with value '\"Not a dtype!\"' to the proper Mojo parameter type: expected a DType",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_dtype_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"DTypeParameter": "Not a dtype!"},
+                )[0]
+            )
 
 
 def test_op_with_dtype_parameter_passed_as_int(
@@ -117,22 +107,19 @@ def test_op_with_dtype_parameter_passed_as_int(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_dtype_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"DTypeParameter": 42},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "failed to convert custom op 'op_with_dtype_parameter' attribute 'DTypeParameter' with value '42 : index' to the proper Mojo parameter type: expected a DType"
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="failed to convert custom op 'op_with_dtype_parameter' attribute 'DTypeParameter' with value '42 : index' to the proper Mojo parameter type: expected a DType",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_dtype_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"DTypeParameter": 42},
+                )[0]
+            )
 
 
 def test_op_with_string_parameter_passed_as_int(
@@ -146,22 +133,19 @@ def test_op_with_string_parameter_passed_as_int(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_string_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": 42},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op."
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_string_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": 42},
+                )[0]
+            )
 
 
 def test_op_with_string_parameter_passed_as_dtype(
@@ -175,22 +159,19 @@ def test_op_with_string_parameter_passed_as_dtype(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_string_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": DType.int32},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op."
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_string_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": DType.int32},
+                )[0]
+            )
 
 
 def test_op_with_string_parameter_passed_as_string_literal(
@@ -204,22 +185,19 @@ def test_op_with_string_parameter_passed_as_string_literal(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_string_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": "String literal"},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op."
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="in custom op 'op_with_string_parameter' attribute 'StringParameter' uses type String. Use type StaticString instead to define a string parameter for a custom op.",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_string_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": "String literal"},
+                )[0]
+            )
 
 
 def test_op_with_string_slice_parameter_passed_as_int(
@@ -233,22 +211,19 @@ def test_op_with_string_slice_parameter_passed_as_int(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_string_slice_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": 42},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op."
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_string_slice_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": 42},
+                )[0]
+            )
 
 
 def test_op_with_string_slice_parameter_passed_as_dtype(
@@ -262,22 +237,19 @@ def test_op_with_string_slice_parameter_passed_as_dtype(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_string_slice_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": DType.int32},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op."
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_string_slice_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": DType.int32},
+                )[0]
+            )
 
 
 def test_op_with_string_slice_parameter_passed_as_string_literal(
@@ -291,22 +263,19 @@ def test_op_with_string_slice_parameter_passed_as_string_literal(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_string_slice_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": "String literal"},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op."
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="in custom op 'op_with_string_slice_parameter' attribute 'StringParameter' uses type StringSlice. Use type StaticString instead to define a string parameter for a custom op.",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_string_slice_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": "String literal"},
+                )[0]
+            )
 
 
 def test_op_with_static_string_parameter_passed_as_int(
@@ -320,22 +289,19 @@ def test_op_with_static_string_parameter_passed_as_int(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_static_string_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": 42},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "failed to convert custom op 'op_with_static_string_parameter' attribute 'StringParameter' with value '42 : index' to the proper Mojo parameter type: expected string type"
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="failed to convert custom op 'op_with_static_string_parameter' attribute 'StringParameter' with value '42 : index' to the proper Mojo parameter type: expected string type",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_static_string_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": 42},
+                )[0]
+            )
 
 
 def test_op_with_static_string_parameter_passed_as_dtype(
@@ -349,19 +315,16 @@ def test_op_with_static_string_parameter_passed_as_dtype(
         custom_extensions=[kernel_verification_ops_path],
     )
     with graph:
-        graph.output(
-            ops.custom(
-                "op_with_static_string_parameter",
-                device=DeviceRef.CPU(),
-                values=[graph.inputs[0]],
-                out_types=[tensor_type],
-                parameters={"StringParameter": DType.int32},
-            )[0]
-        )
-
-        with pytest.raises(ValueError) as err:
-            InferenceSession().load(graph)
-        assert (
-            "failed to convert custom op 'op_with_static_string_parameter' attribute 'StringParameter' with value 'si32' to the proper Mojo parameter type: expected string type"
-            in str(err.value)
-        )
+        with pytest.raises(
+            ValueError,
+            match="failed to convert custom op 'op_with_static_string_parameter' attribute 'StringParameter' with value 'si32' to the proper Mojo parameter type: expected string type",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_static_string_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"StringParameter": DType.int32},
+                )[0]
+            )
