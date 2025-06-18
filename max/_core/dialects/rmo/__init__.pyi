@@ -5373,6 +5373,85 @@ class AndOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
+class AvgPoolOp(max._core.Operation):
+    """
+    Computes average pooling with the given filter shape, strides, and dilations.
+
+    For now the op only supports 2d average pooling (so input must be
+    4D), with the following layout assumption:
+    - input has layout NHWC, i.e., (batch_size, height, width, in_channels)
+
+    All hyperparameters (i.e. strides, dilations, padding) must be of rank 1, or
+    unranked. If the input has static rank, all hyperparameters with static
+    shape must have sizes of `input_rank - 2`, except padding, which must have size
+    `2 * (input_rank - 2)`. Individual elements in the hyperparameters applies to
+    corresponding dimensions of the input (after ignoring the batch and channel dimensions),
+    with padding representing a before/after pair for each axis. The padding values
+    are expected to take the form (pad_dim1_before, pad_dim1_after, pad_dim2_before,
+    pad_dim2_after...). In 2D Convolution, dim1 here represents H and dim2 represents W.
+
+    Example:
+
+    ```mlir
+    %res = rmo.avg_pool(%input) {
+      filter_shape = #mosh<ape<2, 3>> : !mosh.ape
+      strides = #mosh<ape<2, 3>> : !mosh.ape
+      dilations = #mosh<ape<1, 1>> : !mosh.ape
+      paddings = #mosh<ape<0, 0, 0, 0>> : !mosh.ape
+      ceil_mode = false
+      count_boundary = true
+    } : (
+      !mo.tensor<[1, 6, 15, 1], f32>,
+    ) -> !mo.tensor<[1, 3, 5, 1], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        filter_shape: max._core.dialects.mosh.ShapeAttr,
+        strides: max._core.dialects.mosh.ShapeAttr,
+        dilations: max._core.dialects.mosh.ShapeAttr,
+        paddings: max._core.dialects.mosh.ShapeAttr,
+        ceil_mode: max._core.dialects.builtin.BoolAttr,
+        count_boundary: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def filter_shape(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @filter_shape.setter
+    def filter_shape(
+        self, arg: max._core.dialects.mosh.ShapeAttr, /
+    ) -> None: ...
+    @property
+    def strides(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @strides.setter
+    def strides(self, arg: max._core.dialects.mosh.ShapeAttr, /) -> None: ...
+    @property
+    def dilations(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @dilations.setter
+    def dilations(self, arg: max._core.dialects.mosh.ShapeAttr, /) -> None: ...
+    @property
+    def paddings(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @paddings.setter
+    def paddings(self, arg: max._core.dialects.mosh.ShapeAttr, /) -> None: ...
+    @property
+    def ceil_mode(self) -> bool: ...
+    @ceil_mode.setter
+    def ceil_mode(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def count_boundary(self) -> bool: ...
+    @count_boundary.setter
+    def count_boundary(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+
 class BroadcastLikeOp(max._core.Operation):
     """
     Equivalent to the following:
@@ -5856,6 +5935,77 @@ class MaxOp(max._core.Operation):
     @output_param_decls.setter
     def output_param_decls(
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class MaxPoolOp(max._core.Operation):
+    """
+    Computes max pooling with the given filter shape, strides, and dilations.
+
+    For now the op only supports 2d max pooling (so input must be
+    4D), with the following layout assumption:
+    - input has layout NHWC, i.e., (batch_size, height, width, in_channels)
+
+    All hyperparameters (i.e. strides, dilations, padding) must be of rank 1, or
+    unranked. If the input has static rank, all hyperparameters with static
+    shape must have sizes of `input_rank - 2`, except padding, which must have size
+    `2 * (input_rank - 2)`. Individual elements in the hyperparameters applies to
+    corresponding dimensions of the input (after ignoring the batch and channel dimensions),
+    with padding representing a before/after pair for each axis. The padding values
+    are expected to take the form (pad_dim1_before, pad_dim1_after, pad_dim2_before,
+    pad_dim2_after...). In 2D Convolution, dim1 here represents H and dim2 represents W.
+
+    Example:
+
+    ```mlir
+    %res = rmo.max_pool(%input) {
+      filter_shape = #mosh<ape<2, 3>> : !mosh.ape
+      strides = #mosh<ape<2, 3>> : !mosh.ape
+      dilations = #mosh<ape<1, 1>> : !mosh.ape
+      paddings = #mosh<ape<0, 0, 0, 0>> : !mosh.ape
+      ceil_mode = false
+    } : (
+      !mo.tensor<[1, 6, 15, 1], f32>,
+    ) -> !mo.tensor<[1, 3, 5, 1], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: max._core.dialects.mo.TensorType,
+        input: max._core.Value[max._core.dialects.mo.TensorType],
+        filter_shape: max._core.dialects.mosh.ShapeAttr,
+        strides: max._core.dialects.mosh.ShapeAttr,
+        dilations: max._core.dialects.mosh.ShapeAttr,
+        paddings: max._core.dialects.mosh.ShapeAttr,
+        ceil_mode: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[max._core.dialects.mo.TensorType]: ...
+    @property
+    def filter_shape(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @filter_shape.setter
+    def filter_shape(
+        self, arg: max._core.dialects.mosh.ShapeAttr, /
+    ) -> None: ...
+    @property
+    def strides(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @strides.setter
+    def strides(self, arg: max._core.dialects.mosh.ShapeAttr, /) -> None: ...
+    @property
+    def dilations(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @dilations.setter
+    def dilations(self, arg: max._core.dialects.mosh.ShapeAttr, /) -> None: ...
+    @property
+    def paddings(self) -> max._core.dialects.mosh.ShapeAttr: ...
+    @paddings.setter
+    def paddings(self, arg: max._core.dialects.mosh.ShapeAttr, /) -> None: ...
+    @property
+    def ceil_mode(self) -> bool: ...
+    @ceil_mode.setter
+    def ceil_mode(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class MinOp(max._core.Operation):
