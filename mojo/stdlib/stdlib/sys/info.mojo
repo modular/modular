@@ -73,6 +73,33 @@ struct CompilationTarget[value: _TargetType = _current_target()]:
         """
         return Self._has_feature["sse4"]()
 
+    @staticmethod
+    fn has_avx() -> Bool:
+        """Returns True if the host system has AVX, otherwise returns False.
+
+        Returns:
+            True if the host system has AVX, otherwise returns False.
+        """
+        return Self._has_feature["avx"]()
+
+    @staticmethod
+    fn has_avx2() -> Bool:
+        """Returns True if the host system has AVX2, otherwise returns False.
+
+        Returns:
+            True if the host system has AVX2, otherwise returns False.
+        """
+        return Self._has_feature["avx2"]()
+
+    @staticmethod
+    fn has_avx512f() -> Bool:
+        """Returns True if the host system has AVX512, otherwise returns False.
+
+        Returns:
+            True if the host system has AVX512, otherwise returns False.
+        """
+        return Self._has_feature["avx512f"]()
+
     # Platforms
 
     @staticmethod
@@ -137,6 +164,7 @@ fn has_sse4() -> Bool:
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_avx()` instead.")
 fn has_avx() -> Bool:
     """Returns True if the host system has AVX, otherwise returns False.
 
@@ -152,6 +180,7 @@ fn has_avx() -> Bool:
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_avx2()` instead.")
 fn has_avx2() -> Bool:
     """Returns True if the host system has AVX2, otherwise returns False.
 
@@ -167,6 +196,7 @@ fn has_avx2() -> Bool:
 
 
 @always_inline("nodebug")
+@deprecated("Use `CompilationTarget.has_avx512f()` instead.")
 fn has_avx512f() -> Bool:
     """Returns True if the host system has AVX512, otherwise returns False.
 

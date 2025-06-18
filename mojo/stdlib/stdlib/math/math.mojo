@@ -20,8 +20,8 @@ from math import floor
 """
 
 from sys import (
+    CompilationTarget,
     bitwidthof,
-    has_avx512f,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
@@ -496,7 +496,11 @@ fn _ldexp_impl[
     alias hardware_width = simdwidthof[dtype]()
 
     @parameter
-    if has_avx512f() and dtype is DType.float32 and width >= hardware_width:
+    if (
+        CompilationTarget.has_avx512f()
+        and dtype is DType.float32
+        and width >= hardware_width
+    ):
         var res: SIMD[dtype, width] = 0
         var zero: SIMD[dtype, hardware_width] = 0
 

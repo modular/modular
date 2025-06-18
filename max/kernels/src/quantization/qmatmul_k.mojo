@@ -15,7 +15,6 @@ from math import ceildiv
 from sys import (
     CompilationTarget,
     alignof,
-    has_avx512f,
     has_neon,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,

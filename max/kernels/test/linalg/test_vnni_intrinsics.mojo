@@ -17,7 +17,7 @@
 # REQUIRES: avx2
 # RUN: %mojo-no-debug %s
 
-from sys.info import has_avx512f
+from sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from linalg.vnni_intrinsics import (
@@ -64,7 +64,7 @@ def test_i8_to_i32():
     var bv16 = b.data.offset(0).bitcast[Int32]().load[width=16]()
     var cv16u: SIMD[DType.int32, 16] = 0
     var cv16s: SIMD[DType.int32, 16] = 0
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
         cv16u = dot_i8_to_i32_AVX2[16](c.data.load[width=16](), av16u, bv16)
         cv16s = dot_i8_to_i32_saturated_AVX2[16](
             c.data.load[width=16](), av16s, bv16
@@ -207,7 +207,7 @@ def test_i16_to_i32():
         assert_equal(c_golden, c_x86)
 
     @parameter
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
         test_simd_width[16]()
 
     test_simd_width[8]()

@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, align_up, ceildiv, exp
-from sys import alignof, has_avx512f, has_neon, simdwidthof
+from sys import alignof, has_neon, simdwidthof
+from sys.info import CompilationTarget
 
 from algorithm import sync_parallelize, tile, vectorize
 from algorithm.reduction import (
@@ -66,7 +67,7 @@ struct _MatmulConfig:
                 gemv_sizes=VariadicList[Int](32, 4, 1),
                 pack_sizes=VariadicList[Int](32, 8, 4, 1),
             )
-        elif has_avx512f():
+        elif CompilationTarget.has_avx512f():
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),

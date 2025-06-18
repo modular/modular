@@ -15,8 +15,7 @@ from math import align_down, align_up, ceildiv
 from sys import alignof
 from sys._build import is_debug_build
 from sys.info import (
-    has_avx2,
-    has_avx512f,
+    CompilationTarget,
     has_neon,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
@@ -260,7 +259,7 @@ fn _get_tile_n_k[
 #   kernel_rows*kernel_cols + 1*kernel_cols + 1
 fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
     @parameter
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
 
         @parameter
         if kernel_type:
@@ -536,7 +535,7 @@ fn get_pack_data_size[type: DType]() -> Int:
         return 64 * KB // sizeof[type]()
 
     @parameter
-    if has_neon() or has_avx512f():
+    if has_neon() or CompilationTarget.has_avx512f():
         # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
         # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
         # return half the cache size as 4 byte elements
@@ -579,7 +578,7 @@ fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
             (a_type is DType.int8 and b_type is DType.int8)
             or (a_type is DType.uint8 and b_type is DType.uint8)
         ) and c_type is DType.int32
-    elif has_avx2():
+    elif CompilationTarget.has_avx2():
         return (
             a_type is DType.uint8
             and b_type is DType.int8
@@ -608,7 +607,7 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
 @always_inline
 fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
     @parameter
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
         return m > 0 and m <= 32
     elif has_neon():
 

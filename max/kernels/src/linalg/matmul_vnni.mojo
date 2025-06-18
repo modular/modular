@@ -13,7 +13,7 @@
 
 from math import align_down
 from sys import prefetch
-from sys.info import alignof, has_avx512f, has_neon_int8_dotprod
+from sys.info import CompilationTarget, alignof, has_neon_int8_dotprod
 from sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import NDBuffer, partial_simd_load
@@ -105,19 +105,21 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         var a_base_ptr = a.data.offset(global_offset.M * K + global_k)
         var a_ptr = a_local.data if (
             is_tail
-            and not has_avx512f()
+            and not CompilationTarget.has_avx512f()
             # This origin cast is not ideal since we give up
             # exclusivity checking, but it is safe in the sense that
             # `a` will be guaranteed to remain alive because
             # it is an argument to the function.
         ) else a_base_ptr.origin_cast[True, MutableAnyOrigin]()
-        var a_ptr_stride = 4 if (is_tail and not has_avx512f()) else K
+        var a_ptr_stride = 4 if (
+            is_tail and not CompilationTarget.has_avx512f()
+        ) else K
 
         var tail_length = tile_n_k[1] - kl
 
         # pack A if (tile_n_k_idx[1] - kl) is 1, 2, or 3
         @parameter
-        if is_tail and not has_avx512f():
+        if is_tail and not CompilationTarget.has_avx512f():
             for idx0 in range(kernel_rows):
                 for idx_k in range(tail_length):
                     a_local[4 * idx0 + idx_k] = a_base_ptr[idx0 * K + idx_k]
@@ -134,7 +136,9 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                         partial_simd_load[4](
                             a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
                         )
-                    ) if (is_tail and has_avx512f()) else a_ptr.offset(
+                    ) if (
+                        is_tail and CompilationTarget.has_avx512f()
+                    ) else a_ptr.offset(
                         idx0 * a_ptr_stride
                     )
                     .bitcast[Scalar[c_type]]()

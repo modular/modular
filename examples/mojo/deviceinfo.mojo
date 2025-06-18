@@ -15,9 +15,6 @@
 from collections.string import StaticString
 from sys import (
     CompilationTarget,
-    has_avx,
-    has_avx2,
-    has_avx512f,
     has_intel_amx,
     has_neon,
     has_vnni,
@@ -49,14 +46,14 @@ def main():
     var cpu_features = String()
     if CompilationTarget.has_sse4():
         cpu_features += " sse4"
-    if has_avx():
+    if CompilationTarget.has_avx():
         cpu_features += " avx"
-    if has_avx2():
+    if CompilationTarget.has_avx2():
         cpu_features += " avx2"
-    if has_avx512f():
+    if CompilationTarget.has_avx512f():
         cpu_features += " avx512f"
     if has_vnni():
-        if has_avx512f():
+        if CompilationTarget.has_avx512f():
             cpu_features += " avx512_vnni"
         else:
             cpu_features += " avx_vnni"

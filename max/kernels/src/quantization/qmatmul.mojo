@@ -13,8 +13,8 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import (
+    CompilationTarget,
     alignof,
-    has_avx2,
     has_neon,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
@@ -337,7 +337,7 @@ fn _scale_and_accumulate[
             # product was calculated in process_group_packed.
             # Now complete the 4-wide 8-bit to 32-bit dot product.
             @parameter
-            if has_avx2() and not has_vnni():
+            if CompilationTarget.has_avx2() and not has_vnni():
                 dot = pmaddw(
                     dot,
                     bitcast[DType.int32, simd_width](
@@ -1263,7 +1263,7 @@ fn matmul_qint4[
     @parameter
     if has_vnni():
         kernel_dispatch[_MatmulQInt4Kernel_x86_vnni]()
-    elif has_avx2():
+    elif CompilationTarget.has_avx2():
         kernel_dispatch[_MatmulQInt4Kernel_x86_avx]()
     elif has_neon_int8_matmul() and not is_apple_silicon():
         kernel_dispatch[_MatmulQInt4Kernel_neon_i8mm]()

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.info import has_avx512f, has_neon, simdwidthof
+from sys.info import CompilationTarget, has_neon, simdwidthof
 from sys.intrinsics import llvm_intrinsic
 
 
@@ -24,7 +24,11 @@ fn roundeven_to_int32[
     # set to do rounding to nearest with ties to even (roundeven). This
     # replaces a `vrndscaleps` and `vcvttps2dq` instruction pair.
     @parameter
-    if has_avx512f() and type is DType.float32 and simd_width >= native_width:
+    if (
+        CompilationTarget.has_avx512f()
+        and type is DType.float32
+        and simd_width >= native_width
+    ):
         var x_i32 = SIMD[DType.int32, simd_width]()
 
         @parameter
