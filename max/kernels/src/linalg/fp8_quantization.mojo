@@ -23,6 +23,7 @@ from algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
+import gpu.block
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
@@ -151,46 +152,6 @@ fn quantize_dynamic_scaled_fp8[
     )
 
 
-@always_inline
-fn block_reduce[
-    type: DType, //, warps_per_block: Int
-](val: Scalar[type]) -> Scalar[type]:
-    var max_smem = stack_allocation[
-        warps_per_block, type, address_space = AddressSpace.SHARED
-    ]()
-    var max_broadcast = stack_allocation[
-        1, type, address_space = AddressSpace.SHARED
-    ]()
-
-    var tid = thread_idx.x
-    var warp_id = warp_id()
-    var lane_idx = lane_id()
-
-    var warp_max = warp.max(val)
-
-    if tid < warps_per_block:
-        max_smem[tid] = 0
-    barrier()
-
-    if lane_idx == 0:
-        max_smem[warp_id] = warp_max
-    barrier()
-
-    if warp_id == 0:
-        var warp_max: Scalar[type]
-        if lane_idx < warps_per_block:
-            warp_max = max_smem[lane_idx]
-        else:
-            warp_max = 0
-        # the shuffle function only support shuffle a whole warp
-        var block_max = warp.lane_group_max[num_lanes=WARP_SIZE](warp_max)
-        if lane_idx == 0:
-            max_broadcast[0] = block_max
-    barrier()
-
-    return max_broadcast[0]
-
-
 fn quantize_fp8_kernel[
     out_type: DType,
     scales_type: DType,
@@ -225,7 +186,9 @@ fn quantize_fp8_kernel[
 
         @parameter
         if warps_per_block > 1:
-            group_max = block_reduce[warps_per_block](thread_max)
+            group_max = block.max[block_size=num_threads, broadcast=True](
+                thread_max
+            )
         else:
             group_max = warp.lane_group_max_and_broadcast[WARP_SIZE](thread_max)
 
