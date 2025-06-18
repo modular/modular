@@ -76,35 +76,19 @@ fn llvm_intrinsic[
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
+        __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=None,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
+        return rebind[type](None)
 
-        @parameter
-        if has_side_effect:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-            ](loaded_pack)
-            return rebind[type](None)
-        else:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
-            return rebind[type](None)
     else:
-
-        @parameter
-        if has_side_effect:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-            ](loaded_pack)
-        else:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
+        return __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=type,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
 
 
 # ===-----------------------------------------------------------------------===#
