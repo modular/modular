@@ -84,12 +84,30 @@ fn _block_reduce[
         value. Otherwise, only the first thread will have the complete result.
     """
     constrained[
+        block_size >= WARP_SIZE,
+        "Block size must be a greater than warp size",
+    ]()
+    constrained[
         block_size % WARP_SIZE == 0,
         "Block size must be a multiple of warp size",
     ]()
 
     # Allocate shared memory for inter-warp communication.
     alias n_warps = block_size // WARP_SIZE
+
+    @parameter
+    if n_warps == 1:
+        # There is a single warp, so we do not need to use shared memory
+        # and warp shuffle operations are sufficient.
+        var warp_result = warp_reduce_fn(val)
+
+        @parameter
+        if broadcast:
+            # Broadcast the result to all threads in the warp
+            warp_result = warp_broadcast(warp_result)
+
+        return warp_result
+
     var shared_mem = stack_allocation[
         n_warps * width, type, address_space = AddressSpace.SHARED
     ]()
@@ -287,12 +305,12 @@ fn broadcast[
 
     # Source thread writes its value to shared memory
     if thread_idx.x == src_thread:
-        shared_mem.store(0, val)
+        shared_mem.store(val)
 
     barrier()
 
     # All threads read the same value from shared memory
-    return shared_mem.load[width=width](0)
+    return shared_mem.load[width=width]()
 
 
 # ===-----------------------------------------------------------------------===#

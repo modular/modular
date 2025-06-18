@@ -182,15 +182,9 @@ fn quantize_fp8_kernel[
             input_vec = input.load[width=simd_width](row, idx)
             thread_max = max(thread_max, abs(input_vec).reduce_max())
 
-        var group_max: Scalar[in_type]
-
-        @parameter
-        if warps_per_block > 1:
-            group_max = block.max[block_size=num_threads, broadcast=True](
-                thread_max
-            )
-        else:
-            group_max = warp.lane_group_max_and_broadcast[WARP_SIZE](thread_max)
+        var group_max = block.max[block_size=num_threads, broadcast=True](
+            thread_max
+        )
 
         var scale_factor = (
             max(group_max.cast[scales_type](), scale_ub)
