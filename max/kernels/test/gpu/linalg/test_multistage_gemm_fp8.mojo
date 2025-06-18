@@ -22,7 +22,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, barrier, block_idx, grid_dim, lane_id, thread_idx
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,

@@ -17,7 +17,7 @@ from sys import simdwidthof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from nn.normalization import *
 from testing import assert_almost_equal
 

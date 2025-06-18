@@ -18,7 +18,7 @@ from sys import is_nvidia_gpu, simdwidthof
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from testing import assert_equal
 
 from utils import IndexList

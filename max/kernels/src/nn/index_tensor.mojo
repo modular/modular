@@ -18,7 +18,7 @@ from sys.info import _current_target
 from algorithm import elementwise, sync_parallelize
 from buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 

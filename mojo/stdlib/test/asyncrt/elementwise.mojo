@@ -18,7 +18,7 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 
 from utils import IndexList
 from utils.index import Index

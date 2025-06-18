@@ -37,7 +37,7 @@ from gpu import (
 )
 from gpu.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from gpu.host.launch_attribute import (
     LaunchAttribute,

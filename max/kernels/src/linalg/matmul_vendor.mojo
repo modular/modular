@@ -17,7 +17,7 @@ from sys import alignof, simdwidthof
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 
 from utils import Index, IndexList
 

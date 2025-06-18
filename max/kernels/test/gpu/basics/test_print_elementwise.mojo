@@ -17,7 +17,7 @@ from sys import simdwidthof
 from algorithm.functional import elementwise
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple

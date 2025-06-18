@@ -17,7 +17,7 @@ from sys.info import _current_target
 
 from algorithm import elementwise
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import LayoutTensor, Layout, RuntimeTuple, UNKNOWN_VALUE
 from layout.int_tuple import fill_like

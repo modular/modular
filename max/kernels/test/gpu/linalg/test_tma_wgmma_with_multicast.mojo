@@ -17,7 +17,8 @@ from sys import sizeof
 from gpu import WARP_SIZE, barrier
 from gpu.cluster import block_rank_in_cluster, cluster_sync
 from gpu.host import DeviceContext, Dim
-from gpu.host.compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
 from gpu.id import warp_id as get_warp_id

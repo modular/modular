@@ -15,7 +15,7 @@ from sys import sizeof
 
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
 from layout import Layout, LayoutTensor

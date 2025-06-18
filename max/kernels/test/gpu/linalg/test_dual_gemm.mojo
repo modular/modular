@@ -20,7 +20,7 @@ from sys import argv, simdwidthof
 import benchmark
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple

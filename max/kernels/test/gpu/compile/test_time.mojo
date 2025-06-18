@@ -13,7 +13,8 @@
 
 from time import perf_counter_ns, sleep, time_function
 
-from gpu.host.compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.intrinsics import *
 from testing import *
 

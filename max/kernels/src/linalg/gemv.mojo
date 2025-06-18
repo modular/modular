@@ -35,7 +35,7 @@ from gpu import (
 )
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.tensor_ops import tc_reduce_gevm_8x

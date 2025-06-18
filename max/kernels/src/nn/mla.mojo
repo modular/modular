@@ -38,7 +38,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from gpu.host import FuncAttribute
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,

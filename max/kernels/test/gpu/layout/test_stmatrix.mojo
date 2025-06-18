@@ -16,7 +16,8 @@ from random import random_si64
 
 from gpu import WARP_SIZE, barrier, lane_id, thread_idx
 from gpu.host import DeviceContext
-from gpu.host.compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma, st_matrix
 from gpu.mma_util import store_matrix_d

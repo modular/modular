@@ -39,7 +39,7 @@ from gpu import (
 )
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import AddressSpace
 from layout._ndbuffer_stub import (

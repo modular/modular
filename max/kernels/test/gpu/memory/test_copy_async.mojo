@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host.compile import _compile_code_asm, get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace, CacheEviction, async_copy
 from gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
 from testing import assert_true

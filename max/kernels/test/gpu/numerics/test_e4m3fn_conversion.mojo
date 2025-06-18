@@ -14,7 +14,7 @@
 from math import inf, nan
 
 from gpu.host import DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from memory import bitcast
 
 

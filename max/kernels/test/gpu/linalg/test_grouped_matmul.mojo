@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import barrier, block_dim, block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import (
     DeviceNDBuffer,

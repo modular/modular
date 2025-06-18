@@ -29,7 +29,7 @@ from buffer import DimList, NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
 from buffer.dimlist import _make_tuple
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.compile import get_gpu_target
+from gpu.host import get_gpu_target
 from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
 from testing import assert_equal
 
