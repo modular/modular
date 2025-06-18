@@ -44,6 +44,7 @@ def create_test_request() -> AudioGenerationRequest:
         model="test-model",
         audio_prompt_tokens=[1, 2, 3],
         audio_prompt_transcription="test-transcription",
+        streaming=False,
     )
 
 

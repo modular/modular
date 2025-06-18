@@ -70,6 +70,7 @@ def create_text_context(
         prompt=tokens.tolist(),
         max_length=max_seq_len,
         tokens=tokens,
+        streaming=False,
     )
 
 

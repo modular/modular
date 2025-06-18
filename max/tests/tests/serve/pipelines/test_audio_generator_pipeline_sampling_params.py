@@ -55,6 +55,7 @@ def create_test_request_with_sampling_params(
         audio_prompt_tokens=[1, 2, 3],
         audio_prompt_transcription="test-transcription",
         sampling_params=sampling_params,
+        streaming=False,
     )
 
 
@@ -118,6 +119,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
         model="test-model",
         audio_prompt_tokens=[1, 2, 3],
         audio_prompt_transcription="test-transcription",
+        streaming=False,
     )
 
     # Execute the pipeline.
