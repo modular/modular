@@ -884,6 +884,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="gemma3-1b",
             encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation="torch_gemma3-1b_golden/torch_gemma3-1b_bfloat16_golden.json",
             cos_dist_threshold=1.3e-3,
             kl_div_threshold=1.4e-02,
         ),
