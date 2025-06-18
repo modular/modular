@@ -85,7 +85,6 @@ from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,
     _bk_base,
-    _get_block_warp_tile_shape,
     select_config,
 )
 

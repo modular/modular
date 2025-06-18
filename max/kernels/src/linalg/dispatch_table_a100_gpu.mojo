@@ -16,7 +16,6 @@ from .utils_gpu import (
     MatmulConfig,
     MatmulKernels,
     _bk_base,
-    _get_block_warp_tile_shape,
     select_config,
 )
 
@@ -58,7 +57,9 @@ fn get_dispatch_table[
             num_warp_k_partitions=num_warp_k_partitions,
         )
 
-    # --------------------------------K=4096, N=4096--------------------------------
+    # ===------------------------------------------------------------------=== #
+    # Static_NK = (4096, 4096)
+    # ===------------------------------------------------------------------=== #
 
     insert(
         "16_4096_4096",
@@ -150,35 +151,10 @@ fn get_dispatch_table[
         num_warp_k_partitions=1,
     )
 
-    # K=4096, N=14336
-    insert(
-        "16_14336_4096",
-        block_tile_shape=(16, 64, 128),
-        warp_tile_shape=(16, 32, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
+    # ===------------------------------------------------------------------=== #
+    # Static_NK = (4096, 14336)
+    # ===------------------------------------------------------------------=== #
 
-    insert(
-        "32_14336_4096",
-        block_tile_shape=(32, 64, 64),
-        warp_tile_shape=(16, 64, 32),
-        num_pipeline_stages=6,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "64_14336_4096",
-        block_tile_shape=(64, 64, 64),
-        warp_tile_shape=(32, 64, 32),
-        num_pipeline_stages=5,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    # --------------------------------K=14336, N=4096--------------------------------
     insert(
         "16_4096_14336",
         block_tile_shape=(16, 64, 128),
@@ -287,7 +263,10 @@ fn get_dispatch_table[
         num_warp_k_partitions=1,
     )
 
-    # --------------------------------K=4096, N=128256--------------------------------
+    # ===------------------------------------------------------------------=== #
+    # Static_NK = (128256, 4096)
+    # ===------------------------------------------------------------------=== #
+
     insert(
         "128_128256_4096",
         block_tile_shape=(128, 256, 64),
@@ -324,7 +303,10 @@ fn get_dispatch_table[
         num_warp_k_partitions=1,
     )
 
-    # --------------------------------K=4096, N=28672--------------------------------
+    # ===------------------------------------------------------------------=== #
+    # Static_NK = (28672, 4096)
+    # ===------------------------------------------------------------------=== #
+
     insert(
         "16_28672_4096",
         block_tile_shape=(16, 64, 128),
@@ -442,372 +424,10 @@ fn get_dispatch_table[
         num_warp_k_partitions=1,
     )
 
-    # --------------------------------K=4096, N=6144--------------------------------
-    insert(
-        "16_6144_4096",
-        block_tile_shape=(16, 64, 128),
-        warp_tile_shape=(16, 32, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
+    # ===------------------------------------------------------------------=== #
+    # Static_NK = (6144, 4096)
+    # ===------------------------------------------------------------------=== #
 
-    insert(
-        "32_6144_4096",
-        block_tile_shape=(32, 64, 64),
-        warp_tile_shape=(16, 64, 32),
-        num_pipeline_stages=6,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "64_6144_4096",
-        block_tile_shape=(64, 64, 64),
-        warp_tile_shape=(32, 64, 32),
-        num_pipeline_stages=5,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "128_6144_4096",
-        block_tile_shape=(64, 128, 64),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "256_6144_4096",
-        block_tile_shape=(128, 128, 64),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "512_6144_4096",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "768_6144_4096",
-        block_tile_shape=(128, 128, 32),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "896_6144_4096",
-        block_tile_shape=(128, 256, 32),
-        warp_tile_shape=(64, 128, 16),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    # --------------------------------K=4096, N=14336--------------------------------
-    insert(
-        "16_14336_4096",
-        block_tile_shape=(16, 64, 128),
-        warp_tile_shape=(16, 32, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "32_14336_4096",
-        block_tile_shape=(32, 64, 64),
-        warp_tile_shape=(16, 64, 32),
-        num_pipeline_stages=6,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "64_14336_4096",
-        block_tile_shape=(64, 64, 64),
-        warp_tile_shape=(32, 64, 32),
-        num_pipeline_stages=5,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    # --------------------------------K=14336, N=4096--------------------------------
-    insert(
-        "16_4096_14336",
-        block_tile_shape=(16, 64, 128),
-        warp_tile_shape=(16, 32, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "32_4096_14336",
-        block_tile_shape=(32, 64, 64),
-        warp_tile_shape=(16, 64, 32),
-        num_pipeline_stages=6,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "64_4096_14336",
-        block_tile_shape=(64, 64, 64),
-        warp_tile_shape=(32, 64, 32),
-        num_pipeline_stages=5,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "128_4096_14336",
-        block_tile_shape=(64, 256, 64),
-        warp_tile_shape=(32, 128, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=3,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "512_4096_14336",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=3,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "768_4096_14336",
-        block_tile_shape=(128, 256, 64),
-        warp_tile_shape=(64, 128, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "896_4096_14336",
-        block_tile_shape=(128, 128, 64),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=3,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1024_4096_14336",
-        block_tile_shape=(128, 128, 32),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=2,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1152_4096_14336",
-        block_tile_shape=(128, 256, 64),
-        warp_tile_shape=(64, 128, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=3,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1280_4096_14336",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=2,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1606_4096_14336",
-        block_tile_shape=(128, 256, 64),
-        warp_tile_shape=(64, 128, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "2048_4096_14336",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=2,
-        num_warp_k_partitions=1,
-    )
-
-    # --------------------------------K=4096, N=128256--------------------------------
-    insert(
-        "128_128256_4096",
-        block_tile_shape=(128, 256, 64),
-        warp_tile_shape=(64, 128, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "896_128256_4096",
-        block_tile_shape=(128, 128, 64),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "2048_128256_4096",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "768_128256_4096",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    # --------------------------------K=4096, N=28672--------------------------------
-    insert(
-        "16_28672_4096",
-        block_tile_shape=(16, 64, 128),
-        warp_tile_shape=(16, 32, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "32_28672_4096",
-        block_tile_shape=(32, 64, 64),
-        warp_tile_shape=(16, 64, 32),
-        num_pipeline_stages=6,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "64_28672_4096",
-        block_tile_shape=(64, 64, 64),
-        warp_tile_shape=(32, 64, 32),
-        num_pipeline_stages=5,
-        num_k_partitions=1,
-        num_warp_k_partitions=2,
-    )
-
-    insert(
-        "128_28672_4096",
-        block_tile_shape=(128, 128, 32),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "256_28672_4096",
-        block_tile_shape=(64, 256, 64),
-        warp_tile_shape=(32, 128, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "512_28672_4096",
-        block_tile_shape=(128, 128, 32),
-        warp_tile_shape=(64, 64, 32),
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "768_28672_4096",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "896_28672_4096",
-        block_tile_shape=(128, 256, 64),
-        warp_tile_shape=(64, 128, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1024_28672_4096",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1152_28672_4096",
-        block_tile_shape=(128, 256, 64),
-        warp_tile_shape=(64, 128, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1280_28672_4096",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "1606_28672_4096",
-        block_tile_shape=(128, 256, 64),
-        warp_tile_shape=(64, 128, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    insert(
-        "2048_28672_4096",
-        block_tile_shape=(256, 128, 64),
-        warp_tile_shape=(128, 64, 32),
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-        num_warp_k_partitions=1,
-    )
-
-    # --------------------------------K=4096, N=6144--------------------------------
     insert(
         "16_6144_4096",
         block_tile_shape=(16, 64, 128),
@@ -923,6 +543,37 @@ fn get_dispatch_table[
         num_pipeline_stages=3,
         num_k_partitions=1,
         num_warp_k_partitions=1,
+    )
+
+    # ===------------------------------------------------------------------=== #
+    # Static_NK = (14336, 4096)
+    # ===------------------------------------------------------------------=== #
+
+    insert(
+        "16_14336_4096",
+        block_tile_shape=(16, 64, 128),
+        warp_tile_shape=(16, 32, 32),
+        num_pipeline_stages=4,
+        num_k_partitions=1,
+        num_warp_k_partitions=2,
+    )
+
+    insert(
+        "32_14336_4096",
+        block_tile_shape=(32, 64, 64),
+        warp_tile_shape=(16, 64, 32),
+        num_pipeline_stages=6,
+        num_k_partitions=1,
+        num_warp_k_partitions=2,
+    )
+
+    insert(
+        "64_14336_4096",
+        block_tile_shape=(64, 64, 64),
+        warp_tile_shape=(32, 64, 32),
+        num_pipeline_stages=5,
+        num_k_partitions=1,
+        num_warp_k_partitions=2,
     )
 
     return tile_configs
