@@ -1255,6 +1255,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation", [BytecodeOpInterface]> {
     ErrorTreeOrSuccess interpret(ArrayRef<Attribute> operands,
       const Payload &payload, InterpreterState &state);
   }];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

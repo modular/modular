@@ -36,6 +36,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerFunctionStats();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
+  KGEN::registerKGENVerifierPass();
   KGEN::registerLoopUnrolling();
   KGEN::registerLowerAsyncFunctions();
   KGEN::registerLowerCallingConventions();

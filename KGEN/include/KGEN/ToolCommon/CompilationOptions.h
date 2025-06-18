@@ -132,10 +132,15 @@ public:
   bool disableWarnings = false;
 };
 
+// Return true if target triple is `nvptx` or `amdgcn`
 bool isGPUTriple(const llvm::Triple &triple);
 bool isGPUBackend(const CompilationOptions &options);
+
+// Return true if target triple is `amdgcn`
+bool isAMDGPUBackend(const CompilationOptions &options);
+
+// Return true if target triple is `nvptx`
 bool isNVPTXBackend(const CompilationOptions &options);
-bool isAMDBackend(const CompilationOptions &options);
 
 } // namespace M::KGEN
 

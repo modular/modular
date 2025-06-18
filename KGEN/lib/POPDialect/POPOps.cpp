@@ -17,6 +17,7 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPEnums.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MTypes.h"
@@ -29,8 +30,10 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/AMDGPUAddrSpace.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/NVPTXAddrSpace.h"
 
 using namespace M;
 using namespace KGEN;
@@ -403,6 +406,44 @@ void StackAllocationOp::build(OpBuilder &b, OperationState &state, Type result,
 void StackAllocationOp::build(OpBuilder &b, OperationState &state,
                               bool markedLifetimes, Type result) {
   build(b, state, result, /*count=*/1, /*alignment=*/{}, markedLifetimes);
+}
+
+LogicalResult StackAllocationOp::verify() {
+  TargetInfoAttr target = lookupTargetInfo(*this);
+  if (!target) {
+    // Operation may not be in complete state yet. Assume it's good.
+    return success();
+  }
+
+  unsigned addressSpace = 0;
+  if (TypedAttr addrSpaceAttr = getType().getAddressSpace()) {
+    auto addrSpaceIntAttr = dyn_cast<IntegerAttr>(addrSpaceAttr);
+    if (!addrSpaceIntAttr) {
+      // The value is not yet concrete. Assume it's good.
+      return success();
+    }
+    addressSpace = addrSpaceIntAttr.getInt();
+  }
+  // LLVM IR verifies the address space on alloca instruction on AMDGPU.
+  // TODO: Re-enable this check when stdlib is updated.
+  if (0 && target.getTriple().isAMDGCN()) {
+    if (addressSpace != llvm::AMDGPUAS::PRIVATE_ADDRESS) {
+      return emitOpError("expected private address space (")
+             << (unsigned)llvm::AMDGPUAS::PRIVATE_ADDRESS
+             << "), but got address space (" << addressSpace << ')';
+    }
+    return success();
+  }
+  // TODO: Re-enable this check when stdlib is updated.
+  if (0 && target.getTriple().isNVPTX()) {
+    if (addressSpace != llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL) {
+      return emitOpError("expected local address space (")
+             << (unsigned)llvm::NVPTXAS::AddressSpace::ADDRESS_SPACE_LOCAL
+             << "), but got address space (" << addressSpace << ')';
+    }
+    return success();
+  }
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

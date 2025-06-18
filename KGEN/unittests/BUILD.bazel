@@ -18,5 +18,6 @@ modular_cc_test(
     deps = [
         "//KGEN:KGENDialect",
         "//KGEN:LITDialect",
+        "//KGEN:ToolCommon",
     ],
 )

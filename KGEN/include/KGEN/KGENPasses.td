@@ -1073,7 +1073,6 @@ def DeadArgumentElimination:
   let dependentDialects = ["MDialect"];
 }
 
-
 //===----------------------------------------------------------------------===//
 // Remove unused arguments
 //===----------------------------------------------------------------------===//
@@ -1084,5 +1083,20 @@ def RemoveUnusedParams : Pass<"remove-unused-params", "mlir::ModuleOp"> {
     Replaces a function with a new function that drops all unused
     parameters and arguments, updating all the callers to reflect
     the new function call.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Verification pass
+//===----------------------------------------------------------------------===//
+
+def KGENVerifierPass : Pass<"kgen-verifier"> {
+  let summary = "Verify correctness of the IR";
+  let description = [{
+    A verification pass that makes sure IR is well formed.
+    For usability, it limits the number of errors to 10, which can be changed
+    with `kgen-verifier-max-errors` option.
+    It can be invoked in production build and does not depend on pass manager's
+    settings.
   }];
 }

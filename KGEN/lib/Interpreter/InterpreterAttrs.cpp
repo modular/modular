@@ -199,3 +199,8 @@ LogicalResult MemRefAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/Interpreter/InterpreterAttrs.cpp.inc"
+
+bool M::isGlobalBlob(MemoryBlobAttr blob) {
+  return blob.getKind() == MemoryKind::ConstGlobal ||
+         (blob.getKind() == MemoryKind::Persistent && blob.getAddressSpace());
+}

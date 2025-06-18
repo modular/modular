@@ -6,6 +6,7 @@
 
 #include "LLVMLoweringUtils.h"
 #include "KGEN/CODialect/COOps.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -596,13 +597,6 @@ static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
   b.create<LLVM::StoreOp>(b.create<LLVM::ConstantOp>(value), gep, align);
   materializeVectorStores(idx + curSize, remaining, ptr, data, b, ptrType,
                           align);
-}
-
-/// Blobs in `ConstGlobal` or `Persistent` with non-generic address space are
-/// globally allocated.
-static bool isGlobalBlob(MemoryBlobAttr blob) {
-  return blob.getKind() == MemoryKind::ConstGlobal ||
-         (blob.getKind() == MemoryKind::Persistent && blob.getAddressSpace());
 }
 
 InterpreterMemoryConverter::MaterializedBlobs &

@@ -62,4 +62,10 @@ struct PointerRegion {
 #define GET_ATTRDEF_CLASSES
 #include "KGEN/Interpreter/InterpreterAttrs.h.inc"
 
+namespace M {
+/// Blobs in `ConstGlobal` or `Persistent` with non-generic address space are
+/// globally allocated.
+bool isGlobalBlob(MemoryBlobAttr blob);
+} // namespace M
+
 #endif // KGEN_INTERPRETER_INTERPRETERATTRS_H
