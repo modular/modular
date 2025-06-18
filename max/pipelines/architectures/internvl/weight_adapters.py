@@ -87,7 +87,8 @@ def convert_internvl_vision_model_state_dict(
        `vision_model.` prefix).
     2. Strips the `vision_model.` prefix to match InternVLVisionModel
        expectations.
-    3. Excludes language model weights.
+    3. Converts Conv2D patch embedding weights to Linear format.
+    4. Excludes language model weights.
 
     Args:
         state_dict: The raw InternVL checkpoint weights.
@@ -95,7 +96,7 @@ def convert_internvl_vision_model_state_dict(
         pipeline_config: The pipeline configuration.
 
     Returns:
-        The filtered and mapped weights for DistributedLlama3.
+        The filtered and mapped weights for InternVLVisionModel.
     """
     vision_model_state_dict: dict[str, WeightData] = {}
 
@@ -109,6 +110,33 @@ def convert_internvl_vision_model_state_dict(
         for before, after in INTERNVL_VISION_MODEL_MAPPING.items():
             vision_model_name = vision_model_name.replace(before, after)
 
-        vision_model_state_dict[vision_model_name] = weight.data()
+        weight_data = weight.data()
+
+        # Convert Conv2D patch embedding weights to Linear format
+        if vision_model_name == "embeddings.patch_embedding.weight":
+            # Conv2D weight shape: (out_channels, in_channels, kernel_h, kernel_w)
+            # For patch embedding: (embed_dim, 3, patch_size, patch_size)
+            # Need to reshape to: (embed_dim, 3 * patch_size * patch_size)
+
+            # Get the weight array
+            weight_array = weight_data.data
+
+            # Get dimensions
+            out_channels, in_channels, kernel_h, kernel_w = weight_array.shape
+
+            # Reshape from (out_channels, in_channels, kernel_h, kernel_w)
+            # to (out_channels, in_channels * kernel_h * kernel_w)
+            weight_array = weight_array.reshape(out_channels, -1)
+
+            # Create new WeightData with reshaped array
+            weight_data = WeightData(
+                data=weight_array,
+                name=weight_data.name,
+                dtype=weight_data.dtype,
+                shape=weight_data.shape.__class__(weight_array.shape),
+                quantization_encoding=weight_data.quantization_encoding,
+            )
+
+        vision_model_state_dict[vision_model_name] = weight_data
 
     return vision_model_state_dict

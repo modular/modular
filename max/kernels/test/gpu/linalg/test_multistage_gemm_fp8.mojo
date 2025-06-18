@@ -65,7 +65,6 @@ from linalg.utils_gpu import (
     block_swizzle,
     select_config,
 )
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type

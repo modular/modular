@@ -31,7 +31,6 @@ from sys import (
     os_is_windows,
 )
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Utilities

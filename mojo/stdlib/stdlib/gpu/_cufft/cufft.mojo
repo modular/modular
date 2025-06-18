@@ -15,7 +15,6 @@ from os import abort
 
 from complex import ComplexFloat32, ComplexFloat64
 from gpu.host._nvidia_cuda import CUstream
-from memory import UnsafePointer
 
 from .types import Compatibility, LibraryProperty, Property, Status, Type
 from .utils import _get_dylib_function
@@ -82,11 +81,9 @@ fn cufftExecR2C(
     ]()(plan, idata, odata)
 
 
-fn cufftSetWorkArea(
-    plan: cufftHandle, work_area: UnsafePointer[NoneType]
-) -> Status:
+fn cufftSetWorkArea(plan: cufftHandle, work_area: OpaquePointer) -> Status:
     return _get_dylib_function[
-        "cufftSetWorkArea", fn (cufftHandle, UnsafePointer[NoneType]) -> Status
+        "cufftSetWorkArea", fn (cufftHandle, OpaquePointer) -> Status
     ]()(plan, work_area)
 
 

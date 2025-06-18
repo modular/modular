@@ -125,9 +125,15 @@ from builtin.type_aliases import (
     StaticConstantOrigin,
 )
 from builtin.uint import UInt
-from builtin.value import Copyable, Defaultable, ExplicitlyCopyable, Movable
+from builtin.value import (
+    Copyable,
+    Defaultable,
+    ExplicitlyCopyable,
+    IteratorTrait,
+    Movable,
+)
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
-from memory import AddressSpace, Pointer, Span
+from memory import AddressSpace, Pointer, Span, UnsafePointer, OpaquePointer
 
 from utils import Writable, Writer

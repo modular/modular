@@ -21,6 +21,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from uuid import uuid4
 
+import msgspec
 import torch
 from max import driver
 from max._core import nixl
@@ -35,8 +36,9 @@ def _get_tensor_base_addr(tensor: Tensor) -> int:
     return torch.from_dlpack(tensor).data_ptr()
 
 
-@dataclass
-class KVTransferEngineMetadata:
+class KVTransferEngineMetadata(
+    msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
+):
     """Metadata associated with a transfer engine.
 
     This is safe to send between threads/processes."""

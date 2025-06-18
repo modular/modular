@@ -22,7 +22,6 @@
 
 from collections.string import StaticString
 
-from memory import UnsafePointer
 
 from .ffi import MLIR_func
 
@@ -57,17 +56,17 @@ struct MlirLlvmThreadPool:
     """Re-export llvm::ThreadPool so as to avoid including the LLVM C API directly.
     """
 
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirTypeID:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirTypeIDAllocator:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 # ===----------------------------------------------------------------------===//
@@ -146,7 +145,7 @@ fn mlirLlvmThreadPoolDestroy(pool: MlirLlvmThreadPool) -> None:
 # ===----------------------------------------------------------------------===//
 
 
-fn mlirTypeIDCreate(ptr: UnsafePointer[NoneType]) -> MlirTypeID:
+fn mlirTypeIDCreate(ptr: OpaquePointer) -> MlirTypeID:
     """`ptr` must be 8 byte aligned and unique to a type valid for the duration of
     the returned type id's usage."""
     return MLIR_func["mlirTypeIDCreate", MlirTypeID](ptr)

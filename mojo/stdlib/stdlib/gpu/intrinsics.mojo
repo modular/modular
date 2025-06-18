@@ -32,8 +32,6 @@ from sys import is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x, alignof, bitwidthof
 from sys.intrinsics import llvm_intrinsic, readfirstlane
-
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 
 from .host.info import H100, Info

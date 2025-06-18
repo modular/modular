@@ -25,7 +25,7 @@ from sys.info import alignof, is_gpu, is_nvidia_gpu, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
 from utils._serialize import _serialize

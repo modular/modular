@@ -18,7 +18,6 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList

@@ -326,7 +326,7 @@ class LatentAttentionWithRope(Module):
 
         # TODO: use max_lengths[0, 0] cause a CUDA_INVALID_MEMORY_ACCESS error,
         # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
-        max_seq_len = kv_cache_get_max_seq_len(kv_collection)
+        max_seq_len = kv_cache_get_max_seq_len(self.kv_params, kv_collection)
 
         result = ops.cond(
             max_seq_len > 1,

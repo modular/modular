@@ -41,7 +41,6 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
     copy_sram_to_local,
 )
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList

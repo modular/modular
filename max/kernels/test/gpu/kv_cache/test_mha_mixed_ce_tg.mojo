@@ -19,7 +19,7 @@ from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod

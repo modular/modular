@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import Optional, OptionalReg
+from collections.optional import OptionalReg
 from math import ceildiv
 from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof
 
@@ -35,7 +35,7 @@ from linalg import vendor_blas
 from linalg.grouped_matmul import grouped_matmul_sm90, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
 from testing import assert_almost_equal
 

@@ -20,7 +20,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
 
 from utils.write import _WriteBufferStack
 
@@ -54,7 +53,7 @@ from .IR import *
 
 @register_passable("trivial")
 struct MlirAffineExpr:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 fn mlirAffineExprGetContext(affine_expr: MlirAffineExpr) -> MlirContext:

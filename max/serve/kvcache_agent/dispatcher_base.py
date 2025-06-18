@@ -22,6 +22,8 @@ class MessageType(Enum):
 
     PREFILL_REQUEST = "prefill_request"
     PREFILL_RESPONSE = "prefill_response"
+    TRANSFER_ENGINE_REQUEST = "transfer_engine_request"
+    TRANSFER_ENGINE_RESPONSE = "transfer_engine_response"
 
 
 class ReplyContext(

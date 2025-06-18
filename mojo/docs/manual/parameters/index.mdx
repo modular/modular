@@ -191,8 +191,6 @@ build generic collections. For example, a generic array type might include code
 like this:
 
 ```mojo
-from memory import UnsafePointer
-
 struct GenericArray[ElementType: Copyable & Movable]:
     var data: UnsafePointer[ElementType]
     var size: Int

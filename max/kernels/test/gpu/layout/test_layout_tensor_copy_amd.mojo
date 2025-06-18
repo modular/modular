@@ -27,7 +27,6 @@ from layout.layout_tensor import (
     copy_dram_to_sram,
 )
 from layout.tensor_builder import LayoutTensorBuild as tb
-from memory import UnsafePointer
 
 from utils import IndexList
 

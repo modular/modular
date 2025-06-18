@@ -13,7 +13,6 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from buffer import NDBuffer
-from memory import UnsafePointer
 
 alias simd_width = 8
 

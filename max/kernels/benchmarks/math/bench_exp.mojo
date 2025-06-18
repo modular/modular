@@ -30,7 +30,7 @@ from buffer import NDBuffer
 from builtin.range import _StridedRange
 from builtin.simd import _simd_apply
 from compile import compile_info
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 
 fn apply[

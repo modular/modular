@@ -24,7 +24,6 @@ from linalg.utils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
-from memory import UnsafePointer
 
 from utils.index import Index
 

@@ -12,16 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections import InlineArray
 
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 def test_elementwise[

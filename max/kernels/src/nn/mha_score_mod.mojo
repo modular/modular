@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import exp2, iota
-from sys import bitwidthof
 
 from bit import prev_power_of_two
 

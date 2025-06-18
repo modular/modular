@@ -14,7 +14,6 @@
 from gpu.host import DeviceContext
 from gpu.id import block_dim, block_idx, thread_idx
 from math import iota
-from memory import UnsafePointer
 from sys import exit
 from sys.info import has_accelerator
 

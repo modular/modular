@@ -40,7 +40,6 @@ from matmul_kernels import (
     run_gemm_kernel_6,
     run_gemm_kernel_tc,
 )
-from memory import UnsafePointer
 
 alias run_gemm_kernel_type = fn (
     mut m: Bench,

@@ -10,12 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.string.string_slice import StringSlice
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator, sizeof
-from sys.ffi import OpaquePointer, _get_global_or_null, external_call
+from sys import has_amd_gpu_accelerator, sizeof
+from sys.ffi import _get_global_or_null, external_call
 
 import gpu._rocblas
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from gpu._cublas.cublas import (
     Algorithm,
     ComputeType,
@@ -58,7 +57,6 @@ from gpu._cublas.cublaslt import (
     cublasLtMatrixLayoutDestroy,
 )
 from gpu._cublas.dtype import DataType
-from gpu._cublas.result import Result
 from gpu._rocblas.hipblaslt import (
     _check_hipblas_error,
     _convert_to_hip_datatype,
@@ -87,8 +85,6 @@ from gpu.host import DeviceContext
 from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from gpu.host.info import DEFAULT_GPU, H100
-from layout import Layout
-from memory import UnsafePointer
 
 from utils.variant import Variant
 
@@ -905,7 +901,7 @@ fn _cublasLt_matmul(
                 a.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                UnsafePointer[NoneType](),  # _c
+                OpaquePointer(),  # _c
                 _cdesc,  # _cdesc
                 d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
@@ -927,7 +923,7 @@ fn _cublasLt_matmul(
                 b.data.bitcast[NoneType](),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                UnsafePointer[NoneType](),  # _c
+                OpaquePointer(),  # _c
                 _cdesc,  # _cdesc
                 d.data.bitcast[NoneType](),  # _d
                 _ddesc,  # _ddesc
@@ -1101,7 +1097,7 @@ fn _hipblasLt_matmul(
             _ddata,
             _ddesc,
             UnsafePointer(to=heuristicResult.algo),
-            UnsafePointer[NoneType](),
+            OpaquePointer(),
             0,
             HIP(ctx.stream()),
         )

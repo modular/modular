@@ -24,7 +24,7 @@ from gpu.tcgen05 import (
     tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from testing import assert_true
 from gpu.mma_sm100 import MMASmemDescriptor
 from layout import LayoutTensor, Layout, IntTuple

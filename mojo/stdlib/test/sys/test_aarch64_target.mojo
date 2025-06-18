@@ -15,7 +15,7 @@
 # REQUIRES: system-darwin
 # RUN: %mojo %s
 
-from sys import alignof, has_avx512f, has_neon, simdbitwidth
+from sys import has_avx512f, has_neon, simdbitwidth
 
 from testing import assert_equal, assert_false, assert_true
 

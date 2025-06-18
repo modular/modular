@@ -25,7 +25,7 @@ from sys.ffi import _external_call_const
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from builtin.simd import _simd_apply
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 # ===----------------------------------------------------------------------=== #
 # FPUtils

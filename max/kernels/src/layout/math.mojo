@@ -17,8 +17,6 @@ import math
 from builtin.math import max as b_max
 from layout import LayoutTensor
 
-from utils.numerics import min_or_neg_inf
-
 
 @always_inline
 fn outer_product_acc(

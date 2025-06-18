@@ -24,7 +24,7 @@ from sys import is_compile_time
 from sys.info import is_nvidia_gpu
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 # ===-----------------------------------------------------------------------===#
 # Consistency

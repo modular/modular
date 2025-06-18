@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import fma
 from os import abort
 from sys import os_is_macos, simdwidthof
@@ -25,8 +24,6 @@ from algorithm.functional import (
     parallelize_over_rows,
 )
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from memory import UnsafePointer
 
 from utils import IndexList
 from utils.index import Index

@@ -19,7 +19,6 @@ from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import update_bench_config
-from memory import UnsafePointer
 from testing import assert_equal
 
 

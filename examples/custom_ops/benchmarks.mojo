@@ -26,7 +26,7 @@ from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.causal_conv1d import CausalConv1Dgpu, CausalConv1Dcpu
 from kernels.top_k import TopK
 from math import iota
-from memory import AddressSpace, UnsafePointer
+from memory import AddressSpace
 from random import rand
 from sys import (
     argv,

@@ -17,7 +17,6 @@ from sys.ffi import c_int, _Global
 from sys.info import sizeof
 from compile.reflection import get_type_name
 
-from memory import UnsafePointer
 from python import Python, PythonObject
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,

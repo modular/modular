@@ -23,8 +23,6 @@ from os import setenv
 from sys import external_call, os_is_linux, os_is_macos, os_is_windows
 from sys.ffi import c_int
 
-from memory import UnsafePointer
-
 
 fn setenv(
     owned name: String, owned value: String, overwrite: Bool = True

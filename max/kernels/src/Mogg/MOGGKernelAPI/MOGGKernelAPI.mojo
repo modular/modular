@@ -15,8 +15,7 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import InlineArray, List, Optional, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import (
     atanh,
     ceil,
@@ -54,7 +53,7 @@ from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
 from gpu.comm.allgather import allgather
 from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -83,11 +82,10 @@ from linalg.utils import (
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
-from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
 from nn._ragged_utils import merge_ragged_tensors
 from nn.activations import gelu, relu
-from nn.arange import arange, arange_shape
+from nn.arange import arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
@@ -109,7 +107,6 @@ from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
 from nn.fold import fold, fold_shape
-from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.gather_scatter import (
     Axis,
     _unsafe_normalize_neg_index,
@@ -219,7 +216,7 @@ from quantization.qmatmul_k import (
 )
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import Trace, TraceLevel
 from tensor_internal import (
     DynamicTensor,
     InputTensor,
@@ -5261,7 +5258,7 @@ struct Concat:
 fn to_managed_tensor_slice_list[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
-    raw_list_ptr: UnsafePointer[NoneType],
+    raw_list_ptr: OpaquePointer,
 ) -> List[
     ManagedTensorSlice[
         io_spec = IOSpec[mut, input](),
@@ -5272,7 +5269,7 @@ fn to_managed_tensor_slice_list[
         raw_list_ptr
     ).__int__()
 
-    var data_ptrs = List[UnsafePointer[NoneType]](capacity=num_elements)
+    var data_ptrs = List[OpaquePointer](capacity=num_elements)
     var dim_values = List[Int64](capacity=num_elements * rank)
 
     # Collect the data pointers and dimensions of each element from the list.
@@ -5516,6 +5513,7 @@ struct Conv:
         static_dilations: DimList,
         static_padding: DimList,
         target: StaticString,
+        _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
         input: InputTensor[rank = output.rank],
@@ -5597,79 +5595,82 @@ struct Conv:
         var filter_buf = managed_tensor_slice_to_ndbuffer(filter)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
-        @parameter
-        if is_cpu[target]():
-            constrained[
-                not filter_is_fcrs, "Filter layout FCRS is not supported on CPU"
-            ]()
-            conv_nhwc_direct[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # input shape
-                filter._static_shape,  # filter shape
-                output._static_shape,  # output shape
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                filter_packed,
-                conv_attr,
-                lambdas_have_fusion,
-                output_fn,
-            ](
-                input_buf,
-                filter_buf,
-                output_buf,
-                stride_tuple,
-                dilation_tuple,
-                pad_d_tuple,
-                pad_h_tuple,
-                pad_w_tuple,
-                Int(num_groups),
-            )
-        else:
-            constrained[
-                (input.rank == 4 and filter.rank == 4)
-                or (input.rank == 5 and filter.rank == 5),
-                "only rank 4 or 5 tensor is supported on cuda gpu",
-            ]()
-            constrained[
-                filter_packed == False,
-                "only unpacked filter is supported on cuda gpu",
-            ]()
-
-            var cuda_ctx = ctx.get_device_context()
-            var pad_tuple = IndexList[input.rank - 2](0)
+        with Trace[TraceLevel.OP, target=target](_trace_name):
 
             @parameter
-            if input.rank == 4:
-                pad_tuple[0] = pad_h_tuple[0]
-                pad_tuple[1] = pad_w_tuple[0]
-            elif input.rank == 5:
-                pad_tuple[0] = pad_d_tuple[0]
-                pad_tuple[1] = pad_h_tuple[0]
-                pad_tuple[2] = pad_w_tuple[0]
+            if is_cpu[target]():
+                constrained[
+                    not filter_is_fcrs,
+                    "Filter layout FCRS is not supported on CPU",
+                ]()
+                conv_nhwc_direct[
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
+                    input.dtype,
+                    filter.dtype,
+                    output.dtype,
+                    filter_packed,
+                    conv_attr,
+                    lambdas_have_fusion,
+                    output_fn,
+                ](
+                    input_buf,
+                    filter_buf,
+                    output_buf,
+                    stride_tuple,
+                    dilation_tuple,
+                    pad_d_tuple,
+                    pad_h_tuple,
+                    pad_w_tuple,
+                    Int(num_groups),
+                )
+            else:
+                constrained[
+                    (input.rank == 4 and filter.rank == 4)
+                    or (input.rank == 5 and filter.rank == 5),
+                    "only rank 4 or 5 tensor is supported on cuda gpu",
+                ]()
+                constrained[
+                    filter_packed == False,
+                    "only unpacked filter is supported on cuda gpu",
+                ]()
 
-            conv_gpu[
-                input.rank,
-                filter.rank,
-                input._static_shape,  # input shape
-                filter._static_shape,  # filter shape
-                output._static_shape,  # output shape
-                input.dtype,
-                filter.dtype,
-                output.dtype,
-                output_fn,
-                filter_is_fcrs,
-            ](
-                input_buf,
-                filter_buf,
-                output_buf,
-                stride_tuple,
-                dilation_tuple,
-                pad_tuple,
-                Int(num_groups),
-                cuda_ctx,
-            )
+                var cuda_ctx = ctx.get_device_context()
+                var pad_tuple = IndexList[input.rank - 2](0)
+
+                @parameter
+                if input.rank == 4:
+                    pad_tuple[0] = pad_h_tuple[0]
+                    pad_tuple[1] = pad_w_tuple[0]
+                elif input.rank == 5:
+                    pad_tuple[0] = pad_d_tuple[0]
+                    pad_tuple[1] = pad_h_tuple[0]
+                    pad_tuple[2] = pad_w_tuple[0]
+
+                conv_gpu[
+                    input.rank,
+                    filter.rank,
+                    input._static_shape,  # input shape
+                    filter._static_shape,  # filter shape
+                    output._static_shape,  # output shape
+                    input.dtype,
+                    filter.dtype,
+                    output.dtype,
+                    output_fn,
+                    filter_is_fcrs,
+                ](
+                    input_buf,
+                    filter_buf,
+                    output_buf,
+                    stride_tuple,
+                    dilation_tuple,
+                    pad_tuple,
+                    Int(num_groups),
+                    cuda_ctx,
+                )
 
     @staticmethod
     fn shape[
@@ -7862,10 +7863,18 @@ struct Struct_kv_cache_get_max_seq_len_paged:
     @always_inline
     @staticmethod
     fn execute[
+        dtype: DType,
+        num_heads: Int,
+        head_dim: Int,
+        page_size: Int, //,
         target: StaticString,
     ](
         max_seq_len: OutputTensor[dtype = DType.uint32, rank=1],
-        kv_collection: PagedKVCacheCollection,
+        kv_collection: PagedKVCacheCollection[
+            dtype,
+            KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
+            page_size,
+        ],
         context: DeviceContextPtr,
     ) raises:
         # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,

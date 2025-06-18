@@ -17,11 +17,9 @@ digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
 from buffer import NDBuffer
-from gpu.host import DeviceContext
 from gpu.host.info import is_gpu
 from gpu.id import block_dim, block_idx, thread_idx
 from math import floor, clamp
-from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 
 

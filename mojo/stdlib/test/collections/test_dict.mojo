@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import KeyElement
 from collections.dict import OwnedKwargsDict
-from os import abort
 
-from test_utils import AbortOnCopy, CopyCounter
+from test_utils import CopyCounter
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 

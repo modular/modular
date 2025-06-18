@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from math import ceil
 
 from layout import Layout, LayoutTensor
 
-from utils import IndexList
 from utils.numerics import min_or_neg_inf
 
 

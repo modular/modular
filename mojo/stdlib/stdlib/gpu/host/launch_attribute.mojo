@@ -31,7 +31,6 @@ at a granular level, similar to CUDA's native launch attribute system.
 
 from sys import sizeof
 
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
@@ -485,7 +484,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: UnsafePointer[NoneType]
+    var base_ptr: OpaquePointer
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -505,7 +504,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
 
     fn __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
-        self.base_ptr = UnsafePointer[NoneType]()
+        self.base_ptr = OpaquePointer()
         self.num_bytes = 0
         self.hit_ratio = 0
         self.hit_prop = AccessProperty.NORMAL

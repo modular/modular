@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from math import align_down, ceildiv, exp, exp2, log
 from sys import alignof, is_amd_gpu, is_nvidia_gpu, simdwidthof
 
@@ -35,12 +34,12 @@ from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import get_fragment_size
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils import IndexList, StaticTuple
-from utils.index import Index, product
+from utils.index import product
 from utils.numerics import get_accum_type, min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#

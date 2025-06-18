@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray, OptionalReg
-from math import align_down, align_up, ceildiv
+from collections import OptionalReg
 from sys import alignof, simdwidthof
 
 import gpu.warp as warp
@@ -28,7 +27,6 @@ from gpu import (
     thread_idx,
 )
 from gpu import warp_id as get_warp_id
-from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.mma import mma as mma_simd
 from gpu.sync import AMDScheduleBarrierMask
@@ -44,16 +42,13 @@ from layout.layout_tensor import (
     copy_dram_to_sram,
     copy_local_to_dram,
 )
-from layout.runtime_layout import RuntimeLayout
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
-from linalg.utils import GemmShape
-from memory import UnsafePointer
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
-from .utils import apply_epilogue, elementwise_epilogue_type
+from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 
 

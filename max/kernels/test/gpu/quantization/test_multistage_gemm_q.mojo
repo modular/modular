@@ -76,7 +76,6 @@ from linalg.utils_gpu import (
     block_swizzle,
     select_config,
 )
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import (

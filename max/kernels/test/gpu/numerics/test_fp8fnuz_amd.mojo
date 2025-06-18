@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 
 def test_fp8_constructor(ctx: DeviceContext):

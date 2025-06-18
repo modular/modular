@@ -20,7 +20,6 @@ from buffer.dimlist import DimList, _make_tuple
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from internal_utils import DeviceNDBuffer
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils import IndexList, StaticTuple

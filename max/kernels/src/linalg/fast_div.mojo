@@ -17,7 +17,7 @@ This method replaces division by constants with a sequence of shifts and
 multiplications, significantly optimizing division performance.
 """
 
-from sys import bitwidthof, is_nvidia_gpu
+from sys import bitwidthof
 
 from builtin.dtype import _uint_type_of_width
 from gpu.intrinsics import mulhi

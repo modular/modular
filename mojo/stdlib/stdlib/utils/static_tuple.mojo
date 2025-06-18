@@ -19,7 +19,6 @@ from utils import StaticTuple
 ```
 """
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Utilities

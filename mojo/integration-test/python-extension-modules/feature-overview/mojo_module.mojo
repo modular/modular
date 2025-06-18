@@ -18,7 +18,6 @@ from builtin._pybind import (
     check_and_get_or_convert_arg,
     check_arguments_arity,
 )
-from memory import UnsafePointer
 from python import Python, PythonObject
 from python.bindings import (
     PyMojoObject,

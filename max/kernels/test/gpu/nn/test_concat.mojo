@@ -18,7 +18,6 @@ from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,

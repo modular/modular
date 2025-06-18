@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
-from collections.string.string_slice import StaticString, get_static_string
+from collections import OptionalReg
+from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
 from sys import has_neon, simdwidthof, sizeof
 from sys.info import _current_target
@@ -25,15 +25,13 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
-from layout import Layout, LayoutTensor
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from layout import LayoutTensor
+from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import ManagedTensorSlice
 
-from utils import Index, IndexList, StaticTuple
-
-from .reshape import reshape
+from utils import IndexList, StaticTuple
 
 
 @always_inline

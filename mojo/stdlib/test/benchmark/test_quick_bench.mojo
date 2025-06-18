@@ -17,7 +17,6 @@ from random import randint
 from time import sleep
 
 from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
-from memory import UnsafePointer
 
 
 fn vec_reduce[

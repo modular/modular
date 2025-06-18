@@ -18,7 +18,6 @@ from sys.info import simdwidthof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
 from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,

@@ -23,7 +23,6 @@ from buffer import NDBuffer
 from gpu.host import DeviceContext
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
-from memory import UnsafePointer
 from memory.unsafe import bitcast
 from testing import assert_equal
 

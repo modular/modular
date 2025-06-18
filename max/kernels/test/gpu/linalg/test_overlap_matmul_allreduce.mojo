@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import InlineArray
 from math import floor
 from sys import sizeof
 
@@ -27,7 +26,6 @@ from gpu.comm.allreduce import (
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 from testing import assert_almost_equal
 from utils import IndexList, StaticTuple
 

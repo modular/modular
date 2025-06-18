@@ -98,10 +98,6 @@ llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_con
 
 llvm_configure(name = "llvm-project")
 
-modular_host_platform = use_repo_rule("//bazel:modular_host_platform.bzl", "modular_host_platform")
-
-modular_host_platform(name = "modular_host_platform")
-
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
 npm.npm_translate_lock(
     name = "npm",

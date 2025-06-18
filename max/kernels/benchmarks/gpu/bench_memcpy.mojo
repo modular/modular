@@ -19,7 +19,6 @@ from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList

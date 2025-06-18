@@ -44,7 +44,6 @@ var s = String(c)  # "A"
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
-from memory import UnsafePointer
 
 
 @always_inline

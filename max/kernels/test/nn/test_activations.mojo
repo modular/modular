@@ -15,7 +15,6 @@ from math import iota
 from random import randn, seed
 from sys.info import has_neon
 
-from memory import UnsafePointer
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
 from test_utils import compare, libm_call
 from testing import assert_almost_equal

@@ -13,7 +13,7 @@
 """Implements functionality to start a mojo execution."""
 
 from sys import external_call
-from sys.ffi import OpaquePointer, _get_global
+from sys.ffi import _get_global
 
 
 fn _init_global_runtime() -> OpaquePointer:

@@ -21,7 +21,7 @@ from benchmark import (
 )
 from bit import log2_floor
 from math import ceildiv
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from os.atomic import Atomic
 from random import randint
 from sys import has_accelerator, sizeof

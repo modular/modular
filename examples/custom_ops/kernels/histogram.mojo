@@ -18,7 +18,7 @@ from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
 

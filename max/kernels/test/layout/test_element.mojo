@@ -18,7 +18,6 @@ from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
-from memory import UnsafePointer
 
 from utils import IndexList
 

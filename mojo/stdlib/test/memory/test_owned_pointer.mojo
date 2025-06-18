@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from memory import OwnedPointer, UnsafePointer
+from memory import OwnedPointer
 from test_utils import (
     ExplicitCopyOnly,
     ImplicitCopyOnly,

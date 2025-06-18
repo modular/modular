@@ -20,7 +20,6 @@ from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import DEFAULT_GPU_ARCH
-from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod

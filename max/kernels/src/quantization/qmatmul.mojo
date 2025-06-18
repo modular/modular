@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, Optional, OptionalReg
+from collections import OptionalReg
 from math import ceildiv
 from sys import (
     alignof,
@@ -32,7 +32,7 @@ from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
 from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index

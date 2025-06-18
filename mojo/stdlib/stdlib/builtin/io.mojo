@@ -15,7 +15,6 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import InlineArray
 from collections.string.string_slice import get_static_string
 from sys import _libc as libc
 from sys import (
@@ -30,12 +29,12 @@ from sys import (
 )
 from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
 from sys._libc import dup, fclose, fdopen, fflush
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import c_char
 from sys.intrinsics import _type_is_eq
 
 from builtin.dtype import _get_dtype_printf_format
 from builtin.file_descriptor import FileDescriptor
-from memory import UnsafePointer, bitcast, memcpy
+from memory import bitcast, memcpy
 from utils.write import _WriteBufferHeap, _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #

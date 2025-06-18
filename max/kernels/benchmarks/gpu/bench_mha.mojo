@@ -31,7 +31,6 @@ from gpu import *
 from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import arg_parse, bench_compile_time
-from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod

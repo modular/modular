@@ -55,12 +55,12 @@ from sys import (
     sizeof,
 )
 
-from gpu import WARP_SIZE, block_idx, lane_id, thread_idx
+from gpu import WARP_SIZE, lane_id, thread_idx
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
 from layout._utils import load_to_simd
-from layout.int_tuple import IntTuple, product
+from layout.int_tuple import product
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.swizzle import (

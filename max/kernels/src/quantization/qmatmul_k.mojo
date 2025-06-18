@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, OptionalReg
+from collections import OptionalReg
 from math import ceildiv
 from sys import (
     CompilationTarget,
@@ -25,9 +25,8 @@ from sys import (
 )
 from sys.intrinsics import llvm_intrinsic
 
-from algorithm import sync_parallelize, tile, vectorize
+from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
 from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
@@ -36,7 +35,7 @@ from linalg.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index

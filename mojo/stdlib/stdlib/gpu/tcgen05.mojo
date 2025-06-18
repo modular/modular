@@ -22,7 +22,7 @@ from sys.info import _has_blackwell_tcgen05
 
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma import _str_iota  # TODO: move to a string module
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 from gpu.mma_sm100 import MMASmemDescriptor
 

@@ -16,7 +16,6 @@ from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
 from internal_utils import TestTensor, assert_equal
 from nn.gather_scatter import scatter_set_constant
-from memory import UnsafePointer
 
 
 fn test_scatter_set_constant(ctx: DeviceContext) raises:

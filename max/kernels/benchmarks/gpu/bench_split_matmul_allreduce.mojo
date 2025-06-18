@@ -30,7 +30,6 @@ from internal_utils._utils import (
 )
 from utils import IndexList, StaticTuple
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,

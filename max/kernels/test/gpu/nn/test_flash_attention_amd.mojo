@@ -23,7 +23,7 @@ from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import assert_with_measure
 from internal_utils._measure import cosine
-from memory import UnsafePointer, memset_zero
+from memory import memset_zero
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,

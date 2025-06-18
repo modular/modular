@@ -17,7 +17,6 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 alias T = DType.float64
 alias S = Scalar[T]
@@ -34,7 +33,7 @@ trait MaybeZeroSized:
 struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -64,7 +63,7 @@ struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
 struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod

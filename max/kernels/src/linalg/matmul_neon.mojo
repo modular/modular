@@ -11,13 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from math import fma
-from sys.info import alignof
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 

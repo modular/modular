@@ -27,7 +27,6 @@ from compile.reflection import get_type_name
 # NOTE: This apparently redundant import is needed so PythonBindingsGen.cpp can
 # find the StringLiteral declaration.
 from builtin.string_literal import StringLiteral
-from memory import UnsafePointer
 
 from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject
 from .python import Python

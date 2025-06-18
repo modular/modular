@@ -13,8 +13,6 @@
 
 from math import sqrt
 
-from memory import UnsafePointer
-
 
 @register_passable("trivial")
 struct Complex(

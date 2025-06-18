@@ -30,7 +30,6 @@ from layout.layout import (
 )
 from layout.layout_tensor import LayoutTensor, _compute_distribute_layout
 from layout.swizzle import Swizzle, make_swizzle
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils import StaticTuple

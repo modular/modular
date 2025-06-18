@@ -10,15 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray
 from math import ceil, ceildiv
 from sys.info import sizeof
 
 from buffer import NDBuffer
 from buffer.buffer import prod_dims
-from memory import UnsafePointer, bitcast, memcpy
+from memory import bitcast, memcpy
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList, StaticTuple
 
 
 @always_inline

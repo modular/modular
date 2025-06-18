@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import thread_idx
 from gpu.memory import AddressSpace
-from gpu.sync import mbarrier_init
 from layout.tma_async import SharedMemBarrier
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 
 # CHECK-LABEL: test_shared_mem_barrier

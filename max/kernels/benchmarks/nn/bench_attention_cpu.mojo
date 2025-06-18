@@ -17,7 +17,6 @@ from random import rand
 from benchmark import *
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
 from nn.flash_attention import flash_attention
 
 from utils import IndexList

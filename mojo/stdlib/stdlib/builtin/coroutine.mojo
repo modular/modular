@@ -17,7 +17,6 @@ These are Mojo built-ins, so you don't need to import them.
 
 from sys import sizeof
 
-from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # _suspend_async

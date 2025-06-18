@@ -20,7 +20,6 @@ from benchmark import *
 from benchmark import keep
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,

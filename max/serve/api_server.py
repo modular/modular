@@ -23,6 +23,7 @@ from typing import Union
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from max.nn.kv_cache import KVTransferEngineMetadata
 from max.pipelines.core import (
     PipelinesFactory,
     PipelineTask,
@@ -92,11 +93,15 @@ async def lifespan(
         async with AsyncExitStack() as exit_stack:
             # create dispatcher factory
             dispatcher_factory = DispatcherFactory[
-                Union[PrefillRequest, PrefillResponse]
+                Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
             ](
                 settings.dispatcher_config,
                 transport_payload_type=TransportMessage[
-                    Union[PrefillRequest, PrefillResponse]
+                    Union[
+                        PrefillRequest,
+                        PrefillResponse,
+                        KVTransferEngineMetadata,
+                    ]
                 ],
             )
 

@@ -311,14 +311,14 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_equal(
+fn assert_equal_pyobj(
     lhs: PythonObject,
     rhs: PythonObject,
     msg: String = "",
     *,
     location: Optional[_SourceLocation] = None,
 ) raises:
-    """Asserts that the input values are equal. If it is not then an Error
+    """Asserts that the `PythonObject`s are equal. If it is not then an Error
     is raised.
 
     Args:

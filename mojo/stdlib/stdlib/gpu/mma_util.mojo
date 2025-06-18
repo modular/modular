@@ -33,8 +33,6 @@ AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-c
 
 from sys import is_nvidia_gpu
 
-from memory import UnsafePointer
-
 
 @always_inline
 fn load_matrix_a[

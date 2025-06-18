@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from memory import AddressSpace, UnsafePointer
 from test_utils import (
     ExplicitCopyOnly,
     MoveCounter,

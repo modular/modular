@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from collections.optional import OptionalReg
 from math import fma
 from sys import alignof, prefetch
@@ -20,7 +19,6 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from memory import UnsafePointer
 
 from utils.index import IndexList
 

@@ -1454,9 +1454,19 @@ def flare_mla_decompress_k_cache(
 
 
 def kv_cache_get_max_seq_len(
+    kv_params: KVCacheParams,
     kv_collection: PagedKVCacheCollection,
 ) -> TensorValue:
     """This kernel returns the maximum sequence length."""
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "dtype": kv_params.dtype,
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "page_size": kv_params.page_size,
+    }
+
     return ops.inplace_custom(
         "mo.kv_cache.get_max_seq_len.paged",
         device=DeviceRef.CPU(),
@@ -1464,6 +1474,7 @@ def kv_cache_get_max_seq_len(
         out_types=[
             TensorType(dtype=DType.uint32, shape=[1], device=DeviceRef.CPU())
         ],
+        parameters=parameters,
     )[0].tensor[0]
 
 

@@ -68,6 +68,7 @@ class SchedulerLogger:
         num_pending_reqs: int,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
+        num_steps: int,
     ) -> None:
         batch_type = batch.batch_type.concise_name()
         batch_creation_latency_str = to_human_readable_latency(
@@ -79,7 +80,7 @@ class SchedulerLogger:
 
         logger.debug(
             f"Executed {batch_type} batch with {batch.batch_size} reqs | "
-            f"Num steps: {batch.num_steps} | "
+            f"Num steps: {num_steps} | "
             f"Input tokens: {batch.input_tokens} | "
             f"Terminated: {batch.num_terminated} reqs, "
             f"Pending: {num_pending_reqs} reqs | "
@@ -93,7 +94,7 @@ class SchedulerLogger:
                 "end_timestamp": time.time(),
                 "batch_type": batch_type,
                 "batch_size": batch.batch_size,
-                "num_steps": batch.num_steps,
+                "num_steps": num_steps,
                 "input_tokens": batch.input_tokens,
                 "terminated_reqs": batch.num_terminated,
                 "num_pending_reqs": num_pending_reqs,
@@ -134,19 +135,23 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
         self.ce_delay_ms = ce_delay_ms
         self.enable_prioritize_first_decode = enable_prioritize_first_decode
 
+        if self.enable_in_flight_batching:
+            raise ValueError(
+                "In-flight batching is not supported with TTS Scheduler"
+            )
+
 
 class AudioGenerationSchedulerOutput:
     def __init__(
         self,
         reqs: dict[str, TTSContext],
-        num_steps: int,
         batch_type: BatchType,
     ):
         self.start_time = time.time()
         self.reqs = reqs
         self.batch_type = batch_type
         self.batch_size = len(reqs)
-        self.num_steps = num_steps
+
         self.input_tokens = sum(
             context.active_length for context in reqs.values()
         )
@@ -166,7 +171,7 @@ class AudioGenerationSchedulerOutput:
         self.num_terminated = 0
 
     def __repr__(self) -> str:
-        return f"AudioGenerationSchedulerOutput(batch_type={self.batch_type}, batch_size={self.batch_size}, num_steps={self.num_steps}, input_tokens={self.input_tokens})"
+        return f"AudioGenerationSchedulerOutput(batch_type={self.batch_type}, batch_size={self.batch_size}, input_tokens={self.input_tokens})"
 
 
 class AudioGenerationScheduler(Scheduler):
@@ -297,8 +302,6 @@ class AudioGenerationScheduler(Scheduler):
     ) -> AudioGenerationSchedulerOutput:
         self._retrieve_pending_requests()
 
-        num_steps = self.scheduler_config.max_forward_steps_tg
-
         if candidate_reqs is None:
             candidate_reqs = self.decode_reqs
 
@@ -310,24 +313,8 @@ class AudioGenerationScheduler(Scheduler):
                 break
             scheduled_reqs[req_id] = req_data
 
-        for req_data in scheduled_reqs.values():
-            num_available_steps = req_data.compute_num_available_steps(
-                self.paged_manager.max_seq_len
-            )
-            num_steps = min(num_steps, num_available_steps)
-            if (
-                # First check to see if speech token generation is active.
-                not req_data.speech_token_status.is_done
-                # Then try prefetching and checking if there is enough KV cache.
-                and not self.paged_manager.prefetch(
-                    req_data, num_steps=num_steps
-                )
-            ):
-                raise RuntimeError("Ran out of KV cache")
-
         return AudioGenerationSchedulerOutput(
             scheduled_reqs,
-            num_steps=num_steps,
             batch_type=BatchType.TokenGeneration,
         )
 
@@ -336,7 +323,6 @@ class AudioGenerationScheduler(Scheduler):
 
         ce_batch: dict[str, TTSContext] = {}
         max_batch_size_ce = self.scheduler_config.max_batch_size_ce
-        max_batch_size_tg = self.scheduler_config.max_batch_size_tg
         max_queue_size_tg = self.scheduler_config.max_queue_size_tg
         max_input_len = (
             self.scheduler_config.target_tokens_per_batch_ce or float("inf")
@@ -352,26 +338,14 @@ class AudioGenerationScheduler(Scheduler):
         ):
             req_id, req_data = self.pending_reqs.popleft()
             req_data.assign_to_cache(self.available_cache_indices.pop())
+            # Prefetch here for CE so that we query prefix cache
             if not self.paged_manager.prefetch(req_data, num_steps=1):
                 raise RuntimeError("Ran out of KV cache")
             ce_batch[req_id] = req_data
             input_len += req_data.active_length
 
-        if ce_batch and self.scheduler_config.enable_in_flight_batching:
-            num_decode_reqs = 0
-            for req_id, req_data in self.decode_reqs.items():
-                if (
-                    len(ce_batch) == max_batch_size_ce
-                    or num_decode_reqs > max_batch_size_tg
-                ):
-                    break
-                num_decode_reqs += 1
-                ce_batch[req_id] = req_data
-                if not self.paged_manager.prefetch(req_data, num_steps=1):
-                    raise RuntimeError("Ran out of KV cache")
-
         return AudioGenerationSchedulerOutput(
-            ce_batch, num_steps=1, batch_type=BatchType.ContextEncoding
+            ce_batch, batch_type=BatchType.ContextEncoding
         )
 
     def _schedule(self, batch: AudioGenerationSchedulerOutput) -> None:
@@ -379,9 +353,7 @@ class AudioGenerationScheduler(Scheduler):
 
         # execute the batch
         with Trace(f"_schedule({batch})"):
-            responses = self.pipeline.next_chunk(
-                batch.reqs, num_tokens=batch.num_steps
-            )
+            responses = self.pipeline.next_chunk(batch.reqs)
 
         # add the encoded requests to the continuous batch
         self.decode_reqs.update(batch.reqs)
@@ -460,11 +432,14 @@ class AudioGenerationScheduler(Scheduler):
                 batch_execution_time_s = t1 - t0
 
                 # Log batch metrics
+                num_steps = self.pipeline.prev_num_steps
+                assert num_steps is not None and num_steps > 0
                 self.batch_info_logger.log(
                     batch,
                     len(self.pending_reqs),
                     batch_creation_time_s,
                     batch_execution_time_s,
+                    num_steps,
                 )
 
                 # occasionally handle cancelled requests

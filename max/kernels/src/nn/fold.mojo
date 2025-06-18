@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the fold operation."""
 
-from sys.info import simdwidthof
 
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from runtime.asyncrt import DeviceContextPtr
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 fn fold[

@@ -23,7 +23,6 @@ from collections import Deque
 
 
 from bit import next_power_of_two
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -1006,7 +1005,7 @@ struct _DequeIter[
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(mut self) -> ref [deque_lifetime] ElementType:
+    fn __next_ref__(mut self) -> ref [deque_lifetime] ElementType:
         @parameter
         if forward:
             var idx = self.index
@@ -1015,6 +1014,9 @@ struct _DequeIter[
         else:
             self.index -= 1
             return self.src[][self.index]
+
+    fn __next__(mut self) -> ElementType:
+        return self.__next_ref__()
 
     fn __len__(self) -> Int:
         @parameter

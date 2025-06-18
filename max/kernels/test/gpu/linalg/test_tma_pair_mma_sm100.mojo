@@ -16,7 +16,7 @@ from sys import sizeof
 
 from gpu import WARP_SIZE, barrier
 from gpu import warp_id as get_warp_id, lane_id as get_lane_id
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx, block_id_in_cluster
 from gpu.memory import AddressSpace, fence_mbarrier_init
@@ -32,6 +32,7 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
 )
 from gpu.cluster import (
+    elect_one_sync_with_mask,
     block_rank_in_cluster,
     cluster_sync,
     cluster_sync_relaxed,
@@ -80,6 +81,9 @@ fn tma_umma_kernel_pair_cta[
     alias num_m_mmas = BM // mma_shape[0]
     alias num_n_mmas = BN // mma_shape[1]
 
+    alias CLUSTER_M = Int(cluster_shape[0])
+    alias CLUSTER_N = Int(cluster_shape[1])
+
     alias a_tma_load_size = a_desc_layout.size()
     alias b_tma_load_size = b_desc_layout.size()
     alias a_tma_rows = a_desc_layout.shape[0].value()
@@ -94,13 +98,25 @@ fn tma_umma_kernel_pair_cta[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
+    var smem = external_memory[
+        UInt8, address_space = AddressSpace.SHARED, alignment=8
+    ]()
+
+    alias a_smem_bytes = a_smem_layout.size() * sizeof[a_type]()
+    alias b_smem_bytes = b_smem_layout.size() * sizeof[b_type]()
+
+    var a_smem = smem.bitcast[Scalar[a_type]]()
+    var b_smem = (smem + a_smem_bytes).bitcast[Scalar[b_type]]()
+
+    var smem_poll = (smem + a_smem_bytes + b_smem_bytes).bitcast[Int64]()
+
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ].stack_allocation()
+    ](a_smem.static_alignment_cast[128]())
 
     var b_smem_tile = LayoutTensor[
         b_type,
@@ -108,49 +124,31 @@ fn tma_umma_kernel_pair_cta[
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
         alignment=128,
-    ].stack_allocation()
+    ](b_smem.static_alignment_cast[128]())
 
     alias accum_type = get_accum_type[a_type]()
 
     # Shared memory pointer to hold tensor memory address
-    var ptr_tmem_addr = stack_allocation[
-        1, UInt32, address_space = AddressSpace.SHARED, alignment=16
-    ]()
+    var ptr_tmem_addr = (smem_poll.bitcast[Int64]() + 4).bitcast[UInt32]()
 
     alias c_frag_size = MMA_M * MMA_N // 128 // cta_group
     var c_frag = SIMD[accum_type, c_frag_size]()
 
     alias a_expected_bytes = a_smem_layout.size() * sizeof[a_type]()
     alias b_expected_bytes = b_smem_layout.size() * sizeof[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
+    # Leader CTAs expect SMEM from itself and their peers
+    alias expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
-    tma_mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
-        alignment=16,
-    ]()
+    var tma_mbar_ptr = smem_poll.bitcast[Int64]()
+    var mma_mbar_ptr = smem_poll.bitcast[Int64]() + 2
 
-    mma_mbar = stack_allocation[
-        1,
-        SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
-        alignment=16,
-    ]()
+    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = thread_idx.x // WARP_SIZE == 0
-    var elect_one_thread = thread_idx.x == 0
+    var elect_one_thread = elect_one_sync_with_mask()
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
     alias max_tmem_cols = 512
-
-    if elect_one_thread:
-        tma_mbar[0].init()
-        mma_mbar[0].init(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
-
-    cluster_sync()
-
-    var tma_phase: UInt32 = 0
-    var mma_phase: UInt32 = 0
 
     if elect_one_warp:
         tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
@@ -158,6 +156,15 @@ fn tma_umma_kernel_pair_cta[
     # Ensure all threads sees initialized mbarrier and
     # tensor memory allocation
     barrier()
+
+    if elect_one_warp and elect_one_thread:
+        tma_mbar[0].init()
+        mma_mbar[0].init(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
+
+    cluster_sync()
+
+    var tma_phase: UInt32 = 0
+    var mma_phase: UInt32 = 0
 
     tmem_addr = ptr_tmem_addr[0]
 
@@ -194,14 +201,30 @@ fn tma_umma_kernel_pair_cta[
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (rank_m % cta_group, rank_m // cta_group, rank_n)
 
-    var a_multicast_mask: UInt16 = 0x1111 << rank_m
-    var b_multicast_mask: UInt16 = 0x0005 << peer_cta_coord[0] << (rank_n * 4)
-    var c_mma_mask: UInt16 = (a_multicast_mask | a_multicast_mask << 1) | (
-        b_multicast_mask | b_multicast_mask << 1
+    var a_multicast_mask: UInt16 = 0x0
+    var b_multicast_mask: UInt16 = 0x0
+
+    # TODO: find a generic way to calculate multicast mask
+    @parameter
+    for i in range(CLUSTER_N):
+        a_multicast_mask |= 1 << (i * CLUSTER_M)
+
+    @parameter
+    for i in range(CLUSTER_M // cta_group):
+        b_multicast_mask |= 1 << (i * cta_group)
+
+    a_multicast_mask <<= rank_m
+    b_multicast_mask <<= peer_cta_coord[0]
+    b_multicast_mask <<= rank_n * CLUSTER_M
+
+    var a_mma_mask = a_multicast_mask >> peer_cta_coord[0]
+    var b_mma_mask = b_multicast_mask >> peer_cta_coord[0]
+    var c_mma_mask: UInt16 = (a_mma_mask | a_mma_mask << 1) | (
+        b_mma_mask | b_mma_mask << 1
     )
 
     for i in range(num_iters):
-        if elect_one_thread:
+        if elect_one_warp and elect_one_thread:
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(expected_bytes)
 
@@ -214,59 +237,60 @@ fn tma_umma_kernel_pair_cta[
                 + block_idx.y * MMA_N
             )
 
-            var a_smem_slice = __type_of(a_smem_tile)(
-                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
-            )
-
-            var b_smem_slice = __type_of(b_smem_tile)(
-                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
-            )
+            var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
+            var b_smem_reshape = b_smem_tile.reshape[Layout.row_major(BN, BK)]()
 
             a_tma_op.async_multicast_load[cta_group](
-                a_smem_slice,
+                a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
                 tma_mbar[0],
                 (UInt(i) * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
             b_tma_op.async_multicast_load[cta_group](
-                b_smem_slice,
+                b_smem_reshape.split[CLUSTER_M // cta_group]()[
+                    peer_cta_coord[1]
+                ],
                 tma_mbar[0],
                 (UInt(i) * BK, b_gmem_slice_coord),
                 b_multicast_mask,
             )
 
-        # cluster_sync()
-
         if elect_one_cta:
             tma_mbar[0].wait(tma_phase)
             tma_phase ^= 1
 
-            if elect_one_thread:
+            if elect_one_warp:
                 adesc = adesc_base
                 bdesc = bdesc_base
 
                 if i == 0:
-                    mma[cta_group, c_scale=0](adesc, bdesc, tmem_addr, idesc)
+                    if elect_one_thread:
+                        mma[cta_group, c_scale=0](
+                            adesc, bdesc, tmem_addr, idesc
+                        )
 
                     @parameter
                     for j in range(1, BK // mma_shape[2]):
                         adesc += mma_shape[2] * sizeof[a_type]()
                         bdesc += b_k_stride
-                        mma[cta_group, c_scale=1](
-                            adesc, bdesc, tmem_addr, idesc
-                        )
+                        if elect_one_thread:
+                            mma[cta_group, c_scale=1](
+                                adesc, bdesc, tmem_addr, idesc
+                            )
                 else:
 
                     @parameter
                     for j in range(BK // mma_shape[2]):
-                        mma[cta_group, c_scale=1](
-                            adesc, bdesc, tmem_addr, idesc
-                        )
+                        if elect_one_thread:
+                            mma[cta_group, c_scale=1](
+                                adesc, bdesc, tmem_addr, idesc
+                            )
                         adesc += mma_shape[2] * sizeof[a_type]()
                         bdesc += b_k_stride
 
-                mma_arrive_multicast[cta_group](mma_mbar, c_mma_mask)
+                if elect_one_thread:
+                    mma_arrive_multicast[cta_group](mma_mbar, c_mma_mask)
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
@@ -376,6 +400,10 @@ def test_tma_umma_pair_cta[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
+    alias smem_size = BM * BK * sizeof[a_type]() + BN * BK * sizeof[
+        b_type
+    ]() + 16 + 16 + 16
+
     alias kernel = tma_umma_kernel_pair_cta[
         a_type,
         b_type,
@@ -405,6 +433,8 @@ def test_tma_umma_pair_cta[
             1,
         ),
         block_dim=(128),
+        shared_mem_bytes=smem_size,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
     )
 
     vendor_blas.matmul(
@@ -460,6 +490,32 @@ def main():
             Index(64, 128, 64),
             Index(128, 256, 16),
             cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cta_group=2,
+        ](ctx)
+
+        test_tma_umma_pair_cta[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 512, 128),
+            Index(64, 128, 64),
+            Index(128, 256, 16),
+            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cta_group=2,
+        ](ctx)
+
+        test_tma_umma_pair_cta[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(128, 256, 128),
+            Index(64, 128, 64),
+            Index(128, 256, 16),
+            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             cta_group=2,

@@ -28,7 +28,7 @@ from gpu.sync import (
 )
 from layout.tma_async import SharedMemBarrier
 from gpu.intrinsics import Scope
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from buffer import DimList, NDBuffer
 from testing import assert_almost_equal

@@ -19,7 +19,7 @@ from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
 from sys.info import os_is_windows
 
-from memory import Span, UnsafePointer
+from memory import Span
 
 
 struct _POpenHandle:

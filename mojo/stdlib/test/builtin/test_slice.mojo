@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_true
 
 
 def test_none_end_folds():

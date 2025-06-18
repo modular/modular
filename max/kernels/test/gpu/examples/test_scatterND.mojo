@@ -17,7 +17,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import block_dim, block_idx, global_idx, thread_idx
 from gpu.host import DeviceContext
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from testing import assert_false
 
 from utils.index import Index

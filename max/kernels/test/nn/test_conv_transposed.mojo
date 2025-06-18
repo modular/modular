@@ -18,7 +18,6 @@ from sys.info import simdwidthof
 from algorithm.functional import vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
