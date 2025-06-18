@@ -20,3 +20,11 @@
 // RUN:   | FileCheck %s --check-prefix=CHECK-O-DIR
 // CHECK-O-DIR: lit.package @test_package
 // RUN: rm %T/test_package.mojopkg
+
+// Test that if input path is "." for current directory, we get the package name
+// of `current_directory_name.mojopkg` instead of `..mojopkg`.
+// RUN: cd %S/test_package && mojo package .
+// RUN: kgen-opt -mlir-print-debuginfo %S/test_package/test_package.mojopkg \
+// RUN:   | FileCheck %s --check-prefix=CHECK-CUR-DIR
+// CHECK-CUR-DIR: lit.package @test_package
+// RUN: rm %S/test_package/test_package.mojopkg
