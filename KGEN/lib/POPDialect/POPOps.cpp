@@ -585,16 +585,28 @@ LogicalResult GlobalConstantOp::verify() {
 //===----------------------------------------------------------------------===//
 // CallLLVMIntrinsicOp
 //===----------------------------------------------------------------------===//
+static bool getBoolAttrValue(TypedAttr attr, bool defaultValue) {
+  if (attr) {
+    if (auto boolAttr = dyn_cast<BoolAttr>(attr))
+      return boolAttr.getValue();
+  }
+  return defaultValue;
+}
 
 void CallLLVMIntrinsicOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
-  if (getHasSideEffects())
+  // CallLLVMIntrinsicOp has side effect by default. If the attribute is not
+  // set, assume it has side effect.
+  if (getBoolAttrValue(getHasSideEffectsAttr(), true))
     effects.emplace_back(mlir::MemoryEffects::Write::get());
 }
 
 mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
-  if (getHasSideEffects())
+  // CallLLVMIntrinsicOp has side effect by default. If the attribute is not
+  // set, assume it has side effect.
+  if (getBoolAttrValue(getHasSideEffectsAttr(), true))
     return mlir::Speculation::NotSpeculatable;
+
   return mlir::Speculation::Speculatable;
 }
 
