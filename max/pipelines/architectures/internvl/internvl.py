@@ -23,7 +23,6 @@ from max.graph import (
     DeviceRef,
     ShardingStrategy,
     TensorValue,
-    TensorValueLike,
     Weight,
     ops,
 )
@@ -48,6 +47,7 @@ from max.nn.kv_cache import (
     PagedKVCacheCollection,
 )
 
+from .embedding_utils import merge_multimodal_embeddings
 from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
 
@@ -194,12 +194,15 @@ class InternVLLanguageModel(Module):
         - Last token logits only (no variable logits)
     """
 
-    def __init__(self, config: InternVLConfig):
+    def __init__(
+        self, config: InternVLConfig, image_context_token_id: int
+    ) -> None:
         """Initializes the InternVL language model.
 
         Args:
             config: The InternVL configuration containing model parameters,
                 including the language model config, devices, and other settings.
+            image_context_token_id: Token ID for image context tokens.
 
         Raises:
             ValueError: If tied embeddings are requested (not supported).
@@ -259,13 +262,17 @@ class InternVLLanguageModel(Module):
             num_layers=llm_config.num_hidden_layers,
         )
 
+        # Store image context token ID.
+        self.image_context_token_id = image_context_token_id
+
     def __call__(
         self,
-        tokens: TensorValueLike,
+        tokens: TensorValue,
         signal_buffers: Iterable[BufferValue],
         kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
+        image_embeddings: Sequence[TensorValue],
     ) -> tuple[TensorValue, ...]:
         """Executes the language model forward pass.
 
@@ -275,12 +282,27 @@ class InternVLLanguageModel(Module):
             kv_cache_inputs_per_dev: KV cache inputs for each device.
             return_n_logits: Number of logits to return (unused, always returns last).
             input_row_offsets: Offsets for flattened input sequences.
+            image_embeddings: Image embeddings to merge into text embeddings,
+                one per device. Can be empty tensors for text-only inputs.
 
         Returns:
             A tuple containing the output logits for the last token positions.
         """
         # Get embeddings.
         h = self.embed_tokens(tokens, signal_buffers)
+
+        # Merge image embeddings into text embeddings.
+        # Let the kernel handle the no-image embeddings case.
+        # And use the first device's image embeddings since they're replicated.
+        h0_merged = merge_multimodal_embeddings(
+            input_ids=tokens,
+            inputs_embeds=h[0],
+            multimodal_embeddings=image_embeddings[0],
+            image_context_token_id=self.image_context_token_id,
+        )
+
+        # Distribute merged embeddings to all devices
+        h = distribute_value(h0_merged, self.devices)
 
         # Create KV cache collections.
         kv_collections = [
@@ -581,6 +603,135 @@ class InternVLVisionMLP(Module):
         return x
 
 
+class InternVLMLP1(Module, Shardable):
+    """Multimodal projector (mlp1) for InternVL vision model.
+
+    This module projects vision features from the vision encoder to the
+    dimensionality expected by the language model. It consists of:
+    - Layer normalization
+    - Two linear layers with GELU activation
+
+    The module supports sharding across multiple devices for distributed execution.
+    """
+
+    def __init__(
+        self, config: InternVLConfig, device: DeviceRef | None = None
+    ) -> None:
+        """Initializes the multimodal projector.
+
+        Args:
+            config: The InternVL configuration containing model parameters.
+            device: The device to place weights on. Defaults to CPU if not specified.
+        """
+        super().__init__()
+        self.config = config
+        vit_hidden_size = config.vision_config.hidden_size
+        llm_hidden_size = config.llm_config.hidden_size
+        downsample_ratio = config.downsample_ratio
+
+        # Use CPU as default if no device specified.
+        device = device or DeviceRef.CPU()
+
+        # Calculate input size after pixel shuffle.
+        mlp_input_size = int(vit_hidden_size * (1 / downsample_ratio) ** 2)
+
+        self.layer_norm = LayerNorm(
+            dims=mlp_input_size,
+            device=device,
+            dtype=config.vision_config.dtype,
+            eps=1e-6,
+            use_bias=True,
+        )
+
+        self.fc1 = Linear(
+            in_dim=mlp_input_size,
+            out_dim=llm_hidden_size,
+            dtype=config.vision_config.dtype,
+            device=device,
+            has_bias=True,
+        )
+
+        self.fc2 = Linear(
+            in_dim=llm_hidden_size,
+            out_dim=llm_hidden_size,
+            dtype=config.vision_config.dtype,
+            device=device,
+            has_bias=True,
+        )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the MLP sharding strategy."""
+        return self.fc1.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the MLP layers.
+
+        Args:
+            strategy: The strategy describing the MLP's sharding.
+        """
+        if not strategy.is_replicate:
+            raise ValueError(
+                "only replicate is supported for InternVLMLP1, currently"
+            )
+
+        # Set sharding strategy for all weights
+        # LayerNorm weights
+        self.layer_norm.weight.sharding_strategy = strategy
+        if self.layer_norm.bias is not None:
+            self.layer_norm.bias.sharding_strategy = strategy
+
+        # Linear layer weights
+        self.fc1.sharding_strategy = strategy
+        self.fc2.sharding_strategy = strategy
+
+    def shard(self, shard_idx: int, device: DeviceRef) -> InternVLMLP1:
+        """Creates a sharded view of this MLP for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded InternVLMLP1 instance.
+        """
+        # This should be set unconditionally in the constructor.
+        assert self.sharding_strategy
+
+        # Create the new sharded MLP.
+        sharded = InternVLMLP1(self.config, device)
+
+        # Shard the weights.
+        sharded.layer_norm.weight = self.layer_norm.weight.shard(
+            shard_idx, device
+        )
+        if self.layer_norm.bias is not None:
+            sharded.layer_norm.bias = self.layer_norm.bias.shard(
+                shard_idx, device
+            )
+
+        sharded.fc1 = self.fc1.shard(shard_idx, device)
+        sharded.fc2 = self.fc2.shard(shard_idx, device)
+
+        return sharded
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies the multimodal projection to input embeddings.
+
+        Args:
+            x: Input tensor of shape [sequence_length, input_dim].
+
+        Returns:
+            Projected tensor of shape [sequence_length, llm_hidden_size].
+        """
+        x = self.layer_norm(x)
+        x = self.fc1(x)
+        x = ops.gelu(x)
+        x = self.fc2(x)
+        return x
+
+
 class InternVisionEncoderLayer(Module):
     """Single encoder layer for the InternVL vision transformer.
 
@@ -595,9 +746,13 @@ class InternVisionEncoderLayer(Module):
     """
 
     def __init__(self, config: InternVLConfig) -> None:
+        """Initializes an encoder layer.
+
+        Args:
+            config: The InternVL configuration containing model parameters.
+        """
         super().__init__()
         self.config = config
-
         self.embed_dim = config.vision_config.hidden_size
         self.intermediary_size = config.vision_config.intermediate_size
         self.norm_type = config.vision_config.norm_type
@@ -739,16 +894,10 @@ class InternVLVisionModel(Module):
         multi-gpu coming shortly.
     """
 
-    packed_modules_mapping = {
-        "qkv": ["qkv"],
-    }
-
-    def __init__(
-        self,
-        config: InternVLConfig,
-    ) -> None:
+    def __init__(self, config: InternVLConfig) -> None:
         super().__init__()
         self.config = config
+        self.devices = config.devices
 
         # TODO: Add support for multiple devices
         # Use the first device for single-device components
@@ -767,6 +916,18 @@ class InternVLVisionModel(Module):
             self.embeddings.shard(n, dev)
             for n, dev in enumerate(config.devices)
         ]
+
+        # Store downsample_ratio and ps_version for pixel_shuffle
+        self.downsample_ratio = config.downsample_ratio
+        self.ps_version: str = getattr(config, "ps_version", "v2")
+
+        if config.downsample_ratio != 0.5:
+            raise ValueError(
+                "InternVLVisionModel only supports downsample ratio of 0.5"
+            )
+
+        if self.ps_version != "v2":
+            raise ValueError("InternVLVisionModel only supports ps_version v2")
 
         # Use LayerList for proper weight scoping, similar to other MAX models
         encoder_layers = [
@@ -801,16 +962,74 @@ class InternVLVisionModel(Module):
             # Use identity (no-op) when mean pooling is used
             self.layernorm = None
 
+        # Initialize the multimodal projector (mlp1).
+        self.mlp1 = InternVLMLP1(config)
+        self.mlp1.sharding_strategy = ShardingStrategy.replicate(
+            len(config.devices)
+        )
+
+        # Create sharded mlp1 instances for each device.
+        self.mlp1_list = [
+            self.mlp1.shard(n, dev) for n, dev in enumerate(config.devices)
+        ]
+
+    def pixel_shuffle(self, x: TensorValue, h: int, w: int) -> TensorValue:
+        """Pixel shuffle operation for downsampling vision features.
+
+        Args:
+            x: Input tensor of shape [batch, height, width, channels]
+            h: Height dimension (as int, not Dim)
+            w: Width dimension (as int, not Dim)
+
+        NOTE: this assumes a downsampling factor of 2x (`scale_factor == 0.5`).
+
+        Returns:
+            Shuffled tensor
+        """
+        # The constructor checked this is v2 already.
+        assert self.ps_version != "v1"
+
+        batch_size = x.shape[0]
+        c = x.shape[3]
+
+        # Common case: downsample by 2x.
+        # [N, H, W, C] -> [N, H, W/2, C*2].
+        x = ops.reshape(x, [batch_size, h, w // 2, -1])
+
+        # Permute: [N, H, W/2, C*2] -> [N, W/2, H, C*2].
+        x = ops.permute(x, [0, 2, 1, 3])
+
+        # Reshape: [N, W/2, H, C*2] -> [N, H/2, W/2, C*4].
+        x = ops.reshape(x, [batch_size, h // 2, w // 2, -1])
+
+        # For ps_version v2, do another permute.
+        x = ops.permute(x, [0, 2, 1, 3])
+
+        return x
+
     def __call__(
-        self,
-        pixel_values: TensorValue,
-    ) -> TensorValue:
-        """Forward pass through the vision model."""
+        self, pixel_values: Sequence[TensorValue]
+    ) -> Sequence[TensorValue]:
+        """Process pixel values to image embeddings.
 
-        # Single device for now
-        hidden_states = self.embeddings_list[0](pixel_values)
+        Args:
+            pixel_values: Input pixel values tensor, one per device.
 
-        # Pass through all encoder layers using LayerList
+        Returns:
+            Image embeddings tensor, one per device, flattened for language model.
+        """
+        # Get vision embeddings from each device
+        vit_embeds = [
+            embed(pixels)
+            for embed, pixels in zip(self.embeddings_list, pixel_values)
+        ]
+
+        # TODO(MODELS-632): Pass through encoder layers when multi-device
+        # support is added.
+        # For now, process only on the first device.
+        hidden_states = vit_embeds[0]
+
+        # Pass through all encoder layers using LayerList.
         for encoder_layer in self.encoder_layers:
             hidden_states = encoder_layer(hidden_states)
 
@@ -821,6 +1040,66 @@ class InternVLVisionModel(Module):
         if self.layernorm is not None:
             hidden_states = self.layernorm(hidden_states)
 
-        # Ensure we always return a TensorValue
-        assert isinstance(hidden_states, TensorValue)
-        return hidden_states
+        # Create list with processed embeddings (currently single device)
+        vit_embeds_processed = [hidden_states]
+
+        # Remove CLS token (first token) from each device's embeddings.
+        # Shape: [batch, num_positions, embed_dim] -> [batch, num_positions-1, embed_dim]
+        vit_embeds_no_cls = [
+            embeds[:, 1:, :] for embeds in vit_embeds_processed
+        ]
+
+        # For spatial operations, we need to know the grid size
+        # Calculate from the number of patches (assuming square images)
+        # Use the first device's shape as reference.
+        batch_size, num_patches, embed_dim = vit_embeds_no_cls[0].shape[:3]
+
+        # For static shapes, compute grid dimensions.
+        # This assumes num_patches is a perfect square.
+        h = int(int(num_patches) ** 0.5)
+        w = int(int(num_patches) ** 0.5)
+
+        # Reshape to spatial format: [batch, h*w, embed_dim] -> [batch, h, w, embed_dim]
+        spatial_embeds = [
+            ops.reshape(embeds, [batch_size, h, w, embed_dim])
+            for embeds in vit_embeds_no_cls
+        ]
+
+        # Apply pixel shuffle for downsampling
+        shuffled_embeds = [
+            self.pixel_shuffle(embeds, h, w) for embeds in spatial_embeds
+        ]
+
+        # Reshape back to sequence format
+        # After pixel shuffle with scale=0.5, dimensions are halved
+        new_h = h // 2
+        new_w = w // 2
+        new_embed_dim = int(embed_dim * 4)  # C becomes C*4 after pixel shuffle
+
+        seq_embeds = [
+            ops.reshape(embeds, [batch_size, new_h * new_w, new_embed_dim])
+            for embeds in shuffled_embeds
+        ]
+
+        # Apply mlp1 projection (includes layer norm, fc1, gelu, fc2)
+        mlp_out = [
+            mlp(embeds) for mlp, embeds in zip(self.mlp1_list, seq_embeds)
+        ]
+
+        # Flatten for language model
+        # Shape: [batch, seq_len, hidden_dim] -> [batch * seq_len, hidden_dim]
+        flattened = [
+            ops.reshape(
+                embeds,
+                [
+                    batch_size * new_h * new_w,
+                    self.config.llm_config.hidden_size,
+                ],
+            )
+            for embeds in mlp_out
+        ]
+
+        # TODO(MODELS_632): Finish tensor parallel InternVLVisionModel.
+        # In the meantime, broadcast here since the language model supports TP.
+        assert len(flattened) == 1
+        return distribute_value(flattened[0], self.devices)

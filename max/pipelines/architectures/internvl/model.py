@@ -51,6 +51,7 @@ from transformers.models.auto.configuration_auto import AutoConfig
 
 from .internvl import InternVLLanguageModel, InternVLVisionModel
 from .model_config import InternVLConfig
+from .tokenizer import IMAGE_CONTEXT_TOKEN_ID
 from .weight_adapters import (
     convert_internvl_language_model_state_dict,
     convert_internvl_vision_model_state_dict,
@@ -316,12 +317,16 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             (pixel_values,) = graph.inputs
 
             # Execute vision model: pixel_values -> image_embeddings.
-            # The vision model expects a single TensorValue and returns a single TensorValue
-            # TODO: need to implement distributed to do multiple.
-            image_embeddings = vision_model(pixel_values.tensor)
+            image_embeddings = vision_model(
+                [
+                    # Transfer pixel values to each device.
+                    pixel_values.tensor.to(DeviceRef.from_device(dev))
+                    for dev in self.devices
+                ]
+            )
 
             # Set graph outputs.
-            graph.output(image_embeddings)
+            graph.output(*image_embeddings)
 
             return graph, vision_model.state_dict()
 
@@ -343,6 +348,19 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
 
+        # Add image embeddings type - one per device, can be empty for text-only inputs
+        image_embeddings_types = [
+            TensorType(
+                self.dtype,
+                shape=[
+                    "num_image_tokens",
+                    self.huggingface_config.llm_config.hidden_size,
+                ],
+                device=DeviceRef.from_device(dev),
+            )
+            for dev in self.devices
+        ]
+
         # Flatten kv types for each device
         flattened_kv_types = [
             kv_type for sublist in kv_inputs for kv_type in sublist
@@ -356,6 +374,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
+            *image_embeddings_types,
             *signals.input_types(),
             *flattened_kv_types,
         )
@@ -392,7 +411,9 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             "internvl_language", input_types=self._language_graph_input_types()
         ) as graph:
             # Build language model architecture.
-            language_model = InternVLLanguageModel(config)
+            language_model = InternVLLanguageModel(
+                config, IMAGE_CONTEXT_TOKEN_ID
+            )
             language_model.load_state_dict(
                 state_dict=state_dict,
                 override_quantization_encoding=True,
@@ -400,9 +421,18 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
 
             # Unpack inputs
-            tokens, input_row_offsets, return_n_logits, *variadic_args = (
-                graph.inputs
-            )
+            (
+                tokens,
+                input_row_offsets,
+                return_n_logits,
+                *variadic_args,
+            ) = graph.inputs
+
+            # Extract image embeddings (one per device)
+            image_embeddings = [
+                v.tensor for v in variadic_args[: len(self.devices)]
+            ]
+            variadic_args = variadic_args[len(self.devices) :]
 
             # Multi-GPU passes a signal buffer per device: unmarshal these.
             signal_buffers = [
@@ -415,10 +445,11 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             # Execute language model: text + image embeddings -> logits
             outputs = language_model(
                 tokens=tokens.tensor,
-                signal_buffers=[buf.buffer for buf in signal_buffers],
+                signal_buffers=signal_buffers,
                 kv_cache_inputs_per_dev=self._unflatten_kv_inputs(kv_cache),
                 return_n_logits=return_n_logits.tensor,
                 input_row_offsets=input_row_offsets.tensor,
+                image_embeddings=image_embeddings,
             )
 
             graph.output(*outputs)
@@ -461,7 +492,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         model_inputs = cast(InternVLInputs, model_inputs)
 
         # Process vision inputs if present
-        image_embeddings: Tensor
+        image_embeddings: list[Tensor]
         if model_inputs.has_vision_inputs:
             assert model_inputs.pixel_values is not None
 
@@ -469,18 +500,22 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             vision_outputs = self.vision_model.execute(
                 model_inputs.pixel_values
             )
-            assert isinstance(vision_outputs[0], Tensor)
-            image_embeddings = vision_outputs[0]
+            assert len(vision_outputs) == len(self.devices)
+
+            image_embeddings = [
+                output
+                for output in vision_outputs
+                if isinstance(output, Tensor)
+            ]
         else:
-            # Initialize image embeddings as empty tensor for text-only mode
-            llm_config = getattr(
-                self.huggingface_config, "llm_config", self.huggingface_config
-            )
-            hidden_size = getattr(llm_config, "hidden_size", 4096)
-            image_embeddings = Tensor.zeros(
-                shape=[0, hidden_size],
-                dtype=self.dtype,
-            ).to(self.devices[0])
+            # Initialize image embeddings as empty tensors for text-only mode.
+            image_embeddings = [
+                Tensor.zeros(
+                    shape=[0, self.huggingface_config.llm_config.hidden_size],
+                    dtype=self.dtype,
+                ).to(dev)
+                for dev in self.devices
+            ]
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
@@ -491,6 +526,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             model_inputs.input_ids,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
+            *image_embeddings,
             *model_inputs.signal_buffers,
             *kv_cache_inputs_list,
         )

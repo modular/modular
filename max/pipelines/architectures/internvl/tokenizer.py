@@ -27,6 +27,10 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
+# The token ID for "<IMG_CONTEXT>" in the InternVL tokenizer
+# This is used to identify where to insert image embeddings in the text
+IMAGE_CONTEXT_TOKEN_ID = 151667
+
 
 def find_closest_aspect_ratio(
     aspect_ratio: float,
