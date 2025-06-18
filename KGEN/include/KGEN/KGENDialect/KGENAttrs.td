@@ -535,7 +535,7 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
 }
 
 //===----------------------------------------------------------------------===//
-// CompileOffloadClusreAttr
+// CompileOffloadClosureAttr
 //===----------------------------------------------------------------------===//
 
 def KGEN_CompileOffloadClosureAttr : KGEN_ExprAttr<"CompileOffloadClosure",
@@ -548,7 +548,7 @@ def KGEN_CompileOffloadClosureAttr : KGEN_ExprAttr<"CompileOffloadClosure",
     Example:
 
     ```mlir
-    #kgen.get_linkage_name<
+    #kgen.compile_offload_closure<
       #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target,
       #kgen.symbol.constant<@kernel> : !kgen.generator<() -> ()>
     > : !kgen.string
