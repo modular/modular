@@ -16,6 +16,7 @@
 **Mojo**🔥.
 
 The Modular Platform is an open and fully-integrated suite of AI libraries
+
 and tools that accelerates model serving and scales GenAI deployments. It
 abstracts away hardware complexity so you can run the most popular open
 models with industry-leading GPU and CPU performance without any code changes.
