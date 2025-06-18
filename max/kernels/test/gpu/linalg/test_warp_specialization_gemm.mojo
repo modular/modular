@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import sizeof
 
 import linalg.vendor_blas
-from buffer.dimlist import DimList, _make_tuple
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,

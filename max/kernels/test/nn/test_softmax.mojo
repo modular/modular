@@ -14,7 +14,7 @@
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from nn.softmax import logsoftmax, softmax_2_pass
 
 

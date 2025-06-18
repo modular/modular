@@ -11,15 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose
 from random import rand
-from sys import sizeof
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer
-from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha import flash_attention
 from nn.mha_mask import (
     MASK_VALUE,
     ChunkedCausalMask,
@@ -27,11 +24,9 @@ from nn.mha_mask import (
     TileMaskStatus,
 )
 from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import MHAConfig
 from testing import assert_almost_equal, assert_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
+from utils.index import Index
 
 
 def build_ChunkedCausalMask[

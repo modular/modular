@@ -11,17 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv, iota
-from os import abort
+from math import iota
 from random import random_float64
 
 from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from internal_utils import DeviceNDBuffer
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal

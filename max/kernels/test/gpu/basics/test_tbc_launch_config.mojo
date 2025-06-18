@@ -14,8 +14,7 @@
 from collections import OptionalReg
 
 from gpu.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, Dim, FuncAttribute
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext, Dim
 from gpu.id import block_idx, cluster_idx
 
 

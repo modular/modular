@@ -13,8 +13,8 @@
 
 from math import ceildiv
 
-from buffer import DimList, NDBuffer
-from gpu import barrier, block_dim, block_idx, global_idx, thread_idx
+from buffer import NDBuffer
+from gpu import barrier, block_dim, global_idx, thread_idx
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation

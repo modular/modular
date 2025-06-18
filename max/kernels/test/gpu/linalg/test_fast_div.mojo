@@ -11,14 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt, sqrt
-from sys import has_neon, simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
 from linalg.fast_div import FastDiv
 from testing import *
 

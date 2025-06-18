@@ -13,31 +13,15 @@
 
 from math import ceildiv
 from random import rand
-from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceContext
 from nn.conv import (
-    ConvDirectNHWC,
-    ConvInfoStatic,
     Naive2dConvolution,
     conv3d_gpu_naive_ndhwc_qrscf,
-    conv_cudnn,
-    conv_gpu,
-    conv_nhwc_direct,
-    pack_conv_filter_shape,
-    pack_filter,
 )
-from nn.conv_utils import (
-    ConvShape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
-    get_conv_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-)
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 

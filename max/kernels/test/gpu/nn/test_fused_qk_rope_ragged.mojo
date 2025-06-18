@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isqrt
+from math import ceildiv
 from random import random_ui64
 
 from buffer import Dim, DimList, NDBuffer

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import *
-from gpu.host import DeviceContext, Dim
+from gpu.host import DeviceContext
 from testing import *
 
 

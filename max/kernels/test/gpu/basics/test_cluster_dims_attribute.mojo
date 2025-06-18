@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, Dim, FuncAttribute
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext
 from gpu.id import block_idx, cluster_dim, cluster_idx
 
 from utils.static_tuple import StaticTuple

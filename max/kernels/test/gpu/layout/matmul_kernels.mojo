@@ -10,8 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-import time
-from collections.string import StaticString
 from math import ceildiv
 from sys.info import simdwidthof
 
@@ -19,26 +17,19 @@ import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from builtin.io import _printf
 from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
-from layout.int_tuple import IntTuple
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
-    copy_dram_to_sram,
     copy_dram_to_sram_async,
 )
 from layout.math import outer_product_acc
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from memory.pointer import _GPUAddressSpace as AddressSpace
 
-from utils import IndexList
 from utils.index import Index
 
 alias NWARMUP = 1

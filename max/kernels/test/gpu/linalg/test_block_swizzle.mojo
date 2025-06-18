@@ -13,7 +13,7 @@
 
 from linalg.utils_gpu import block_swizzle
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 # CHECK-LABEL: test_block_swizzle

@@ -13,8 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import has_amd_gpu_accelerator, llvm_intrinsic
-from sys.info import alignof
+from sys import has_amd_gpu_accelerator
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
@@ -33,7 +32,7 @@ from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
 from gpu.memory import AddressSpace
 from linalg.utils import elementwise_epilogue_type
-from memory import bitcast, memset_zero, stack_allocation
+from memory import stack_allocation
 
 from utils import StaticTuple
 from utils.index import Index

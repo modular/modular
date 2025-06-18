@@ -13,8 +13,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from pathlib import Path
-from sys import bitwidthof, simdwidthof
+from sys import simdwidthof
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -23,7 +22,6 @@ from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_all,
-    async_copy_wait_group,
 )
 from layout import *
 from layout._fillers import arange
@@ -39,9 +37,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
     copy_local_to_local,
     copy_sram_to_dram,
-    copy_sram_to_local,
 )
-from testing import assert_almost_equal
 
 from utils import IndexList
 

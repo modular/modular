@@ -14,37 +14,29 @@
 # to build this file if running into linking issues with large PTX kernels.
 
 from collections.optional import OptionalReg
-from math import ceildiv
 from sys import alignof, bitwidthof, has_nvidia_gpu_accelerator, simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from gpu import barrier, block_dim, block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
+from buffer.dimlist import DimList
+from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
-from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     arange,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg import vendor_blas
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from memory import memset_zero, stack_allocation
-from memory.pointer import _GPUAddressSpace as GPUAddressSpace
+from linalg.matmul_gpu import _matmul_gpu
+from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
-from testing import assert_almost_equal, assert_true
+from testing import assert_almost_equal
 
 from utils import IndexList
 from utils.index import Index
-from utils.numerics import FPUtils
 
 alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 

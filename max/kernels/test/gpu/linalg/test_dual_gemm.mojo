@@ -26,7 +26,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from linalg._multistage_gemm_gpu import distance, multistage_gemm_kernel
+from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base

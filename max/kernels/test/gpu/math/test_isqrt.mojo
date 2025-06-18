@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import isqrt, sqrt
-from sys import has_neon, simdwidthof
+from sys import simdwidthof
 
 from algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext, HostBuffer
 from gpu.host import get_gpu_target

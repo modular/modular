@@ -15,7 +15,7 @@ from math import log, log2, log10
 from sys import simdwidthof
 
 from algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target

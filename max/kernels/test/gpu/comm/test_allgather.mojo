@@ -11,17 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from math import floor
-from sys import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.comm.allgather import allgather
 from gpu.host import DeviceBuffer, DeviceContext
-from testing import assert_almost_equal, assert_equal
-
-from utils import IndexList, StaticTuple
+from testing import assert_equal
 
 
 def all_gather_test[

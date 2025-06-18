@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose
 from random import rand
 from sys import argv, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100
-from nn.mha import flash_attention, mha_gpu_naive
+from gpu.host import DeviceContext
+from gpu.host.info import A100, H100
+from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import MHAConfig, FlashAttentionAlgorithm

@@ -11,12 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _is_sm_8x, _is_sm_9x
 
-from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
 from gpu.id import thread_idx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -28,9 +25,7 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout import print_layout
 from memory import bitcast
 
 

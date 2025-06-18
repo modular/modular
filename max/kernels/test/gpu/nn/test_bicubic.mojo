@@ -11,19 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import has_accelerator
-from sys import exit
 from gpu.host import DeviceContext
-from math import iota, isclose
+from math import isclose
 from internal_utils import ndbuffer_to_str
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    arange,
     fill,
-    random,
     zero,
     ndbuffer_to_str,
 )

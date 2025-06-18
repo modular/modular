@@ -14,10 +14,9 @@
 from sys import sizeof
 
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, thread_idx
+from gpu import barrier, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace, async_copy
 from gpu.sync import async_copy_arrive
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
@@ -25,8 +24,6 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
 from testing import assert_equal
-
-from utils import StaticTuple
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():

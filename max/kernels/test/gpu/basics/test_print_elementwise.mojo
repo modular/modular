@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from sys import simdwidthof
 
 from algorithm.functional import elementwise
-from gpu import block_idx, thread_idx
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout

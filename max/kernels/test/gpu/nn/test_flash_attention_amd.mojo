@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose
 from random import rand
 from sys import argv
 
@@ -20,9 +20,6 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import assert_with_measure
-from internal_utils._measure import cosine
 from memory import memset_zero
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -34,7 +31,6 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
-from utils.numerics import min_or_neg_inf, neg_inf
 
 
 fn is_benchmark() -> Bool:

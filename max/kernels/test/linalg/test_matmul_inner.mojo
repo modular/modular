@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_up
-from sys import alignof, has_neon, has_vnni
+from sys import alignof, has_neon
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

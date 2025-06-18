@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isclose, isqrt
+from math import ceildiv, isqrt
 from random import random_ui64, seed
 
-from buffer import Dim, DimList, NDBuffer
-from internal_utils import HostNDBuffer, fill, random
+from buffer import Dim, DimList
+from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -24,11 +24,10 @@ from kv_cache.types import (
 )
 from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
-from nn.mha_mask import CausalMask, NullMask
-from nn.mha_score_mod import IdentityScoreMod
+from nn.mha_mask import CausalMask
 from testing import assert_almost_equal
 
-from utils import Index, IndexList
+from utils import IndexList
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24

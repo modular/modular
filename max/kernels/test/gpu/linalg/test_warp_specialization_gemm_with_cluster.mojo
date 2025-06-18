@@ -13,34 +13,15 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
 
 import linalg.vendor_blas
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
-    block_rank_in_cluster,
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host import FuncAttribute
-from gpu.id import block_dim, block_idx, thread_idx
-from gpu.memory import AddressSpace
-from gpu.mma import (
-    WGMMADescriptor,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
     assert_with_measure,
-    fill,
     random,
     zero,
 )

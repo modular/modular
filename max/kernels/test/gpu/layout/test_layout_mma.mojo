@@ -18,18 +18,13 @@ from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from gpu import (
     WARP_SIZE,
-    barrier,
     block_dim,
-    block_idx,
     global_idx,
     grid_dim,
-    lane_id,
-    thread_idx,
 )
-from gpu.host import DeviceContext, Dim
+from gpu.host import DeviceContext
 from layout import *
 from layout._utils import ManagedLayoutTensor
-from layout.math import outer_product_acc
 from layout.tensor_core import *
 from testing import *
 

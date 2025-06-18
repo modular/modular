@@ -14,7 +14,7 @@
 from math import ceildiv
 from sys import sizeof
 
-from gpu import WARP_SIZE, barrier
+from gpu import barrier
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle

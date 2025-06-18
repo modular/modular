@@ -15,7 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import has_avx2, has_neon_int8_matmul, os_is_macos
+from sys.info import os_is_macos
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

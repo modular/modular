@@ -15,7 +15,7 @@ from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, block_idx, global_idx, thread_idx
+from gpu import block_dim, global_idx
 from gpu.host import DeviceContext
 from memory import memcpy
 from testing import assert_false

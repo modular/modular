@@ -16,7 +16,7 @@ from random import rand
 
 from nn.conv import Naive2dConvolution
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 fn winograd_1d_convolution_3[

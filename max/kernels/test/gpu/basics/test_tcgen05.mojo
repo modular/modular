@@ -15,7 +15,6 @@ from gpu.host.compile import _compile_code_asm
 from gpu.host import get_gpu_target
 from gpu.memory import AddressSpace
 from gpu.tcgen05 import (
-    TensorMemory,
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -28,7 +27,7 @@ from gpu.tcgen05 import (
 from memory import stack_allocation
 from testing import assert_true
 from gpu.mma_sm100 import MMASmemDescriptor
-from layout import LayoutTensor, Layout, IntTuple
+from layout import LayoutTensor, IntTuple
 
 
 fn alloc_test_fn[cta_group: Int32]():

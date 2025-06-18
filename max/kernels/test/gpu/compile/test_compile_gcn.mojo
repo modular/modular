@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import exp
-from pathlib import Path
-from sys._assembly import inlined_assembly
 
 from gpu import (
     AMDScheduleBarrierMask,
@@ -26,7 +24,6 @@ from gpu import (
     thread_idx,
 )
 from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code_asm
 from gpu.host import get_gpu_target
 from gpu.intrinsics import load_acquire, store_release

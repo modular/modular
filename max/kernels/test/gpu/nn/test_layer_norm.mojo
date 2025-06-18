@@ -16,7 +16,6 @@ from sys import simdwidthof
 
 from algorithm import mean, variance
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target

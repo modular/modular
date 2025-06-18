@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simdwidthof, sizeof
+from sys.info import sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from nn.gather_scatter import gather
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 # CHECK-LABEL: test_gather

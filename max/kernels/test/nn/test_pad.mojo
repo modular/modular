@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, RuntimeLayout, LayoutTensor
+from layout import Layout, LayoutTensor
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 from testing import assert_equal
-
-from utils.index import IndexList
 
 
 # CHECK-LABEL: test_pad_1d

@@ -13,7 +13,6 @@
 
 from builtin.io import _printf
 from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
 from gpu.id import thread_idx
 from gpu.mma import mma
 

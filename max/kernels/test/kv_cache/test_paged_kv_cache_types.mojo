@@ -11,11 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from internal_utils import HostNDBuffer
 from kv_cache.types import (
     KVCacheStaticParams,
-    PagedKVCache,
     PagedKVCacheCollection,
 )
 from layout import IntTuple, Layout

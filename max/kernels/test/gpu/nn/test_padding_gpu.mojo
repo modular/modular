@@ -11,23 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
 
 from gpu import *
 from gpu.host import DeviceContext
-from internal_utils import (
-    arg_parse,
-    array_equal,
-    env_get_shape,
-    int_list_to_tuple,
-    ndbuffer_to_str,
-)
 from layout import LayoutTensor, RuntimeLayout, Layout
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
-from testing import assert_equal, assert_true
+from testing import assert_equal
 
-from utils.index import IndexList, product
+from utils.index import IndexList
 
 
 @no_inline

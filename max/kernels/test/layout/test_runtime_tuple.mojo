@@ -21,12 +21,10 @@ from layout.runtime_tuple import (
     RuntimeTuple,
     crd2idx,
     idx2crd,
-    is_int,
-    is_tuple,
     prefix_product,
     shape_div,
 )
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal
 
 
 def test_construct():

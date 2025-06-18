@@ -21,7 +21,7 @@
 # - Add bounds checking for input dimensions
 # - Add test cases for odd sizes, likely broken
 
-from math import ceildiv, isclose
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -33,7 +33,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from nn.conv import conv_gpu
 from testing import assert_almost_equal, assert_true
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 from utils.numerics import get_accum_type
 
 

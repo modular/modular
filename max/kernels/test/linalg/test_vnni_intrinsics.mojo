@@ -23,8 +23,6 @@ from buffer import NDBuffer
 from linalg.vnni_intrinsics import (
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
-    dot_i8_to_i32_saturated_x86,
-    dot_i8_to_i32_x86,
     dot_i16_to_i32_AVX2,
     dot_i16_to_i32_x86,
 )

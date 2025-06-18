@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simdwidthof
 
 from linalg.utils import partition_work
 from nn.conv_utils import ConvShape, get_conv_num_partitions
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 # CHECK-LABEL: test_conv_partition

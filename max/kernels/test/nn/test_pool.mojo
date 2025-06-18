@@ -13,16 +13,13 @@
 
 from sys import simdwidthof
 
-import builtin
 from layout import (
     LayoutTensor,
     Layout,
-    RuntimeTuple,
     RuntimeLayout,
     UNKNOWN_VALUE,
 )
 from layout._fillers import arange
-from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 from testing import assert_equal, assert_almost_equal
 

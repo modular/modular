@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import perf_counter_ns, sleep, time_function
+from time import perf_counter_ns, time_function
 
 from gpu.host.compile import _compile_code_asm
 from gpu.host import get_gpu_target

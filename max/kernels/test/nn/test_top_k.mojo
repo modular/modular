@@ -17,9 +17,7 @@ from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from internal_utils import HostNDBuffer
-from nn.arange import arange
-from nn.topk import _top_k_cpu, _top_k_sampling, fused_token_sampling_cpu
+from nn.topk import _top_k_cpu, _top_k_sampling
 
 from utils import IndexList
 

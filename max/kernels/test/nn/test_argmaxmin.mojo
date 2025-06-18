@@ -11,14 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import sum
-from algorithm.reduction import _reduce_generator
-from builtin.math import max as _max
-from builtin.math import min as _min
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from nn.argmaxmin import argmax, argmin
 
-from utils.index import Index, IndexList, StaticTuple
+from utils.index import IndexList
 
 
 # CHECK-LABEL: test_argn

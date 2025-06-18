@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random, zero
@@ -20,10 +19,9 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_static_scaled_fp8,
 )
-from memory.unsafe import bitcast
 from testing import assert_equal
 
-from utils.numerics import FPUtils, max_finite, min_finite
+from utils.numerics import max_finite, min_finite
 
 
 fn test_scaled_fp8_quant[

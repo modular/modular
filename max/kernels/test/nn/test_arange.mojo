@@ -14,11 +14,9 @@
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from nn.arange import arange, arange_shape
-from nn.slice import slice_as_copy, slice_as_view
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 def print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):

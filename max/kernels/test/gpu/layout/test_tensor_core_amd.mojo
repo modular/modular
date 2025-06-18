@@ -11,18 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.io import _printf
-from gpu import WARP_SIZE, barrier, lane_id
+from gpu import WARP_SIZE, lane_id
 from gpu.host import DeviceContext
-from gpu.id import thread_idx
-from gpu.memory import _GPUAddressSpace as AddressSpace
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
-from layout._utils import load_to_simd
-from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 

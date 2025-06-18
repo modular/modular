@@ -15,13 +15,12 @@ from collections import Set
 from math import ceildiv, isqrt
 from random import random_ui64
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from internal_utils import HostNDBuffer, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from memory import memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import IndexList

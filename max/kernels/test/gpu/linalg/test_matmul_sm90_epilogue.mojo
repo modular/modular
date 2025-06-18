@@ -16,9 +16,8 @@ from math import ceildiv
 from sys import alignof, sizeof
 
 import linalg.vendor_blas
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,

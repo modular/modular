@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from nn.concat import (
     _concat_parallel,
     _concat_serial,
     concat,
-    elementwise_epilogue_type,
 )
 
 from utils import IndexList, StaticTuple

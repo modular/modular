@@ -20,13 +20,10 @@ from gpu.memory import AddressSpace
 from nn.mha_tile_scheduler import (
     MHASchedule,
     MHASchedulerSynchronization,
-    MHATileState,
     MHATileSummary,
     TileScheduler,
     WorkInfo,
 )
-
-from utils.index import Index, IndexList
 
 
 fn test_kernel[schedule: MHASchedule]():

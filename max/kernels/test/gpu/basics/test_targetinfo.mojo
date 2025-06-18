@@ -14,7 +14,6 @@
 from sys.info import simdbitwidth, simdwidthof
 
 from gpu.host import get_gpu_target
-from gpu.host.info import _get_info_from_target
 from testing import assert_equal
 
 

@@ -22,8 +22,6 @@ from gpu.mma_util import load_matrix_b_amd as load_matrix_b
 from gpu.mma_util import store_matrix_d
 from testing import assert_equal
 
-from utils.numerics import isnan
-
 
 fn matmul_naive[
     a_type: DType, b_type: DType, c_type: DType, //, mma_n_blocks: Int = 1

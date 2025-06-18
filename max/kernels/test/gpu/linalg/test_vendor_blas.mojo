@@ -15,13 +15,11 @@ from math import ceildiv
 from random import random_float64
 
 import linalg.vendor_blas
-from buffer import DimList, NDBuffer
-from gpu import block_dim, block_idx, thread_idx
+from buffer import NDBuffer
+from gpu import block_dim
 from gpu.host import DeviceContext
 from linalg.matmul_gpu import matmul_kernel_naive
-from testing import assert_almost_equal, assert_equal
-
-from utils.index import Index
+from testing import assert_almost_equal
 
 
 def test_vendor_blas[

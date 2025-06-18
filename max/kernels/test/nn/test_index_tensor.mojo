@@ -27,7 +27,6 @@ from nn.index_tensor import (
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, StaticTuple
-from utils.index import Index
 
 
 # TODO: It is like example 5 ONNX.

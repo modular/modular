@@ -11,21 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from math import floor
 from sys import sizeof
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,
     allreduce,
-    elementwise_epilogue_type,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import _matmul_gpu
 from testing import assert_almost_equal
 from utils import IndexList, StaticTuple
 

@@ -14,7 +14,7 @@
 from math import ceildiv
 from sys import env_get_int
 
-from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal
 

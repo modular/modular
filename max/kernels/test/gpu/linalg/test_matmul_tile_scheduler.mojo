@@ -13,9 +13,9 @@
 
 from gpu.host import DeviceContext
 from gpu.id import block_idx
-from linalg.matmul_tile_scheduler import TileScheduler, WorkInfo
+from linalg.matmul_tile_scheduler import TileScheduler
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 fn test_kernel():

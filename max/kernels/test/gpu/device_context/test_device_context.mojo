@@ -14,7 +14,7 @@
 from math import iota
 
 from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_equal
 
 

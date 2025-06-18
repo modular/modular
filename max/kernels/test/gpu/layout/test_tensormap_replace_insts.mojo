@@ -11,20 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
 from sys import sizeof
 
-from builtin.io import _printf
 from gpu import barrier
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host import get_gpu_target
+from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
 from gpu.id import block_idx, thread_idx
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
+from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -34,10 +31,9 @@ from layout.tma_async import (
 )
 from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal
 
 from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
 
 
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)

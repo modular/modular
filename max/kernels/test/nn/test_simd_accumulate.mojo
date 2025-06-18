@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import has_neon, simdwidthof
 
-from algorithm.functional import vectorize
 from buffer import NDBuffer
 from linalg.accumulate import _Accumulator, _simd_load_maybe_partial
 from testing import *

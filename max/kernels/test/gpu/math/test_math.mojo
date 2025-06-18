@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import *
-from pathlib import Path
 
 from gpu.host import DeviceContext
-from testing import assert_true
 
 
 fn run_func[

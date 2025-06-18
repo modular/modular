@@ -17,7 +17,7 @@
 from sys import has_intel_amx, os_is_linux
 
 from linalg.intel_amx_intrinsics import init_intel_amx
-from testing import assert_false, assert_true
+from testing import assert_true
 
 
 fn test_has_intel_amx() raises:

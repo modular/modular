@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import argv, has_amd_gpu_accelerator
 
@@ -20,8 +19,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100, Info, Vendor
-from internal_utils import assert_with_measure
+from gpu.host.info import A100, H100, Info, Vendor
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,

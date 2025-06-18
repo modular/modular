@@ -17,13 +17,10 @@ from random import rand, seed
 import internal_utils
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
-    IntTuple,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
 )
-from linalg.qr_factorization import apply_q, form_q, qr_factorization
+from linalg.qr_factorization import form_q, qr_factorization
 from memory import memcpy
 from testing import assert_almost_equal
 

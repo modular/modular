@@ -16,14 +16,13 @@ from gpu.memory import AddressSpace
 
 import benchmark
 from benchmark import Unit, keep
-from internal_utils import assert_equal
 from layout import LayoutTensor, Layout, RuntimeLayout
 from memory import memcpy
-from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
+from nn.pad import _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
 from testing import assert_true
 
-from utils import IndexList, StaticTuple, product
+from utils import IndexList, product
 
 
 @always_inline

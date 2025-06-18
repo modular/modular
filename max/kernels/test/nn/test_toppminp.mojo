@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
+from math import iota
 from random import random_float64
 
 from algorithm.functional import parallelize_over_rows

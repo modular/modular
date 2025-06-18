@@ -16,8 +16,6 @@ from gpu import thread_idx
 from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer
 
-from utils.index import IndexList
-
 
 @register_passable("trivial")
 trait BaseT:

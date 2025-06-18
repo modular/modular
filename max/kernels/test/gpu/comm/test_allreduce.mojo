@@ -21,7 +21,6 @@ from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,
     allreduce,
-    elementwise_epilogue_type,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_almost_equal

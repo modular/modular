@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import OptionalReg
-from math import ceildiv, isclose
+from math import ceildiv
 from pathlib import Path
-from random import rand, randint, random_float64, seed
-from sys import alignof, argv, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from random import rand, randint, random_float64
+from sys import alignof, argv, sizeof
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -30,63 +28,40 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import DEFAULT_GPU_ARCH
 from gpu.intrinsics import lop
 from gpu.memory import (
     AddressSpace,
-    async_copy_commit_group,
-    async_copy_wait_group,
     external_memory,
 )
-from gpu.mma import ld_matrix, mma
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    arange,
     assert_almost_equal,
-    assert_equal,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
-    LayoutTensorIter,
-    _swizzle_signature,
-    copy,
     copy_dram_to_sram,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-    copy_local_to_local,
-    copy_sram_to_dram,
 )
-from layout.runtime_tuple import RuntimeTuple
-from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from linalg.matmul_gpu import _matmul_gpu, multistage_gemm
+from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils_gpu import (
-    MatmulConfig,
     MatmulKernels,
-    block_swizzle,
-    select_config,
 )
 from memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import (
     multistage_gemm_q,
     pack_Q_tile,
-    q_smem_usage,
 )
 
 from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from utils.index import Index
 
 
 fn is_benchmark() -> Bool:

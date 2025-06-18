@@ -11,43 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys import sizeof
-from sys.info import num_physical_cores, simdwidthof
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    arange,
-    fill,
     random,
     zero,
 )
 from nn.conv import (
-    ConvDirectNHWC,
-    ConvInfoStatic,
-    Naive2dConvolution,
     conv_cudnn,
     conv_gpu,
-    conv_nhwc_direct,
-    pack_conv_filter_shape,
-    pack_filter,
 )
-from nn.conv_utils import (
-    ConvShape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
-    get_conv_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-)
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 fn print_data[type: DType](data: UnsafePointer[Scalar[type]], dim: DimList):

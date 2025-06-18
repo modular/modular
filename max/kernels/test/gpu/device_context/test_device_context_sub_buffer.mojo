@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from gpu.host import DeviceContext
 from testing import assert_equal
 
 

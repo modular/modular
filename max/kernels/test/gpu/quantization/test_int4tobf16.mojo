@@ -26,8 +26,6 @@ from gpu.memory import AddressSpace
 from memory.unsafe import bitcast
 from testing import assert_equal
 
-from utils import StaticTuple
-
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
 fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:

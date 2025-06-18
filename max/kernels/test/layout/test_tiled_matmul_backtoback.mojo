@@ -18,12 +18,11 @@ from sys import CompilationTarget, argv, simdwidthof, sizeof
 
 import benchmark
 from algorithm.functional import vectorize
-from layout import Layout, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple, size
-from layout.layout import coalesce, expand_modes_alike, flatten
+from layout import Layout, RuntimeLayout
+from layout.int_tuple import IntTuple, size
+from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from layout.math import outer_product_acc
-from memory import memcpy, memset_zero, stack_allocation
+from memory import stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple

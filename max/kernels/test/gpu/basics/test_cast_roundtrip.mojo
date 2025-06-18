@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu import *
-from gpu.host import DeviceContext, Dim
+from gpu.host import DeviceContext
 from testing import assert_equal
 
 from utils.numerics import inf, nan, neg_inf

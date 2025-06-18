@@ -15,8 +15,6 @@ import linalg.vendor_blas
 from buffer import DimList, NDBuffer
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host.compile import _compile_code_asm
-from gpu.host import get_gpu_target
 from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
@@ -36,7 +34,6 @@ from layout.tensor_core_async import (
 from testing import assert_almost_equal
 
 from utils import StaticTuple
-from utils.index import Index
 
 
 fn wgmma_kernel_ss[

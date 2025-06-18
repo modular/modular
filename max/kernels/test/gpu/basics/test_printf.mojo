@@ -11,10 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin._location import __source_location
 from builtin.io import _printf
 from gpu.host import DeviceContext
-from layout import Layout
 
 
 # CHECK-LABEL: == test_gpu_printf

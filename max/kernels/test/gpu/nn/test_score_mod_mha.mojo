@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import exp2, iota, isclose, isqrt
+from math import exp2, iota, isqrt
 from random import random_ui64, seed
 
 from bit import prev_power_of_two

@@ -14,8 +14,6 @@
 from math import ceildiv
 from sys import alignof
 
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, product

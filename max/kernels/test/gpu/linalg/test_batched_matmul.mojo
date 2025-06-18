@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import bitwidthof
 
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext

@@ -11,24 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from sys import sizeof
 
-from layout.element import Element
 from layout.int_tuple import IntTuple, size
 from layout.layout import (
     Layout,
-    LayoutList,
     MakeTileLayoutList,
     coalesce,
-    complement,
-    composition,
-    make_layout,
-    print_layout,
     right_inverse,
     zipped_divide,
 )
-from layout.layout_tensor import LayoutTensor, _compute_distribute_layout
+from layout.layout_tensor import _compute_distribute_layout
 from layout.swizzle import Swizzle, make_swizzle
 from testing import assert_equal
 

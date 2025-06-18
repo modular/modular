@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from math import exp
-from sys import is_nvidia_gpu, simdwidthof
+from sys import simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer

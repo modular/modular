@@ -14,7 +14,6 @@
 from layout import Layout, LayoutTensor
 from gpu.host import DeviceContext
 from runtime.asyncrt import DeviceContextPtr
-from internal_utils import TestTensor, assert_equal
 from nn.gather_scatter import scatter_set_constant
 
 

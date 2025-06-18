@@ -17,7 +17,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from sys.info import bitwidthof
 
 import benchmark
 from buffer import NDBuffer

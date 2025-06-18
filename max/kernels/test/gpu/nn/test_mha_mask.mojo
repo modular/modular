@@ -23,7 +23,6 @@ from nn.mha_mask import (
 from testing import assert_equal, assert_true
 
 from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
 
 
 def test_causal_mask():

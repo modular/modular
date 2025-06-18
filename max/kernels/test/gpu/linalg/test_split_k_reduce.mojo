@@ -14,11 +14,9 @@
 from math import isclose
 from random import rand
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import split_k_reduce
-from linalg.utils_gpu import MatmulConfig
-from memory import memcpy
 from testing import assert_almost_equal
 
 from utils import IndexList

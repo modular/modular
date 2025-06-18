@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from pathlib import Path
-from sys.info import is_nvidia_gpu
 
 from gpu import *
-from gpu.host import DeviceContext, Dim
+from gpu.host import DeviceContext
 from testing import assert_equal
 
 

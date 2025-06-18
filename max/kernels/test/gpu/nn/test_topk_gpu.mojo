@@ -13,7 +13,6 @@
 
 from collections import OptionalReg
 from math import ceildiv, iota
-from os import abort
 from random import random_float64
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
