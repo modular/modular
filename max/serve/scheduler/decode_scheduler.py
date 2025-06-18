@@ -233,6 +233,10 @@ class DecodeScheduler(Scheduler):
                 cache_seq_id = self.available_cache_indices.pop()
                 self.paged_manager.external_claim([cache_seq_id])
 
+                # Ensure request_context uses the appropriate cache seq id
+                request_context.unassign_from_cache()
+                request_context.assign_to_cache(cache_seq_id)
+
                 # TODO: E2EOPT-269
 
                 # Prefetch memory for Context Encoding eagerly, this only needs to be
