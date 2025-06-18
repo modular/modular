@@ -885,11 +885,15 @@ struct CPython(Copyable, Defaultable, Movable):
             "invalid unchecked conversion of Python error to Mojo error",
         )
 
-        # TODO(MSTDL-1479): PyErr_Fetch is deprecated since Python 3.12.
-        var err_ptr = self.PyErr_Fetch()
+        var err_ptr: PyObjectPtr
+        # NOTE: PyErr_Fetch is deprecated since Python 3.12.
+        var is_old = self.version.major == 3 and self.version.minor < 12
+        if is_old:
+            err_ptr = self.PyErr_Fetch()
+        else:
+            err_ptr = self.PyErr_GetRaisedException()
         debug_assert(
-            Bool(err_ptr),
-            "Python exception occurred but PyErr_Fetch returned null",
+            Bool(err_ptr), "Python exception occurred but null was returned"
         )
 
         var error: Error
@@ -901,7 +905,8 @@ struct CPython(Copyable, Defaultable, Movable):
                 " converted to String"
             )
 
-        self.PyErr_Clear()
+        if is_old:
+            self.PyErr_Clear()
         return error
 
     fn get_error(self) -> Error:
@@ -1982,16 +1987,20 @@ struct CPython(Copyable, Defaultable, Movable):
         )
         var r = value
 
-        self.log(
-            r,
-            " NEWREF PyErr_Fetch, refcnt:",
-            self._Py_REFCNT(r),
-        )
-
+        self.log(r, " NEWREF PyErr_Fetch, refcnt:", self._Py_REFCNT(r))
         self._inc_total_rc()
-        _ = type
-        _ = value
-        _ = traceback
+        return r
+
+    fn PyErr_GetRaisedException(self) -> PyObjectPtr:
+        """[Reference](
+        https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException).
+        """
+        var r = self.lib.call["PyErr_GetRaisedException", PyObjectPtr]()
+
+        self.log(
+            r, " NEWREF PyErr_GetRaisedException, refcnt:", self._Py_REFCNT(r)
+        )
+        self._inc_total_rc()
         return r
 
     fn PyErr_SetNone(self, type: PyObjectPtr):
