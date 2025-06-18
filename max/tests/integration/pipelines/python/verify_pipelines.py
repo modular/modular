@@ -561,6 +561,7 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama3-8b",
             encoding="float32",
+            pregenerated_torch_goldens_rlocation="torch_llama_golden/torch_llama3-8b_float32_golden.json",
             absolute_tolerance=2.9e-2,
             relative_tolerance=9.4e-2,
             cos_dist_threshold=2.1e-6,
