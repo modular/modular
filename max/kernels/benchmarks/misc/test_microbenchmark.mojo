@@ -11,18 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from random import random_si64, seed
-from sys.info import sizeof
+from random import random_si64
 
 import microbenchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import bitcast
+from linalg.matmul import matmul
 from microbenchmark import Benchmarkable
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 alias alignment = 64
 

@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import random_float64
-from sys import env_get_dtype, env_get_int
+from sys import env_get_dtype
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from buffer import NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, env_get_shape, int_list_to_tuple
+from internal_utils import env_get_shape, int_list_to_tuple
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
-from utils.index import Index, IndexList, StaticTuple
+from utils.index import IndexList
 
 
 fn bench_layer_norm_gpu[

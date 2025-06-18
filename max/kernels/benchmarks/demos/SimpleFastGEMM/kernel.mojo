@@ -17,7 +17,7 @@ from sys import prefetch
 from sys.intrinsics import PrefetchOptions
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import Dim
 
 alias mr = 6
 alias nr = 64

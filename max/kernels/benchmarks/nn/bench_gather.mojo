@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from random import rand, randint
 
 from benchmark import *
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import Dim
 from nn.gather_scatter import gather_elements
 
 from utils.index import Index

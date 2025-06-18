@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
 from sys import env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from benchmark import Bench, Bencher, BenchId
 from builtin._closure import __ownership_keepalive
 from gpu import *
-from gpu.grid_controls import PDL, pdl_launch_attributes
+from gpu.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceContext
-from testing import assert_equal
 
 
 fn copy1(

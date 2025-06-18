@@ -12,25 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose, isqrt
 from random import rand
-from sys import env_get_dtype, env_get_int, env_get_string, is_defined
+from sys import env_get_dtype, env_get_int
 
 from benchmark import (
     Bench,
-    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    keep,
 )
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import arg_parse, bench_compile_time
+from internal_utils import arg_parse
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod

@@ -13,7 +13,7 @@
 
 from math import floor, iota
 from os import abort
-from sys import env_get_int, sizeof
+from sys import sizeof
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure

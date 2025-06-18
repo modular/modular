@@ -14,7 +14,7 @@
 from sys.info import num_physical_cores
 
 from algorithm import parallelize, sync_parallelize
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from benchmark import Bench, Bencher, BenchId, keep
 from testing import assert_true
 
 

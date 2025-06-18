@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from random import rand
 
 from benchmark import *

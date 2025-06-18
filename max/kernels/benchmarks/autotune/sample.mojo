@@ -11,17 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_bool, env_get_dtype, env_get_int, env_get_string
-from time import sleep
+from sys import env_get_dtype, env_get_int
 
 from benchmark import (
     Bench,
     BenchConfig,
     Bencher,
     BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-    keep,
 )
 from internal_utils import (
     Mode,

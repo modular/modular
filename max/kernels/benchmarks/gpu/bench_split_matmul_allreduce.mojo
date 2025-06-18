@@ -11,29 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
 from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList, NDBuffer
-from buffer.dimlist import _make_tuple
+from buffer import DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse
+from internal_utils import arg_parse
 import random
 from internal_utils._utils import (
-    InitializationType,
     ValOrDim,
     dynamic,
     initialize,
     static,
 )
 from utils import IndexList, StaticTuple
-from linalg.matmul_gpu import _matmul_gpu
 from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,
-    elementwise_epilogue_type,
 )
 
 from linalg.distributed_matmul import matmul_allreduce

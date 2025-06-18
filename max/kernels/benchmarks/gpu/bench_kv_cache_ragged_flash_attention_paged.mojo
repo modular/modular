@@ -14,12 +14,12 @@
 from collections import Set
 from math import ceildiv, isqrt
 from random import random_ui64, seed
-from sys import env_get_bool, env_get_dtype, env_get_int, sizeof
+from sys import env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arg_parse, random
+from internal_utils import HostNDBuffer, arg_parse, random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask

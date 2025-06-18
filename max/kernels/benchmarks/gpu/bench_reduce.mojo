@@ -15,8 +15,7 @@ from sys import alignof, env_get_int, env_get_string, simdwidthof
 
 from algorithm._gpu.reduction import reduce_launch
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.dimlist import DimList, _make_tuple
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host import get_gpu_target
 from internal_utils import DeviceNDBuffer

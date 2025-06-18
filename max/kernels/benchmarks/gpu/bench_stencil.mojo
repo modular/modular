@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_bool, env_get_dtype, env_get_int, env_get_string
+from sys import env_get_dtype, env_get_int, env_get_string
 
 from algorithm.functional import stencil, stencil_gpu
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure

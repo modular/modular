@@ -11,19 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
 from collections import InlineArray
 from math import floor
 from sys import env_get_dtype, env_get_int, sizeof
 
 from benchmark import (
     Bench,
-    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    keep,
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList

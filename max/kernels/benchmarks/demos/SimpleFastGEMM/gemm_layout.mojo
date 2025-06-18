@@ -19,10 +19,6 @@ from sys import alignof, simdwidthof
 import benchmark
 from buffer import NDBuffer
 from layout import *
-from linalg.utils import (
-    get_matmul_kernel_shape,
-    get_matmul_prefetch_b_distance_k,
-)
 
 alias MR = 6
 alias NR = 64
