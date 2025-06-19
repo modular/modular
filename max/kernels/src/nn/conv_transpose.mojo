@@ -101,11 +101,11 @@ from .conv_utils import (
 
 @always_inline
 fn conv_transpose_naive[
-    type: DType,
+    dtype: DType,
 ](
-    output: NDBuffer[type, 5, MutableAnyOrigin],
-    input: NDBuffer[type, 5, MutableAnyOrigin],
-    filter: NDBuffer[type, 5, MutableAnyOrigin],
+    output: NDBuffer[dtype, 5, MutableAnyOrigin],
+    input: NDBuffer[dtype, 5, MutableAnyOrigin],
+    filter: NDBuffer[dtype, 5, MutableAnyOrigin],
     stride: IndexList[3],
     dilation: IndexList[3],
     pad_d: IndexList[2],
@@ -116,7 +116,7 @@ fn conv_transpose_naive[
     Implements the ConvTranspose operator from the MO spec.
 
     Parameters:
-        type: Type of the input, output, and kernel tensors.
+        dtype: Type of the input, output, and kernel tensors.
 
     Args:
         output: Output data tensor that contains the result of the convolution.
@@ -196,15 +196,15 @@ fn conv_transpose_naive[
 fn conv_transpose_shape[
     input_rank: Int,
     kernel_rank: Int,
-    type: DType,
+    dtype: DType,
     strides_type: DType,
     dilations_type: DType,
     pads_type: DType,
     output_pads_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[type, input_rank],
-    kernel: NDBuffer[type, kernel_rank],
+    input: NDBuffer[dtype, input_rank],
+    kernel: NDBuffer[dtype, kernel_rank],
     strides: NDBuffer[strides_type, 1],
     dilations: NDBuffer[dilations_type, 1],
     pads: NDBuffer[pads_type, 1],
@@ -217,7 +217,7 @@ fn conv_transpose_shape[
     Parameters:
         input_rank: Rank of the input tensor.
         kernel_rank: Rank of the kernel tensor.
-        type: Element type of the input and kernel tensor.
+        dtype: Element type of the input and kernel tensor.
         strides_type: Element type of the strides tensor.
         dilations_type: Element type of the dilations tensor.
         pads_type: Element type of the pads tensor.
@@ -1364,8 +1364,8 @@ fn conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
-    elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
-        IndexList[rank], SIMD[type, width]
+    elementwise_lambda: fn[dtype: DType, rank: Int, width: Int] (
+        IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
 ](
     output: NDBuffer[mut=True, output_type, input_rank, _, output_shape],

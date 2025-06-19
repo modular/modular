@@ -38,7 +38,7 @@ def flops(
 
 
 fn _get_run_name[
-    type: DType,
+    dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
@@ -49,10 +49,10 @@ fn _get_run_name[
     cache_len: Int,
     use_random_cache_lengths: Bool,
 ) -> String:
-    var name = String(
+    return String(
         "fused_qkv_ragged_flash_attention",
         "(",
-        type,
+        dtype,
         ") : ",
         # head_info
         "num_q_heads=",
@@ -73,8 +73,6 @@ fn _get_run_name[
         ", use_random_cache_lengths=",
         use_random_cache_lengths,
     )
-
-    return name
 
 
 def execute_kv_cache_ragged_flash_attention[

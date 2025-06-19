@@ -27,15 +27,15 @@ fn reverse_filler(i: Int, n: Int) -> Float32:
 
 
 fn test_argsort[
-    type: DType = DType.float32,
+    dtype: DType = DType.float32,
     *,
     filler: fn (Int, Int) -> Float32,
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
-    var input = HostNDBuffer[type, 1](N)
+    var input = HostNDBuffer[dtype, 1](N)
 
     for i in range(N):
-        input.tensor[i] = filler(i, N).cast[type]()
+        input.tensor[i] = filler(i, N).cast[dtype]()
 
     var device_indices = DeviceNDBuffer[DType.int64, 1](N, ctx=ctx)
 
@@ -84,28 +84,28 @@ fn test_argsort[
 
 fn test_argsort_helper[
     *,
-    type: DType,
+    dtype: DType,
     filler: fn (Int, Int) -> Float32,
     ascending: Bool,
 ](ctx: DeviceContext) raises:
-    test_argsort[type, filler=filler, ascending=ascending](ctx, N=3731)
-    test_argsort[type, filler=filler, ascending=ascending](ctx, N=4096)
-    test_argsort[type, filler=filler, ascending=ascending](ctx, N=102_400)
-    test_argsort[type, filler=filler, ascending=ascending](ctx, N=16_384)
-    test_argsort[type, filler=filler, ascending=ascending](ctx, N=1024)
+    test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=3731)
+    test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=4096)
+    test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=102_400)
+    test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=16_384)
+    test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=1024)
 
 
 def main():
     with DeviceContext() as ctx:  # argmax tests
         test_argsort_helper[
-            type = DType.float32, filler=linear_filler, ascending=True
+            dtype = DType.float32, filler=linear_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            type = DType.float32, filler=linear_filler, ascending=False
+            dtype = DType.float32, filler=linear_filler, ascending=False
         ](ctx)
         test_argsort_helper[
-            type = DType.float32, filler=reverse_filler, ascending=True
+            dtype = DType.float32, filler=reverse_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            type = DType.float32, filler=reverse_filler, ascending=False
+            dtype = DType.float32, filler=reverse_filler, ascending=False
         ](ctx)

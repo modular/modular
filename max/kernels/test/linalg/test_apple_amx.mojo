@@ -39,15 +39,15 @@ fn clear_c(buf: NDBuffer[mut=True, *_, **_]):
     buf.zero()
 
 
-def test_dot_at_b[type: DType, shape: Tuple[Int, Int]]():
+def test_dot_at_b[dtype: DType, shape: Tuple[Int, Int]]():
     var a_matrix = NDBuffer[
-        type, 2, MutableAnyOrigin, shape=shape
+        dtype, 2, MutableAnyOrigin, shape=shape
     ].stack_allocation()
     var b_matrix = NDBuffer[
-        type, 2, MutableAnyOrigin, shape=shape
+        dtype, 2, MutableAnyOrigin, shape=shape
     ].stack_allocation()
     var c_matrix = NDBuffer[
-        type, 2, MutableAnyOrigin, shape=shape
+        dtype, 2, MutableAnyOrigin, shape=shape
     ].stack_allocation()
 
     fill_a(a_matrix)
@@ -58,7 +58,7 @@ def test_dot_at_b[type: DType, shape: Tuple[Int, Int]]():
 
     for m in range(c_matrix.dim[0]()):
         for n in range(c_matrix.dim[1]()):
-            var golden = Scalar[type](0)
+            var golden = Scalar[dtype](0)
             for k in range(a_matrix.dim[1]()):
                 golden += a_matrix[k, m] * b_matrix[k, n]
             assert_almost_equal(

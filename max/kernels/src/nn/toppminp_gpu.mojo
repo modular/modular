@@ -252,15 +252,15 @@ fn normalize(
 
 @always_inline
 fn radix_sort_pairs_kernel[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType,
     current_bit: Int,
     ascending: Bool = False,
     BLOCK_SIZE: Int = 256,  # found empirically
     NUM_BITS_PER_PASS: Int = 4,
 ](
-    input_keys_: UnsafePointer[Scalar[type]],  # modifies input
-    output_keys_: UnsafePointer[Scalar[type]],
+    input_keys_: UnsafePointer[Scalar[dtype]],  # modifies input
+    output_keys_: UnsafePointer[Scalar[dtype]],
     input_key_ids_: UnsafePointer[Scalar[out_idx_type]],  # modifies input
     output_key_ids_: UnsafePointer[Scalar[out_idx_type]],
     num_keys: Int,
@@ -270,7 +270,7 @@ fn radix_sort_pairs_kernel[
     Radix pair sort kernel for (default) descending order.
 
     Parameters:
-        type: DType - Data type.
+        dtype: DType - Data type.
         out_idx_type: DType - Output index type.
         current_bit: Int - Current bit to start sorting NUM_BITS_PER_PASS bits at.
         ascending: Bool - Whether to sort in ascending order.
@@ -464,7 +464,7 @@ fn radix_sort_pairs_kernel[
 
 @always_inline
 fn run_radix_sort_pairs_gpu[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType,
     rank: Int,
     ascending: Bool = False,
@@ -472,8 +472,8 @@ fn run_radix_sort_pairs_gpu[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     ctx: DeviceContext,
-    mut input_keys: NDBuffer[type, rank, MutableAnyOrigin],  # modifies input
-    mut output_keys: NDBuffer[type, rank, MutableAnyOrigin],  # modifies output
+    mut input_keys: NDBuffer[dtype, rank, MutableAnyOrigin],  # modifies input
+    mut output_keys: NDBuffer[dtype, rank, MutableAnyOrigin],  # modifies output
     mut input_key_ids: NDBuffer[
         out_idx_type, rank, MutableAnyOrigin
     ],  # modifies input
@@ -487,9 +487,9 @@ fn run_radix_sort_pairs_gpu[
     var vocab_size = in_shape[1]
 
     @parameter
-    for current_bit in range(0, bitwidthof[type](), NUM_BITS_PER_PASS):
+    for current_bit in range(0, bitwidthof[dtype](), NUM_BITS_PER_PASS):
         alias kernel = radix_sort_pairs_kernel[
-            type, out_idx_type, current_bit, ascending, BLOCK_SIZE
+            dtype, out_idx_type, current_bit, ascending, BLOCK_SIZE
         ]
 
         ctx.enqueue_function[kernel](
@@ -514,12 +514,12 @@ fn run_radix_sort_pairs_gpu[
 
 @always_inline
 fn topp_minp_sampling_kernel[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType,
     is_top_p: Bool,
 ](
-    p_thresholds_: UnsafePointer[Scalar[type]],
-    sorted_probs_: UnsafePointer[Scalar[type]],
+    p_thresholds_: UnsafePointer[Scalar[dtype]],
+    sorted_probs_: UnsafePointer[Scalar[dtype]],
     sorted_ids_: UnsafePointer[Scalar[out_idx_type]],
     out_token_ids: UnsafePointer[Scalar[out_idx_type]],
     skip_sort: UnsafePointer[Scalar[DType.bool]],
@@ -529,7 +529,7 @@ fn topp_minp_sampling_kernel[
     Top P-Min P sampling kernel.
 
     Parameters:
-        type: DType - scalar values dtype.
+        dtype: DType - scalar values dtype.
         out_idx_type: DType - output index type.
         is_top_p: Bool - Whether to use Top-P (True) or Min-P (False) sampling.
     Args:
@@ -556,7 +556,7 @@ fn topp_minp_sampling_kernel[
         if tid == 0:
             var rng_state = Random(seed=SEED)
             var rng = rng_state.step_uniform()
-            var r = p_threshold * rng[0].cast[type]()
+            var r = p_threshold * rng[0].cast[dtype]()
             for i in range(vocab_size):
                 r -= sorted_probs[i]
 
@@ -577,7 +577,7 @@ fn topp_minp_sampling_kernel[
             var rng = rng_state.step_uniform()
 
             # Step 1: Filter out tokens with probabilities less than the min-p threshold
-            var sum_filtered_probs = Scalar[type](0.0)
+            var sum_filtered_probs = Scalar[dtype](0.0)
             var num_filtered_tokens = 0
             for i in range(vocab_size):
                 if sorted_probs[i] >= p_threshold:
@@ -587,7 +587,7 @@ fn topp_minp_sampling_kernel[
                     break
 
             # Step 2: Sample from normalized distribution of remaining tokens
-            var r = sum_filtered_probs * rng[0].cast[type]()
+            var r = sum_filtered_probs * rng[0].cast[dtype]()
             # Step 3: Select token based on normalized probabilities
             for i in range(num_filtered_tokens):
                 r -= sorted_probs[i]
@@ -604,32 +604,32 @@ fn topp_minp_sampling_kernel[
 
 
 @always_inline
-fn _is_supported_type[type: DType]() -> Bool:
+fn _is_supported_type[dtype: DType]() -> Bool:
     """
     Check if the type is supported by the radix sort kernel.
     If not supported, need to add a normalize function for that
     numeric type.
     """
-    if type in (DType.bfloat16, DType.float32):
+    if dtype in (DType.bfloat16, DType.float32):
         return True
-    if type in (DType.uint16, DType.uint32, DType.int32):
+    if dtype in (DType.uint16, DType.uint32, DType.int32):
         return True
     return False
 
 
 @always_inline
 fn _topp_minp_sampling_gpu[
-    type: DType,
+    dtype: DType,
     rank: Int,
     out_idx_type: DType, //,
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    p_thresholds: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
+    p_thresholds: NDBuffer[dtype, 1],
+    input_logits: NDBuffer[dtype, rank],
     out_token_ids: NDBuffer[out_idx_type, rank],
-    temperature: Scalar[type] = 1,
+    temperature: Scalar[dtype] = 1,
 ) raises:
     """
     GPU implementation of Top-P (nucleus) and Min-P sampling for token selection.
@@ -639,7 +639,7 @@ fn _topp_minp_sampling_gpu[
 
 
     Parameters:
-        type: DType - The data type of the input logits, p_thresholds, and temperature.
+        dtype: DType - The data type of the input logits, p_thresholds, and temperature.
         rank: Int - The rank of the input tensor (must be 2).
         out_idx_type: DType - The data type for output token indices.
         is_top_p: Bool - Whether to use Top-P (True) or Min-P (False) sampling. If Min-P, the
@@ -650,15 +650,15 @@ fn _topp_minp_sampling_gpu[
     Args:
         ctx: DeviceContext
             The context for GPU execution.
-        p_thresholds: NDBuffer[type, 1]
+        p_thresholds: NDBuffer[dtype, 1]
             Batch of p values (thresholds) for Top-P/Min-P sampling.
             For Top-P: cumulative probability threshold (e.g., 0.9 means sample from top 90%).
             For Min-P: min-p coefficients that determine the minimum probability threshold.
-        input_logits: NDBuffer[type, rank]
+        input_logits: NDBuffer[dtype, rank]
             Input logits tensor of shape [batch_size, vocab_size].
         out_token_ids: NDBuffer[out_idx_type, rank]
             Output buffer for sampled token indices of shape [batch_size, 1].
-        temperature: Scalar[type]
+        temperature: Scalar[dtype]
             Temperature for softmax scaling of logits (default=1.0).
             Higher values increase diversity, lower values make sampling more deterministic.
 
@@ -676,7 +676,7 @@ fn _topp_minp_sampling_gpu[
     - InternLM: https://github.com/InternLM/lmdeploy/
     """
     constrained[rank == 2, "Only rank 2 tensors are supported"]()
-    constrained[_is_supported_type[type](), "Unsupported type"]()
+    constrained[_is_supported_type[dtype](), "Unsupported type"]()
 
     alias BLOCK_SIZE = 256
 
@@ -690,20 +690,22 @@ fn _topp_minp_sampling_gpu[
     @__copy_capture(input_logits)
     fn apply_temperature[
         _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         var val = input_logits.load[width=_simd_width](
             rebind[IndexList[rank]](coords)
         )
         return val / temperature
 
     # TODO: Should softmax be done in-place without needing this other buffer?
-    var probs_buf = ctx.enqueue_create_buffer[type](
+    var probs_buf = ctx.enqueue_create_buffer[dtype](
         input_shape.flattened_length()
     )
-    var input_probs = NDBuffer[type, rank](probs_buf._unsafe_ptr(), input_shape)
+    var input_probs = NDBuffer[dtype, rank](
+        probs_buf._unsafe_ptr(), input_shape
+    )
 
     _softmax_gpu[
-        type, 1, rank, DimList.create_unknown[rank](), apply_temperature
+        dtype, 1, rank, DimList.create_unknown[rank](), apply_temperature
     ](input_shape, input_probs, rank - 1, ctx)
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
@@ -711,8 +713,8 @@ fn _topp_minp_sampling_gpu[
     #   token exceeds P. If it does, we skip sorting by setting
     #   begin_offset_buf[bi] = offset_buf[bi]
     # materialize a vals buffer
-    var max_vals_cache_buf = ctx.enqueue_create_buffer[type](Int(batch_size))
-    var max_vals = NDBuffer[type, rank](
+    var max_vals_cache_buf = ctx.enqueue_create_buffer[dtype](Int(batch_size))
+    var max_vals = NDBuffer[dtype, rank](
         max_vals_cache_buf._unsafe_ptr(), DimList(batch_size)
     )
     var skip_sort_buf = ctx.enqueue_create_buffer[DType.bool](Int(batch_size))
@@ -723,7 +725,7 @@ fn _topp_minp_sampling_gpu[
     alias K = 1
     alias num_blocks_per_input = 1
     ctx.enqueue_function[
-        topk_wrapper[type, out_idx_type, is_top_p, _test_sort=_test_sort]
+        topk_wrapper[dtype, out_idx_type, is_top_p, _test_sort=_test_sort]
     ](
         K,
         vocab_size,
@@ -735,15 +737,15 @@ fn _topp_minp_sampling_gpu[
         skip_sort.data,
         grid_dim=Dim(batch_size),
         block_dim=Dim(BLOCK_SIZE),
-        shared_mem_bytes=_get_shmem_size_stg_1[type](BLOCK_SIZE),
+        shared_mem_bytes=_get_shmem_size_stg_1[dtype](BLOCK_SIZE),
     )
 
     # Step 3: Apply a global sort on the input tensor of probs
     # Create the input_ids buffer
-    var sorted_probs_buf = ctx.enqueue_create_buffer[type](
+    var sorted_probs_buf = ctx.enqueue_create_buffer[dtype](
         batch_size * vocab_size
     )
-    var sorted_probs = NDBuffer[type, rank](
+    var sorted_probs = NDBuffer[dtype, rank](
         sorted_probs_buf._unsafe_ptr(), DimList(batch_size, vocab_size)
     )
     var input_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
@@ -778,7 +780,7 @@ fn _topp_minp_sampling_gpu[
 
     # Step 4: Sample from the sorted probabilities by cumsumming
     ctx.enqueue_function[
-        topp_minp_sampling_kernel[type, out_idx_type, is_top_p]
+        topp_minp_sampling_kernel[dtype, out_idx_type, is_top_p]
     ](
         p_thresholds.data,
         sorted_probs.data,
@@ -799,16 +801,16 @@ fn _topp_minp_sampling_gpu[
 
 @always_inline
 fn top_p_sampling_gpu[
-    type: DType,
+    dtype: DType,
     rank: Int,
     out_idx_type: DType, //,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    top_ps: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
+    top_ps: NDBuffer[dtype, 1],
+    input_logits: NDBuffer[dtype, rank],
     out_token_ids: NDBuffer[out_idx_type, rank],
-    temperature: Scalar[type] = 1,
+    temperature: Scalar[dtype] = 1,
 ) raises:
     """
     GPU implementation of Top-P sampling for token selection.
@@ -824,16 +826,16 @@ fn top_p_sampling_gpu[
 
 @always_inline
 fn min_p_sampling_gpu[
-    type: DType,
+    dtype: DType,
     rank: Int,
     out_idx_type: DType, //,
     _test_sort: Bool = False,
 ](
     ctx: DeviceContext,
-    min_ps: NDBuffer[type, 1],
-    input_logits: NDBuffer[type, rank],
+    min_ps: NDBuffer[dtype, 1],
+    input_logits: NDBuffer[dtype, rank],
     out_token_ids: NDBuffer[out_idx_type, rank],
-    temperature: Scalar[type] = 1,
+    temperature: Scalar[dtype] = 1,
 ) raises:
     """
     GPU implementation of Min-P sampling for token selection.

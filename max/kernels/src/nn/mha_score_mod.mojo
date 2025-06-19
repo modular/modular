@@ -25,13 +25,13 @@ trait ScoreModTrait:
     alias name_str: String
 
     fn score_mod[
-        type: DType, width: Int, //, *, element_type: DType = DType.int32
+        dtype: DType, width: Int, //, *, element_type: DType = DType.int32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
+        score_vec: SIMD[dtype, width],
         max_prompt_len: Int = 0,
-    ) -> SIMD[type, width]:
+    ) -> SIMD[dtype, width]:
         """Return score vector at given coordinates given a score_mod.
 
         Arguments:
@@ -56,48 +56,48 @@ struct AlibiScoreMod[
     @always_inline
     fn _generate_alibi_bias[
         coords_dtype: DType,
-        type: DType,
+        dtype: DType,
         width: Int,
     ](
         self,
         head_idx: SIMD[coords_dtype, width],
         k_idx: SIMD[coords_dtype, width],
         max_prompt_len: Int,
-    ) -> SIMD[type, width]:
-        var scale: SIMD[type, width]
+    ) -> SIMD[dtype, width]:
+        var scale: SIMD[dtype, width]
 
         @parameter
         if num_heads.is_power_of_two():
-            scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
+            scale = exp2(-((head_idx + 1).cast[dtype]() * 8.0 / num_heads))
         else:
             alias floor_power_of_2 = prev_power_of_two(num_heads)
             if head_idx[0] < floor_power_of_2:
                 scale = exp2(
-                    -((head_idx + 1).cast[type]() * 8.0 / floor_power_of_2)
+                    -((head_idx + 1).cast[dtype]() * 8.0 / floor_power_of_2)
                 )
             else:
                 scale = exp2(
                     -(
-                        ((head_idx - floor_power_of_2) * 2 + 1).cast[type]()
+                        ((head_idx - floor_power_of_2) * 2 + 1).cast[dtype]()
                         * 8.0
                         / (floor_power_of_2 * 2)
                     )
                 )
         var bias = -(
             max_prompt_len - 1 - k_idx - iota[coords_dtype, width]()
-        ).cast[type]()
+        ).cast[dtype]()
         var alibi_bias = bias * scale
         return alibi_bias
 
     @always_inline
     fn score_mod[
-        type: DType, width: Int, //, *, element_type: DType = DType.int32
+        dtype: DType, width: Int, //, *, element_type: DType = DType.int32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
+        score_vec: SIMD[dtype, width],
         max_prompt_len: Int,
-    ) -> SIMD[type, width]:
+    ) -> SIMD[dtype, width]:
         # coord[1] is the head index.
         # coord[2] and coord[3] are the token index in query and key respectively.
 
@@ -112,7 +112,7 @@ struct AlibiScoreMod[
             q_idx >= (k_idx + iota[coords_dtype, width]())
         ).select(
             score_vec
-            + self._generate_alibi_bias[coords_dtype, type, width](
+            + self._generate_alibi_bias[coords_dtype, dtype, width](
                 head_idx, k_idx, max_prompt_len
             ),
             score_vec,
@@ -130,11 +130,11 @@ struct IdentityScoreMod(Copyable, Movable, ScoreModTrait):
 
     @always_inline
     fn score_mod[
-        type: DType, width: Int, //, *, element_type: DType = DType.int32
+        dtype: DType, width: Int, //, *, element_type: DType = DType.int32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
+        score_vec: SIMD[dtype, width],
         max_prompt_len: Int = 0,
-    ) -> SIMD[type, width]:
+    ) -> SIMD[dtype, width]:
         return score_vec

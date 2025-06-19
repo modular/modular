@@ -30,23 +30,23 @@ alias DEBUG_BENCH = False
 alias PRINT_OUTPUT = False
 
 
-struct TestCase[_type: DType, _out_idx_type: DType, _is_top_p: Bool](
+struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
     Copyable, Movable
 ):
     alias is_top_p = _is_top_p
-    alias type = _type
+    alias dtype = _dtype
     alias out_idx_type = _out_idx_type
     var batch_size: Int
     var vocab_size: Int
-    var temperature: Scalar[_type]
-    var p_threshold: Scalar[_type]
+    var temperature: Scalar[_dtype]
+    var p_threshold: Scalar[_dtype]
 
     fn __init__(
         out self,
         batch_size: Int,
         vocab_size: Int,
-        temperature: Scalar[_type] = Scalar[_type](1.0),
-        p_threshold: Scalar[_type] = Scalar[_type](0.9),
+        temperature: Scalar[_dtype] = Scalar[_dtype](1.0),
+        p_threshold: Scalar[_dtype] = Scalar[_dtype](0.9),
     ):
         self.batch_size = batch_size
         self.vocab_size = vocab_size
@@ -83,20 +83,20 @@ fn fill_random[
 
 
 @parameter
-fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[mut=True, type, rank]):
+fn fill_iota[rank: Int, dtype: DType](mut buf: NDBuffer[mut=True, dtype, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
 fn merge[
-    type: DType, rank: Int
-](mut buf: NDBuffer[mut=True, type, rank], start: Int, mid: Int, end: Int):
+    dtype: DType, rank: Int
+](mut buf: NDBuffer[mut=True, dtype, rank], start: Int, mid: Int, end: Int):
     """Merge two sorted subarrays into one sorted array."""
     var left_size = mid - start
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_ptr = UnsafePointer[Scalar[type]].alloc(left_size)
-    var right_ptr = UnsafePointer[Scalar[type]].alloc(right_size)
+    var left_ptr = UnsafePointer[Scalar[dtype]].alloc(left_size)
+    var right_ptr = UnsafePointer[Scalar[dtype]].alloc(right_size)
 
     # Copy data to temporary arrays
     for i in range(left_size):
@@ -135,8 +135,8 @@ fn merge[
 
 
 fn merge_sort_recursive[
-    type: DType, rank: Int
-](mut buf: NDBuffer[mut=True, type, rank], start: Int, end: Int):
+    dtype: DType, rank: Int
+](mut buf: NDBuffer[mut=True, dtype, rank], start: Int, end: Int):
     """Recursive merge sort implementation."""
     if end - start > 1:
         var mid = start + (end - start) // 2
@@ -146,8 +146,8 @@ fn merge_sort_recursive[
 
 
 fn sort_buf_descending[
-    type: DType, rank: Int
-](mut buf: NDBuffer[mut=True, type, rank], vocab_size: Int):
+    dtype: DType, rank: Int
+](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int):
     """Sort each batch separately in descending order using parallel merge sort.
     """
     constrained[rank == 2, "rank must be 2"]()
@@ -160,8 +160,8 @@ fn sort_buf_descending[
 
 
 fn test_is_sorted_descending[
-    type: DType, rank: Int
-](mut buf: NDBuffer[mut=True, type, rank], vocab_size: Int) -> Bool:
+    dtype: DType, rank: Int
+](mut buf: NDBuffer[mut=True, dtype, rank], vocab_size: Int) -> Bool:
     constrained[rank == 2, "rank must be 2"]()
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
@@ -212,8 +212,8 @@ fn print_test_case(test_case: TestCase):
     print(
         "==== Running",
         "Top-P" if test_case.is_top_p else "Min-P",
-        ", type=",
-        test_case.type,
+        ", dtype=",
+        test_case.dtype,
         ", out_idx_type=",
         test_case.out_idx_type,
         "sampling with batch_size=",
@@ -228,19 +228,19 @@ fn print_test_case(test_case: TestCase):
 
 
 fn test_case_sampling[
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     print_test_case(test_case)
     alias rank = 2
-    alias type = test_case.type
+    alias dtype = test_case.dtype
     alias out_idx_type = test_case.out_idx_type
     alias is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
-    var temperature = rebind[Scalar[type]](test_case.temperature)
-    var p_threshold = rebind[Scalar[type]](test_case.p_threshold)
+    var temperature = rebind[Scalar[dtype]](test_case.temperature)
+    var p_threshold = rebind[Scalar[dtype]](test_case.p_threshold)
 
     var m: Bench
 
@@ -249,10 +249,10 @@ fn test_case_sampling[
         m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = UnsafePointer[Scalar[type]].alloc(
+    var in_logits_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var in_logits = NDBuffer[type, rank](
+    var in_logits = NDBuffer[dtype, rank](
         in_logits_ptr, DimList(batch_size, vocab_size)
     )
     var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
@@ -261,8 +261,8 @@ fn test_case_sampling[
     var token_ids = NDBuffer[out_idx_type, rank](
         token_ids_ptr, DimList(batch_size, 1)
     )
-    var p_thresholds_ptr = UnsafePointer[Scalar[type]].alloc(batch_size)
-    var p_thresholds = NDBuffer[type, 1](p_thresholds_ptr, DimList(batch_size))
+    var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
+    var p_thresholds = NDBuffer[dtype, 1](p_thresholds_ptr, DimList(batch_size))
 
     # Fill tensors
     fill_fn(in_logits)
@@ -270,13 +270,13 @@ fn test_case_sampling[
         p_thresholds.data[i] = p_threshold
 
     # Create device buffers
-    var device_in = DeviceNDBuffer[type, rank](
+    var device_in = DeviceNDBuffer[dtype, rank](
         DimList(batch_size, vocab_size), ctx=ctx
     )
     var device_token_ids = DeviceNDBuffer[out_idx_type, rank](
         DimList(batch_size, 1), ctx=ctx
     )
-    var device_p_thresholds = DeviceNDBuffer[type, 1](
+    var device_p_thresholds = DeviceNDBuffer[dtype, 1](
         DimList(batch_size), ctx=ctx
     )
 
@@ -285,16 +285,16 @@ fn test_case_sampling[
     ctx.enqueue_copy(device_p_thresholds.buffer, p_thresholds.data)
 
     # Copy to CPU and perform softmax & sort for correctness testing
-    var in_logits_cpu_test_ptr = UnsafePointer[Scalar[type]].alloc(
+    var in_logits_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var in_logits_cpu_test = NDBuffer[type, rank](
+    var in_logits_cpu_test = NDBuffer[dtype, rank](
         in_logits_cpu_test_ptr, DimList(batch_size, vocab_size)
     )
-    var probs_cpu_test_ptr = UnsafePointer[Scalar[type]].alloc(
+    var probs_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var probs_cpu_test = NDBuffer[type, rank](
+    var probs_cpu_test = NDBuffer[dtype, rank](
         probs_cpu_test_ptr, DimList(batch_size, vocab_size)
     )
     for i in range(in_logits.num_elements()):
@@ -396,19 +396,19 @@ fn test_case_sampling[
 
 
 fn test_toppminp_gpu[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
-    alias test_case1 = TestCase[type, out_idx_type, _is_top_p=True](
+    alias test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=1, vocab_size=1024, temperature=1.0, p_threshold=0.9
     )
-    alias test_case2 = TestCase[type, out_idx_type, _is_top_p=True](
+    alias test_case2 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=16, vocab_size=32000, temperature=10.0, p_threshold=0.95
     )
-    alias test_case3 = TestCase[type, out_idx_type, _is_top_p=False](
+    alias test_case3 = TestCase[dtype, out_idx_type, _is_top_p=False](
         batch_size=64,
         vocab_size=128256,
         temperature=0.7,
@@ -421,19 +421,19 @@ fn test_toppminp_gpu[
 
 
 fn test_all_out_idx_types[
-    type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    dtype: DType,
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
-    test_toppminp_gpu[type, DType.int32, fill_fn](ctx)
-    test_toppminp_gpu[type, DType.int64, fill_fn](ctx)
-    test_toppminp_gpu[type, DType.uint64, fill_fn](ctx)
+    test_toppminp_gpu[dtype, DType.int32, fill_fn](ctx)
+    test_toppminp_gpu[dtype, DType.int64, fill_fn](ctx)
+    test_toppminp_gpu[dtype, DType.uint64, fill_fn](ctx)
 
 
 fn test_all_types[
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     print("\n=== Testing Float32 ===")

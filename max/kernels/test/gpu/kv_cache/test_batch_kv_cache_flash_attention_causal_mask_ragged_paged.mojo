@@ -38,7 +38,7 @@ alias llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: List[Int],
     cache_lengths: List[Int],
@@ -130,7 +130,7 @@ def execute_ragged_flash_attention[
     var lookup_table_device = lookup_table_continuous_host.copy_to_device(ctx)
 
     kv_collection_continuous_device = ContinuousBatchingKVCacheCollection[
-        type, kv_params
+        dtype, kv_params
     ](
         kv_block_continuous_device.tensor,
         cache_lengths_device.tensor,
@@ -139,7 +139,7 @@ def execute_ragged_flash_attention[
         max_full_context_length,
     )
 
-    kv_block_paged_host = HostNDBuffer[type, 6](
+    kv_block_paged_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
             2,
@@ -187,7 +187,7 @@ def execute_ragged_flash_attention[
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
     kv_collection_paged_device = PagedKVCacheCollection[
-        type, kv_params, page_size
+        dtype, kv_params, page_size
     ](
         kv_block_paged_device.tensor,
         cache_lengths_device.tensor,

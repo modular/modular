@@ -19,18 +19,18 @@ from utils import IndexList
 
 
 @register_passable("trivial")
-struct BoxCoords[type: DType]:
-    var y1: Scalar[type]
-    var x1: Scalar[type]
-    var y2: Scalar[type]
-    var x2: Scalar[type]
+struct BoxCoords[dtype: DType]:
+    var y1: Scalar[dtype]
+    var x1: Scalar[dtype]
+    var y2: Scalar[dtype]
+    var x2: Scalar[dtype]
 
     fn __init__(
         out self,
-        y1: Scalar[type],
-        x1: Scalar[type],
-        y2: Scalar[type],
-        x2: Scalar[type],
+        y1: Scalar[dtype],
+        x1: Scalar[dtype],
+        y2: Scalar[dtype],
+        x2: Scalar[dtype],
     ):
         self.y1 = y1
         self.x1 = x1
@@ -44,14 +44,14 @@ alias unknown_layout_3d = Layout.row_major(
 
 
 fn fill_boxes[
-    type: DType
-](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> LayoutTensor[
-    type, unknown_layout_3d, MutableAnyOrigin
+    dtype: DType
+](batch_size: Int, box_list: VariadicList[BoxCoords[dtype]]) -> LayoutTensor[
+    dtype, unknown_layout_3d, MutableAnyOrigin
 ]:
     var num_boxes = len(box_list) // batch_size
     var shape = IndexList[3](batch_size, num_boxes, 4)
-    var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
-    var boxes = LayoutTensor[type, unknown_layout_3d](
+    var storage = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
+    var boxes = LayoutTensor[dtype, unknown_layout_3d](
         storage.origin_cast[True, MutableAnyOrigin](),
         RuntimeLayout[unknown_layout_3d].row_major(shape),
     )
@@ -80,15 +80,15 @@ fn linear_offset_to_coords[
 
 
 fn fill_scores[
-    type: DType
+    dtype: DType
 ](
-    batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[type]]
-) -> LayoutTensor[type, unknown_layout_3d, MutableAnyOrigin]:
+    batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[dtype]]
+) -> LayoutTensor[dtype, unknown_layout_3d, MutableAnyOrigin]:
     var num_boxes = len(scores_list) // batch_size // num_classes
 
     var shape = IndexList[3](batch_size, num_classes, num_boxes)
-    var storage = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
-    var scores = LayoutTensor[type, unknown_layout_3d](
+    var storage = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
+    var scores = LayoutTensor[dtype, unknown_layout_3d](
         storage.origin_cast[True, MutableAnyOrigin](),
         RuntimeLayout[unknown_layout_3d].row_major(shape),
     )
@@ -100,7 +100,7 @@ fn fill_scores[
 
 
 fn test_case[
-    type: DType
+    dtype: DType
 ](
     batch_size: Int,
     num_classes: Int,
@@ -108,11 +108,11 @@ fn test_case[
     iou_threshold: Float32,
     score_threshold: Float32,
     max_output_boxes_per_class: Int,
-    box_list: VariadicList[BoxCoords[type]],
-    scores_list: VariadicList[Scalar[type]],
+    box_list: VariadicList[BoxCoords[dtype]],
+    scores_list: VariadicList[Scalar[dtype]],
 ):
-    var boxes = fill_boxes[type](batch_size, box_list)
-    var scores = fill_scores[type](batch_size, num_classes, scores_list)
+    var boxes = fill_boxes[dtype](batch_size, box_list)
+    var scores = fill_scores[dtype](batch_size, num_classes, scores_list)
 
     var shape = non_max_suppression_shape_func(
         boxes,

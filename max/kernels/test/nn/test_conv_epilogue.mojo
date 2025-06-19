@@ -35,12 +35,12 @@ from nn.conv_utils import (
 from utils.index import Index, IndexList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
-alias type = DType.float32
+alias dtype = DType.float32
 
 
 # CHECK-LABEL: test_conv_epilogue
 fn test[
-    rank: Int, type: DType, filter_packed: Bool
+    rank: Int, dtype: DType, filter_packed: Bool
 ](
     N: Int,
     input_dims: IndexList[rank],
@@ -99,18 +99,18 @@ fn test[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(input_size)
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
     rand(input_ptr, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = UnsafePointer[Scalar[type]].alloc(filter_size)
+    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
     rand(filter_ptr, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
+    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
 
-    var bias_ptr = UnsafePointer[Scalar[type]].alloc(F)
+    var bias_ptr = UnsafePointer[Scalar[dtype]].alloc(F)
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -123,23 +123,23 @@ fn test[
 
     # Input buffer.
     var input_shape = extend_shape(input_dims, N, C)
-    var input = NDBuffer[type, rank + 2](input_ptr, input_shape)
+    var input = NDBuffer[dtype, rank + 2](input_ptr, input_shape)
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, C_per_group, F)
-    var filter = NDBuffer[type, rank + 2](filter_ptr, filter_shape)
+    var filter = NDBuffer[dtype, rank + 2](filter_ptr, filter_shape)
 
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[type, rank + 3](
+    var packed_filter = NDBuffer[dtype, rank + 3](
         packed_filter_ptr, rebind[IndexList[rank + 3]](packed_filter_shape)
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = NDBuffer[type, rank + 2](output_ptr, output_shape)
-    var output_ref = NDBuffer[type, rank + 2](output_ref_ptr, output_shape)
+    var output = NDBuffer[dtype, rank + 2](output_ptr, output_shape)
+    var output_ref = NDBuffer[dtype, rank + 2](output_ref_ptr, output_shape)
 
     @parameter
     if filter_packed:
@@ -164,9 +164,9 @@ fn test[
             DimList.create_unknown[rank + 2](),
             DimList.create_unknown[rank + 3](),
             DimList.create_unknown[rank + 2](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             True,
             conv_attr,
         ].run(
@@ -187,9 +187,9 @@ fn test[
             DimList.create_unknown[rank + 2](),
             DimList.create_unknown[rank + 2](),
             DimList.create_unknown[rank + 2](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             False,
             conv_attr,
         ].run(
@@ -255,9 +255,9 @@ fn test[
             DimList.create_unknown[rank + 2](),
             DimList.create_unknown[rank + 3](),
             DimList.create_unknown[rank + 2](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             True,
             conv_attr,
             epilogue,
@@ -279,9 +279,9 @@ fn test[
             DimList.create_unknown[rank + 2](),
             DimList.create_unknown[rank + 2](),
             DimList.create_unknown[rank + 2](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             False,
             conv_attr,
             epilogue,

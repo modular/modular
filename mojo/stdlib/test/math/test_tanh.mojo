@@ -22,9 +22,9 @@ from testing import assert_almost_equal
 
 
 fn tanh_libm[
-    type: DType, simd_width: Int
-](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return libm_call[type, simd_width, "tanhf", "tanh"](arg)
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    return libm_call[dtype, simd_width, "tanhf", "tanh"](arg)
 
 
 def test_tanh_tfvals_fp32():

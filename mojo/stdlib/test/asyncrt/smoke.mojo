@@ -24,8 +24,8 @@ fn _ownership_helper(
 
 
 fn _ownership_helper_buf[
-    type: DType
-](owned buf: DeviceBuffer[type]) raises -> DeviceBuffer[type]:
+    dtype: DType
+](owned buf: DeviceBuffer[dtype]) raises -> DeviceBuffer[dtype]:
     var buf_copy = buf
     print("local buf_copy: ", len(buf))
     return buf_copy

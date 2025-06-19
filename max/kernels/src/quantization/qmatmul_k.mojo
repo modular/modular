@@ -269,8 +269,8 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 
 fn _quantize_a_Q8_K[
-    group_size: Int, type: DType, *, interleave_group_sums: Bool = False
-](a: NDBuffer[type, 2, **_]) -> UnsafePointer[
+    group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
+](a: NDBuffer[dtype, 2, **_]) -> UnsafePointer[
     _block_Q8_K_packed[group_size], mut = a.mut, origin = a.origin
 ]:
     alias quantized_k = _block_QK_K.quantized_k
@@ -302,7 +302,7 @@ fn _quantize_a_Q8_K[
             var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
 
             for row in range(tile_m):
-                var max_value_simd = SIMD[type, group_size](Scalar[type].MIN)
+                var max_value_simd = SIMD[dtype, group_size](Scalar[dtype].MIN)
 
                 for g in range(group_count):
                     var fp_data = am_ptr.load[width=group_size](g * group_size)

@@ -42,9 +42,9 @@ alias NumWarpPerWarpGroup = 4
 
 def test_warp_specialize_gemm_with_multicasting[
     wgmma_n: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
+    a_dtype: DType,
+    b_dtype: DType,
+    c_dtype: DType,
     cluster_shape: IndexList[3],
     num_consumer: Int = 1,
     num_pipeline_stages: Int = 4,
@@ -150,11 +150,11 @@ def test_warp_specialize_gemm_with_multicasting[
     @always_inline
     @__copy_capture(c_tensor)
     fn epilogue_fn[
-        _type: DType,
+        _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_type, width]](),
-    ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> None:
+        alignment: Int = alignof[SIMD[_dtype, width]](),
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         c_tensor.store[alignment=alignment](
             idx, rebind[SIMD[c_type, width]](val)
         )
@@ -384,11 +384,11 @@ def main():
         @parameter
         @always_inline
         fn test_lambda_fn_square[
-            _type: DType,
+            _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_type, width]](),
-        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
+            alignment: Int = alignof[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
             _type, width
         ]:
             return val * val
@@ -408,17 +408,17 @@ def main():
         @parameter
         @always_inline
         fn test_lambda_add_coords[
-            _type: DType,
+            _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_type, width]](),
-        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
+            alignment: Int = alignof[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
             _type, width
         ]:
             # Cast indices between 0-1 to avoid accuracy issues
             var i = Float32(idx[0]) / 277.0
             var j = Float32(idx[1] - idx[1] % 8) / 2560.0
-            return val + i.cast[_type]() + 2 * j.cast[_type]()
+            return val + i.cast[_dtype]() + 2 * j.cast[_dtype]()
 
         test_warp_specialize_gemm_with_multicasting[
             256,

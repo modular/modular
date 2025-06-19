@@ -24,14 +24,14 @@ from utils import IndexList
 
 @always_inline
 fn top_p_sampling[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType, //,
     _test_sort: Bool = False,
 ](
-    top_ps: LayoutTensor[type, **_],
-    input_logits: LayoutTensor[mut=True, type, **_],
+    top_ps: LayoutTensor[dtype, **_],
+    input_logits: LayoutTensor[mut=True, dtype, **_],
     out_token_ids: LayoutTensor[mut=True, out_idx_type, **_],
-    temperature: Scalar[type] = 1,
+    temperature: Scalar[dtype] = 1,
 ) raises:
     """
     Naive CPU implementation of Top-P sampling for token selection.
@@ -47,14 +47,14 @@ fn top_p_sampling[
 
 @always_inline
 fn min_p_sampling[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType, //,
     _test_sort: Bool = False,
 ](
-    min_ps: LayoutTensor[type, **_],
-    input_logits: LayoutTensor[mut=True, type, **_],
+    min_ps: LayoutTensor[dtype, **_],
+    input_logits: LayoutTensor[mut=True, dtype, **_],
     out_token_ids: LayoutTensor[mut=True, out_idx_type, **_],
-    temperature: Scalar[type] = 1,
+    temperature: Scalar[dtype] = 1,
 ) raises:
     """
     Naive CPU implementation of Min-P sampling for token selection.
@@ -68,15 +68,15 @@ fn min_p_sampling[
 
 @always_inline
 fn _topp_minp_sampling[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType, //,
     is_top_p: Bool,
     _test_sort: Bool = False,
 ](
-    p_thresholds: LayoutTensor[type, **_],
-    input_logits: LayoutTensor[mut=True, type, **_],
+    p_thresholds: LayoutTensor[dtype, **_],
+    input_logits: LayoutTensor[mut=True, dtype, **_],
     out_token_ids: LayoutTensor[mut=True, out_idx_type, **_],
-    temperature: Scalar[type] = 1,
+    temperature: Scalar[dtype] = 1,
 ) raises:
     """
     Naive CPU implementation of Top-P/Min-P sampling for token selection.
@@ -85,27 +85,27 @@ fn _topp_minp_sampling[
     minimum probability threshold (Min-P).
 
     Parameters:
-        type: DType - The data type of the input logits, p_thresholds, and temperature.
+        dtype: DType - The data type of the input logits, p_thresholds, and temperature.
         out_idx_type: DType - The data type for output token indices.
         is_top_p: Bool - Whether to use Top-P (True) or Min-P (False) sampling.
         _test_sort: Bool - For internal testing purposes to check if the
             sorted probs are in descending order. If true, copies the sorted
             probs back into input_logits.
     Args:
-        p_thresholds: NDBuffer[type, 1] - Sampling thresholds, one per batch.
-        input_logits: NDBuffer[type, rank] - Input logits (modified in-place).
+        p_thresholds: NDBuffer[dtype, 1] - Sampling thresholds, one per batch.
+        input_logits: NDBuffer[dtype, rank] - Input logits (modified in-place).
         out_token_ids: NDBuffer[out_idx_type, rank] - Output sampled token IDs.
-        temperature: Scalar[type] - Temperature for logits scaling.
+        temperature: Scalar[dtype] - Temperature for logits scaling.
     """
     constrained[input_logits.rank == 2, "Only rank 2 tensors are supported"]()
     var input_shape = input_logits.runtime_layout.shape.value
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
-    var sorted_probs_ptr = UnsafePointer[Scalar[type]].alloc(
+    var sorted_probs_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var sorted_probs = LayoutTensor[type, Layout.row_major[2]()](
+    var sorted_probs = LayoutTensor[dtype, Layout.row_major[2]()](
         sorted_probs_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(
             IndexList[2](batch_size, vocab_size)
@@ -136,7 +136,7 @@ fn _topp_minp_sampling[
     @__copy_capture(input_logits)
     fn apply_temperature[
         _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         var i = input_logits.runtime_layout(
             RuntimeTuple[Layout.row_major[input_logits.rank]().shape](coords)
         )
@@ -151,7 +151,7 @@ fn _topp_minp_sampling[
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
-        NDBuffer[type, input_logits.rank](
+        NDBuffer[dtype, input_logits.rank](
             sorted_probs_ptr, DimList(batch_size, vocab_size)
         ),
         axis=input_logits.rank - 1,
@@ -172,7 +172,7 @@ fn _topp_minp_sampling[
         @parameter
         if is_top_p:
             # Sample using top-p (nucleus) sampling
-            var r = p_threshold * random_float64().cast[type]()
+            var r = p_threshold * random_float64().cast[dtype]()
             for i in range(vocab_size):
                 r -= sorted_probs[batch, i][0]
                 if r <= 0 or i == vocab_size - 1:
@@ -181,7 +181,7 @@ fn _topp_minp_sampling[
         else:
             # Sample using min-p sampling
             # Step 1: Filter out tokens with probabilities less than min-p threshold
-            var sum_filtered_probs = Scalar[type](0.0)
+            var sum_filtered_probs = Scalar[dtype](0.0)
             var num_filtered_tokens = 0
             for i in range(vocab_size):
                 if sorted_probs[batch, i][0] >= p_threshold:
@@ -191,7 +191,7 @@ fn _topp_minp_sampling[
                     break
 
             # Step 2: Sample from normalized distribution of remaining tokens
-            var r = sum_filtered_probs * random_float64().cast[type]()
+            var r = sum_filtered_probs * random_float64().cast[dtype]()
 
             # Step 3: Select token based on normalized probabilities
             for i in range(num_filtered_tokens):
@@ -206,9 +206,9 @@ fn _topp_minp_sampling[
 
 @always_inline
 fn sort_buf_descending[
-    type: DType, out_idx_type: DType
+    dtype: DType, out_idx_type: DType
 ](
-    mut buf_keys: LayoutTensor[mut=True, type, **_],
+    mut buf_keys: LayoutTensor[mut=True, dtype, **_],
     mut buf_ids: LayoutTensor[mut=True, out_idx_type, **_],
     vocab_size: Int,
 ):
@@ -224,10 +224,10 @@ fn sort_buf_descending[
 
 
 fn merge_sort_recursive[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType,
 ](
-    mut buf_keys: LayoutTensor[mut=True, type, **_],
+    mut buf_keys: LayoutTensor[mut=True, dtype, **_],
     mut buf_ids: LayoutTensor[mut=True, out_idx_type, **_],
     start: Int,
     end: Int,
@@ -242,9 +242,9 @@ fn merge_sort_recursive[
 
 @always_inline
 fn merge[
-    type: DType, out_idx_type: DType
+    dtype: DType, out_idx_type: DType
 ](
-    mut buf_keys: LayoutTensor[mut=True, type, **_],
+    mut buf_keys: LayoutTensor[mut=True, dtype, **_],
     mut buf_ids: LayoutTensor[mut=True, out_idx_type, **_],
     start: Int,
     mid: Int,
@@ -255,8 +255,8 @@ fn merge[
     var right_size = end - mid
 
     # Create temporary arrays
-    var left_keys_ptr = UnsafePointer[Scalar[type]].alloc(left_size)
-    var right_keys_ptr = UnsafePointer[Scalar[type]].alloc(right_size)
+    var left_keys_ptr = UnsafePointer[Scalar[dtype]].alloc(left_size)
+    var right_keys_ptr = UnsafePointer[Scalar[dtype]].alloc(right_size)
     var left_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(left_size)
     var right_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(right_size)
 

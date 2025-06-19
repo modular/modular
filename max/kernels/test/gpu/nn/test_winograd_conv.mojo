@@ -39,8 +39,8 @@ from utils.numerics import get_accum_type
 
 @always_inline
 fn _get_b[
-    type: DType
-](out B: LayoutTensor[type, Layout.row_major(4, 4), MutableAnyOrigin]):
+    dtype: DType
+](out B: LayoutTensor[dtype, Layout.row_major(4, 4), MutableAnyOrigin]):
     B = __type_of(B).stack_allocation()
     # fmt:off
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
@@ -52,8 +52,8 @@ fn _get_b[
 
 @always_inline
 fn _get_g[
-    type: DType
-](out G: LayoutTensor[type, Layout.row_major(4, 3), MutableAnyOrigin]):
+    dtype: DType
+](out G: LayoutTensor[dtype, Layout.row_major(4, 3), MutableAnyOrigin]):
     G = __type_of(G).stack_allocation()
     # fmt:off
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
@@ -65,8 +65,8 @@ fn _get_g[
 
 @always_inline
 fn _get_a[
-    type: DType
-](out A: LayoutTensor[type, Layout.row_major(2, 4), MutableAnyOrigin]):
+    dtype: DType
+](out A: LayoutTensor[dtype, Layout.row_major(2, 4), MutableAnyOrigin]):
     A = __type_of(A).stack_allocation()
     # fmt:off
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
@@ -121,20 +121,20 @@ fn matmul[
 # to a rank 2 LayoutTensor
 @always_inline
 fn get_tile[
-    type: DType, layout: Layout, //, tile_size: Int
+    dtype: DType, layout: Layout, //, tile_size: Int
 ](
-    input_tensor: LayoutTensor[type, layout, MutableAnyOrigin],
+    input_tensor: LayoutTensor[dtype, layout, MutableAnyOrigin],
     n: Int,
     h: Int,
     w: Int,
     c: Int,
 ) -> LayoutTensor[
-    type, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
+    dtype, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
 ]:
     # TODO: Issue because returning a stack variable? Workaround
     # with @always_inline
     var result = LayoutTensor[
-        type, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
+        dtype, Layout.row_major(tile_size, tile_size), MutableAnyOrigin
     ].stack_allocation()
 
     for i in range(tile_size):
@@ -376,7 +376,7 @@ fn get_output_dim[
 
 
 fn test_winograd_conv_gpu[
-    type: DType,
+    dtype: DType,
     input_dim: DimList,
     filter_dim: DimList,
     stride: IndexList[2],
@@ -390,11 +390,11 @@ fn test_winograd_conv_gpu[
         input_dim, filter_dim, stride, dilation, pad
     ]()
 
-    var host_input = HostNDBuffer[type, 4, input_dim]()
-    var host_filter = HostNDBuffer[type, 4, filter_dim]()
+    var host_input = HostNDBuffer[dtype, 4, input_dim]()
+    var host_filter = HostNDBuffer[dtype, 4, filter_dim]()
 
-    var device_output = DeviceNDBuffer[type, 4, output_dim](ctx=ctx)
-    var device_output_ref = DeviceNDBuffer[type, 4, output_dim](ctx=ctx)
+    var device_output = DeviceNDBuffer[dtype, 4, output_dim](ctx=ctx)
+    var device_output_ref = DeviceNDBuffer[dtype, 4, output_dim](ctx=ctx)
 
     random(host_filter.tensor)
     random(host_input.tensor)
@@ -402,7 +402,7 @@ fn test_winograd_conv_gpu[
     var device_input = host_input.copy_to_device(ctx)
     var device_filter = host_filter.copy_to_device(ctx)
 
-    conv_gpu[4, 4, input_dim, filter_dim, output_dim, type, type, type](
+    conv_gpu[4, 4, input_dim, filter_dim, output_dim, dtype, dtype, dtype](
         device_input.tensor,
         device_filter.tensor,
         device_output_ref.tensor,
@@ -416,7 +416,7 @@ fn test_winograd_conv_gpu[
     var host_output_ref = device_output_ref.copy_from_device(ctx)
 
     winograd_conv2d_gpu_launcher[
-        4, 4, input_dim, filter_dim, output_dim, type, type, type
+        4, 4, input_dim, filter_dim, output_dim, dtype, dtype, dtype
     ](
         device_input.tensor,
         device_filter.tensor,
@@ -431,8 +431,8 @@ fn test_winograd_conv_gpu[
     var host_output = device_output.copy_from_device(ctx)
 
     # TODO: Should tolerances really this high for BFloat16?
-    alias atol = 1e-06 if type is DType.float32 else 1e-1
-    alias rtol = 1e-06 if type is DType.float32 else 1e-4
+    alias atol = 1e-06 if dtype is DType.float32 else 1e-1
+    alias rtol = 1e-06 if dtype is DType.float32 else 1e-4
 
     for x in range(output_dim.product().get()):
         assert_almost_equal(
@@ -448,7 +448,7 @@ fn main() raises:
 
     with DeviceContext() as ctx:
         test_winograd_conv_gpu[
-            type=dtype,
+            dtype=dtype,
             input_dim = DimList(1, 8, 8, 1),
             filter_dim = DimList(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
@@ -457,7 +457,7 @@ fn main() raises:
         ](ctx)
 
         test_winograd_conv_gpu[
-            type=dtype,
+            dtype=dtype,
             input_dim = DimList(32, 256, 256, 1),
             filter_dim = DimList(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
@@ -466,7 +466,7 @@ fn main() raises:
         ](ctx)
 
         test_winograd_conv_gpu[
-            type=dtype,
+            dtype=dtype,
             input_dim = DimList(1, 4, 16, 1),
             filter_dim = DimList(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
@@ -475,7 +475,7 @@ fn main() raises:
         ](ctx)
 
         test_winograd_conv_gpu[
-            type=dtype,
+            dtype=dtype,
             input_dim = DimList(1, 16, 4, 1),
             filter_dim = DimList(3, 3, 1, 1),
             stride = IndexList[2](1, 1),
@@ -484,7 +484,7 @@ fn main() raises:
         ](ctx)
 
         test_winograd_conv_gpu[
-            type = DType.bfloat16,
+            dtype = DType.bfloat16,
             input_dim = DimList(1, 32, 32, 1),
             filter_dim = DimList(3, 3, 1, 1),
             stride = IndexList[2](1, 1),

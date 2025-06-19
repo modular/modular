@@ -103,17 +103,17 @@ fn flare_mla_decoding[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        dtype, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: cache_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -148,8 +148,8 @@ fn flare_mla_decoding[
         not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
     ]()
     constrained[
-        q.type == cache_t.type == output.type,
-        "Q, K, V, output should have same type.",
+        q.dtype == cache_t.dtype == output.dtype,
+        "Q, K, V, output should have same dtype.",
     ]()
 
     @always_inline
@@ -205,14 +205,14 @@ fn flare_mla_decoding[
     rank: Int,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
-    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
+    config: MHAConfig = MHAConfig(dtype, q_shape.get[2](), q_shape.get[3]()),
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -263,12 +263,12 @@ fn flare_mla_decoding_dispatch[
     k_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     kv_num_heads: Int,
     use_score_mod: Bool = False,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        dtype, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
     ragged: Bool = False,
     # Work arounds to unify KVCache and NDBuffer inputs:
@@ -282,7 +282,7 @@ fn flare_mla_decoding_dispatch[
     decoding_warp_split_k: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: k_t,
     mask_functor: mask_t,
     score_mod_functor: score_mod_t,
@@ -317,12 +317,12 @@ fn flare_mla_decoding_dispatch[
     ]()
 
     constrained[
-        q.type.is_half_float(),
+        q.dtype.is_half_float(),
         "Only support half precision.",
     ]()
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
-    # H and D are always known for opaque KVCache types, we only check Q.
+    # H and D are always known for opaque KVCache dtypes, we only check Q.
     constrained[
         q.shape.all_known[rank - 2, rank](),
         "Need num_heads and head_dim to be static for Q.",
@@ -346,25 +346,26 @@ fn flare_mla_decoding_dispatch[
     # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-    alias accum_type = get_accum_type[q.type]()
+    alias accum_type = get_accum_type[q.dtype]()
     alias num_pipeline_stages = 6
     # smem for q
-    var shared_mem_bytes = BM * depth * sizeof[q.type]()
+    var shared_mem_bytes = BM * depth * sizeof[q.dtype]()
 
-    shared_mem_bytes += BN * depth * sizeof[k_t.type]()
+    shared_mem_bytes += BN * depth * sizeof[k_t.dtype]()
 
     alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
     # smem for p and warp_scratch
     shared_mem_bytes += (
-        BM * BN * sizeof[k_t.type]() + 2 * num_warps * BM * sizeof[accum_type]()
+        BM * BN * sizeof[k_t.dtype]()
+        + 2 * num_warps * BM * sizeof[accum_type]()
     )
     alias num_blocks_y = num_heads // BM
 
     alias kernel = mla_decoding[
-        q.type,
+        q.dtype,
         k_t,
-        output.type,
+        output.dtype,
         mask_t,
         score_mod_t,
         BM=BM,
@@ -564,7 +565,7 @@ fn mla_decoding_single_batch[
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
-    alias k_type = k_t.type
+    alias k_type = k_t.dtype
     constrained[q_type == k_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -1113,7 +1114,7 @@ fn flare_mla_prefill[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     output_type: DType,
     softmax_type: DType,
     q_shape: DimList, //,
@@ -1122,7 +1123,7 @@ fn flare_mla_prefill[
     use_cascade_attention: Bool = False,
 ](
     output: NDBuffer[mut=True, output_type, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, 3, *_],
     v: NDBuffer[_, 3, *_],
     k_rope: cache_t,
@@ -1166,11 +1167,11 @@ fn flare_mla_prefill[
     """
     constrained[rank == 3, "only support ragged inputs"]()
     constrained[
-        q.type == cache_t.type == output.type,
-        "Q, K, V, output should have same type.",
+        q.dtype == cache_t.dtype == output.dtype,
+        "Q, K, V, output should have same dtype.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -1206,7 +1207,7 @@ fn flare_mla_prefill[
         alias q_depth = q_shape.get[rank - 1]()
 
         alias mha_config = MHAConfig(
-            type,
+            dtype,
             q_shape.get[rank - 2](),  # num_heads
             k.shape.get[rank - 1](),  # depth
             num_keys_per_block=UInt(64),
@@ -1246,7 +1247,7 @@ fn flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     softmax_type: DType,
     q_shape: DimList, //,
     use_score_mod: Bool = False,
@@ -1254,7 +1255,7 @@ fn flare_mla_prefill[
     use_cascade_attention: Bool = False,
 ](
     output: NDBuffer[mut=True, _, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: NDBuffer[_, 3, *_],
     v: NDBuffer[_, 3, *_],
     k_rope: NDBuffer[_, 4, *_],
@@ -1274,11 +1275,11 @@ fn flare_mla_prefill[
 ) raises:
     constrained[rank == 3, "only support ragged inputs"]()
     constrained[
-        q.type == k.type == v.type == k_rope.type == output.type,
-        "Q, K, V, output should have same type.",
+        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype,
+        "Q, K, V, output should have same dtype.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -1307,13 +1308,13 @@ fn flare_mla_prefill[
         var v_operand = RaggedMHAOperand(v, cache_row_offsets)
         var k_rope_operand = NDBufferMHAOperand(k_rope)
 
-        alias output_type = output.type
+        alias output_type = output.dtype
         alias kv_num_heads = k_rope.shape.get[2]()
         alias cache_depth = k_rope.shape.get[3]()
         alias q_depth = q_shape.get[rank - 1]()  # hard code for now
 
         alias mha_config = MHAConfig(
-            type,
+            dtype,
             q_shape.get[rank - 2](),
             k.shape.get[rank - 1](),
             num_keys_per_block=UInt(64),
@@ -1360,7 +1361,7 @@ fn flare_mla_prefill_dispatch[
     k_rope_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     output_type: DType,
     softmax_type: DType,
     q_shape: DimList, //,
@@ -1371,12 +1372,12 @@ fn flare_mla_prefill_dispatch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
     config: MHAConfig = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        dtype, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
     _ndbuffer_mha_operand: Bool = False,
 ](
     output: NDBuffer[output_type, rank, *_],
-    q: NDBuffer[type, rank, _, q_shape, *_],
+    q: NDBuffer[dtype, rank, _, q_shape, *_],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
@@ -1412,7 +1413,7 @@ fn flare_mla_prefill_dispatch[
 
     var batch_size: Int = valid_length.dim[0]() - 1
 
-    alias q_half_float = type in (DType.float16, DType.bfloat16)
+    alias q_half_float = dtype in (DType.float16, DType.bfloat16)
 
     alias BM = config.block_m()
     alias BN = config.block_n()
@@ -1422,7 +1423,7 @@ fn flare_mla_prefill_dispatch[
     alias k_smem = BN * q_depth
     alias v_smem = BN * depth
 
-    alias smem_use = (q_smem + k_smem + v_smem) * config.type.sizeof()
+    alias smem_use = (q_smem + k_smem + v_smem) * config.dtype.sizeof()
 
     var softmax_info_ptr = (
         softmax_info.value().data if softmax_info else UnsafePointer[
@@ -1441,11 +1442,11 @@ fn flare_mla_prefill_dispatch[
     )
 
     alias kernel = mla_prefill[
-        config.type,
+        config.dtype,
         k_t,
         v_t,
         k_rope_t,
-        output.type,
+        output.dtype,
         softmax_type,
         mask_t,
         score_mod_t,
@@ -1535,7 +1536,7 @@ fn mla_prefill[
 
     constrained[
         softmax_type == get_accum_type[q_type](),
-        "Softmax type should be the same as the accumulation type.",
+        "Softmax dtype should be the same as the accumulation dtype.",
     ]()
     var softmax_info_accum_ptr = softmax_info_ptr.bitcast[
         Scalar[get_accum_type[q_type]()]
@@ -1634,9 +1635,9 @@ fn mla_prefill_single_batch[
     batch_idx: Int,
 ):
     """MLA for encoding where seqlen > 1."""
-    alias k_type = k_t.type
-    alias v_type = v_t.type
-    alias k_rope_type = k_rope_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
+    alias k_rope_type = k_rope_t.dtype
     constrained[
         q_type == k_type and k_type == v_type and k_type == k_rope_type
     ]()
@@ -2628,14 +2629,14 @@ fn mla_prefill_plan_kernel[
 
 @always_inline
 fn _k_cache_to_buffer[
-    type: DType,
+    dtype: DType,
     cache_t: KVCacheT,
 ](
     buffer_row_offsets: NDBuffer[DType.uint32, 1, *_],
     cache_offsets: NDBuffer[DType.uint32, 1, *_],
     k_cache: cache_t,
     length: Int32,
-    buffer: NDBuffer[mut=True, type, 2, *_],
+    buffer: NDBuffer[mut=True, dtype, 2, *_],
     context: DeviceContext,
 ) raises:
     alias num_heads = cache_t.kv_params.num_heads
@@ -2662,7 +2663,7 @@ fn _k_cache_to_buffer[
 
         var head_dim_idx = idx[1]
 
-        var cache_val = rebind[SIMD[type, width]](
+        var cache_val = rebind[SIMD[dtype, width]](
             k_cache.load[width=width](batch_idx, 0, token_idx, head_dim_idx)
         )
 
@@ -2673,7 +2674,7 @@ fn _k_cache_to_buffer[
         buffer.dim[1](),
     )
     alias compile_target = get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](
         launch_shape, context

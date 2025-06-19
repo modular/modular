@@ -297,12 +297,12 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
-    type: DType, //,
+    dtype: DType, //,
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    scratch: UnsafePointer[Scalar[type]],
-    output: UnsafePointer[Scalar[type]],
+    scratch: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype]],
     N: Int,
     output_space_dims: IndexList,
     F: Int,

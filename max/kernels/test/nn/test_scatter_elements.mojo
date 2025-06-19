@@ -17,37 +17,37 @@ from nn.gather_scatter import scatter_elements
 
 
 fn test_case[
-    type: DType,
+    dtype: DType,
 ](
     axis: Int,
-    data: TestTensor[type, 2],
+    data: TestTensor[dtype, 2],
     indices: TestTensor[DType.int32, 2],
-    updates: TestTensor[type, 2],
-    output: TestTensor[type, 2],
+    updates: TestTensor[dtype, 2],
+    output: TestTensor[dtype, 2],
 ) raises:
     @always_inline
     @parameter
     fn use_update[
-        _type: DType, width: Int
-    ](input_val: SIMD[_type, width], update_val: SIMD[_type, width]) -> SIMD[
-        _type, width
+        _dtype: DType, width: Int
+    ](input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]) -> SIMD[
+        _dtype, width
     ]:
         return update_val
 
-    test_case[type, use_update](axis, data, indices, updates, output)
+    test_case[dtype, use_update](axis, data, indices, updates, output)
 
 
 fn test_case[
-    type: DType,
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing [_] -> SIMD[type, width],
+    dtype: DType,
+    reduce_fn: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing [_] -> SIMD[dtype, width],
 ](
     axis: Int,
-    data: TestTensor[type, 2],
+    data: TestTensor[dtype, 2],
     indices: TestTensor[DType.int32, 2],
-    updates: TestTensor[type, 2],
-    output: TestTensor[type, 2],
+    updates: TestTensor[dtype, 2],
+    output: TestTensor[dtype, 2],
 ) raises:
     var output_ref = output
 

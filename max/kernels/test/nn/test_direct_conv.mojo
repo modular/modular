@@ -35,12 +35,12 @@ from nn.conv_utils import (
 from utils.index import Index, IndexList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
-alias type = DType.float32
+alias dtype = DType.float32
 
 
 # CHECK-LABEL: test_direct_conv
 fn test[
-    type: DType, filter_packed: Bool
+    dtype: DType, filter_packed: Bool
 ](
     N: Int,
     H: Int,
@@ -77,13 +77,13 @@ fn test[
         num_groups=num_groups,
     )
 
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[type]].alloc(R * S * C * F)
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(N * H * W * C)
+    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(R * S * C * F)
+    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
+    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
 
-    rand[type](input_ptr, N * H * W * C)
-    rand[type](filter_ptr, R * S * C * F)
+    rand[dtype](input_ptr, N * H * W * C)
+    rand[dtype](filter_ptr, R * S * C * F)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -99,18 +99,18 @@ fn test[
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    var input = NDBuffer[type, 4](input_ptr, Index(N, H, W, C))
-    var filter = NDBuffer[type, 4](filter_ptr, Index(R, S, C // num_groups, F))
+    var input = NDBuffer[dtype, 4](input_ptr, Index(N, H, W, C))
+    var filter = NDBuffer[dtype, 4](filter_ptr, Index(R, S, C // num_groups, F))
     var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[type, 5, _, DimList.create_unknown[5]()](
+    var packed_filter = NDBuffer[dtype, 5, _, DimList.create_unknown[5]()](
         packed_filter_ptr,
         packed_filter_shape,
     )
-    var output = NDBuffer[type, 4](output_ptr, Index(N, HO, WO, F))
-    var output_ref = NDBuffer[type, 4](output_ref_ptr, Index(N, HO, WO, F))
+    var output = NDBuffer[dtype, 4](output_ptr, Index(N, HO, WO, F))
+    var output_ref = NDBuffer[dtype, 4](output_ref_ptr, Index(N, HO, WO, F))
 
     @parameter
     if filter_packed:
@@ -118,9 +118,9 @@ fn test[
 
     # Reference: naive conv
     Naive2dConvolution[
-        type,  # Data type.
-        type,
-        type,
+        dtype,  # Data dtype.
+        dtype,
+        dtype,
     ].run(
         output_ref_ptr,
         input_ptr,
@@ -151,9 +151,9 @@ fn test[
             DimList.create_unknown[4](),
             DimList.create_unknown[5](),
             DimList.create_unknown[4](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             True,
             conv_attr,
         ].run(
@@ -173,9 +173,9 @@ fn test[
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
             DimList.create_unknown[4](),
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             False,
             conv_attr,
         ].run(output, input, filter, conv_shape)

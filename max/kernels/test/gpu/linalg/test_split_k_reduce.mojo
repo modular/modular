@@ -58,18 +58,18 @@ fn _create_host_buffer[
 
 
 fn _get_test_name[
-    type: DType, shape_a: DimList, shape_b: DimList
+    dtype: DType, shape_a: DimList, shape_b: DimList
 ](shape_a_dim: IndexList[2], shape_b_dim: IndexList[2],) -> String:
     return String(
-        "test-case(", type, ") : a -> ", shape_a_dim, " and b ->", shape_b_dim
+        "test-case(", dtype, ") : a -> ", shape_a_dim, " and b ->", shape_b_dim
     )
 
 
 fn _split_k_reduce_verify[
-    type: DType, a_shape: DimList, b_shape: DimList
+    dtype: DType, a_shape: DimList, b_shape: DimList
 ](
-    mut A: NDBuffer[mut=True, type, 2, _, a_shape],
-    B: NDBuffer[type, 2, _, b_shape],
+    mut A: NDBuffer[mut=True, dtype, 2, _, a_shape],
+    B: NDBuffer[dtype, 2, _, b_shape],
     num_partition: UInt,
 ):
     var M = A.dim[0]()
@@ -141,9 +141,9 @@ def test_split_k_reduce_rank3[
     @always_inline
     @__copy_capture(c, epilogue_buffer)
     fn epilogue_fn[
-        _type: DType, _width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_type, _width]) capturing -> None:
-        var another_val = rebind[SIMD[_type, _width]](
+        _dtype: DType, _width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[_dtype, _width]) capturing -> None:
+        var another_val = rebind[SIMD[_dtype, _width]](
             epilogue_buffer.load[width=_width](idx)
         )
         c.store(idx, rebind[SIMD[c_type, _width]](val + another_val))

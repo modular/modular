@@ -29,16 +29,19 @@ from utils import IndexList, product
 fn pad_constant_dispatch[
     output_layout: Layout,
     input_layout: Layout,
-    type: DType,
+    dtype: DType,
     paddings_type: DType,
     constant_type: DType,
     recursive: Int = 0,
 ](
     output: LayoutTensor[
-        mut=True, type, output_layout, address_space = AddressSpace.GENERIC, **_
+        mut=True,
+        dtype,
+        output_layout,
+        address_space = AddressSpace.GENERIC, **_,
     ],
     input: LayoutTensor[
-        type, input_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, input_layout, address_space = AddressSpace.GENERIC, **_
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
     constant: SIMD[constant_type, 1],
@@ -67,16 +70,16 @@ fn pad_constant_dispatch[
     @parameter
     if recursive:
         alias init_axis = 0
-        var constant_cast = rebind[Scalar[type]](constant[0])
+        var constant_cast = rebind[Scalar[dtype]](constant[0])
 
         @__copy_capture(constant_cast)
         @parameter
         fn pad_constant_wrapper(
             output: UnsafePointer[
-                Scalar[type], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
             ],
             input: UnsafePointer[
-                Scalar[type], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
@@ -84,7 +87,7 @@ fn pad_constant_dispatch[
             input_strides: UnsafePointer[Scalar[DType.index]],
         ):
             return _pad_constant_impl_rec[
-                output_layout.rank(), type, paddings_type
+                output_layout.rank(), dtype, paddings_type
             ](
                 init_axis,
                 output,
@@ -102,7 +105,7 @@ fn pad_constant_dispatch[
         return _do_pad[
             output_layout,
             input_layout,
-            type,
+            dtype,
             paddings_type,
             pad_constant_wrapper,
         ](output, input, paddings)
@@ -112,14 +115,14 @@ fn pad_constant_dispatch[
 
 fn _pad_constant_impl_rec[
     rank: Int,
-    type: DType,
+    dtype: DType,
     paddings_type: DType,
 ](
     axis: Int,
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype]],
     paddings: UnsafePointer[Scalar[paddings_type]],
-    constant: Scalar[type],
+    constant: Scalar[dtype],
     output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
@@ -201,15 +204,18 @@ fn _pad_constant_impl_rec[
 fn pad_reflect_dispatch[
     output_layout: Layout,
     input_layout: Layout,
-    type: DType,
+    dtype: DType,
     paddings_type: DType,
     recursive: Int = 0,
 ](
     output: LayoutTensor[
-        mut=True, type, output_layout, address_space = AddressSpace.GENERIC, **_
+        mut=True,
+        dtype,
+        output_layout,
+        address_space = AddressSpace.GENERIC, **_,
     ],
     input: LayoutTensor[
-        type, input_layout, address_space = AddressSpace.GENERIC, **_
+        dtype, input_layout, address_space = AddressSpace.GENERIC, **_
     ],
     paddings: UnsafePointer[Scalar[paddings_type]],
 ):
@@ -243,10 +249,10 @@ fn pad_reflect_dispatch[
         @parameter
         fn pad_reflect_wrapper(
             output: UnsafePointer[
-                Scalar[type], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
             ],
             input: UnsafePointer[
-                Scalar[type], address_space = AddressSpace.GENERIC, **_
+                Scalar[dtype], address_space = AddressSpace.GENERIC, **_
             ],
             paddings: UnsafePointer[Scalar[paddings_type]],
             output_shape: IndexList[output_layout.rank()],
@@ -254,7 +260,7 @@ fn pad_reflect_dispatch[
             input_strides: UnsafePointer[Scalar[DType.index]],
         ):
             return _pad_reflect_impl_rec[
-                output_layout.rank(), type, paddings_type
+                output_layout.rank(), dtype, paddings_type
             ](
                 init_axis,
                 output,
@@ -270,7 +276,7 @@ fn pad_reflect_dispatch[
         return _do_pad[
             output_layout,
             input_layout,
-            type,
+            dtype,
             paddings_type,
             pad_reflect_wrapper,
         ](output, input, paddings)
@@ -280,13 +286,13 @@ fn pad_reflect_dispatch[
 
 @always_inline
 fn _memcpy_regions[
-    type: DType
+    dtype: DType
 ](
     pre_pad: Int,
     post_pad: Int,
     non_pad: Int,
     output_axis_stride: Int,
-    pre_pad_start_ptr: UnsafePointer[Scalar[type]],
+    pre_pad_start_ptr: UnsafePointer[Scalar[dtype]],
 ):
     # now memcpy the fully padded axes from the regions we just filled
     var curr_pre_pad = 0
@@ -334,12 +340,12 @@ fn _memcpy_regions[
 
 fn _pad_reflect_impl_rec[
     rank: Int,
-    type: DType,
+    dtype: DType,
     paddings_type: DType,
 ](
     axis: Int,
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype]],
     paddings: UnsafePointer[Scalar[paddings_type]],
     output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
@@ -401,7 +407,7 @@ fn _pad_reflect_impl_rec[
         var non_pad_start_ptr = pre_pad_start_ptr.offset(pre_pad)
         memcpy(non_pad_start_ptr, input_start_ptr, non_pad)
 
-    _memcpy_regions[type](
+    _memcpy_regions[dtype](
         pre_pad, post_pad, non_pad, output_axis_stride, pre_pad_start_ptr
     )
 

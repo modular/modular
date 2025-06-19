@@ -34,8 +34,8 @@ from .MOGGIntList import IntList
 # ===-----------------------------------------------------------------------===#
 
 
-fn bytecount_with_dtype(shape: IndexList, type: DType) -> Int:
-    return shape.flattened_length() * type.sizeof()
+fn bytecount_with_dtype(shape: IndexList, dtype: DType) -> Int:
+    return shape.flattened_length() * dtype.sizeof()
 
 
 @register_passable("trivial")
@@ -157,9 +157,9 @@ fn create_non_tracked_buffer_ref_async(
 fn create_non_tracked_tensor_async[
     tensor_rank: Int,
     buffer_rank: Int,
-    type: DType,
+    dtype: DType,
 ](
-    buffer: NDBuffer[type, buffer_rank, MutableAnyOrigin],
+    buffer: NDBuffer[dtype, buffer_rank, MutableAnyOrigin],
     async_ptr: OpaquePointer,
 ):
     constrained[
@@ -167,10 +167,10 @@ fn create_non_tracked_tensor_async[
     ]()
     external_call["KGEN_CompilerRT_CreateAsyncNonTrackedTensor", NoneType](
         buffer.data,
-        bytecount_with_dtype(buffer.dynamic_shape, type),
+        bytecount_with_dtype(buffer.dynamic_shape, dtype),
         tensor_rank,
         UnsafePointer(to=buffer.dynamic_shape.data.array),
-        type,
+        dtype,
         async_ptr,
     )
 
@@ -218,10 +218,10 @@ fn create_tensor_spec_async[
 fn create_tensor_async[
     tensor_rank: Int,
     buffer_rank: Int,
-    type: DType,
+    dtype: DType,
     borrowee_type: Int,
 ](
-    buffer: NDBuffer[type, buffer_rank, MutableAnyOrigin],
+    buffer: NDBuffer[dtype, buffer_rank, MutableAnyOrigin],
     async_to_borrow: OpaquePointer,
     output_async: OpaquePointer,
 ):
@@ -232,10 +232,10 @@ fn create_tensor_async[
     ]()
     external_call["KGEN_CompilerRT_CreateAsyncTensorWithBorrow", NoneType](
         buffer.data,
-        bytecount_with_dtype(buffer.dynamic_shape, type),
+        bytecount_with_dtype(buffer.dynamic_shape, dtype),
         tensor_rank,
         UnsafePointer(to=buffer.dynamic_shape.data.array),
-        type,
+        dtype,
         async_to_borrow,
         borrowee_type,
         output_async,
@@ -355,9 +355,9 @@ fn unpack_buffer_ref(
 fn unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
-    type: DType,
+    dtype: DType,
 ](tensor_async_ptr: OpaquePointer) -> NDBuffer[
-    type, buffer_rank, MutableAnyOrigin
+    dtype, buffer_rank, MutableAnyOrigin
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a NDBuffer<[1]>
@@ -377,8 +377,8 @@ fn unpack_tensor[
     if tensor_rank == 0:
         shapes[0] = 1
 
-    return NDBuffer[type, buffer_rank](
-        buffer_ptr.bitcast[Scalar[type]](), shapes
+    return NDBuffer[dtype, buffer_rank](
+        buffer_ptr.bitcast[Scalar[dtype]](), shapes
     )
 
 
@@ -446,23 +446,23 @@ fn mgp_assert(cond: Bool, msg_ptr: UnsafePointer[Byte], msg_len: UInt) raises:
 fn mgp_tensor_create[
     spec_rank: Int,
     buffer_rank: Int,
-    type: DType,
+    dtype: DType,
 ](
     buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     spec: IndexList[spec_rank],
-) -> NDBuffer[type, buffer_rank, MutableAnyOrigin]:
+) -> NDBuffer[dtype, buffer_rank, MutableAnyOrigin]:
     @parameter
     if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
         constrained[buffer_rank == 1]()
-        return NDBuffer[type, buffer_rank](
-            buffer.data.bitcast[Scalar[type]](),
+        return NDBuffer[dtype, buffer_rank](
+            buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
         constrained[spec_rank == buffer_rank]()
-        return NDBuffer[type, buffer_rank](
-            buffer.data.bitcast[Scalar[type]](),
+        return NDBuffer[dtype, buffer_rank](
+            buffer.data.bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
 
@@ -472,8 +472,8 @@ fn mgp_tensor_create[
 fn mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
-    type: DType,
-](buffer: NDBuffer[type, buffer_rank, MutableAnyOrigin]) -> IndexList[
+    dtype: DType,
+](buffer: NDBuffer[dtype, buffer_rank, MutableAnyOrigin]) -> IndexList[
     tensor_rank
 ]:
     @parameter
@@ -492,8 +492,8 @@ fn mgp_tensor_extract_tensor_spec[
 fn mgp_tensor_extract_buffer[
     tensor_rank: Int,
     buffer_rank: Int,
-    type: DType,
-](buffer: NDBuffer[type, buffer_rank, MutableAnyOrigin]) -> NDBuffer[
+    dtype: DType,
+](buffer: NDBuffer[dtype, buffer_rank, MutableAnyOrigin]) -> NDBuffer[
     DType.uint8, 1, MutableAnyOrigin
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
@@ -563,9 +563,9 @@ fn mgp_buffer_constant_external(
 
 @no_inline
 fn fill_buffer[
-    type: DType
+    dtype: DType
 ](buf: NDBuffer[DType.uint8, 1, MutableAnyOrigin], vals: VariadicList[Int]):
-    var ptr = buf.data.bitcast[Scalar[type]]()
+    var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
         ptr.store(offset, val)
@@ -710,7 +710,7 @@ fn mgp_buffer_device_to_device[
     else:
         raise Error(
             "mgp.buffer.device_to_device can be scheduled between same device"
-            " types (cpu-cpu) or (gpu-gpu)"
+            " dtypes (cpu-cpu) or (gpu-gpu)"
         )
 
 
@@ -874,7 +874,7 @@ fn mgp_debug_print[
 @no_inline
 fn mgp_debug_tensor_print[
     spec_rank: Int,
-    type: DType,
+    dtype: DType,
 ](
     buffer: NDBuffer[DType.uint8, 1, MutableAnyOrigin],
     shape: IndexList[spec_rank],
@@ -884,7 +884,7 @@ fn mgp_debug_tensor_print[
     external_call["KGEN_CompilerRT_DebugTensorPrint", NoneType](
         label_ptr,
         label_len,
-        type,
+        dtype,
         UnsafePointer(to=shape.data.array),
         spec_rank,
         buffer.data,
