@@ -9367,7 +9367,7 @@ struct ArgSort[*, ascending: Bool]:
 
 
 @compiler.register("mo.quantize_static_scaled_float8")
-struct QuantizeStaticScaledFloat8[*, is_scale_inverted: Bool]:
+struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
     @always_inline
     @staticmethod
     fn execute[
@@ -9382,7 +9382,7 @@ struct QuantizeStaticScaledFloat8[*, is_scale_inverted: Bool]:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
         var scale_loaded = scale.cast[DType.float32]()
-        quantize_static_scaled_fp8[is_scale_inverted=is_scale_inverted](
+        quantize_static_scaled_fp8[scale_is_inverted=scale_is_inverted](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(input),
             scale_loaded,

@@ -45,7 +45,7 @@ from utils.numerics import max_finite, min_finite
 fn quantize_static_scaled_fp8[
     out_dtype: DType,
     in_dtype: DType,
-    is_scale_inverted: Bool = True,
+    scale_is_inverted: Bool = True,
 ](
     out_buffer: NDBuffer[mut=True, out_dtype, 2, *_],
     in_buffer: NDBuffer[in_dtype, 2, *_],
