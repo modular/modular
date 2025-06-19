@@ -54,5 +54,5 @@ fixed as time permits.
 """
 
 from .codepoint import Codepoint
-from .string import String, ascii, atof, atol, chr, ord
+from .string import String, ascii, atof, atol, stol, chr, ord
 from .string_slice import CodepointsIter, StaticString, StringSlice

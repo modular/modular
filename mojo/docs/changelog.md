@@ -46,6 +46,10 @@ what we publish.
   `OpaquePointer` (the equivalent of a `void*` in C) is moved into the `memory`
   module, and is also implicitly included.
 
+- Added `stol`, a more permissable version of `atol` allowing for partial parsing,
+  of strings without raising errors. [PR 3951](https://github.com/modular/modular/pull/3951)
+  by [jjvraw](https://github.com/jjvraw).
+
 ### Tooling changes
 
 - Added progress reporting support to the Mojo language server. This will emit progress
