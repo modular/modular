@@ -200,6 +200,11 @@ class PipelineModel(ABC, Generic[T]):
         self.adapter = adapter
         self.return_logits = return_logits
 
+        # Initialize `max_seq_len` here to avoid repeated HF config access.
+        self.max_seq_len = self.calculate_max_seq_len(
+            pipeline_config, huggingface_config
+        )
+
         if isinstance(self, KVCacheMixin):
             self.kv_manager = self.load_kv_manager(
                 session, self.kv_cache_config._available_cache_memory
@@ -595,10 +600,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         num_steps: int,
         context: T,
     ) -> int:
-        max_seq_len = self._pipeline_model.calculate_max_seq_len(
-            self._pipeline_config,
-            huggingface_config=self._pipeline_config.model_config.huggingface_config,
-        )
+        max_seq_len = self._pipeline_model.max_seq_len
         num_available_steps = context.compute_num_available_steps(max_seq_len)
 
         if num_available_steps <= 0:
