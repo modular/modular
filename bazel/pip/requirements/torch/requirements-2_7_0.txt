@@ -245,7 +245,7 @@ gevent==24.2.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     #   locust
 geventhttpclient==2.0.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via locust
-gguf==0.14.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+gguf==0.17.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
 google-api-core[grpc]==2.19.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
@@ -920,10 +920,6 @@ sentence-transformers==3.3.1 ; sys_platform == 'darwin' or sys_platform == 'linu
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   mteb
-sentencepiece==0.2.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
-    # via
-    #   -r bazel/pip/requirements/torch/../requirements.in
-    #   gguf
 sentinel==1.0.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
 setuptools==70.1.0 ; sys_platform == 'darwin' or sys_platform == 'linux'

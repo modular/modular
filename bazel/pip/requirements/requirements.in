@@ -65,7 +65,6 @@ qwen-vl-utils
 requests>=2.28
 safetensors
 sentence-transformers
-sentencepiece==0.2.0
 sentinel==1.0.0
 setuptools
 sphinx==7.4.7
