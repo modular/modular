@@ -13,6 +13,6 @@
 """Sampling custom ops."""
 
 from .min_p import MinPSampler
-from .rejection_sampler import RejectionSampler
+from .rejection_sampler import RejectionSampler, RejectionSamplerWithResiduals
 
-__all__ = ["MinPSampler", "RejectionSampler"]
+__all__ = ["MinPSampler", "RejectionSampler", "RejectionSamplerWithResiduals"]

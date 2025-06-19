@@ -49,7 +49,11 @@ from .pipeline import (
 )
 from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .sampling import rejection_sampler, token_sampler
+from .sampling import (
+    rejection_sampler,
+    rejection_sampler_with_residuals,
+    token_sampler,
+)
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
@@ -87,6 +91,7 @@ __all__ = [
     "ProfilingConfig",
     "ragged_token_merger",
     "rejection_sampler",
+    "rejection_sampler_with_residuals",
     "repo_exists_with_retry",
     "RepoType",
     "RopeType",
