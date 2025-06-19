@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t
+# RUN: %mojo-no-debug %s
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
 from collections import BitSet
-from math import ceil
+from math import ceil, ceildiv
 from random import *
 from sys import sizeof
 
@@ -59,15 +59,19 @@ fn bench_bitset_init_from[width: Int](mut b: Bencher) raises:
 
 @parameter
 fn bench_bitset_set[size: Int](mut b: Bencher) raises:
+    var items = List[Int]()
+    for i in range(0, 1000, 2):
+        items.append(i % size)
+
     @always_inline
     @parameter
     fn call_fn() raises:
         var bitset = BitSet[size]()
-        for _ in range(0, OP_LOOP_SIZE):
+        var count = 0
 
-            @parameter
-            for i in range(0, bitset.size):
-                bitset.set(i)
+        for _ in range(0, OP_LOOP_SIZE):
+            for value in items:
+                bitset.set(value[])
         keep(len(bitset))
 
     b.iter[call_fn]()
@@ -76,6 +80,9 @@ fn bench_bitset_set[size: Int](mut b: Bencher) raises:
 @parameter
 fn bench_bitset_clear[width: Int](mut b: Bencher) raises:
     var initial = SIMD[DType.bool, width](True)
+    var items = List[Int]()
+    for i in range(0, 1000, 2):
+        items.append(i % width)
 
     @__copy_capture(initial)
     @always_inline
@@ -83,10 +90,8 @@ fn bench_bitset_clear[width: Int](mut b: Bencher) raises:
     fn call_fn() raises:
         var bitset = BitSet[width](initial)
         for _ in range(0, OP_LOOP_SIZE):
-
-            @parameter
-            for i in range(0, bitset.size):
-                bitset.clear(i)
+            for value in items:
+                bitset.clear(value[])
 
         keep(len(bitset))
 
@@ -96,6 +101,9 @@ fn bench_bitset_clear[width: Int](mut b: Bencher) raises:
 @parameter
 fn bench_bitset_toggle[width: Int](mut b: Bencher) raises:
     var initial = SIMD[DType.bool, width](True)
+    var items = List[Int]()
+    for i in range(0, 1000, 2):
+        items.append(i % width)
 
     @__copy_capture(initial)
     @always_inline
@@ -103,10 +111,8 @@ fn bench_bitset_toggle[width: Int](mut b: Bencher) raises:
     fn call_fn() raises:
         var bitset = BitSet[width](initial)
         for _ in range(0, OP_LOOP_SIZE):
-
-            @parameter
-            for i in range(0, bitset.size):
-                bitset.toggle(i)
+            for value in items:
+                bitset.toggle(value[])
 
         keep(len(bitset))
 
@@ -116,6 +122,9 @@ fn bench_bitset_toggle[width: Int](mut b: Bencher) raises:
 @parameter
 fn bench_bitset_test[width: Int](mut b: Bencher) raises:
     var initial = SIMD[DType.bool, width](True)
+    var items = List[Int]()
+    for i in range(0, 1000, 2):
+        items.append(i % width)
 
     @__copy_capture(initial)
     @always_inline
@@ -123,10 +132,8 @@ fn bench_bitset_test[width: Int](mut b: Bencher) raises:
     fn call_fn() raises:
         var bitset = BitSet[width](initial)
         for _ in range(0, OP_LOOP_SIZE):
-
-            @parameter
-            for i in range(0, bitset.size):
-                keep(bitset.test(i))
+            for value in items:
+                keep(bitset.test(value[]))
 
     b.iter[call_fn]()
 
@@ -145,8 +152,8 @@ fn bench_bitset_union[width: Int](mut b: Bencher) raises:
         var rhs = BitSet[width](rhs_init)
 
         for _ in range(0, OP_LOOP_SIZE):
-            var new = lhs.union(rhs)
-            keep(len(new))
+            lhs = lhs.union(rhs)
+        keep(len(lhs))
 
     b.iter[call_fn]()
 
@@ -165,8 +172,8 @@ fn bench_bitset_intersection[width: Int](mut b: Bencher) raises:
         var rhs = BitSet[width](rhs_init)
 
         for _ in range(0, OP_LOOP_SIZE):
-            var new = lhs.intersection(rhs)
-            keep(len(new))
+            lhs = lhs.intersection(rhs)
+        keep(len(lhs))
 
     b.iter[call_fn]()
 
