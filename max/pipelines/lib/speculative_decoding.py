@@ -49,7 +49,7 @@ from .pipeline import (
     upper_bounded_default,
 )
 from .ragged_token_merger import ragged_token_merger
-from .sampling import rejection_sampler, token_sampler
+from .sampling import rejection_sampler_with_residuals, token_sampler
 
 T = TypeVar("T", bound=InputContext)
 
@@ -177,6 +177,10 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             self.pipeline_config.draft_model_config.huggingface_config
         )
 
+        self.vocab_size = (
+            self.pipeline_config.model_config._huggingface_config.vocab_size
+        )
+
         # Retrieve Encoding, and Files for Draft Model
         if self.pipeline_config.draft_model_config is None:
             raise ValueError(
@@ -251,7 +255,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         # Load rejection sampler
         self._rejection_sampler = target_session.load(
-            rejection_sampler(
+            rejection_sampler_with_residuals(
                 device=DeviceRef.from_device(self.target_devices[0])
             )
         )
@@ -423,7 +427,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
     @traced
     def generate_draft_tokens(
         self, batch: list[T], num_steps: int
-    ) -> tuple[int, Tensor, Tensor, ModelInputs]:
+    ) -> tuple[int, Tensor, Tensor, ModelInputs, Tensor]:
         # Prepare the Batch
         model_inputs, num_steps = self.prepare_batch(
             self._draft_model,
@@ -444,11 +448,21 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         # Multi-step execution
         curr_step_inputs = model_inputs
+
+        # num_steps first so that slice indexing is contiguous
+        all_draft_logits = Tensor.zeros(
+            (num_steps, len(batch), self.vocab_size),
+            dtype=DType.float32,
+            device=self.draft_devices[0],
+        )
+
         for i in range(num_steps):
             # Execute the model and get next tokens.
             model_outputs = self._draft_model.execute(
                 model_inputs=curr_step_inputs
             )
+
+            all_draft_logits[i, :, :].inplace_copy_from(model_outputs.logits)
 
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
@@ -458,10 +472,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             )
             generated_tokens = new_generated_tokens
             generated_logits = new_generated_logits
-
-            # Check if we're on our last iteration. If so, skip preparing the next batch
-            if i == num_steps - 1:
-                break
 
             # Increment cache lengths.
             assert isinstance(
@@ -487,7 +497,13 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run
         for i, context in enumerate(batch):
             context.bump_token_indices(active_idx=num_steps, end_idx=num_steps)
-        return num_steps, generated_tokens, generated_logits, model_inputs
+        return (
+            num_steps,
+            generated_tokens,
+            generated_logits,
+            model_inputs,
+            all_draft_logits,
+        )
 
     @traced
     def verify_draft_tokens_with_target_model(
@@ -498,7 +514,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         draft_logits: Tensor,
         merged_draft_tokens: Tensor,
         merged_draft_offsets: Tensor,
-    ) -> tuple[Tensor, Tensor]:
+        all_draft_logits: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
         # Prepare next token inputs for target model
         target_inputs, target_num_steps = self.prepare_batch(
             self._target_model,
@@ -517,16 +534,20 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
-        first_rejected_tokens, sampled_target_tokens = self._rejection_sampler(
-            draft_tokens,
-            draft_logits,
-            target_outputs.logits,
-            target_outputs.logit_offsets,
+        first_rejected_tokens, recovered_tokens, bonus_tokens = (
+            self._rejection_sampler(
+                draft_tokens,
+                draft_logits,
+                target_outputs.logits,
+                target_outputs.logit_offsets,
+                all_draft_logits,
+            )
         )
         assert isinstance(first_rejected_tokens, Tensor)
-        assert isinstance(sampled_target_tokens, Tensor)
+        assert isinstance(recovered_tokens, Tensor)
+        assert isinstance(bonus_tokens, Tensor)
 
-        return first_rejected_tokens, sampled_target_tokens
+        return first_rejected_tokens, recovered_tokens, bonus_tokens
 
     @traced
     def next_token(
@@ -538,9 +559,13 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         context_batch = list(batch.values())
 
         # Generate draft tokens.
-        num_draft_tokens_generated, draft_tokens, draft_logits, model_inputs = (
-            self.generate_draft_tokens(context_batch, num_steps)
-        )
+        (
+            num_draft_tokens_generated,
+            draft_tokens,
+            draft_logits,
+            model_inputs,
+            all_draft_logits,
+        ) = self.generate_draft_tokens(context_batch, num_steps)
 
         # Merge draft tokens with target tokens
         merged_tokens, merged_offsets = self._ragged_token_merger(
@@ -552,7 +577,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         assert isinstance(merged_tokens, Tensor)
         assert isinstance(merged_offsets, Tensor)
         # Verify draft tokens with target model
-        first_rejected_tokens, sampled_target_tokens = (
+        first_rejected_tokens, recovered_tokens, bonus_tokens = (
             self.verify_draft_tokens_with_target_model(
                 context_batch,
                 num_draft_tokens_generated,
@@ -560,13 +585,15 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 draft_logits,
                 merged_tokens,
                 merged_offsets,
+                all_draft_logits,
             )
         )
 
         self.update_contexts(
             context_batch=context_batch,
             first_rejected_tokens=first_rejected_tokens.to_numpy(),
-            sampled_target_tokens=sampled_target_tokens.to_numpy(),
+            recovered_tokens=recovered_tokens.to_numpy(),
+            bonus_tokens=bonus_tokens.to_numpy(),
             draft_tokens=draft_tokens.to_numpy(),
             num_draft_tokens_generated=num_draft_tokens_generated,
         )
@@ -587,7 +614,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         self,
         context_batch: list[T],
         first_rejected_tokens: np.ndarray,
-        sampled_target_tokens: np.ndarray,
+        recovered_tokens: np.ndarray,
+        bonus_tokens: np.ndarray,
         draft_tokens: np.ndarray,
         num_draft_tokens_generated: int,
     ) -> None:
@@ -604,8 +632,6 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             context = context_batch[idx]
             rejected_token_idx = rejected_token_idx.item()
 
-            accepted_draft_tokens = draft_tokens[idx, :rejected_token_idx]
-
             context.bump_token_indices(
                 active_idx=-num_draft_tokens_generated,
                 end_idx=-num_draft_tokens_generated,
@@ -615,16 +641,19 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 token = int(draft_tokens[idx, token_idx])
                 context.update(token)
 
-            target_token = int(sampled_target_tokens[idx])
-            context.update(target_token)
-
-            # Bump the start index back by 1 when all draft tokens are accepted.
-            # The inputs to the draft will take the bonus token from the target
-            # into account. The target model will have to compute one redundant
-            # token. We can probably get rid of this by modifying the offsets
-            # and lengths of the input to the target model
             if rejected_token_idx == num_draft_tokens_generated:
-                context.bump_token_indices(start_idx=-1)
+                context.update(bonus_tokens[idx, 0].item())
+            else:
+                context.update(recovered_tokens[idx, rejected_token_idx].item())
+
+            # When some or all draft tokens are rejected, we apply a token from
+            # the residual distribution. The draft and target models have not
+            # processed this token so the context goes back one step for both
+            # of the models to process that token.
+            # If all draft tokens are accepted, then the draft model has not
+            # processed the bonus token. In this case only the draft needs to
+            # go one step back. At the moment we do this for all cases.
+            context.bump_token_indices(start_idx=-1)
 
     def build_response(
         self,
