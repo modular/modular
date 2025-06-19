@@ -119,10 +119,10 @@ fn wgmma_tf32_tf32_f32_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 # CHECK-LABEL: wgmma_tf32_tf32_f32_64x8x8
@@ -427,10 +427,10 @@ fn wgmma_bf16_bf16_f32_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 # CHECK-LABEL: wgmma_bf16_bf16_f32_64x8x16
@@ -727,10 +727,10 @@ fn wgmma_f16_f16_f32_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 # CHECK-LABEL: wgmma_f16_f16_f32_64x8x16
@@ -1028,10 +1028,10 @@ fn wgmma_f16_f16_f16_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c0[0]
-    th_local_res[0][1] = c0[1]
-    th_local_res[1][0] = c0[2]
-    th_local_res[1][1] = c0[3]
+    th_local_res[0, 0][0] = c0[0]
+    th_local_res[0, 0][1] = c0[1]
+    th_local_res[1, 0][0] = c0[2]
+    th_local_res[1, 0][1] = c0[3]
 
 
 # CHECK-LABEL: wgmma_f16_f16_f16_64x8x16
@@ -1335,10 +1335,10 @@ fn wgmma_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c_reg[0].cast[c_gmem.dtype]()
-    th_local_res[0][1] = c_reg[1].cast[c_gmem.dtype]()
-    th_local_res[1][0] = c_reg[2].cast[c_gmem.dtype]()
-    th_local_res[1][1] = c_reg[3].cast[c_gmem.dtype]()
+    th_local_res[0, 0][0] = c_reg[0].cast[c_gmem.dtype]()
+    th_local_res[0, 0][1] = c_reg[1].cast[c_gmem.dtype]()
+    th_local_res[1, 0][0] = c_reg[2].cast[c_gmem.dtype]()
+    th_local_res[1, 0][1] = c_reg[3].cast[c_gmem.dtype]()
 
 
 # CHECK-LABEL: wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32

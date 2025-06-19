@@ -104,10 +104,10 @@ fn wgmma_f32_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 fn wgmma_f16_kernel[
@@ -187,10 +187,10 @@ fn wgmma_f16_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c0[0]
-    th_local_res[0][1] = c0[1]
-    th_local_res[1][0] = c0[2]
-    th_local_res[1][1] = c0[3]
+    th_local_res[0, 0][0] = c0[0]
+    th_local_res[0, 0][1] = c0[1]
+    th_local_res[1, 0][0] = c0[2]
+    th_local_res[1, 0][1] = c0[3]
 
 
 # CHECK-LABEL: wgmma_e4m3_e4m3_f32_64x8x32

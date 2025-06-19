@@ -106,10 +106,10 @@ fn wgmma_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c0[0]
-    th_local_res[0][1] = c0[1]
-    th_local_res[1][0] = c0[2]
-    th_local_res[1][1] = c0[3]
+    th_local_res[0, 0][0] = c0[0]
+    th_local_res[0, 0][1] = c0[1]
+    th_local_res[1, 0][0] = c0[2]
+    th_local_res[1, 0][1] = c0[3]
 
 
 # CHECK-LABEL: wgmma_s8_s8_s32_64x8x32

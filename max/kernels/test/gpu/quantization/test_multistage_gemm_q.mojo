@@ -341,7 +341,7 @@ fn create_ref_b[
     var mma_tile_iter_1 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 0)
     var mma_tile_iter_2 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 1)
 
-    var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[lane_id])
+    var vec = bitcast[DType.int32, 4](warp_q_tile.vectorize[1, 4]()[0, lane_id])
 
     @always_inline
     fn int4tobf16(
@@ -365,21 +365,21 @@ fn create_ref_b[
         return v
 
     alias write_back_layout = Layout.row_major(1, 32)
-    alias write_back_type = __type_of(mma_tile_iter_1[].vectorize[1, 2]()[0])
+    alias write_back_type = __type_of(mma_tile_iter_1[].vectorize[1, 2]()[0, 0])
 
     @parameter
     for i in range(0, TILE_N // 8, 2):
         var q_int = vec[i // 2]
 
         var v1 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i, 0])
         )
         mma_tile_iter_1[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
         ](v1)
         q_int >>= 4
         var v2 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i, 0])
         )
         mma_tile_iter_2[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
@@ -389,14 +389,14 @@ fn create_ref_b[
         mma_tile_iter_2._incr()
 
         v1 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1, 0])
         )
         mma_tile_iter_1[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
         ](v1)
         q_int >>= 4
         v2 = int4tobf16(
-            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1])
+            q_int, bitcast[DType.bfloat16, 1](scales_reg_tiles[i + 1, 0])
         )
         mma_tile_iter_2[].vectorize[1, 2]()[lane_id // 4, lane_id % 4] = rebind[
             write_back_type
