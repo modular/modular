@@ -292,7 +292,7 @@ fn tma_umma_kernel_pair_cta[
     c_frag = tcgen05_ld[
         datapaths=32,
         bits=32,
-        repeat=BN,
+        repeat = BN if MMA_M == 128 else MMA_N,
         type=accum_type,
         pack=False,
         width=c_frag_size,
@@ -309,15 +309,32 @@ fn tma_umma_kernel_pair_cta[
         peer_cta_coord[1], peer_cta_coord[2]
     )
     var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](peer_cta_coord[0], 0)
-    var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
-        warp_id % 2, warp_id // 2
-    ).vectorize[1, 2]()
 
     @parameter
-    for i in range(c_frag_size // 2):
-        c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
-            SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[c_type]()
-        )
+    if MMA_M == 128:
+        var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
+            warp_id % 2, warp_id // 2
+        ).vectorize[1, 2]()
+
+        @parameter
+        for i in range(c_frag_size // 2):
+            c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
+                SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
+                    c_type
+                ]()
+            )
+    else:
+        var c_gmem_frag = c_gmem_slice.tile[BM // 4, MMA_N](
+            warp_id, 0
+        ).vectorize[1, 2]()
+
+        @parameter
+        for i in range(c_frag_size // 2):
+            c_gmem_frag[lane_id(), i] = rebind[c_gmem_frag.element_type](
+                SIMD[accum_type, 2](c_frag[2 * i], c_frag[2 * i + 1]).cast[
+                    c_type
+                ]()
+            )
 
 
 def test_tma_umma_pair_cta[
@@ -454,7 +471,6 @@ def test_tma_umma_pair_cta[
                 rtol=1e-4,
                 msg=String(m) + ", " + String(n),
             )
-            # print(m, n, c_host[m, n], c_host_ref[m, n])
 
     _ = a^
     _ = b^
@@ -511,6 +527,45 @@ def main():
             Index(64, 128, 64),
             Index(128, 256, 16),
             cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cta_group=2,
+        ](ctx)
+
+        test_tma_umma_pair_cta[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(256, 128, 128),
+            Index(128, 64, 64),
+            Index(256, 128, 16),
+            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cta_group=2,
+        ](ctx)
+
+        test_tma_umma_pair_cta[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(256, 256, 128),
+            Index(128, 64, 64),
+            Index(256, 128, 16),
+            cluster_shape = StaticTuple[Int32, 3](2, 2, 1),
+            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            cta_group=2,
+        ](ctx)
+
+        test_tma_umma_pair_cta[
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            Index(512, 512, 128),
+            Index(128, 64, 64),
+            Index(256, 128, 16),
+            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
             a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             cta_group=2,
