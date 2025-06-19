@@ -43,22 +43,22 @@ fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> (Int, Int):
 
 
 @always_inline
-fn get_identity_rope_coeff[width: Int, type: DType]() -> SIMD[type, width]:
+fn get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
     # Creates a SIMD vector with real parts set to 1 and imaginary parts to
     # 0, effectively making the RoPE transformation an identity operation.
-    return rebind[SIMD[type, width]](
-        SIMD[type, width // 2](1).interleave(SIMD[type, width // 2](0))
+    return rebind[SIMD[dtype, width]](
+        SIMD[dtype, width // 2](1).interleave(SIMD[dtype, width // 2](0))
     )
 
 
 @always_inline
 fn rope_q_proj[
-    type: DType, rank: Int, width: Int, //, *, interleaved: Bool
+    dtype: DType, rank: Int, width: Int, //, *, interleaved: Bool
 ](
-    q_proj: NDBuffer[type, rank, *_],
-    output: NDBuffer[mut=True, type, rank, *_],
+    q_proj: NDBuffer[dtype, rank, *_],
+    output: NDBuffer[mut=True, dtype, rank, *_],
     idx: IndexList[rank],
-    freq_val: SIMD[type, width],
+    freq_val: SIMD[dtype, width],
     head_size: Int,
 ):
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
@@ -68,13 +68,13 @@ fn rope_q_proj[
     pos_im[rank - 1] = indices[1]
     alias width_2 = width // 2
 
-    var val: SIMD[type, width]
+    var val: SIMD[dtype, width]
 
     @parameter
     if interleaved:
         val = q_proj.load[width=width](idx)
     else:
-        val = rebind[SIMD[type, width]](
+        val = rebind[SIMD[dtype, width]](
             q_proj.load[width=width_2](pos_re).interleave(
                 q_proj.load[width=width_2](pos_im)
             )
@@ -93,36 +93,36 @@ fn rope_q_proj[
 
 @always_inline
 fn rope_k_cache[
-    type: DType, cache_t: KVCacheT, width: Int, //, *, interleaved: Bool
+    dtype: DType, cache_t: KVCacheT, width: Int, //, *, interleaved: Bool
 ](
     k_cache: cache_t,
     b_idx: Int,
     h_idx: Int,
     s_idx: Int,
     d_idx: Int,
-    freq_val: SIMD[type, width],
+    freq_val: SIMD[dtype, width],
     head_size: Int,
 ):
     h_re, h_im = get_safetensors_idx(d_idx, head_size)
     alias width_2 = width // 2
-    alias cache_type = cache_t.type
+    alias cache_type = cache_t.dtype
 
     constrained[
-        cache_type == type,
+        cache_type == dtype,
         String(
-            "Expected cache type ", cache_type, " to match input type ", type
+            "Expected cache dtype ", cache_type, " to match input dtype ", dtype
         ),
     ]()
 
-    var val: SIMD[type, width]
+    var val: SIMD[dtype, width]
 
     @parameter
     if interleaved:
-        val = rebind[SIMD[type, width]](
+        val = rebind[SIMD[dtype, width]](
             k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx)
         )
     else:
-        val = rebind[SIMD[type, width]](
+        val = rebind[SIMD[dtype, width]](
             k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re).interleave(
                 k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im)
             )
@@ -155,18 +155,18 @@ fn rope_k_cache[
 
 @always_inline
 fn fused_qk_rope[
-    type: DType,
+    dtype: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: NDBuffer[type, 4, *_],
+    q_proj: NDBuffer[dtype, 4, *_],
     kv_collection: collection_t,
-    freqs_cis: NDBuffer[type, 2, *_],
+    freqs_cis: NDBuffer[dtype, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
     context: Optional[DeviceContext],
 ) raises:
     alias kv_params = cache_t.kv_params
@@ -228,7 +228,7 @@ fn fused_qk_rope[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
     alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
@@ -245,19 +245,19 @@ fn fused_qk_rope[
 
 @always_inline
 fn fused_qk_rope_ragged[
-    type: DType,
+    dtype: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     interleaved: Bool,
     target: StaticString,
 ](
-    q_proj: NDBuffer[type, 3, *_],
+    q_proj: NDBuffer[dtype, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
-    freqs_cis: NDBuffer[type, 2, *_],
+    freqs_cis: NDBuffer[dtype, 2, *_],
     layer_idx: UInt32,
-    output: NDBuffer[mut=True, type, 3, *_],
+    output: NDBuffer[mut=True, dtype, 3, *_],
     context: Optional[DeviceContext],
 ) raises:
     """Applies RoPE (Rotary Position Embedding) to query and key tensors.
@@ -327,12 +327,12 @@ fn fused_qk_rope_ragged[
             var is_q_proj = head_idx < num_q_heads
             var is_unroped_region = head_dim_idx < unroped_dim
 
-            var f_c_temp: SIMD[type, width]
+            var f_c_temp: SIMD[dtype, width]
 
             @parameter
             if has_nope:
                 if is_unroped_region:
-                    f_c_temp = get_identity_rope_coeff[width, type]()
+                    f_c_temp = get_identity_rope_coeff[width, dtype]()
                 else:
                     var f_idx = IndexList[2](
                         post_seq_idx, head_dim_idx - unroped_dim
@@ -374,7 +374,7 @@ fn fused_qk_rope_ragged[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
     alias kernel_simd_width = gcd(target_simd_width, rope_dim)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 

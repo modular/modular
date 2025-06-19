@@ -24,29 +24,29 @@ from testing import *
 from utils.index import Index, IndexList
 
 
-def run_elementwise[type: DType](ctx: DeviceContext):
+def run_elementwise[dtype: DType](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
+        dtype, 1, MutableAnyOrigin, DimList(length)
     ].stack_allocation()
     var out_host = NDBuffer[
-        type, 1, MutableAnyOrigin, DimList(length)
+        dtype, 1, MutableAnyOrigin, DimList(length)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
     for i in range(length):
-        in_host[i] = 0.001 * abs(Scalar[type](i) - length // 2)
+        in_host[i] = 0.001 * abs(Scalar[dtype](i) - length // 2)
 
-    var in_device = ctx.enqueue_create_buffer[type](flattened_length)
-    var out_device = ctx.enqueue_create_buffer[type](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
     ctx.enqueue_copy(in_device, in_host.data)
 
-    var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
@@ -59,12 +59,12 @@ def run_elementwise[type: DType](ctx: DeviceContext):
 
         @parameter
         if simd_width == 1:
-            out_buffer[idx] = rng[0].cast[type]()
+            out_buffer[idx] = rng[0].cast[dtype]()
         else:
 
             @parameter
             for i in range(simd_width):
-                out_buffer[idx + i] = rng[i % len(rng)].cast[type]()
+                out_buffer[idx + i] = rng[i % len(rng)].cast[dtype]()
 
     elementwise[func, 4, target="gpu"](Index(length), ctx)
 

@@ -19,7 +19,7 @@ from utils.numerics import min_or_neg_inf
 
 
 @register_passable("trivial")
-struct Weighted2DPoint[type: DType]:
+struct Weighted2DPoint[dtype: DType]:
 
     """Utility class to wrap 2-d point coordinates and floating point weight for
     bilinear interpolation.
@@ -27,9 +27,9 @@ struct Weighted2DPoint[type: DType]:
 
     var y: Int
     var x: Int
-    var w: Scalar[type]
+    var w: Scalar[dtype]
 
-    fn __init__(out self, y: Int, x: Int, weight: Scalar[type]):
+    fn __init__(out self, y: Int, x: Int, weight: Scalar[dtype]):
         self.y = y
         self.x = x
         self.w = weight
@@ -37,7 +37,7 @@ struct Weighted2DPoint[type: DType]:
 
 @always_inline
 fn _bilinear_interpolate[
-    type: DType
+    dtype: DType
 ](
     ph: Int,
     pw: Int,
@@ -52,10 +52,10 @@ fn _bilinear_interpolate[
     roi_bin_grid_h: Int,
     roi_bin_grid_w: Int,
 ) -> (
-    Weighted2DPoint[type],
-    Weighted2DPoint[type],
-    Weighted2DPoint[type],
-    Weighted2DPoint[type],
+    Weighted2DPoint[dtype],
+    Weighted2DPoint[dtype],
+    Weighted2DPoint[dtype],
+    Weighted2DPoint[dtype],
 ):
     # Compute central point (y, x) by mapping (py, ph) into a grid of size
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
@@ -71,7 +71,7 @@ fn _bilinear_interpolate[
     )
 
     if not (Float32(-1.0) <= y <= height) or not (Float32(-1.0) <= x <= width):
-        var zeroPoint = Weighted2DPoint[type](0, 0, 0)
+        var zeroPoint = Weighted2DPoint[dtype](0, 0, 0)
         return (zeroPoint, zeroPoint, zeroPoint, zeroPoint)
 
     y = max(y, 0)
@@ -99,26 +99,26 @@ fn _bilinear_interpolate[
     var w3 = ly * hx
     var w4 = ly * lx
 
-    var p1 = Weighted2DPoint[type](y_low, x_low, w1.cast[type]())
-    var p2 = Weighted2DPoint[type](y_low, x_high, w2.cast[type]())
-    var p3 = Weighted2DPoint[type](y_high, x_low, w3.cast[type]())
-    var p4 = Weighted2DPoint[type](y_high, x_high, w4.cast[type]())
+    var p1 = Weighted2DPoint[dtype](y_low, x_low, w1.cast[dtype]())
+    var p2 = Weighted2DPoint[dtype](y_low, x_high, w2.cast[dtype]())
+    var p3 = Weighted2DPoint[dtype](y_high, x_low, w3.cast[dtype]())
+    var p4 = Weighted2DPoint[dtype](y_high, x_high, w4.cast[dtype]())
 
     return (p1, p2, p3, p4)
 
 
 @always_inline
 fn roi_align_nhwc[
-    type: DType,
+    dtype: DType,
     output_layout: Layout,
     input_layout: Layout,
     roi_layout: Layout, //,
     aligned: Bool,
     mode: StaticString = "AVG",
 ](
-    output: LayoutTensor[mut=True, type, output_layout, **_],
-    input: LayoutTensor[type, input_layout, **_],
-    rois: LayoutTensor[type, roi_layout, **_],
+    output: LayoutTensor[mut=True, dtype, output_layout, **_],
+    input: LayoutTensor[dtype, input_layout, **_],
+    rois: LayoutTensor[dtype, roi_layout, **_],
     output_height: Int,
     output_width: Int,
     in_spatial_scale: Scalar,
@@ -131,7 +131,7 @@ fn roi_align_nhwc[
     [M, output_height, output_width, C].
 
     Parameters:
-        type: Type of the input tensor.
+        dtype: Type of the input tensor.
         output_layout: The output layout.
         input_layout: The input layout.
         roi_layout: The layout of the regions of interests (ROI).
@@ -155,7 +155,7 @@ fn roi_align_nhwc[
     constrained[rois.rank == 2, "rois must be of rank 2"]()
 
     constrained[
-        type.is_floating_point(),
+        dtype.is_floating_point(),
         "ROI align input / output must be a floating point",
     ]()
     constrained[
@@ -212,18 +212,18 @@ fn roi_align_nhwc[
         # Pooling init/update/finalize functions parameterized by mode
         @parameter
         @always_inline
-        fn init_fn[type: DType]() -> Scalar[type]:
+        fn init_fn[dtype: DType]() -> Scalar[dtype]:
             @parameter
             if mode == "AVG":
                 return 0
             else:
-                return min_or_neg_inf[type]()
+                return min_or_neg_inf[dtype]()
 
         @parameter
         @always_inline
         fn update_fn[
-            type: DType
-        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            dtype: DType
+        ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             @parameter
             if mode == "AVG":
                 return a + b
@@ -233,8 +233,8 @@ fn roi_align_nhwc[
         @parameter
         @always_inline
         fn reduce_fn[
-            type: DType
-        ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
+            dtype: DType
+        ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
             @parameter
             if mode == "AVG":
                 return a / b
@@ -244,12 +244,12 @@ fn roi_align_nhwc[
         for ph in range(pooled_height):
             for pw in range(pooled_width):
                 for c in range(channels):
-                    var pool_val = init_fn[type]()
+                    var pool_val = init_fn[dtype]()
                     for iy in range(roi_bin_grid_h):
                         for ix in range(roi_bin_grid_w):
                             # Sample bilinearly mapped points coordinates
                             # and weights.
-                            var p = _bilinear_interpolate[type](
+                            var p = _bilinear_interpolate[dtype](
                                 ph,
                                 pw,
                                 iy,

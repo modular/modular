@@ -50,11 +50,11 @@ from utils.numerics import get_accum_type, min_or_neg_inf
 fn reduce_add_simd[
     simd_width: Int,
     step_simd_width: Int,
-    type: DType,
+    dtype: DType,
 ](
-    mut scalar: Scalar[type],
-    mut vector: SIMD[type, simd_width],
-    val: SIMD[type, step_simd_width],
+    mut scalar: Scalar[dtype],
+    mut vector: SIMD[dtype, simd_width],
+    val: SIMD[dtype, step_simd_width],
 ):
     """This functions adds val to either the scalar value or the vector value
     depending on the step_simd_width. This is useful when the simd_width varies
@@ -68,7 +68,7 @@ fn reduce_add_simd[
     else:
         # When the step_simd_Width is the same as the simd_width, then we add to
         # the vector value.
-        vector += rebind[SIMD[type, simd_width]](val)
+        vector += rebind[SIMD[dtype, simd_width]](val)
 
 
 @always_inline
@@ -116,8 +116,8 @@ fn _exp2_concrete(x: SIMD) -> __type_of(x):
 fn _softmax_2_pass_step1[
     simd_width: Int,
     buffer_size: Dim,
-    type: DType,
-](input: NDBuffer[type, 1, _, buffer_size]) -> StaticTuple[Scalar[type], 2]:
+    dtype: DType,
+](input: NDBuffer[dtype, 1, _, buffer_size]) -> StaticTuple[Scalar[dtype], 2]:
     # STEP 1: find the runningMax and runningSum in each batch.
     #   runningMax = -∞
     #   runningSum = 0
@@ -129,8 +129,8 @@ fn _softmax_2_pass_step1[
     #   end for
     #   return runningMax, runningSum
 
-    var running_max_vec = SIMD[type, simd_width](min_or_neg_inf[type]())
-    var running_sum_vec = SIMD[type, simd_width](0)
+    var running_max_vec = SIMD[dtype, simd_width](min_or_neg_inf[dtype]())
+    var running_sum_vec = SIMD[dtype, simd_width](0)
 
     # TODO: Because vectorize cannot currently capture values from outside
     # scope, we therefore replicate the logic of Functional.vectorize here.
@@ -141,7 +141,7 @@ fn _softmax_2_pass_step1[
 
     for i in range(0, vector_end, simd_width):
         var simd_elem = input.load[width=simd_width](i)
-        var new_max_vec = SIMD[type, simd_width](
+        var new_max_vec = SIMD[dtype, simd_width](
             max(running_max_vec, simd_elem).reduce_max()
         )
         running_sum_vec = running_sum_vec * exp(
@@ -160,19 +160,19 @@ fn _softmax_2_pass_step1[
         )
         running_max = new_max
 
-    return StaticTuple[Scalar[type], 2](running_max[0], running_sum[0])
+    return StaticTuple[Scalar[dtype], 2](running_max[0], running_sum[0])
 
 
 fn _softmax_2_pass_step2[
     simd_width: Int,
     unroll_factor: Int,
     buffer_size: Dim,
-    type: DType,
+    dtype: DType,
 ](
-    output: NDBuffer[mut=True, type, 1, _, buffer_size],
-    input: NDBuffer[type, 1, _, buffer_size],
-    running_max: Scalar[type],
-    running_sum: Scalar[type],
+    output: NDBuffer[mut=True, dtype, 1, _, buffer_size],
+    input: NDBuffer[dtype, 1, _, buffer_size],
+    running_max: Scalar[dtype],
+    running_sum: Scalar[dtype],
 ):
     # Step 2:
     #   for i = 0 to N do
@@ -182,8 +182,8 @@ fn _softmax_2_pass_step2[
     @always_inline
     @parameter
     fn _step_2[simd_width: Int](idx: Int):
-        var running_max_simd = SIMD[type, simd_width](running_max)
-        var running_sum_simd = SIMD[type, simd_width](running_sum)
+        var running_max_simd = SIMD[dtype, simd_width](running_max)
+        var running_sum_simd = SIMD[dtype, simd_width](running_sum)
         var input_val = input.load[width=simd_width](idx)
         output.store[width=simd_width](
             idx,
@@ -196,10 +196,10 @@ fn _softmax_2_pass_step2[
 fn softmax_2_pass[
     simd_width: Int,
     buffer_size: Dim,
-    type: DType,
+    dtype: DType,
 ](
-    output: NDBuffer[mut=True, type, 1, _, buffer_size],
-    input: NDBuffer[type, 1, _, buffer_size],
+    output: NDBuffer[mut=True, dtype, 1, _, buffer_size],
+    input: NDBuffer[dtype, 1, _, buffer_size],
 ):
     """Performs an unbatched softmax on an input tensor using the two-pass
     online algorithm.
@@ -226,14 +226,14 @@ fn softmax_2_pass[
     Parameters:
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
-        type: The type of the input and output buffers.
+        dtype: The dtype of the input and output buffers.
 
     Args:
         output: The output buffer in which to store the softmax values.
         input: The input buffer used to compute the softmax.
     """
 
-    var running_info = _softmax_2_pass_step1[simd_width, buffer_size, type](
+    var running_info = _softmax_2_pass_step1[simd_width, buffer_size, dtype](
         input
     )
 
@@ -241,7 +241,7 @@ fn softmax_2_pass[
     var running_sum = running_info[1]
 
     alias unroll_factor = 8  # TODO: search
-    _softmax_2_pass_step2[simd_width, unroll_factor, buffer_size, type](
+    _softmax_2_pass_step2[simd_width, unroll_factor, buffer_size, dtype](
         output, input, running_max, running_sum
     )
 
@@ -255,20 +255,20 @@ fn _softmax_3_pass_step_2[
     simd_width: Int,
     unroll_factor: Int,
     buffer_size: Dim,
-    type: DType,
+    dtype: DType,
     input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
-        type, _simd_width
+        dtype, _simd_width
     ],
-    pre_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
-        type, width
+    pre_update_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
     ],
-    post_update_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
-        type, width
+    post_update_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
     ],
 ](
-    output: NDBuffer[mut=True, type, 1, _, buffer_size],
-    max_val: Scalar[type],
-) -> Scalar[type]:
+    output: NDBuffer[mut=True, dtype, 1, _, buffer_size],
+    max_val: Scalar[dtype],
+) -> Scalar[dtype]:
     # STEP 2: compute for each batch
     # for i = 0 to N do
     #   Output[i] = pre_update_func(Input[i] - max_val)
@@ -276,19 +276,19 @@ fn _softmax_3_pass_step_2[
     # end for
     alias outer_simd_width = simd_width
 
-    var accum_scalar: Scalar[type] = 0
-    var accum_simd: SIMD[type, outer_simd_width] = 0
+    var accum_scalar: Scalar[dtype] = 0
+    var accum_simd: SIMD[dtype, outer_simd_width] = 0
 
     @always_inline
     @parameter
     fn step_2[simd_width: Int](idx: Int):
         var vin = input_fn_1d[simd_width](idx)
-        var elem = vin - SIMD[type, simd_width](max_val)
+        var elem = vin - SIMD[dtype, simd_width](max_val)
 
-        elem = pre_update_func[type, simd_width](elem)
+        elem = pre_update_func[dtype, simd_width](elem)
         output.store[width=simd_width](idx, elem)
-        elem = post_update_func[type, simd_width](elem)
-        reduce_add_simd[outer_simd_width, simd_width, type](
+        elem = post_update_func[dtype, simd_width](elem)
+        reduce_add_simd[outer_simd_width, simd_width, dtype](
             accum_scalar, accum_simd, elem
         )
 
@@ -301,28 +301,28 @@ fn _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     buffer_size: Dim,
-    type: DType,
-    accum_proc_func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
-        type, width
+    dtype: DType,
+    accum_proc_func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
     ],
-    accum_apply_func: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) -> SIMD[type, width],
-](output: NDBuffer[mut=True, type, 1, _, buffer_size], accum: Scalar[type]):
+    accum_apply_func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
+](output: NDBuffer[mut=True, dtype, 1, _, buffer_size], accum: Scalar[dtype]):
     # STEP 3: normalize each batch
     # accum = accum_proc_func(accum)
     # for i = 0 to N do
     #   accum_apply_func(Output[b, i], accum)
     # end for
-    var accum_proc = accum_proc_func[type, 1](accum)
+    var accum_proc = accum_proc_func[dtype, 1](accum)
 
     @always_inline
     @__copy_capture(accum_proc)
     @parameter
     fn step_3[simd_width: Int](idx: Int):
-        var accum_simd = SIMD[type, simd_width](accum_proc)
+        var accum_simd = SIMD[dtype, simd_width](accum_proc)
         var elem = output.load[width=simd_width](idx)
-        elem = accum_apply_func[type, simd_width](elem, accum_simd)
+        elem = accum_apply_func[dtype, simd_width](elem, accum_simd)
         output.store[width=simd_width](idx, elem)
 
     vectorize[step_3, simd_width, unroll_factor=unroll_factor](len(output))
@@ -331,30 +331,30 @@ fn _softmax_3_pass_step_3[
 fn _softmax_3_pass_base[
     simd_width: Int,
     buffer_size: Dim,
-    type: DType,
+    dtype: DType,
     input_fn_1d: fn[_simd_width: Int] (Int) capturing [_] -> SIMD[
-        type, _simd_width
+        dtype, _simd_width
     ],
-    step2_pre_update_func: fn[type: DType, width: Int] (
-        SIMD[type, width]
-    ) -> SIMD[type, width],
-    step2_post_update_func: fn[type: DType, width: Int] (
-        SIMD[type, width]
-    ) -> SIMD[type, width],
-    step3_accum_proc_func: fn[type: DType, width: Int] (
-        SIMD[type, width]
-    ) -> SIMD[type, width],
-    step3_accum_apply_func: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) -> SIMD[type, width],
-](output: NDBuffer[mut=True, type, 1, _, buffer_size]) raises:
+    step2_pre_update_func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
+    step2_post_update_func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
+    step3_accum_proc_func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
+    step3_accum_apply_func: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
+](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
     """Performs an unbatched three-pass softmax. The actual behavior of each
     step can be different between the (regular) softmax and logsoftmax.
 
     Parameters:
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
-        type: The type of the input and output buffers.
+        dtype: The dtype of the input and output buffers.
         input_fn_1d: The elementwise input lambda.
         step2_pre_update_func: Pre update function.
         step2_post_update_func: Post update function.
@@ -366,7 +366,7 @@ fn _softmax_3_pass_base[
     """
     # STEP 1 - Calculate max
     # Allocate buffer for max_val
-    var max_buff = NDBuffer[type, 1, MutableAnyOrigin, 1].stack_allocation()
+    var max_buff = NDBuffer[dtype, 1, MutableAnyOrigin, 1].stack_allocation()
 
     # Use _reduce_generator to fuse input lambda with max-reduction
     # Reduce function
@@ -383,19 +383,19 @@ fn _softmax_3_pass_base[
     @parameter
     @always_inline
     fn input_fn[
-        _type: DType, _width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[_type, _width]:
+        _dtype: DType, _width: Int, _rank: Int
+    ](coords: IndexList[_rank]) -> SIMD[_dtype, _width]:
         constrained[_rank == 1]()
-        return rebind[SIMD[_type, _width]](input_fn_1d[_width](coords[0]))
+        return rebind[SIMD[_dtype, _width]](input_fn_1d[_width](coords[0]))
 
     # Output function
     @parameter
     @always_inline
     fn output_fn[
-        _type: DType, _width: Int, _rank: Int
-    ](coords: IndexList[_rank], val: SIMD[_type, _width]):
+        _dtype: DType, _width: Int, _rank: Int
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         constrained[_rank == 1]()
-        max_buff[0] = val.reduce_max().cast[type]()
+        max_buff[0] = val.reduce_max().cast[dtype]()
 
     # Generate fused input-reduction
     _reduce_generator[
@@ -405,7 +405,7 @@ fn _softmax_3_pass_base[
         single_thread_blocking_override=True,
     ](
         IndexList[1](len(output)),
-        init=Scalar[type].MIN,
+        init=Scalar[dtype].MIN,
         reduce_dim=0,
     )
 
@@ -417,7 +417,7 @@ fn _softmax_3_pass_base[
         simd_width,
         unroll_factor,
         buffer_size,
-        type,
+        dtype,
         input_fn_1d,
         step2_pre_update_func,
         step2_post_update_func,
@@ -428,7 +428,7 @@ fn _softmax_3_pass_base[
         simd_width,
         unroll_factor,
         buffer_size,
-        type,
+        dtype,
         step3_accum_proc_func,
         step3_accum_apply_func,
     ](output, accum)
@@ -437,12 +437,12 @@ fn _softmax_3_pass_base[
 fn softmax_3_pass[
     simd_width: Int,
     buffer_size: Dim,
-    type: DType,
+    dtype: DType,
     origins: OriginSet,
     input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
-        type, _simd_width
+        dtype, _simd_width
     ],
-](output: NDBuffer[mut=True, type, 1, _, buffer_size]) raises:
+](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
     """Performs an unbatched softmax on an input tensor using the three-pass
     algorithm.
 
@@ -467,7 +467,7 @@ fn softmax_3_pass[
     Parameters:
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
-        type: The type of the input and output buffers.
+        dtype: The dtype of the input and output buffers.
         origins: The OriginSet of captured arguments by the input_fn_1d.
         input_fn_1d: The elementwise input lambda.
 
@@ -477,7 +477,7 @@ fn softmax_3_pass[
     _softmax_3_pass_base[
         simd_width,
         buffer_size,
-        type,
+        dtype,
         input_fn_1d,
         exp,
         identity,
@@ -494,12 +494,12 @@ fn softmax_3_pass[
 fn logsoftmax[
     simd_width: Int,
     buffer_size: Dim,
-    type: DType,
+    dtype: DType,
     origins: OriginSet,
     input_fn_1d: fn[_simd_width: Int] (Int) capturing [origins] -> SIMD[
-        type, _simd_width
+        dtype, _simd_width
     ],
-](output: NDBuffer[mut=True, type, 1, _, buffer_size]) raises:
+](output: NDBuffer[mut=True, dtype, 1, _, buffer_size]) raises:
     """Performs an unbatched logsoftmax on an input tensor using the three-pass
     algorithm.
 
@@ -524,7 +524,7 @@ fn logsoftmax[
     Parameters:
         simd_width: The simd_width to use in vectorization.
         buffer_size: The size of the input and output buffers.
-        type: The type of the input and output buffers.
+        dtype: The dtype of the input and output buffers.
         origins: The OriginSet of captured arguments by the input_fn_1d.
         input_fn_1d: The elementwise input lambda.
 
@@ -532,21 +532,21 @@ fn logsoftmax[
         output: The output buffer in which to store the softmax values.
     """
     _softmax_3_pass_base[
-        simd_width, buffer_size, type, input_fn_1d, identity, exp, log, sub
+        simd_width, buffer_size, dtype, input_fn_1d, identity, exp, log, sub
     ](output)
 
 
 fn logsoftmax[
-    type: DType,
+    dtype: DType,
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         _
-    ] -> SIMD[type, _simd_width],
+    ] -> SIMD[dtype, _simd_width],
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, type, rank, _, static_shape],
+    output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partitioning logic between
@@ -570,7 +570,7 @@ fn logsoftmax[
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
             var buffer_offset = i * inner_dim
-            var output_buffer_view = NDBuffer[type, 1](
+            var output_buffer_view = NDBuffer[dtype, 1](
                 output.data.offset(buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
@@ -580,11 +580,11 @@ fn logsoftmax[
             # Given input lambda accepts N-dimensional coordinates, but the
             # softmax base routines operate on 1D buffers. Here we wrap the
             # given input lambda with some 1d-to-Nd translation logic.
-            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
+            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[dtype, _width]:
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
 
-            logsoftmax[simd_width, Dim(), type, __origin_of(), input_fn_1d](
+            logsoftmax[simd_width, Dim(), dtype, __origin_of(), input_fn_1d](
                 output_buffer_view
             )
             _ = indices
@@ -593,23 +593,23 @@ fn logsoftmax[
 
 
 fn logsoftmax[
-    type: DType,
+    dtype: DType,
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
 ](
-    input: NDBuffer[type, rank, _, static_shape],
-    output: NDBuffer[mut=True, type, rank, _, static_shape],
+    input: NDBuffer[dtype, rank, _, static_shape],
+    output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
 ) raises:
     @parameter
     @always_inline
     fn input_fn[
         _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         return input.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
-    logsoftmax[type, simd_width, rank, static_shape, input_fn](
+    logsoftmax[dtype, simd_width, rank, static_shape, input_fn](
         input.get_shape(), output, axis
     )
 
@@ -620,17 +620,17 @@ fn logsoftmax[
 
 
 fn _softmax_cpu[
-    type: DType,
+    dtype: DType,
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
     origins: OriginSet,
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         origins
-    ] -> SIMD[type, _simd_width],
+    ] -> SIMD[dtype, _simd_width],
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, type, rank, _, static_shape],
+    output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partitioning logic between
@@ -654,7 +654,7 @@ fn _softmax_cpu[
         var end_offset = min((task_id + 1) * chunk_size, outer_dim)
         for i in range(start_offset, end_offset):
             var buffer_offset = i * inner_dim
-            var output_buffer_view = NDBuffer[type, 1](
+            var output_buffer_view = NDBuffer[dtype, 1](
                 output.data.offset(buffer_offset), inner_dim
             )
             var indices = _get_nd_indices_from_flat_index(i, shape, rank - 1)
@@ -664,13 +664,13 @@ fn _softmax_cpu[
             # Given input lambda accepts N-dimensional coordinates, but the
             # softmax base routines operate on 1D buffers. Here we wrap the
             # given input lambda with some 1d-to-Nd translation logic.
-            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[type, _width]:
+            fn input_fn_1d[_width: Int](idx: Int) -> SIMD[dtype, _width]:
                 indices[rank - 1] = idx
                 return input_fn[_width, rank](indices)
 
-            softmax_3_pass[simd_width, Dim(), type, __origin_of(), input_fn_1d](
-                output_buffer_view
-            )
+            softmax_3_pass[
+                simd_width, Dim(), dtype, __origin_of(), input_fn_1d
+            ](output_buffer_view)
             _ = indices
 
     sync_parallelize[task_func](num_workers)
@@ -678,36 +678,36 @@ fn _softmax_cpu[
 
 # Softmax (no input lambda)
 fn softmax[
-    type: DType,
+    dtype: DType,
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
 ](
-    input: NDBuffer[type, rank, _, static_shape],
-    output: NDBuffer[mut=True, type, rank, _, static_shape],
+    input: NDBuffer[dtype, rank, _, static_shape],
+    output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
 ) raises:
     @parameter
     @always_inline
     fn input_fn[
         _simd_width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[type, _simd_width]:
+    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
         return input.load[width=_simd_width](rebind[IndexList[rank]](coords))
 
-    softmax[type, simd_width, rank, static_shape, input_fn](
+    softmax[dtype, simd_width, rank, static_shape, input_fn](
         input.get_shape(), output, axis
     )
 
 
 fn softmax_kernel[
     BLOCK_SIZE: Int,
-    input_fn: fn[_type: DType, _simd_width: Int, _rank: Int] (
+    input_fn: fn[_dtype: DType, _simd_width: Int, _rank: Int] (
         IndexList[_rank]
-    ) capturing [_] -> SIMD[_type, _simd_width],
-    type: DType,
+    ) capturing [_] -> SIMD[_dtype, _simd_width],
+    dtype: DType,
     rank: Int,
-    accum_type: DType = get_accum_type[type](),
-](shape: IndexList[rank], output: NDBuffer[type, rank, MutableAnyOrigin]):
+    accum_type: DType = get_accum_type[dtype](),
+](shape: IndexList[rank], output: NDBuffer[dtype, rank, MutableAnyOrigin]):
     alias axis = rank - 1
 
     var row_size = UInt(shape[axis])
@@ -723,15 +723,15 @@ fn softmax_kernel[
     @parameter
     @always_inline
     fn _max[
-        type: DType, width: Int
-    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        dtype: DType, width: Int
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
     @parameter
     @always_inline
     fn _sum[
-        type: DType, width: Int
-    ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+        dtype: DType, width: Int
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
     var tid = thread_idx.x
@@ -748,11 +748,11 @@ fn softmax_kernel[
             BLOCK_SIZE,
             input_fn,
             _max,
-            type,
+            dtype,
             1,
             rank,
             accum_type=accum_type,
-        ](row_coords, axis, Scalar[type].MIN, Int(row_size))
+        ](row_coords, axis, Scalar[dtype].MIN, Int(row_size))
 
         if tid == 0:
             max_buf[0] = row_max
@@ -767,12 +767,13 @@ fn softmax_kernel[
 
             # loads from input_fn twice
             var val = exp(
-                input_fn[type, 1, rank](row_coords).cast[accum_type]() - row_max
+                input_fn[dtype, 1, rank](row_coords).cast[accum_type]()
+                - row_max
             )
 
             # TODO we're writing to and reading from global memory twice
             # we can reduce the amount of reads by keeping values local here.
-            output[row_coords] = val.cast[type]()
+            output[row_coords] = val.cast[dtype]()
             exp_sum += val
 
         var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
@@ -784,20 +785,20 @@ fn softmax_kernel[
         var block_exp_sum_recip = 1 / exp_sum_buf[0]
         for row_offset in range(tid, row_size, UInt(BLOCK_SIZE)):
             row_coords[axis] = Int(row_offset)
-            output[row_coords] *= block_exp_sum_recip.cast[type]()
+            output[row_coords] *= block_exp_sum_recip.cast[dtype]()
 
 
 fn _softmax_gpu[
-    type: DType,
+    dtype: DType,
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         _
-    ] -> SIMD[type, _simd_width],
+    ] -> SIMD[dtype, _simd_width],
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, type, rank, _, static_shape],
+    output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
     ctx: DeviceContext,
 ) raises:
@@ -807,9 +808,9 @@ fn _softmax_gpu[
     @always_inline
     @parameter
     fn input_fn_wrapper[
-        _type: DType, width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[_type, width]:
-        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return rebind[SIMD[_dtype, width]](input_fn[width, rank](idx))
 
     alias BLOCK_SIZE = 128
     var num_rows = shape.flattened_length() // shape[axis]
@@ -817,28 +818,28 @@ fn _softmax_gpu[
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
     ctx.enqueue_function[
-        softmax_kernel[BLOCK_SIZE, input_fn_wrapper, type, rank]
+        softmax_kernel[BLOCK_SIZE, input_fn_wrapper, dtype, rank]
     ](shape, output, grid_dim=num_blocks, block_dim=BLOCK_SIZE)
 
 
 fn softmax[
-    type: DType,
+    dtype: DType,
     simd_width: Int,
     rank: Int,
     static_shape: DimList,
     input_fn: fn[_simd_width: Int, _rank: Int] (IndexList[_rank]) capturing [
         _
-    ] -> SIMD[type, _simd_width],
+    ] -> SIMD[dtype, _simd_width],
     target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
-    output: NDBuffer[mut=True, type, rank, _, static_shape],
+    output: NDBuffer[mut=True, dtype, rank, _, static_shape],
     axis: Int,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     @parameter
     fn trace_information() -> String:
-        return trace_arg("input", shape, type)
+        return trace_arg("input", shape, dtype)
 
     with Trace[TraceLevel.OP, target=target](
         "softmax",
@@ -848,10 +849,10 @@ fn softmax[
         @parameter
         if is_cpu[target]():
             _softmax_cpu[
-                type, simd_width, rank, static_shape, __origin_of(), input_fn
+                dtype, simd_width, rank, static_shape, __origin_of(), input_fn
             ](shape, output, axis)
         elif is_gpu[target]():
-            _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
+            _softmax_gpu[dtype, simd_width, rank, static_shape, input_fn](
                 shape,
                 output,
                 axis,
@@ -869,12 +870,12 @@ fn softmax[
 fn _online_softmax_kernel[
     WM: Int,
     WN: Int,
-    type: DType,
+    dtype: DType,
     layout: Layout,
     fragment_transpose: Bool = False,
 ](
-    input: LayoutTensor[type, layout, MutableAnyOrigin],
-    output: LayoutTensor[type, layout, MutableAnyOrigin],
+    input: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    output: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
     """This is only for online softmax validation, NOT a general kernel."""
 
@@ -934,7 +935,7 @@ fn _online_softmax_kernel[
     )
 
     var p = LayoutTensor[
-        type,
+        dtype,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
@@ -964,7 +965,7 @@ fn _online_softmax_kernel[
 
     var o = (
         LayoutTensor[
-            type,
+            dtype,
             Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
             MutableAnyOrigin,
             address_space = AddressSpace.LOCAL,
@@ -979,16 +980,16 @@ fn _online_softmax_kernel[
     alias frag_num_rows = 2 if is_nvidia_gpu() else (
         1 if fragment_transpose else 4
     )
-    alias row_alignment = alignof[SIMD[type, simdwidthof[type]()]]()
+    alias row_alignment = alignof[SIMD[dtype, simdwidthof[dtype]()]]()
     var rowmax = stack_allocation[
-        num_m_mmas * frag_num_rows, type, alignment=row_alignment
+        num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
     ]()
     var rowsum = stack_allocation[
-        num_m_mmas * frag_num_rows, type, alignment=row_alignment
+        num_m_mmas * frag_num_rows, dtype, alignment=row_alignment
     ]()
 
     var warp_scratch = LayoutTensor[
-        type,
+        dtype,
         Layout.row_major(2 * num_rowwise_warps, WM),
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -996,11 +997,11 @@ fn _online_softmax_kernel[
 
     @parameter
     for i in range(0, frag_num_rows * num_m_mmas, frag_num_rows):
-        rowmax.store(i, SIMD[type, frag_num_rows](min_or_neg_inf[type]()))
-        rowsum.store(i, SIMD[type, frag_num_rows](0))
+        rowmax.store(i, SIMD[dtype, frag_num_rows](min_or_neg_inf[dtype]()))
+        rowsum.store(i, SIMD[dtype, frag_num_rows](0))
 
     _online_softmax_iter_for_mma_output[
-        type,
+        dtype,
         score_layout_by_mma_unit,
         block_layout_by_warp,
         warp_layout,
@@ -1023,7 +1024,7 @@ fn _online_softmax_kernel[
         )
 
     _online_softmax_iter_for_mma_output[
-        type,
+        dtype,
         score_layout_by_mma_unit,
         block_layout_by_warp,
         warp_layout,
@@ -1054,7 +1055,7 @@ fn _online_softmax_kernel[
                     ]
                 else:
                     var rowsum_tensor = (
-                        tb[type]()
+                        tb[dtype]()
                         .row_major[num_m_mmas, frag_num_rows]()
                         .view(rowsum)
                     )
@@ -1084,7 +1085,7 @@ fn _online_softmax_kernel[
 
 @always_inline
 fn _online_softmax_iter_for_mma_output[
-    type: DType,
+    dtype: DType,
     score_layout_by_mma_unit: Layout,
     block_layout_by_warp: Layout,
     warp_layout: Layout,
@@ -1094,11 +1095,11 @@ fn _online_softmax_iter_for_mma_output[
         1, 2
     ) if is_nvidia_gpu() else Layout.row_major(4, 1),
 ](
-    output_reg_tile: LayoutTensor[type, *_, **_],
-    score_reg_tile: LayoutTensor[type, *_, **_],
-    warp_scratch: LayoutTensor[type, *_, **_],
-    rowmax: UnsafePointer[Scalar[type], **_],
-    rowsum: UnsafePointer[Scalar[type], **_],
+    output_reg_tile: LayoutTensor[dtype, *_, **_],
+    score_reg_tile: LayoutTensor[dtype, *_, **_],
+    warp_scratch: LayoutTensor[dtype, *_, **_],
+    rowmax: UnsafePointer[Scalar[dtype], **_],
+    rowsum: UnsafePointer[Scalar[dtype], **_],
 ):
     alias num_colwise_warps = block_layout_by_warp.shape[0].value()
     alias num_rowwise_warps = block_layout_by_warp.shape[1].value()
@@ -1127,20 +1128,29 @@ fn _online_softmax_iter_for_mma_output[
     alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
     var score_frag_rowmax = (
-        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().local().alloc()
+        tb[dtype]()
+        .row_major[num_colwise_tiles, frag_num_rows]()
+        .local()
+        .alloc()
     )
     var score_frag_rowsum = (
-        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().local().alloc()
+        tb[dtype]()
+        .row_major[num_colwise_tiles, frag_num_rows]()
+        .local()
+        .alloc()
     )
     var correction = (
-        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().local().alloc()
+        tb[dtype]()
+        .row_major[num_colwise_tiles, frag_num_rows]()
+        .local()
+        .alloc()
     )
 
     var rowmax_tensor = (
-        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().view(rowmax)
+        tb[dtype]().row_major[num_colwise_tiles, frag_num_rows]().view(rowmax)
     )
     var rowsum_tensor = (
-        tb[type]().row_major[num_colwise_tiles, frag_num_rows]().view(rowsum)
+        tb[dtype]().row_major[num_colwise_tiles, frag_num_rows]().view(rowsum)
     )
 
     # Initialize local max with the running max, and local sum with zero.
@@ -1246,10 +1256,10 @@ fn _online_softmax_iter_for_mma_output[
                     @parameter
                     for row_warp in range(num_rowwise_warps):
                         score_frag_rowmax[col_tile, row] = max(
-                            rebind[Scalar[type]](
+                            rebind[Scalar[dtype]](
                                 score_frag_rowmax[col_tile, row]
                             ),
-                            rebind[Scalar[type]](
+                            rebind[Scalar[dtype]](
                                 warp_scratch[row_warp, Int(score_row_idx)]
                             ),
                         )
@@ -1289,7 +1299,7 @@ fn _online_softmax_iter_for_mma_output[
                 score_reg_tile[tile_id, 0] = exp_function(
                     score_reg_tile[tile_id, 0]
                     - rebind[frag_type](
-                        SIMD[type, frag_num_cols](
+                        SIMD[dtype, frag_num_cols](
                             score_frag_rowmax[col_tile, 0][0]
                         )
                     )
@@ -1374,7 +1384,7 @@ fn _online_softmax_iter_for_mma_output[
                     @parameter
                     for row_warp in range(num_rowwise_warps):
                         score_frag_rowsum[col_tile, row] += rebind[
-                            Scalar[type]
+                            Scalar[dtype]
                         ](
                             warp_scratch[
                                 row_warp + num_rowwise_warps, Int(score_row_idx)
@@ -1474,7 +1484,7 @@ fn _online_softmax_iter_for_mma_output[
 @always_inline
 fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     output_layout: Layout, //,
-    type: DType,
+    dtype: DType,
     score_layout_by_mma_unit: Layout,
     block_layout_by_warp: Layout,
     warp_layout: Layout,
@@ -1484,19 +1494,19 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     use_exp2: Bool = False,
 ](
     output_reg_tile: LayoutTensor[
-        type,
+        dtype,
         output_layout,
         *_,
         address_space = AddressSpace.LOCAL, **_,
     ],
     warp_scratch: LayoutTensor[
-        type, *_, address_space = AddressSpace.SHARED, **_
+        dtype, *_, address_space = AddressSpace.SHARED, **_
     ],
     o_smem_ptr_base: UnsafePointer[
-        Scalar[type], address_space = AddressSpace.SHARED, **_
+        Scalar[dtype], address_space = AddressSpace.SHARED, **_
     ],
-    rowmax: UnsafePointer[Scalar[type], **_],
-    rowsum: UnsafePointer[Scalar[type], **_],
+    rowmax: UnsafePointer[Scalar[dtype], **_],
+    rowsum: UnsafePointer[Scalar[dtype], **_],
 ):
     # Here, we use naming conventions aligning with MHA's
     alias num_m_mmas = score_layout_by_mma_unit.shape[0].value()
@@ -1578,19 +1588,19 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     alias exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     var interwarp_frag_rowmax = (
-        tb[type]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
+        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
     )
     var interwarp_frag_rowsum = (
-        tb[type]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
+        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
     )
     var correction = (
-        tb[type]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
+        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().local().alloc()
     )
     var rowmax_tensor = (
-        tb[type]().row_major[num_m_mmas, frag_num_rows]().view(rowmax)
+        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().view(rowmax)
     )
     var rowsum_tensor = (
-        tb[type]().row_major[num_m_mmas, frag_num_rows]().view(rowsum)
+        tb[dtype]().row_major[num_m_mmas, frag_num_rows]().view(rowsum)
     )
     # corrections across warps
     # Write per warp rowmax to shared memory.
@@ -1628,17 +1638,17 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                     + row
                 )
 
-                interwarp_frag_rowmax[col_tile, row] = rebind[Scalar[type]](
+                interwarp_frag_rowmax[col_tile, row] = rebind[Scalar[dtype]](
                     warp_scratch[num_warps_n, Int(score_row_idx)]
                 )
 
                 @parameter
                 for row_warp in range(1, num_warps_n):
                     interwarp_frag_rowmax[col_tile, row] = max(
-                        rebind[Scalar[type]](
+                        rebind[Scalar[dtype]](
                             interwarp_frag_rowmax[col_tile, row]
                         ),
-                        rebind[Scalar[type]](
+                        rebind[Scalar[dtype]](
                             warp_scratch[
                                 row_warp + num_warps_n, Int(score_row_idx)
                             ]
@@ -1679,7 +1689,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                     + (lane // num_lanes_n) * frag_num_rows
                     + row
                 )
-                var c = rebind[Scalar[type]](correction[col_tile, row])
+                var c = rebind[Scalar[dtype]](correction[col_tile, row])
                 warp_scratch[Int(warp_x), Int(score_row_idx)] = (
                     0.0 if c == 0.0 else rowsum_tensor[col_tile, row][0] * c
                 )
@@ -1699,7 +1709,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                     + (lane // num_lanes_n) * frag_num_rows
                     + row
                 )
-                interwarp_frag_rowsum[col_tile, row] = rebind[Scalar[type]](
+                interwarp_frag_rowsum[col_tile, row] = rebind[Scalar[dtype]](
                     warp_scratch[0, Int(score_row_idx)]
                 )
 
@@ -1707,7 +1717,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                 @parameter
                 for row_warp in range(1, num_warps_n):
                     interwarp_frag_rowsum[col_tile, row] += rebind[
-                        Scalar[type]
+                        Scalar[dtype]
                     ](warp_scratch[row_warp, Int(score_row_idx)])
 
         # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
@@ -1787,7 +1797,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             )
             var o_smem_write = (
                 LayoutTensor[
-                    type,
+                    dtype,
                     o_smem_layout,
                     address_space = AddressSpace.SHARED,
                 ](o_smem_ptr_write)
@@ -1818,7 +1828,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         )
         var o_smem_reduce = (
             LayoutTensor[
-                type,
+                dtype,
                 o_smem_layout,
                 address_space = AddressSpace.SHARED,
             ](o_smem_ptr_reduce)
@@ -1828,12 +1838,12 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
         @parameter
         for i in range(o_smem_reduce.layout.size()):
-            out_reg_tile[i] += rebind[SIMD[type, frag_size]](o_smem_reduce[i])
+            out_reg_tile[i] += rebind[SIMD[dtype, frag_size]](o_smem_reduce[i])
 
 
 @always_inline
 fn _rowmax_online_softmax[
-    type: DType,
+    dtype: DType,
     reg_tile_layout: Layout,
     row_accum_layout: Layout,
     fragment_layout: Layout,
@@ -1843,21 +1853,21 @@ fn _rowmax_online_softmax[
     use_exp2: Bool,
 ](
     out score_frag_rowmax: LayoutTensor[
-        type,
+        dtype,
         row_accum_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_reg_tile: LayoutTensor[
-        type,
+        dtype,
         reg_tile_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=fragment_layout,
     ],
     rowmax_tensor: LayoutTensor[
-        type,
+        dtype,
         row_accum_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
@@ -1950,20 +1960,20 @@ fn _rowmax_online_softmax[
 
 @always_inline
 fn _rowsum[
-    type: DType,
+    dtype: DType,
     reg_tile_layout: Layout,
     fragment_layout: Layout, //,
     warp_layout: Layout,
 ](
     score_reg_tile: LayoutTensor[
-        type,
+        dtype,
         reg_tile_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=fragment_layout,
     ],
     out score_frag_rowsum: LayoutTensor[
-        type,
+        dtype,
         Layout.row_major(reg_tile_layout[0].size()),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
@@ -2015,20 +2025,20 @@ fn _rowsum[
 
 @always_inline
 fn _online_softmax_correction[
-    type: DType,
+    dtype: DType,
     row_accum_layout: Layout,
     accum_frag_layout: Layout, //,
     use_exp2: Bool,
 ](
     rowmax_tensor: LayoutTensor[
-        type,
+        dtype,
         row_accum_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
         element_layout=accum_frag_layout,
     ],
     score_frag_rowmax: LayoutTensor[
-        type,
+        dtype,
         row_accum_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,

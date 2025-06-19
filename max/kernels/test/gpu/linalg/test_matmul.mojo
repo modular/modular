@@ -40,30 +40,30 @@ from utils.index import Index
 
 alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 
-alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[type, width]
-) capturing -> SIMD[type, width]
+alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    IndexList[2], IndexList[2], SIMD[dtype, width]
+) capturing -> SIMD[dtype, width]
 
 
 @parameter
 @always_inline
 fn epilogue_test_fn[
-    type: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
-    val: SIMD[type, width],
+    val: SIMD[dtype, width],
 ) -> SIMD[
-    type, width
+    dtype, width
 ]:
-    var bias = SIMD[type, width](0)
+    var bias = SIMD[dtype, width](0)
 
     @parameter
     for i in range(width):
         bias[i] = (
             0.5
             + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                type
+                dtype
             ]()
         )
 
@@ -84,20 +84,20 @@ fn select_max_ulp_distance[
 
 
 fn test[
-    type: DType,
+    dtype: DType,
     /,
     *,
     transpose_b: Bool = False,
     init_a: Optional[init_fn_type] = None,
     init_b: Optional[init_fn_type] = None,
     lambda_fn: Optional[epilogue_func_type] = None,
-    config: OptionalReg[MatmulConfig[type, type, type, transpose_b]] = None,
+    config: OptionalReg[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
     n: ValOrDim,
     k: ValOrDim,
-    rtol: Float64 = 1e-3 if type is DType.float32 else 1e-2,
+    rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
     constrained[
@@ -121,21 +121,21 @@ fn test[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    var a_host = HostNDBuffer[type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[type, 2, static_c_shape](dynamic_c_shape)
+    var a_host = HostNDBuffer[dtype, 2, static_a_shape](dynamic_a_shape)
+    var b_host = HostNDBuffer[dtype, 2, static_b_shape](dynamic_b_shape)
+    var c_host = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
+    var c_host_ref = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
 
-    var a_device = DeviceNDBuffer[type, 2, static_a_shape](
+    var a_device = DeviceNDBuffer[dtype, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
-    var b_device = DeviceNDBuffer[type, 2, static_b_shape](
+    var b_device = DeviceNDBuffer[dtype, 2, static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
-    var c_device = DeviceNDBuffer[type, 2, static_c_shape](
+    var c_device = DeviceNDBuffer[dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
-    var c_device_ref = DeviceNDBuffer[type, 2, static_c_shape](
+    var c_device_ref = DeviceNDBuffer[dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
 
@@ -171,19 +171,19 @@ fn test[
     @always_inline
     @__copy_capture(c_tensor, M, N)
     fn epilogue_fn[
-        _type: DType,
+        _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_type, width]](),
-    ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> None:
-        var update_val: SIMD[_type, width] = val
+        alignment: Int = alignof[SIMD[_dtype, width]](),
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        var update_val: SIMD[_dtype, width] = val
 
         @parameter
         if lambda_fn:
             alias func = lambda_fn.value()
             update_val = func(idx, (M, N), update_val)
         c_tensor.store[alignment=alignment](
-            idx, rebind[SIMD[type, width]](update_val)
+            idx, rebind[SIMD[dtype, width]](update_val)
         )
 
     @parameter
@@ -223,7 +223,7 @@ fn test[
     )
 
     var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)
@@ -266,7 +266,7 @@ fn test[
             var actual = c_host_tensor[m, n]
 
             @parameter
-            if bitwidthof[type]() <= 16:
+            if bitwidthof[dtype]() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue

@@ -24,20 +24,20 @@ from testing import *
 from utils import Index, IndexList
 
 
-def run_elementwise[type: DType](ctx: DeviceContext):
+def run_elementwise[dtype: DType](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
-    var in_device = ctx.enqueue_create_buffer[type](length)
-    var out_device = ctx.enqueue_create_buffer[type](length)
+    var in_device = ctx.enqueue_create_buffer[dtype](length)
+    var out_device = ctx.enqueue_create_buffer[dtype](length)
 
     with in_device.map_to_host() as in_host:
         for i in range(length):
-            in_host[i] = 0.001 * (Scalar[type](i) - length // 2)
+            in_host[i] = 0.001 * (Scalar[dtype](i) - length // 2)
 
-    var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
@@ -57,13 +57,13 @@ def run_elementwise[type: DType](ctx: DeviceContext):
                 "values did not match at position ",
                 i,
                 " for dtype=",
-                type,
+                dtype,
                 " and value=",
                 in_host[i],
             )
 
             @parameter
-            if type is DType.float32:
+            if dtype is DType.float32:
                 assert_almost_equal(
                     out_host[i],
                     exp(in_host[i]),

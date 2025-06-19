@@ -19,11 +19,11 @@ from gpu.intrinsics import *
 
 
 fn kernel[
-    type: DType, memory: Bool = True
+    dtype: DType, memory: Bool = True
 ](
-    output: UnsafePointer[Scalar[type]],
-    ptr: UnsafePointer[Scalar[type]],
-    val: Scalar[type],
+    output: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype]],
+    val: Scalar[dtype],
 ):
     store_release[memory=memory](ptr, val)
     output[] = load_acquire[memory=memory](ptr)

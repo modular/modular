@@ -25,7 +25,7 @@ from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 
-alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
+alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
 # TileMask holds information collected by composed tile operations to

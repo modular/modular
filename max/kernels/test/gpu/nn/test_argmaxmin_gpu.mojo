@@ -23,10 +23,10 @@ from testing import assert_equal
 
 
 fn test_argmaxmin_gpu[
-    type: DType,
+    dtype: DType,
     output_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     largest: Bool = True,
     rank: Int = 2,
@@ -50,13 +50,13 @@ fn test_argmaxmin_gpu[
     else:
         raise Error("Test case doesn't support rank above 3 (just add it)")
 
-    var in_buffer = HostNDBuffer[type, rank](in_shape)
+    var in_buffer = HostNDBuffer[dtype, rank](in_shape)
     var out_idxs = HostNDBuffer[output_type, rank](out_shape)
 
     # Fill the buffer with consecutive values
     fill_fn(in_buffer.tensor)
 
-    var device_in = DeviceNDBuffer[type, rank](in_shape, ctx=ctx)
+    var device_in = DeviceNDBuffer[dtype, rank](in_shape, ctx=ctx)
     var device_out_idxs = DeviceNDBuffer[output_type, rank](out_shape, ctx=ctx)
 
     ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
@@ -99,8 +99,8 @@ fn test_argmaxmin_gpu[
 
 fn _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     largest: Bool,
 ](ctx: DeviceContext) raises:
@@ -117,8 +117,8 @@ fn _test_argmaxmin_gpu_helper_2[
 
 fn test_argmaxmin_gpu_helper[
     idx_type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        mut NDBuffer[mut=True, type, rank]
+    fill_fn: fn[rank: Int, dtype: DType] (
+        mut NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
 ](ctx: DeviceContext) raises:
     # argmax

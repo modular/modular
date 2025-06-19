@@ -22,13 +22,13 @@ from utils.index import IndexList
 @always_inline
 fn reshape[
     rank: Int,
-    type: DType, //,
+    dtype: DType, //,
     output_rank: Int,
     single_thread_blocking_override: Bool = True,
 ](
-    input: NDBuffer[type, rank, *_, **_],
+    input: NDBuffer[dtype, rank, *_, **_],
     new_shape: IndexList[output_rank],
-) -> NDBuffer[type, output_rank, input.origin]:
+) -> NDBuffer[dtype, output_rank, input.origin]:
     var stride_tuple = __type_of(new_shape)()
     var stride: Int = 1
 
@@ -40,7 +40,7 @@ fn reshape[
         stride *= new_shape[i]
 
     # Return the a view with the new shape.
-    return NDBuffer[type, output_rank, address_space = input.address_space](
+    return NDBuffer[dtype, output_rank, address_space = input.address_space](
         input.data, new_shape, stride_tuple
     )
 
@@ -50,13 +50,13 @@ fn reshape[
 fn ndbuffer_reshape[
     rank: Int,
     output_rank: Int,
-    type: DType,
+    dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     new_shape: IndexList[output_rank],
 ) -> NDBuffer[
-    type, output_rank, input.origin
+    dtype, output_rank, input.origin
 ]:
     return reshape[
         output_rank,

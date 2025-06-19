@@ -16,9 +16,9 @@ from sys.intrinsics import llvm_intrinsic
 
 @always_inline
 fn roundeven_to_int32[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[DType.int32, simd_width]:
-    alias native_width = simdwidthof[type]()
+    dtype: DType, simd_width: Int
+](x: SIMD[dtype, simd_width]) -> SIMD[DType.int32, simd_width]:
+    alias native_width = simdwidthof[dtype]()
 
     # Use the AVX512 instruction `vcvtps2dq` with embedded rounding control
     # set to do rounding to nearest with ties to even (roundeven). This
@@ -26,7 +26,7 @@ fn roundeven_to_int32[
     @parameter
     if (
         CompilationTarget.has_avx512f()
-        and type is DType.float32
+        and dtype is DType.float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[DType.int32, simd_width]()
@@ -53,7 +53,7 @@ fn roundeven_to_int32[
     @parameter
     if (
         CompilationTarget.has_neon()
-        and type is DType.float32
+        and dtype is DType.float32
         and simd_width >= native_width
     ):
         var x_i32 = SIMD[DType.int32, simd_width]()

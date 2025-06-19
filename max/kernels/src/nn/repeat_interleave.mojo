@@ -45,14 +45,14 @@ fn _collapse_dims_around_axis(
 
 @always_inline
 fn repeat_interleave[
-    type: DType,
+    dtype: DType,
     rank: Int,
     type_repeats: DType,
 ](
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     repeats: NDBuffer[type_repeats, 1],
     axis: Int,
-    output: NDBuffer[mut=True, type, rank],
+    output: NDBuffer[mut=True, dtype, rank],
 ) raises:
     """
     Fill `output` by repeating values from `input` along `axis` based on the
@@ -84,11 +84,11 @@ fn repeat_interleave[
     debug_assert(collapsed_output_shape[0] == collapsed_input_shape[0])
     debug_assert(collapsed_output_shape[2] == collapsed_input_shape[2])
 
-    var collapsed_input = NDBuffer[type, 3](
+    var collapsed_input = NDBuffer[dtype, 3](
         input.data,
         dynamic_shape=collapsed_input_shape,
     )
-    var collapsed_output = NDBuffer[type, 3](
+    var collapsed_output = NDBuffer[dtype, 3](
         output.data,
         dynamic_shape=collapsed_output_shape,
     )

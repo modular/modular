@@ -29,7 +29,7 @@ from utils.index import Index, IndexList
 fn test_conv3d_gpu[
     input_dim: DimList,
     filter_dim: DimList,
-    type: DType,
+    dtype: DType,
     stride: IndexList[3],
     dilation: IndexList[3],
     pad: IndexList[3],
@@ -69,17 +69,17 @@ fn test_conv3d_gpu[
     var output_size = output_dim.product().get()
 
     # allocate host memory and initialize with random data
-    var input_host = UnsafePointer[Scalar[type]].alloc(input_size)
-    var filter_host = UnsafePointer[Scalar[type]].alloc(filter_size)
-    var output_gpu_host = UnsafePointer[Scalar[type]].alloc(output_size)
-    var output_ref_host = UnsafePointer[Scalar[type]].alloc(output_size)
+    var input_host = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var filter_host = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var output_gpu_host = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ref_host = UnsafePointer[Scalar[dtype]].alloc(output_size)
 
     # initialize with random data
-    rand[type](input_host, input_size)
-    rand[type](filter_host, filter_size)
+    rand[dtype](input_host, input_size)
+    rand[dtype](filter_host, filter_size)
 
     # run reference implementation
-    Naive2dConvolution[type, type, type].run(
+    Naive2dConvolution[dtype, dtype, dtype].run(
         output_ref_host,
         input_host,
         filter_host,
@@ -94,22 +94,22 @@ fn test_conv3d_gpu[
         1,  # num_groups
     )
     # allocate device memory
-    var input_dev = ctx.enqueue_create_buffer[type](input_size)
-    var filter_dev = ctx.enqueue_create_buffer[type](filter_size)
-    var output_dev = ctx.enqueue_create_buffer[type](output_size)
+    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
 
     # copy input and filter to device, shipping data to gpu land
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
     # create ndbuffer views, making it easier to work with
-    var input_buf = NDBuffer[type, 5, _, input_dim](
+    var input_buf = NDBuffer[dtype, 5, _, input_dim](
         input_dev._unsafe_ptr(), input_dim
     )
-    var filter_buf = NDBuffer[type, 5, _, filter_dim](
+    var filter_buf = NDBuffer[dtype, 5, _, filter_dim](
         filter_dev._unsafe_ptr(), filter_dim
     )
-    var output_buf = NDBuffer[type, 5, _, output_dim](
+    var output_buf = NDBuffer[dtype, 5, _, output_dim](
         output_dev._unsafe_ptr(), output_dim
     )
 
@@ -127,9 +127,9 @@ fn test_conv3d_gpu[
             input_dim,
             filter_dim,
             output_dim,
-            type,
-            type,
-            type,
+            dtype,
+            dtype,
+            dtype,
             block_size,
             None,
         ]

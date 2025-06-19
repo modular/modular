@@ -70,12 +70,12 @@ fn _argsort_cpu[
 
 
 @always_inline
-fn _sentinel_val[type: DType, ascending: Bool]() -> Scalar[type]:
+fn _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
     """
     Returns a sentinel value based on sort direction.
 
     Parameters:
-        type: Data type of the sentinel value.
+        dtype: Data type of the sentinel value.
         ascending: Sort direction.
 
     Returns:
@@ -84,9 +84,9 @@ fn _sentinel_val[type: DType, ascending: Bool]() -> Scalar[type]:
 
     @parameter
     if ascending:
-        return Scalar[type].MAX_FINITE
+        return Scalar[dtype].MAX_FINITE
     else:
-        return Scalar[type].MIN_FINITE
+        return Scalar[dtype].MIN_FINITE
 
 
 fn _argsort_gpu_impl[

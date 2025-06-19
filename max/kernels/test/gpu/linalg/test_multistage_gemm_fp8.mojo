@@ -31,7 +31,7 @@ from linalg.utils_gpu import (
 
 
 fn test_fp8_multistage_gemm[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
@@ -45,8 +45,8 @@ fn test_fp8_multistage_gemm[
     alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
     alias static_c_shape = DimList(M, N)
 
-    var a_host = HostNDBuffer[type, 2, static_a_shape]()
-    var b_host = HostNDBuffer[type, 2, static_b_shape]()
+    var a_host = HostNDBuffer[dtype, 2, static_a_shape]()
+    var b_host = HostNDBuffer[dtype, 2, static_b_shape]()
     var c_host = HostNDBuffer[DType.float32, 2, static_c_shape]()
     var c_host_ref = HostNDBuffer[DType.float32, 2, static_c_shape]()
 
@@ -67,8 +67,8 @@ fn test_fp8_multistage_gemm[
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
 
-    var a_device = DeviceNDBuffer[type, 2, static_a_shape](ctx=ctx)
-    var b_device = DeviceNDBuffer[type, 2, static_b_shape](ctx=ctx)
+    var a_device = DeviceNDBuffer[dtype, 2, static_a_shape](ctx=ctx)
+    var b_device = DeviceNDBuffer[dtype, 2, static_b_shape](ctx=ctx)
     var c_device = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
     var c_device_ref = DeviceNDBuffer[DType.float32, 2, static_c_shape](ctx=ctx)
 
@@ -79,15 +79,15 @@ fn test_fp8_multistage_gemm[
     var a_tensor = from_ndbuffer_row_major(a_device.tensor)
     var b_tensor = from_ndbuffer_row_major(b_device.tensor)
 
-    alias kernels = MatmulKernels[type, type, DType.float32, transpose_b]()
+    alias kernels = MatmulKernels[dtype, dtype, DType.float32, transpose_b]()
     alias config = kernels.hopper_128x128_4
 
     alias kernel = multistage_gemm_kernel[
         DType.float32,  # c_type
         c_tensor.layout,
-        type,  # a_type
+        dtype,  # a_type
         a_tensor.layout,
-        type,  # b_type
+        dtype,  # b_type
         b_tensor.layout,
         transpose_b,
         config,
@@ -123,13 +123,15 @@ fn test_fp8_multistage_gemm[
 
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
-        var b_host_col_major = HostNDBuffer[type, 2, DimList(N, K)]()
+        var b_host_col_major = HostNDBuffer[dtype, 2, DimList(N, K)]()
 
         for i in range(N):
             for j in range(K):
                 b_host_col_major.tensor[i, j] = b_host.tensor[j, i]
 
-        var b_device_col_major = DeviceNDBuffer[type, 2, DimList(N, K)](ctx=ctx)
+        var b_device_col_major = DeviceNDBuffer[dtype, 2, DimList(N, K)](
+            ctx=ctx
+        )
         ctx.enqueue_copy(
             b_device_col_major.buffer, b_host_col_major.tensor.data
         )

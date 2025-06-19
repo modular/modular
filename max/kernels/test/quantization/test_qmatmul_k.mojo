@@ -31,7 +31,7 @@ from quantization.qmatmul_k import (
 from utils.index import Index
 
 
-fn fill_random[type: DType](mut array: InlineArray[Scalar[type]]):
+fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
     rand(array.unsafe_ptr(), len(array))
 
 

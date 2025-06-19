@@ -25,17 +25,17 @@ from utils import IndexList, StaticTuple
 from utils.index import product
 
 
-fn alignof_simd[type: DType, simd_target: __mlir_type.`!kgen.target`]() -> Int:
+fn alignof_simd[dtype: DType, simd_target: __mlir_type.`!kgen.target`]() -> Int:
     # TODO: move this utility function to a module.
-    alias pack_size = simdwidthof[type, target=simd_target]()
-    return alignof[SIMD[type, pack_size]]()
+    alias pack_size = simdwidthof[dtype, target=simd_target]()
+    return alignof[SIMD[dtype, pack_size]]()
 
 
 fn run_reduce[
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing [_] -> SIMD[type, width],
-    type: DType,
+    reduce_fn: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing [_] -> SIMD[dtype, width],
+    dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
 ](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
@@ -43,28 +43,28 @@ fn run_reduce[
     var axis = rank - 1
     var out_shape = shape
     out_shape[axis] = 1
-    alias init: Scalar[type] = Scalar[type](0.0)
+    alias init: Scalar[dtype] = Scalar[dtype](0.0)
 
     var in_size = shape.flattened_length()
     var out_size = product(shape, rank - 1)
 
-    alias align = alignof_simd[type, simd_target = get_gpu_target()]()
-    var expected_vals = UnsafePointer[Scalar[type], alignment=align].alloc(
+    alias align = alignof_simd[dtype, simd_target = get_gpu_target()]()
+    var expected_vals = UnsafePointer[Scalar[dtype], alignment=align].alloc(
         out_size
     )
 
-    var in_host = UnsafePointer[Scalar[type]].alloc(in_size)
-    var res_host = UnsafePointer[Scalar[type]].alloc(out_size)
+    var in_host = UnsafePointer[Scalar[dtype]].alloc(in_size)
+    var res_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
 
     for i in range(in_size):
         in_host[i] = (i // shape[axis]) + 1
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals[i] = shape[axis] * Scalar[type](i + 1)
+        expected_vals[i] = shape[axis] * Scalar[dtype](i + 1)
 
-    var vec_device = DeviceNDBuffer[type, rank](shape, ctx=ctx)
-    var res_device = DeviceNDBuffer[type, rank](out_shape, ctx=ctx)
+    var vec_device = DeviceNDBuffer[dtype, rank](shape, ctx=ctx)
+    var res_device = DeviceNDBuffer[dtype, rank](out_shape, ctx=ctx)
     var input_buf_device = vec_device.tensor
     var output_buf_device = res_device.tensor
 
@@ -73,33 +73,33 @@ fn run_reduce[
     @always_inline
     @parameter
     fn reduce_wrapper[
-        type: DType, width: Int, reduction_idx: Int
-    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+        dtype: DType, width: Int, reduction_idx: Int
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         constrained[reduction_idx < num_reductions, "invalid reduction idx"]()
 
-        return reduce_fn[type, width](lhs, rhs)
+        return reduce_fn[dtype, width](lhs, rhs)
 
     @__copy_capture(input_buf_device)
     @parameter
     fn input_fn[
-        type: DType,
+        dtype: DType,
         width: Int,
         _rank: Int,
-    ](coords: IndexList[_rank]) -> SIMD[type, width]:
-        return rebind[SIMD[type, width]](
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        return rebind[SIMD[dtype, width]](
             input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
         )
 
     @__copy_capture(output_buf_device)
     @parameter
     fn output_fn[
-        _type: DType, width: Int, _rank: Int
+        _dtype: DType, width: Int, _rank: Int
     ](
         coords: IndexList[_rank],
-        val: StaticTuple[SIMD[_type, width], num_reductions],
+        val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
         output_buf_device[rebind[IndexList[rank]](coords)] = rebind[
-            Scalar[type]
+            Scalar[dtype]
         ](val[0])
 
     @__copy_capture(axis)
@@ -110,13 +110,13 @@ fn run_reduce[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             reduce_launch[
-                num_reductions, input_fn, output_fn, reduce_wrapper, rank, type
+                num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
             ](shape, axis, init, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
-        BenchId("reduce", input_id=String(type, "/shape=", shape)),
+        BenchId("reduce", input_id=String(dtype, "/shape=", shape)),
         ThroughputMeasure(BenchMetric.elements, in_size),
     )
 
@@ -135,9 +135,9 @@ fn run_reduce[
 
 @parameter
 fn reduce_add[
-    type: DType,
+    dtype: DType,
     width: Int,
-](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
+](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x + y
 
 

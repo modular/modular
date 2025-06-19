@@ -19,8 +19,8 @@ from testing import assert_true
 
 
 fn do_prefetch[
-    type: DType, *, offset: Int = 0
-](addr: UnsafePointer[Scalar[type]]):
+    dtype: DType, *, offset: Int = 0
+](addr: UnsafePointer[Scalar[dtype]]):
     prefetch(addr + offset)
 
 

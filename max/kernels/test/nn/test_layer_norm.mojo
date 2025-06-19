@@ -22,38 +22,38 @@ from utils.index import Index, IndexList
 
 
 fn run_layer_norm_cpu[
-    type: DType, rank: Int
+    dtype: DType, rank: Int
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var gamma_ptr = UnsafePointer[Scalar[type]].alloc(cols)
-    var beta_ptr = UnsafePointer[Scalar[type]].alloc(cols)
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var gamma_ptr = UnsafePointer[Scalar[dtype]].alloc(cols)
+    var beta_ptr = UnsafePointer[Scalar[dtype]].alloc(cols)
 
     for i in range(rows * cols):
-        var val = Scalar[type](i)
+        var val = Scalar[dtype](i)
         input_ptr[i] = val
 
     for i in range(cols):
-        gamma_ptr[i] = ((i + cols) / cols).cast[type]()
-        beta_ptr[i] = (i / cols).cast[type]()
+        gamma_ptr[i] = ((i + cols) / cols).cast[dtype]()
+        beta_ptr[i] = (i / cols).cast[dtype]()
 
     var param_shape = IndexList[1](cols)
 
-    var input_buf = NDBuffer[type, rank](input_ptr, shape)
-    var output_buf = NDBuffer[type, rank](output_ptr, shape)
-    var gamma = NDBuffer[type, 1](gamma_ptr, param_shape)
-    var beta = NDBuffer[type, 1](beta_ptr, param_shape)
-    var epsilon = Scalar[type](0.0001)
+    var input_buf = NDBuffer[dtype, rank](input_ptr, shape)
+    var output_buf = NDBuffer[dtype, rank](output_ptr, shape)
+    var gamma = NDBuffer[dtype, 1](gamma_ptr, param_shape)
+    var beta = NDBuffer[dtype, 1](beta_ptr, param_shape)
+    var epsilon = Scalar[dtype](0.0001)
 
     @__copy_capture(input_buf)
     @always_inline
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
         return input_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @__copy_capture(gamma)
@@ -61,13 +61,13 @@ fn run_layer_norm_cpu[
     @parameter
     fn gamma_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return gamma.load[width=width](idx[0])
 
     layer_norm_cpu[input_fn, gamma_fn](shape, beta, epsilon, output_buf)
 
     for r in range(rows):
-        var vec = NDBuffer[type, 1](input_ptr + r * cols, cols)
+        var vec = NDBuffer[dtype, 1](input_ptr + r * cols, cols)
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
         var norm_factor_ref = isqrt(var_ref + epsilon)

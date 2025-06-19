@@ -31,9 +31,9 @@ from ._utils import HostNDBuffer, TestTensor
 
 @always_inline
 fn assert_almost_equal[
-    type: DType, //,
+    dtype: DType, //,
 ](
-    x: UnsafePointer[Scalar[type]],
+    x: UnsafePointer[Scalar[dtype]],
     y: __type_of(x),
     num_elements: Int,
     msg: String = "",
@@ -183,12 +183,12 @@ fn assert_equal(
 
 @always_inline
 fn _assert_with_measure_impl[
-    type: DType, //,
-    measure: fn[type: DType] (
-        UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
+    dtype: DType, //,
+    measure: fn[dtype: DType] (
+        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[type], **_],
+    x: UnsafePointer[Scalar[dtype], **_],
     y: __type_of(x),
     n: Int,
     msg: String = "",
@@ -196,7 +196,7 @@ fn _assert_with_measure_impl[
     location: OptionalReg[_SourceLocation] = None,
     threshold: OptionalReg[Float64] = None,
 ) raises:
-    alias sqrt_eps = exp2(-0.5 * FPUtils[type].mantissa_width()).cast[
+    alias sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
         DType.float64
     ]()
     var m = measure(
@@ -216,8 +216,8 @@ fn _assert_with_measure_impl[
 
 @always_inline
 fn assert_with_measure[
-    measure: fn[type: DType] (
-        UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
+    measure: fn[dtype: DType] (
+        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
     ) -> Float64,
 ](
     x: NDBuffer,
@@ -239,8 +239,8 @@ fn assert_with_measure[
 
 @always_inline
 fn assert_with_measure[
-    measure: fn[type: DType] (
-        UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
+    measure: fn[dtype: DType] (
+        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
     ) -> Float64,
 ](
     x: HostNDBuffer,
@@ -262,8 +262,8 @@ fn assert_with_measure[
 
 @always_inline
 fn assert_with_measure[
-    measure: fn[type: DType] (
-        UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
+    measure: fn[dtype: DType] (
+        UnsafePointer[Scalar[dtype]], UnsafePointer[Scalar[dtype]], Int
     ) -> Float64,
 ](
     x: TestTensor,

@@ -102,7 +102,7 @@ fn mha_sm90_dispatch[
     v_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     output_type: DType,
     max_prompt_len_t: OptionallyStaticInt,
     partition_t: MHAPartitionScheme, //,
@@ -113,7 +113,7 @@ fn mha_sm90_dispatch[
     _is_cache_length_accurate: Bool,
 ](
     output: UnsafePointer[Scalar[output_type]],
-    q: UnsafePointer[Scalar[type]],
+    q: UnsafePointer[Scalar[dtype]],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -131,7 +131,7 @@ fn mha_sm90_dispatch[
 ) raises:
     alias decoding: Bool = max_prompt_len_t.static_value.or_else(0) == 1
     alias new_config = MHAConfig(
-        config.type,
+        config.dtype,
         config.num_heads,
         config.depth,
         OptionalReg[UInt](64),
@@ -183,7 +183,7 @@ fn mha_sm90_dispatch[
             scheduler_tile_shape, num_scheduler_heads
         ]
         alias kernel_sm90 = _mha_sm90[
-            new_config.type,
+            new_config.dtype,
             k_t,
             v_t,
             output_type,
@@ -298,7 +298,7 @@ fn mha_sm90_dispatch[
             scheduler_tile_shape, num_scheduler_heads
         ]
         alias kernel_sm90 = _mha_sm90[
-            new_config.type,
+            new_config.dtype,
             k_t,
             v_t,
             output_type,
@@ -415,7 +415,7 @@ fn mha_sm90_dispatch[
             scheduler_tile_shape, num_scheduler_heads, decoding=decoding
         ]
         alias kernel_sm90 = _mha_sm90[
-            new_config.type,
+            new_config.dtype,
             k_t,
             v_t,
             output_type,
@@ -845,7 +845,7 @@ fn _produce[
     ],
     kv: kv_t,
     smem_iter: LayoutTensorIter[
-        kv_t.type,
+        kv_t.dtype,
         smem_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -882,7 +882,7 @@ fn _produce[
     @always_inline
     fn copy_gmem_to_smem[masked: Bool]():
         gmem_block = LayoutTensor[
-            kv_t.type,
+            kv_t.dtype,
             kv_gmem_layout,
             MutableAnyOrigin,
             layout_int_type = DType.int32,
@@ -1170,8 +1170,8 @@ fn _mha_sm90[
       TODO: use more optimized kernels for them
 
     """
-    alias k_type = k_t.type
-    alias v_type = v_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
     alias decoding: Bool = _is_decoding[max_seq_len_t]()
 

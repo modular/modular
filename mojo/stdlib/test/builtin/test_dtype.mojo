@@ -100,12 +100,12 @@ def test_from_str():
 
 
 def test_get_dtype():
-    def _test[D: DType]():
-        assert_equal(DType.get_dtype[Scalar[D]](), D)
+    def _test[dtype: DType]():
+        assert_equal(DType.get_dtype[Scalar[dtype]](), dtype)
 
         @parameter
         for i in range(6):
-            assert_equal(DType.get_dtype[SIMD[D, 2**i], 2**i](), D)
+            assert_equal(DType.get_dtype[SIMD[dtype, 2**i], 2**i](), dtype)
 
     _test[DType.int8]()
     _test[DType.int16]()

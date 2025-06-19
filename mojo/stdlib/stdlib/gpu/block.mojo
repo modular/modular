@@ -50,15 +50,15 @@ from .warp import sum as warp_sum
 
 @always_inline
 fn _block_reduce[
-    type: DType,
+    dtype: DType,
     width: Int, //,
     block_size: Int,
     warp_reduce_fn: fn[dtype: DType, width: Int] (
         SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
     broadcast: Bool = False,
-](val: SIMD[type, width], *, initial_val: SIMD[type, width]) -> SIMD[
-    type, width
+](val: SIMD[dtype, width], *, initial_val: SIMD[dtype, width]) -> SIMD[
+    dtype, width
 ]:
     """Performs a generic block-level reduction operation.
 
@@ -67,7 +67,7 @@ fn _block_reduce[
     participate to compute the final reduced value.
 
     Parameters:
-        type: The data type of the SIMD elements.
+        dtype: The data type of the SIMD elements.
         width: The SIMD width for vector operations.
         block_size: The number of threads in the block.
         warp_reduce_fn: A function that performs warp-level reduction.
@@ -109,7 +109,7 @@ fn _block_reduce[
         return warp_result
 
     var shared_mem = stack_allocation[
-        n_warps * width, type, address_space = AddressSpace.SHARED
+        n_warps * width, dtype, address_space = AddressSpace.SHARED
     ]()
 
     # Step 1: Perform warp-level reduction.
@@ -151,15 +151,15 @@ fn _block_reduce[
 
 @always_inline
 fn sum[
-    type: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the sum of values across all threads in a block.
 
     Performs a parallel reduction using warp-level operations and shared memory
     to find the global sum across all threads in the block.
 
     Parameters:
-        type: The data type of the SIMD elements.
+        dtype: The data type of the SIMD elements.
         width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
         broadcast: If True, the final sum is broadcast to all threads in the
@@ -192,15 +192,15 @@ fn sum[
 
 @always_inline
 fn max[
-    type: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the maximum value across all threads in a block.
 
     Performs a parallel reduction using warp-level operations and shared memory
     to find the global maximum across all threads in the block.
 
     Parameters:
-        type: The data type of the SIMD elements.
+        dtype: The data type of the SIMD elements.
         width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
         broadcast: If True, the final reduced value is broadcast to all
@@ -224,7 +224,7 @@ fn max[
         return warp_max(x)
 
     return _block_reduce[block_size, _warp_max, broadcast=broadcast](
-        val, initial_val=Scalar[type].MIN_FINITE
+        val, initial_val=Scalar[dtype].MIN_FINITE
     )
 
 
@@ -235,15 +235,15 @@ fn max[
 
 @always_inline
 fn min[
-    type: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
-](val: SIMD[type, width]) -> SIMD[type, width]:
+    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum value across all threads in a block.
 
     Performs a parallel reduction using warp-level operations and shared memory
     to find the global minimum across all threads in the block.
 
     Parameters:
-        type: The data type of the SIMD elements.
+        dtype: The data type of the SIMD elements.
         width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
         broadcast: If True, the final minimum is broadcast to all threads in the
@@ -266,7 +266,7 @@ fn min[
         return warp_min(x)
 
     return _block_reduce[block_size, _warp_min, broadcast=broadcast](
-        val, initial_val=Scalar[type].MAX_FINITE
+        val, initial_val=Scalar[dtype].MAX_FINITE
     )
 
 
@@ -277,8 +277,8 @@ fn min[
 
 @always_inline
 fn broadcast[
-    type: DType, width: Int, //, *, block_size: Int
-](val: SIMD[type, width], src_thread: UInt = 0) -> SIMD[type, width]:
+    dtype: DType, width: Int, //, *, block_size: Int
+](val: SIMD[dtype, width], src_thread: UInt = 0) -> SIMD[dtype, width]:
     """Broadcasts a value from a source thread to all threads in a block.
 
     This function takes a SIMD value from the specified source thread and
@@ -286,7 +286,7 @@ fn broadcast[
     the value across the entire block.
 
     Parameters:
-        type: The data type of the SIMD elements.
+        dtype: The data type of the SIMD elements.
         width: The number of elements in each SIMD vector.
         block_size: The total number of threads in the block.
 
@@ -300,7 +300,7 @@ fn broadcast[
     """
     # Allocate shared memory for broadcasting
     var shared_mem = stack_allocation[
-        width, type, address_space = AddressSpace.SHARED
+        width, dtype, address_space = AddressSpace.SHARED
     ]()
 
     # Source thread writes its value to shared memory
@@ -320,11 +320,11 @@ fn broadcast[
 
 @always_inline
 fn prefix_sum[
-    type: DType, //,
+    dtype: DType, //,
     *,
     block_size: Int,
     exclusive: Bool = False,
-](val: Scalar[type]) -> Scalar[type]:
+](val: Scalar[dtype]) -> Scalar[dtype]:
     """Performs a prefix sum (scan) operation across all threads in a block.
 
     This function implements a block-level inclusive or exclusive scan,
@@ -332,7 +332,7 @@ fn prefix_sum[
     thread indices.
 
     Parameters:
-        type: The data type of the Scalar elements.
+        dtype: The data type of the Scalar elements.
         block_size: The total number of threads in the block.
         exclusive: If True, perform exclusive scan instead of inclusive.
 
@@ -352,7 +352,7 @@ fn prefix_sum[
     # We need one slot per warp to store warp-level scan results
     alias n_warps = block_size // WARP_SIZE
     var warp_mem = stack_allocation[
-        align_up(n_warps, WARP_SIZE), type, address_space = AddressSpace.SHARED
+        align_up(n_warps, WARP_SIZE), dtype, address_space = AddressSpace.SHARED
     ]()
 
     var thread_result = warp_prefix_sum[exclusive=exclusive](val)
@@ -360,7 +360,7 @@ fn prefix_sum[
     # Step 2: Store last value from each warp to shared memory
     var wid = warp_id()
     if lane_id() == WARP_SIZE - 1:
-        var inclusive_warp_sum: Scalar[type] = thread_result
+        var inclusive_warp_sum: Scalar[dtype] = thread_result
 
         @parameter
         if exclusive:

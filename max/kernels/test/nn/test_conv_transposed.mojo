@@ -36,7 +36,7 @@ from nn.conv_utils import (
 from utils.index import Index, IndexList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
-alias type = DType.float32
+alias dtype = DType.float32
 
 
 @always_inline
@@ -95,7 +95,7 @@ fn append_shape_5d[
 
 
 fn test_conv_transposed[
-    type: DType, rank: Int
+    dtype: DType, rank: Int
 ](
     N: Int,
     input_dims: IndexList[rank],
@@ -154,16 +154,16 @@ fn test_conv_transposed[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(input_size)
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
     rand(input_ptr, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = UnsafePointer[Scalar[type]].alloc(filter_size)
+    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
     rand(filter_ptr, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(output_size)
+    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
 
     # Find the tile size used in packing.
     alias micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -175,40 +175,40 @@ fn test_conv_transposed[
 
     # Input buffer.
     var input_shape = extend_shape(input_dims, N, C)
-    var input = NDBuffer[type, rank + 2](input_ptr, input_shape)
-    var input_ref = NDBuffer[type, 5](
+    var input = NDBuffer[dtype, rank + 2](input_ptr, input_shape)
+    var input_ref = NDBuffer[dtype, 5](
         input_ptr, extend_shape_5d(input_dims, N, C)
     )
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, F, C_per_group)
-    var filter = NDBuffer[type, rank + 2](filter_ptr, filter_shape)
-    var filter_ref = NDBuffer[type, 5](
+    var filter = NDBuffer[dtype, rank + 2](filter_ptr, filter_shape)
+    var filter_ref = NDBuffer[dtype, 5](
         filter_ptr, append_shape_5d(filter_dims, F, C_per_group)
     )
 
     var packed_filter_shape = pack_filter_shape(filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[type]].alloc(
+    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[type, rank + 3](
+    var packed_filter = NDBuffer[dtype, rank + 3](
         packed_filter_ptr, rebind[IndexList[rank + 3]](packed_filter_shape)
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = NDBuffer[type, rank + 2](output_ptr, output_shape)
-    var output_ref = NDBuffer[type, 5](
+    var output = NDBuffer[dtype, rank + 2](output_ptr, output_shape)
+    var output_ref = NDBuffer[dtype, 5](
         output_ref_ptr, extend_shape_5d(output_dims, N, F)
     )
 
     # Bias for epilogue
-    var bias_ptr = UnsafePointer[Scalar[type]].alloc(F)
+    var bias_ptr = UnsafePointer[Scalar[dtype]].alloc(F)
     rand(bias_ptr, F)
 
     pack_filter(filter, packed_filter, num_groups)
 
     # Reference.
-    conv_transpose_naive[type](
+    conv_transpose_naive[dtype](
         output_ref,
         input_ref,
         filter_ref,
@@ -276,9 +276,9 @@ fn test_conv_transposed[
         DimList.create_unknown[rank + 2](),  # input shape
         DimList.create_unknown[rank + 3](),  # filter shape
         DimList.create_unknown[rank + 2](),  # output shape
-        type,  # input
-        type,  # filter
-        type,  # output
+        dtype,  # input
+        dtype,  # filter
+        dtype,  # output
         conv_attr,
         epilogue,
     ].run(

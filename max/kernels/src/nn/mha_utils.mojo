@@ -103,9 +103,9 @@ alias is_sm90or100 = is_sm90 or is_sm100
 @fieldwise_init
 @register_passable("trivial")
 struct MHAConfig(Copyable, Movable, Writable):
-    var type: DType
+    var dtype: DType
 
-    # Q, K, V, output should have the same type.
+    # Q, K, V, output should have the same dtype.
     var num_heads: UInt
     var depth: UInt
     var num_queries_per_block: UInt
@@ -202,7 +202,7 @@ struct MHAConfig(Copyable, Movable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = self.type.sizeof() * num_smem_elements
+        num_smem_bytes = self.dtype.sizeof() * num_smem_elements
         if sm_90_fa3:
             alias persistent = env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
             num_smem_bytes += (4 * self.num_pipeline_stages + 4) * sizeof[
@@ -212,7 +212,7 @@ struct MHAConfig(Copyable, Movable, Writable):
 
     fn __init__(
         out self,
-        type: DType,
+        dtype: DType,
         num_heads: UInt,
         depth: UInt,
         num_queries_per_block: OptionalReg[UInt] = None,
@@ -224,7 +224,7 @@ struct MHAConfig(Copyable, Movable, Writable):
         k_group_size: UInt = 1,
         algorithm: FlashAttentionAlgorithm = FlashAttentionAlgorithm(),
     ):
-        self.type = type
+        self.dtype = dtype
         self.num_heads = num_heads
         self.depth = depth
         self.num_pipeline_stages = num_pipeline_stages
@@ -235,7 +235,7 @@ struct MHAConfig(Copyable, Movable, Writable):
         # BN
         self.num_keys_per_block = num_keys_per_block.or_else(depth)
 
-        if is_sm90or100 and type.is_half_float():
+        if is_sm90or100 and dtype.is_half_float():
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 128 if algorithm == 3 else 64
@@ -244,19 +244,19 @@ struct MHAConfig(Copyable, Movable, Writable):
         else:
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
-                32 if type
+                32 if dtype
                 is DType.float32 else (128 if has_amd_gpu_accelerator() else 64)
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
-            var bk_type_factor = 1 if type is DType.float32 else 2
+            var bk_type_factor = 1 if dtype is DType.float32 else 2
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
             ) if has_nvidia_gpu_accelerator() else 32
         self.WM = WM.or_else(
-            32 if type
+            32 if dtype
             is DType.float32 else (32 if has_amd_gpu_accelerator() else 16)
         )
-        self.WN = WN.or_else(32 if type is DType.float32 else depth)
+        self.WN = WN.or_else(32 if dtype is DType.float32 else depth)
         self.algorithm = algorithm
 
     fn __str__(self) -> String:
@@ -264,7 +264,7 @@ struct MHAConfig(Copyable, Movable, Writable):
 
     fn write_to[W: Writer](self, mut writer: W):
         writer.write("ampere_")
-        writer.write(self.type, "_")
+        writer.write(self.dtype, "_")
         # Use BNxBM to match MatmulConfig, which matches cublas
         writer.write(self.block_n(), "x", self.block_m(), "_")
         writer.write(self.block_k(), "x")
@@ -273,18 +273,18 @@ struct MHAConfig(Copyable, Movable, Writable):
 
 @always_inline
 fn _kernel_mask[
-    type: DType, width: Int
+    dtype: DType, width: Int
 ](
-    coord: IndexList[2, **_], bound: IndexList[2, **_], vec: SIMD[type, width]
-) -> SIMD[type, width]:
-    var masked_vec = SIMD[type, width]()
+    coord: IndexList[2, **_], bound: IndexList[2, **_], vec: SIMD[dtype, width]
+) -> SIMD[dtype, width]:
+    var masked_vec = SIMD[dtype, width]()
 
     # TODO: use `select` to see if it generates the same code.
     @parameter
     for i in range(width):
         masked_vec[i] = (
             vec[i] if coord[0] < bound[0]
-            and coord[1] + UInt32(i) < bound[1] else min_or_neg_inf[type]()
+            and coord[1] + UInt32(i) < bound[1] else min_or_neg_inf[dtype]()
         )
 
     return masked_vec
@@ -301,16 +301,16 @@ fn _copy_frag_to_smem_nvidia[
     MMA_N: UInt,
     frag_simd_width: UInt,
     *,
-    type0: DType,
+    dtype0: DType,
     layout0: Layout,
-    type1: DType,
+    dtype1: DType,
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, **_
+        dtype0, layout0, address_space = AddressSpace.SHARED, **_
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        dtype1, layout1, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -330,7 +330,7 @@ fn _copy_frag_to_smem_nvidia[
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
-        p_smem_iter.type,
+        p_smem_iter.dtype,
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
@@ -374,7 +374,9 @@ fn _copy_frag_to_smem_nvidia[
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     Int((offset_BMxBN % BN) // BK)
                 )[]
-                alias align = alignof[SIMD[p_smem_iter.type, frag_simd_width]]()
+                alias align = alignof[
+                    SIMD[p_smem_iter.dtype, frag_simd_width]
+                ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
 
 
@@ -389,16 +391,16 @@ fn _copy_frag_to_smem_amd[
     MMA_N: UInt,
     frag_simd_width: UInt,
     *,
-    type0: DType,
+    dtype0: DType,
     layout0: Layout,
-    type1: DType,
+    dtype1: DType,
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, **_
+        dtype0, layout0, address_space = AddressSpace.SHARED, **_
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        dtype1, layout1, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -415,7 +417,7 @@ fn _copy_frag_to_smem_amd[
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
-        p_smem_iter.type,
+        p_smem_iter.dtype,
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
@@ -464,16 +466,16 @@ fn _copy_frag_to_smem[
     MMA_N: UInt,
     frag_simd_width: UInt,
     *,
-    type0: DType,
+    dtype0: DType,
     layout0: Layout,
-    type1: DType,
+    dtype1: DType,
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED, **_
+        dtype0, layout0, address_space = AddressSpace.SHARED, **_
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        dtype1, layout1, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -547,7 +549,7 @@ fn dispatch_mask_and_score_mod[
 
         return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
 
-    # TODO: attach string constants to mask types themselves.
+    # TODO: attach string constants to mask dtypes themselves.
     @parameter
     if MaskName.CAUSAL == mask_type:
         return outer_wrapper(CausalMask())
@@ -572,7 +574,7 @@ fn dispatch_mask_and_score_mod[
         ]()
         return outer_wrapper(ChunkedCausalMask[local_window_size]())
     else:
-        constrained[False, "Unsupported mask type: " + mask_type]()
+        constrained[False, "Unsupported mask dtype: " + mask_type]()
 
 
 @always_inline
@@ -617,7 +619,7 @@ fn _dispatch_score_mod[
     elif score_mod_type == IdentityScoreMod.name_str:
         return wrapper(IdentityScoreMod())
     else:
-        constrained[False, "Unsupported score mod type: " + score_mod_type]()
+        constrained[False, "Unsupported score mod dtype: " + score_mod_type]()
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`

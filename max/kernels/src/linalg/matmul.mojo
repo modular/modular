@@ -77,16 +77,16 @@ trait InnerMatmulKernel(Copyable):
 
 fn elementwise_epilogue_c_tile[
     simd_width: Int,
-    type: DType,
+    dtype: DType,
     origin: MutableOrigin,
     c_shape: DimList,
-    func: fn[type: DType, width: Int, *, alignment: Int = 1] (
-        IndexList[2], SIMD[type, width]
+    func: fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+        IndexList[2], SIMD[dtype, width]
     ) capturing [_] -> None,
 ](
     offset: GemmShape,
     tile_len: GemmShape,
-    c: NDBuffer[type, 2, origin, c_shape],
+    c: NDBuffer[dtype, 2, origin, c_shape],
 ):
     @always_inline
     @parameter
@@ -96,7 +96,7 @@ fn elementwise_epilogue_c_tile[
             var m_coord = idx_m + offset.M
             var c_coord = Index(m_coord, n_coord)
             var c_val = c.load[width=col_chunk_size](c_coord)
-            func[type, col_chunk_size](c_coord, c_val)
+            func[dtype, col_chunk_size](c_coord, c_val)
 
     vectorize[activation_on_col_chunk, simd_width](tile_len.N)
 
@@ -463,20 +463,20 @@ fn _small_matmul[
         @parameter
         @always_inline
         fn last_update[
-            _type: DType, width: Int
-        ](coords: IndexList[2], val: SIMD[_type, width]):
+            _dtype: DType, width: Int
+        ](coords: IndexList[2], val: SIMD[_dtype, width]):
             @parameter
             if epilogue_wrapper:
                 alias func = epilogue_wrapper.value()
-                func[_type, width](coords, val)
+                func[_dtype, width](coords, val)
             else:
                 c.store[width=width](coords, rebind[SIMD[c.type, width]](val))
 
         @always_inline
         @parameter
         fn accum_out_row[
-            output_func: fn[type: DType, width: Int] (
-                IndexList[2], SIMD[type, width]
+            output_func: fn[dtype: DType, width: Int] (
+                IndexList[2], SIMD[dtype, width]
             ) capturing [_] -> None,
         ](m: Int, k: Int):
             var a_val = a[m, k].cast[c.type]()

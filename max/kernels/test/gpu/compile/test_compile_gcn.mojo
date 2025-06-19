@@ -41,7 +41,7 @@ fn kernel_laneid(x: UnsafePointer[Int]):
     x[0] = lane_id()
 
 
-fn kernel_exp[type: DType](x: UnsafePointer[Scalar[type]]):
+fn kernel_exp[dtype: DType](x: UnsafePointer[Scalar[dtype]]):
     x[0] = exp(x[0])
 
 
@@ -74,17 +74,17 @@ fn kernel_shuffle_idx(x: UnsafePointer[UInt32]):
 
 
 fn kernel_cast[
-    type: DType, target: DType
-](x: UnsafePointer[Scalar[type]], y: UnsafePointer[Scalar[target]]):
+    dtype: DType, target: DType
+](x: UnsafePointer[Scalar[dtype]], y: UnsafePointer[Scalar[target]]):
     y[0] = x[0].cast[target]()
 
 
 fn kernel_atomic[
-    type: DType, memory: Bool = True
+    dtype: DType, memory: Bool = True
 ](
-    output: UnsafePointer[Scalar[type]],
-    ptr: UnsafePointer[Scalar[type]],
-    val: Scalar[type],
+    output: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype]],
+    val: Scalar[dtype],
 ):
     output[] = ptr[]
     store_release[memory=memory](ptr, val)

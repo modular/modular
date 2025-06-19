@@ -24,13 +24,13 @@ from utils import IndexList
 
 @always_inline
 fn allgather[
-    type: DType,
+    dtype: DType,
     rank: Int,
     ngpus: Int, //,
 ](
-    input_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
     output_buffers: InlineArray[
-        NDBuffer[type, rank, MutableAnyOrigin], ngpus * ngpus
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
     ],
     ctxs: List[DeviceContext],
 ) raises:
@@ -40,7 +40,7 @@ fn allgather[
     Each device receives individual copies of all input buffers.
 
     Parameters:
-        type: DType - The data type of tensor elements.
+        dtype: DType - The data type of tensor elements.
         rank: Int - Number of dimensions in input tensors.
         ngpus: Int - Number of GPUs participating in all-gather.
 
@@ -52,7 +52,7 @@ fn allgather[
         ctxs: List of device contexts for participating GPUs.
     """
 
-    var device_buffers = List[DeviceBuffer[type]](capacity=ngpus)
+    var device_buffers = List[DeviceBuffer[dtype]](capacity=ngpus)
 
     # Assemble input buffers from all devices.
     for device_idx in range(ngpus):
