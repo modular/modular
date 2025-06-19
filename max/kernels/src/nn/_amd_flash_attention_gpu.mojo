@@ -181,22 +181,15 @@ fn tensor_core_mma[
 
 
 @always_inline
-fn fast_cast[out_type: DType](x: SIMD, out res: SIMD[out_type, x.size]):
+fn fast_cast[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
     # this is a workaround compiler, we should probably do this in the compiler via a flag
     alias truncate = False
 
     @parameter
     if truncate:
-        var out = __type_of(res)()
-
-        @parameter
-        for i in range(x.size):
-            out[i] = __type_of(res[i]).from_bits(
-                (bitcast[DType.int32](x[i].to_bits() >> 16)).cast[DType.int16]()
-            )
-        res = out
+        res = __type_of(res).from_bits((x.to_bits() >> 16).cast[DType.uint16]())
     else:
-        res = x.cast[out_type]()
+        res = x.cast[dtype]()
 
 
 @always_inline
