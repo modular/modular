@@ -34,6 +34,7 @@ modular_py_test(
         requirement("sseclient-py"),
         requirement("torch"),
         requirement("transformers"),
+        requirement("pillow"),
         requirement("pyzmq"),
     ],
 )
