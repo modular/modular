@@ -684,6 +684,30 @@ fn _is_amd_mi355x() -> Bool:
 
 
 @always_inline("nodebug")
+fn _cnda_version() -> Int:
+    constrained[
+        _is_amd_mi300x() or _is_amd_mi355x(),
+        "querying the cdna version is only supported on AMD hardware",
+    ]()
+
+    @parameter
+    if _is_amd_mi300x():
+        return 3
+    else:
+        return 4
+
+
+@always_inline("nodebug")
+fn _cnda_3_or_newer() -> Bool:
+    return _cnda_version() >= 3
+
+
+@always_inline("nodebug")
+fn _cnda_4_or_newer() -> Bool:
+    return _cnda_version() >= 4
+
+
+@always_inline("nodebug")
 fn _is_amd_cdna() -> Bool:
     return _is_amd_mi300x() or _is_amd_mi355x()
 
