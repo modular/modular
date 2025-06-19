@@ -65,6 +65,36 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "tests_gpu_hf",
+    size = "enormous",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_file_uri.py",
+    ],
+    exec_properties = {
+        # Ensure the test has at least 8GB of GPU memory available.
+        "resources:gpu-memory": "8",
+    },
+    gpu_constraints = [
+        "//:has_gpu",
+    ],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/nn",
+        "//SDK/lib/API/python/max/pipelines",
+        requirement("async-asgi-testclient"),
+        requirement("pillow"),
+        requirement("sse-starlette"),
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
     name = "tests_gpu",
     size = "enormous",
     srcs = [

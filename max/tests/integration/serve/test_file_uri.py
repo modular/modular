@@ -1,0 +1,147 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+"""Integration test for file URI support in chat completions."""
+
+import os
+import tempfile
+from io import BytesIO
+
+import pytest
+from async_asgi_testclient import TestClient
+from max.driver import DeviceSpec
+from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines import PipelineConfig, SupportedEncoding
+from PIL import Image
+
+pipeline_config = PipelineConfig(
+    model_path="OpenGVLab/InternVL3-1B-Instruct",
+    max_length=512,
+    max_new_tokens=3,
+    device_specs=[DeviceSpec.accelerator()],
+    quantization_encoding=SupportedEncoding.bfloat16,
+    cache_strategy=KVCacheStrategy.PAGED,
+    max_batch_size=1,
+    trust_remote_code=True,
+)
+
+
+def create_test_image_bytes() -> bytes:
+    """Create a minimal test image and return it as JPEG bytes."""
+    # Create a simple 10x10 red image
+    img = Image.new("RGB", (10, 10), color="red")
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_config",
+    [pipeline_config],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "settings_config",
+    [
+        {
+            "MAX_SERVE_USE_HEARTBEAT": True,
+            "MAX_SERVE_ALLOWED_IMAGE_ROOTS": ["/tmp"],
+        }
+    ],
+    indirect=True,
+)
+async def test_chat_completion_with_file_uri(app, tmp_path):
+    """Test chat completion with file:// URI for images."""
+    # Create a valid test image file in /tmp (which is in allowed roots)
+    image_path = tmp_path / "test_image.jpg"
+    image_path.write_bytes(create_test_image_bytes())
+
+    async with TestClient(app, timeout=720.0) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "OpenGVLab/InternVL3-1B-Instruct",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "What's in this image?"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"file://{image_path}"},
+                            },
+                        ],
+                    }
+                ],
+                "stream": False,
+            },
+        )
+
+        # Should succeed with 200 OK.
+        assert response.status_code == 200
+        result = response.json()
+        assert "choices" in result
+        assert len(result["choices"]) > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_config",
+    [pipeline_config],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "settings_config",
+    [
+        {
+            "MAX_SERVE_USE_HEARTBEAT": True,
+            "MAX_SERVE_ALLOWED_IMAGE_ROOTS": [],  # No allowed roots
+        }
+    ],
+    indirect=True,
+)
+async def test_file_uri_security_check(app, tmp_path):
+    """Test that file URIs are rejected when no roots are allowed."""
+    # Create a valid test image file
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+        f.write(create_test_image_bytes())
+        outside_path = f.name
+
+    try:
+        async with TestClient(app, timeout=60.0) as client:
+            response = await client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "OpenGVLab/InternVL3-1B-Instruct",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "What's in this image?",
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"file://{outside_path}"
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    "stream": False,
+                },
+            )
+
+            # Should fail with error
+            assert response.status_code == 400  # ValueError becomes 400
+            error = response.json()
+            # The API returns a generic "Value error." for security reasons
+            assert error["detail"] == "Value error."
+    finally:
+        os.unlink(outside_path)
