@@ -17,6 +17,8 @@ from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
 from max.nn import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
+    LongRoPERotaryEmbedding,
+    LongRoPEScalingParams,
     RotaryEmbedding,
 )
 from max.nn.kernels import fused_qk_ragged_rope
@@ -421,3 +423,211 @@ def test_kv_cache_ragged_rope(session):
         result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)
         assert np.any(result != np.inf)
+
+
+def torch_longrope_freqs_cis(
+    dim: int,
+    theta: float,
+    max_seq_len: int,
+    short_factor: list[float],
+    long_factor: list[float],
+    original_max_position: int,
+):
+    """PyTorch reference implementation of LongRoPE frequency computation with stitched table."""
+    # Compute base inverse frequencies
+    inv_freqs = 1.0 / (
+        theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim)
+    )
+
+    # Apply short scaling factors
+    short_factors_tensor = torch.tensor(
+        short_factor[: len(inv_freqs)], dtype=torch.float32
+    )
+    scaled_inv_freqs_short = inv_freqs / short_factors_tensor
+
+    # Apply long scaling factors
+    long_factors_tensor = torch.tensor(
+        long_factor[: len(inv_freqs)], dtype=torch.float32
+    )
+    scaled_inv_freqs_long = inv_freqs / long_factors_tensor
+
+    # Generate position ids for the "short" part (0 to original_max_position)
+    t_short = torch.arange(original_max_position, dtype=torch.float32)
+
+    # Generate position ids for the "long" part (original_max_position to max_seq_len*2)
+    t_long = torch.arange(
+        original_max_position, max_seq_len * 2.0, dtype=torch.float32
+    )
+
+    # Compute frequencies for both parts
+    freqs_short = torch.outer(t_short, scaled_inv_freqs_short)
+    freqs_long = torch.outer(t_long, scaled_inv_freqs_long)
+
+    # Concatenate the two parts
+    freqs_combined = torch.cat([freqs_short, freqs_long], dim=0)
+
+    # Convert to complex
+    freqs_cis = torch.polar(torch.ones_like(freqs_combined), freqs_combined)
+    return freqs_cis
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        RopeParams(dim=3072, n_heads=32, theta=10000.0),
+        RopeParams(dim=2048, n_heads=16, theta=10000.0),
+    ],
+)
+@pytest.mark.parametrize("dtype", [DType.float32])
+def test_longrope_scaling(session, dtype: DType, params: RopeParams):
+    """Test LongRoPE frequency scaling with different scaling factors for short and long sequences.
+
+    This test verifies that LongRoPE correctly applies frequency scaling parameters:
+    - short_factor: scaling factors for shorter sequences (default 1.0)
+    - long_factor: scaling factors for longer sequences (2x the short factors)
+    - Ensures proper shape and numerical stability of the frequency embeddings
+    - Validates numerical correctness against PyTorch reference implementation
+    """
+    max_seq_len = 131072
+
+    # Create scaling params with long factors being 2x short factors
+    scaling_params = LongRoPEScalingParams(
+        short_factor=[1.0] * (params.head_dim // 2),
+        long_factor=[2.0] * (params.head_dim // 2),
+        original_max_position=4096,
+        max_position_embeddings=max_seq_len,
+    )
+
+    with Graph("longrope_freqs_cis", input_types=[]) as graph:
+        rope = LongRoPERotaryEmbedding(
+            params.dim,
+            params.n_heads,
+            params.theta,
+            max_seq_len,
+            head_dim=params.head_dim,
+            device=DeviceRef.CPU(),
+            scaling_params=scaling_params,
+        )
+        graph.output(rope.freqs_cis)
+        model = session.load(graph)
+
+    result = model.execute()[0].to_numpy()
+
+    # Basic shape and validity checks - enforce flattened 2D shape
+    assert len(result.shape) == 2, (
+        f"Expected 2D tensor, but got shape {result.shape}"
+    )
+    assert result.shape[0] == max_seq_len * 2
+    assert result.shape[1] == params.head_dim
+    assert not np.any(np.isnan(result))
+    assert not np.any(np.isinf(result))
+
+    # Numerical validation against PyTorch reference
+    # Reshape the validated 2D tensor to extract real/imaginary parts
+    d0, d1 = result.shape  # (max_seq_len * 2, head_dim)
+    result = result.reshape(
+        (d0, d1 // 2, 2)
+    )  # (max_seq_len * 2, head_dim // 2, 2)
+
+    result_cis_complex = result[:, :, 0] + 1j * result[:, :, 1]
+    expected = torch_longrope_freqs_cis(
+        params.head_dim,
+        params.theta,
+        max_seq_len,
+        scaling_params.short_factor,
+        scaling_params.long_factor,
+        scaling_params.original_max_position,
+    )
+
+    np.testing.assert_allclose(
+        result_cis_complex,
+        expected,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
+
+    # Test short sequence behavior (should use short_factor)
+    short_max_seq_len = 2048  # Less than original_max_position=4096
+
+    with Graph("longrope_short_seq", input_types=[]) as graph:
+        rope_short = LongRoPERotaryEmbedding(
+            params.dim,
+            params.n_heads,
+            params.theta,
+            short_max_seq_len,
+            head_dim=params.head_dim,
+            device=DeviceRef.CPU(),
+            scaling_params=scaling_params,
+        )
+        graph.output(rope_short.freqs_cis)
+        model_short = session.load(graph)
+
+    result_short = model_short.execute()[0].to_numpy()
+
+    # Validate short sequence uses short_factor
+    if len(result_short.shape) == 2:
+        d0, d1 = result_short.shape
+        result_short = result_short.reshape((d0, d1 // 2, 2))
+
+    result_short_complex = result_short[:, :, 0] + 1j * result_short[:, :, 1]
+    expected_short = torch_longrope_freqs_cis(
+        params.head_dim,
+        params.theta,
+        short_max_seq_len,
+        scaling_params.short_factor,
+        scaling_params.long_factor,
+        scaling_params.original_max_position,
+    )
+
+    np.testing.assert_allclose(
+        result_short_complex,
+        expected_short,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
+
+    # Test without scaling (should behave like standard RoPE)
+    with Graph("longrope_no_scaling", input_types=[]) as graph:
+        rope_no_scale = LongRoPERotaryEmbedding(
+            params.dim,
+            params.n_heads,
+            params.theta,
+            4096,  # smaller max_seq_len
+            head_dim=params.head_dim,
+            device=DeviceRef.CPU(),
+            scaling_params=None,  # No scaling
+        )
+        graph.output(rope_no_scale.freqs_cis)
+        model_no_scale = session.load(graph)
+
+    result_no_scale = model_no_scale.execute()[0].to_numpy()
+
+    # Should behave like standard RoPE when no scaling params
+    assert result_no_scale.shape[0] == 4096 * 2
+    assert result_no_scale.shape[1] == params.head_dim
+
+    # Compare with standard RoPE for validation
+    with Graph("standard_rope", input_types=[]) as graph:
+        rope_standard = RotaryEmbedding(
+            params.dim,
+            params.n_heads,
+            params.theta,
+            4096,
+            head_dim=params.head_dim,
+            device=DeviceRef.CPU(),
+        )
+        graph.output(rope_standard.freqs_cis)
+        model_standard = session.load(graph)
+
+    result_standard = model_standard.execute()[0].to_numpy()
+
+    # LongRoPE without scaling should match standard RoPE
+    np.testing.assert_allclose(
+        result_no_scale,
+        result_standard,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )

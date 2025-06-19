@@ -844,8 +844,8 @@ PIPELINES = {
             pipeline="phi-3.5-mini",
             encoding="bfloat16",
             # TODO(MODELS-458): This model seems broken based on the thresholds
-            cos_dist_threshold=1.2e-1,
-            kl_div_threshold=1.1,
+            cos_dist_threshold=1.5e-2,
+            kl_div_threshold=4.0e-1,
         ),
     ),
     "microsoft/phi-4-bfloat16": PipelineDef(
