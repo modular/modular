@@ -22,9 +22,12 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from json.decoder import JSONDecodeError
+from pathlib import Path
 from time import perf_counter_ns
 from typing import Any, Literal, Optional, Union, cast
+from urllib.parse import unquote, urlparse
 
+import aiofiles
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
@@ -39,6 +42,7 @@ from max.pipelines.core import (
 )
 from max.pipelines.core.interfaces.text_generation import SamplingParams
 from max.profiler import Tracer, traced
+from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
@@ -491,7 +495,9 @@ def openai_parse_chat_completion_request(
     return messages, image_refs
 
 
-async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
+async def resolve_image_from_url(
+    image_ref: AnyUrl, settings: Settings
+) -> bytes:
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         # TODO: Evaluate creating a single AsyncClient for the app.
         async with AsyncClient() as client:
@@ -508,6 +514,67 @@ async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
             "ResolvedImageB64: %s -> %d bytes",
             str(image_ref)[:16],
             len(images_bytes),
+        )
+        return images_bytes
+    elif image_ref.scheme == "file":
+        if settings is None:
+            raise ValueError("Settings required for file URI resolution")
+
+        # Parse the file URI.
+        parsed = urlparse(str(image_ref))
+
+        # Check host - only allow empty or localhost.
+        if parsed.netloc and parsed.netloc not in ("", "localhost"):
+            raise ValueError(
+                f"File URI with remote host '{parsed.netloc}' is not supported"
+            )
+
+        # Extract and decode the path.
+        file_path = Path(unquote(parsed.path))
+
+        # Validate against allowed roots.
+        allowed_roots = [Path(root) for root in settings.allowed_image_roots]
+        if not allowed_roots:
+            raise ValueError(
+                "File URI access denied: no allowed roots configured"
+            )
+
+        # Resolve the path, following symlinks.
+        try:
+            resolved_path = file_path.resolve(strict=True)
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"File not found: {file_path}") from e
+
+        # Check if it's a directory.
+        if resolved_path.is_dir():
+            raise ValueError(f"Path is a directory: {resolved_path}")
+
+        # Check if path is within allowed roots.
+        path_allowed = False
+        for root in allowed_roots:
+            try:
+                resolved_path.relative_to(root)
+                path_allowed = True
+                break
+            except ValueError:
+                continue
+
+        if not path_allowed:
+            raise ValueError(
+                f"Path forbidden: {resolved_path} is outside allowed roots"
+            )
+
+        # Read the file with size limit.
+        max_bytes = settings.max_local_image_bytes
+
+        async with aiofiles.open(resolved_path, "rb") as f:
+            images_bytes = await f.read(max_bytes + 1)
+            if len(images_bytes) > max_bytes:
+                raise ValueError(
+                    f"File exceeds size limit of {max_bytes} bytes"
+                )
+        logger.debug(
+            "ResolvedFileUri: %s -> %d bytes", resolved_path, len(images_bytes)
         )
         return images_bytes
     raise ValueError(f"Invalid image ref '{image_ref}'")
@@ -543,8 +610,9 @@ async def openai_create_chat_completion(
 
         request_images = None
         if request_images_urls:
+            settings: Settings = request.app.state.settings
             resolve_image_tasks = [
-                resolve_image_from_url(image_url)
+                resolve_image_from_url(image_url, settings)
                 for image_url in request_images_urls
             ]
             request_images = await asyncio.gather(*resolve_image_tasks)

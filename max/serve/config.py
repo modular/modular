@@ -118,6 +118,18 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
     )
 
+    # File URI configuration
+    allowed_image_roots: list[str] = Field(
+        description="List of allowed root directories for file:// URI access",
+        default_factory=list,
+        alias="MAX_SERVE_ALLOWED_IMAGE_ROOTS",
+    )
+    max_local_image_bytes: int = Field(
+        description="Maximum size in bytes for local image files accessed via file:// URIs",
+        default=20_000_000,  # 20MB
+        alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
+    )
+
     # Telemetry and logging configuration
     logs_console_level: Union[str, None] = Field(
         default="INFO",

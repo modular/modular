@@ -1,4 +1,5 @@
 accelerate
+aiofiles
 aiohttp
 asgiref
 async-asgi-testclient
