@@ -389,27 +389,68 @@ class KVTransferEngine:
                 )
 
     def get_transfer_status(self, xfer_req_data: XferReqData) -> nixl.Status:
+        """Get the current status of a transfer request.
+
+        This API can only be used by the initiating transfer engine.
+        """
         return self.agent.get_transfer_status(xfer_req_data.xfer_id)
 
-    def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
-        """Wait for a transfer initiated by remote engine to complete."""
-        while (
-            xfer_req_id.xfer_name
-            not in self.completed_xfers[xfer_req_id.src_name]
-        ):
-            notifs = self.agent.get_notifs()
+    def update_completed_xfers(self) -> None:
+        """Update the completed transfers by processing notifications from the agent.
 
-            for remote in notifs:
-                completed_xfer_names = [x.decode() for x in notifs[remote]]
-                self.completed_xfers[remote].update(completed_xfer_names)
+        This method retrieves notifications from the transfer agent and updates
+        the internal completed_xfers tracking for each remote connection.
+        Notifications contain transfer names that have completed, which are
+        decoded from bytes to strings and added to the appropriate remote's
+        completed transfers set.
+        """
+        notifs = self.agent.get_notifs()
 
-        # move data from CPU staging buffer to tensor after xfer
+        for remote in notifs:
+            completed_xfer_names = [x.decode() for x in notifs[remote]]
+            self.completed_xfers[remote].update(completed_xfer_names)
+
+    def is_complete(self, xfer_req_id: XferReqData) -> bool:
+        """Check if a transfer request has completed.
+
+        This method is primarily expected to be used by the receiver of a transfer
+        to check if data has been successfully transferred from the source.
+
+        Args:
+            xfer_req_id: The transfer request data containing transfer metadata.
+
+        Returns:
+            True if the transfer has completed, False otherwise.
+        """
+        return (
+            xfer_req_id.xfer_name in self.completed_xfers[xfer_req_id.src_name]
+        )
+
+    def finalize_transfer(self, xfer_req_id: XferReqData) -> None:
+        """Finalize a completed transfer by copying data from staging buffer and cleaning up.
+
+        Once called, the transfer data is no longer tracked in completed_xfers and thus,
+        is_complete(xfer_req_id) will return False for a recently completed transfer.
+
+        Args:
+            xfer_req_id: The transfer request data containing transfer metadata.
+        """
         if self.cpu_staging_buffer is not None:
             for dst_idx in xfer_req_id.dst_idxs:
                 self.tensor[dst_idx, :].inplace_copy_from(
                     self.cpu_staging_buffer[dst_idx, :]
                 )
             self.cpu_staging_buffer.device.synchronize()
+
+        # Release from completed xfers
+        self.completed_xfers[xfer_req_id.src_name].remove(xfer_req_id.xfer_name)
+
+    def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
+        """Wait for a transfer initiated by remote engine to complete."""
+        while not self.is_complete(xfer_req_id):
+            self.update_completed_xfers()
+
+        self.finalize_transfer(xfer_req_id)
 
     def cleanup(self) -> None:
         """Release all resources associated with the transfer engine.
