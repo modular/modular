@@ -674,6 +674,21 @@ fn _is_amd_rdna() -> Bool:
 
 
 @always_inline("nodebug")
+fn _is_amd_mi300x() -> Bool:
+    return is_amd_gpu["amdgpu:gfx942"]()
+
+
+@always_inline("nodebug")
+fn _is_amd_mi355x() -> Bool:
+    return is_amd_gpu["amdgpu:gfx950"]()
+
+
+@always_inline("nodebug")
+fn _is_amd_cdna() -> Bool:
+    return _is_amd_mi300x() or _is_amd_mi355x()
+
+
+@always_inline("nodebug")
 fn is_amd_gpu() -> Bool:
     """Returns True if the target triple of the compiler is `amdgcn-amd-amdhsa`
     False otherwise.

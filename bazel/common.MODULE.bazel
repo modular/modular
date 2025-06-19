@@ -258,6 +258,7 @@ mojo.gpu_toolchains(
         "l4": "nvidia:89",
         "mi300x": "amdgpu:gfx942",
         "mi325": "amdgpu:gfx942",
+        "mi355": "amdgpu:gfx950",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
     },
