@@ -1006,6 +1006,14 @@ def main(
                 flush=True,
             )
     else:
+        # TODO: Temporarily allow to not specify the org name when running a
+        # pipeline by name. This is because the bisection script does not
+        # currently have access to the org name. Fix this by making the
+        # bisection use the existing json status report.
+        for pipeline_name, pipeline_def in PIPELINES.items():
+            if display_name(pipeline_name) == pipeline:
+                pipeline = pipeline_name
+                break
         if pipeline not in PIPELINES:
             raise click.ClickException(f"Unknown pipeline {pipeline!r}")
         pipeline_def = PIPELINES[pipeline]
