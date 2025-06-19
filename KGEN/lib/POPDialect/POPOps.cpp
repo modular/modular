@@ -627,10 +627,9 @@ LogicalResult GlobalConstantOp::verify() {
 // CallLLVMIntrinsicOp
 //===----------------------------------------------------------------------===//
 static bool getBoolAttrValue(TypedAttr attr, bool defaultValue) {
-  if (attr) {
-    if (auto boolAttr = dyn_cast<BoolAttr>(attr))
-      return boolAttr.getValue();
-  }
+  if (auto boolAttr = dyn_cast_if_present<BoolAttr>(attr))
+    return boolAttr.getValue();
+
   return defaultValue;
 }
 
