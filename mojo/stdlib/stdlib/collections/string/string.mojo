@@ -391,7 +391,11 @@ struct String(
         """
         var length = len(bytes)
         self = Self(unsafe_uninit_length=length)
-        memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
+        memcpy(
+            self.unsafe_ptr_mut[is_unique_mut_ref=True](),
+            bytes.unsafe_ptr(),
+            length,
+        )
 
     @no_inline
     fn __init__[T: Stringable](out self, value: T):
@@ -840,7 +844,7 @@ struct String(
         var rhs_len = len(rhs)
 
         var result = String(unsafe_uninit_length=lhs_len + rhs_len)
-        var result_ptr = result.unsafe_ptr_mut()
+        var result_ptr = result.unsafe_ptr_mut[is_unique_mut_ref=True]()
         memcpy(result_ptr, lhs.unsafe_ptr(), lhs_len)
         memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
         return result^
@@ -1173,18 +1177,28 @@ struct String(
         else:
             return self._ptr_or_data
 
-    fn unsafe_ptr_mut(
-        mut self,
-    ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
+    fn unsafe_ptr_mut[
+        *, is_unique_mut_ref: Bool = False
+    ](mut self) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
         """Retrieves a mutable pointer to the underlying memory, copying to a
         new buffer if this was previously pointing to a static constant.
+
+        Parameters:
+            is_unique_mut_ref: Whether the variable is a unique mutable
+                reference to the `String`.
 
         Returns:
             The pointer to the underlying memory.
         """
-        # If out of line, make sure it is uniquely owned and mutable.
-        if not self._is_inline():
-            self._make_unique_mutable()
+
+        @parameter
+        if is_unique_mut_ref:
+            debug_assert(
+                self._is_unique_mut_ref(),
+                "The string must be a unique mutable reference",
+            )
+        else:  # Make sure it is uniquely owned and mutable.
+            self._make_unique_mut_ref()
         return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
@@ -1793,29 +1807,32 @@ struct String(
             return
         self._realloc_mutable(new_capacity)
 
-    # This is called when the string is known to be indirect. This checks to
-    # make sure the indirect representation is uniquely owned and mutable,
-    # copying if necessary.
-    fn _make_unique_mutable(mut self):
-        debug_assert(not self._is_inline())
-
-        # If already mutable and uniquely owned, we're done.
-        if (
+    @always_inline
+    fn _is_unique_mut_ref(self) -> Bool:
+        return self._capacity_or_data.is_inline() or (
             not self._is_indirect_static_constant()
             and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
-        ):
-            return
+        )
 
-        # Otherwise, copy to a new buffer to ensure mutability.
-        self._realloc_mutable(self.byte_length())
+    @always_inline
+    fn _make_unique_mut_ref(mut self):
+        """This checks to make sure the representation is uniquely owned and
+        mutable, copying if necessary.
+        """
+        if not self._is_unique_mut_ref():
+            # Copy to a new buffer to ensure mutability.
+            self._realloc_mutable(self.byte_length())
 
-    # This is the out-of-line implementation of reserve called when we need
-    # to grow the capacity of the string. Make sure our capacity at least
-    # doubles to avoid O(n^2) behavior, and make use of extra space if it exists.
     @no_inline
     fn _realloc_mutable(mut self, capacity: UInt):
-        # Get these fields before we change _capacity_or_data
-        var len = self.byte_length()
+        """This is the out-of-line implementation of reserve called when we need
+        to grow the capacity of the string. Make sure our capacity at least
+        doubles to avoid O(n^2) behavior, and make use of extra space if it
+        exists.
+        """
+        # Get these fields before we change _capacity_or_data, which can modify
+        # where they are stored.
+        var length = self.byte_length()
         var ptr = self.unsafe_ptr()
         var should_drop_ref = self._has_mutable_buffer()
 
@@ -1825,11 +1842,11 @@ struct String(
             out_of_line_capacity=max(capacity, self.capacity() * 2)
         )
         var new_ptr = _StringOutOfLineHeader.alloc(new_capacity.capacity())
-        memcpy(new_ptr, ptr, len)
+        memcpy(new_ptr, ptr, length)
         if should_drop_ref:
             _StringOutOfLineHeader.get(ptr.origin_cast[mut=True]()).drop_ref()
 
-        self._len_or_data = len
+        self._len_or_data = length
         self._ptr_or_data = new_ptr
         self._capacity_or_data = new_capacity
 
