@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
@@ -30,7 +30,11 @@ from max.nn import (
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
     Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+    LongRoPERotaryEmbedding,
+    LongRoPEScalingParams,
     ReturnLogits,
+    RotaryEmbedding,
 )
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import (
@@ -42,6 +46,53 @@ from max.pipelines.lib import (
     upper_bounded_default,
 )
 from transformers import AutoConfig
+
+
+def create_rope_embedding(
+    hidden_size: int,
+    num_attention_heads: int,
+    rope_theta: float,
+    max_seq_len: int,
+    interleaved_rope_weights: bool,
+    rope_scaling_params: Llama3RopeScalingParams | None,
+    longrope_scaling_params: LongRoPEScalingParams | None,
+    device: DeviceRef,
+) -> RotaryEmbedding:
+    """Create appropriate RoPE embedding based on scaling parameters.
+
+    Args:
+        hidden_size: Model hidden dimension
+        num_attention_heads: Number of attention heads
+        rope_theta: RoPE theta parameter (typically 10000.0)
+        max_seq_len: Maximum sequence length
+        interleaved_rope_weights: Whether to use interleaved RoPE weights
+        rope_scaling_params: Llama3 RoPE scaling parameters (if any)
+        longrope_scaling_params: LongRoPE scaling parameters (if any)
+        device: Device to place tensors on
+
+    Returns:
+        Configured RoPE embedding instance
+    """
+    if longrope_scaling_params is not None:
+        return LongRoPERotaryEmbedding(
+            dim=hidden_size,
+            n_heads=num_attention_heads,
+            theta=rope_theta,
+            max_seq_len=max_seq_len,
+            interleaved=interleaved_rope_weights,
+            scaling_params=longrope_scaling_params,
+            device=device,
+        )
+    else:
+        return Llama3RotaryEmbedding(
+            dim=hidden_size,
+            n_heads=num_attention_heads,
+            theta=rope_theta,
+            max_seq_len=max_seq_len,
+            interleaved=interleaved_rope_weights,
+            scaling_params=rope_scaling_params,
+            device=device,
+        )
 
 
 def _quantized_layers_and_embedding_dtype(
@@ -328,20 +379,20 @@ class Llama3ConfigBase(MAXModelConfigBase):
     num_key_value_heads: int
     num_hidden_layers: int
     rope_theta: float
-    rope_scaling_params: Optional[Llama3RopeScalingParams]
+    rope_scaling_params: Llama3RopeScalingParams | None
     max_seq_len: int
     intermediate_size: int
     interleaved_rope_weights: bool
     vocab_size: int
     dtype: DType
-    model_quantization_encoding: Optional[QuantizationEncoding]
-    quantization_config: Optional[QuantizationConfig]
+    model_quantization_encoding: QuantizationEncoding | None
+    quantization_config: QuantizationConfig | None
     kv_params: KVCacheParams
     return_logits: ReturnLogits
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     norm_dtype: DType | None
     attention_bias: bool
-    rms_norm_eps: Optional[float]
+    rms_norm_eps: float | None
     tie_word_embeddings: bool
     stacked_mlp: bool
     stacked_qkv: bool
@@ -350,8 +401,9 @@ class Llama3ConfigBase(MAXModelConfigBase):
     embedding_multiplier: float
     residual_multiplier: float
     devices: list[DeviceRef]
-    clip_qkv: Optional[float]
+    clip_qkv: float | None
     float8_config: Float8Config | None
+    longrope_scaling_params: LongRoPEScalingParams | None = None
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -376,7 +428,8 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         huggingface config. If the attention multiplier is not set, it will be
         calculated as the square root of 1.0 divided by the head dimension.
         """
-        return getattr(
+        # Base attention multiplier
+        base_multiplier = getattr(
             huggingface_config,
             "attention_multiplier",
             math.sqrt(
@@ -391,6 +444,8 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                 )
             ),
         )
+
+        return base_multiplier
 
     # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod
@@ -500,7 +555,8 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
         residual_multiplier = getattr(
             huggingface_config, "residual_multiplier", 1.0
         )
-        rope_scaling_params = None
+        rope_scaling_params: Llama3RopeScalingParams | None = None
+        longrope_scaling_params: LongRoPEScalingParams | None = None
         rope_scaling = huggingface_config.rope_scaling
 
         if rope_scaling is not None:
@@ -524,6 +580,37 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
                         "original_max_position_embeddings"
                     ],
                 )
+            elif rope_type == "longrope" or rope_type_alt == "longrope":
+                longrope_scaling_params = LongRoPEScalingParams(
+                    short_factor=rope_scaling["short_factor"],
+                    long_factor=rope_scaling["long_factor"],
+                    original_max_position=huggingface_config.original_max_position_embeddings,
+                    max_position_embeddings=huggingface_config.max_position_embeddings,
+                )
+                rope_scaling_params = None
+
+        # Calculate base attention multiplier
+        base_attention_multiplier = Llama3Config.calculate_attention_multiplier(
+            huggingface_config, n_devices, kv_cache_config, cache_dtype
+        )
+
+        # Apply LongRoPE attention scaling if needed
+        attention_multiplier = base_attention_multiplier
+        if longrope_scaling_params is not None:
+            # Create temporary RoPE embedding to get proper attention scale
+            rope_embedding = create_rope_embedding(
+                hidden_size=huggingface_config.hidden_size,
+                num_attention_heads=huggingface_config.num_attention_heads,
+                rope_theta=huggingface_config.rope_theta,
+                max_seq_len=Llama3Config.calculate_max_seq_len(
+                    pipeline_config, huggingface_config=huggingface_config
+                ),
+                interleaved_rope_weights=interleaved_rope_weights,
+                rope_scaling_params=rope_scaling_params,
+                longrope_scaling_params=longrope_scaling_params,
+                device=DeviceRef.CPU(),  # temporary device, not used for scale computation
+            )
+            attention_multiplier = rope_embedding.compute_scale()
 
         return Llama3Config(
             hidden_size=huggingface_config.hidden_size,
@@ -532,6 +619,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             num_hidden_layers=huggingface_config.num_hidden_layers,
             rope_theta=huggingface_config.rope_theta,
             rope_scaling_params=rope_scaling_params,
+            longrope_scaling_params=longrope_scaling_params,
             rms_norm_eps=rms_norm_eps,
             intermediate_size=huggingface_config.intermediate_size,
             interleaved_rope_weights=interleaved_rope_weights,
@@ -560,9 +648,7 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
             stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
             logits_postprocessor=logits_postprocessor,
-            attention_multiplier=Llama3Config.calculate_attention_multiplier(
-                huggingface_config, n_devices, kv_cache_config, cache_dtype
-            ),
+            attention_multiplier=attention_multiplier,
             embedding_multiplier=embedding_multiplier,
             residual_multiplier=residual_multiplier,
             devices=device_refs,

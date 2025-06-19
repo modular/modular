@@ -18,9 +18,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from max.driver import (
-    DeviceSpec,
-)
+from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph.quantization import QuantizationEncoding
 
@@ -53,6 +51,7 @@ class RopeType(str, Enum):
     none = "none"
     normal = "normal"
     neox = "neox"
+    longrope = "longrope"
 
 
 class PipelineEngine(str, Enum):

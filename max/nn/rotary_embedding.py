@@ -34,7 +34,7 @@ class RotaryEmbedding(Module):
     """Hyperparameter used to control the frequency scaling of the sinusoidal components of the embeddings."""
     max_seq_len: int
     """The maximum sequence length for model's input."""
-    head_dim: Optional[int] = None
+    head_dim: int
     """head_dim = dim // n_heads if not specified in the config."""
     device: DeviceRef
     _freqs_cis: Optional[TensorValueLike] = None
@@ -56,7 +56,7 @@ class RotaryEmbedding(Module):
         self.n_heads = n_heads
         self.theta = theta
         self.max_seq_len = max_seq_len
-        self.head_dim = head_dim
+        self.head_dim = head_dim if head_dim is not None else dim // n_heads
         self.interleaved = interleaved
         self.device = device
         self._freqs_cis = _freqs_cis
@@ -68,11 +68,7 @@ class RotaryEmbedding(Module):
             a 1D tensor of thetas of shape [head_dim // 2]
         """
 
-        n = (
-            self.head_dim
-            if self.head_dim is not None
-            else self.dim // self.n_heads
-        )
+        n = self.head_dim
 
         # Note: using float64 to avoid an overflow on the exponential, then converting back to float32.
         # Calculate theta for n/2 blocks: theta_for_block_i = theta ** (-2i/n) where n is dim for each head.
@@ -115,7 +111,6 @@ class RotaryEmbedding(Module):
 
     @cached_property
     def freqs_cis(self) -> TensorValue:
-        # self._freqs_cis = self.freqs_cis_base()
         freqs = self.freqs_cis_base()
         d1, d2, d3 = freqs.shape  # (max_seq_len * 2, head_dim // 2, 2)
         new_f_shape = [d1, d2 * d3]  # (max_seq_len * 2, head_dim)
@@ -123,11 +118,7 @@ class RotaryEmbedding(Module):
         return self._freqs_cis
 
     def compute_scale(self, user_scale: Optional[float] = None) -> float:
-        n = (
-            self.head_dim
-            if self.head_dim is not None
-            else self.dim // self.n_heads
-        )
+        n = self.head_dim
         return user_scale if user_scale else math.sqrt(1.0 / n)
 
     def __call__(
@@ -535,3 +526,185 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
 class LinearScalingParams:
     factor: float
     """Main scaling factor for the frequency components of the rope."""
+
+
+@dataclass
+class LongRoPEScalingParams:
+    """Parameters for LongRoPE scaling as used in Phi-3.5 models."""
+
+    short_factor: list[float]
+    """Scaling factors for short sequences (typically close to 1.0)."""
+
+    long_factor: list[float]
+    """Scaling factors for long sequences (can be much larger)."""
+
+    original_max_position: int
+    """Original max position embeddings the model was trained with."""
+
+    max_position_embeddings: int
+    """Current max position embeddings after scaling."""
+
+
+class LongRoPERotaryEmbedding(RotaryEmbedding):
+    """Rotary position embedding with LongRoPE scaling for Phi-3.5 models."""
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        theta: float,
+        max_seq_len: int,
+        device: DeviceRef,
+        head_dim: Optional[int] = None,
+        _freqs_cis: Optional[TensorValueLike] = None,
+        interleaved: bool = True,
+        scaling_params: Optional[LongRoPEScalingParams] = None,
+    ):
+        """Initialize LongRoPE rotary embeddings.
+
+        Args:
+            dim: Model dimension
+            n_heads: Number of attention heads
+            theta: Base for computing frequencies (usually 10000.0)
+            max_seq_len: Maximum sequence length
+            device: Device to place tensors on
+            head_dim: Head dimension (if None, computed as dim // n_heads)
+            _freqs_cis: Pre-computed frequency tensor (optional)
+            interleaved: Whether to use interleaved RoPE weights
+            scaling_params: LongRoPE scaling parameters
+        """
+        super().__init__(
+            dim,
+            n_heads,
+            theta,
+            max_seq_len,
+            device,
+            head_dim,
+            _freqs_cis,
+            interleaved,
+        )
+        self.scaling_params = scaling_params
+
+    def _compute_inv_freqs(self) -> TensorValue:
+        """Compute base inverse frequencies without scaling.
+
+        Note: LongRoPE scaling is applied dynamically in freqs_cis_base()
+        based on sequence length.
+        """
+        return super()._compute_inv_freqs()
+
+    def _compute_scaled_inv_freqs_from_factors(
+        self, factors: list[float]
+    ) -> TensorValue:
+        """Compute inverse frequencies scaled by the given factors.
+
+        Args:
+            factors: List of scaling factors to apply to each frequency component
+
+        Returns:
+            Scaled inverse frequencies tensor
+        """
+        # Get base frequencies
+        inv_freqs = self._compute_inv_freqs()
+
+        num_freqs = int(inv_freqs.shape[0])  # Convert Dim to int
+
+        # Ensure we have enough factors
+        factors_to_use = factors[:num_freqs]
+
+        factor_tensors = [
+            ops.constant(factor, dtype=DType.float32, device=self.device)
+            for factor in factors_to_use
+        ]
+        factors_tensor = ops.stack(factor_tensors, axis=0)
+
+        scaled_inv_freqs = inv_freqs / factors_tensor
+
+        return scaled_inv_freqs
+
+    def freqs_cis_base(self) -> TensorValue:
+        """
+        Computes the frequency tensor for complex exponentials (cis)
+        with LongRoPE scaling. Creates a "stitched" table where:
+        - Positions 0 to original_max_position use short_factor
+        - Positions from original_max_position onwards use long_factor
+
+        Returns:
+            The frequency tensor for complex exponentials with shape (max_seq_len * 2, head_dim / 2, 2)
+        """
+        if self._freqs_cis is None:
+            if self.scaling_params is None:
+                # No scaling, use standard RoPE
+                return super().freqs_cis_base()
+
+            # Compute inverse frequencies for both short and long factors
+            inv_freqs_short = self._compute_scaled_inv_freqs_from_factors(
+                self.scaling_params.short_factor
+            )
+            inv_freqs_long = self._compute_scaled_inv_freqs_from_factors(
+                self.scaling_params.long_factor
+            )
+
+            # Generate position ids for the "short" part (0 to original_max_position)
+            t_short = ops.range(
+                0,
+                float(self.scaling_params.original_max_position),
+                1,
+                out_dim=self.scaling_params.original_max_position,
+                device=self.device,
+                dtype=DType.float32,
+            )
+
+            # Generate position ids for the "long" part (original_max_position to max_seq_len*2)
+            long_start = self.scaling_params.original_max_position
+            long_end = self.max_seq_len * 2
+            long_length = long_end - long_start
+
+            t_long = ops.range(
+                float(long_start),
+                float(long_end),
+                1,
+                out_dim=long_length,
+                device=self.device,
+                dtype=DType.float32,
+            )
+
+            # Compute frequencies for both parts
+            freqs_short = ops.outer(t_short, inv_freqs_short)
+            freqs_long = ops.outer(t_long, inv_freqs_long)
+
+            # Concatenate the two parts
+            freqs_combined = ops.concat([freqs_short, freqs_long], axis=0)
+
+            # Compute cos and sin
+            self._freqs_cis = ops.stack(
+                [ops.cos(freqs_combined), ops.sin(freqs_combined)], axis=-1
+            )  # [max_seq_len*2, head_dim // 2, 2]
+
+        return TensorValue(self._freqs_cis)
+
+    def compute_scale(self, user_scale: Optional[float] = None) -> float:
+        """Compute attention scale with LongRoPE adjustment."""
+        if user_scale is not None:
+            return user_scale
+
+        # Base scale
+        scale = super().compute_scale(user_scale)
+
+        # Apply attention factor for LongRoPE
+        if self.scaling_params:
+            # Calculate factor = max_position_embeddings / original_max_position
+            factor = (
+                self.scaling_params.max_position_embeddings
+                / self.scaling_params.original_max_position
+            )
+            if factor > 1.0:
+                # attention_factor = sqrt(1 + log(factor) / log(original_max_position))
+                attention_factor = math.sqrt(
+                    1
+                    + math.log(factor)
+                    / math.log(self.scaling_params.original_max_position)
+                )
+                scale = scale * attention_factor
+
+        return scale
