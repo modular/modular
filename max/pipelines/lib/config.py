@@ -608,10 +608,6 @@ class PrependPromptSpeechTokens(str, Enum):
     ONCE = "once"
     """Prepend the prompt speech tokens to the first block of the audio decoder."""
 
-    ALWAYS = "always"
-    """Prepend the prompt speech tokens to all blocks of speech tokens sent to
-    the audio decoder."""
-
 
 @dataclass
 class AudioGenerationConfig(PipelineConfig):
