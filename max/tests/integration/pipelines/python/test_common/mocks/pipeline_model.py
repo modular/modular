@@ -77,6 +77,9 @@ class MockPipelineModel(PipelineModel):
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
         self.eos_prob = pipeline_config.eos_prob  # type: ignore
+        self.max_seq_len = self.calculate_max_seq_len(
+            pipeline_config, huggingface_config
+        )
 
     @classmethod
     def calculate_max_seq_len(
