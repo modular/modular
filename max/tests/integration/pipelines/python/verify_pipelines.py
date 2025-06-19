@@ -171,7 +171,7 @@ def compute_diff(
     diff = float(f"{curr_val:.2e}") - float(f"{prev_val:.2e}")
 
     if diff == 0:
-        return "-"
+        return "---"
 
     return f"{diff:+.2e}"
 
@@ -213,8 +213,13 @@ def dump_results(
     if any_logit:
         to.write("\n\n## LLMs\n")
         to.write(
-            "NOTE: KL Div here is the average over each prompt. "
-            "_Not_ the max used for pass/fail checks. \n"
+            "**KL Div** = average over all prompts (lower is better)\n"
+            "Note: This is NOT the max threshold used for pass/fail checks\n\n"
+            "**Diff** = change from previous run\n"
+            "  • Negative = accuracy improved\n"
+            "  • Positive = accuracy worsened\n"
+            "  • N/A = no previous verdict\n"
+            "  • --- = no change\n"
         )
         to.write("| Status | Model | KL Div | Diff |\n")
         to.write("| :----: | :---  | :---:  | :---:|\n")
