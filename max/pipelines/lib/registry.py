@@ -351,6 +351,13 @@ class PipelineRegistry:
         )
 
         devices_str = ", ".join(f"{d.label}[{d.id}]" for d in devices)
+
+        quantization_encoding_str = str(
+            pipeline_config.model_config.quantization_encoding
+        )
+        if pipeline_config.model_config.cast_safetensor_weights_from_float32_to_bfloat16:
+            quantization_encoding_str = f"{quantization_encoding_str} (potentially downcasted from float32)"
+
         message = f"""
 
         Loading {tokenizer_type.__name__} and {pipeline_name}({pipeline_model}) {factory_str} for:
@@ -359,7 +366,7 @@ class PipelineRegistry:
             devices:                {devices_str}
             model_path:             {pipeline_config.model_config.model_path}{weights_repo_str}
             huggingface_revision:   {pipeline_config.model_config.huggingface_model_revision}
-            quantization_encoding:  {pipeline_config.model_config.quantization_encoding}
+            quantization_encoding:  {quantization_encoding_str}
             cache_strategy:         {pipeline_config.model_config.kv_cache_config.cache_strategy}
             weight_path:            [
         {weight_path}

@@ -98,6 +98,10 @@ class MAXModelConfig(MAXModelConfigBase):
     use_subgraphs: bool = False
     """Whether to use subgraphs for the model."""
 
+    # TODO: This can be made more generic for arbitrary dtypes.
+    cast_safetensor_weights_from_float32_to_bfloat16: bool = False
+    """Whether to cast safetensor weights from float32 to bfloat16."""
+
     _huggingface_config: Optional[AutoConfig] = None
     """Hugging Face config. This should only be set by internal code."""
 
@@ -351,6 +355,7 @@ class MAXModelConfig(MAXModelConfigBase):
             _weights_format = weights_format(self.weight_path)
         except ValueError:
             _weights_format = None
+
         if (
             self.weight_path
             and self.quantization_encoding
@@ -408,7 +413,16 @@ class MAXModelConfig(MAXModelConfigBase):
             if len(supported_encodings) == 1:
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
-                self.quantization_encoding = supported_encodings[0]
+
+                # Special case for when we allow for float32 safetensors weights
+                # to be downcasted to bfloat16.
+                if (
+                    self.cast_safetensor_weights_from_float32_to_bfloat16
+                    and supported_encodings[0] == SupportedEncoding.float32
+                ):
+                    self.quantization_encoding = SupportedEncoding.bfloat16
+                else:
+                    self.quantization_encoding = supported_encodings[0]
             elif not self.device_specs[0].device_type == "cpu":
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
@@ -499,9 +513,15 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # If no weight_path is provided, we should grab the default.
         if not self.weight_path:
+            # We allow ourselves to load float32 safetensors weights as bfloat16.
+            search_encoding = (
+                SupportedEncoding.float32
+                if self.cast_safetensor_weights_from_float32_to_bfloat16
+                else self.quantization_encoding
+            )
             # Retrieve the default files for each weights format.
             weight_files = self.huggingface_weight_repo.files_for_encoding(
-                encoding=self.quantization_encoding
+                encoding=search_encoding
             )
 
             if default_weight_files := weight_files.get(

@@ -60,6 +60,11 @@ def convert_safetensor_state_dict(
                 key.endswith("bias") or key.endswith("scales")
             ):
                 new_state_dict[key] = weight_data.astype(DType.bfloat16)
+
+    if pipeline_config.model_config.cast_safetensor_weights_from_float32_to_bfloat16:
+        for key, weight_data in new_state_dict.items():
+            if weight_data.dtype == DType.float32:
+                new_state_dict[key] = weight_data.astype(DType.bfloat16)
     return new_state_dict
 
 
