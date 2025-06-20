@@ -723,7 +723,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 
       // Finally, perform any implicit conversion of the actual value to
       // whatever the 'value' would provide.
-      auto argRVType = initSig.getArguments()[0];
+      auto argRVType = initSig.getArgument(0);
       if (hasAddress(initSig.getArgConvention(0)))
         argRVType = ASTType(argRVType).getReferenceElementType();
 
@@ -1329,8 +1329,7 @@ LogicalResult ParameterInferenceState::infer(
 
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
-    Type expectedType = signature.getArguments()[expectedArgIdx];
-
+    Type expectedType = signature.getArgument(expectedArgIdx);
     if (signature.isKwVarArg(expectedArgIdx)) {
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
@@ -1536,7 +1535,7 @@ ParameterInferenceState::inferCTADParams(FnTypeGeneratorType signature,
          "init should have positional self argument");
 
   auto selfConvention = signature.getArgConventions()[0];
-  ASTType declaredSelfType = signature.getArguments()[0];
+  ASTType declaredSelfType = signature.getArgument(0);
   if (hasAddress(selfConvention))
     declaredSelfType = declaredSelfType.getReferenceElementType();
 
@@ -1560,10 +1559,8 @@ ParameterInferenceState::inferCTADParams(FnTypeGeneratorType signature,
 
   // If passing self by reference, wrap the Self type with the RefType
   // paraphernalia like origins.
-  if (hasAddress(selfConvention)) {
-    auto selfRefType = cast<RefType>(signature.getArguments()[0]);
-    selfType = selfRefType.getWithElement(selfType);
-  }
+  if (hasAddress(selfConvention))
+    selfType = cast<RefType>(signature.getArgument(0)).getWithElement(selfType);
 
   // Infer the first operand against this type - it was presumably already
   // inferred against the methods declared type of 'self' as well.

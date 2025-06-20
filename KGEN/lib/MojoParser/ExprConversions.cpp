@@ -388,7 +388,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
       size_t indexInVariadic = actualArgIndex - thunkVariadicArgIndex;
 
       MBValue packRefMBValue =
-          MBValue(thunk.getArguments()[thunkVariadicArgIndex]);
+          MBValue(thunk.getArgument(thunkVariadicArgIndex));
 
       auto index = IntegerAttr::get(IndexType::get(ctx), indexInVariadic);
 
@@ -440,7 +440,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
       // Thunks can only receive
       convForActual = ArgConvention::ReadMem;
     } else {
-      argForActual = thunk.getArguments()[actualArgIndex];
+      argForActual = thunk.getArgument(actualArgIndex);
       convForActual = thunkSignature.getArgConvention(actualArgIndex);
     }
 

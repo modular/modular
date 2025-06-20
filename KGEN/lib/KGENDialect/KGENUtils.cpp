@@ -1816,7 +1816,7 @@ void KGEN::printFuncType(AsmPrinter &p, FuncType signature) {
   }
 
   auto printElt = [&](unsigned i) {
-    p << signature.getArguments()[i];
+    p << signature.getArgument(i);
     printArgConvention(p, signature.getArgConvention(i));
   };
 

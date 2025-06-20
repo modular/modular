@@ -529,6 +529,7 @@ public:
 
   /// Return the list of arguments of this function.
   ArrayRef<PublicArgumentDecl> getArguments() const { return args; }
+  const PublicArgumentDecl &getArgument(size_t i) const { return args[i]; }
 
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 

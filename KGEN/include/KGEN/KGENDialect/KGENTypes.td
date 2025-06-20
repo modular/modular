@@ -253,6 +253,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
   let extraClassDeclaration = [{
     /// Helper to return the argument and result types.
     ArrayRef<Type> getArguments() const;
+    Type getArgument(size_t i) const { return getArguments()[i]; }
     ArrayRef<Type> getResults() const;
 
     /// Return true if this signature's last argument is a result from the

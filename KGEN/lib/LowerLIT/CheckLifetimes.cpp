@@ -2134,7 +2134,7 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   // The dtor must take a reference:  Bind the implicit origin of __del__'s self
   // to the origin of the reference we have.
   SmallVector<TypedAttr> implicitOrigins;
-  auto delSelfTy = dyn_cast<RefType>(signature.getArguments()[0]);
+  auto delSelfTy = dyn_cast<RefType>(signature.getArgument(0));
   if (!delSelfTy) {
     auto diag = mlir::emitError(builder.getLoc())
                 << "invalid __del__ that doesn't take register by-ref";

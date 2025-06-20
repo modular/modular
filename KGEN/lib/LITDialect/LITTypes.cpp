@@ -1169,7 +1169,7 @@ Type FnType::getIfVariadicPack(size_t index) {
     return {};
 
   // Look through references to the VariadicPack type.
-  auto type = getArguments()[index];
+  auto type = getArgument(index);
   if (hasAddress(getArgConvention(index)))
     type = ::cast<RefType>(type).getElementType();
   return type;

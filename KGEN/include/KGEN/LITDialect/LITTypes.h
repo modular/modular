@@ -183,6 +183,7 @@ public:
 
   /// Helper to return the argument and result types.
   ArrayRef<Type> getArguments() { return getBody().getArguments(); }
+  Type getArgument(size_t i) { return getArguments()[i]; }
   ArrayRef<Type> getResults() { return getBody().getResults(); }
 
   bool hasMemoryOnlyResult() { return getBody().hasMemoryOnlyResult(); }

@@ -982,7 +982,7 @@ FuncOp LowerAsyncBuildContext::createColdRamp(StringRef prefix,
     --end;
   SmallVector<Type> args;
   for (unsigned i = 0; i < end; ++i)
-    args.push_back(originalSignature.getArguments()[i]);
+    args.push_back(originalSignature.getArgument(i));
   FunctionType rampFunctionType =
       builder.getFunctionType(args, PointerType::get(coTypes.getHeaderType()));
   auto rampSignature = FuncType::get(rampFunctionType);

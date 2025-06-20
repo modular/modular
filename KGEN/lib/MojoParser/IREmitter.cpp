@@ -1706,9 +1706,8 @@ MLValue IREmitter::findNearestErrorSlot() {
 
   // In a raising function, the error slot is always the second last argument.
   if (auto func = dyn_cast<FnOp>(opForRaise)) {
-    return func
-        .getArguments()[func.getNumArguments() -
-                        func.getFuncTypeGenerator().getErrorSlotOffset()];
+    return func.getArgument(func.getNumArguments() -
+                            func.getFuncTypeGenerator().getErrorSlotOffset());
   }
   // Otherwise, the error slot is carried by the surrounding try op.
   return cast<LIT::TryOp>(opForRaise).getErr();
