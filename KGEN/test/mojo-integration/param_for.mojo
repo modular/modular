@@ -18,13 +18,29 @@ fn test_unroll_warn_threshold():
 
 
 fn test_for_list():
-    alias list = [1, 2, 3]
     cnt = 0
 
     @parameter
-    for i in list:
+    for i in [1, 2, 3]:
         cnt += i
     debug_assert(cnt == 6)
+
+    # Test for floating point numbers.
+    fp_cnt = 0.0
+
+    @parameter
+    for i in [1.0, 2.0, 3.0]:
+        fp_cnt += i
+    debug_assert(fp_cnt == 6.0)
+
+    # Test for strings
+    concated = String("")
+
+    @parameter
+    for str in [String("a"), "b", "c"]:
+        var str2 = str  # Work around origin issue.
+        concated += str2
+    debug_assert(concated == "abc")
 
 
 fn main():
