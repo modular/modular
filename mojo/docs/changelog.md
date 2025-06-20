@@ -21,6 +21,9 @@ what we publish.
 
 ### Language enhancements
 
+- `@parameter for` now works on a broader range of collection types, enabling
+  things like `@parameter for i in [1, 2, 3]: ...`.
+
 ### Language changes
 
 - The `@value` decorator has been formally deprecated with a warning, it will
