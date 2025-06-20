@@ -13,6 +13,7 @@
 
 
 import logging
+import logging.handlers
 import os
 import platform
 import uuid
@@ -117,6 +118,33 @@ def get_log_level(settings: Settings) -> Union[int, str, None]:
     return otlp_level
 
 
+# Create a logger that buffers logs in memory and prints them to the console in batches.
+# The returned logger is a no op if logging has not yet been configured.
+def get_batch_logger(
+    parent_logger: logging.Logger, capacity: int = 10
+) -> logging.Logger:
+    batch_logger = logging.getLogger(parent_logger.name)
+    console_handlers = [
+        h
+        for h in logging.getLogger().handlers
+        if type(h) is logging.StreamHandler
+    ]
+    memory_handler = logging.handlers.MemoryHandler(
+        capacity=capacity,
+        target=console_handlers[0] if len(console_handlers) > 0 else None,
+    )
+    batch_logger.addHandler(memory_handler)
+    batch_logger.propagate = False
+    return batch_logger
+
+
+# Force a flush of the batch given logger.
+def flush_batch_logger(logger: logging.Logger) -> None:
+    for handler in logger.handlers:
+        if type(handler) is logging.handlers.MemoryHandler:
+            handler.flush()
+
+
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
 def configure_logging(settings: Settings) -> None:
@@ -150,7 +178,7 @@ def configure_logging(settings: Settings) -> None:
         console_formatter: logging.Formatter
         if settings.structured_logging:
             console_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
+                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s",
                 timestamp=True,
             )
         else:
@@ -176,7 +204,7 @@ def configure_logging(settings: Settings) -> None:
         file_formatter: logging.Formatter
         if settings.structured_logging:
             file_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s",
+                "%(levelname)s %(process)d %(threadName)s %(name)s %(message)s %(request_id)s %(batch_id)s",
                 timestamp=True,
             )
         else:

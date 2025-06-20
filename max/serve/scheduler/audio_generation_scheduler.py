@@ -17,6 +17,7 @@ import logging
 import os
 import queue
 import time
+import uuid
 from collections import deque
 from collections.abc import Generator
 from typing import Any, cast
@@ -34,6 +35,7 @@ from max.pipelines.core import (
 from max.profiler import Trace, traced
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
 
 from .base import Scheduler
@@ -61,6 +63,7 @@ class SchedulerLogger:
         self.logs: list[Any] = []
         if self.f is not None:
             logger.info(f"Dumping scheduler logs to {self.path}")
+        self.request_logger = get_batch_logger(logger)
 
     def log(
         self,
@@ -78,18 +81,34 @@ class SchedulerLogger:
             batch_execution_time_s
         )
 
-        logger.debug(
-            f"Executed {batch_type} batch with {batch.batch_size} reqs | "
+        self.request_logger.debug(
+            f"Executed {batch_type} batch [{batch.batch_id}] with {batch.batch_size} reqs | "
             f"Num steps: {num_steps} | "
             f"Input tokens: {batch.input_tokens} | "
             f"Terminated: {batch.num_terminated} reqs, "
             f"Pending: {num_pending_reqs} reqs | "
             f"Batch creation: {batch_creation_latency_str}, "
-            f"Execution: {batch_execution_latency_str}"
+            f"Execution: {batch_execution_latency_str}",
+            extra={"batch_id": batch.batch_id},
         )
+
+        if self.request_logger.isEnabledFor(logging.DEBUG):
+            for req in batch.req_info:
+                self.request_logger.debug(
+                    f"Completed request [{req['req_id']}] in batch [{batch.batch_id}] | "
+                    f"Arrival time: {req['arrival_time']} | "
+                    f"Start idx: {req['start_idx']}, "
+                    f"End idx: {req['end_idx']} | "
+                    f"Input tokens: {req['input_tokens']}",
+                    extra={
+                        "batch_id": batch.batch_id,
+                        "request_id": req["req_id"],
+                    },
+                )
 
         if self.f is not None:
             batch_info = {
+                "batch_id": batch.batch_id,
                 "start_timestamp": batch.start_time - batch_creation_time_s,
                 "end_timestamp": time.time(),
                 "batch_type": batch_type,
@@ -109,6 +128,8 @@ class SchedulerLogger:
         if self.f is not None:
             self.f.write(json.dumps(self.logs, indent=2) + "\n")
             self.f.close()
+
+        flush_batch_logger(self.request_logger)
 
 
 class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
@@ -151,11 +172,14 @@ class AudioGenerationSchedulerOutput:
         self.reqs = reqs
         self.batch_type = batch_type
         self.batch_size = len(reqs)
+        self.batch_id = str(uuid.uuid4())
 
         self.input_tokens = sum(
             context.active_length for context in reqs.values()
         )
-        if MAX_SERVE_TTS_BATCH_INFO_FILENAME is not None:
+        if MAX_SERVE_TTS_BATCH_INFO_FILENAME is not None or logger.isEnabledFor(
+            logging.DEBUG
+        ):
             # Store request info prior to executing batch
             self.req_info = [
                 {
