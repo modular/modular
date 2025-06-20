@@ -420,6 +420,12 @@ class MAXModelConfig(MAXModelConfigBase):
                     self.cast_safetensor_weights_from_float32_to_bfloat16
                     and supported_encodings[0] == SupportedEncoding.float32
                 ):
+                    # if no GPUs are available, we can't possibly downcast to bfloat16.
+                    if not any(
+                        d.device_type == "gpu" for d in self.device_specs
+                    ):
+                        msg = "No GPUs available, cannot downcast from float32 to bfloat16."
+                        raise ValueError(msg)
                     self.quantization_encoding = SupportedEncoding.bfloat16
                 else:
                     self.quantization_encoding = supported_encodings[0]
@@ -513,16 +519,18 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # If no weight_path is provided, we should grab the default.
         if not self.weight_path:
-            # We allow ourselves to load float32 safetensors weights as bfloat16.
-            search_encoding = (
-                SupportedEncoding.float32
-                if self.cast_safetensor_weights_from_float32_to_bfloat16
-                else self.quantization_encoding
-            )
             # Retrieve the default files for each weights format.
             weight_files = self.huggingface_weight_repo.files_for_encoding(
-                encoding=search_encoding
+                encoding=self.quantization_encoding
             )
+            if (
+                not weight_files
+                and self.cast_safetensor_weights_from_float32_to_bfloat16
+            ):
+                # We allow ourselves to load float32 safetensors weights as bfloat16.
+                weight_files = self.huggingface_weight_repo.files_for_encoding(
+                    encoding=SupportedEncoding.float32
+                )
 
             if default_weight_files := weight_files.get(
                 default_weights_format, []
