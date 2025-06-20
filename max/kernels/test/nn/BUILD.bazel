@@ -33,7 +33,6 @@ _FILECHECK_TESTS = [
     "test_repeat_interleave.mojo",
     "test_resize.mojo",
     "test_scatter_elements.mojo",
-    "test_scatter_nd.mojo",
     "test_softmax.mojo",
     "test_static_conv.mojo",
     "test_static_conv_small_shapes.mojo",

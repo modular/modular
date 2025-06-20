@@ -836,20 +836,8 @@ fn scatter_nd_generator[
 
         var output_flat = output.flatten()
         var data_flat = data.flatten()
-        var updates_flat = updates.flatten()
 
-        var data_shape = data.get_shape()
-        var indices_shape = indices.get_shape()
-        var last_shape_of_indices = indices_shape[indices_rank - 1]
-
-        # Depending on r_minus_m = data_rank - last_shape_of_indices,
-        # we will be copying (gather):
-        #   element (r_minus_m = 0),
-        #   row (r_minus_m = 1),
-        #   sheet (r_minus_m = 2),
-        #   cuboid (r_minus_m = 3), etc.
-        var r_minus_m = data_rank - last_shape_of_indices
-
+        # Always copy input to output first.
         @parameter
         if is_gpu[target]():
             # TODO: Does it matter if output.data or output_flat.data (and data)?
@@ -872,6 +860,24 @@ fn scatter_nd_generator[
         @parameter
         if is_cpu[target]():
             memcpy(output_flat.data, data_flat.data, len(output_flat))
+
+        if updates.num_elements() == 0:
+            # Nothing to update.
+            return
+
+        var updates_flat = updates.flatten()
+
+        var data_shape = data.get_shape()
+        var indices_shape = indices.get_shape()
+        var last_shape_of_indices = indices_shape[indices_rank - 1]
+
+        # Depending on r_minus_m = data_rank - last_shape_of_indices,
+        # we will be copying (gather):
+        #   element (r_minus_m = 0),
+        #   row (r_minus_m = 1),
+        #   sheet (r_minus_m = 2),
+        #   cuboid (r_minus_m = 3), etc.
+        var r_minus_m = data_rank - last_shape_of_indices
 
         @__copy_capture(
             r_minus_m,
