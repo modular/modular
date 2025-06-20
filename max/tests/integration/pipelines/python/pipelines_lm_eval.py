@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import sys
@@ -19,6 +20,25 @@ import python.runfiles
 import requests
 
 logger = logging.getLogger("pipelines_lm_eval")
+
+
+def inject_model_name_into_results(
+    output_dir: Path, model_name: str, task_name: str
+) -> None:
+    """Inject model_name into mistral-eval results.json if found."""
+    results_path = output_dir / f"{task_name.lower()}.json"
+    if results_path.exists():
+        with results_path.open("r+", encoding="utf-8") as f:
+            data = json.load(f)
+            data["model_name"] = model_name
+            f.seek(0)
+            json.dump(data, f, indent=2)
+            f.truncate()
+        logger.info(f"Injected model_name={model_name!r} into {results_path}")
+    else:
+        logger.warning(
+            f"Could not find results file to patch at {results_path}"
+        )
 
 
 def _must_rlocation_str(runfiles: python.runfiles.Runfiles, rloc: str) -> str:
@@ -235,16 +255,97 @@ def main(
             pipeline_sitter.wait_for_alive(
                 probe_port=pipelines_probe_port, timeout=pipelines_probe_timeout
             )
-        logger.info(
-            "Running evaluator %r with provided args: %r",
-            evaluator_program,
-            evaluator_args,
-        )
-        evaluator_proc = subprocess.run(evaluator_program + evaluator_args)
-        logger.info(
-            "Evaluator exited with status code %s", evaluator_proc.returncode
-        )
-    sys.exit(evaluator_proc.returncode)
+
+        if evaluator == "mistral-evals":
+            # Handle multiple tasks for mistral-evals by running separately for each task
+            model_name_arg = next(
+                (
+                    arg.split("=", 1)[1]
+                    for arg in mistral_evals_args
+                    if arg.startswith("--model-name=")
+                ),
+                None,
+            )
+            output_dir_arg = next(
+                (
+                    arg.split("=", 1)[1]
+                    for arg in mistral_evals_args
+                    if arg.startswith("--output-dir=")
+                ),
+                None,
+            )
+            task_names_arg = next(
+                (
+                    arg.split("=", 1)[1]
+                    for arg in mistral_evals_args
+                    if arg.startswith("--eval-name=")
+                ),
+                None,
+            )
+
+            if not (model_name_arg and output_dir_arg and task_names_arg):
+                logger.error(
+                    "Could not find --model-name, --output-dir, or --eval-name for mistral-evals"
+                )
+                sys.exit(1)
+
+            # Remove the original --eval-name argument and prepare base args
+            base_mistral_args = [
+                arg
+                for arg in evaluator_args
+                if not arg.startswith("--eval-name=")
+            ]
+
+            # Split comma-separated tasks and run mistral-eval for each
+            task_names = [task.strip() for task in task_names_arg.split(",")]
+            logger.info(
+                f"Running mistral-evals for {len(task_names)} tasks: {task_names}"
+            )
+
+            final_return_code = 0
+            for task_name in task_names:
+                logger.info(f"Running mistral-evals for task: {task_name}")
+
+                # Add the current task to the arguments
+                current_task_args = base_mistral_args + [
+                    f"--eval-name={task_name}"
+                ]
+
+                evaluator_proc = subprocess.run(
+                    evaluator_program + current_task_args
+                )
+                logger.info(
+                    f"Mistral-evals for task '{task_name}' exited with status code {evaluator_proc.returncode}"
+                )
+
+                # Keep track of any non-zero exit codes
+                if evaluator_proc.returncode != 0:
+                    final_return_code = evaluator_proc.returncode
+
+                # Inject model name into the results for this task
+                inject_model_name_into_results(
+                    Path(output_dir_arg), model_name_arg, task_name
+                )
+
+            logger.info(
+                f"All mistral-evals tasks completed. Final exit code: {final_return_code}"
+            )
+            sys.exit(final_return_code)
+
+        else:
+            # Handle other evaluators (like lm-eval) normally
+            logger.info(
+                "Running evaluator %r with provided args: %r",
+                evaluator_program,
+                evaluator_args,
+            )
+
+            evaluator_proc = subprocess.run(evaluator_program + evaluator_args)
+            logger.info(
+                "Evaluator exited with status code %s",
+                evaluator_proc.returncode,
+            )
+            sys.exit(evaluator_proc.returncode)
 
 
 if __name__ == "__main__":
