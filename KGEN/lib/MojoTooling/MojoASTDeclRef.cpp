@@ -187,8 +187,7 @@ createPublicArgumentDecl(MojoASTDeclRef declRef, unsigned arg) {
       llvm::unique_dyn_cast_or_null<PublicFunctionDecl>(parentDecl.getDecl());
   if (!functionView || functionView->getArguments().size() <= arg)
     return nullptr;
-  return std::make_unique<PublicArgumentDecl>(
-      functionView->getArguments()[arg]);
+  return std::make_unique<PublicArgumentDecl>(functionView->getArgument(arg));
 }
 
 /// Helper method for `getDeclImpl` that either returns a PublicDeclKind

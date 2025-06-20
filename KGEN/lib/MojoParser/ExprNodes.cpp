@@ -1547,7 +1547,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
           << setterName << " declared here";
       return {};
     }
-    elementType = sigType.getArguments()[setValueIdx];
+    elementType = sigType.getArgument(setValueIdx);
     auto setValueConvention = sigType.getArgConvention(setValueIdx);
     if (setValueConvention != ArgConvention::ReadReg)
       elementType = elementType.getReferenceElementType();

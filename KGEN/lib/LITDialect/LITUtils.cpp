@@ -542,7 +542,7 @@ void LIT::printFnType(AsmPrinter &p, FnType signature) {
       p << ": ";
     }
 
-    p << signature.getArguments()[i];
+    p << signature.getArgument(i);
     ArgConvention argConv = signature.getArgConvention(i);
     if (argListAttr.isPack(i)) {
       assert(argConv == ArgConvention::ReadMem ||

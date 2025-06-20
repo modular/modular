@@ -322,7 +322,7 @@ emitOperandsNeedingOriginsToMemory(const OverloadFitness &info,
 
     // The argument value may have implicit conversions necessary, so make
     // sure to emit it into the expected type.
-    ASTType argType = expectedSig.getArguments()[i];
+    ASTType argType = expectedSig.getArgument(i);
     // Strip off the ref to get the RValue type.
     argType = argType.getReferenceElementType();
 
