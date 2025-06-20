@@ -45,6 +45,7 @@ modular_py_test(
         requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
         requirement("requests"),
         requirement("torch"),
         requirement("torchvision"),

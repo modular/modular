@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-from functools import partial
-
 import torch
 from max.driver import CPU, Tensor
 from max.dtype import DType
@@ -21,33 +19,29 @@ from max.pipelines.architectures.internvl.embedding_utils import (
 
 
 def merge_multimodal_embeddings_torch_reference(
-    input_ids: torch.Tensor,
     inputs_embeds: torch.Tensor,
     multimodal_embeddings: torch.Tensor,
-    image_context_token_id: int,
+    image_token_indices: torch.Tensor,
 ) -> torch.Tensor:
-    """Reference PyTorch implementation for testing with flattened tensors."""
+    """Reference PyTorch implementation using pre-computed indices."""
     # Expect already flattened tensors.
-    # input_ids shape: [num_tokens]
     # inputs_embeds shape: [num_tokens, hidden_size]
     # multimodal_embeddings shape: [num_multimodal_tokens, hidden_size]
-
-    # Find image context token positions.
-    selected = input_ids == image_context_token_id
+    # image_token_indices shape: [num_multimodal_tokens]
 
     # Verify count.
-    num_image_context_tokens = selected.sum().item()
+    num_indices = image_token_indices.shape[0]
     num_embeddings = multimodal_embeddings.shape[0]
-    if num_image_context_tokens != num_embeddings:
+    if num_indices != num_embeddings:
         raise ValueError(
-            f"Image context token count mismatch: {num_image_context_tokens} image context tokens "
+            f"Index count mismatch: {num_indices} indices "
             f"but {num_embeddings} multimodal embeddings provided"
         )
 
-    # Replace image context tokens with multimodal embeddings
+    # Replace tokens at specified indices with multimodal embeddings.
     result = inputs_embeds.clone()
-    if selected.sum() > 0:
-        result[selected] = multimodal_embeddings
+    if num_indices > 0:
+        result[image_token_indices] = multimodal_embeddings
 
     return result
 
@@ -65,6 +59,11 @@ def test_single_image_merge_execution() -> None:
     input_ids = torch.tensor(
         [1, 2, 3, 100, 100, 100, 100, 4, 5, 6], dtype=torch.int32
     )
+    # Pre-compute indices where image tokens should be inserted.
+    image_token_indices = torch.where(input_ids == img_context_token_id)[0].to(
+        torch.int32
+    )
+
     text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
     vision_embeds = torch.randn(
         num_image_tokens, hidden_size, dtype=torch.float32
@@ -72,22 +71,14 @@ def test_single_image_merge_execution() -> None:
 
     # Get reference output
     expected_output = merge_multimodal_embeddings_torch_reference(
-        input_ids, text_embeds, vision_embeds, img_context_token_id
+        text_embeds, vision_embeds, image_token_indices
     )
 
     # Build the graph
     graph = Graph(
         "test_merge_execution",
-        forward=partial(
-            merge_multimodal_embeddings,
-            image_context_token_id=img_context_token_id,
-        ),
+        forward=merge_multimodal_embeddings,
         input_types=[
-            TensorType(
-                dtype=DType.int32,
-                shape=(seq_len,),
-                device=device_ref,
-            ),
             TensorType(
                 dtype=DType.float32,
                 shape=(seq_len, hidden_size),
@@ -98,6 +89,11 @@ def test_single_image_merge_execution() -> None:
                 shape=(num_image_tokens, hidden_size),
                 device=device_ref,
             ),
+            TensorType(
+                dtype=DType.int32,
+                shape=(num_image_tokens,),
+                device=device_ref,
+            ),
         ],
     )
 
@@ -106,15 +102,15 @@ def test_single_image_merge_execution() -> None:
     compiled = session.load(graph)
 
     # Convert inputs to MAX tensors
-    input_ids_tensor = Tensor.from_numpy(input_ids.numpy()).to(device)
     text_embeds_tensor = Tensor.from_numpy(text_embeds.numpy()).to(device)
     vision_embeds_tensor = Tensor.from_numpy(vision_embeds.numpy()).to(device)
+    indices_tensor = Tensor.from_numpy(image_token_indices.numpy()).to(device)
 
     # Execute
     results = compiled.execute(
-        input_ids_tensor,
         text_embeds_tensor,
         vision_embeds_tensor,
+        indices_tensor,
     )
 
     # Convert result back to torch
@@ -175,6 +171,11 @@ def test_batch_merge_variable_positions_execution():
     seq_len = 20
     num_image_tokens = 8
 
+    # Pre-compute indices where image tokens should be inserted.
+    image_token_indices = torch.where(input_ids == img_context_token_id)[0].to(
+        torch.int32
+    )
+
     text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
     vision_embeds = torch.randn(
         num_image_tokens, hidden_size, dtype=torch.float32
@@ -182,22 +183,14 @@ def test_batch_merge_variable_positions_execution():
 
     # Get reference output
     expected_output = merge_multimodal_embeddings_torch_reference(
-        input_ids, text_embeds, vision_embeds, img_context_token_id
+        text_embeds, vision_embeds, image_token_indices
     )
 
     # Build and execute graph
     graph = Graph(
         "test_batch_merge",
-        forward=partial(
-            merge_multimodal_embeddings,
-            image_context_token_id=img_context_token_id,
-        ),
+        forward=merge_multimodal_embeddings,
         input_types=[
-            TensorType(
-                dtype=DType.int32,
-                shape=(seq_len,),
-                device=device_ref,
-            ),
             TensorType(
                 dtype=DType.float32,
                 shape=(seq_len, hidden_size),
@@ -208,6 +201,11 @@ def test_batch_merge_variable_positions_execution():
                 shape=(num_image_tokens, hidden_size),
                 device=device_ref,
             ),
+            TensorType(
+                dtype=DType.int32,
+                shape=(num_image_tokens,),
+                device=device_ref,
+            ),
         ],
     )
 
@@ -216,9 +214,9 @@ def test_batch_merge_variable_positions_execution():
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(input_ids.numpy()).to(device),
         Tensor.from_numpy(text_embeds.numpy()).to(device),
         Tensor.from_numpy(vision_embeds.numpy()).to(device),
+        Tensor.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
@@ -292,6 +290,11 @@ def test_ragged_multimodal_embeddings_execution():
     seq_len = 30
     num_image_tokens = 8
 
+    # Pre-compute indices where image tokens should be inserted.
+    image_token_indices = torch.where(input_ids == img_context_token_id)[0].to(
+        torch.int32
+    )
+
     text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
 
     # Ragged embeddings as a list that we'll concatenate
@@ -305,22 +308,14 @@ def test_ragged_multimodal_embeddings_execution():
 
     # Get reference output
     expected_output = merge_multimodal_embeddings_torch_reference(
-        input_ids, text_embeds, vision_embeds, img_context_token_id
+        text_embeds, vision_embeds, image_token_indices
     )
 
     # Build graph
     graph = Graph(
         "test_ragged_merge",
-        forward=partial(
-            merge_multimodal_embeddings,
-            image_context_token_id=img_context_token_id,
-        ),
+        forward=merge_multimodal_embeddings,
         input_types=[
-            TensorType(
-                dtype=DType.int32,
-                shape=(seq_len,),
-                device=device_ref,
-            ),
             TensorType(
                 dtype=DType.float32,
                 shape=(seq_len, hidden_size),
@@ -331,6 +326,11 @@ def test_ragged_multimodal_embeddings_execution():
                 shape=(num_image_tokens, hidden_size),
                 device=device_ref,
             ),
+            TensorType(
+                dtype=DType.int32,
+                shape=(num_image_tokens,),
+                device=device_ref,
+            ),
         ],
     )
 
@@ -339,9 +339,9 @@ def test_ragged_multimodal_embeddings_execution():
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(input_ids.numpy()).to(device),
         Tensor.from_numpy(text_embeds.numpy()).to(device),
         Tensor.from_numpy(vision_embeds.numpy()).to(device),
+        Tensor.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
@@ -365,22 +365,19 @@ def test_no_image_context_tokens_fast_path_execution():
 
     # No image context tokens
     input_ids = torch.ones(seq_len, dtype=torch.int32) * 50
+    # Pre-compute indices - should be empty tensor.
+    image_token_indices = torch.where(input_ids == img_context_token_id)[0].to(
+        torch.int32
+    )
+
     text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
     vision_embeds = torch.empty(0, hidden_size, dtype=torch.float32)
 
     # Build graph
     graph = Graph(
         "test_no_placeholders",
-        forward=partial(
-            merge_multimodal_embeddings,
-            image_context_token_id=img_context_token_id,
-        ),
+        forward=merge_multimodal_embeddings,
         input_types=[
-            TensorType(
-                dtype=DType.int32,
-                shape=(seq_len,),
-                device=device_ref,
-            ),
             TensorType(
                 dtype=DType.float32,
                 shape=(seq_len, hidden_size),
@@ -391,6 +388,11 @@ def test_no_image_context_tokens_fast_path_execution():
                 shape=(0, hidden_size),  # Empty multimodal embeddings
                 device=device_ref,
             ),
+            TensorType(
+                dtype=DType.int32,
+                shape=(0,),  # Empty indices
+                device=device_ref,
+            ),
         ],
     )
 
@@ -399,9 +401,9 @@ def test_no_image_context_tokens_fast_path_execution():
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(input_ids.numpy()).to(device),
         Tensor.from_numpy(text_embeds.numpy()).to(device),
         Tensor.from_numpy(vision_embeds.numpy()).to(device),
+        Tensor.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
@@ -411,6 +413,14 @@ def test_no_image_context_tokens_fast_path_execution():
 
     # Should return inputs_embeds unchanged
     torch.testing.assert_close(actual_output, text_embeds, rtol=1e-5, atol=1e-5)
+
+    # Get reference output to ensure consistency
+    expected_output = merge_multimodal_embeddings_torch_reference(
+        text_embeds, vision_embeds, image_token_indices
+    )
+    torch.testing.assert_close(
+        actual_output, expected_output, rtol=1e-5, atol=1e-5
+    )
 
 
 def test_count_mismatch_error():
@@ -424,24 +434,23 @@ def test_count_mismatch_error():
     input_ids = torch.tensor(
         [1, 2, 100, 100, 100, 3, 4, 5, 6, 7], dtype=torch.int32
     )  # 3 image context tokens
+    # Pre-compute indices - should find 3 positions.
+    image_token_indices = torch.where(input_ids == img_context_token_id)[0].to(
+        torch.int32
+    )
+    # But we'll only pass 2 indices to create mismatch.
+    mismatched_indices = image_token_indices[:2]
+
     text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
     vision_embeds = torch.randn(
         2, hidden_size, dtype=torch.float32
     )  # Only 2 embeddings!
 
-    # Build graph - note that we don't validate count at graph construction time
+    # Build graph
     graph = Graph(
         "test_count_mismatch",
-        forward=partial(
-            merge_multimodal_embeddings,
-            image_context_token_id=img_context_token_id,
-        ),
+        forward=merge_multimodal_embeddings,
         input_types=[
-            TensorType(
-                dtype=DType.int32,
-                shape=(seq_len,),
-                device=device_ref,
-            ),
             TensorType(
                 dtype=DType.float32,
                 shape=(seq_len, hidden_size),
@@ -452,18 +461,22 @@ def test_count_mismatch_error():
                 shape=(2, hidden_size),
                 device=device_ref,
             ),
+            TensorType(
+                dtype=DType.int32,
+                shape=(2,),  # Only 2 indices to match embeddings
+                device=device_ref,
+            ),
         ],
     )
 
     session = InferenceSession(devices=[device])
     compiled = session.load(graph)
 
-    # Execute - the mismatch will be handled by masked_scatter
-    # It will use the first 2 embeddings for the first 2 image context token positions
+    # Execute
     results = compiled.execute(
-        Tensor.from_numpy(input_ids.numpy()).to(device),
         Tensor.from_numpy(text_embeds.numpy()).to(device),
         Tensor.from_numpy(vision_embeds.numpy()).to(device),
+        Tensor.from_numpy(mismatched_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
@@ -493,6 +506,11 @@ def test_large_sequence_performance():
     )[:num_placeholders]
     input_ids[image_context_positions] = img_context_token_id
 
+    # Pre-compute indices where image tokens should be inserted.
+    image_token_indices = torch.where(input_ids == img_context_token_id)[0].to(
+        torch.int32
+    )
+
     text_embeds = torch.randn(seq_len, hidden_size, dtype=torch.float32)
     vision_embeds = torch.randn(
         num_placeholders, hidden_size, dtype=torch.float32
@@ -500,22 +518,14 @@ def test_large_sequence_performance():
 
     # Get reference output
     expected_output = merge_multimodal_embeddings_torch_reference(
-        input_ids, text_embeds, vision_embeds, img_context_token_id
+        text_embeds, vision_embeds, image_token_indices
     )
 
     # Build and execute graph
     graph = Graph(
         "test_large_sequence",
-        forward=partial(
-            merge_multimodal_embeddings,
-            image_context_token_id=img_context_token_id,
-        ),
+        forward=merge_multimodal_embeddings,
         input_types=[
-            TensorType(
-                dtype=DType.int32,
-                shape=(seq_len,),
-                device=device_ref,
-            ),
             TensorType(
                 dtype=DType.float32,
                 shape=(seq_len, hidden_size),
@@ -526,6 +536,11 @@ def test_large_sequence_performance():
                 shape=(num_placeholders, hidden_size),
                 device=device_ref,
             ),
+            TensorType(
+                dtype=DType.int32,
+                shape=(num_placeholders,),
+                device=device_ref,
+            ),
         ],
     )
 
@@ -534,9 +549,9 @@ def test_large_sequence_performance():
 
     # Execute
     results = compiled.execute(
-        Tensor.from_numpy(input_ids.numpy()).to(device),
         Tensor.from_numpy(text_embeds.numpy()).to(device),
         Tensor.from_numpy(vision_embeds.numpy()).to(device),
+        Tensor.from_numpy(image_token_indices.numpy()).to(device),
     )
 
     # Convert result back to torch
