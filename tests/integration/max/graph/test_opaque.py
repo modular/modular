@@ -160,7 +160,6 @@ def test_opaque_type_parameterization(
     with Graph(
         "test_opaque_type_parameterization",
         input_types=[],
-        output_types=[result_type],
         custom_extensions=[custom_ops_mojopkg],
     ) as graph:
         simd_pair_type = _OpaqueType("SIMDPair", {"S0": 4, "S1": 8})
@@ -171,7 +170,6 @@ def test_opaque_type_parameterization(
             device=DeviceRef.CPU(),
             values=[],
             out_types=[simd_pair_type],
-            parameters={"P0": 4, "P1": 8},
         )[0]
 
         # Process the pair with kernel_with_parameterized_opaque
