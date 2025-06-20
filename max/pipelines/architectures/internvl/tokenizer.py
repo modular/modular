@@ -27,9 +27,13 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
-# The token ID for "<IMG_CONTEXT>" in the InternVL tokenizer
-# This is used to identify where to insert image embeddings in the text
+# The token ID for "<IMG_CONTEXT>" in the InternVL tokenizer.
+# This is used to identify where to insert image embeddings in the text.
 IMAGE_CONTEXT_TOKEN_ID = 151667
+
+# ImageNet normalization constants.
+IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
 def find_closest_aspect_ratio(
@@ -91,6 +95,94 @@ def calculate_num_patches_for_image(
         blocks += 1
 
     return blocks
+
+
+def imagenet_normalize(img: Image.Image, input_size: int) -> np.ndarray:
+    """Normalize image using ImageNet normalization.
+
+    This converts PIL image to normalized numpy array with proper preprocessing.
+    """
+    # Convert to RGB if needed
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    # Resize with BICUBIC interpolation (use numerical constant for compatibility)
+    img = img.resize((input_size, input_size), Image.Resampling.BICUBIC)
+
+    # Convert to numpy array and normalize to [0, 1]
+    img_array = np.array(img, dtype=np.float32) / 255.0
+
+    # Apply ImageNet normalization
+    img_array = (img_array - IMAGENET_MEAN) / IMAGENET_STD
+
+    # Ensure we return float32
+    return img_array.astype(np.float32)
+
+
+def crop_into_patches(
+    image: Image.Image,
+    min_num: int = 1,
+    max_num: int = 12,
+    image_size: int = 448,
+    use_thumbnail: bool = False,
+) -> list[Image.Image]:
+    """Dynamically preprocess image with adaptive tiling."""
+    orig_width, orig_height = image.size
+    aspect_ratio = orig_width / orig_height
+
+    # Calculate the existing image aspect ratio.
+    target_ratios = list(
+        set(
+            (i, j)
+            for n in range(min_num, max_num + 1)
+            for i in range(1, n + 1)
+            for j in range(1, n + 1)
+            if i * j <= max_num and i * j >= min_num
+        )
+    )
+    target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
+
+    # Find the closest aspect ratio to the target..
+    target_aspect_ratio = find_closest_aspect_ratio(
+        aspect_ratio, target_ratios, orig_width, orig_height, image_size
+    )
+
+    # Calculate the target width and height.
+    # Note: Each individual patch will be square (image_size x image_size),
+    # but the overall image is resized to maintain aspect ratio by using
+    # different numbers of patches horizontally and vertically.
+    target_width = image_size * target_aspect_ratio[0]
+    target_height = image_size * target_aspect_ratio[1]
+    blocks = target_aspect_ratio[0] * target_aspect_ratio[1]
+
+    # Resize and split the image into patches.
+    resized_img = image.resize((target_width, target_height))
+    processed_images = []
+    for i in range(blocks):
+        box = (
+            (i % (target_width // image_size)) * image_size,
+            (i // (target_width // image_size)) * image_size,
+            ((i % (target_width // image_size)) + 1) * image_size,
+            ((i // (target_width // image_size)) + 1) * image_size,
+        )
+        split_img = resized_img.crop(box)
+        processed_images.append(split_img)
+    assert len(processed_images) == blocks
+    if use_thumbnail and len(processed_images) != 1:
+        thumbnail_img = image.resize((image_size, image_size))
+        processed_images.append(thumbnail_img)
+    return processed_images
+
+
+def preprocess_image_to_tensor(
+    pil_image: Image.Image, input_size: int = 448, max_num: int = 12
+) -> np.ndarray:
+    """Preprocess image to tensor with dynamic patching - must match InternVLProcessor."""
+    images = crop_into_patches(
+        pil_image, image_size=input_size, use_thumbnail=True, max_num=max_num
+    )
+    pixel_values = [imagenet_normalize(image, input_size) for image in images]
+    return np.stack(pixel_values)
 
 
 class InternVLProcessor:
@@ -161,24 +253,23 @@ class InternVLProcessor:
                 + self.IMG_END_TOKEN
             )
 
-            # Replace <image> with InternVL's format
+            # Replace <image> or <|image|> with InternVL's format.
             if "<image>" in processed_text:
                 processed_text = processed_text.replace(
                     "<image>", image_tokens, 1
+                )
+            elif "<|image|>" in processed_text:
+                # Handle the test prompt format with pipes.
+                processed_text = processed_text.replace(
+                    "<|image|>", image_tokens, 1
                 )
             else:
                 # If no <image> placeholder, prepend to text
                 processed_text = image_tokens + "\n" + processed_text
 
-            # Convert PIL image to basic numpy array (no torch/torchvision preprocessing)
-            # Just convert to RGB and numpy array - full preprocessing happens later
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-
-            # Convert PIL image to numpy array (H, W, C format)
-            # TODO(MODELS-565): correctly patchify the image here.
-            image = image.resize((448, 448))
-            image_array = np.array(image, dtype=np.float32)
+            image_array = preprocess_image_to_tensor(
+                image, self.image_size, self.max_dynamic_patch
+            )
             raw_pixel_values.append(image_array)
 
         # Tokenize the processed text

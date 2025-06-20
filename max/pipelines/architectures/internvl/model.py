@@ -466,20 +466,22 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 context.pixel_values is not None
                 and len(context.pixel_values) > 0
             ):
-                # InternVL expects images in CHW format
+                # InternVL expects images in HWC format
                 # context.pixel_values is a list of numpy arrays, take the first one
-                image = context.pixel_values[0]  # Shape: [patches, C, H, W]
+                # TODO(MODELS-638): Support multiple images per request
+                image = context.pixel_values[0]  # Shape: [patches, H, W, C]
 
-                # Add batch dimension: [1, patches, C, H, W]
-                image = np.expand_dims(image, axis=0)
-                images.append(image)
+                # Each patch needs to be processed separately by the vision model
+                # So we add each patch as a separate "batch" item
+                for patch in image:
+                    images.append(patch)
 
         if not images:
             return None
 
         # Convert the list into a single NumPy array with shape
-        # (batch_size, patches, C, H, W).
-        final_images = np.concatenate(images, axis=0)
+        # (total_patches, H, W, C).
+        final_images = np.stack(images, axis=0)
 
         return Tensor.from_numpy(final_images).to(self.devices[0])
 
