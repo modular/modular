@@ -1873,6 +1873,46 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
   targetOffloadInfos.modify([&](auto &info) {
     OffloadInfo::Group &offloadInfo = info[target].groups[emissionOptionsStr];
 
+    // Slice out a pre-elaboration module for the new target to compile for.
+    ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
+    exportedSymbols.insert_or_assign(func.getSymNameAttr(),
+                                     ExportKind::Exported);
+
+    // Make sure to slice out anything referenced in the input parameters. When
+    // generator references are instantiated in the standalone module, they are
+    // instantiated with the new target.
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement(
+        [&](SymbolConstantAttr ref)
+            -> std::optional<std::pair<Attribute, WalkResult>> {
+          if (ref != symbol)
+            exportedSymbols.insert(
+                {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+          return std::nullopt;
+        });
+    replacer.addReplacement(
+        [&](TypeGeneratorRefAttr ref)
+            -> std::optional<std::pair<Attribute, WalkResult>> {
+          exportedSymbols.insert(
+              {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+          return std::nullopt;
+        });
+    replacer.addReplacement(
+        [&](TypeInstanceRefAttr ref)
+            -> std::optional<std::pair<Attribute, WalkResult>> {
+          // Upgrade the instance reference to a generator reference so that we
+          // may slice out the struct generator. We do not support slicing out
+          // instances yet (see WEASOOM for more details).
+          ImplNode *impl = lookupImplNode(ref.getSymbol());
+          auto gen = cast<StructGeneratorOp>(impl->parent->gen);
+          TypeGeneratorRefAttr genRef = TypeGeneratorRefAttr::get(
+              SymbolRefAttr::get(gen.getSymNameAttr()),
+              impl->parent->inputParams, gen.getMetaType());
+          Attribute newGenRef = replacer.replace(genRef);
+          return std::make_pair(newGenRef, WalkResult::skip());
+        });
+    symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
+
     auto iter =
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
             .first;
@@ -1888,22 +1928,6 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
 
     OpBuilder b(ctx);
     op.setKernelIDAttr(b.getIndexAttr(pair.first->second.kernelId));
-
-    // Slice out a pre-elaboration module for the new target to compile for.
-    ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
-    exportedSymbols.insert_or_assign(func.getSymNameAttr(),
-                                     ExportKind::Exported);
-
-    // Make sure to slice out anything referenced in the input parameters. When
-    // generator references are instantiated in the standalone module, they are
-    // instantiated with the new target.
-    mlir::AttrTypeWalker walker;
-    walker.addWalk([&](SymbolConstantAttr ref) {
-      exportedSymbols.insert(
-          {ref.getSymbol().getRootReference(), ExportKind::NotExported});
-    });
-    for (TypedAttr attr : symbol.getParamValues())
-      walker.walk(attr);
   });
   return success();
 }
