@@ -72,6 +72,55 @@ def scatter(
     )[0].tensor.to(old_device)
 
 
+def scatter_nd(
+    input: TensorValueLike,
+    updates: TensorValueLike,
+    indices: TensorValueLike,
+) -> TensorValue:
+    """
+    Creates a new symbolic tensor where the updates are scattered into input at specified indices.
+
+    Args:
+        input: The input symbolic tensor to write elements to.
+        updates: A symbolic tensor of elements to write to input.
+        indices: A tensor of indices specifying where to write updates.
+            Shape should be [num_updates, rank] for full indexing or
+            [num_updates, k] for partial indexing where k < rank.
+
+    Returns:
+        A new symbolic tensor representing the result of the scatter_nd operation.
+    """
+    input = TensorValue(input)
+    updates = TensorValue(updates)
+    indices = TensorValue(indices)
+
+    if input.dtype != updates.dtype:
+        raise ValueError(
+            f"The input dtype ({input.dtype}) and updates dtype"
+            f" ({updates.dtype}) must match"
+        )
+
+    if indices.dtype not in (DType.int32, DType.int64):
+        raise ValueError(
+            f"Invalid indices dtype: '{indices.dtype}'. Indices must be of type int32 or int64."
+        )
+
+    # Check that all tensors are on the same device
+    if not (input.device == updates.device == indices.device):
+        raise ValueError(
+            f"All tensors must be on the same device. Got input.device={input.device}, "
+            f"updates.device={updates.device}, indices.device={indices.device}"
+        )
+
+    return Graph.current._add_op(
+        rmo.mo_scatter_nd,
+        TensorType(input.dtype, input.shape, input.device).to_mlir(),
+        input,
+        updates,
+        indices,
+    )[0].tensor
+
+
 def masked_scatter(
     input: TensorValueLike,
     mask: TensorValueLike,
@@ -116,10 +165,4 @@ def masked_scatter(
 
     updates = updates.flatten()
 
-    return Graph.current._add_op(
-        rmo.mo_scatter_nd,
-        TensorType(input.dtype, input.shape, input.device).to_mlir(),
-        input,
-        updates,
-        indices,
-    )[0].tensor
+    return scatter_nd(input, updates, indices)
