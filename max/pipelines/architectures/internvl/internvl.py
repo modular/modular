@@ -273,6 +273,7 @@ class InternVLLanguageModel(Module):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         image_embeddings: Sequence[TensorValue],
+        image_token_indices: TensorValue,
     ) -> tuple[TensorValue, ...]:
         """Executes the language model forward pass.
 
@@ -295,10 +296,9 @@ class InternVLLanguageModel(Module):
         # Let the kernel handle the no-image embeddings case.
         # And use the first device's image embeddings since they're replicated.
         h0_merged = merge_multimodal_embeddings(
-            input_ids=tokens,
             inputs_embeds=h[0],
             multimodal_embeddings=image_embeddings[0],
-            image_context_token_id=self.image_context_token_id,
+            image_token_indices=image_token_indices,
         )
 
         # Distribute merged embeddings to all devices

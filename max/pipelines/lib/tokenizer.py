@@ -630,6 +630,12 @@ class TextAndVisionTokenizer(
         else:
             pixel_values = tuple()
 
+        # Pass through image token indices if present
+        if "image_token_indices" in processed_inputs:
+            extra_model_args["image_token_indices"] = processed_inputs[
+                "image_token_indices"
+            ]
+
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))
             if request.response_format

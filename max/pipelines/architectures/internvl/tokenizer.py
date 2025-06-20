@@ -77,7 +77,7 @@ def calculate_num_patches_for_image(
             for n in range(min_num, max_num + 1)
             for i in range(1, n + 1)
             for j in range(1, n + 1)
-            if i * j <= max_num and i * j >= min_num
+            if min_num <= i * j <= max_num
         )
     )
     target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
@@ -102,25 +102,25 @@ def imagenet_normalize(img: Image.Image, input_size: int) -> np.ndarray:
 
     This converts PIL image to normalized numpy array with proper preprocessing.
     """
-    # Convert to RGB if needed
+    # Convert to RGB if needed.
     if img.mode != "RGB":
         img = img.convert("RGB")
 
-    # Resize with BICUBIC interpolation (use numerical constant for compatibility)
+    # Resize with BICUBIC interpolation.
     img = img.resize((input_size, input_size), Image.Resampling.BICUBIC)
 
-    # Convert to numpy array and normalize to [0, 1]
+    # Convert to numpy array and normalize to [0, 1].
     img_array = np.array(img, dtype=np.float32) / 255.0
 
-    # Apply ImageNet normalization
+    # Apply ImageNet normalization.
     img_array = (img_array - IMAGENET_MEAN) / IMAGENET_STD
 
-    # Ensure we return float32
-    return img_array.astype(np.float32)
+    return img_array
 
 
 def crop_into_patches(
     image: Image.Image,
+    *,
     min_num: int = 1,
     max_num: int = 12,
     image_size: int = 448,
@@ -137,7 +137,7 @@ def crop_into_patches(
             for n in range(min_num, max_num + 1)
             for i in range(1, n + 1)
             for j in range(1, n + 1)
-            if i * j <= max_num and i * j >= min_num
+            if min_num <= i * j <= max_num
         )
     )
     target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
@@ -158,15 +158,16 @@ def crop_into_patches(
     # Resize and split the image into patches.
     resized_img = image.resize((target_width, target_height))
     processed_images = []
-    for i in range(blocks):
-        box = (
-            (i % (target_width // image_size)) * image_size,
-            (i // (target_width // image_size)) * image_size,
-            ((i % (target_width // image_size)) + 1) * image_size,
-            ((i // (target_width // image_size)) + 1) * image_size,
-        )
-        split_img = resized_img.crop(box)
-        processed_images.append(split_img)
+    for y_block in range(target_aspect_ratio[1]):
+        for x_block in range(target_aspect_ratio[0]):
+            box = (
+                x_block * image_size,
+                y_block * image_size,
+                (x_block + 1) * image_size,
+                (y_block + 1) * image_size,
+            )
+            split_img = resized_img.crop(box)
+            processed_images.append(split_img)
     assert len(processed_images) == blocks
     if use_thumbnail and len(processed_images) != 1:
         thumbnail_img = image.resize((image_size, image_size))
@@ -175,7 +176,10 @@ def crop_into_patches(
 
 
 def preprocess_image_to_tensor(
-    pil_image: Image.Image, input_size: int = 448, max_num: int = 12
+    pil_image: Image.Image,
+    *,
+    input_size: int = 448,
+    max_num: int = 12,
 ) -> np.ndarray:
     """Preprocess image to tensor with dynamic patching - must match InternVLProcessor."""
     images = crop_into_patches(
@@ -268,7 +272,9 @@ class InternVLProcessor:
                 processed_text = image_tokens + "\n" + processed_text
 
             image_array = preprocess_image_to_tensor(
-                image, self.image_size, self.max_dynamic_patch
+                image,
+                input_size=self.image_size,
+                max_num=self.max_dynamic_patch,
             )
             raw_pixel_values.append(image_array)
 
@@ -281,6 +287,17 @@ class InternVLProcessor:
         # These are raw image arrays that will be preprocessed later in the model layer
         if raw_pixel_values:
             text_inputs["pixel_values"] = [raw_pixel_values]
+
+            # Compute image token indices for optimization
+            input_ids = text_inputs.get("input_ids", [])
+            # Handle various input formats (list, nested list, numpy array)
+            # by converting to numpy and flattening.
+            seq = np.asarray(input_ids).ravel()
+
+            image_token_indices = (
+                (seq == IMAGE_CONTEXT_TOKEN_ID).nonzero()[0].astype(np.int32)
+            )
+            text_inputs["image_token_indices"] = image_token_indices
 
         return text_inputs
 
