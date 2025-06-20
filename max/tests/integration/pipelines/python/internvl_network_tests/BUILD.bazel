@@ -1,0 +1,30 @@
+# InternVL integration tests that require network access.
+# These tests are tagged with AITLIB-293 and manual because they make HuggingFace API calls.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+modular_py_test(
+    name = "tests",
+    size = "large",
+    srcs = glob(["test_*.py"]),
+    env_inherit = ["HF_TOKEN"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = [
+        "AITLIB-293",
+        "gpu",
+        "manual",  # TODO(AITLIB-293): Remove this once we have a way to run these tests on CI.
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/pipelines/architectures",
+        requirement("pillow"),
+        requirement("pytest-asyncio"),
+    ],
+)

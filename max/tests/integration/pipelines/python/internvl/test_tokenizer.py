@@ -4,12 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""Minimal smoke test for InternVL tokenizer."""
+"""Tests for InternVL tokenizer."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-from max.pipelines import TokenGeneratorRequest, TokenGeneratorRequestMessage
+from max.pipelines import (
+    TokenGeneratorRequest,
+    TokenGeneratorRequestMessage,
+)
 from max.pipelines.architectures.internvl.tokenizer import InternVLTokenizer
 
 
