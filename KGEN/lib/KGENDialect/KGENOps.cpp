@@ -641,6 +641,15 @@ static void printStructGeneratorSpec(OpAsmPrinter &p, Operation *op,
     p.printRegion(body);
 }
 
+/// StructGeneratorOps are not exported for now.
+ExportKind StructGeneratorOp::getExportKind() {
+  return ExportKind::NotExported;
+}
+void StructGeneratorOp::setExportKind(ExportKind kind) {
+  assert(kind == ExportKind::NotExported &&
+         "StructGeneratorOp is not exported");
+}
+
 //===----------------------------------------------------------------------===//
 // StructInstanceOp
 //===----------------------------------------------------------------------===//

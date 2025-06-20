@@ -2082,6 +2082,12 @@ kgen.struct.generator @Contrived<n: index> = struct_inst<"Contrived"(data: index
   }
 }
 
+kgen.struct.generator @AnotherContrived<n: index> = struct_inst<"AnotherContrived"(data: index)> {
+  kgen.conformance @Fooable {
+    kgen.witness "__foo__" : (!pop.scalar<index>) -> !pop.simd<apply(:(index) -> index @addOne, n), index> = @"Contrived::__foo__(::Int)"<apply(:(index) -> index @addOne, n)>
+  }
+}
+
 kgen.generator @"addOne"(%arg0: index) -> index {
   %index1 = kgen.param.constant : index = <1>
   %index2 = index.add %arg0, %index1
@@ -2095,20 +2101,24 @@ kgen.generator @"Contrived::__foo__(::Int)"<n: index>(%arg0: !pop.scalar<index>)
   kgen.return %result : !pop.simd<n, index>
 }
 
+#Contrived3 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@Contrived<:index 3>>>, struct<(index)>> : !kgen.type
+#Contrived7 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@Contrived<:index 7>>>, struct<(index)>> : !kgen.type
+#AnotherContrivedN1 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@AnotherContrived<:index sub(n, 1)>>>, struct<(index)>> : !kgen.type
+
 // CHECK-LABEL: kgen.func @"use_fooable,T={{.*}},n=4"
 // CHECK:    kgen.call @"Contrived::__foo__(::Int),n=4"
 
 // CHECK-LABEL: kgen.func @"use_fooable,T={{.*}},n=8"
 // CHECK:    kgen.call @"Contrived::__foo__(::Int),n=8"
 kgen.generator @use_fooable<T: type, n: index>(%arg: !kgen.param<T>) -> !pop.simd<n, index> {
-  %const = kgen.param.constant : !pop.scalar<index> = <8>
+  %const = kgen.param.constant : !pop.scalar<index> = <7>
   kgen.param.declare traitMethod: (!pop.scalar<index>) -> !pop.simd<n, index>  = <#kgen.get_witness<#kgen.param.decl.ref<"T">, "Fooable", "__foo__">>
   %result = kgen.call_param[(!pop.scalar<index>) -> !pop.simd<n, index> : traitMethod](%const)
-  kgen.return %result : !pop.simd<n, index>
+  kgen.param.declare traitMethod2: (!pop.scalar<index>) -> !pop.simd<n, index>  = <#kgen.get_witness<#AnotherContrivedN1, "Fooable", "__foo__">>
+  %result2 = kgen.call_param[(!pop.scalar<index>) -> !pop.simd<n, index> : traitMethod2](%const)
+  %result3 = pop.add %result, %result2 : !pop.simd<n, index>
+  kgen.return %result3 : !pop.simd<n, index>
 }
-
-#Contrived3 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@Contrived<:index 3>>>, struct<(index)>> : !kgen.type
-#Contrived7 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@Contrived<:index 7>>>, struct<(index)>> : !kgen.type
 
 // CHECK-LABEL: kgen.func @gen_structs
 kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
@@ -2116,6 +2126,19 @@ kgen.generator @gen_structs(%arg0: !kgen.struct<(index)>) {
   kgen.call @use_fooable<:type #Contrived3, 4>(%arg0) : (!kgen.struct<(index)>) -> !pop.simd<4, index>
   // CHECK-NEXT: kgen.call {{.*}}Contrived,n=7
   kgen.call @use_fooable<:type #Contrived7, 8>(%arg0) : (!kgen.struct<(index)>) -> !pop.simd<8, index>
+
+  // CHECK: kgen.param.constant: string = <";
+  // CHECK-SAME: use_fooable,T={{.*}}Contrived,n=3
+  // CHECK-SAME: ret <4 x i64> splat (i64 14)
+  %0 = kgen.compile_offload<current_target(), 2, "",
+                            :(!kgen.struct<(index)>) -> !pop.simd<4, index> @use_fooable<:type #Contrived3, 4>>
+                            : !kgen.struct<(string, index)>
+  // CHECK: kgen.param.constant: string = <";
+  // CHECK-SAME: use_fooable,T={{.*}}Contrived,n=7
+  // CHECK-SAME: ret <8 x i64> splat (i64 14)
+  %1 = kgen.compile_offload<current_target(), 2, "",
+                            :(!kgen.struct<(index)>) -> !pop.simd<8, index> @use_fooable<:type #Contrived7, 8>>
+                            : !kgen.struct<(string, index)>
   kgen.return
 }
 
