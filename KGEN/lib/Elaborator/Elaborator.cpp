@@ -1095,10 +1095,8 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     return ElaborationState::skipNode();
 
   // has_next should return a bool.
-  if (FuncOp(*hasNextFunc)
-          .getFuncTypeGenerator()
-          .getBody()
-          .hasMemoryOnlyResult()) {
+  FuncType hasNextType = FuncOp(*hasNextFunc).getFuncTypeGenerator().getBody();
+  if (hasNextType.hasMemoryOnlyResult()) {
     parent->setToError(ErrorTree(
         op.getLoc(), "INTERNAL ERROR: __has_next__ should return a bool"));
     return failure();
@@ -1123,16 +1121,12 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     // Check to see if we are supposed to stop here.
     parent->getEvaluator().setErrorLoc(op.getLoc());
 
-    // Check if hasNextFunc takes a pointer input or not (memory type?).
-    // If so, create a StoreToMemAttr so that the input will be internalized to
-    // the interpreter memory and become a pointer type argument for the
-    // hasNextFunc.
-    FuncOp func = *hasNextFunc;
+    // Check if the iterator is a memory-only type, then hasNextFunc will take
+    // a pointer input.
     TypedAttr hasNextInput = iterator;
-    if (isa<PointerType>(func.getFunctionType().getInput(0))) {
+    if (hasAddress(hasNextType.getArgConvention(0)))
       hasNextInput =
-          StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
-    }
+          StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
 
     ErrorTreeOr<TypedAttr> hasNextResult =
         parent->getEvaluator().evaluateFunction(*hasNextFunc, hasNextInput);
