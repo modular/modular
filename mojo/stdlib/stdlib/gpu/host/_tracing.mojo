@@ -143,6 +143,32 @@ struct Color(Intable):
     alias WHITE = Self(0xFFFFFF)
     alias YELLOW = Self(0xFFFF00)
 
+    fn __init__(out self, colorname: StaticString):
+        """Initialize Color from a StaticString color name.
+
+        Args:
+            colorname: The name of the color to use.
+        """
+        if colorname == "modular_max":
+            self = Color.MODULAR_MAX
+        elif colorname == "blue":
+            self = Color.BLUE
+        elif colorname == "green":
+            self = Color.GREEN
+        elif colorname == "orange":
+            self = Color.ORANGE
+        elif colorname == "purple":
+            self = Color.PURPLE
+        elif colorname == "red":
+            self = Color.RED
+        elif colorname == "white":
+            self = Color.WHITE
+        elif colorname == "yellow":
+            self = Color.YELLOW
+        else:
+            # Default to MODULAR_MAX for unknown color names
+            self = Color.MODULAR_MAX
+
     fn __int__(self) -> Int:
         return self._value
 
