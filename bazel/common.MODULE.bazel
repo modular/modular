@@ -242,6 +242,7 @@ mojo.gpu_toolchains(
         "NVIDIA GeForce RTX 3090": "",
         "MI300X": "mi300x",
         "MI325": "mi325",
+        "MI355": "mi355",
         "Navi": "radeon",
         "AMD Radeon Graphics": "radeon",
     },
