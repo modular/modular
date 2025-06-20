@@ -102,6 +102,9 @@ class MAXModelConfig(MAXModelConfigBase):
     cast_safetensor_weights_from_float32_to_bfloat16: bool = False
     """Whether to cast safetensor weights from float32 to bfloat16."""
 
+    applied_bfloat16_downcast: bool = False
+    """If safetensor weights were downcasted from float32 to bfloat16."""
+
     _huggingface_config: Optional[AutoConfig] = None
     """Hugging Face config. This should only be set by internal code."""
 
@@ -426,6 +429,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     ):
                         msg = "No GPUs available, cannot downcast from float32 to bfloat16."
                         raise ValueError(msg)
+                    self.applied_bfloat16_downcast = True
                     self.quantization_encoding = SupportedEncoding.bfloat16
                 else:
                     self.quantization_encoding = supported_encodings[0]
