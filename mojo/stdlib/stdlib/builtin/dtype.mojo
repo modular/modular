@@ -373,24 +373,28 @@ struct DType(
         """
         return self.value
 
+    @doc_private
     @staticmethod
-    fn _from_ui8(ui8: __mlir_type.ui8) -> DType:
-        return __mlir_op.`pop.dtype.from_ui8`(ui8)
-
-    @staticmethod
-    fn _from_ui8(ui8: __mlir_type.`!pop.scalar<ui8>`) -> DType:
-        return DType._from_ui8(
+    @always_inline("nodebug")
+    fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
+        return __mlir_op.`pop.dtype.from_ui8`(
             __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
         )
 
+    @doc_private
     @always_inline("nodebug")
-    fn _as_i8(
-        self,
-    ) -> __mlir_type.`!pop.scalar<ui8>`:
-        var val = __mlir_op.`pop.dtype.to_ui8`(self.value)
-        return __mlir_op.`pop.cast_from_builtin`[
-            _type = __mlir_type.`!pop.scalar<ui8>`
-        ](val)
+    fn _as_ui8(self) -> UInt8._mlir_type:
+        return __mlir_op.`pop.cast_from_builtin`[_type = UInt8._mlir_type](
+            __mlir_op.`pop.dtype.to_ui8`(self.value)
+        )
+
+    @doc_private
+    @always_inline("nodebug")
+    fn _match(self, mask: UInt8) -> Bool:
+        return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
+            __mlir_op.`pop.simd.and`(self._as_ui8(), mask.value),
+            __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
+        )
 
     @always_inline("nodebug")
     fn __is__(self, rhs: DType) -> Bool:
@@ -427,7 +431,7 @@ struct DType(
             True if the DTypes are the same and False otherwise.
         """
         return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
-            self._as_i8(), rhs._as_i8()
+            self._as_ui8(), rhs._as_ui8()
         )
 
     @always_inline("nodebug")
@@ -441,7 +445,7 @@ struct DType(
             False if the DTypes are the same and True otherwise.
         """
         return __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-            self._as_i8(), rhs._as_i8()
+            self._as_ui8(), rhs._as_ui8()
         )
 
     fn __hash__(self) -> UInt:
@@ -450,7 +454,7 @@ struct DType(
         Returns:
             A 64-bit integer hash of this `DType` value.
         """
-        return hash(UInt8(self._as_i8()))
+        return hash(UInt8(self._as_ui8()))
 
     fn __hash__[H: _Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.
@@ -461,7 +465,7 @@ struct DType(
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_simd(UInt8(self._as_i8()))
+        hasher._update_with_simd(UInt8(self._as_ui8()))
 
     @always_inline("nodebug")
     fn is_unsigned(self) -> Bool:
@@ -470,14 +474,7 @@ struct DType(
         Returns:
             Returns True if the input type parameter is unsigned.
         """
-        if not self.is_integral():
-            return False
-        return Bool(
-            __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred eq>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsSigned.value),
-                UInt8(0).value,
-            )
-        )
+        return self._is_non_index_integral() and not self._match(_mIsSigned)
 
     @always_inline("nodebug")
     fn is_signed(self) -> Bool:
@@ -486,16 +483,9 @@ struct DType(
         Returns:
             Returns True if the input type parameter is signed.
         """
-        if self is DType.index or self.is_floating_point():
+        if self.is_floating_point():
             return True
-        if not self.is_integral():
-            return False
-        return Bool(
-            __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsSigned.value),
-                UInt8(0).value,
-            )
-        )
+        return self.is_integral() and self._match(_mIsSigned)
 
     @always_inline("nodebug")
     fn _is_non_index_integral(self) -> Bool:
@@ -504,12 +494,7 @@ struct DType(
         Returns:
             Returns True if the input type parameter is a non-index integer.
         """
-        return Bool(
-            __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsInteger.value),
-                UInt8(0).value,
-            )
-        )
+        return self._match(_mIsInteger)
 
     @always_inline("nodebug")
     fn is_integral(self) -> Bool:
@@ -518,9 +503,7 @@ struct DType(
         Returns:
             Returns True if the input type parameter is an integer.
         """
-        if self is DType.index:
-            return True
-        return self._is_non_index_integral()
+        return self is DType.index or self._is_non_index_integral()
 
     @always_inline("nodebug")
     fn is_floating_point(self) -> Bool:
@@ -530,14 +513,7 @@ struct DType(
         Returns:
             Returns True if the input type parameter is a floating-point.
         """
-        if self.is_integral():
-            return False
-        return Bool(
-            __mlir_op.`pop.cmp`[pred = __mlir_attr.`#pop<cmp_pred ne>`](
-                __mlir_op.`pop.simd.and`(self._as_i8(), _mIsFloat.value),
-                UInt8(0).value,
-            )
-        )
+        return self._match(_mIsFloat)
 
     @always_inline("nodebug")
     fn is_float8(self) -> Bool:
@@ -594,7 +570,7 @@ struct DType(
                         __mlir_op.`pop.sub`(
                             __mlir_op.`pop.shr`(
                                 __mlir_op.`pop.simd.and`(
-                                    self._as_i8(), _mIsNotInteger.value
+                                    self._as_ui8(), _mIsNotInteger.value
                                 ),
                                 UInt8(1).value,
                             ),
@@ -660,34 +636,24 @@ struct DType(
         Parameters:
             func: A parametrized on dtype function to dispatch.
         """
-        if self is DType.index:
-            func[DType.index]()
-        elif self is DType.uint8:
-            func[DType.uint8]()
-        elif self is DType.int8:
-            func[DType.int8]()
-        elif self is DType.uint16:
-            func[DType.uint16]()
-        elif self is DType.int16:
-            func[DType.int16]()
-        elif self is DType.uint32:
-            func[DType.uint32]()
-        elif self is DType.int32:
-            func[DType.int32]()
-        elif self is DType.uint64:
-            func[DType.uint64]()
-        elif self is DType.int64:
-            func[DType.int64]()
-        elif self is DType.uint128:
-            func[DType.int128]()
-        elif self is DType.int128:
-            func[DType.int128]()
-        elif self is DType.uint256:
-            func[DType.uint256]()
-        elif self is DType.int256:
-            func[DType.int256]()
-        else:
-            raise Error("only integral types are supported")
+
+        # fmt: off
+        alias dtypes = [
+            DType.index,
+            DType.uint8, DType.int8,
+            DType.uint16, DType.int16,
+            DType.uint32, DType.int32,
+            DType.uint64, DType.int64,
+            DType.uint128, DType.int128,
+            DType.uint256, DType.int256,
+        ]
+        # fmt: on
+
+        @parameter
+        for dtype in dtypes:
+            if self is dtype:
+                return func[dtype]()
+        raise Error("only integral types are supported")
 
     # ===-------------------------------------------------------------------===#
     # dispatch_floating
