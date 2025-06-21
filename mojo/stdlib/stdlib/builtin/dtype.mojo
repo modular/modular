@@ -759,11 +759,9 @@ struct DType(
             func: A parametrized on dtype function to dispatch.
             dtypes: A list of DTypes on which to do dispatch.
         """
-        alias dtype_var = VariadicList[DType](dtypes)
 
         @parameter
-        for idx in range(len(dtype_var)):
-            alias dtype = dtype_var[idx]
+        for dtype in VariadicList(dtypes):
             if self is dtype:
                 return func[dtype]()
 

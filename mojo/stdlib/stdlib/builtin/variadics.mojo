@@ -23,12 +23,16 @@ from memory import Pointer
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Movable):
+struct _VariadicListIter[type: AnyTrivialRegType](
+    Copyable, IteratorTrait, Movable
+):
     """Const Iterator for VariadicList.
 
     Parameters:
         type: The type of the elements in the list.
     """
+
+    alias Element = type
 
     var index: Int
     var src: VariadicList[type]

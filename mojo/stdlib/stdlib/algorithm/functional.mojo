@@ -519,10 +519,7 @@ fn tile[
     var current_offset: Int = offset
 
     @parameter
-    for idx in range(len(tile_size_list)):
-        # Get the tile size to proceed with.
-        alias tile_size = tile_size_list[idx]
-
+    for tile_size in tile_size_list:
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while current_offset <= upperbound - tile_size:
@@ -653,18 +650,13 @@ fn tile[
     # Initialize where to start on the overall work load.
     var current_offset_y: Int = offset_y
 
-    alias num_tiles_x = len(tile_sizes_x)
-    alias num_tiles_y = len(tile_sizes_y)
-
     @parameter
-    for idx_y in range(num_tiles_y):
-        alias tile_size_y = tile_sizes_y[idx_y]
+    for tile_size_y in tile_sizes_y:
         while current_offset_y <= upperbound_y - tile_size_y:
             var current_offset_x = offset_x
 
             @parameter
-            for idx_x in range(num_tiles_x):
-                alias tile_size_x = tile_sizes_x[idx_x]
+            for tile_size_x in tile_sizes_x:
                 while current_offset_x <= upperbound_x - tile_size_x:
                     workgroup_function[tile_size_x, tile_size_y](
                         current_offset_x, current_offset_y
@@ -863,16 +855,11 @@ fn tile_and_unswitch[
     var remaining = upperbound - offset
 
     @parameter
-    for idx in range(len(tile_size_list)):
-        # Get the tile size to proceed with.
-        var tile_size = tile_size_list[idx]
-
+    for tile_size in tile_size_list:
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while remaining >= tile_size:
-            workgroup_function[tile_size_list[idx], True](
-                current_offset, upperbound
-            )
+            workgroup_function[tile_size, True](current_offset, upperbound)
             current_offset += tile_size
             remaining -= tile_size
 
@@ -986,9 +973,7 @@ fn tile_middle_unswitch_boundaries[
 
     # Middle
     @parameter
-    for idx in range(len(middle_tile_sizes)):
-        alias tile_size = middle_tile_sizes[idx]
-
+    for tile_size in middle_tile_sizes:
         while offset <= right_boundary_start - tile_size:
             work_fn[tile_size, False](offset)
             offset += tile_size
