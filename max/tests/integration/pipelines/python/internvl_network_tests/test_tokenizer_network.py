@@ -15,6 +15,7 @@ from max.pipelines import (
     PipelineConfig,
     TokenGeneratorRequest,
 )
+from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.lib import PipelineEngine
 from PIL import Image
 
@@ -68,3 +69,93 @@ async def test_internvl_tokenizer_with_image():
 
     num_image_tokens = (image_context.all_tokens == image_token_id).sum()
     assert num_image_tokens == expected_image_tokens
+
+
+@pytest.mark.asyncio
+async def test_internvl_tokenizer_apply_chat_template(mocker):
+    """Test that InternVL tokenizer's apply_chat_template handles multimodal content correctly.
+
+    This test verifies that the InternVL processor can handle messages with multimodal
+    content (text + image) without throwing warnings about string concatenation.
+    """
+    # Create a mock tokenizer with apply_chat_template.
+    mock_tokenizer = mocker.MagicMock()
+    mock_tokenizer.apply_chat_template.return_value = "User: What is this?"
+
+    # Create a mock config.
+    mock_config = mocker.MagicMock()
+    mock_config.vision_config.image_size = 448
+    mock_config.vision_config.patch_size = 14
+    mock_config.max_dynamic_patch = 12
+    mock_config.downsample_ratio = 0.5
+
+    # Create processor.
+    processor = InternVLProcessor(mock_tokenizer, mock_config)
+
+    # Test with multimodal message (text + image).
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "content": "What is this?"},
+                {"type": "image"},
+            ],
+        }
+    ]
+
+    # Mock the warning logger.
+    mock_warning = mocker.patch("max.pipelines.lib.tokenizer.logger.warning")
+
+    result = processor.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+
+    # Verify no warnings were logged.
+    mock_warning.assert_not_called()
+
+    # Verify the tokenizer was called with text-only content.
+    mock_tokenizer.apply_chat_template.assert_called_once()
+    called_messages = mock_tokenizer.apply_chat_template.call_args[0][0]
+
+    # Check that the content was converted to string.
+    assert len(called_messages) == 1
+    assert called_messages[0]["role"] == "user"
+    assert isinstance(called_messages[0]["content"], str)
+    assert called_messages[0]["content"] == "What is this?"
+
+    # Verify result.
+    assert result == "User: What is this?"
+
+    # Test with text-only message.
+    mock_tokenizer.apply_chat_template.reset_mock()
+    text_only_messages = [{"role": "user", "content": "Hello world"}]
+
+    result2 = processor.apply_chat_template(
+        text_only_messages, tokenize=False, add_generation_prompt=True
+    )
+
+    # Verify it still works with text-only.
+    called_messages2 = mock_tokenizer.apply_chat_template.call_args[0][0]
+    assert called_messages2[0]["content"] == "Hello world"
+
+    # Test with multiple text parts in content.
+    mock_tokenizer.apply_chat_template.reset_mock()
+    mock_tokenizer.apply_chat_template.return_value = "User: Hello world"
+
+    multi_text_messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "content": "Hello"},
+                {"type": "image"},
+                {"type": "text", "content": "world"},
+            ],
+        }
+    ]
+
+    result3 = processor.apply_chat_template(
+        multi_text_messages, tokenize=False, add_generation_prompt=True
+    )
+
+    called_messages3 = mock_tokenizer.apply_chat_template.call_args[0][0]
+    assert called_messages3[0]["content"] == "Hello world"

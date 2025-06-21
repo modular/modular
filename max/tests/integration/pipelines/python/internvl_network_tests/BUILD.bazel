@@ -26,5 +26,6 @@ modular_py_test(
         "//SDK/lib/API/python/max/pipelines/architectures",
         requirement("pillow"),
         requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
     ],
 )
