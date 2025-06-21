@@ -329,6 +329,46 @@ class ClosureSymbolAttr(max._core.Attribute):
     @property
     def type(self) -> FuncTypeGeneratorType: ...
 
+class CompileAssemblyAttr(max._core.Attribute):
+    """
+    The `#kgen.compile_assembly` attribute is used to model compiling a function
+    to assembly code for a given target and emission format.
+
+    Example:
+
+    ```mlir
+    kgen.param.declare some_target: target = #kgen.target<
+      triple="", arch="", features="", data_layout="", simd_bit_width=128
+    > : !kgen.target
+
+    #kgen.compile_assembly<
+      some_target, =llvm, "", false, :() -> () @kernel>
+    > : !kgen.string
+    ```
+    """
+
+    def __init__(
+        self,
+        target: max._core.dialects.builtin.TypedAttr,
+        emission_kind: max._core.dialects.builtin.TypedAttr,
+        emission_options: max._core.dialects.builtin.TypedAttr,
+        propagate_error: max._core.dialects.builtin.BoolAttr,
+        func: max._core.dialects.builtin.TypedAttr,
+        type: max._core.Type,
+    ) -> None: ...
+    @property
+    def target(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def emission_kind(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def emission_options(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def propagate_error(self) -> max._core.dialects.builtin.BoolAttr: ...
+    @property
+    def func(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class CompileOffloadClosureAttr(max._core.Attribute):
     """
     The `#kgen.compile_offload_closure` attribute is used to compile offload
