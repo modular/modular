@@ -364,9 +364,66 @@ populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
   return parameters;
 }
 
+/// Given a wrapper function, the wrapper type, and the wrapped field, populate
+/// the operands and implicit origins necessary to bind the arguments of the
+/// wrapped function.
+static void
+getUnwrappedOperands(ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
+                     StructFieldOp wrappedField,
+                     llvm::SmallDenseSet<StringRef> const &explicitParameters,
+                     SmallVector<Value> &operands,
+                     SmallVector<TypedAttr> &origins) {
+  MLIRContext *ctx = b.getContext();
+  // If we map a value to its field, save the lifetime name so we can map the
+  // origins as well.
+  DenseMap<StringRef, StringAttr> originToField;
+  for (Value arg : op.getBodyRegion().front().getArguments()) {
+    // replace wrapper type with impl type
+    RefType refType = dyn_cast<RefType>(arg.getType());
+    if (!refType) {
+      operands.push_back(arg);
+      continue;
+    }
+
+    if (refType.getElementType() == wrapperType) {
+      ParamDeclRefAttr originReference =
+          dyn_cast<ParamDeclRefAttr>(refType.getOrigin());
+      assert(originReference && "There should not be parameter expressions "
+                                "in the signature of wrapper functions");
+      operands.push_back(
+          b.create<RefStructGEROp>(arg, wrappedField)->getResults().front());
+      originToField[originReference.getName().getValue()] =
+          wrappedField.getNameAttr();
+    } else {
+      operands.push_back(arg);
+    }
+  }
+
+  // Since this is a wrapper we know all the origins of the function must be
+  // bound to the single call op in the body.
+  SmallVector<ParamDeclAttr> allParams = op.collectAllParams(true);
+  for (ParamDeclAttr param : allParams) {
+    if (explicitParameters.contains(param.getName().getValue()))
+      continue;
+    auto originType = dyn_cast<OriginType>(param.getType());
+    if (!originType)
+      continue;
+    ParamDeclRefAttr originRef =
+        ParamDeclRefAttr::get(param.getName(), param.getType());
+    TypedAttr originArg;
+    auto ptr = originToField.find(originRef.getName().getValue());
+    if (ptr != originToField.end())
+      originArg = OriginFieldAttr::get(ctx, originRef, ptr->second, originType);
+    else
+      originArg = originRef;
+    origins.push_back(originArg);
+  }
+}
+
 StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                                                  ASTDecl &traitDecl,
                                                  SMLoc smLocation) {
+  StringRef implName = "impl";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl);
   auto module = cast<FileModuleOp>(moduleDecl);
   Location location = shared.diags.translateLocation(smLocation);
@@ -385,7 +442,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
 
   // Give the struct a parameter "impl" of metatype trait.
   SmallVector<ParamDeclAttr> implParameters;
-  ParamDeclAttr implType = ParamDeclAttr::get("impl", traitType);
+  ParamDeclAttr implType = ParamDeclAttr::get(implName, traitType);
   Type paramType = ParamType::get(ParamDeclRefAttr::get(implType));
   implParameters.push_back(implType);
   ASTType selfType(paramType);
@@ -447,55 +504,14 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
     operands.reserve(op.getNumArguments());
     Type wrapperType = cast<RefType>(selfArgument.getType()).getElementType();
 
-    // Replace wrapper type with impl type.
-    // If we map a value to its field, save the lifetime name so we can map the
-    // origins as well.
-    DenseMap<StringRef, StringAttr> originToField;
-    for (Value arg : op.getBodyRegion().front().getArguments()) {
-      RefType refType = dyn_cast<RefType>(arg.getType());
-      if (!refType) {
-        operands.push_back(arg);
-        continue;
-      }
-
-      if (refType.getElementType() == wrapperType) {
-        ParamDeclRefAttr originReference =
-            dyn_cast<ParamDeclRefAttr>(refType.getOrigin());
-        assert(originReference && "There should not be parameter expressions "
-                                  "in the signature of wrapper functions");
-        operands.push_back(
-            b.create<RefStructGEROp>(arg, wrappedField)->getResults().front());
-        originToField[originReference.getName().getValue()] =
-            wrappedField.getNameAttr();
-      } else {
-        operands.push_back(arg);
-      }
-    }
-
     // Since this is a wrapper we know all the origins of the function must be
     // bound to the single call op in the body.
-    SmallVector<ParamDeclAttr> allParams = op.collectAllParams(true);
     SmallVector<TypedAttr> origins;
     llvm::SmallDenseSet<StringRef> explicitParameters;
     for (auto explicitParam : parameters)
       explicitParameters.insert(explicitParam.getName().getValue());
-    for (ParamDeclAttr param : allParams) {
-      if (explicitParameters.contains(param.getName().getValue()))
-        continue;
-      auto originType = dyn_cast<OriginType>(param.getType());
-      if (!originType)
-        continue;
-      ParamDeclRefAttr originRef =
-          ParamDeclRefAttr::get(param.getName(), param.getType());
-      TypedAttr originArg;
-      auto ptr = originToField.find(originRef.getName().getValue());
-      if (ptr != originToField.end())
-        originArg =
-            OriginFieldAttr::get(ctx, originRef, ptr->second, originType);
-      else
-        originArg = originRef;
-      origins.push_back(originArg);
-    }
+    getUnwrappedOperands(b, op, wrapperType, wrappedField, explicitParameters,
+                         operands, origins);
 
     TypedAttr symbol = ParamOperatorAttr::get(
         POC::GetVTableEntry,
@@ -524,7 +540,65 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
     }
   }
 
-  // TODO: generate the constructor
+  auto initName = StringAttr::get(ctx, "__init__");
+  SmallVector<Type> initArgumentTypes;
+  SmallVector<PogMetadataAttr> argPogs;
+  SmallVector<ArgConvention> argConventions;
+
+  initArgumentTypes.reserve(2);
+  argPogs.reserve(2);
+  argConventions.reserve(2);
+
+  // the constructor takes an instance of type "impl" and an instance of type
+  // "self"
+  Type refInitImplType = ASTType((paramType)).getRefForArgument(implName, true);
+  argConventions.push_back(ArgConvention::OwnedMem);
+  initArgumentTypes.push_back(refInitImplType);
+  argPogs.push_back(PogMetadataAttr::get(StringAttr::get(ctx, implName),
+                                         PassingKind::PosOnly));
+
+  RefType refSelfType = ASTType(structDecl.getTypeDeclSelf())
+                            .getRefForArgument(selfName.getValue(), true);
+  argConventions.push_back(ArgConvention::ByRefResult);
+  initArgumentTypes.push_back(refSelfType);
+  argPogs.push_back(PogMetadataAttr::get(selfName, PassingKind::PosOnly));
+  b.setInsertionPointToEnd(&declOp.getFields().front());
+  auto [initFnOp, initDecl] = synthesizeFunction(
+      structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
+      argConventions, PogListAttr::get(ctx, argPogs), NoneType::get(ctx),
+      SpecialFunctionKind::kInit, smLocation, b, {}, "", true,
+      InlineLevel::Automatic);
+
+  // Generate the body of the constructor, which should contain a call to the
+  // move constructor.
+  StringAttr moveName = StringAttr::get("__moveinit__", StringType::get(ctx));
+  FnOp moveFn;
+  for (auto fnOp : trait.getFields().getOps<FnOp>()) {
+    if (fnOp.getSourceName() == "__moveinit__") {
+      moveFn = fnOp;
+      break;
+    }
+  }
+  assert(moveFn && "closures are movable but cannot find the move function.");
+  FnTypeGeneratorType moveSignature =
+      specializeSignature(moveFn, paramType, *shared.declResolver);
+  b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
+  TypedAttr moveSymbol = ParamOperatorAttr::get(
+      POC::GetVTableEntry,
+      {ParamDeclRefAttr::get(implType.getName(), implType.getType()), moveName},
+      moveSignature);
+  SmallVector<Value> operands;
+  SmallVector<TypedAttr> origins;
+  llvm::SmallDenseSet<StringRef> explicitParameters;
+  getUnwrappedOperands(b, initFnOp, refSelfType.getElementType(), wrappedField,
+                       explicitParameters, operands, origins);
+  b.create<LIT::CallOp>(moveSignature.getResultType(), moveSymbol, origins,
+                        operands);
+  ValueRange results =
+      b.create<ParamConstantOp>(NoneAttr::get(ctx))->getResults();
+  b.create<LIT::ReturnOp>(results);
+  b.create<LIT::EndFnOp>();
+
   return declOp;
 }
 
