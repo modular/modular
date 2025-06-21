@@ -56,7 +56,7 @@ trait Writer:
         # Writer requirement to take multiple args
         fn write[*Ts: Writable](mut self, *args: *Ts):
             @parameter
-            for i in range(args.__len__()):
+            for i in range(len(args)):
                 args[i].write_to(self)
 
         # Also make it Writable to allow `print` to write the inner String
@@ -117,7 +117,7 @@ trait Writer:
         ...
         # TODO: When have default implementations on traits, we can use this:
         # @parameter
-        # for i in range(args.__len__()):
+        # for i in range(len(args)):
         #     args[i].write_to(self)
         #
         # To only have to implement `write_bytes` to make a type a valid Writer
@@ -204,7 +204,7 @@ struct _WriteBufferHeap(Writable, Writer):
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
-        for i in range(args.__len__()):
+        for i in range(len(args)):
             args[i].write_to(self)
 
     fn write_to[W: Writer](self, mut writer: W):
@@ -257,7 +257,7 @@ struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
 
     fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
-        for i in range(args.__len__()):
+        for i in range(len(args)):
             args[i].write_to(self)
 
 

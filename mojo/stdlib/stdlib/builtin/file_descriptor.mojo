@@ -147,5 +147,5 @@ struct FileDescriptor(Writer):
         """
 
         @parameter
-        for i in range(args.__len__()):
+        for i in range(len(args)):
             args[i].write_to(self)

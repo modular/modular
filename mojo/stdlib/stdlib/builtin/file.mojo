@@ -424,7 +424,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var buffer = _WriteBufferStack(file)
 
         @parameter
-        for i in range(args.__len__()):
+        for i in range(len(args)):
             args[i].write_to(buffer)
 
         buffer.flush()

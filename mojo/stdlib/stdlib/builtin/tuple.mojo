@@ -145,7 +145,7 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
 
     @always_inline
     @staticmethod
-    fn __len__() -> Int:
+    fn __len__() -> UInt:
         """Return the number of elements in the tuple.
 
         Returns:
@@ -160,15 +160,6 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
 
         alias result = variadic_size(element_types)
         return result
-
-    @always_inline("nodebug")
-    fn __len__(self) -> Int:
-        """Get the number of elements in the tuple.
-
-        Returns:
-            The tuple length.
-        """
-        return Self.__len__()
 
     @always_inline("nodebug")
     fn __getitem__[idx: Int](ref self) -> ref [self] element_types[idx.value]:

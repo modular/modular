@@ -447,7 +447,7 @@ struct String(
         """
         self = String()
         var buffer = _WriteBufferStack(self)
-        alias length = args.__len__()
+        alias length = len(args)
 
         @parameter
         for i in range(length):
@@ -499,7 +499,7 @@ struct String(
         """
         self = String()
         var buffer = _WriteBufferStack(self)
-        alias length = args.__len__()
+        alias length = len(args)
 
         @parameter
         for i in range(length):
@@ -647,7 +647,7 @@ struct String(
         """
 
         @parameter
-        for i in range(args.__len__()):
+        for i in range(len(args)):
             args[i].write_to(self)
 
     @staticmethod
@@ -675,7 +675,7 @@ struct String(
         """
         var string = String()
         var buffer = _WriteBufferStack(string)
-        alias length = args.__len__()
+        alias length = len(args)
 
         @parameter
         for i in range(length):

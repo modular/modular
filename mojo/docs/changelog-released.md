@@ -489,7 +489,7 @@ Python-Mojo interoperability enhancements and changes:
       var string = String()
 
       @parameter
-      for i in range(args.__len__()):
+      for i in range(len(args)):
           args[i].write_to(string)
   ```
 
@@ -503,7 +503,7 @@ Python-Mojo interoperability enhancements and changes:
       var buffer = _WriteBufferStack(string)
 
       @parameter
-      for i in range(args.__len__()):
+      for i in range(len(args)):
           args[i].write_to(buffer)
 
       buffer.flush()

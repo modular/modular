@@ -359,7 +359,7 @@ struct RuntimeLayout[
         return self.shape.value[i]
 
     @staticmethod
-    fn __len__() -> Int:
+    fn __len__() -> UInt:
         """Get the number of dimensions in the layout.
 
         Returns:

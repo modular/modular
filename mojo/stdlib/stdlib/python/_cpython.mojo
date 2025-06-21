@@ -945,7 +945,7 @@ struct CPython(Copyable, Defaultable, Movable):
         #   Once Mojo argument splatting is supported, this should just
         #   be: `print(*args)`
         @parameter
-        for i in range(args.__len__()):
+        for i in range(len(args)):
             print(args[i], sep="", end="", flush=False)
 
         print(flush=True)

@@ -19,6 +19,11 @@ These are Mojo built-ins, so you don't need to import them.
 #  Sized
 # ===----------------------------------------------------------------------=== #
 
+# TODO: these should be abstracted over once we have parametric traits:
+# trait Sized[indexing_type: Indexer]: fn __len__(self) -> indexing_type:
+# trait StaticSized[indexing_type: Indexer]: fn __len__() -> indexing_type:
+# trait SizedRaising[indexing_type: Indexer]: fn __len__(self) raises -> indexing_type:
+
 
 trait Sized:
     """The `Sized` trait describes a type that has an integer length (such as a
@@ -102,6 +107,20 @@ trait UIntSized:
     """
 
     fn __len__(self) -> UInt:
+        """Get the length of the type.
+
+        Returns:
+            The length of the type.
+        """
+        ...
+
+
+trait StaticUIntSized:
+    """The `StaticUIntSized` trait describes a type that has an integer length.
+    """
+
+    @staticmethod
+    fn __len__() -> UInt:
         """Get the length of the type.
 
         Returns:
@@ -195,3 +214,19 @@ fn len[T: SizedRaising](value: T) raises -> Int:
         If the length cannot be computed.
     """
     return value.__len__()
+
+
+@always_inline
+fn len[T: StaticUIntSized](value: T) -> UInt:
+    """Get the length of a value.
+
+    Parameters:
+        T: The Sized type.
+
+    Args:
+        value: The object to get the length of.
+
+    Returns:
+        The length of the object.
+    """
+    return T.__len__()

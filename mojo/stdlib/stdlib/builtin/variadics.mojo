@@ -360,7 +360,7 @@ struct VariadicPack[
 
     @always_inline
     @staticmethod
-    fn __len__() -> Int:
+    fn __len__() -> Unt:
         """Return the VariadicPack length.
 
         Returns:
@@ -375,15 +375,6 @@ struct VariadicPack[
 
         alias result = variadic_size(element_types)
         return result
-
-    @always_inline
-    fn __len__(self) -> Int:
-        """Return the VariadicPack length.
-
-        Returns:
-            The number of elements in the variadic pack.
-        """
-        return Self.__len__()
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
