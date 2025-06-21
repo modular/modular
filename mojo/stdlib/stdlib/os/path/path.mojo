@@ -366,7 +366,7 @@ fn join(owned path: String, *paths: String) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
+fn split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
     """
     Split a given pathname into two components: head and tail. This is useful
     for separating the directory path from the filename. If the input path ends
