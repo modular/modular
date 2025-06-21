@@ -1637,8 +1637,6 @@ class POC(enum.Enum):
 
     variadic_get = 28
 
-    compile_assembly = 30
-
     get_vtable_entry = 33
 
     ptr_bitcast = 34
