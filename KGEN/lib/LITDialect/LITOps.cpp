@@ -2075,6 +2075,10 @@ LogicalResult LIT::ClosureInitOp::verify() {
         "expected move or copy capture symbols to match number of captures");
   return success();
 }
+// The only parameter uses we need to check for are those outside the region.
+void LIT::ClosureInitOp::collectParameterUses(
+    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
+}
 
 //===----------------------------------------------------------------------===//
 // EndFnOp

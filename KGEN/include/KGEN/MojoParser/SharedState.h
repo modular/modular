@@ -43,6 +43,7 @@ class CallOperands;
 class ParserEvaluationContext;
 struct ParserConfig;
 class CachedOriginFinder;
+class TraitDeclOp;
 enum class CallSyntax : uint8_t;
 
 /// Capture represents a nested function value whose declaration is in the
@@ -460,10 +461,10 @@ public:
   ///  struct Impl[T : Closure_Int_yInt_Int](Closure_Int_yInt_Int):
   ///     var impl: T
   /// ... and return the StructDeclOp for "Impl".
-  StructDeclOp getOrCreateParametricClosureWrapper(SMLoc loc,
-                                                   FuncTypeGeneratorType sig,
-                                                   ASTDecl *moduleDecl,
-                                                   InlineLevel inlineLevel);
+  std::pair<StructDeclOp, TraitDeclOp>
+  getOrCreateParametricClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
+                                      ASTDecl *moduleDecl,
+                                      InlineLevel inlineLevel);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.

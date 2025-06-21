@@ -958,8 +958,9 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   return {std::move(captured), unbound};
 }
 
-static void emitUnifiedClosureInstance(ASTDecl &nestedFnDecl,
-                                       SharedState &shared) {
+static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
+                                          ASTDecl &nestedFnDecl,
+                                          SharedState &shared) {
   FnOp nestedFn = cast<FnOp>(nestedFnDecl);
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -969,15 +970,17 @@ static void emitUnifiedClosureInstance(ASTDecl &nestedFnDecl,
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
   auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
       nestedFn.getFuncTypeGenerator());
-  shared.getOrCreateParametricClosureWrapper(loc, wrapperSig, moduleDecl,
-                                             nestedFn.getInlineLevel());
+  auto [closureWrapper, trait] = shared.getOrCreateParametricClosureWrapper(
+      loc, wrapperSig, moduleDecl, nestedFn.getInlineLevel());
 
-  // TODO: Create an instance of the LIT.CLOSURE.INIT OP, allocate closure
-  // wrapper, emit a call to the constructor of the closure wrapper with the
-  // lit.init.op, and Return the closure wrapper instance as an MLValue.
+  ClosureEmitter emitter(*moduleDecl, shared);
+  Value wrapperInstance = emitter.emitClosureOp(nestedFnDecl, captures,
+                                                closureWrapper, trait, mlirLoc);
+
   nestedFnDecl.getIfOperation()->erase();
   nestedFnDecl.setIRValue(nullptr);
   shared.deleteDecl(nestedFnDecl);
+  return MLValue(wrapperInstance);
 }
 
 static MLValue emitClosureInstance(ArrayRef<Capture> captures,
@@ -1313,7 +1316,10 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   }
 
   if (signature.isUnified()) {
-    emitUnifiedClosureInstance(decl, shared);
+    MLValue instance = emitUnifiedClosureInstance(captures, decl, shared);
+    if (!instance)
+      return failure();
+    decl.setIRValue(instance);
     return success();
   }
 

@@ -52,6 +52,8 @@ Type ASTType::getMetaType() const {
     return paramRef.getParam().getType();
   if (auto traitRef = dyn_cast<TraitType>(mlirType))
     return traitRef.getMetaType();
+  if (auto closureType = dyn_cast<ClosureType>(mlirType))
+    return TypeType::get(closureType.getContext());
   // This is some generic MLIR type.
   return {};
 }

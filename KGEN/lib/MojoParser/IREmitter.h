@@ -22,8 +22,10 @@ enum class SpecialFunctionKind : uint8_t;
 enum class CallSyntax : uint8_t;
 class IREmitter;
 class CallOperands;
+class ClosureInitOp;
 class AliasDeclOp;
 class TraitType;
+class TraitDeclOp;
 class VarDeclOp;
 class LoopOp;
 
