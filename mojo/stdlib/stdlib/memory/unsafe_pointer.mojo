@@ -234,6 +234,37 @@ struct UnsafePointer[
         constrained[sizeof_t > 0, "size must be greater than zero"]()
         return _malloc[type, alignment=alignment](sizeof_t * count)
 
+    @staticmethod
+    @always_inline
+    fn alloc[
+        count: Int, /, name: Optional[StaticString] = None
+    ]() -> UnsafePointer[
+        type,
+        address_space=address_space,
+        alignment=alignment,
+        mut=True,
+        origin = MutableOrigin.empty,
+    ]:
+        """Allocates data buffer space on the stack given a data type and number
+        of elements.
+
+        Parameters:
+            count: Number of elements to allocate memory for.
+            name: The name of the global variable (only honored in certain
+                cases).
+
+        Returns:
+            A data pointer of the given type pointing to the allocated space.
+        """
+        constrained[count > 0, "count must be > 0"]()
+        return stack_allocation[
+            count,
+            type,
+            name=name,
+            address_space=address_space,
+            alignment=alignment,
+        ]()
+
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
