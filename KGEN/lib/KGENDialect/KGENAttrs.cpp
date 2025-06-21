@@ -1319,7 +1319,6 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::ApplyResultSlot:
   case POC::Rebind:
   case POC::VariadicGet:
-  case POC::CompileAssembly:
   case POC::GetVTableEntry:
   case POC::PtrBitcast:
   case POC::AttrToStr:
@@ -1492,30 +1491,6 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'get_env' must return index, i1, or string";
     }
     break;
-  case POC::CompileAssembly: {
-    if (operands.size() != 5)
-      return emitError() << "'compile_assembly' requires 5 operands";
-    if (!::isa<TargetType>(operands.front().getType()))
-      return emitError()
-             << "'compile_assembly' first operand should be a target type";
-    if (!::isa<IndexType>(operands[1].getType()))
-      return emitError()
-             << "'compile_assembly' second operand should have index type";
-    if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(operands[1])) {
-      if (!::isa<EmitAsAttr>(emissionIntAttr)) {
-        return emitError() << "'compile_assembly' second operand should "
-                              "evaluate to either 'asm', 'llvm', 'llvm-opt', "
-                              "or 'object'";
-      }
-    }
-    if (!operands[3].getType().isInteger(1))
-      return emitError() << "'compile_assembly' third operand should be an i1";
-    if (!::isa<IntegerAttr>(operands[3])) {
-      return emitError()
-             << "'compile_assembly' fourth operand must be a constant";
-    }
-    break;
-  }
   case POC::GetVTableEntry:
     return verifyGetVTableEntry(operands, type, emitError);
   case POC::PtrBitcast:
@@ -3014,7 +2989,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::ApplyResultSlot:
   case POC::GetEnv:
-  case POC::CompileAssembly:
   case POC::AttrToStr:
     result = {};
     break;
@@ -3066,13 +3040,13 @@ Type inferParamOperatorResultType(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::GetSizeOf && opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained(
-             {POC::Apply, POC::ApplyResultSlot, POC::TargetHasFeature,
-              POC::TargetGetField, POC::AcceleratorArch, POC::GetSizeOf,
-              POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-              POC::CompileAssembly, POC::GetVTableEntry, POC::VariadicPtrMap,
-              POC::VariadicPtrRemoveMap, POC::StringAddress},
-             opcode) ||
+  assert(llvm::is_contained({POC::Apply, POC::ApplyResultSlot,
+                             POC::TargetHasFeature, POC::TargetGetField,
+                             POC::AcceleratorArch, POC::GetSizeOf,
+                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
+                             POC::GetVTableEntry, POC::VariadicPtrMap,
+                             POC::VariadicPtrRemoveMap, POC::StringAddress},
+                            opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
   return resultType;

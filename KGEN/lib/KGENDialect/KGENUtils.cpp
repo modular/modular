@@ -941,33 +941,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
   case (uint32_t)POC::GetEnv:
     return parseParamValue(p, operands.emplace_back(),
                            StringType::get(p.getContext()));
-  case (uint32_t)POC::CompileAssembly: {
-    // Parse the target.
-    if (parseParamValue(p, operands.emplace_back(),
-                        TargetType::get(p.getContext())) ||
-        p.parseComma())
-      return failure();
-
-    // Parse the emission kind.
-    if (parseEmissionKind(p, operands.emplace_back()))
-      return failure();
-
-    // Parse the emission options.
-    if (p.parseComma() || parseParamValue(p, operands.emplace_back(),
-                                          StringType::get(p.getContext())))
-      return failure();
-
-    // Parse the fallibility option.
-    if (p.parseComma() ||
-        parseParamValue(p, operands.emplace_back(), p.getBuilder().getI1Type()))
-      return failure();
-
-    // Parse the type.
-    if (p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
-      return failure();
-
-    return success();
-  }
 
   case (uint32_t)POC::GetVTableEntry:
     if (!type)
@@ -1293,19 +1266,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     p << ", ";
     printParamValue(p, operands[2]);
     break;
-
-  case POC::CompileAssembly: {
-    printParamValue(p, operands[0]);
-    p << ", ";
-    printEmissionKind(p, operands[1]);
-    p << ", ";
-    printParamValue(p, operands[2]);
-    p << ", ";
-    printParamValue(p, operands[3]);
-    p << ", ";
-    printColonTypeParamValue(p, operands[4]);
-    break;
-  }
 
   case POC::GetVTableEntry:
     if (!isa<TypeType>(operands[0].getType())) {

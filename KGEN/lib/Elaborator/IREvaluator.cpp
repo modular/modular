@@ -140,6 +140,8 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
   if (auto compileOffloadClosureAttr =
           dyn_cast<CompileOffloadClosureAttr>(attr))
     return evaluateCompileOffloadClosureAttr(compileOffloadClosureAttr);
+  if (auto compileAssemblyAttr = dyn_cast<CompileAssemblyAttr>(attr))
+    return evaluateCompileAssemblyAttr(compileAssemblyAttr);
 
   // Must be a parameter operator then.
   auto op = dyn_cast<ParamOperatorAttr>(attr);
@@ -178,8 +180,6 @@ IREvaluator::evaluateExpression(ContextuallyEvaluatedAttrInterface attr) {
                        "' does not match result type '" +
                        mlir::debugString(op.getType()) + "'"));
     return failure();
-  case POC::CompileAssembly:
-    return evaluateCompileAssembly(op);
   case POC::LoadFromMem:
     if (auto memref = dyn_cast<MemRefAttr>(op.getOperands().front())) {
       ErrorOr<TypedAttr> value = loadAttributeFromMemRef(memref, op.getType());
@@ -499,17 +499,18 @@ static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
 }
 
 FailureOr<TypedAttr>
-IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
+IREvaluator::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
   // Cheeky copy. The state of the symbol table right at this moment is
   // sufficient to produce a standalone object for the generator being JIT'd.
   SymbolTable symtabCopy = elaborator->oldSymTab;
 
   // Slice out a standalone module to re-elaborate with the new target.
-  TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
-  EmitAs emissionKind = cast<EmitAsAttr>(op.getOperand(1)).getValue();
-  StringRef emissionOptionsStr = cast<StringAttr>(op.getOperand(2)).getValue();
-  bool propagateError = cast<IntegerAttr>(op.getOperand(3)).getInt();
-  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(4));
+  TargetInfoAttr target = cast<TargetParamAttr>(attr.getTarget()).getTarget();
+  EmitAs emissionKind = cast<EmitAsAttr>(attr.getEmissionKind()).getValue();
+  StringRef emissionOptionsStr =
+      cast<StringAttr>(attr.getEmissionOptions()).getValue();
+  bool propagateError = cast<BoolAttr>(attr.getPropagateError()).getValue();
+  SymbolConstantAttr symbol = dyn_cast<SymbolConstantAttr>(attr.getFunc());
   ErrorTreeOr<std::pair<StringAttr, GeneratorOp>> pairOrError =
       elaborator->getExpectedMangledName(*errorLoc, "compile_assembly", symbol,
                                          /*allowParametric=*/false,
@@ -523,7 +524,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   std::tie(name, func) = pairOrError.takeValue();
 
   // Construct the expected result type.
-  MLIRContext *ctx = op.getContext();
+  MLIRContext *ctx = attr.getContext();
   Builder b(ctx);
   auto noneType = KGEN::NoneType::get(ctx);
   auto populateFnType = FuncTypeGeneratorType::get(
