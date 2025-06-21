@@ -482,8 +482,8 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
   if (auto bindParams = ::dyn_cast<BindParamsAttr>(generator)) {
     SmallVector<TypedAttr> mergedParamValues =
         mergeParamBindings(bindParams.getParamValues(), paramValues);
-    return Base::get(bindParams.getContext(), bindParams.getGenerator(),
-                     mergedParamValues, type);
+    return get(bindParams.getContext(), bindParams.getGenerator(),
+               mergedParamValues, type);
   }
 
   // Don't substitute any parameter values into a GeneratorAttr here. Those
@@ -503,19 +503,28 @@ BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
 }
 
 TypedAttr BindParamsAttr::get(TypedAttr generator,
-                              ArrayRef<TypedAttr> paramValues) {
+                              ArrayRef<TypedAttr> paramValues,
+                              ParameterEvaluationContext *evaluationContext) {
   if (paramValues.empty())
     return generator;
   auto genType = ::cast<GeneratorType>(generator.getType());
-  Type resultType = genType.getSpecializedGenerator(paramValues);
-  assert(resultType && "Failed to specialize generator");
+  GeneratorType specializedType =
+      genType.getSpecializedGenerator(paramValues,
+                                      /*emitErrorFn=*/{}, evaluationContext);
+  assert(specializedType && "Failed to specialize generator");
+  // By back-compat, we never eliminate the empty generator type wrapper on func
+  // types. This should eventually be made consistent with other types.
+  bool canEagerInstantiate = specializedType.isFullyBound() &&
+                             !isa<FuncType>(specializedType.getBody());
+  Type resultType =
+      canEagerInstantiate ? specializedType.getBody() : specializedType;
   return get(generator.getContext(), generator, paramValues, resultType);
 }
 
 TypedAttr
 BindParamsAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                           TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues) {
+                           TypedAttr generator, ArrayRef<TypedAttr> paramValues,
+                           ParameterEvaluationContext *evaluationContext) {
   if (failed(verify(emitError, generator, paramValues, {})))
     return {};
   return get(generator, paramValues);

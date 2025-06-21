@@ -1840,8 +1840,9 @@ ParseResult DeclResolver::resolveBody(GlobalVarDeclOp op, Lexer &lexer,
 // Alias Decl implementation
 //===----------------------------------------------------------------------===//
 
-/// alias_decl_stmt ::= "alias" identifier ":" expression ["=" expression]
-///                   | "alias" identifier "=" expression
+/// alias_decl_stmt ::=
+///   | "alias" identifier [param_signature] ":" expression ["=" expression]
+///   | "alias" identifier [param_signature] "=" expression
 ///
 LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
@@ -1857,11 +1858,45 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                         &identifierLoc))
     return failure();
 
+  // Parse the param signature if present.
+  ParsedParamList parsedParams;
+  if (parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
+    return failure();
+
+  // The alias signature is a self-contained scope where the input parameters of
+  // the alias are visible by all types.  We must use a temporary declaration
+  // here (with an empty name) because we don't want references to the alias
+  // itself to resolve to a fully-resolved decl, but we need a fully-resolved
+  // decl for incremental lookups within the scope to work out.
+  ASTDecl &sigDecl =
+      addFullyResolvedDecl(aliasDeclOp.getOperation(), StringAttr(),
+                           decl.getLoc(), decl.getParentDecl());
+
+  TypeCheckedParamList paramSignature(parsedParams.params, sigDecl);
+
   ASTType type;
   if (p.consumeIf(Token::colon)) {
-    if (parseType(p, type, *decl.getParentDecl(), decl.getIndentation()))
+    if (parseType(p, type, sigDecl, decl.getIndentation()))
       return failure();
   }
+
+  // If there are input parameters, the actual type of the alias is a generator
+  // type. Parameterize the type with the input parameters.
+  // The type of the alias is a standalone type, so it needs to reference its
+  // input parameters by index refs (IRAIDAI), not name refs. This remapper
+  // handles converting the name refs to index refs.
+  IndexRefRemapper remapper(paramSignature.paramDeclAttrs, {});
+  auto parameterizeType = [&](ASTType type) -> ASTType {
+    if (paramSignature.paramDeclAttrs.empty())
+      return type;
+
+    SmallVector<Type> inputParamTypes;
+    for (ParamDeclAttr param : paramSignature.paramDeclAttrs)
+      inputParamTypes.push_back(remapper.replace(param.getType()));
+
+    return GeneratorType::get(inputParamTypes, remapper.replace(type.mlirType),
+                              paramSignature.getParamListAttr());
+  };
 
   ASTDecl &parentDecl = *decl.getParentDecl();
 
@@ -1878,10 +1913,10 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       // Don't return; continue parsing as if it has no name, so that references
       // to the name will resolve.
     } else {
-      IREmitter emitter(parentDecl, EC_AliasValue);
+      IREmitter emitter(sigDecl, EC_AliasValue);
 
       // Emit the value and convert to the expected type if we know it.
-      auto rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
+      PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
       if (!rhsValue)
         return failure();
 
@@ -1889,6 +1924,14 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       // initializer.
       if (!type)
         type = rhsValue.getType();
+
+      // If there are input parameters, we need to emit a value generator attr.
+      type = parameterizeType(type);
+      if (!paramSignature.paramDeclAttrs.empty()) {
+        TypedAttr remappedBody = remapper.replace(rhsValue.get());
+        rhsValue = cast<TypedAttr>(
+            GeneratorAttr::get(remappedBody, cast<GeneratorType>(type)));
+      }
 
       // Remember the value
       attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
@@ -1906,7 +1949,13 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
           << "alias without initial value must have a type";
       return failure();
     }
+
+    type = parameterizeType(type);
   }
+
+  // Propagate signature errors and decls.
+  decl.takeDecls(sigDecl);
+
   // Update the type from UnresolvedType
   attrs.set(aliasDeclOp.getParamDeclAttrName(),
             ParamDeclAttr::get(aliasDeclOp.getName(), type));

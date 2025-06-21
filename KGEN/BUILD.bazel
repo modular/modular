@@ -210,9 +210,10 @@ mlir_nanobind(
         "KGEN_ParamMaterializeOp",
         "KGEN_NoneAttr",  # Can't bind NoneAttr::get for some reason
         "KGEN_CallOp",  # Can't bind CallOp::setCalleeAttr for some reason
-        # These interfaces use internally defined evaluation handler type
+        # These classes use internally defined evaluation context type
         "DeclRefAttrInterface",
         "StructTypeInterface",
+        "KGEN_BindParamsAttr",
     ],
     output_dir = "include/KGEN/KGENDialect/Nanobind",
     visibility = ["//visibility:public"],

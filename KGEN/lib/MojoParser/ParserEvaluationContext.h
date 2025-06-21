@@ -21,9 +21,18 @@ public:
   FailureOr<TypedAttr>
   evaluateExpression(ContextuallyEvaluatedAttrInterface attr) override;
 
+  /// Simplifying getters for evaluatable attributes. These should be used
+  /// instead of directly creating attributes so that immediately simplifiable
+  /// attributes do not need to be created in the first place.
+  TypedAttr getBindParamsAttr(TypedAttr generator,
+                              ArrayRef<TypedAttr> paramValues);
+
 private:
   friend class SharedState;
   ParserEvaluationContext(SharedState &shared) : shared(shared) {}
+
+  FailureOr<TypedAttr> evaluateBindParams(TypedAttr generator,
+                                          ArrayRef<TypedAttr> paramValues);
 
   SharedState &shared;
 };

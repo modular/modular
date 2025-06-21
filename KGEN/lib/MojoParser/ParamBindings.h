@@ -20,6 +20,7 @@ class DeclResolver;
 class ExprNode;
 class FnOp;
 class FnTypeGeneratorType;
+class LITGeneratorType;
 class ParserParameterEvaluator;
 class PogListAttr;
 class PValue;
@@ -136,18 +137,18 @@ public:
     std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
   };
 
-  /// Verify the full parameter bindings for the given signature. If the
+  /// Verify the full parameter bindings for the given generator. If the
   /// signature doesn't match, the provided DiagEmitter will be used to emit
   /// diagnostics. A parameter inference must must be provided.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(FnTypeGeneratorType sig, const DiagEmitter &diagEmitter,
+  verifyBindings(LITGeneratorType sig, const DiagEmitter &diagEmitter,
                  ParameterInferenceHookTy parameterInferenceHook) const;
 
-  /// Attempt to bind the current set of parameters to the provided signature.
+  /// Attempt to bind the current set of parameters to the provided generator.
   /// This applies parameter inference and any default values to form a full
   /// binding set, which is returned along with the binding fitness. This will
   /// form a partial binding of the signature.
-  ParameterExprArrayAttr verifyBindings(FnTypeGeneratorType sig) const;
+  ParameterExprArrayAttr verifyBindings(LITGeneratorType sig) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
@@ -164,11 +165,11 @@ public:
                                         TypeSignatureType sig, SMLoc exprLoc,
                                         bool partial) const;
 
-  /// Verify the parameter bindings for the given signature. If the signature
+  /// Verify the parameter bindings for the given generator. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
   /// locations.
   ParameterExprArrayAttr
-  verifyBindings(FnTypeGeneratorType sig, StringRef baseName, SMLoc exprLoc,
+  verifyBindings(LITGeneratorType sig, StringRef baseName, SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt) const;
 
   /// Check that our set of parameter bindings work with the specified input

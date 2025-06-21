@@ -526,7 +526,9 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
           return ParamDeclRefAttr::get(p);
         }));
     auto callOp = b.create<LIT::CallOp>(
-        result, BindParamsAttr::get(symbol, paramArgs), origins, operands);
+        result,
+        shared.getEvaluationContext().getBindParamsAttr(symbol, paramArgs),
+        origins, operands);
     ValueRange results = callOp.getResults();
     b.create<LIT::ReturnOp>(results);
     b.create<LIT::EndFnOp>();
