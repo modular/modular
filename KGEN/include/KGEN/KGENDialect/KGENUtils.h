@@ -411,6 +411,10 @@ void printSequenceElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
                         [&](TypedAttr value) { printParamValue(p, value); });
 }
 
+/// Print and parse an emission kind.
+void printEmissionKind(AsmPrinter &p, TypedAttr emissionKind);
+ParseResult parseEmissionKind(AsmParser &p, TypedAttr &emissionKind);
+
 //===----------------------------------------------------------------------===//
 // Logic shared between funcs, generators, and generator interfaces
 //===----------------------------------------------------------------------===//

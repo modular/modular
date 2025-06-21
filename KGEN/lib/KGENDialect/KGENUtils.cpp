@@ -949,21 +949,8 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
 
     // Parse the emission kind.
-    if (succeeded(p.parseOptionalEqual())) {
-      StringRef emissionKind;
-      if (p.parseKeyword(&emissionKind))
-        return failure();
-      std::optional<EmitAs> kind = symbolizeEmitAs(emissionKind);
-      if (!kind) {
-        return p.emitError(p.getCurrentLocation(),
-                           "the immediate emission kind must be either "
-                           "'=llvm', '=asm', '=llvm-opt', or '=object'");
-      }
-      operands.emplace_back(EmitAsAttr::get(p.getContext(), *kind));
-    } else if (parseParamValue(p, operands.emplace_back(),
-                               p.getBuilder().getIndexType())) {
+    if (parseEmissionKind(p, operands.emplace_back()))
       return failure();
-    }
 
     // Parse the emission options.
     if (p.parseComma() || parseParamValue(p, operands.emplace_back(),
@@ -1310,11 +1297,7 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
   case POC::CompileAssembly: {
     printParamValue(p, operands[0]);
     p << ", ";
-    // '=' is used to disambiguate the string form.
-    if (auto emitAsAttr = dyn_cast<EmitAsAttr>(operands[1]))
-      p << '=' << stringifyEmitAs(emitAsAttr.getValue());
-    else
-      printParamValue(p, operands[1]);
+    printEmissionKind(p, operands[1]);
     p << ", ";
     printParamValue(p, operands[2]);
     p << ", ";
@@ -2052,6 +2035,32 @@ void KGEN::printParametricCallee(OpAsmPrinter &p, Operation *,
   p << ": ";
   printParamValue(p, callee);
   p << "]";
+}
+
+void KGEN::printEmissionKind(AsmPrinter &p, TypedAttr emissionKind) {
+  // '=' is used to disambiguate the string form.
+  if (auto emitAsAttr = dyn_cast<EmitAsAttr>(emissionKind))
+    p << '=' << stringifyEmitAs(emitAsAttr.getValue());
+  else
+    printParamValue(p, emissionKind);
+}
+
+ParseResult KGEN::parseEmissionKind(AsmParser &p, TypedAttr &emissionKind) {
+  if (succeeded(p.parseOptionalEqual())) {
+    StringRef emissionKindStr;
+    if (p.parseKeyword(&emissionKindStr))
+      return failure();
+    std::optional<EmitAs> kind = symbolizeEmitAs(emissionKindStr);
+    if (!kind) {
+      return p.emitError(p.getCurrentLocation(),
+                         "the immediate emission kind must be either "
+                         "'=llvm', '=asm', '=llvm-opt', or '=object'");
+    }
+    emissionKind = cast<TypedAttr>(EmitAsAttr::get(p.getContext(), *kind));
+  } else if (parseParamValue(p, emissionKind, p.getBuilder().getIndexType())) {
+    return failure();
+  }
+  return success();
 }
 
 /// Compare a range of values from an "originator" to a corresponding range of
