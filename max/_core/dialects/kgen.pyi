@@ -186,50 +186,6 @@ class AttrCtorDeferredAttr(max._core.Attribute):
     @property
     def strings(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
-class BindParamsAttr(max._core.Attribute):
-    """
-    The `#kgen.bind_params` attribute is used to bind parameters onto a
-    generator parameter (a parameter whose type is some GeneratorType).
-
-    Partial & out-of-order parameter binding is allowed by specifying the
-    unbound positions with UnboundAttr.
-
-    Example:
-
-    Given
-    ```mlir
-      @SIMD : !kgen.generator<<dtype, index> AnyStruct<@SIMD<*(0,0), *(0,1)>>>
-    ```
-
-    This attr binds the index parameter but not the dtype
-    ```mlir
-    #kgen.bind_param<@SIMD<?, 2>>
-      : !kgen.generator<<dtype> AnyStruct<@SIMD<*(0,0), 2>>>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        generator: max._core.dialects.builtin.TypedAttr,
-        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        generator: max._core.dialects.builtin.TypedAttr,
-        param_values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: max._core.Type,
-    ) -> None: ...
-    @property
-    def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def param_values(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
-    @property
-    def type(self) -> max._core.Type | None: ...
-
 class ClosureAttr(max._core.Attribute):
     """
     The `#kgen.closure` attribute represents an uncomputed
