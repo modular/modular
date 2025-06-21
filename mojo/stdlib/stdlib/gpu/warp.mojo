@@ -422,7 +422,7 @@ fn _shuffle_down_amd[
       return _shuffle_amd_helper(dst_lane, val)
 
     @parameter
-    if amdgcn_supports_shifts():
+    if amdgcn_supports_shifts() and (dtype.bitwidth() % 32) == 0:
       # sanity check - varying offset or partial participation is not supported (yet)
       if mask == _FULL_MASK and min(UInt64(mask)) == max(UInt64(mask)):
         # small shifts only
