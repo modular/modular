@@ -424,7 +424,8 @@ fn _shuffle_down_amd[
     @parameter
     if amdgcn_supports_shifts() and (dtype.bitwidth() % 32) == 0:
       # sanity check - varying offset or partial participation is not supported (yet)
-      if mask == _FULL_MASK and min(UInt64(mask)) == max(UInt64(mask)):
+      # TODO: should check for `min(UInt64(offset)) == max(UInt64(offset)):` but that causes infinite recursion
+      if mask == _FULL_MASK: 
         # small shifts only
         if offset <= 4:
           var x = val
