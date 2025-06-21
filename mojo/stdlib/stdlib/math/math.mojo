@@ -2511,7 +2511,10 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(0 <= n <= 20, "input value causes an overflow")
+    debug_assert(
+        0 <= n <= (12 if bitwidthof[Int]() == 32 else 20),
+        "input value causes an overflow",
+    )
     return table[n]
 
 
