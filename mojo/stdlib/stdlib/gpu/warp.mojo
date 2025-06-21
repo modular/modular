@@ -42,6 +42,7 @@ from sys import (
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
 
+from algorithm.functional import unswitch
 from bit import log2_floor
 from builtin.math import max as _max
 from builtin.math import min as _min
@@ -50,6 +51,7 @@ from gpu.globals import WARP_SIZE
 from memory import bitcast
 
 from .tensor_ops import tc_reduce
+from .amdgcn_dpp import *
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
@@ -411,11 +413,26 @@ fn _shuffle_down_amd[
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
-    # FIXME: Set the EXECute mask register to the mask
-    var lane = lane_id()
-    # set the offset to 0 if lane + offset >= WARP_SIZE
-    var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
-    return _shuffle_amd_helper(dst_lane, val)
+    @parameter
+    fn generic_impl() -> SIMD[dtype, simd_width]:
+      # FIXME: Set the EXECute mask register to the mask
+      var lane = lane_id()
+      # set the offset to 0 if lane + offset >= WARP_SIZE
+      var dst_lane = (lane + offset).gt(_WIDTH_MASK).select(0, offset) + lane
+      return _shuffle_amd_helper(dst_lane, val)
+
+    @parameter
+    if amdgcn_supports_shifts():
+      # sanity check - varying offset or partial participation is not supported (yet)
+      if mask == _FULL_MASK and min(UInt64(mask)) == max(UInt64(mask)):
+        # small shifts only
+        if offset <= 4:
+          var x = val
+          for _ in range(offset):
+            x = amdgcn_shift_left(x)
+          return x
+
+    return generic_impl()
 
 
 @always_inline
