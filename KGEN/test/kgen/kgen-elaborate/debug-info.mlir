@@ -102,6 +102,6 @@ kgen.generator @kernel<dtype: dtype>(%arg0: !pop.simd<4, dtype>) -> !pop.simd<4,
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: kgen.param.constant{{.*}}!DICompositeType(tag: DW_TAG_array_type, name: \22!pop.simd<4, ui32>\22
-  kgen.param.constant: struct<(string, index, (!kgen.pointer<pointer<none>> read) capturing -> !kgen.none)> = <compile_assembly(current_target(), =llvm, "", 0, :(!pop.simd<4, ui32>) -> (!pop.simd<4, ui32>) @kernel<:dtype ui32>)>
+  kgen.param.constant: struct<(string, index, (!kgen.pointer<pointer<none>> read) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!pop.simd<4, ui32>) -> (!pop.simd<4, ui32>) @kernel<:dtype ui32>>>
   kgen.return
 }

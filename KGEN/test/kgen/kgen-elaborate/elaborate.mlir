@@ -1292,7 +1292,7 @@ kgen.generator @kernel() {
 kgen.generator export @top() {
   // COM: Just check that the code compiles. The assembly is target-dependent.
   // CHECK: constant: struct
-  kgen.param.constant: struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)> = <compile_assembly(current_target(), =asm, "", 0, :() -> () @kernel)>
+  kgen.param.constant: struct<(string, index, (!kgen.pointer<pointer<none>>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @kernel>>
   kgen.return
 }
 
@@ -1333,15 +1333,15 @@ kgen.generator @func_param<f: <index, index>() -> (index, index)>() -> index {
 // CHECK-LABEL: kgen.func export @get_linkage_name
 kgen.generator export @get_linkage_name() {
   // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}no_params
-  %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() -> () @no_params)>
+  %0 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> () @no_params>>
   // CHECK-NEXT: constant: string = <"no_params">
   %1 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@no_params> : !kgen.generator<() -> ()>>>
   // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}params,a=1,b=2
-  %2 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() -> (index, index) @params<1, 2>)>
+  %2 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> (index, index) @params<1, 2>>>
   // CHECK-NEXT: constant: string = <"params,a=1,b=2">
   %3 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@params<1, 2>> : !kgen.generator<() -> (index, index)>>>
   // CHECK-NEXT: constant: struct<(string, index, {{.*}})> = <{ "{{.*}}func_param,f=params
-  %4 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() -> index @func_param<:<index, index>() -> (index, index) @params>)>
+  %4 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params>>>
   // CHECK-NEXT: constant: string = <"func_param,f=params">
   %5 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params>> : !kgen.generator<() -> index>>>
   kgen.return
@@ -1389,7 +1389,7 @@ kgen.generator @captures<f: () capturing -> index>() capturing -> index {
 // CHECK-LABEL: kgen.func export @main
 kgen.generator export @main() {
   // CHECK-NEXT: struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <{ "{{.*}}", 1, [[POPULATE:@.*]] }>
-  %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), =asm, "", 0, :() capturing -> index @captures<:() capturing -> index @lambda>)>
+  %0 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =asm, "", false, :() capturing -> index @captures<:() capturing -> index @lambda>>>
   kgen.return
 }
 
@@ -1684,7 +1684,7 @@ kgen.generator @fma(%arg0: index, %arg1: index, %arg2: index) -> index {
 kgen.generator export @main() {
   // CHECK: mul i64
   // CHECK: add i64
-  %0 = kgen.param.constant: !capture = <compile_assembly(current_target(), =llvm, "", 0, :(index, index, index) -> (index) @fma)>
+  %0 = kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(index, index, index) -> (index) @fma>>
   kgen.return
 }
 
@@ -1700,9 +1700,9 @@ kgen.generator @might_fail<succeed: i1>() {
 // CHECK-LABEL: @compile_assembly_conditional
 kgen.generator export @compile_assembly_conditional() {
   // CHECK-NEXT: <{ "failed {{.*}}", -1, #interp.uninitmem }>
-  kgen.param.constant: !capture = <compile_assembly(current_target(), =llvm, "", 1, :() -> () @might_fail<:i1 0>)>
+  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:i1 0>>>
   // CHECK-NEXT: <{ "{{.*}}", 0, [[CAP_FN:@.*]] }>
-  kgen.param.constant: !capture = <compile_assembly(current_target(), =llvm, "", 1, :() -> () @might_fail<:i1 1>)>
+  kgen.param.constant: !capture = <#kgen.compile_assembly<current_target(), =llvm, "", true, :() -> () @might_fail<:i1 1>>>
   kgen.return
 }
 

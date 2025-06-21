@@ -78,8 +78,6 @@ private:
                                          bool withResultSlot);
   /// Evaluate a `get_env` operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
-  /// Evaluate a `compile_assembly` operator.
-  FailureOr<TypedAttr> evaluateCompileAssembly(ParamOperatorAttr op);
   /// Evaluate POC::DataToStr "data_to_str" operator.
   FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
   FailureOr<StringAttr> evaluateStringPart(TypedAttr part);
@@ -91,6 +89,7 @@ private:
   FailureOr<TypedAttr> evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr);
   FailureOr<TypedAttr> evaluateCompileOffloadClosureAttr(
       CompileOffloadClosureAttr compileOffloadClosureAttr);
+  FailureOr<TypedAttr> evaluateCompileAssemblyAttr(CompileAssemblyAttr attr);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);
