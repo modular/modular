@@ -734,7 +734,7 @@ fn frexp[
     alias mantissa_width = FPUtils[dtype].mantissa_width()
     var mask1 = _frexp_mask1[dtype, width]()
     var mask2 = _frexp_mask2[dtype, width]()
-    var x_int = x.to_bits()
+    var x_int = x._to_bits_signed()
     var selector = x != zero
     var exp = selector.select(
         (((mask1 & x_int) >> mantissa_width) - exponent_bias).cast[dtype](),

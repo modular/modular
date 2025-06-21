@@ -163,7 +163,7 @@ def test_hash_hashable_with_hasher_types():
     assert_equal(_hash_with_hasher(UInt(123)), 4498397628805512285)
     assert_equal(
         _hash_with_hasher(SIMD[DType.float16, 4](0.1, -0.1, 12, 0)),
-        3806818604433176740,
+        9316495345323385448,
     )
     assert_equal(_hash_with_hasher(Path("/tmp")), 16491058316913697698)
 
