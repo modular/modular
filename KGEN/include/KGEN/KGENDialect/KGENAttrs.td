@@ -603,6 +603,50 @@ def KGEN_GetLinkageNameAttr : KGEN_ExprAttr<"GetLinkageName",
 }
 
 //===----------------------------------------------------------------------===//
+// CompileAssemblyAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_CompileAssemblyAttr : KGEN_ExprAttr<"CompileAssembly",
+    "compile_assembly", [ContextuallyEvaluatedAttrInterface]> {
+  let summary = "Compile assembly for a given target and emission kind.";
+  let description = [{
+    The `#kgen.compile_assembly` attribute is used to model compiling a function
+    to assembly code for a given target and emission format.
+
+    Example:
+
+    ```mlir
+    kgen.param.declare some_target: target = #kgen.target<
+      triple="", arch="", features="", data_layout="", simd_bit_width=128
+    > : !kgen.target
+
+    #kgen.compile_assembly<
+      some_target, =llvm, "", false, :() -> () @kernel>
+    > : !kgen.string
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$target,
+    "TypedAttr":$emissionKind,
+    "TypedAttr":$emissionOptions,
+    "BoolAttr":$propagateError,
+    "TypedAttr":$func,
+    AttributeSelfTypeParameter<"", "Type">:$type
+  );
+
+  let assemblyFormat = [{
+    `<` custom<ParamValue>($target, "TargetType::get($_ctxt)") `,`
+    custom<EmissionKind>($emissionKind) `,`
+    custom<ParamValue>($emissionOptions, "StringType::get($_ctxt)") `,`
+    $propagateError `,`
+    custom<ColonTypeParamValue>($func) `>`
+  }];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // GetTypeNameAttr
 //===----------------------------------------------------------------------===//
 

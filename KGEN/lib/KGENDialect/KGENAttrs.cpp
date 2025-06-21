@@ -384,6 +384,36 @@ LogicalResult GetLinkageNameAttr::verify(
 }
 
 //===----------------------------------------------------------------------===//
+// CompileAssemblyAttr
+//===----------------------------------------------------------------------===//
+
+bool CompileAssemblyAttr::isConstant() const { return false; }
+
+LogicalResult CompileAssemblyAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError, TypedAttr target,
+    TypedAttr emissionKind, TypedAttr emissionOptions, BoolAttr propagateError,
+    TypedAttr func, Type type) {
+  if (!::isa<TargetType>(target.getType()))
+    return emitError() << "target operand must be of `!kgen.target` type";
+
+  if (!::isa<IndexType>(emissionKind.getType()))
+    return emitError() << "emissionKind operand should have index type";
+  if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(emissionKind)) {
+    if (!::isa<EmitAsAttr>(emissionIntAttr)) {
+      return emitError() << "emissionKind operand should evaluate to either "
+                            "'asm', 'llvm', 'llvm-opt', or 'object'";
+    }
+  }
+
+  if (!::isa<StringType>(emissionOptions.getType())) {
+    return emitError()
+           << "emissionOptions operand must be of `!kgen.string` type";
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // GetTypeNameAttr
 //===----------------------------------------------------------------------===//
 
