@@ -183,7 +183,7 @@ fn reduce[
     reduce_fn: fn[acc_type: DType, type: DType, width: Int] (
         SIMD[acc_type, width], SIMD[type, width]
     ) capturing [_] -> SIMD[acc_type, width]
-](src: NDBuffer[rank=1], init: Scalar) raises -> Scalar[init.element_type]:
+](src: NDBuffer[rank=1], init: Scalar) raises -> Scalar[init.dtype]:
     """Computes a custom reduction of buffer elements.
 
     Parameters:
@@ -204,7 +204,7 @@ fn reduce[
     ](idx: IndexList[rank]) -> SIMD[_type, width]:
         return src.load[width=width](idx[0])._refine[_type]()
 
-    var out: Scalar[init.element_type] = 0
+    var out: Scalar[init.dtype] = 0
 
     @always_inline
     @parameter
@@ -344,7 +344,7 @@ fn _reduce_3D[
         @__copy_capture(w)
         @parameter
         fn reduce_w_chunked[simd_width: Int](idx: Int):
-            var accum = SIMD[init.element_type, simd_width](init)
+            var accum = SIMD[init.dtype, simd_width](init)
             for j in range(w):
                 var chunk = src.load[width=simd_width](
                     IndexList[src.rank](i, j, idx)
@@ -740,12 +740,10 @@ fn _reduce_generator[
         constrained[reduction_idx < num_reductions, "invalid reduction index"]()
         return reduce_function[type, width](val, acc)
 
-    var init_wrapped = StaticTuple[Scalar[init.element_type], num_reductions](
-        init
-    )
+    var init_wrapped = StaticTuple[Scalar[init.dtype], num_reductions](init)
     return _reduce_generator[
         num_reductions,
-        init.element_type,
+        init.dtype,
         input_0_fn,
         output_fn_wrapper,
         reduce_fn_wrapper,
