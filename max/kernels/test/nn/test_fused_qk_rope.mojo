@@ -32,9 +32,9 @@ from testdata.fused_qk_rope_goldens import (
 from utils import IndexList
 
 
-def test_fused_qk_rope[type: DType]() -> None:
+def test_fused_qk_rope[dtype: DType]() -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    constrained[type is DType.float32, "goldens only for float32, currently"]()
+    constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters.
     alias batch_size = 2
@@ -44,7 +44,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     alias max_seq_len = 16
     alias num_layers = 1
 
-    fn _max[type: DType, items: List[Scalar[type]]]() -> Scalar[type]:
+    fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()
         max_item = items[0]
         for i in range(1, len(items)):
@@ -70,13 +70,13 @@ def test_fused_qk_rope[type: DType]() -> None:
     )
 
     # Construct backing buffer and the KV cache itself.
-    kv_cache_block_buffer = List[Scalar[type]](
+    kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
     kv_cache_block = NDBuffer(kv_cache_block_buffer.unsafe_ptr(), block_shape)
 
     # Initialize KV cache block buffer with golden values.
-    k_cache_input_buffer = k_cache_input[type]()
+    k_cache_input_buffer = k_cache_input[dtype]()
     var max_cache_len_in_batch = 0
     for batch_idx in range(batch_size):
         memcpy(
@@ -93,7 +93,7 @@ def test_fused_qk_rope[type: DType]() -> None:
         )
 
     # Create the actual KV cache type.
-    kv_collection = ContinuousBatchingKVCacheCollection[type, kv_params](
+    kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=NDBuffer[DType.uint32, 1](
             start_positions.data,
@@ -112,44 +112,44 @@ def test_fused_qk_rope[type: DType]() -> None:
     )
 
     # Create and initialize query buffer.
-    q_buffer = q_input[type]()
+    q_buffer = q_input[dtype]()
     debug_assert(
         len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
     )
 
     # Create query tensor as a view of the query buffer.
     q = NDBuffer[
-        type, 4, _, shape = DimList(batch_size, seq_len, num_heads, head_dim)
+        dtype, 4, _, shape = DimList(batch_size, seq_len, num_heads, head_dim)
     ](q_buffer.data)
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
-    freqs_cis_table_buffer = freqs_cis_table_input[type]()
+    freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
     debug_assert(
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
         "invalid freqs_cis_table init",
     )
     freqs_cis_table = NDBuffer[
-        type, 2, _, shape = DimList(max_seq_len, head_dim)
+        dtype, 2, _, shape = DimList(max_seq_len, head_dim)
     ](freqs_cis_table_buffer.data)
 
     # Create and initialize golden outputs.
-    expected_q_out_buffer = q_out_golden[type]()
+    expected_q_out_buffer = q_out_golden[dtype]()
     debug_assert(
         len(expected_q_out_buffer) == len(q_buffer),
         "invalid expected q out init",
     )
-    expected_q_out = NDBuffer[type, rank=4, shape = q.shape](
+    expected_q_out = NDBuffer[dtype, rank=4, shape = q.shape](
         expected_q_out_buffer.data
     )
-    expected_k_out_buffer = k_out_golden[type]()
+    expected_k_out_buffer = k_out_golden[dtype]()
     debug_assert(
         len(expected_k_out_buffer) == batch_size * seq_len * dim,
         "invalid expected k out init",
     )
 
     # Create output buffer.
-    q_out_buffer = List[Scalar[type]](length=len(q_buffer), fill=0)
-    q_out = NDBuffer[type, rank=4](q_out_buffer.unsafe_ptr(), q.dynamic_shape)
+    q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
+    q_out = NDBuffer[dtype, rank=4](q_out_buffer.unsafe_ptr(), q.dynamic_shape)
     fused_qk_rope[
         kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
     ](

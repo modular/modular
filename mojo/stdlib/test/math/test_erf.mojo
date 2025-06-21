@@ -61,9 +61,9 @@ def test_erf_libm():
     ####################
     @always_inline
     fn erf_libm[
-        type: DType, simd_width: Int
-    ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-        return libm_call[type, simd_width, "erff", "err"](arg)
+        dtype: DType, simd_width: Int
+    ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+        return libm_call[dtype, simd_width, "erff", "err"](arg)
 
     var libm_out = UnsafePointer[Scalar[test_dtype]].alloc(N)
     for i in range(N):

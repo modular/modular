@@ -696,16 +696,16 @@ fn _mark_eviction[
 
 @always_inline("nodebug")
 fn async_copy[
-    type: DType, //,
+    dtype: DType, //,
     size: Int,
     *,
-    fill: OptionalReg[Scalar[type]] = None,
+    fill: OptionalReg[Scalar[dtype]] = None,
     bypass_L1_16B: Bool = True,
     l2_prefetch: OptionalReg[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
+    src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    dst: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
     src_size: Int32 = 0,
     predicate: Bool = False,
 ):
@@ -716,7 +716,7 @@ fn async_copy[
     the PTX cp.async instruction on NVIDIA GPUs.
 
     Parameters:
-        type: The data type to copy (e.g. float32, int32).
+        dtype: The data type to copy (e.g. float32, int32).
         size: Number of bytes to copy (must be 4, 8, or 16).
         fill: Optional fill value for uncopied bytes when src_size < size.
         bypass_L1_16B: If True, bypasses L1 cache for 16-byte copies.
@@ -730,14 +730,14 @@ fn async_copy[
         predicate: Optional predicate to conditionally execute the copy.
 
     Constraints:
-        - Fill value only supported for types <= 32 bits.
+        - Fill value only supported for dtypes <= 32 bits.
         - Size must be 4, 8, or 16 bytes.
         - Cannot enable both L2 prefetch and L1 bypass.
         - L2 prefetch size must be 64, 128, or 256 bytes.
     """
     constrained[
-        not fill or sizeof[type]() <= sizeof[Int32](),
-        "if the fill value is specified, then the type must be 32bit or less",
+        not fill or sizeof[dtype]() <= sizeof[Int32](),
+        "if the fill value is specified, then the dtype must be 32bit or less",
     ]()
     constrained[size in (4, 8, 16)]()
     constrained[
@@ -753,8 +753,8 @@ fn async_copy[
     if is_amd_gpu():
         # Use sync load and stores for now
         # TODO(KERN-1249): add async memcopy to AMD
-        alias n_scalars = size // sizeof[type]()
-        var n_src_scalars = src_size // sizeof[type]()
+        alias n_scalars = size // sizeof[dtype]()
+        var n_src_scalars = src_size // sizeof[dtype]()
 
         @parameter
         if fill:
@@ -812,15 +812,15 @@ fn async_copy[
 
         # Pack filling values into 4B registers.
         @always_inline
-        fn _i32_repr[fill: Scalar[type]]() -> Int32:
+        fn _i32_repr[fill: Scalar[dtype]]() -> Int32:
             @parameter
-            if sizeof[type]() == 1:
+            if sizeof[dtype]() == 1:
                 return bitcast[DType.int32, 1](
-                    SIMD[type, 4](fill, fill, fill, fill)
+                    SIMD[dtype, 4](fill, fill, fill, fill)
                 )
-            elif sizeof[type]() == 2:
-                return bitcast[DType.int32, 1](SIMD[type, 2](fill, fill))
-            elif sizeof[type]() == 4:
+            elif sizeof[dtype]() == 2:
+                return bitcast[DType.int32, 1](SIMD[dtype, 2](fill, fill))
+            elif sizeof[dtype]() == 4:
                 return bitcast[DType.int32](fill)
 
             return 0
@@ -949,12 +949,12 @@ fn async_copy_wait_all():
 
 @always_inline
 fn external_memory[
-    type: AnyTrivialRegType,
+    dtype: AnyTrivialRegType,
     *,
     address_space: _AddressSpace,
     alignment: Int,
     name: StaticString = "extern_ptr_syml",
-]() -> UnsafePointer[type, address_space=address_space, alignment=alignment]:
+]() -> UnsafePointer[dtype, address_space=address_space, alignment=alignment]:
     """Gets a pointer to dynamically allocated external memory.
 
     This function returns a pointer to external memory that can be used for dynamic
@@ -962,7 +962,7 @@ fn external_memory[
     address space with the given alignment requirements.
 
     Parameters:
-        type: The type of elements stored in the memory. Must be a trivial register type.
+        dtype: The dtype of elements stored in the memory. Must be a trivial register dtype.
         address_space: The memory address space to allocate in (e.g. shared, global).
         alignment: The minimum alignment requirement in bytes for the allocated memory.
         name: Optional symbolic name for the external memory allocation. Defaults to
@@ -980,11 +980,11 @@ fn external_memory[
     - Care must be taken to respect alignment requirements when accessing the memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[type, 0], address_space=address_space, alignment=alignment
+        StaticTuple[dtype, 0], address_space=address_space, alignment=alignment
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
-                StaticTuple[type, 0],
+                StaticTuple[dtype, 0],
                 address_space=address_space,
                 alignment=alignment,
             ]._mlir_type,
@@ -992,7 +992,7 @@ fn external_memory[
             alignment = alignment.value,
         ]()
     )
-    return extern_ptr_symbol.bitcast[type]()
+    return extern_ptr_symbol.bitcast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1002,9 +1002,9 @@ fn external_memory[
 
 @always_inline
 fn fence_proxy_tensormap_generic_sys_acquire[
-    type: AnyType,
+    dtype: AnyType,
 ](
-    ptr: UnsafePointer[type, address_space = GPUAddressSpace.GENERIC, **_],
+    ptr: UnsafePointer[dtype, address_space = GPUAddressSpace.GENERIC, **_],
     size: Int32,
 ):
     """Acquires a system-wide memory fence for tensor map operations.
@@ -1014,7 +1014,7 @@ fn fence_proxy_tensormap_generic_sys_acquire[
     memory operations are completed before subsequent tensor map accesses.
 
     Parameters:
-        type: The data type of the tensor map object being synchronized.
+        dtype: The data type of the tensor map object being synchronized.
 
     Args:
         ptr: Pointer to the tensor map object in system memory that needs to be synchronized.
@@ -1423,7 +1423,7 @@ fn cp_async_bulk_tensor_reduce[
     Parameters:
         src_type: The data type of the source tensor elements.
         rank: The dimensionality of the tensor (must be 1 or 2).
-        reduction_kind: The type of reduction operation to perform. Supported operations are:
+        reduction_kind: The dtype of reduction operation to perform. Supported operations are:
                        "add", "min", "max", "inc", "dec", "and", "or", "xor".
         eviction_policy: Optional cache eviction policy that controls how the data is handled
                         in the cache hierarchy. Defaults to `EVICT_NORMAL`.
@@ -1486,22 +1486,22 @@ fn cp_async_bulk_tensor_reduce[
 
 @always_inline
 fn _load_impl[
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
     read_only: Bool = False,
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if is_gpu() else 1,
-](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    alignment: Int = alignof[Scalar[dtype]]() if is_gpu() else 1,
+](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Internal implementation of vectorized memory loads from global memory.
 
     This function provides low-level control over cache behavior and memory access patterns
     for loading data from global memory into vector registers.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         width: Vector width (number of elements to load).
         read_only: If True, marks the load as read-only for cache optimization.
         prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
@@ -1525,7 +1525,7 @@ fn _load_impl[
         ptr.address_space == _GPUAddressSpace.GENERIC,
         "must be global address space",
     ]()
-    constrained[type.is_numeric(), "type must be numeric"]()
+    constrained[dtype.is_numeric(), "type must be numeric"]()
 
     @parameter
     if is_amd_gpu():
@@ -1537,31 +1537,31 @@ fn _load_impl[
     if prefetch_size:
         constrained[prefetch_size.value() in (64, 128, 256)]()
 
-    alias bytes_to_load = sizeof[type]() * width
-    alias type_bitwidth = bitwidthof[type]()
+    alias bytes_to_load = sizeof[dtype]() * width
+    alias dtype_bitwidth = bitwidthof[dtype]()
 
     @parameter
     if bytes_to_load < sizeof[DType.uint32]():
         return ptr.load[width=width, alignment=alignment]()
 
     @parameter
-    if type.is_floating_point() or type.is_signed():
-        return bitcast[type, width](
+    if dtype.is_floating_point() or dtype.is_signed():
+        return bitcast[dtype, width](
             _load_impl[
                 width=width,
                 prefetch_size=prefetch_size,
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
                 alignment=alignment,
-            ](ptr.bitcast[Scalar[_uint_type_of_width[type_bitwidth]()]]())
+            ](ptr.bitcast[Scalar[_uint_type_of_width[dtype_bitwidth]()]]())
         )
 
     @parameter
     if (
-        type_bitwidth <= 16
+        dtype_bitwidth <= 16
         and sizeof[DType.uint32]() <= bytes_to_load < sizeof[DType.uint64]()
     ):
-        return bitcast[type, width](
+        return bitcast[dtype, width](
             _load_impl[
                 width = (bytes_to_load // sizeof[DType.uint32]()),
                 prefetch_size=prefetch_size,
@@ -1571,7 +1571,7 @@ fn _load_impl[
             ](ptr.bitcast[UInt32]())
         )
 
-    alias type_mnemonic = "u" + _int_to_str[type_bitwidth]()
+    alias dtype_mnemonic = "u" + _int_to_str[dtype_bitwidth]()
     alias cache_policy_mnemonic = cache_policy.mnemonic()
     alias eviction_policy_mnemonic = (
         ".L1::" + eviction_policy.mnemonic()
@@ -1587,37 +1587,37 @@ fn _load_impl[
     )
     alias v_width = ("" if width == 1 else ".v" + _int_to_str[width]())
 
-    alias instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + type_mnemonic
+    alias instruction_name = "ld.global" + cache_policy_inst + cache_operation + eviction_policy_mnemonic + pretch_size_mnemonic + v_width + "." + dtype_mnemonic
 
-    var res = SIMD[type, width]()
+    var res = SIMD[dtype, width]()
 
     @parameter
     if width == 1:
         var tmp = inlined_assembly[
             "ld.global " + cache_policy_inst + cache_operation + " $0, [$2];",
-            Scalar[type],
+            Scalar[dtype],
             constraints="=r,l,r",
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0])
-        return SIMD[type, width](tmp)
+        return SIMD[dtype, width](tmp)
     elif width == 2:
         var tmp = inlined_assembly[
             instruction_name + " {$0, $1}, [$2];",
-            _RegisterPackType[Scalar[type], Scalar[type]],
+            _RegisterPackType[Scalar[dtype], Scalar[dtype]],
             constraints="=r,=r,l,r,r",
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1])
-        return SIMD[type, width](tmp[0], tmp[1])
+        return SIMD[dtype, width](tmp[0], tmp[1])
     elif width == 4:
         var tmp = inlined_assembly[
             instruction_name + " {$0, $1, $2, $3}, [$4];",
             _RegisterPackType[
-                Scalar[type], Scalar[type], Scalar[type], Scalar[type]
+                Scalar[dtype], Scalar[dtype], Scalar[dtype], Scalar[dtype]
             ],
             constraints="=r,=r,=r,=r,l,r,r,r,r",
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1], res[2], res[3])
-        return SIMD[type, width](tmp[0], tmp[1], tmp[2], tmp[3])
+        return SIMD[dtype, width](tmp[0], tmp[1], tmp[2], tmp[3])
 
     var lhs = _load_impl[
         width = width // 2,
@@ -1638,22 +1638,22 @@ fn _load_impl[
 
 @always_inline
 fn load[
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
     read_only: Bool = False,
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    alignment: Int = alignof[Scalar[dtype]]() if is_nvidia_gpu() else 1,
+](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
     cache behavior and memory access patterns.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         width: Vector width (number of elements to load).
         read_only: If True, marks the load as read-only for cache optimization.
         prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
@@ -1680,15 +1680,15 @@ fn load[
 @always_inline
 fn load[
     OffsetType: Indexer,
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
     read_only: Bool = False,
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
-](ptr: UnsafePointer[Scalar[type]], offset: OffsetType) -> SIMD[type, width]:
+    alignment: Int = alignof[Scalar[dtype]]() if is_nvidia_gpu() else 1,
+](ptr: UnsafePointer[Scalar[dtype]], offset: OffsetType) -> SIMD[dtype, width]:
     """Loads data from global memory with an offset into a SIMD vector.
 
     Provides a high-level interface for vectorized memory loads with configurable
@@ -1696,7 +1696,7 @@ fn load[
 
     Parameters:
         OffsetType: Type of the offset value.
-        type: The data type to load.
+        dtype: The data type to load.
         width: Vector width (number of elements to load).
         read_only: If True, marks the load as read-only for cache optimization.
         prefetch_size: Optional L2 cache prefetch size (64, 128, or 256 bytes).
@@ -1727,7 +1727,7 @@ fn load[
 
 @always_inline("nodebug")
 fn _get_multimem_ld_reduce_asm[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     reduction: ReduceOp,
@@ -1743,13 +1743,13 @@ fn _get_multimem_ld_reduce_asm[
     available on SM90+ GPUs.
 
     Parameters:
-        type: Data type for the operation (float32, float16, or bfloat16).
+        dtype: Data dtype for the operation (float32, float16, or bfloat16).
         count: Number of elements to load and reduce (2 or 4).
         reduction: Type of reduction operation to perform.
         scope: Memory scope for the operation.
         consistency: Memory consistency model to use.
-        accum_type: Data type used for accumulation during reduction. Defaults to
-            float32 for float16/bfloat16 inputs and matches input type for float32.
+        accum_type: Data dtype used for accumulation during reduction. Defaults to
+            float32 for float16/bfloat16 inputs and matches input dtype for float32.
         output_width: Width of each output SIMD vector (default 1).
 
     Returns:
@@ -1763,9 +1763,9 @@ fn _get_multimem_ld_reduce_asm[
     constrained[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
-    constrained[type.is_floating_point(), "type must be floating point"]()
+    constrained[dtype.is_floating_point(), "type must be floating point"]()
     constrained[
-        type in (DType.float32, DType.float16, DType.bfloat16),
+        dtype in (DType.float32, DType.float16, DType.bfloat16),
         "type must be float32, float16, or bfloat16",
     ]()
     constrained[
@@ -1777,28 +1777,28 @@ fn _get_multimem_ld_reduce_asm[
     alias ss = ".global"
     alias vec = ".v" + _int_to_str[count]()
     alias op = "." + reduction.mnemonic()
-    alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
+    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[output_width]() if output_width > 1 else ""
     )
     alias accum = (
         ".acc::" + _get_type_mnemonic[accum_type]()
-    ) if accum_type is not type else ""
-    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + type_mnemonic
+    ) if accum_type is not dtype else ""
+    alias asm = "multimem.ld_reduce." + consistency.mnemonic() + "." + scope.mnemonic() + ss + op + accum + vec + dtype_mnemonic
     return asm
 
 
 @always_inline("nodebug")
 fn multimem_ld_reduce[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     reduction: ReduceOp,
     scope: Scope,
     consistency: Consistency,
-    accum_type: DType = get_accum_type[type](),
+    accum_type: DType = get_accum_type[dtype](),
     output_width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
+    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
 ) -> StaticTuple[SIMD[accum_type, output_width], count]:
     """Performs a vectorized load-reduce operation using NVIDIA's multimem feature.
 
@@ -1807,12 +1807,12 @@ fn multimem_ld_reduce[
     feature available on SM90+ GPUs for improved performance.
 
     Parameters:
-        type: Data type for the operation (float32, float16, or bfloat16).
+        dtype: Data dtype for the operation (float32, float16, or bfloat16).
         count: Number of elements to load and reduce (2 or 4).
         reduction: Type of reduction operation to perform.
         scope: Memory scope for the operation.
         consistency: Memory consistency model to use.
-        accum_type: Data type used for accumulation. Defaults to a wider type than input
+        accum_type: Data dtype used for accumulation. Defaults to a wider dtype than input
                    (e.g. float32 for float16 inputs) to maintain precision during reduction.
         output_width: Width of each output SIMD vector (default 1).
 
@@ -1831,7 +1831,7 @@ fn multimem_ld_reduce[
     constrained[count in (2, 4), "count must be 2 or 4"]()
 
     alias asm = _get_multimem_ld_reduce_asm[
-        type,
+        dtype,
         count=count,
         reduction=reduction,
         scope=scope,
@@ -1875,7 +1875,7 @@ fn multimem_ld_reduce[
 
 @always_inline("nodebug")
 fn _get_multimem_st_asm[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     scope: Scope,
@@ -1885,9 +1885,9 @@ fn _get_multimem_st_asm[
     constrained[
         _is_sm_9x_or_newer(), "multimem is only supported on SM90+ GPUs"
     ]()
-    constrained[type.is_floating_point(), "type must be floating point"]()
+    constrained[dtype.is_floating_point(), "type must be floating point"]()
     constrained[
-        type in (DType.float32, DType.float16, DType.bfloat16),
+        dtype in (DType.float32, DType.float16, DType.bfloat16),
         "type must be float32, float16, or bfloat16",
     ]()
     constrained[
@@ -1898,24 +1898,24 @@ fn _get_multimem_st_asm[
 
     alias ss = ".global"
     alias vec = ".v" + _int_to_str[count]()
-    alias type_mnemonic = "." + _get_type_mnemonic[type]() + (
+    alias dtype_mnemonic = "." + _get_type_mnemonic[dtype]() + (
         "x" + _int_to_str[width]() if width > 1 else ""
     )
-    alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + type_mnemonic
+    alias asm = "multimem.st." + consistency.mnemonic() + "." + scope.mnemonic() + ss + vec + dtype_mnemonic
     return asm
 
 
 @always_inline("nodebug")
 fn multimem_st[
-    type: DType,
+    dtype: DType,
     *,
     count: Int,
     scope: Scope,
     consistency: Consistency,
     width: Int = 1,
 ](
-    addr: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
-    values: StaticTuple[SIMD[type, width], count],
+    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
+    values: StaticTuple[SIMD[dtype, width], count],
 ) -> None:
     """Stages an inline multimem.st instruction.
 
@@ -1923,7 +1923,7 @@ fn multimem_st[
     multimem address using the specified memory consistency model and scope.
 
     Parameters:
-        type: The data type of elements to store (must be float16, bfloat16, or
+        dtype: The data type of elements to store (must be float16, bfloat16, or
             float32).
         count: Number of vector elements per store operation (2 or 4).
         scope: Memory scope for visibility of the store operation
@@ -1941,7 +1941,7 @@ fn multimem_st[
 
     - Requires SM90+ GPU architecture (PTX ISA 8.1+).
     - The address must be a valid multimem address.
-    - Supported type-width combinations must total 32/64/128 bits.
+    - Supported dtype-width combinations must total 32/64/128 bits.
     - Default memory semantics: weak consistency (when not specified).
     - Vector stores (.v2/.v4) require matching total size constraints.
 
@@ -1967,7 +1967,7 @@ fn multimem_st[
     constrained[count in (2, 4), "count must be 2 or 4"]()
 
     alias asm = _get_multimem_st_asm[
-        type,
+        dtype,
         count=count,
         scope=scope,
         consistency=consistency,
@@ -1996,22 +1996,22 @@ fn multimem_st[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_mnemonic[type: DType]() -> StaticString:
+fn _get_type_mnemonic[dtype: DType]() -> StaticString:
     """Returns the mnemonic string representation for a given DType.
 
     This internal utility function converts floating point DTypes into their
     corresponding string mnemonics used in GPU assembly instructions.
     """
-    if type is DType.float32:
+    if dtype is DType.float32:
         return "f32"
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         return "f16"
-    elif type is DType.bfloat16:
+    elif dtype is DType.bfloat16:
         return "bf16"
-    if type is DType.float64:
+    if dtype is DType.float64:
         return "f64"
 
-    return "unknown type mnemonic"
+    return "unknown dtype mnemonic"
 
 
 fn _int_to_str[val: Int]() -> StaticString:

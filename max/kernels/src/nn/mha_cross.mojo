@@ -56,7 +56,7 @@ fn _bmm0_bs[
     # prompt_length
     var y = global_idx.y
 
-    alias k_type = cache_t.type
+    alias k_type = cache_t.dtype
     alias kv_num_heads = cache_t.kv_params.num_heads
 
     var batch_head = block_idx.z
@@ -148,7 +148,7 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
-    alias v_type = cache_t.type
+    alias v_type = cache_t.dtype
     alias kv_num_heads = cache_t.kv_params.num_heads
 
     # head_size
@@ -206,12 +206,12 @@ fn _bmm1_bs[
 fn mha_cross_gpu_naive[
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    type: DType,
+    dtype: DType,
     q_shape: DimList, //,
     rank: Int,
 ](
     output: NDBuffer[_, rank, MutableAnyOrigin, *_],
-    q: NDBuffer[type, rank, MutableAnyOrigin, q_shape, *_],
+    q: NDBuffer[dtype, rank, MutableAnyOrigin, q_shape, *_],
     q_input_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
     q_max_seq_len: Int,
     k: cache_t,
@@ -247,7 +247,7 @@ fn mha_cross_gpu_naive[
     """
     constrained[rank == 3, "only support rank 3 inputs for ragged inputs."]()
     constrained[
-        q.type == cache_t.type == cache_t.type == output.type,
+        q.type == cache_t.dtype == cache_t.dtype == output.type,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
@@ -256,7 +256,7 @@ fn mha_cross_gpu_naive[
     ]()
 
     alias config = MHAConfig(
-        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+        dtype, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     )
 
     alias num_heads = Int(config.num_heads)
@@ -268,8 +268,8 @@ fn mha_cross_gpu_naive[
     var max_cache_size = Int(k.max_context_length())
 
     alias q_type = q.type
-    alias k_type = cache_t.type
-    alias v_type = cache_t.type
+    alias k_type = cache_t.dtype
+    alias v_type = cache_t.dtype
 
     # Assume self attention if the query sequence length isn't passed.
     var num_keys = kv_max_seq_len + max_cache_size

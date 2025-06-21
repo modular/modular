@@ -340,19 +340,21 @@ struct RuntimeTuple[
         return l
 
     @always_inline
-    fn cast[type: DType](self, out result: RuntimeTuple[S, element_type=type]):
+    fn cast[
+        dtype: DType
+    ](self, out result: RuntimeTuple[S, element_type=dtype]):
         """Casts the RuntimeTuple to use a different numeric type.
         This method creates a new RuntimeTuple with the same structure and values
         but using a different underlying numeric type for storage. This is useful
         for changing precision or signedness of the data.
 
         Parameters:
-            type: The target DType to cast the elements to.
+            dtype: The target DType to cast the elements to.
 
         Returns:
             A new `RuntimeTuple` with elements cast to the specified type.
         """
-        return __type_of(result)(self.value.cast[type]())
+        return __type_of(result)(self.value.cast[dtype]())
 
     @always_inline
     fn __int__(self) -> Int:

@@ -41,18 +41,18 @@ struct AttentionSpec(Copyable, Movable, Stringable):
         # fmt: on
 
 
-def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):
+def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
     var q_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
     var kv_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
 
-    var q_ptr = UnsafePointer[Scalar[type]].alloc(q_shape.flattened_length())
-    var k_ptr = UnsafePointer[Scalar[type]].alloc(kv_shape.flattened_length())
-    var v_ptr = UnsafePointer[Scalar[type]].alloc(kv_shape.flattened_length())
-    var mask_ptr = UnsafePointer[Scalar[type]].alloc(
+    var q_ptr = UnsafePointer[Scalar[dtype]].alloc(q_shape.flattened_length())
+    var k_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_shape.flattened_length())
+    var v_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_shape.flattened_length())
+    var mask_ptr = UnsafePointer[Scalar[dtype]].alloc(
         mask_shape.flattened_length()
     )
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(
+    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(
         q_shape.flattened_length()
     )
 
@@ -61,31 +61,31 @@ def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):
     rand(v_ptr, kv_shape.flattened_length())
     rand(mask_ptr, mask_shape.flattened_length())
 
-    var q = NDBuffer[type, 3](q_ptr, q_shape)
-    var k = NDBuffer[type, 3](k_ptr, kv_shape)
-    var v = NDBuffer[type, 3](v_ptr, kv_shape)
-    var mask = NDBuffer[type, 3](mask_ptr, mask_shape)
-    var output = NDBuffer[type, 3](output_ptr, q_shape)
+    var q = NDBuffer[dtype, 3](q_ptr, q_shape)
+    var k = NDBuffer[dtype, 3](k_ptr, kv_shape)
+    var v = NDBuffer[dtype, 3](v_ptr, kv_shape)
+    var mask = NDBuffer[dtype, 3](mask_ptr, mask_shape)
+    var output = NDBuffer[dtype, 3](output_ptr, q_shape)
 
     @parameter
     @always_inline
     fn input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[3]](idx))
 
     alias scale = 0.25
@@ -102,7 +102,7 @@ def bench_attention[type: DType](mut m: Bench, spec: AttentionSpec):
                 k.get_shape(),
                 v.get_shape(),
                 mask.get_shape(),
-                rebind[NDBuffer[type, 3, output.origin, output_static_shape]](
+                rebind[NDBuffer[dtype, 3, output.origin, output_static_shape]](
                     output
                 ),
                 scale=scale,

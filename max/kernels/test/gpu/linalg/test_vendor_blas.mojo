@@ -23,35 +23,35 @@ from testing import assert_almost_equal
 
 
 def test_vendor_blas[
-    type: DType, transpose_b: Bool
+    dtype: DType, transpose_b: Bool
 ](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var c_host_ref = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     for m in range(M):
         for k in range(K):
-            a_host[m * K + k] = random_float64(-0.1, 0.1).cast[type]()
+            a_host[m * K + k] = random_float64(-0.1, 0.1).cast[dtype]()
 
     for k in range(K):
         for n in range(N):
-            b_host[k * N + n] = random_float64(-0.1, 0.1).cast[type]()
+            b_host[k * N + n] = random_float64(-0.1, 0.1).cast[dtype]()
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var c_device_ref = ctx.enqueue_create_buffer[type](M * N)
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var a = NDBuffer[type, 2](a_device._unsafe_ptr(), (M, K))
-    var b = NDBuffer[type, 2](
+    var a = NDBuffer[dtype, 2](a_device._unsafe_ptr(), (M, K))
+    var b = NDBuffer[dtype, 2](
         b_device._unsafe_ptr(), (N, K) if transpose_b else (K, N)
     )
-    var c = NDBuffer[type, 2](c_device._unsafe_ptr(), (M, N))
-    var c_ref = NDBuffer[type, 2](c_device_ref._unsafe_ptr(), (M, N))
+    var c = NDBuffer[dtype, 2](c_device._unsafe_ptr(), (M, N))
+    var c_ref = NDBuffer[dtype, 2](c_device_ref._unsafe_ptr(), (M, N))
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
 
@@ -60,7 +60,7 @@ def test_vendor_blas[
     alias BLOCK_DIM = 16
     ctx.enqueue_function[
         matmul_kernel_naive[
-            type, type, type, BLOCK_DIM, transpose_b=transpose_b
+            dtype, dtype, dtype, BLOCK_DIM, transpose_b=transpose_b
         ]
     ](
         c_ref,
@@ -81,8 +81,8 @@ def test_vendor_blas[
         assert_almost_equal(
             c_host[i],
             c_host_ref[i],
-            atol=1e-2 if type.is_half_float() else 1e-3,
-            rtol=1e-2 if type.is_half_float() else 1e-3,
+            atol=1e-2 if dtype.is_half_float() else 1e-3,
+            rtol=1e-2 if dtype.is_half_float() else 1e-3,
         )
 
     _ = a_device
@@ -99,10 +99,10 @@ def test_vendor_blas[
 def dispatch_test_vendor_blas[
     transpose_b: Bool
 ](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
-    test_vendor_blas[type = DType.bfloat16, transpose_b=transpose_b](
+    test_vendor_blas[dtype = DType.bfloat16, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
-    test_vendor_blas[type = DType.float32, transpose_b=transpose_b](
+    test_vendor_blas[dtype = DType.float32, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
 

@@ -44,11 +44,11 @@ from .memory import AddressSpace, _int_to_str
 
 @always_inline
 fn ldg[
-    type: DType, //,
+    dtype: DType, //,
     width: Int = 1,
     *,
-    alignment: Int = alignof[SIMD[type, width]](),
-](x: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+    alignment: Int = alignof[SIMD[dtype, width]](),
+](x: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -56,10 +56,10 @@ fn ldg[
     It optimizes for read-only data access patterns.
 
     Parameters:
-        type: The data type to load (must be numeric).
+        dtype: The data type to load (must be numeric).
         width: The SIMD vector width for vectorized loads.
         alignment: Memory alignment in bytes. Defaults to natural alignment
-                  of the SIMD vector type.
+            of the SIMD vector dtype.
 
     Args:
         x: Pointer to global memory location to load from.
@@ -72,7 +72,7 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    constrained[type.is_numeric(), "the type must be numeric"]()
+    constrained[dtype.is_numeric(), "the dtype must be numeric"]()
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -526,7 +526,7 @@ struct Scope(Copyable, EqualityComparable, Movable, Writable):
         """Writes the string representation of the scope to a writer.
 
         Parameters:
-            W: The type of writer to use for output. Must implement the Writer interface.
+            W: The dtype of writer to use for output. Must implement the Writer interface.
 
         Args:
             w: The writer to write to.
@@ -622,27 +622,27 @@ fn threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_suffix[type: DType]() -> StaticString:
-    alias str = get_static_string["u", _int_to_str[bitwidthof[type]()]()]()
+fn _get_type_suffix[dtype: DType]() -> StaticString:
+    alias str = get_static_string["u", _int_to_str[bitwidthof[dtype]()]()]()
     return str
 
 
-fn _get_register_constraint[type: DType]() -> StaticString:
-    if type is DType.bool:
+fn _get_register_constraint[dtype: DType]() -> StaticString:
+    if dtype is DType.bool:
         return "b"
-    if type.is_half_float():
+    if dtype.is_half_float():
         return "h"
-    if type.is_integral():
-        alias width = bitwidthof[type]()
+    if dtype.is_integral():
+        alias width = bitwidthof[dtype]()
         if width == 16:
             return "c"
         if width == 32:
             return "r"
         if width == 64:
             return "l"
-    if type is DType.float32:
+    if dtype is DType.float32:
         return "f"
-    if type is DType.float64:
+    if dtype is DType.float64:
         return "d"
 
     return "<<unknown_register_constraint>>"
@@ -654,15 +654,15 @@ fn _get_pointer_constraint() -> StaticString:
 
 @always_inline
 fn store_release[
-    type: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
+    dtype: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs an atomic store with release memory ordering semantics.
 
     This function provides a memory barrier that ensures all previous memory operations
     from the calling thread are visible to other threads before this store is performed.
 
     Parameters:
-        type: The data type to store.
+        dtype: The data type to store.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
 
@@ -683,14 +683,14 @@ fn store_release[
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
         alias constraints = _get_register_constraint[
-            type
+            dtype
         ]() + "," + _get_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         inlined_assembly[
             "st.release."
             + ((scope_str + ".") if scope_str else "")
             + "global."
-            + _get_type_suffix[type]()
+            + _get_type_suffix[dtype]()
             + " [$1], $0;",
             NoneType,
             constraints=constraints,
@@ -701,20 +701,20 @@ fn store_release[
             ordering = Consistency.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     else:
-        abort("unsupported device type")
+        abort("unsupported device dtype")
 
 
 @always_inline
 fn load_acquire[
-    type: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
+    dtype: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs an atomic load operation with acquire memory ordering semantics.
 
     This function provides a memory barrier that ensures no subsequent memory operations
     from the calling thread are executed until after this load completes.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         scope: Memory scope for the operation (default: Scope.SYSTEM).
         memory: Whether to include memory side effects in constraints (default: True).
 
@@ -737,16 +737,16 @@ fn load_acquire[
     if is_nvidia_gpu():
         alias mem_constraint = StaticString(",~{memory}") if memory else ""
         alias constraints = "=" + _get_register_constraint[
-            type
+            dtype
         ]() + "," + _get_pointer_constraint() + mem_constraint
         alias scope_str = scope.mnemonic()
         return inlined_assembly[
             "ld.acquire."
             + ((scope_str + ".") if scope_str else "")
             + "global."
-            + _get_type_suffix[type]()
+            + _get_type_suffix[dtype]()
             + " $0, [$1];",
-            Scalar[type],
+            Scalar[dtype],
             constraints=constraints,
         ](ptr.address_space_cast[AddressSpace.GENERIC]())
     elif is_amd_gpu():
@@ -755,20 +755,20 @@ fn load_acquire[
             ordering = Consistency.ACQUIRE.__mlir_attr(),
         ](ptr.address)
     else:
-        return abort[Scalar[type]]("unsupported device type")
+        return abort[Scalar[dtype]]("unsupported device dtype")
 
 
 @always_inline
 fn store_volatile[
-    type: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
+    dtype: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_], value: Scalar[dtype]):
     """Performs a volatile store operation that cannot be optimized away.
 
     This function guarantees that the store operation will be performed exactly as
     specified, without being reordered or optimized away by the compiler.
 
     Parameters:
-        type: The data type to store.
+        dtype: The data type to store.
         memory: Whether to include memory side effects in constraints (default: True).
 
     Args:
@@ -787,10 +787,10 @@ fn store_volatile[
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
     alias constraints = _get_register_constraint[
-        type
+        dtype
     ]() + "," + _get_pointer_constraint() + mem_constraint
     inlined_assembly[
-        "st.volatile.global." + _get_type_suffix[type]() + " [$1], $0;",
+        "st.volatile.global." + _get_type_suffix[dtype]() + " [$1], $0;",
         NoneType,
         constraints=constraints,
     ](value, ptr.address_space_cast[AddressSpace.GENERIC]())
@@ -798,15 +798,15 @@ fn store_volatile[
 
 @always_inline
 fn load_volatile[
-    type: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
+    dtype: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[dtype], **_]) -> Scalar[dtype]:
     """Performs a volatile load operation that cannot be optimized away.
 
     This function guarantees that the load operation will be performed exactly as
     specified, without being reordered or optimized away by the compiler.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         memory: Whether to include memory side effects in constraints (default: True).
 
     Args:
@@ -827,11 +827,11 @@ fn load_volatile[
     ]()
     alias mem_constraint = StaticString(",~{memory}") if memory else ""
     alias constraints = "=" + _get_register_constraint[
-        type
+        dtype
     ]() + "," + _get_pointer_constraint() + mem_constraint
     return inlined_assembly[
-        "ld.volatile.global." + _get_type_suffix[type]() + " $0, [$1];",
-        Scalar[type],
+        "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
+        Scalar[dtype],
         constraints=constraints,
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
@@ -843,9 +843,9 @@ buffer_load/buffer_store instructions."""
 
 @always_inline
 fn make_buffer_resource[
-    type: DType
+    dtype: DType
 ](
-    gds_ptr: UnsafePointer[Scalar[type], **_],
+    gds_ptr: UnsafePointer[Scalar[dtype], **_],
     num_records: Int = Int(UInt32.MAX),
 ) -> _buffer_resource:
     """Creates a 128-bit buffer resource descriptor for AMD GPU buffer operations.
@@ -856,7 +856,7 @@ fn make_buffer_resource[
     perform memory operations.
 
     Parameters:
-        type: The data type of elements in the buffer.
+        dtype: The data type of elements in the buffer.
 
     Args:
         gds_ptr: Global memory base address pointer to the start of the buffer.
@@ -908,7 +908,7 @@ fn make_buffer_resource[
     resource_constant[0] = address[0]
     # assuming 0 stride currently
     resource_constant[1] = address[1]
-    resource_constant[2] = sizeof[type]() * num_records
+    resource_constant[2] = sizeof[dtype]() * num_records
     # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
     resource_constant[3] = 0x00020000
     return resource_constant
@@ -930,10 +930,10 @@ fn _waitcnt():
 
 @always_inline
 fn _raw_buffer_load_lds[
-    type: DType
+    dtype: DType
 ](
     rsrc: _buffer_resource,
-    lds_ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
+    lds_ptr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
     size: Int32,
     voffset: Int32,
     soffset: Int32,
@@ -954,12 +954,12 @@ fn _raw_buffer_load_lds[
 
 @always_inline
 fn _buffer_load_store_lds_nowait[
-    type: DType
+    dtype: DType
 ](
     src_resource: _buffer_resource,
     gds_offset: Int32,
     lds_ptr_base: UnsafePointer[
-        Scalar[type], address_space = AddressSpace.SHARED
+        Scalar[dtype], address_space = AddressSpace.SHARED
     ],
     lds_offset: Int32,
 ):
@@ -970,7 +970,7 @@ fn _buffer_load_store_lds_nowait[
     is necessary to ensure the copy is finished.
 
     Parameters:
-        type: The type of the data to be loaded.
+        dtype: The dtype of the data to be loaded.
 
     Arg:
         src_resource: Buffer resource descriptor from make_buffer_resource.
@@ -996,7 +996,7 @@ fn _buffer_load_store_lds_nowait[
         has_side_effect=True,
     ](lds_ptr_sgpr)
 
-    var global_offset_bytes = Int32(sizeof[type]() * gds_offset)
+    var global_offset_bytes = Int32(sizeof[dtype]() * gds_offset)
     inlined_assembly[
         "buffer_load_dword $0, $1, 0 offen lds",
         NoneType,
@@ -1007,12 +1007,12 @@ fn _buffer_load_store_lds_nowait[
 
 @always_inline
 fn buffer_load_store_lds[
-    type: DType
+    dtype: DType
 ](
     src_resource: _buffer_resource,
     gds_offset: Int32,
     lds_ptr_base: UnsafePointer[
-        Scalar[type], address_space = AddressSpace.SHARED
+        Scalar[dtype], address_space = AddressSpace.SHARED
     ],
     lds_offset: Int32,
 ):
@@ -1022,7 +1022,7 @@ fn buffer_load_store_lds[
     register.
 
     Parameters:
-        type: The type of the data to be loaded.
+        dtype: The dtype of the data to be loaded.
 
     Args:
         src_resource: Buffer resource descriptor from make_buffer_resource.
@@ -1039,7 +1039,7 @@ fn buffer_load_store_lds[
     ]()
 
     var lds_ptr = lds_ptr_base + lds_offset
-    var global_offset_bytes = Int32(sizeof[type]() * gds_offset)
+    var global_offset_bytes = Int32(sizeof[dtype]() * gds_offset)
     _raw_buffer_load_lds(
         src_resource,
         lds_ptr,
@@ -1053,8 +1053,8 @@ fn buffer_load_store_lds[
 
 @always_inline
 fn buffer_load[
-    type: DType, width: Int
-](src_resource: _buffer_resource, gds_offset: Int32) -> SIMD[type, width]:
+    dtype: DType, width: Int
+](src_resource: _buffer_resource, gds_offset: Int32) -> SIMD[dtype, width]:
     """Loads data from global memory into a SIMD register.
 
     This function provides a hardware-accelerated global memory load operation
@@ -1062,7 +1062,7 @@ fn buffer_load[
     transfers data from global memory to registers.
 
     Parameters:
-        type: The data type to load.
+        dtype: The data type to load.
         width: The SIMD vector width for vectorized loads.
 
     Args:
@@ -1084,8 +1084,8 @@ fn buffer_load[
         "The buffer_load function is only applicable on AMDGPU hardware.",
     ]()
 
-    alias bytes = sizeof[type]() * width
-    var global_offset_bytes: Int32 = Int32(sizeof[type]() * gds_offset)
+    alias bytes = sizeof[dtype]() * width
+    var global_offset_bytes: Int32 = Int32(sizeof[dtype]() * gds_offset)
     # READ
     # GLC = 0 Reads can hit on the L1 and persist across wavefronts
     # GLC = 1 Reads miss the L1 and L2 and force fetch to the data fabric. No L1 persistence across waves.
@@ -1111,21 +1111,21 @@ fn buffer_load[
 
     return llvm_intrinsic[
         get_inst_name(),
-        SIMD[type, width],
+        SIMD[dtype, width],
         has_side_effect=True,
     ](src_resource, global_offset_bytes, src_wave_addr_offset, glc)
 
 
 @always_inline
 fn buffer_store[
-    type: DType, width: Int
-](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[type, width]):
+    dtype: DType, width: Int
+](src_resource: _buffer_resource, gds_offset: Int32, val: SIMD[dtype, width]):
     """Stores a register variable to global memory.
 
     Writes to global memory from a register.
 
     Parameters:
-        type: The data type.
+        dtype: The data type.
         width: The SIMD vector width.
 
     Args:
@@ -1139,9 +1139,9 @@ fn buffer_store[
         "The buffer_store function is only applicable on AMDGPU hardware.",
     ]()
 
-    alias bytes = sizeof[type]() * width
+    alias bytes = sizeof[dtype]() * width
 
-    var global_offset_bytes: Int32 = Int32(sizeof[type]() * gds_offset)
+    var global_offset_bytes: Int32 = Int32(sizeof[dtype]() * gds_offset)
     # WRITE
     # GLC = 0 Writes miss the L1, write through to L2, and persist in L1 across wavefronts.
     # GLC = 1 Writes miss the L1, write through to L2. No persistence across wavefronts.

@@ -132,17 +132,17 @@ fn tcgen05_ld[
     datapaths: Int,
     bits: Int,
     repeat: Int,
-    type: DType,
+    dtype: DType,
     pack: Bool,
     width: Int = (datapaths * bits * repeat) // (32 * 32),
-](tmem_addr: UInt32) -> SIMD[type, width]:
+](tmem_addr: UInt32) -> SIMD[dtype, width]:
     """Loads data from tensor memory into registers.
 
     Parameters:
         datapaths: The first dimension of the shape.
         bits: The second dimension of the shape.
         repeat: The repeat factor.
-        type: The data type to load.
+        dtype: The data type to load.
         pack: Whether to pack two 16-bit chunks of adjacent columns into a single 32-bit register.
         width: The number elements in the result vector.
 
@@ -178,7 +178,7 @@ fn tcgen05_ld[
 
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
-        and sizeof[type]() == 4,
+        and sizeof[dtype]() == 4,
         String(
             (
                 "Only support 4B data type and width must be equal to (num * n"
@@ -199,7 +199,7 @@ fn tcgen05_ld[
 
     @parameter
     @always_inline
-    fn call_ld_intrinsic[pack_type: AnyTrivialRegType]() -> SIMD[type, width]:
+    fn call_ld_intrinsic[pack_type: AnyTrivialRegType]() -> SIMD[dtype, width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
             + shape_str
@@ -215,7 +215,7 @@ fn tcgen05_ld[
             constraints=constraints_str,
             has_side_effect=True,
         ](tmem_addr)
-        return UnsafePointer(to=r).bitcast[SIMD[type, width]]()[]
+        return UnsafePointer(to=r).bitcast[SIMD[dtype, width]]()[]
 
     # fmt: off
     @parameter
@@ -283,23 +283,23 @@ fn tcgen05_ld[
         ]()
     else:
         constrained[False, "width must be a power of 2 in the range [1, 128]."]()
-        return abort[SIMD[type, width]]()
+        return abort[SIMD[dtype, width]]()
     # fmt: on
 
 
 fn tcgen05_st[
-    type: DType,
+    dtype: DType,
     width: Int, //,
     *,
     datapaths: Int,
     bits: Int,
     repeat: Int,
     pack: Bool,
-](tmem_addr: UInt32, data: SIMD[type, width]):
+](tmem_addr: UInt32, data: SIMD[dtype, width]):
     """Stores data from registers into tensor memory.
 
     Parameters:
-        type: The data type to store.
+        dtype: The data type to store.
         width: The number of elements in the data vector.
         datapaths: The first dimension of the shape.
         bits: The second dimension of the shape.
@@ -332,7 +332,7 @@ fn tcgen05_st[
 
     constrained[
         width == (repeat * bits * datapaths) // (32 * 32)
-        and sizeof[type]() == 4,
+        and sizeof[dtype]() == 4,
         (
             "Only support 4B data type and width must be equal to (num * n"
             " * m) // (32 * 32)."
