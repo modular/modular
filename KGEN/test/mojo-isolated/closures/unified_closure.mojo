@@ -129,3 +129,30 @@ fn make_closure(x: Int) -> Int:
         pass
 
     return x
+
+
+# // -----
+
+# COM: Verify that the constructor is assembled correctly
+
+
+trait MyInterface:
+    fn thing(self):
+        ...
+
+
+# CHECK-DAG: [[TRAIT:!None.*]] = !lit.trait<@{{.*}}::@"fn[MyInterface](a: $0) -> None">
+
+# CHECK: lit.fn @"__init__($0)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[TRAIT]] impl, mut *"impl`"> owned_in_mem, %self: !lit.ref<@{{.*}}::@"fn[MyInterface](a: $0) -> None_wrapper"<:[[TRAIT]] impl>, mut *"self`"> byref_result, |) -> !kgen.none attributes {isStatic, isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.struct.ger %self[field0] : <@{{.*}}::@"fn[MyInterface](a: $0) -> None_wrapper"<:[[TRAIT]] impl>, mut *"self`"> -> :[[TRAIT]] impl
+# CHECK-NEXT: [[V1:%.*]] = lit.call[!lit.generator<[2]("existing": !lit.ref<:[[TRAIT]] impl, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<:[[TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: get_vtable_entry(:[[TRAIT]] impl, "__moveinit__")][mut *"impl`", mut *"self`"->field0](%impl, [[V0]])
+# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT: lit.return %none : !kgen.none
+# CHECK-NEXT: lit.end_fn
+
+
+fn make_closure(x: Int) -> Int:
+    fn parametric[T: MyInterface](a: T) unified:
+        pass
+
+    return x
