@@ -18,8 +18,9 @@ from gpu.host._nvidia_cuda import CUstream
 
 from .types import Compatibility, LibraryProperty, Property, Status, Type
 from .utils import _get_dylib_function
+import sys.ffi
 
-alias cufftHandle = Int16
+alias cufftHandle = ffi.c_uint
 
 
 fn cufftCreate(handle: UnsafePointer[cufftHandle]) -> Status:
