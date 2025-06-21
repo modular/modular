@@ -13,6 +13,7 @@
 """Implements the  Set datatype."""
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
+from hashlib import Hasher
 
 
 struct Set[T: KeyElement](
@@ -279,20 +280,23 @@ struct Set[T: KeyElement](
         """
         return len(self._data)
 
-    fn __hash__(self) -> UInt:
-        """A hash value of the elements in the set.
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying values.
 
-        The hash value is order independent, so s1 == s2 -> hash(s1) == hash(s2).
+        The update is order independent, so s1 == s2 -> hash(s1) == hash(s2).
 
-        Returns:
-            A hash value of the set suitable for non-cryptographic purposes.
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
         """
-        var hash_value = 0
+        var hash_value: UInt64 = 0
         # Hash combination needs to be commutative so iteration order
         # doesn't impact the hash value.
         for e in self:
             hash_value ^= hash(e)
-        return hash_value
+        hasher.update(hash_value)
 
     @no_inline
     fn __str__[U: KeyElement & Representable, //](self: Set[U]) -> String:

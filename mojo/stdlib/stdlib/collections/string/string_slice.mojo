@@ -62,7 +62,7 @@ from collections.string._utf8 import (
     _utf8_first_byte_sequence_length,
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from math import align_down
 from os import PathLike, abort
 from sys import bitwidthof, is_compile_time, simdwidthof
@@ -465,7 +465,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Stringable,
     Writable,
     _CurlyEntryFormattable,
-    _HashableWithHasher,
 ):
     """A non-owning view to encoded string data.
 
@@ -819,17 +818,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return len(self._slice) > 0
 
-    fn __hash__(self) -> UInt:
-        """Hash the underlying buffer using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return hash(self._slice._data, self._slice._len)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:

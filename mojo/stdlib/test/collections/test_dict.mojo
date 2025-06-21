@@ -15,6 +15,7 @@
 from collections.dict import OwnedKwargsDict
 
 from test_utils import CopyCounter
+from hashlib import Hashable, Hasher
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -405,8 +406,8 @@ struct DummyKey(KeyElement):
     fn __init__(out self, *, other: Self):
         self = other
 
-    fn __hash__(self) -> UInt:
-        return self.value
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        return hasher.update(self.value)
 
     fn __eq__(self, other: DummyKey) -> Bool:
         return self.value == other.value

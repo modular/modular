@@ -12,3 +12,4 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the hashlib package that provides various hash algorithms."""
 from .hash import Hashable, hash
+from .hasher import Hasher

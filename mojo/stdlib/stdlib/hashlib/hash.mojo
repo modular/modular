@@ -25,9 +25,11 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-import ._djbx33a
+from .hasher import Hasher
 from memory import UnsafePointer
-from ._djbx33a import _hash_simd
+from sys import is_compile_time
+from ._fnv1a import Fnv1a
+
 
 # ===----------------------------------------------------------------------=== #
 # Implementation
@@ -48,28 +50,34 @@ trait Hashable:
     ```mojo
     @fieldwise_init
     struct Foo(Hashable):
-        fn __hash__(self) -> UInt:
-            return 4  # chosen by fair random dice roll
+        var value: Int
+        fn __hash__[H: Hasher](self, mut hasher: H):
+            hasher.update(self.value)
 
     var foo = Foo()
     print(hash(foo))
     ```
     """
 
-    fn __hash__(self) -> UInt:
-        """Return a 64-bit hash of the type's data.
+    fn __hash__[H: Hasher](self, mut hasher: H):
+        """Accepts a hasher and contributes to the hash value
+        by calling the update function of the hasher.
 
-        Returns:
-            A 64-bit integer hash of this instance's data.
+        Parameters:
+            H: Any Hasher type.
+        Args:
+            hasher: The hasher instance to contribute to.
+
         """
         ...
 
 
-fn hash[T: Hashable](hashable: T) -> UInt:
+fn hash[T: Hashable, HasherType: Hasher = Fnv1a](hashable: T) -> UInt64:
     """Hash a Hashable type using its underlying hash implementation.
 
     Parameters:
         T: Any Hashable type.
+        HasherType: Type of the hasher which should be used for hashing.
 
     Args:
         hashable: The input data to hash.
@@ -77,13 +85,21 @@ fn hash[T: Hashable](hashable: T) -> UInt:
     Returns:
         A 64-bit integer hash based on the underlying implementation.
     """
-    return hashable.__hash__()
+    var hasher = HasherType()
+    hasher.update(hashable)
+    var value = hasher^.finish()
+    return value
 
 
-fn hash(
+fn hash[
+    HasherType: Hasher = Fnv1a
+](
     bytes: UnsafePointer[
         UInt8, address_space = AddressSpace.GENERIC, mut=False, **_
     ],
     n: Int,
-) -> UInt:
-    return _djbx33a.hash(bytes, n)
+) -> UInt64:
+    var hasher = HasherType()
+    hasher._update_with_bytes(bytes, n)
+    var value = hasher^.finish()
+    return value

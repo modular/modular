@@ -12,15 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from ._ahash import AHasher
-
-
-trait _HashableWithHasher:
-    fn __hash__[H: _Hasher](self, mut hasher: H):
-        ...
-
-
-trait _Hasher:
+trait Hasher:
     fn __init__(out self):
         ...
 
@@ -36,29 +28,8 @@ trait _Hasher:
     fn _update_with_simd(mut self, value: SIMD[_, _]):
         ...
 
-    fn update[T: _HashableWithHasher](mut self, value: T):
+    fn update[T: Hashable](mut self, value: T):
         ...
 
     fn finish(owned self) -> UInt64:
         ...
-
-
-alias default_hasher = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
-
-
-fn _hash_with_hasher[
-    HashableType: _HashableWithHasher, HasherType: _Hasher = default_hasher
-](hashable: HashableType) -> UInt64:
-    var hasher = HasherType()
-    hasher.update(hashable)
-    var value = hasher^.finish()
-    return value
-
-
-fn _hash_with_hasher[
-    HasherType: _Hasher = default_hasher
-](data: UnsafePointer[UInt8], len: Int) -> UInt64:
-    var hasher = HasherType()
-    hasher._update_with_bytes(data, len)
-    var value = hasher^.finish()
-    return value
