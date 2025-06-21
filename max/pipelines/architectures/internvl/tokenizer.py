@@ -23,6 +23,7 @@ from PIL import Image
 from transformers import (
     AutoConfig,
     AutoTokenizer,
+    BatchEncoding,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
@@ -220,6 +221,51 @@ class InternVLProcessor:
         downsample_ratio = getattr(config, "downsample_ratio", 0.5)
         self.num_image_token = int(
             (self.image_size // patch_size) ** 2 * (downsample_ratio**2)
+        )
+
+    def apply_chat_template(
+        self,
+        messages: list[dict],
+        tokenize: bool = False,
+        add_generation_prompt: bool = True,
+        **kwargs,
+    ) -> str | list[int] | list[str] | list[list[int]] | BatchEncoding:
+        """Converts a list of dictionaries with `"role"` and `"content"` keys to a formatted string.
+
+        This method handles multimodal messages by extracting text content before
+        forwarding to the HF tokenizer.
+        """
+        # Convert multimodal messages to text-only for the tokenizer
+        text_messages = []
+        for message in messages:
+            text_message = {"role": message.get("role")}
+            content = message.get("content")
+
+            if isinstance(content, str):
+                text_message["content"] = content
+            elif isinstance(content, list):
+                # Extract text from multimodal content
+                text_parts = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        # Handle both "content" and "text" keys
+                        text_content = item.get("content") or item.get(
+                            "text", ""
+                        )
+                        if text_content:
+                            text_parts.append(text_content)
+                text_message["content"] = " ".join(text_parts)
+            else:
+                text_message["content"] = ""
+
+            text_messages.append(text_message)
+
+        # Forward to the HF tokenizer with text-only messages
+        return self.tokenizer.apply_chat_template(
+            text_messages,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+            **kwargs,
         )
 
     def __call__(
