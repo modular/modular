@@ -313,7 +313,10 @@ class AudioGenerationScheduler(Scheduler):
             else:
                 audio_data = torch.tensor([], dtype=torch.float32)
             audio_responses[req_id] = AudioGeneratorOutput(
-                audio_data=audio_data, metadata={}, is_done=response.is_done
+                audio_data=audio_data,
+                metadata={},
+                is_done=response.is_done,
+                buffer_speech_tokens=response.buffer_speech_tokens,
             )
             if response.is_done:
                 stop_responses[req_id] = stop_stream
