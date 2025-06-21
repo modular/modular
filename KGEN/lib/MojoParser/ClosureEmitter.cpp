@@ -438,7 +438,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
       moduleDecl.getSymbolRef().getNestedReferences());
   path.push_back(FlatSymbolRefAttr::get(trait.getSymNameAttr()));
   SymbolRefAttr symbol = SymbolRefAttr::get(ctx, root, path);
-  Type traitType = TraitType::get(ctx, symbol);
+  TraitType traitType = TraitType::get(ctx, symbol);
 
   // Give the struct a parameter "impl" of metatype trait.
   SmallVector<ParamDeclAttr> implParameters;
@@ -561,7 +561,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                             .getRefForArgument(selfName.getValue(), true);
   argConventions.push_back(ArgConvention::ByRefResult);
   initArgumentTypes.push_back(refSelfType);
-  argPogs.push_back(PogMetadataAttr::get(selfName, PassingKind::PosOnly));
+  argPogs.push_back(PogMetadataAttr::get(selfName, PassingKind::Implicit));
   b.setInsertionPointToEnd(&declOp.getFields().front());
   auto [initFnOp, initDecl] = synthesizeFunction(
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
@@ -598,7 +598,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
       b.create<ParamConstantOp>(NoneAttr::get(ctx))->getResults();
   b.create<LIT::ReturnOp>(results);
   b.create<LIT::EndFnOp>();
-
+  declOp.setCanonicalTrait(traitType);
   return declOp;
 }
 
