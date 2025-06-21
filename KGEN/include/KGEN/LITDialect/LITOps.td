@@ -1704,8 +1704,8 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
 //===----------------------------------------------------------------------===//
 
 def LIT_ClosureInitOp : LITOp<"closure.init",
-                [FunctionLike, SingleBlock,
-                  DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
+                [FunctionLike, SingleBlock, DeclInterface,
+                  DeclareOpInterfaceMethods<ParamOpInterface, ["collectParameterUses"]>]>, OneParamDecl {
   let summary = "Allocate memory and store values into a closure struct.";
   let description = [{
     The `lit.closure.init` operation represents the instantiation of a closure

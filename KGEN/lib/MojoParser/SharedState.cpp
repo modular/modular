@@ -318,7 +318,8 @@ struct SharedState::Impl {
   /// A parametric closure wrapper is a parametric struct with a single
   /// parametric field. This field conforms to a trait specific to the signature
   /// of the closure's call signature.
-  DenseMap<std::pair<GeneratorType, ASTDecl *>, StructDeclOp>
+  DenseMap<std::pair<GeneratorType, ASTDecl *>,
+           std::pair<StructDeclOp, TraitDeclOp>>
       parametricClosureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
@@ -1805,18 +1806,22 @@ SharedState::getOrCreateClosureWrapper(SMLoc loc, FuncTypeGeneratorType sig,
   return existing;
 }
 
-StructDeclOp SharedState::getOrCreateParametricClosureWrapper(
-    SMLoc loc, FuncTypeGeneratorType sig, ASTDecl *moduleDecl,
-    InlineLevel inlineLevel) {
-  StructDeclOp &existing = impl->parametricClosureWrappers[{sig, moduleDecl}];
-  if (!existing) {
+std::pair<StructDeclOp, TraitDeclOp>
+SharedState::getOrCreateParametricClosureWrapper(SMLoc loc,
+                                                 FuncTypeGeneratorType sig,
+                                                 ASTDecl *moduleDecl,
+                                                 InlineLevel inlineLevel) {
+  auto ptr = impl->parametricClosureWrappers.find({sig, moduleDecl});
+  if (ptr == impl->parametricClosureWrappers.end()) {
     std::string name =
         ASTType(sig).getAsString(/*diags=*/this, /*demangleParams=*/true);
     ClosureEmitter emitter(*moduleDecl, *this);
-    existing = emitter.createParametricClosureWrapperStructDecl(
+    auto result = emitter.createParametricClosureWrapperStructDecl(
         StringAttr::get(getContext(), name), sig, loc, inlineLevel);
+    impl->parametricClosureWrappers.insert({{sig, moduleDecl}, result});
+    return result;
   }
-  return existing;
+  return ptr->second;
 }
 
 FnOp SharedState::getOrCreateFunctionThunk(Attribute key,

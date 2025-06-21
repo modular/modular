@@ -602,7 +602,8 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
   return declOp;
 }
 
-StructDeclOp ClosureEmitter::createParametricClosureWrapperStructDecl(
+std::pair<StructDeclOp, TraitDeclOp>
+ClosureEmitter::createParametricClosureWrapperStructDecl(
     StringAttr name, FnTypeGeneratorType dependentSignatureType,
     SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel) {
   // Generate the movable, destructable closure trait, populating the trait
@@ -641,8 +642,9 @@ StructDeclOp ClosureEmitter::createParametricClosureWrapperStructDecl(
       createTraitOp(name, parents, nestedFunctionOrTypeLocation, populate);
 
   // Now create a wrapper struct that conforms to the trait we created.
-  return createStructWrapper(name.getValue(), *traitDecl,
-                             nestedFunctionOrTypeLocation);
+  return {createStructWrapper(name.getValue(), *traitDecl,
+                              nestedFunctionOrTypeLocation),
+          closureTrait};
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
@@ -1465,4 +1467,118 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   }
   setMember(topLevelCall, callFieldAttr, topLevelTypes.callFuncFieldType);
   return init;
+}
+
+static TypedAttr generateVTableAttr(SharedState &shared, Location location,
+                                    FnOp parent, ClosureType closureType,
+                                    TraitDeclOp trait) {
+  MLIRContext *ctx = parent->getContext();
+  SmallVector<VTableEntryAttr> entries;
+  SymbolRefAttr parentSymbolRef = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(parent.getOperation()));
+  for (auto fnOp : trait.getFields().getOps<FnOp>()) {
+    std::optional<StringRef> sourceNameMaybe = fnOp.getSourceName();
+    assert(sourceNameMaybe.has_value() &&
+           "Expected the function to have a source name");
+    StringRef sourceName = *sourceNameMaybe;
+    ClosureMethod method;
+    if (sourceName == "__moveinit__")
+      method = ClosureMethod::MOVE;
+    else if (sourceName == "__call__")
+      method = ClosureMethod::CALL;
+    else if (sourceName == "__del__")
+      method = ClosureMethod::DEL;
+    else
+      assert(false && "closures should only define del, call, and move but "
+                      "trait specifies unrecognized method");
+    FnTypeGeneratorType sig =
+        specializeSignature(fnOp, closureType, *shared.declResolver);
+    SmallVector<TypedAttr> paramValues;
+    TypedAttr symbol = ClosureSymbolAttr::get(
+        ctx, parentSymbolRef, closureType.getName(),
+        ClosureMethodAttr::get(ctx, method), paramValues, sig);
+    entries.push_back(
+        VTableEntryAttr::get(StringAttr::get(ctx, sourceName), symbol));
+  }
+  auto typeParamAttr = TypeParamAttr::get(
+      closureType,
+      TraitType::get(getFullyResolvedSymbolRef(
+          cast<mlir::SymbolOpInterface>(trait.getOperation()))),
+      VTableAttr::get(ctx, entries));
+  return typeParamAttr;
+}
+
+Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
+                                    ArrayRef<Capture> captures,
+                                    StructDeclOp wrapper, TraitDeclOp trait,
+                                    Location location) {
+  // (1) Create the closure instance.
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl);
+  FnOp parent = nestedFn->getParentOfType<FnOp>();
+  assert(parent && "expected the function to be a nested function");
+  ImplicitLocOpBuilder builder(location, shared.getContext());
+  builder.setInsertionPoint(nestedFn);
+  MLIRContext *ctx = builder.getContext();
+  StringAttr fnName = nestedFn.getSourceNameAttr();
+  // TODO: use effect to determine the memory kind for the closure
+  KGEN::ClosureType closureType =
+      ClosureType::get(ctx, nestedFnDecl.getParentDecl()->getSymbolRef(),
+                       fnName, ClosureMemoryKind::NONESCAPING);
+  // TODO: support explicit capture semantics. For now just default to by value.
+  SmallVector<Attribute> captureInfo;
+  SmallVector<Value> captureValues;
+  SmallVector<TypedAttr> origins;
+  for (const Capture &capture : captures) {
+    captureValues.push_back(capture.getValue().getMlirValue());
+    captureInfo.push_back(UnitAttr::get(ctx));
+  }
+  StringAttr originAttr =
+      nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue());
+  TypedAttr vTable =
+      generateVTableAttr(shared, location, parent, closureType, trait);
+  ParamDeclAttr origin =
+      ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
+  auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));
+  auto closure = builder.create<LIT::ClosureInitOp>(
+      location, refType, nestedFn.getFuncTypeGenerator(),
+      nestedFn.getFunctionType(), ValueRange(captureValues),
+      ArrayAttr::get(ctx, captureInfo), OriginSetAttr::get(ctx, origins),
+      nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin, vTable);
+  closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
+
+  // (2) Create the wrapper instance and populate it with the closure init op
+  // value.
+
+  // The wrapper takes ownership of the closure.
+  builder.create<OwnershipUseOp>(location, closure);
+
+  // Create the wrapper instance by emitting a call to the Wrapper constructor.
+  LIT::StructType closureWrapperType =
+      wrapper.bindReference(closure.getVtableAttr());
+  VarDeclOp var = builder.create<VarDeclOp>(
+      location, closureWrapperType, fnName.getValue(),
+      nestedFnDecl.getParentDecl()->mangleParamName(fnName.getValue()),
+      VarDeclKind::Var);
+  SmallVector<Value> operands({closure->getResult(0), var});
+  SmallVector<TypedAttr> implicitOrigins(
+      {ParamDeclRefAttr::get(origin), var.getType().getOrigin()});
+  FnOp init;
+  for (auto fn : wrapper.getFields().getOps<FnOp>()) {
+    if (fn.getSourceName() == "__init__") {
+      assert(!init && "Wrapper has exactly one constructor.");
+      init = fn;
+    }
+  }
+  assert(init && "Wrapper has exactly one constructor but could not find it.");
+  SymbolRefAttr symbolRef = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(init.getOperation()));
+  FnTypeGeneratorType fullSig =
+      LIT::getFullSignature(wrapper, init.getFuncTypeGenerator());
+  SmallVector<TypedAttr> paramArgs;
+  paramArgs.push_back(closure.getVtableAttr());
+  auto boundSig = fullSig.getSpecializedGenerator(paramArgs, location);
+  TypedAttr symbol = SymbolConstantAttr::get(symbolRef, boundSig, paramArgs);
+  builder.create<LIT::CallOp>(location, boundSig.getBody().getResults(), symbol,
+                              implicitOrigins, operands);
+  return MLValue(var);
 }

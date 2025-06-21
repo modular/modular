@@ -157,3 +157,49 @@ fn make_closure(x: Int) -> Int:
         pass
 
     return x
+
+
+# // -----
+
+
+# COM: Verify the closure instance is created correctly.
+
+
+fn make_closure(x: Int):
+    # CHECK: [[RAW_CLOSURE:%.*]] = lit.closure.init[{{.*}}](%x)(%arg0[y]: !Int1) unified -> !Int1 {
+    # CHECK-NEXT: [[BODY_OP:%.*]] = lit.call @{{.*}}@Int::@"__add__{{.*}}"(%x, %arg0) : !lit.generator<("lhs": !Int1, "rhs": !Int1) -> !Int1>
+    # CHECK-NEXT: lit.return [[BODY_OP]] : !Int1
+    # CHECK-NEXT: lit.end_fn
+    # CHECK-NEXT: } : (!Int1), !lit.ref<!kgen.closure<@{{.*}}::@"make_closure{{.*}}", "my_closure" nonescaping>, mut *"[[L0:.*]]">
+
+    # CHECK-NEXT: lit.ownership.use [[RAW_CLOSURE]]
+    # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:!Int {{.*}}, mut *"[[L1:.*]]">
+    # CHECK-NEXT: lit.call @{{.*}}::@"fn(y: Int) -> Int_wrapper"::@"__init__($0)"[mut *"[[L0]]", mut *"[[L1]]"]<:!Int {{.*}}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:!Int {{.*}}>, mut *[0,1]> byref_result) -> !kgen.none>
+
+    fn my_closure(y: Int) unified -> Int:
+        return x + y
+
+
+# // -----
+
+# COM: Verify that the vtable entry is generated correctly
+
+
+trait MyInterface:
+    fn thing(self):
+        ...
+
+
+# CHECK:, {"__call__" : !lit.generator<<"T": !MyInterface>[2](!lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> mut
+# CHECK-SAME:, |, "a": !lit.ref<:!MyInterface *(0,0), imm *[0,1]> read_mem) -> !kgen.none> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<call>>
+# CHECK-SAME:, "__del__" : !lit.generator<[1]("self": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> owned_in_mem, |) -> !kgen.none
+# CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<del>>
+# CHECK-SAME:, "__moveinit__" : !lit.generator<[2]("existing": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> owned_in_mem
+# CHECK-SAME:, |, ?, "self": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,1]> byref_result) -> !kgen.none> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<move>>}> : !None
+
+
+fn make_closure(x: Int) -> Int:
+    fn parametric[T: MyInterface](a: T) unified:
+        pass
+
+    return x

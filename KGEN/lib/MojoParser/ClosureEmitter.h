@@ -42,7 +42,7 @@ public:
   /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
   /// parametric field. Both the field and the struct must conform to the
   /// associated closure trait characterized by the signature of the closure.
-  StructDeclOp createParametricClosureWrapperStructDecl(
+  std::pair<StructDeclOp, TraitDeclOp> createParametricClosureWrapperStructDecl(
       StringAttr name, FnTypeGeneratorType signatureType,
       SMLoc nestedFunctionOrTypeLocation, InlineLevel inlineLevel);
 
@@ -56,6 +56,9 @@ public:
   /// instance.
   FnOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                  StructDeclOp closureImpl, SMLoc location);
+  Value emitClosureOp(ASTDecl &nestedFnDecl, ArrayRef<Capture> captures,
+                      StructDeclOp wrapper, TraitDeclOp trait,
+                      Location location);
 
 private:
   MLIRContext *ctx;
