@@ -1319,9 +1319,10 @@ static PValue substituteParametersIntoUserDefinedType(
 }
 
 /// Bind parameter operands to a callable parameter.
-static PValue bindToIndirectCall(PValue callable, FnTypeGeneratorType sig,
-                                 ArrayRef<Operand> operands, IREmitter &emitter,
-                                 const SourceRange &range) {
+static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
+                                   ArrayRef<Operand> operands,
+                                   IREmitter &emitter,
+                                   const SourceRange &range) {
   // Build up a ParamBindings set to validate and check the bindings.
   std::optional<ParamBindings> paramBindings = getBindingsForParameterOperands(
       operands, sig.getInputParamTypes(), sig.getParamListAttrs(), emitter,
@@ -1329,12 +1330,13 @@ static PValue bindToIndirectCall(PValue callable, FnTypeGeneratorType sig,
   if (!paramBindings)
     return {};
 
-  ParameterExprArrayAttr newBindings = paramBindings->verifyBindings(
-      sig, "parametric callable", range.getStart());
+  ParameterExprArrayAttr newBindings =
+      paramBindings->verifyBindings(sig, "parametric value", range.getStart());
   if (!newBindings)
     return {};
 
-  return BindParamsAttr::get(callable.get(), newBindings);
+  return emitter.shared.getEvaluationContext().getBindParamsAttr(callable.get(),
+                                                                 newBindings);
 }
 
 /// When subscripting a callable with a bound symbol (i.e. a direct method call
@@ -2306,11 +2308,11 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
       return emitter.emitResult(result, this, dest);
     }
 
-    // If this is a signature-type PValue callable, this is binding parameter
-    // values to a call.
-    if (auto sig = dyn_cast<FnTypeGeneratorType>(baseType)) {
+    // If this is a parametric PValue, this is binding parameter values to the
+    // generator value.
+    if (auto sig = dyn_cast<LITGeneratorType>(baseType)) {
       PValue result =
-          bindToIndirectCall(value, sig, operands, emitter, getIndexRange());
+          bindToGeneratorValue(value, sig, operands, emitter, getIndexRange());
       if (!result)
         return {};
       return emitter.emitResult(result, this, dest);

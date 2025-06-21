@@ -1028,8 +1028,8 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
       dest.resetForError(*this);
       return {};
     }
-    boundCalleeRV = PValue(
-        BindParamsAttr::get(calleePVal, fitness.getParamBindings().getValue()));
+    boundCalleeRV = PValue(shared.getEvaluationContext().getBindParamsAttr(
+        calleePVal, fitness.getParamBindings().getValue()));
   }
 
   // If the selected candidate needs some register operands emitted to memory,

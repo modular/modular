@@ -497,7 +497,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   //
   // notice how we're calling `callee[Y](s)` and the clarifying parameter Z
   // doesn't appear on that call line.
-  TypedAttr calleeParam = BindParamsAttr::get(
+  TypedAttr calleeParam = shared.getEvaluationContext().getBindParamsAttr(
       ParamDeclRefAttr::get(calleeDecl),
       ArrayRef(paramValues)
           .take_back(actualSignature.getInputParamTypes().size()));

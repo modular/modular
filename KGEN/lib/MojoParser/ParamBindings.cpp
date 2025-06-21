@@ -660,7 +660,7 @@ ParamBindings::verifyBindingsImpl(
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
-    FnTypeGeneratorType sig, const DiagEmitter &diagEmitter,
+    LITGeneratorType sig, const DiagEmitter &diagEmitter,
     ParameterInferenceHookTy parameterInferenceHook) const {
   return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
                             sig.getMetadata(), parameterInferenceHook,
@@ -668,7 +668,7 @@ ParamBindings::verifyBindings(
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(FnTypeGeneratorType sig) const {
+ParamBindings::verifyBindings(LITGeneratorType sig) const {
   return verifyBindings(sig.getInputParamTypes(), sig.getMetadata(),
                         /*partial=*/true);
 }
@@ -705,7 +705,7 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(FnTypeGeneratorType sig, StringRef baseName,
+ParamBindings::verifyBindings(LITGeneratorType sig, StringRef baseName,
                               SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
   auto [newBindings, _, diag] =
@@ -935,7 +935,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(FnOp funcOp, StringRef baseName,
   if (!newBindings)
     return {};
 
-  return BindParamsAttr::get(fnRef, newBindings);
+  return shared.getEvaluationContext().getBindParamsAttr(fnRef, newBindings);
 }
 
 void ParamBindings::dump() const { llvm::errs() << parameters << "\n"; }

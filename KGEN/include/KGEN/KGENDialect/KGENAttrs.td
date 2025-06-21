@@ -713,8 +713,12 @@ def KGEN_BindParamsAttr : KGEN_ExprAttr<"BindParams", "bind_params",
        "TypedAttr":$generator, "ArrayRef<TypedAttr>":$paramValues,
        "Type":$type), "", "TypedAttr">,
     // Builder that derives the result type from the input paramValues.
+    // Optionally takes an evaluation context to use when computing the result
+    // type. The evaluation context is never stored, only used temporarily prior
+    // to construction.
     AttrBuilderWithInferredContext<(ins
-       "TypedAttr":$generator, "ArrayRef<TypedAttr>":$paramValues), "",
+       "TypedAttr":$generator, "ArrayRef<TypedAttr>":$paramValues,
+       CArg<"ParameterEvaluationContext *", "nullptr">:$evaluationContext), "",
        "TypedAttr">
   ];
   let genVerifyDecl = 1;

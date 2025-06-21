@@ -13,6 +13,7 @@
 #include "CallEmission.h"
 #include "ExprNodes.h"
 #include "MojoUtils.h"
+#include "ParserEvaluationContext.h"
 #include "Traits.h"
 
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -792,7 +793,8 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 
       // Apply whatever it produced to the attr of signature type to resolve the
       // remaining arguments.
-      attr = BindParamsAttr::get(attr, bindingAttr);
+      attr =
+          shared.getEvaluationContext().getBindParamsAttr(attr, {bindingAttr});
     }
 
     // Materialize signatures as closures.
