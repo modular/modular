@@ -350,7 +350,6 @@ Rule of thumb: Any Python builtin function should be accessible in Mojo using
 fn foo(x: PythonObject, y: PythonObject, z: PythonObject) -> PythonObject:
     x[y] = Python.int(z)
     x = y + z
-    x.attr = z
 ```
 
 ## Keyword arguments
