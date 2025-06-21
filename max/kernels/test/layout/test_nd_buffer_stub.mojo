@@ -1236,7 +1236,8 @@ fn test_copy_nd_buffer_to_layout_tensor_masked_scalar():
                     distribute_mask,
                 )
 
-            print(tensor_tile_4x4)
+            # FIXME(#4846): should use .get_immutable() or better yet, nothing
+            print(tensor_tile_4x4.copy())
 
 
 # CHECK-LABEL: test_copy_from_nd_buffer_masked_scalar
@@ -1302,7 +1303,8 @@ fn test_copy_from_nd_buffer_masked_scalar():
                     th_id,
                 )
 
-            print(tensor_tile_4x4)
+            # FIXME(#4846): should use .get_immutable() or better yet, nothing
+            print(tensor_tile_4x4.copy())
 
 
 # CHECK-LABEL: test_copy_to_nd_buffer_masked_scalar
