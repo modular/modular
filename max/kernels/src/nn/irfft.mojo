@@ -183,17 +183,20 @@ fn irfft[
 
         while reduced_batch_size > 0:
             reduced_batch_size //= 2
-            check_error(
-                cufftEstimate1d(
-                    output_size,
-                    Type.CUFFT_C2R,
-                    reduced_batch_size,
-                    UnsafePointer(to=work_size),
+            try:
+                check_error(
+                    cufftEstimate1d(
+                        output_size,
+                        Type.CUFFT_C2R,
+                        reduced_batch_size,
+                        UnsafePointer(to=work_size),
+                    )
                 )
-            )
-
-            if work_size < MAX_FFT_WORKSPACE_SIZE:
-                break
+                if work_size < MAX_FFT_WORKSPACE_SIZE:
+                    break
+            except e:
+                # Try the next work_size
+                pass
 
         if reduced_batch_size == 0:
             raise Error("FFT Output signal size is too large")
