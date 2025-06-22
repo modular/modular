@@ -47,6 +47,37 @@ fn global_cache_insert(key: String, value: OpaquePointer):
     )
 
 
+fn _get_fft_plan(output_size: Int, batch_size: Int) raises -> cufftHandle:
+    var cached_plan_key = String("CUFFT_PLAN_", output_size, ",", batch_size)
+
+    if lookup := global_cache_lookup(cached_plan_key):
+        # We found the plan in the cache, so just return it
+        return cufftHandle(Int(lookup))
+
+    var plan = cufftHandle(0)
+    check_error(
+        cufftPlan1d(
+            UnsafePointer(to=plan),
+            output_size,
+            Type.CUFFT_C2R,
+            batch_size,
+        )
+    )
+
+    # We want to cache the cuFFT plan to avoid calling high overhead cuda
+    # calls each time the plane is created and destroyed
+    global_cache_insert(
+        cached_plan_key,
+        # we are bitcasting the integer plan to a void * to cache it,
+        # because that's what KGEN_CompilerRT_InsertGlobal expects.
+        _unsafe_aliasing_address_to_pointer[DType.index](Int(plan)).bitcast[
+            NoneType
+        ](),
+    )
+
+    return plan
+
+
 fn irfft[
     input_rank: Int,
     input_type: DType,
@@ -98,30 +129,7 @@ fn irfft[
         batch_size *= input_shape[i]
 
     # Create cuFFT plan
-    var plan: cufftHandle = 0
-    var plan_ptr = UnsafePointer(to=plan)
-
-    # We want to cache the cuFFT plan to avoid calling high overhead cuda
-    # calls each time the plane is created and destroyed
-    var cached_plan_key = String(output_size) + "," + String(batch_size)
-    plan = cufftHandle(Int(global_cache_lookup(cached_plan_key)))
-
-    if not plan:
-        var plan_status = cufftPlan1d(
-            plan_ptr,
-            output_size,
-            Type.CUFFT_C2R,
-            batch_size,
-        )
-        check_error(plan_status)
-        global_cache_insert(
-            cached_plan_key,
-            # we are bitcasting the integer plan to a void * to cache it,
-            # because that's what KGEN_CompilerRT_InsertGlobal expects.
-            _unsafe_aliasing_address_to_pointer[DType.index](Int(plan)).bitcast[
-                NoneType
-            ](),
-        )
+    var plan = _get_fft_plan(output_size, batch_size)
 
     # Set up cuda stream.
     # Notice that we do not want to have this part of the cache
