@@ -1,6 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test", "requirement")
 
 _DATA = [
+    "builtin/data/test_io_dummy_input.txt",
     "builtin/test_file_dummy_input.txt",
     "python/custom_indexable.py",
     "python/my_module.py",
