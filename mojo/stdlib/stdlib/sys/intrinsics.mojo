@@ -1088,20 +1088,25 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
         value: The value to place across the mask.
 
     Returns:
-        A bitfield(Int32 or Int64) containing the result of its Bool argument in all active lanes.
+        A bitfield(Int32 or Int64) containing the result of its Bool argumentin all active lanes.
     """
     @parameter
     if is_amd_gpu():
-      constrained[dtype == DType.int32 or dtype == DType.int64, "This intrinsic is only defined for i32 or i64 on AMD GPUs"]()
+      constrained[
+          dtype == DType.int32 or dtype == DType.int64,
+          "This intrinsic is only defined for i32 or i64 on AMD GPUs"
+      ]()
       return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)
     else:
-      constrained[dtype == DType.int32, "This intrinsic is only defined for i32 on NVIDIA GPUs"]()
-      # mode 3 means BALLOT
+      constrained[
+          dtype == DType.int32,
+          "This intrinsic is only defined for i32 on NVIDIA GPUs"
+      ]()
       var result = llvm_intrinsic[
-          "llvm.nvvm.vote.sync",
-          _RegisterPackType[Int, Bool]
-      ](Int(_FULL_MASK), Int(3), value)
-      return rebind[Scalar[dtype]](Int32(result[0]))
+          "llvm.nvvm.vote.ballot.sync",
+          Int32
+      ](Int32(_FULL_MASK), value)
+      return result.cast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#

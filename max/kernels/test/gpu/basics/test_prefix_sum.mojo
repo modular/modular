@@ -19,6 +19,7 @@ from gpu.host import DeviceContext
 from gpu.globals import WARP_SIZE
 from math import ceildiv
 from testing import assert_equal
+from sys.intrinsics import lanemask_lt
 
 alias dtype = DType.uint64
 
@@ -179,6 +180,7 @@ fn warp_rank_kernel[
     var condition = v % 4 == 1
     var rank = warp.rank(condition)
     if condition:
+      print("tid", tid, "rank", rank, "value", v + 100, "lanemask_lt", lanemask_lt())
       output[rank] = v + 100
 
 def test_warp_rank(ctx: DeviceContext):
