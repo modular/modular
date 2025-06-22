@@ -235,6 +235,8 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             max_length=max_length,
             trust_remote_code=True,
             engine=PipelineEngine.MAX,
+            # TODO(GEX-2365): Handle this in model memory estimation.
+            device_memory_utilization=0.8,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
