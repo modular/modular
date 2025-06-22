@@ -63,7 +63,7 @@ from sys._assembly import inlined_assembly
 from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 from sys.intrinsics import _type_is_eq
 
-from bit import bit_width, byte_swap, pop_count
+from bit import bit_width, byte_swap, pop_count, count_leading_zeros, count_trailing_zeros
 from builtin._format_float import _write_float
 from builtin.device_passable import DevicePassable
 from builtin.format_int import _try_write_int
@@ -2848,6 +2848,42 @@ struct SIMD[dtype: DType, size: Int](
             return Int(self.cast[DType.uint8]().reduce_add())
         else:
             return Int(pop_count(self).reduce_add())
+
+    @always_inline
+    fn leading_zeros(self) -> SIMD[dtype, size]:
+        """Counts the number of leading zero bits, starting from the most
+            significant bit (MSB).
+
+        Constraints:
+            Must be either an integral type.
+
+        Returns:
+            Count of leading zero bits across all elements of the vector.
+        """
+        constrained[
+            dtype.is_integral() or dtype is DType.bool,
+            "Expected either integral or bool type",
+        ]()
+
+        return count_leading_zeros(self)
+
+    @always_inline
+    fn trailing_zeros(self) -> SIMD[dtype, size]:
+        """Counts the number of trailing zero bits, starting from the most
+            significant bit (MSB).
+
+        Constraints:
+            Must be either an integral type.
+
+        Returns:
+            Count of trailing zero bits across all elements of the vector.
+        """
+        constrained[
+            dtype.is_integral() or dtype is DType.bool,
+            "Expected either integral or bool type",
+        ]()
+
+        return count_trailing_zeros(self)
 
     # ===------------------------------------------------------------------=== #
     # select

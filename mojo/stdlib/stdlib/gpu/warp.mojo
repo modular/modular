@@ -25,6 +25,7 @@ This module provides warp-level operations for NVIDIA and AMD GPUs, including:
   - max: Find maximum value across warp
   - min: Find minimum value across warp
   - broadcast: Broadcast value to all lanes
+  - rank: Find the rank of the thread given a mask
 
 The module handles both NVIDIA and AMD GPU architectures through architecture-specific
 implementations of the core operations. It supports various data types including
@@ -41,6 +42,7 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
+from sys.intrinsics import ballot, mbcnt
 
 from algorithm.functional import unswitch
 from bit import log2_floor
@@ -1224,3 +1226,22 @@ fn broadcast(val: UInt) -> UInt:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
     return Int(shuffle_idx(Int32(val), 0))
+
+
+# ===-----------------------------------------------------------------------===#
+# Warp Rank
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn rank(val: Scalar[DType.bool]) -> Scalar[DType.uint32]:
+  @parameter
+  if is_amd_gpu():
+    @parameter
+    if WARP_SIZE == 32:
+      return mbcnt(ballot[DType.int32](val))
+    else:
+      return mbcnt(bitcast[DType.int32, 2](ballot[DType.int64](val)))
+  else:
+    constrained[True, "unimplemented"]()
+    return 0

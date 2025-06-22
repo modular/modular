@@ -24,6 +24,8 @@ from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
+from gpu.warp import _FULL_MASK
+from memory import bitcast
 from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
@@ -877,6 +879,28 @@ fn assume(val: Bool):
         return
     llvm_intrinsic["llvm.assume", NoneType](val)
 
+# ===-----------------------------------------------------------------------===#
+# mbcnt
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn mbcnt(input: Scalar[DType.int32], count: Scalar[DType.int32] = 0) -> UInt32:
+    constrained[is_amd_gpu(), "This function only applies to AMD GPUs."]()
+    return llvm_intrinsic[
+        "llvm.amdgcn.mbcnt.lo", UInt32, has_side_effect=False
+    ](input, count)
+
+
+@always_inline("nodebug")
+fn mbcnt(input: SIMD[DType.int32, 2], count: Scalar[DType.int32] = 0) -> UInt32:
+    constrained[is_amd_gpu(), "This function only applies to AMD GPUs."]()
+    lo, hi = input.split()
+    var t = mbcnt(lo, count)
+    return llvm_intrinsic[
+                "llvm.amdgcn.mbcnt.hi", UInt32, has_side_effect=False
+            ](hi, t)
+
 
 # ===-----------------------------------------------------------------------===#
 # lane_id
@@ -905,18 +929,8 @@ fn lane_id() -> UInt:
         )
 
     elif is_amd_gpu():
-        alias none = Scalar[DType.int32](-1)
-        alias zero = Scalar[DType.int32](0)
-        var t = llvm_intrinsic[
-            "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
-        ](none, zero)
-        return UInt(
-            Int(
-                llvm_intrinsic[
-                    "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
-                ](none, t).cast[DType.uint32]()
-            )
-        )
+        alias none = SIMD[DType.int32, 2](-1)
+        return UInt(mbcnt(none))
 
     else:
         return CompilationTarget.unsupported_target_error[
@@ -1044,12 +1058,14 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     Returns:
         A bitfield(Int32 or Int64) containing the result of its Bool argument in all active lanes.
     """
-    constrained[is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"]()
-    constrained[
-        dtype == DType.int32 or dtype == DType.int64,
-        "This intrinsic is only defined for i32 or i64",
-    ]()
-    return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)
+    @parameter
+    if is_amd_gpu():
+      constrained[dtype == DType.int32 or dtype == DType.int64, "This intrinsic is only defined for i32 or i64 on AMD GPUs"]()
+      return llvm_intrinsic["llvm.amdgcn.ballot", Scalar[dtype]](value)
+    else:
+      constrained[dtype == DType.int32, "This intrinsic is only defined for i32 on NVIDIA GPUs"]()
+      # mode 3 means BALLOT
+      return llvm_intrinsic["llvm.nvvm.vote.sync", Scalar[dtype]](_FULL_MASK, Scalar[DType.int32](3), value)
 
 
 # ===-----------------------------------------------------------------------===#
