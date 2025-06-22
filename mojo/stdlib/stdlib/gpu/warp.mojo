@@ -42,7 +42,7 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
-from sys.intrinsics import ballot, mbcnt
+from sys.intrinsics import ballot, mbcnt, lanemask_lt
 
 from algorithm.functional import unswitch
 from bit import log2_floor
@@ -1234,14 +1234,41 @@ fn broadcast(val: UInt) -> UInt:
 
 
 @always_inline
-fn rank(val: Scalar[DType.bool]) -> Scalar[DType.uint32]:
+fn rank(flag: Scalar[DType.bool]) -> Scalar[DType.uint32]:
+  """Computes the rank of the thread within a warp given the flag.
+
+  Equivalent to a warp-wide prefix sum where each thread can contribute either
+  zero or one to the sum.
+
+  Args:
+      flag: Whether this thread is enabled or not.
+
+  Returns:
+      The rank (index) of this thread among threads of this warp that had the
+      flag enabled.
+
+  Example:
+      To filter out odd elements and output them to a contiguous range, one
+      could use the following pattern:
+
+      ```mojo
+          from gpu.warp import rank
+
+          var condition = element % 2 == 0
+          var rank = rank(condition)
+
+          if condition:
+            output[rank] = element
+      ```
+  """
+
   @parameter
   if is_amd_gpu():
     @parameter
     if WARP_SIZE == 32:
-      return mbcnt(ballot[DType.int32](val))
+      return mbcnt(ballot[DType.int32](flag))
     else:
-      return mbcnt(bitcast[DType.int32, 2](ballot[DType.int64](val)))
+      return mbcnt(bitcast[DType.int32, 2](ballot[DType.int64](flag)))
   else:
-    constrained[True, "unimplemented"]()
-    return 0
+    var b = ballot[DType.int32](flag).cast[DType.uint32]()
+    return (b & Scalar[DType.uint32](lanemask_lt())).reduce_bit_count()

@@ -940,6 +940,38 @@ fn lane_id() -> UInt:
 
 
 # ===-----------------------------------------------------------------------===#
+# lanemask_lt
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn lanemask_lt() -> UInt:
+    """Returns a warp thread mask with lanes prior to the current one set to 1.
+
+    Corresponds to lanemask_lt in PTX.
+
+    Returns:
+        The mask.
+    """
+    constrained[is_gpu(), "This function only applies to GPUs."]()
+
+    @parameter
+    if is_nvidia_gpu():
+        return UInt(
+            Int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.lanemask_lt",
+                    Int32,
+                    has_side_effect=False,
+                ]().cast[DType.uint32]()
+            )
+        )
+
+    else:
+        return (1 << lane_id()) - 1
+
+
+# ===-----------------------------------------------------------------------===#
 # implicitarg_ptr
 # ===-----------------------------------------------------------------------===#
 
@@ -1065,7 +1097,11 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     else:
       constrained[dtype == DType.int32, "This intrinsic is only defined for i32 on NVIDIA GPUs"]()
       # mode 3 means BALLOT
-      return llvm_intrinsic["llvm.nvvm.vote.sync", Scalar[dtype]](_FULL_MASK, Scalar[DType.int32](3), value)
+      var result = llvm_intrinsic[
+          "llvm.nvvm.vote.sync",
+          _RegisterPackType[Int, Bool]
+      ](Int(_FULL_MASK), Int(3), value)
+      return rebind[Scalar[dtype]](Int32(result[0]))
 
 
 # ===-----------------------------------------------------------------------===#
