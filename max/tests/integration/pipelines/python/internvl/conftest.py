@@ -27,16 +27,18 @@ def vision_config() -> VisionConfig:
     """Create a test vision config for InternVL using realistic sizes."""
     return VisionConfig(
         dtype=DType.bfloat16,
-        hidden_size=1024,  # Reduced for faster testing
-        intermediate_size=4096,  # 4x hidden_size
+        hidden_size=1024,
+        intermediate_size=4096,
         norm_type="rms_norm",
-        image_size=224,  # Reduced for faster testing
+        image_size=448,
         patch_size=14,
-        num_attention_heads=16,  # Reduced for hidden_size=1024
-        head_dim=64,  # 1024 / 16 = 64 head_dim
+        num_attention_heads=16,
+        head_dim=64,
         layer_norm_eps=1e-6,
         qk_normalization=True,
-        num_hidden_layers=4,  # Back to 4 layers with proper weight scoping
+        qkv_bias=True,
+        o_proj_bias=True,
+        num_hidden_layers=24,
         use_mean_pooling=False,
     )
 
@@ -134,16 +136,16 @@ def vision_attention_weights(
     # ==================================================
     # INTERNVL VISION ATTENTION LAYER WEIGHT STANDARD DEVIATIONS
     # ==================================================
-    # QKV_PROJ_STD: 0.0289  # For stacked QKV projection
-    # O_PROJ_STD: 0.0282    # Output projection
-    # Q_NORM_STD: 0.1854    # Q normalization (smaller than text models)
-    # K_NORM_STD: 0.1967    # K normalization (smaller than text models)
+    # QKV_PROJ_STD: 0.0160
+    # O_PROJ_STD: 0.0138
+    # Q_NORM_STD: 0.2299
+    # K_NORM_STD: 0.2299
     # ==================================================
 
-    QKV_PROJ_STD = 0.0289
-    O_PROJ_STD = 0.0282
-    Q_NORM_STD = 0.1854
-    K_NORM_STD = 0.1967
+    QKV_PROJ_STD = 0.0160
+    O_PROJ_STD = 0.0138
+    Q_NORM_STD = 0.2299
+    K_NORM_STD = 0.2299
 
     hidden_size = vision_config.hidden_size
 
@@ -183,12 +185,33 @@ def vision_attention_weights(
         * K_NORM_STD
     )
 
-    return {
+    weights_dict = {
         "qkv_proj.weight": qkv_weight,
         "o_proj.weight": o_proj_weight,
         "q_norm.weight": q_norm_weight,
         "k_norm.weight": k_norm_weight,
     }
+
+    # Add bias weights if qkv_bias is enabled
+    if vision_config.qkv_bias:
+        qkv_bias = (
+            torch.randn(
+                3 * hidden_size,  # Q, K, V stacked bias
+                dtype=torch.bfloat16,
+            )
+            * QKV_PROJ_STD
+        )
+        o_proj_bias = (
+            torch.randn(
+                hidden_size,
+                dtype=torch.bfloat16,
+            )
+            * O_PROJ_STD
+        )
+        weights_dict["qkv_proj.bias"] = qkv_bias
+        weights_dict["o_proj.bias"] = o_proj_bias
+
+    return weights_dict
 
 
 @pytest.fixture
@@ -207,24 +230,24 @@ def vision_encoder_layer_weights(
     # ==================================================
     # INTERNVL VISION ENCODER LAYER WEIGHT STANDARD DEVIATIONS
     # ==================================================
-    # QKV_PROJ_STD: 0.0289  # For stacked QKV projection
-    # O_PROJ_STD: 0.0282    # Output projection
-    # Q_NORM_STD: 0.1854    # Q normalization
-    # K_NORM_STD: 0.1967    # K normalization
-    # GATE_PROJ_STD: 0.0245 # MLP gate projection
-    # DOWN_PROJ_STD: 0.0176 # MLP down projection
-    # NORM_STD: 0.2156      # Layer normalization weights
-    # LAYER_SCALE_STD: 0.1  # Layer scale parameters (ls1, ls2)
+    # QKV_PROJ_STD: 0.0160
+    # O_PROJ_STD: 0.0138
+    # Q_NORM_STD: 0.2299
+    # K_NORM_STD: 0.2299
+    # GATE_PROJ_STD: 0.0150
+    # DOWN_PROJ_STD: 0.0140
+    # NORM_STD: 0.2299
+    # LAYER_SCALE_STD: 0.2
     # ==================================================
 
-    QKV_PROJ_STD = 0.0289
-    O_PROJ_STD = 0.0282
-    Q_NORM_STD = 0.1854
-    K_NORM_STD = 0.1967
-    GATE_PROJ_STD = 0.0245
-    DOWN_PROJ_STD = 0.0176
-    NORM_STD = 0.2156
-    LAYER_SCALE_STD = 0.1
+    QKV_PROJ_STD = 0.0160
+    O_PROJ_STD = 0.0138
+    Q_NORM_STD = 0.2299
+    K_NORM_STD = 0.2299
+    GATE_PROJ_STD = 0.0150
+    DOWN_PROJ_STD = 0.0140
+    NORM_STD = 0.2299
+    LAYER_SCALE_STD = 0.2
 
     hidden_size = vision_config.hidden_size
     intermediate_size = vision_config.intermediate_size
@@ -284,15 +307,21 @@ def vision_encoder_layer_weights(
     )
 
     # MLP bias weights
-    gate_proj_bias = torch.randn(
-        intermediate_size,
-        dtype=torch.bfloat16,
-    ) * (GATE_PROJ_STD * 0.1)  # Smaller scale for biases
+    gate_proj_bias = (
+        torch.randn(
+            intermediate_size,
+            dtype=torch.bfloat16,
+        )
+        * GATE_PROJ_STD
+    )
 
-    down_proj_bias = torch.randn(
-        hidden_size,
-        dtype=torch.bfloat16,
-    ) * (DOWN_PROJ_STD * 0.1)  # Smaller scale for biases
+    down_proj_bias = (
+        torch.randn(
+            hidden_size,
+            dtype=torch.bfloat16,
+        )
+        * DOWN_PROJ_STD
+    )
 
     # Layer normalization weights
     norm1_weight = (
@@ -302,6 +331,7 @@ def vision_encoder_layer_weights(
         )
         * NORM_STD
     )
+    norm1_bias = torch.randn(hidden_size, dtype=torch.bfloat16) * NORM_STD
 
     norm2_weight = (
         torch.randn(
@@ -310,6 +340,7 @@ def vision_encoder_layer_weights(
         )
         * NORM_STD
     )
+    norm2_bias = torch.randn(hidden_size, dtype=torch.bfloat16) * NORM_STD
 
     # Layer scale parameters (initialized close to 1.0 with small variation)
     ls1 = (
@@ -321,7 +352,22 @@ def vision_encoder_layer_weights(
         + torch.randn(hidden_size, dtype=torch.bfloat16) * LAYER_SCALE_STD
     )
 
-    return {
+    qkv_bias = (
+        torch.randn(
+            3 * hidden_size,  # Q, K, V stacked bias
+            dtype=torch.bfloat16,
+        )
+        * QKV_PROJ_STD
+    )
+    o_proj_bias = (
+        torch.randn(
+            hidden_size,
+            dtype=torch.bfloat16,
+        )
+        * O_PROJ_STD
+    )
+
+    weights_dict = {
         # Attention weights (prefixed with attn.)
         "attn.qkv_proj.weight": qkv_weight,
         "attn.o_proj.weight": o_proj_weight,
@@ -335,11 +381,18 @@ def vision_encoder_layer_weights(
         "mlp.down_proj.bias": down_proj_bias,
         # Layer normalization weights
         "norm1.weight": norm1_weight,
+        "norm1.bias": norm1_bias,
         "norm2.weight": norm2_weight,
+        "norm2.bias": norm2_bias,
         # Layer scale parameters
         "ls1": ls1,
         "ls2": ls2,
+        # Attention bias weights
+        "attn.qkv_proj.bias": qkv_bias,
+        "attn.o_proj.bias": o_proj_bias,
     }
+
+    return weights_dict
 
 
 @pytest.fixture
@@ -401,9 +454,9 @@ def embeddings_weights(vision_config: VisionConfig) -> dict[str, torch.Tensor]:
         )
         * PATCH_CONV_STD
     )
-    patch_embedding_bias = torch.randn(hidden_size, dtype=torch.bfloat16) * (
-        PATCH_CONV_STD * 0.1
-    )  # Smaller scale for biases
+    patch_embedding_bias = (
+        torch.randn(hidden_size, dtype=torch.bfloat16) * PATCH_CONV_STD
+    )
 
     # Position embeddings
     num_patches = (vision_config.image_size // vision_config.patch_size) ** 2
@@ -442,14 +495,14 @@ def vision_model_weights(
     PATCH_CONV_STD = 0.02  # Patch embedding convolution
     POS_EMBED_STD = 0.02  # Position embeddings
     # Encoder layers (same as encoder layer weights)
-    QKV_PROJ_STD = 0.0289  # For stacked QKV projection
-    O_PROJ_STD = 0.0282  # Output projection
-    Q_NORM_STD = 0.1854  # Q normalization
-    K_NORM_STD = 0.1967  # K normalization
-    GATE_PROJ_STD = 0.0245  # MLP gate projection (fc1)
-    DOWN_PROJ_STD = 0.0176  # MLP down projection (fc2)
-    NORM_STD = 0.2156  # Layer normalization weights
-    LAYER_SCALE_STD = 0.1  # Layer scale parameters (ls1, ls2)
+    QKV_PROJ_STD = 0.0160
+    O_PROJ_STD = 0.0138
+    Q_NORM_STD = 0.2299
+    K_NORM_STD = 0.2299
+    GATE_PROJ_STD = 0.0150
+    DOWN_PROJ_STD = 0.0140
+    NORM_STD = 0.2299
+    LAYER_SCALE_STD = 0.2
     # ==================================================
 
     hidden_size = vision_config.hidden_size
@@ -475,9 +528,9 @@ def vision_model_weights(
         )
         * PATCH_CONV_STD
     )
-    weights["embeddings.patch_embedding.bias"] = torch.randn(
-        hidden_size, dtype=torch.bfloat16
-    ) * (PATCH_CONV_STD * 0.1)
+    weights["embeddings.patch_embedding.bias"] = (
+        torch.randn(hidden_size, dtype=torch.bfloat16) * PATCH_CONV_STD
+    )
 
     # Position embeddings
     num_patches = (vision_config.image_size // vision_config.patch_size) ** 2
@@ -544,15 +597,21 @@ def vision_model_weights(
         )
 
         # MLP bias weights
-        fc1_bias = torch.randn(
-            intermediate_size,
-            dtype=torch.bfloat16,
-        ) * (GATE_PROJ_STD * 0.1)  # Smaller scale for biases
+        fc1_bias = (
+            torch.randn(
+                intermediate_size,
+                dtype=torch.bfloat16,
+            )
+            * GATE_PROJ_STD
+        )
 
-        fc2_bias = torch.randn(
-            hidden_size,
-            dtype=torch.bfloat16,
-        ) * (DOWN_PROJ_STD * 0.1)  # Smaller scale for biases
+        fc2_bias = (
+            torch.randn(
+                hidden_size,
+                dtype=torch.bfloat16,
+            )
+            * DOWN_PROJ_STD
+        )
 
         # Layer normalization weights
         norm1_weight = (
@@ -581,29 +640,47 @@ def vision_model_weights(
             + torch.randn(hidden_size, dtype=torch.bfloat16) * LAYER_SCALE_STD
         )
 
+        qkv_bias = (
+            torch.randn(
+                3 * hidden_size,  # Q, K, V stacked bias
+                dtype=torch.bfloat16,
+            )
+            * QKV_PROJ_STD
+        )
+        o_proj_bias = (
+            torch.randn(
+                hidden_size,
+                dtype=torch.bfloat16,
+            )
+            * O_PROJ_STD
+        )
+
         # Add all encoder layer weights with proper naming
         layer_prefix = f"encoder_layers.{layer_idx}"
-        weights.update(
-            {
-                # Attention weights (prefixed with attn.)
-                f"{layer_prefix}.attn.qkv_proj.weight": qkv_weight,
-                f"{layer_prefix}.attn.o_proj.weight": o_proj_weight,
-                f"{layer_prefix}.attn.q_norm.weight": q_norm_weight,
-                f"{layer_prefix}.attn.k_norm.weight": k_norm_weight,
-                # MLP weights (fc1/fc2 naming for simple MLP)
-                f"{layer_prefix}.mlp.fc1.weight": fc1_weight,
-                f"{layer_prefix}.mlp.fc2.weight": fc2_weight,
-                # MLP bias weights
-                f"{layer_prefix}.mlp.fc1.bias": fc1_bias,
-                f"{layer_prefix}.mlp.fc2.bias": fc2_bias,
-                # Layer normalization weights
-                f"{layer_prefix}.norm1.weight": norm1_weight,
-                f"{layer_prefix}.norm2.weight": norm2_weight,
-                # Layer scale parameters
-                f"{layer_prefix}.ls1": ls1,
-                f"{layer_prefix}.ls2": ls2,
-            }
-        )
+        layer_weights = {
+            # Attention weights (prefixed with attn.)
+            f"{layer_prefix}.attn.qkv_proj.weight": qkv_weight,
+            f"{layer_prefix}.attn.o_proj.weight": o_proj_weight,
+            f"{layer_prefix}.attn.q_norm.weight": q_norm_weight,
+            f"{layer_prefix}.attn.k_norm.weight": k_norm_weight,
+            # MLP weights (fc1/fc2 naming for simple MLP)
+            f"{layer_prefix}.mlp.fc1.weight": fc1_weight,
+            f"{layer_prefix}.mlp.fc2.weight": fc2_weight,
+            # MLP bias weights
+            f"{layer_prefix}.mlp.fc1.bias": fc1_bias,
+            f"{layer_prefix}.mlp.fc2.bias": fc2_bias,
+            # Layer normalization weights
+            f"{layer_prefix}.norm1.weight": norm1_weight,
+            f"{layer_prefix}.norm2.weight": norm2_weight,
+            # Layer scale parameters
+            f"{layer_prefix}.ls1": ls1,
+            f"{layer_prefix}.ls2": ls2,
+            # Attention bias weights
+            f"{layer_prefix}.attn.qkv_proj.bias": qkv_bias,
+            f"{layer_prefix}.attn.o_proj.bias": o_proj_bias,
+        }
+
+        weights.update(layer_weights)
 
     # ===== MLP1 WEIGHTS (Multimodal Projector) =====
     # Calculate mlp1 dimensions
@@ -654,6 +731,10 @@ def vision_model_weights(
     )
     weights["mlp1.fc2.bias"] = (
         torch.randn(llm_hidden_size, dtype=torch.bfloat16) * MLP1_FC_STD
+    )
+
+    weights["layernorm.weight"] = (
+        torch.randn(hidden_size, dtype=torch.bfloat16) * NORM_STD
     )
 
     return weights

@@ -249,11 +249,17 @@ def generate_max_outputs(
             # Skip up_proj bias since simple MLP doesn't use it
             continue
         else:
-            # Keep all other weights as-is
             state_dict[weight_name] = value.cpu()
 
-    # Create the encoder layer
+    # If using RMSNorm, remove bias keys since RMSNorm does not have bias
+    if internvl_config.vision_config.norm_type == "rms_norm":
+        state_dict.pop("norm1.bias", None)
+        state_dict.pop("norm2.bias", None)
+
+    # Create the MAX encoder layer
     encoder_layer = InternVisionEncoderLayer(internvl_config)
+
+    # Load weights
     encoder_layer.load_state_dict(state_dict)
 
     session = InferenceSession(devices=[Accelerator(0)])

@@ -70,7 +70,6 @@ def generate_torch_outputs(
         attention_weights["o_proj.weight"].to(torch.bfloat16).to("cuda")
     )
 
-    # Set normalization weights
     layer.q_norm.weight.data = (
         attention_weights["q_norm.weight"].to(torch.bfloat16).to("cuda")
     )
@@ -78,18 +77,45 @@ def generate_torch_outputs(
         attention_weights["k_norm.weight"].to(torch.bfloat16).to("cuda")
     )
 
-    # Zero out biases if they exist (to match MAX implementation with has_bias=False)
-    if hasattr(layer.q_proj, "bias") and layer.q_proj.bias is not None:
-        layer.q_proj.bias.data.zero_()
-    if hasattr(layer.k_proj, "bias") and layer.k_proj.bias is not None:
-        layer.k_proj.bias.data.zero_()
-    if hasattr(layer.v_proj, "bias") and layer.v_proj.bias is not None:
-        layer.v_proj.bias.data.zero_()
-    if (
-        hasattr(layer.projection_layer, "bias")
-        and layer.projection_layer.bias is not None
-    ):
-        layer.projection_layer.bias.data.zero_()
+    # Handle bias weights if they exist in the attention_weights
+    if "qkv_proj.bias" in attention_weights:
+        # Split stacked QKV bias for PyTorch
+        qkv_bias = (
+            attention_weights["qkv_proj.bias"].to(torch.bfloat16).to("cuda")
+        )
+        q_bias = qkv_bias[:hidden_size]
+        k_bias = qkv_bias[hidden_size : 2 * hidden_size]
+        v_bias = qkv_bias[2 * hidden_size :]
+
+        if hasattr(layer.q_proj, "bias") and layer.q_proj.bias is not None:
+            layer.q_proj.bias.data = q_bias
+        if hasattr(layer.k_proj, "bias") and layer.k_proj.bias is not None:
+            layer.k_proj.bias.data = k_bias
+        if hasattr(layer.v_proj, "bias") and layer.v_proj.bias is not None:
+            layer.v_proj.bias.data = v_bias
+    else:
+        # Zero out biases if they exist (to match MAX implementation with has_bias=False)
+        if hasattr(layer.q_proj, "bias") and layer.q_proj.bias is not None:
+            layer.q_proj.bias.data.zero_()
+        if hasattr(layer.k_proj, "bias") and layer.k_proj.bias is not None:
+            layer.k_proj.bias.data.zero_()
+        if hasattr(layer.v_proj, "bias") and layer.v_proj.bias is not None:
+            layer.v_proj.bias.data.zero_()
+
+    if "o_proj.bias" in attention_weights:
+        if (
+            hasattr(layer.projection_layer, "bias")
+            and layer.projection_layer.bias is not None
+        ):
+            layer.projection_layer.bias.data = (
+                attention_weights["o_proj.bias"].to(torch.bfloat16).to("cuda")
+            )
+    else:
+        if (
+            hasattr(layer.projection_layer, "bias")
+            and layer.projection_layer.bias is not None
+        ):
+            layer.projection_layer.bias.data.zero_()
 
     # Forward pass - the HuggingFace implementation returns a tuple (output, attn_weights)
     # We only need the output for comparison
@@ -108,6 +134,8 @@ def generate_max_outputs(
     attention_weights: dict[str, torch.Tensor],
     dtype: DType,
     device: Device,
+    qkv_has_bias: bool = False,
+    o_proj_has_bias: bool = False,
 ) -> torch.Tensor:
     """Generate outputs using MAX InternVL attention implementation."""
     is_gpu = isinstance(device, Accelerator)
@@ -127,7 +155,8 @@ def generate_max_outputs(
         dtype=dtype,
         qk_normalization=qk_normalization,
         layer_norm_eps=layer_norm_eps,
-        has_bias=False,
+        qkv_has_bias=qkv_has_bias,
+        o_proj_has_bias=o_proj_has_bias,
         stacked_qkv=True,
     )
     attention.load_state_dict(state_dict)
@@ -182,6 +211,8 @@ def test_vision_attention(
         attention_weights=vision_attention_weights,
         dtype=DType.bfloat16,
         device=Accelerator(),
+        qkv_has_bias=vision_config.qkv_bias,
+        o_proj_has_bias=vision_config.o_proj_bias,
     )
 
     # Compare outputs

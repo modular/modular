@@ -22,6 +22,7 @@ def create_attention_weights(
     has_bias: bool = False,
     dtype: torch.dtype = torch.float32,
     device: str = "cuda",
+    stacked_qkv: bool = False,
 ) -> dict[str, torch.Tensor]:
     """Create shared attention weights for both PyTorch and MAX models."""
     torch.manual_seed(42)
@@ -29,14 +30,35 @@ def create_attention_weights(
     std = 0.02
 
     weights = {}
-    for proj in ["q", "k", "v", "o"]:
-        weights[f"{proj}_proj.weight"] = std * torch.randn(
-            hidden_size, hidden_size, dtype=dtype, device=device
+
+    if stacked_qkv:
+        # Create stacked QKV weight
+        weights["qkv_proj.weight"] = std * torch.randn(
+            3 * hidden_size, hidden_size, dtype=dtype, device=device
         )
         if has_bias:
-            weights[f"{proj}_proj.bias"] = std * torch.randn(
-                hidden_size, dtype=dtype, device=device
+            weights["qkv_proj.bias"] = std * torch.randn(
+                3 * hidden_size, dtype=dtype, device=device
             )
+    else:
+        # Create separate Q, K, V weights
+        for proj in ["q", "k", "v"]:
+            weights[f"{proj}_proj.weight"] = std * torch.randn(
+                hidden_size, hidden_size, dtype=dtype, device=device
+            )
+            if has_bias:
+                weights[f"{proj}_proj.bias"] = std * torch.randn(
+                    hidden_size, dtype=dtype, device=device
+                )
+
+    # Always create output projection
+    weights["o_proj.weight"] = std * torch.randn(
+        hidden_size, hidden_size, dtype=dtype, device=device
+    )
+    if has_bias:
+        weights["o_proj.bias"] = std * torch.randn(
+            hidden_size, dtype=dtype, device=device
+        )
 
     return weights
 
@@ -49,6 +71,7 @@ def generate_torch_outputs(
     input_tensor: torch.Tensor,
     has_bias: bool = False,
     dtype: torch.dtype = torch.float32,
+    stacked_qkv: bool = False,
 ) -> torch.Tensor:
     """Generate outputs using PyTorch MultiheadAttention."""
 
@@ -63,9 +86,15 @@ def generate_torch_outputs(
     )
 
     # PyTorch MultiheadAttention uses different weight layout
-    q_weight = attention_weights["q_proj.weight"]
-    k_weight = attention_weights["k_proj.weight"]
-    v_weight = attention_weights["v_proj.weight"]
+    if stacked_qkv and "qkv_proj.weight" in attention_weights:
+        # Split stacked QKV weights for PyTorch
+        qkv_weight = attention_weights["qkv_proj.weight"]
+        q_weight, k_weight, v_weight = qkv_weight.chunk(3, dim=0)
+    else:
+        q_weight = attention_weights["q_proj.weight"]
+        k_weight = attention_weights["k_proj.weight"]
+        v_weight = attention_weights["v_proj.weight"]
+
     o_weight = attention_weights["o_proj.weight"]
 
     torch_attention.in_proj_weight.data = torch.cat(
@@ -74,9 +103,15 @@ def generate_torch_outputs(
     torch_attention.out_proj.weight.data = o_weight
 
     if has_bias:
-        q_bias = attention_weights["q_proj.bias"]
-        k_bias = attention_weights["k_proj.bias"]
-        v_bias = attention_weights["v_proj.bias"]
+        if stacked_qkv and "qkv_proj.bias" in attention_weights:
+            # Split stacked QKV bias for PyTorch
+            qkv_bias = attention_weights["qkv_proj.bias"]
+            q_bias, k_bias, v_bias = qkv_bias.chunk(3, dim=0)
+        else:
+            q_bias = attention_weights["q_proj.bias"]
+            k_bias = attention_weights["k_proj.bias"]
+            v_bias = attention_weights["v_proj.bias"]
+
         o_bias = attention_weights["o_proj.bias"]
 
         torch_attention.in_proj_bias.data = torch.cat(
@@ -97,6 +132,7 @@ def generate_max_outputs(
     input_tensor: torch.Tensor,
     has_bias: bool = False,
     dtype: DType = DType.float32,
+    stacked_qkv: bool = False,
 ) -> torch.Tensor:
     """Generate outputs using MAX MultiheadAttention."""
 
@@ -112,7 +148,9 @@ def generate_max_outputs(
         devices=[DeviceRef.GPU()],
         dtype=dtype,
         scale=scale,
-        has_bias=has_bias,
+        qkv_has_bias=has_bias,
+        o_proj_has_bias=has_bias,
+        stacked_qkv=stacked_qkv,
     )
 
     state_dict = {}
@@ -147,14 +185,19 @@ def generate_max_outputs(
 
 
 @pytest.mark.parametrize(
-    "batch_size,seq_len,num_heads,hidden_size,has_bias,dtype",
+    "batch_size,seq_len,num_heads,hidden_size,has_bias,dtype,stacked_qkv",
     [
-        (1, 32, 8, 512, False, DType.bfloat16),
-        (1, 32, 8, 512, False, DType.float32),
-        (1, 256, 8, 512, True, DType.bfloat16),
-        (1, 256, 8, 512, True, DType.float32),
-        (2, 64, 8, 512, False, DType.bfloat16),
-        (2, 64, 8, 512, False, DType.float32),
+        (1, 32, 8, 512, False, DType.bfloat16, False),
+        (1, 32, 8, 512, False, DType.float32, False),
+        (1, 256, 8, 512, True, DType.bfloat16, False),
+        (1, 256, 8, 512, True, DType.float32, False),
+        (2, 64, 8, 512, False, DType.bfloat16, False),
+        (2, 64, 8, 512, False, DType.float32, False),
+        # Test stacked QKV with bias
+        (1, 32, 8, 512, True, DType.bfloat16, True),
+        (1, 32, 8, 512, True, DType.float32, True),
+        (2, 64, 8, 512, True, DType.bfloat16, True),
+        (2, 64, 8, 512, True, DType.float32, True),
     ],
 )
 @torch.no_grad()
@@ -165,6 +208,7 @@ def test_multihead_attention_gpu(
     hidden_size: int,
     has_bias: bool,
     dtype: DType,
+    stacked_qkv: bool,
 ) -> None:
     """Test MultiheadAttention functionality on GPU with different configurations and dtypes."""
 
@@ -175,6 +219,7 @@ def test_multihead_attention_gpu(
         has_bias=has_bias,
         dtype=torch_dtype,
         device="cuda",
+        stacked_qkv=stacked_qkv,
     )
 
     torch.manual_seed(42)
@@ -189,6 +234,7 @@ def test_multihead_attention_gpu(
         input_tensor=input_tensor,
         has_bias=has_bias,
         dtype=torch_dtype,
+        stacked_qkv=stacked_qkv,
     )
 
     max_output = generate_max_outputs(
@@ -200,6 +246,7 @@ def test_multihead_attention_gpu(
         input_tensor=input_tensor,
         has_bias=has_bias,
         dtype=dtype,
+        stacked_qkv=stacked_qkv,
     )
 
     if dtype == DType.bfloat16:

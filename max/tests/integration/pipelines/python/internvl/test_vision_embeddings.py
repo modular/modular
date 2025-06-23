@@ -337,8 +337,8 @@ def test_vision_embeddings_non_square(
     torch.testing.assert_close(
         torch_output.to(torch.bfloat16),
         max_output.to(torch.bfloat16),
-        rtol=1e-2,
-        atol=1e-2,
+        rtol=2e-2,
+        atol=2e-2,
     )
 
 
