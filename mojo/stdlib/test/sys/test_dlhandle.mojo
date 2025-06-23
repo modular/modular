@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_not
-# RUN: not mojo %s 2>&1
+# RUN: mojo %s
 
 from pathlib import Path
 from sys import DLHandle
