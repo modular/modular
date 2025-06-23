@@ -13,9 +13,9 @@
 
 # CHECK: lit.struct.decl @"fn(y: Int) -> Int_wrapper"<impl: [[TRAIT]], |>([[TRAIT]]) attributes {isSynthetic} {
 # CHECK:  lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
-# CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:[[TRAIT]] impl>, mut *"[[L0]]`"> mut, |, %y: !Int1) -> [[INT]]
+# CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn(y: Int) -> Int_wrapper"<:[[TRAIT]] impl>, mut *"[[L0]]`"> read_mem, |, %y: !Int1) -> [[INT]]
 # CHECK-NEXT:  [[CLOSURE:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
-# CHECK-NEXT:  [[RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> mut, |, "y": [[INT]]) -> !Int1>: get_vtable_entry(:[[TRAIT]] impl, "__call__")][mut *"[[L0]]`"->field0]([[CLOSURE]], %y)
+# CHECK-NEXT:  [[RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "y": [[INT]]) -> !Int1>: get_vtable_entry(:[[TRAIT]] impl, "__call__")][mut *"[[L0]]`"->field0]([[CLOSURE]], %y)
 # CHECK-NEXT:  lit.return [[RES]]
 # CHECK-NEXT:  lit.end_fn
 # CHECK-NEXT: }
@@ -25,7 +25,7 @@
 
 # CHECK: lit.trait.decl @"fn(y: Int) -> Int"<?, *"_Self`": [[TRAIT]]>([[PARENT]])  unspecified attributes {dtorSig = !kgen.generator<!lit.generator<<[[TRAIT]], |>[1]("self": !lit.ref<:[[TRAIT]] *(0,0), mut *[0,0]> owned_in_mem, |) -> !kgen.none>>
 # CHECK-NEXT:  lit.fn @"__call__({{.*}})"
-# CHECK-SAME: [mut *"self`"](%{{.*}}: !lit.ref<:!Int *"_Self`", mut *"self`"> mut, |, %y: [[INT]]) -> [[INT]]
+# CHECK-SAME: [mut *"self`"](%{{.*}}: !lit.ref<:!Int *"_Self`", mut *"self`"> read_mem, |, %y: [[INT]]) -> [[INT]]
 # CHECK-SAME: attributes {isSynthetic, sourceName = "__call__", specialFnKind = 0 : i8} {
 # CHECK-NEXT: kgen.unreachable
 # CHECK-NEXT: }
@@ -94,7 +94,7 @@ struct Foo[T: Movable, b: T]:
 # CHECK-DAG: [[TRAIT:!None.*]] = !lit.trait<@{{.*}}::@"fn[MyInterface, $0, Foo[$0, $1]](a: $0) -> None">
 # CHECK: lit.trait.decl @"fn[MyInterface, $0, Foo[$0, $1]](a: $0) -> None"<?, *"_Self`": [[TRAIT]]>(!{{.*}}) unspecified attributes {{{.*}}} {
 # CHECK: lit.fn @"__call__{{.*}}"<T: !MyInterface, b: !kgen.param<:!MyInterface T>, c: @{{.*}}::@Foo<:!Movable {{.*}}, :!kgen.param<:!MyInterface T> b>>
-# CHECK-SAME: [mut *"self`", imm *"[[L1:.*]]`"](%0[*""]: !lit.ref<:[[TRAIT]] *"_Self`", mut *"self`"> mut, |, %a: !lit.ref<:!MyInterface T, imm *"[[L1]]`"> read_mem) -> !kgen.none
+# CHECK-SAME: [mut *"self`", imm *"[[L1:.*]]`"](%0[*""]: !lit.ref<:[[TRAIT]] *"_Self`", mut *"self`"> read_mem, |, %a: !lit.ref<:!MyInterface T, imm *"[[L1]]`"> read_mem) -> !kgen.none
 
 
 fn make_closure(x: Int) -> Int:
@@ -113,10 +113,10 @@ fn make_closure(x: Int) -> Int:
 # CHECK: lit.struct.decl @"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"<impl: [[TRAIT]], |>([[TRAIT]]) attributes {isSynthetic} {
 # CHECK-NEXT: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<lt: origin<1>>[mut *"[[L1:.*]]`", imm *"[[L2:.*]]`"](%0[*""]: !lit.ref<@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"
-# CHECK-SAME: <:[[TRAIT]] impl>, mut *"[[L1]]`"> mut, |, %a: !lit.ref<!String, mut lt>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem) -> !kgen.none attributes {isSynthetic, sourceName = "__call__", specialFnKind = 0 : i8} {
+# CHECK-SAME: <:[[TRAIT]] impl>, mut *"[[L1]]`"> read_mem, |, %a: !lit.ref<!String, mut lt>, %b: !lit.ref<!String, imm *"[[L2]]`"> read_mem) -> !kgen.none attributes {isSynthetic, sourceName = "__call__", specialFnKind = 0 : i8} {
 # CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0] : <@{{.*}}::@"fn[MutableOrigin](a: ref [$0] String, b: String) -> None_wrapper"<:[[TRAIT]] impl>, mut *"[[L1]]`"> -> :[[TRAIT]] impl
-# CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> mut, |, "a": !lit.ref<!String, mut lt>, "b": !lit.ref<!String, imm *[0,1]> read_mem) -> !kgen.none>
-# CHECK-SAME:: bind_params(:!lit.generator<<"lt": origin<1>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> mut, |, "a": !lit.ref<!String, mut *(0,0)>, "b": !lit.ref<!String, imm *[0,1]> read_mem) -> !kgen.none
+# CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, mut lt>, "b": !lit.ref<!String, imm *[0,1]> read_mem) -> !kgen.none>
+# CHECK-SAME:: bind_params(:!lit.generator<<"lt": origin<1>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, mut *(0,0)>, "b": !lit.ref<!String, imm *[0,1]> read_mem) -> !kgen.none
 # CHECK-SAME:> get_vtable_entry(:[[TRAIT]] impl, "__call__"), lt)][mut *"[[L1]]`"->field0, imm *"[[L2]]`"]([[V1]], %a, %b)
 # CHECK-NEXT: lit.return [[V2]] : !kgen.none
 # CHECK-NEXT: lit.end_fn
@@ -190,7 +190,7 @@ trait MyInterface:
         ...
 
 
-# CHECK:, {"__call__" : !lit.generator<<"T": !MyInterface>[2](!lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> mut
+# CHECK:, {"__call__" : !lit.generator<<"T": !MyInterface>[2](!lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> read_mem
 # CHECK-SAME:, |, "a": !lit.ref<:!MyInterface *(0,0), imm *[0,1]> read_mem) -> !kgen.none> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<call>>
 # CHECK-SAME:, "__del__" : !lit.generator<[1]("self": !lit.ref<!kgen.closure<@{{.*}}::@"make_closure(::Int)", "parametric" nonescaping>, mut *[0,0]> owned_in_mem, |) -> !kgen.none
 # CHECK-SAME:> = #kgen.closure.symbol<@{{.*}}::@"make_closure(::Int)", "parametric", #kgen.closure_method<del>>

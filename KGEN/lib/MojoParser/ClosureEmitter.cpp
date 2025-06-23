@@ -616,7 +616,7 @@ ClosureEmitter::createParametricClosureWrapperStructDecl(
     TraitDeclOp closureTrait = cast<TraitDeclOp>(decl);
     RefType refType = decl.getTypeDeclSelf().getRefForArgument("self", true);
     FnTypeGeneratorType sig = addClosureSelfArgToFunctionSignature(
-        refType, ArgConvention::Mut, dependentSignatureType);
+        refType, ArgConvention::ReadMem, dependentSignatureType);
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
         closureTrait.getLoc(), &closureTrait.getFields().front());
     SmallVector<ParamDeclAttr> parameters(
