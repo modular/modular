@@ -773,14 +773,16 @@ class InternVisionEncoderLayer(Module):
 
         layer_norm_eps = config.vision_config.layer_norm_eps
 
+        self.norm1: RMSNorm | LayerNorm
+        self.norm2: RMSNorm | LayerNorm
         if self.norm_type == "rms_norm":
-            self.norm1: Union[RMSNorm, LayerNorm] = RMSNorm(
+            self.norm1 = RMSNorm(
                 dim=self.embed_dim,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
                 multiply_before_cast=False,  # Match PyTorch behavior: cast first, then multiply
             )
-            self.norm2: Union[RMSNorm, LayerNorm] = RMSNorm(
+            self.norm2 = RMSNorm(
                 dim=self.embed_dim,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
@@ -792,12 +794,14 @@ class InternVisionEncoderLayer(Module):
                 device=default_device,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
+                use_bias=True,
             )
             self.norm2 = LayerNorm(
                 dims=self.embed_dim,
                 device=default_device,
                 dtype=config.llm_config.dtype,
                 eps=layer_norm_eps,
+                use_bias=True,
             )
 
         self.ls1 = Weight(
@@ -830,7 +834,8 @@ class InternVisionEncoderLayer(Module):
             dtype=config.llm_config.dtype,
             qk_normalization=vision_config.qk_normalization,
             layer_norm_eps=vision_config.layer_norm_eps,
-            has_bias=False,
+            qkv_has_bias=vision_config.qkv_bias,
+            o_proj_has_bias=vision_config.o_proj_bias,
             stacked_qkv=True,
         )
 

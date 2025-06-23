@@ -313,9 +313,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 state_dict=state_dict,
                 override_quantization_encoding=True,
                 weight_alignment=1,
-                # TODO(MODELS-565): make `strict=True` once the VisionEncoder
-                # lands.
-                strict=False,
+                strict=True,
             )
 
             # Unpack inputs.

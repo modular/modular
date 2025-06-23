@@ -61,6 +61,12 @@ class VisionConfig:
     qk_normalization: bool
     """Whether to use QK normalization in attention."""
 
+    qkv_bias: bool
+    """Whether to use bias in the QKV projection. Default: False."""
+
+    o_proj_bias: bool
+    """Whether to use bias in the out projection. Default: True."""
+
     num_hidden_layers: int
     """Number of hidden layers in the vision encoder."""
 
@@ -92,6 +98,8 @@ class VisionConfig:
             head_dim=head_dim,
             layer_norm_eps=getattr(vision_config, "layer_norm_eps", 1e-6),
             qk_normalization=getattr(vision_config, "qk_normalization", True),
+            qkv_bias=getattr(vision_config, "qkv_bias", False),
+            o_proj_bias=getattr(vision_config, "o_proj_bias", True),
             num_hidden_layers=getattr(vision_config, "num_hidden_layers", 32),
             use_mean_pooling=getattr(
                 vision_config, "use_mean_pooling", True

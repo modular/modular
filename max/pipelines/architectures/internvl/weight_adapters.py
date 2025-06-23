@@ -36,6 +36,7 @@ INTERNVL_VISION_MODEL_MAPPING = {
     "encoder.layers.": "encoder_layers.",
     # Map attention weight names: checkpoint has "qkv" but model expects "qkv_proj"
     ".attn.qkv.": ".attn.qkv_proj.",
+    ".attn.qkv_bias.": ".attn.qkv_proj_bias.",
     ".attn.proj.": ".attn.o_proj.",
     # Map mlp1 numbered layers to descriptive names
     "mlp1.0.": "mlp1.layer_norm.",  # Layer normalization

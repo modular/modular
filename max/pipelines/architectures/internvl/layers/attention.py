@@ -38,7 +38,8 @@ class InternVLMultiheadAttention(MultiheadAttention):
         qk_normalization: bool = True,
         layer_norm_eps: float = 1e-6,
         scale: float | None = None,
-        has_bias: bool = False,
+        qkv_has_bias: bool = False,
+        o_proj_has_bias: bool = False,
         stacked_qkv: bool = True,
     ) -> None:
         """Initialize InternVL attention layer.
@@ -51,7 +52,8 @@ class InternVLMultiheadAttention(MultiheadAttention):
             qk_normalization: Whether to apply QK normalization.
             layer_norm_eps: Epsilon value for layer normalization.
             scale: Value used to scale the results of the attention output.
-            has_bias: Whether to use an attention bias.
+            qkv_has_bias: Whether to use an attention bias.
+            o_proj_has_bias: Whether to use an output projection bias.
             stacked_qkv: Whether to use a single stacked QKV weight matrix.
         """
         devices_list = list(devices) if devices else []
@@ -62,7 +64,8 @@ class InternVLMultiheadAttention(MultiheadAttention):
             devices=devices_list if devices_list else None,
             dtype=dtype,
             scale=scale,
-            has_bias=has_bias,
+            qkv_has_bias=qkv_has_bias,
+            o_proj_has_bias=o_proj_has_bias,
             stacked_qkv=stacked_qkv,
         )
 
@@ -107,6 +110,9 @@ class InternVLMultiheadAttention(MultiheadAttention):
         # Fused in-projection for Q, K, V
         qkv = x @ self.wqkv.T
 
+        # Add bias if present
+        if self.wqkv_bias is not None:
+            qkv += self.wqkv_bias
         q, k, v = ops.split(
             qkv, [self.embed_dim, self.embed_dim, self.embed_dim], axis=-1
         )
