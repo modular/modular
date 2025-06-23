@@ -145,13 +145,6 @@ static constexpr StringLiteral kKernelResultParameterAttrName =
 static constexpr StringLiteral kKernelTensorSpecParameterAttrName =
     "mogg.tensor_spec_params";
 
-// The generator level label for operations which take in the special
-// synchronous parameter. This is a hint that the runtime is running in
-// synchronous mode. Often times this means the work done is trivial and
-// the kernel may want to consider single-threading.
-static constexpr StringLiteral kMOGGSynchronousLabel = "mogg.synchronous";
-static constexpr StringLiteral kMOGGSynchronousParameterName = "_synchronous";
-
 // The generator level label for the target device for the kernel, e.g. cpu.
 static constexpr StringLiteral kMOGGTargetLabel = "mogg.target";
 static constexpr StringLiteral kMOGGTargetParameterName = "target";
