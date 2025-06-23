@@ -32,6 +32,7 @@ from python._cpython import (
 )
 from python.python_object import PyFunction, PyFunctionRaising
 from python._python_func import PyObjectFunction
+from builtin._startup import _ensure_current_or_global_runtime_init
 
 # ===-----------------------------------------------------------------------===#
 # Global `PyTypeObject` Registration
@@ -511,6 +512,9 @@ struct PythonModuleBuilder:
             builder.finalize(self.module)
         self.type_builders.clear()
 
+        # Check or initialize the global runtime
+        _ensure_current_or_global_runtime_init()
+
         return self.module
 
 
@@ -836,7 +840,7 @@ fn _py_c_function_wrapper[
 
     #   > When a C function is called from Python, it borrows references to its
     #   > arguments from the caller. The caller owns a reference to the object,
-    #   > so the read-only reference’s lifetime is guaranteed until the function
+    #   > so the read-only reference's lifetime is guaranteed until the function
     #   > returns. Only when such a read-only reference must be stored or passed
     #   > on, it must be turned into an owned reference by calling Py_INCREF().
     #   >
