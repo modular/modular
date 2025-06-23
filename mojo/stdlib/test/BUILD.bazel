@@ -24,7 +24,6 @@ _LIT_TESTS = [
     "builtin/test_uint_error.mojo",
     "os/test_no_trap.mojo",
     "runtime/test_tracing.mojo",
-    "sys/test_exit_1.mojo",
     "sys/test_invalid_paramenv.mojo",
 ]
 
@@ -149,6 +148,10 @@ _EXPECT_CRASH = [
     "os/test_trap.mojo",
 ]
 
+_EXPECT_FAIL = [
+    "sys/test_exit_1.mojo",
+]
+
 _FILECHECK_TESTS = [
     "algorithm/test_elementwise.mojo",
     "algorithm/test_elementwise_1d.mojo",
@@ -187,6 +190,7 @@ _FILECHECK_TESTS = [
     "os/test_trap.mojo",
     "runtime/test_asyncrt.mojo",
     "runtime/test_locks.mojo",
+    "sys/test_exit_1.mojo",
 ]
 
 [
@@ -202,6 +206,7 @@ _FILECHECK_TESTS = [
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         env = _ENV.get(src, {}),
         expect_crash = src in _EXPECT_CRASH,
+        expect_fail = src in _EXPECT_FAIL,
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:stdlib",
