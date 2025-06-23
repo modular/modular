@@ -14,8 +14,14 @@
 # RUN: %mojo %s
 
 from python import Python, PythonObject
-from python._cpython import PyObjectPtr
-from testing import assert_equal, assert_raises
+from python._cpython import Py_ssize_t, PyObjectPtr
+from testing import (
+    assert_false,
+    assert_equal,
+    assert_equal_pyobj,
+    assert_raises,
+    assert_true,
+)
 
 
 def test_PyObject_HasAttrString(mut python: Python):
@@ -33,6 +39,42 @@ def test_PyObject_HasAttrString(mut python: Python):
     )
     assert_equal(1, result)
     _ = the_object
+
+
+def test_PyDict(mut python: Python):
+    var cpy = python.cpython()
+
+    var d = cpy.PyDict_New()
+    var b = cpy.PyBool_FromLong(0)
+
+    assert_true(cpy.PyDict_CheckExact(d))
+    assert_false(cpy.PyDict_CheckExact(b))
+
+    assert_equal(cpy.PyDict_SetItem(d, b, b), 0)
+    assert_equal(cpy.PyDict_GetItemWithError(d, b), b)
+
+    var key = PyObjectPtr()
+    var value = PyObjectPtr()
+    var pos: Py_ssize_t = 0
+
+    var succ = cpy.PyDict_Next(
+        d,
+        UnsafePointer(to=pos),
+        UnsafePointer(to=key),
+        UnsafePointer(to=value),
+    )
+    assert_equal(pos, 1)
+    assert_equal(key, b)
+    assert_equal(value, b)
+    assert_true(succ)
+
+    succ = cpy.PyDict_Next(
+        d,
+        UnsafePointer(to=pos),
+        UnsafePointer(to=key),
+        UnsafePointer(to=value),
+    )
+    assert_false(succ)
 
 
 fn destructor(capsule: PyObjectPtr) -> None:
@@ -70,4 +112,5 @@ def main():
     # initializing Python instance calls init_python
     var python = Python()
     test_PyObject_HasAttrString(python)
+    test_PyDict(python)
     test_PyCapsule(python)

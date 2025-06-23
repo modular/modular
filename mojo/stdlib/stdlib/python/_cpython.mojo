@@ -106,26 +106,16 @@ struct PyThreadState:
 
 @fieldwise_init
 @register_passable("trivial")
-struct PyKeysValuePair:
-    """Represents a key-value pair in a Python dictionary iteration.
-
-    This struct is used to store the result of iterating over a Python dictionary,
-    containing the key, value, current position, and success status of the iteration.
-    """
-
-    var key: PyObjectPtr
-    """The key of the current dictionary item."""
-    var value: PyObjectPtr
-    """The value of the current dictionary item."""
-    var position: c_int
-    """The current position in the dictionary iteration."""
-    var success: Bool
-    """Indicates whether the iteration was successful."""
-
-
-@fieldwise_init
-@register_passable("trivial")
-struct PyObjectPtr(Boolable, Copyable, Defaultable, Intable, Movable, Writable):
+struct PyObjectPtr(
+    Boolable,
+    Copyable,
+    Defaultable,
+    EqualityComparable,
+    Intable,
+    Movable,
+    Stringable,
+    Writable,
+):
     """Equivalent to `PyObject*` in C.
 
     It is crucial that this type has the same size and alignment as `PyObject*`
@@ -203,6 +193,10 @@ struct PyObjectPtr(Boolable, Copyable, Defaultable, Intable, Movable, Writable):
     @always_inline
     fn __int__(self) -> Int:
         return Int(self.unsized_obj_ptr)
+
+    @always_inline
+    fn __str__(self) -> String:
+        return String.write(self)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1070,113 +1064,109 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
-    # Python Dict operations
+    # Dictionary Objects
+    # ref: https://docs.python.org/3/c-api/dict.html
     # ===-------------------------------------------------------------------===#
 
     fn PyDict_New(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_New).
+        """Return a new empty dictionary, or `NULL` on failure.
+
+        Note:
+            Return value: New reference.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_New).
         """
 
+        # PyObject *PyDict_New()
         var r = self.lib.call["PyDict_New", PyObjectPtr]()
-
-        self.log(
-            r,
-            " NEWREF PyDict_New, refcnt:",
-            self._Py_REFCNT(r),
-        )
-
+        self.log(r, " NEWREF PyDict_New, refcnt:", self._Py_REFCNT(r))
         self._inc_total_rc()
         return r
 
-    # int PyDict_SetItem(PyObject *p, PyObject *key, PyObject *val)
     fn PyDict_SetItem(
-        self, dict_obj: PyObjectPtr, key: PyObjectPtr, value: PyObjectPtr
+        self,
+        dict_obj: PyObjectPtr,
+        key: PyObjectPtr,
+        value: PyObjectPtr,
     ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_SetItem).
+        """Insert `value` into the dictionary `dict_obj` with a key of `key`.
+
+        Note:
+            This function does not steal a reference to `value`.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_SetItem).
         """
 
+        # int PyDict_SetItem(PyObject *p, PyObject *key, PyObject *val)
         var r = self.lib.call["PyDict_SetItem", c_int](dict_obj, key, value)
-
-        self.log(
-            "PyDict_SetItem, key: ",
-            key,
-            " value: ",
-            value,
-        )
-
+        self.log("PyDict_SetItem, key: ", key, " value: ", value)
         return r
 
     fn PyDict_GetItemWithError(
-        self, dict_obj: PyObjectPtr, key: PyObjectPtr
+        self,
+        dict_obj: PyObjectPtr,
+        key: PyObjectPtr,
     ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemWithError).
+        """Return the object from dictionary `dict_obj` which has a key `key`.
+
+        Note:
+            Return value: Borrowed reference.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemWithError).
         """
 
+        # PyObject *PyDict_GetItemWithError(PyObject *p, PyObject *key)
         var r = self.lib.call["PyDict_GetItemWithError", PyObjectPtr](
             dict_obj, key
         )
         self.log("PyDict_GetItemWithError, key: ", key)
         return r
 
-    fn PyDict_Check(self, maybe_dict: PyObjectPtr) -> Bool:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_Check).
+    fn PyDict_CheckExact(self, obj: PyObjectPtr) -> Bool:
+        """Return true if `obj` is a `dict` object.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_CheckExact).
+        """
+        return self.Py_TYPE(obj) == self.PyDict_Type()
+
+    fn PyDict_Type(self) -> UnsafePointer[PyTypeObject]:
+        """This instance of `PyTypeObject` represents the Python dictionary type.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_Type).
         """
 
-        var my_type = self.PyObject_Type(maybe_dict)
-        var dict_type = self.PyDict_Type()
-        var result = my_type == dict_type
-        self.Py_DecRef(my_type)
-        return result
+        # PyTypeObject PyDict_Type
+        return self.lib.get_symbol[PyTypeObject]("PyDict_Type")
 
-    fn PyDict_Type(self) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_Type).
+    fn PyDict_Next(
+        self,
+        dict_obj: PyObjectPtr,
+        pos: UnsafePointer[Py_ssize_t],
+        key: UnsafePointer[PyObjectPtr],
+        value: UnsafePointer[PyObjectPtr],
+    ) -> c_int:
+        """Iterate over all key-value pairs in the dictionary `dict_obj`.
+
+        [Reference](https://docs.python.org/3/c-api/dict.html#c.PyDict_Next).
         """
-        return self.lib.call["PyDict_Type", PyObjectPtr]()
 
-    # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
-    fn PyDict_Next(self, dictionary: PyObjectPtr, p: Int) -> PyKeysValuePair:
-        """[Reference](
-        https://docs.python.org/3/c-api/dict.html#c.PyDict_Next).
-        """
-        var key = PyObjectPtr()
-        var value = PyObjectPtr()
-        var v = p
-        var position = UnsafePointer[Int](to=v)
-        var result = self.lib.call["PyDict_Next", c_int](
-            dictionary,
-            position,
-            UnsafePointer(to=key),
-            UnsafePointer(to=value),
-        )
-
+        # int PyDict_Next(PyObject *p, Py_ssize_t *ppos, PyObject **pkey, PyObject **pvalue)
+        var r = self.lib.call["PyDict_Next", c_int](dict_obj, pos, key, value)
         self.log(
-            dictionary,
-            " NEWREF PyDict_Next",
-            dictionary,
+            "PyDict_Next",
+            dict_obj,
             "refcnt:",
-            self._Py_REFCNT(dictionary),
+            self._Py_REFCNT(dict_obj),
             " key: ",
-            key,
+            key[],
             ", refcnt(key):",
-            self._Py_REFCNT(key),
-            "value:",
-            value,
-            "refcnt(value)",
-            self._Py_REFCNT(value),
+            self._Py_REFCNT(key[]),
+            " value: ",
+            value[],
+            ", refcnt(value):",
+            self._Py_REFCNT(value[]),
         )
-
-        _ = v
-        return PyKeysValuePair(
-            key,
-            value,
-            position.take_pointee(),
-            result == 1,
-        )
+        return r
 
     # ===-------------------------------------------------------------------===#
     # Python Module operations
