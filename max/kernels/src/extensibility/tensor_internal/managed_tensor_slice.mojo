@@ -1263,7 +1263,6 @@ fn foreach[
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _synchronous: Bool = False,
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
@@ -1277,7 +1276,6 @@ fn foreach[
         func: The function to apply to each element of the tensor slice.
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
-        _synchronous: True to run the custom op synchronously in the runtime (defaults to False).
         _trace_name: Name of the executed operation displayed in the trace_description.
 
     Args:
@@ -1300,7 +1298,7 @@ fn foreach[
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
-        use_blocking_impl=_synchronous,
+        use_blocking_impl=False,
         target=target,
         _trace_description=_trace_name,
     ](tensor.shape(), ctx)
@@ -1317,7 +1315,6 @@ fn foreach[
     *,
     target: StaticString = "cpu",
     simd_width: Int = get_kernel_simd_width[dtype, target](),
-    _synchronous: Bool = False,
     _trace_name: StaticString = "mogg.for_each",
 ](
     tensor: ManagedTensorSlice[dtype=dtype, rank=rank],
@@ -1332,7 +1329,6 @@ fn foreach[
         out_func: The function to apply on each output element.
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
         simd_width: The SIMD width for the target (usually leave this as its default value).
-        _synchronous: True to run the custom op synchronously in the runtime (defaults to False).
         _trace_name: Name of the executed operation displayed in the trace_description.
 
     Args:
@@ -1355,7 +1351,7 @@ fn foreach[
     algorithm.functional.elementwise[
         out_func_shim,
         simd_width,
-        use_blocking_impl=_synchronous,
+        use_blocking_impl=False,
         target=target,
         _trace_description=_trace_name,
     ](tensor.shape(), ctx)
@@ -1372,7 +1368,6 @@ fn view_copy_impl[
     spec: StaticTensorSpec[dtype, rank], //,
     *,
     target: StaticString,
-    _synchronous: Bool,
     _trace_name: StaticString = "mogg.view_copy_impl",
 ](
     z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
@@ -1393,7 +1388,6 @@ fn view_copy_impl[
     foreach[
         func,
         target=target,
-        _synchronous=_synchronous,
         _trace_name=_trace_name,
     ](z, ctx)
 

@@ -784,7 +784,6 @@ struct Range:
     fn execute[
         dtype: DType,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=1],
@@ -801,7 +800,6 @@ struct Range:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](output, ctx)
 
@@ -850,7 +848,6 @@ struct Add:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -868,7 +865,6 @@ struct Add:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -878,7 +874,6 @@ struct Sub:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -896,7 +891,6 @@ struct Sub:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -906,7 +900,6 @@ struct Mul:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -924,7 +917,6 @@ struct Mul:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -934,7 +926,6 @@ struct Div:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -952,7 +943,6 @@ struct Div:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -962,7 +952,6 @@ struct Mod:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -980,7 +969,6 @@ struct Mod:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -990,7 +978,6 @@ struct Equal:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1008,7 +995,6 @@ struct Equal:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1018,7 +1004,6 @@ struct Greater:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1036,7 +1021,6 @@ struct Greater:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1046,7 +1030,6 @@ struct GreaterEqual:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1064,7 +1047,6 @@ struct GreaterEqual:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1074,7 +1056,6 @@ struct NotEqual:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1092,7 +1073,6 @@ struct NotEqual:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1102,7 +1082,6 @@ struct And:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1120,7 +1099,6 @@ struct And:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1130,7 +1108,6 @@ struct Or:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1148,7 +1125,6 @@ struct Or:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1158,7 +1134,6 @@ struct Xor:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1176,7 +1151,6 @@ struct Xor:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1186,7 +1160,6 @@ struct Pow:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1204,7 +1177,6 @@ struct Pow:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1214,7 +1186,6 @@ struct Max:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1232,7 +1203,6 @@ struct Max:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1242,7 +1212,6 @@ struct Min:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         z: FusedOutputTensor,
@@ -1260,7 +1229,6 @@ struct Min:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](z, ctx)
 
@@ -1275,7 +1243,6 @@ struct Cast:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1289,7 +1256,6 @@ struct Cast:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1299,7 +1265,6 @@ struct Negative:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1312,7 +1277,6 @@ struct Negative:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1322,7 +1286,6 @@ struct ReLU:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1335,7 +1298,6 @@ struct ReLU:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1345,7 +1307,6 @@ struct GeLU:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1358,7 +1319,6 @@ struct GeLU:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1368,7 +1328,6 @@ struct Ceil:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1381,7 +1340,6 @@ struct Ceil:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1391,7 +1349,6 @@ struct Floor:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1406,7 +1363,6 @@ struct Floor:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1416,7 +1372,6 @@ struct Tanh:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1429,7 +1384,6 @@ struct Tanh:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1439,7 +1393,6 @@ struct ATanh:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1454,7 +1407,6 @@ struct ATanh:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1464,7 +1416,6 @@ struct Cos:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1477,7 +1428,6 @@ struct Cos:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1487,7 +1437,6 @@ struct Sin:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1500,7 +1449,6 @@ struct Sin:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1510,7 +1458,6 @@ struct Erf:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1523,7 +1470,6 @@ struct Erf:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1533,7 +1479,6 @@ struct Exp:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1546,7 +1491,6 @@ struct Exp:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1556,7 +1500,6 @@ struct Round:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1571,7 +1514,6 @@ struct Round:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1581,7 +1523,6 @@ struct Sqrt:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1594,7 +1535,6 @@ struct Sqrt:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1604,7 +1544,6 @@ struct Isqrt:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1619,7 +1558,6 @@ struct Isqrt:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1629,7 +1567,6 @@ struct Select:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
@@ -1655,7 +1592,6 @@ struct Select:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](output, ctx)
 
@@ -1665,7 +1601,6 @@ struct Trunc:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1683,7 +1618,6 @@ struct Trunc:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1693,7 +1627,6 @@ struct Log:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1706,7 +1639,6 @@ struct Log:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1716,7 +1648,6 @@ struct Log1p:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1731,7 +1662,6 @@ struct Log1p:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1741,7 +1671,6 @@ struct IsNan:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1756,7 +1685,6 @@ struct IsNan:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1766,7 +1694,6 @@ struct IsInf:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1781,7 +1708,6 @@ struct IsInf:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1791,7 +1717,6 @@ struct Not:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1805,7 +1730,6 @@ struct Not:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1815,7 +1739,6 @@ struct Abs:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         y: FusedOutputTensor, x: FusedInputTensor, ctx: DeviceContextPtr
@@ -1828,7 +1751,6 @@ struct Abs:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](y, ctx)
 
@@ -1838,7 +1760,6 @@ struct SqueezeShape:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         indices_type: DType,
     ](
@@ -1907,7 +1828,6 @@ struct UnsqueezeShape:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         indices_type: DType,
     ](
@@ -1979,7 +1899,6 @@ struct ScatterND:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -1998,7 +1917,7 @@ struct ScatterND:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
         ](
             input_ndbuffer,
@@ -2009,14 +1928,12 @@ struct ScatterND:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2028,7 +1945,6 @@ struct ScatterNDAdd:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2057,7 +1973,7 @@ struct ScatterNDAdd:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.add",
@@ -2070,14 +1986,12 @@ struct ScatterNDAdd:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2089,7 +2003,6 @@ struct ScatterNDMul:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2118,7 +2031,7 @@ struct ScatterNDMul:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.mul",
@@ -2131,14 +2044,12 @@ struct ScatterNDMul:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2150,7 +2061,6 @@ struct ScatterNDMin:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2179,7 +2089,7 @@ struct ScatterNDMin:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.min",
@@ -2192,14 +2102,12 @@ struct ScatterNDMin:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2211,7 +2119,6 @@ struct ScatterNDMax:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2240,7 +2147,7 @@ struct ScatterNDMax:
             output_ndbuffer.rank,
             indices_ndbuffer.rank,
             updates_ndbuffer.rank,
-            _synchronous,
+            False,
             target,
             reduce_fn=reduce_fn,
             _trace_description="scatter_nd.max",
@@ -2253,14 +2160,12 @@ struct ScatterNDMax:
         )
 
     @staticmethod
-    fn shape[
-        _synchronous: Bool,
-    ](
+    fn shape[](
         input: InputTensor,
         updates: InputTensor[dtype = input.dtype, *_],
         indices: InputTensor,
     ) raises -> IndexList[input.rank]:
-        return scatter_nd_shape[single_thread_blocking_override=_synchronous](
+        return scatter_nd_shape[single_thread_blocking_override=False](
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(updates),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -2274,14 +2179,13 @@ struct ScatterSetConstant:
         data_type: DType,
         index_type: DType, //,
         target: StaticString,
-        _synchronous: Bool,
     ](
         data: MutableInputTensor[dtype=data_type, rank=2],
         indices: InputTensor[dtype=index_type, rank=2],
         fill_value: Scalar[data_type],
         ctx: DeviceContextPtr,
     ) raises:
-        scatter_set_constant[target, _synchronous](
+        scatter_set_constant[target, False](
             data.to_layout_tensor(),
             indices.to_layout_tensor(),
             fill_value,
@@ -2299,7 +2203,6 @@ struct Scatter:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2345,7 +2248,6 @@ struct ScatterAdd:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2391,7 +2293,6 @@ struct ScatterMax:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2437,7 +2338,6 @@ struct ScatterMin:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2483,7 +2383,6 @@ struct ScatterMul:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor,
         input: InputTensor[dtype = output.dtype, rank = output.rank],
@@ -2751,7 +2650,6 @@ struct StaticBroadcastTo:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         in_rank: Int,
         out_rank: Int,
@@ -2770,7 +2668,6 @@ struct StaticBroadcastTo:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](z, x_view, ctx)
 
 
@@ -2824,7 +2721,6 @@ struct StaticReshape:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         dtype: DType,
         output_rank: Int,
@@ -2841,7 +2737,6 @@ struct StaticReshape:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
 
@@ -2932,7 +2827,6 @@ struct Transpose:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         static_permutations: DimList,
         dtype: DType,
@@ -2950,7 +2844,6 @@ struct Transpose:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view, ctx)
 
     # TODO(GEX-1033) Make it possible to have multiple raises.
@@ -3040,7 +2933,6 @@ struct Slice:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         static_steps: DimList,
         dtype: DType,
@@ -3060,7 +2952,6 @@ struct Slice:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
     @staticmethod
@@ -3083,7 +2974,6 @@ struct MutableStore:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         buffer: MutableInputTensor,
@@ -3109,7 +2999,6 @@ struct MutableStore:
             func,
             out_func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name=_trace_name,
         ](buffer, ctx)
 
@@ -3119,7 +3008,6 @@ struct MutableStoreSlice:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         rank: Int,
     ](
@@ -3199,7 +3087,6 @@ struct SliceDim:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         dtype: DType,
         rank: Int,
@@ -3220,7 +3107,6 @@ struct SliceDim:
         view_copy_impl[
             _trace_name=_trace_name,
             target=target,
-            _synchronous=_synchronous,
         ](output, view_tensor, ctx)
 
 
@@ -3334,7 +3220,7 @@ struct ArgNonZero:
 struct Mean:
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StaticString
+        target: StaticString
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
@@ -3366,7 +3252,7 @@ struct Mean:
             output.dtype,
             input_fn,
             output_fn,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
         ](input.shape(), axis_val, output.shape(), ctx)
 
@@ -3385,7 +3271,7 @@ struct Mean:
 struct ReduceAdd:
     @staticmethod
     fn execute[
-        _synchronous: Bool, target: StaticString, _trace_name: StaticString
+        target: StaticString, _trace_name: StaticString
     ](
         output: FusedOutputTensor,
         input: FusedInputTensor[dtype = output.dtype, rank = output.rank],
@@ -3418,7 +3304,7 @@ struct ReduceAdd:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3437,7 +3323,6 @@ struct ReduceAdd:
 struct ReduceMul:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -3472,7 +3357,7 @@ struct ReduceMul:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3491,7 +3376,6 @@ struct ReduceMul:
 struct ReduceMax:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -3526,7 +3410,7 @@ struct ReduceMax:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3545,7 +3429,6 @@ struct ReduceMax:
 struct ReduceMin:
     @staticmethod
     fn execute[
-        _synchronous: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
@@ -3580,7 +3463,7 @@ struct ReduceMin:
                 output.dtype,
                 input_fn,
                 output_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](input.shape(), axis_val, ctx)
 
@@ -3600,7 +3483,6 @@ struct ReduceMinMax:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
         dtype: DType,
         rank: Int,
@@ -3696,7 +3578,7 @@ struct ReduceMinMax:
                 input_0_fn_wrapper,
                 output_0_fn_wrapper,
                 reduce_fn,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
                 target=target,
             ](
                 input.shape(),
@@ -4055,7 +3937,6 @@ struct GatherND:
     fn execute[
         batchDims: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: OutputTensor,
@@ -4075,7 +3956,7 @@ struct GatherND:
 
     @staticmethod
     fn shape[
-        batch_dims: Int, output_rank: Int, _synchronous: Bool
+        batch_dims: Int, output_rank: Int
     ](
         data: InputTensor,
         indices: InputTensor,
@@ -4085,7 +3966,7 @@ struct GatherND:
         return gather_nd_shape[
             batch_dims=batch_dims,
             output_rank=output_rank,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
         ](
             managed_tensor_slice_to_ndbuffer(data),
             managed_tensor_slice_to_ndbuffer(indices),
@@ -4097,7 +3978,6 @@ struct Gather:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output: FusedOutputTensor,
@@ -4142,7 +4022,7 @@ struct Gather:
                 indices_fn=indices_fn,
                 output_fn=output_fn,
                 target=target,
-                single_thread_blocking_override=_synchronous,
+                single_thread_blocking_override=False,
             ](
                 Axis(Int(axis), input.rank),
                 input.shape(),
@@ -4524,7 +4404,6 @@ struct Matmul:
         packed_b: Bool,
         lambdas_have_fusion: Bool,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         c: _FusedComputeOutputTensor[rank=2],
@@ -4584,7 +4463,7 @@ struct Matmul:
             ) if lambdas_have_fusion
             and has_compute_lambda else None,
             saturated_vnni=False,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
             _trace_description=_trace_name,
         ](c_buffer, a_buffer, b_buffer, ctx)
@@ -4598,7 +4477,6 @@ struct BatchMatmul:
         rank: Int,
         transpose_b: Bool,
         target: StaticString,
-        _synchronous: Bool,
     ](
         c: _FusedComputeOutputTensor[rank=rank],
         a: InputTensor[rank=rank],
@@ -4640,7 +4518,7 @@ struct BatchMatmul:
                 batched_matmul_elementwise_epilogue_type
             ](output_fn) if lambdas_have_fusion else None,
             saturated_vnni=False,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
         ](c_buffer, a_buffer, b_buffer, context=ctx)
 
@@ -4665,7 +4543,6 @@ struct LinalgBandPart:
     @staticmethod
     fn execute[
         target: StaticString,
-        _synchronous: Bool,
         dtype: DType,
         int_type: DType,
         rank: Int,
@@ -4694,7 +4571,7 @@ struct LinalgBandPart:
         matrix_band_part[
             input_0_fn=input_fn,
             simd_width = simdwidthof[dtype](),
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             target=target,
         ](
             input.shape(),
@@ -5199,7 +5076,6 @@ struct Concat:
         dtype: DType,
         rank: Int,
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
         axis: Scalar,
@@ -5241,7 +5117,7 @@ struct Concat:
         fused_concat[
             dtype,
             rank,
-            _synchronous,
+            False,
             inputs_lambda,
             epilogue_wrapper,
             target,
@@ -5256,7 +5132,6 @@ struct Concat:
     fn shape[
         dtype: DType,
         rank: Int,
-        _synchronous: Bool,
     ](
         axis: Scalar, inputs: InputVariadicTensors[dtype, rank, *_]
     ) raises -> IndexList[rank]:
@@ -5364,7 +5239,6 @@ struct ConcatFromList:
         dtype: DType,
         rank: Int,
         target: StaticString,
-        _synchronous: Bool,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
         inputs: List[
@@ -5389,7 +5263,7 @@ struct ConcatFromList:
                 managed_tensor_slice_to_ndbuffer(inputs[i])
             )
 
-        _concat_cpu[rank, dtype, None, _synchronous](
+        _concat_cpu[rank, dtype, None, False](
             output_buf,
             normalize_neg_index(Int(axis), rank),
             input_as_ndbuffer,
@@ -5399,7 +5273,6 @@ struct ConcatFromList:
     fn shape[
         dtype: DType,
         rank: Int,
-        _synchronous: Bool,
     ](
         inputs: List[
             InputTensor[
@@ -5475,7 +5348,6 @@ struct SplitOutputShapeHelper:
         rank: Int,
         input_type: DType,
         split_size_type: DType,
-        _synchronous: Bool,
     ](
         input_buf: InputTensor[dtype=input_type, rank=rank],
         split_sizes_buf: InputTensor[dtype=split_size_type, rank=1],
@@ -8134,7 +8006,6 @@ struct PackConvFilterShape:
         dilations: DimList,
         paddings: DimList,
         num_groups: Int,
-        _synchronous: Bool,
     ](filter_buf: InputTensor[dtype=filter_type, rank=rank]) -> IndexList[
         rank + 1
     ]:
@@ -8151,7 +8022,6 @@ struct PackConvFilterShape:
             dilations: Should be rank 1 size 2.
             paddings: Should be rank 1 size 4.
             num_groups: The number of groups in the convolution.
-            _synchronous: If True, then reduction is run sync with 1 thread.
 
         Args:
             filter_buf: The filter to be packed.
@@ -8169,7 +8039,7 @@ struct PackConvFilterShape:
             dilations,
             paddings,
             num_groups,
-            _synchronous,
+            False,
         ](managed_tensor_slice_to_ndbuffer(filter_buf))
 
 
@@ -8333,7 +8203,6 @@ struct PackMatmulBShapeFunc:
         c_type: DType,
         c_shape: DimList,
         transpose_in_0: Bool,
-        _synchronous: Bool,
     ](b_input: InputTensor[dtype=b_type, rank=2]) -> IndexList[2]:
         return pack_matmul_b_shape_func[
             a_type,
@@ -8343,7 +8212,7 @@ struct PackMatmulBShapeFunc:
             c_type,
             c_shape,
             transpose_in_0,
-            _synchronous,
+            False,
         ](managed_tensor_slice_to_ndbuffer(b_input))
 
 
@@ -9151,7 +9020,6 @@ struct AdvancedIndexingGetItem:
         num_index_tensors: Int, //,
         start_axis: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         out_tensor: OutputTensor[
@@ -9185,7 +9053,7 @@ struct AdvancedIndexingGetItem:
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             trace_description=_trace_name,
             input_tensor_fn=input_tensor_fn,
             indices_fn=indices_fn,
@@ -9228,7 +9096,6 @@ struct AdvancedIndexingSetItemInplace:
         num_index_tensors: Int, //,
         start_axis: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         input_tensor: MutableInputTensor[dtype=input_type, rank=input_rank],
@@ -9259,7 +9126,7 @@ struct AdvancedIndexingSetItemInplace:
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
-            single_thread_blocking_override=_synchronous,
+            single_thread_blocking_override=False,
             trace_description=_trace_name,
             updates_tensor_fn=updates_tensor_fn,
             indices_fn=indices_fn,
@@ -9284,7 +9151,6 @@ struct AdvancedIndexingSetItem:
         num_index_tensors: Int, //,
         start_axis: Int,
         target: StaticString,
-        _synchronous: Bool,
         _trace_name: StaticString,
     ](
         output_tensor: OutputTensor[dtype=input_type, rank=input_rank],
@@ -9311,7 +9177,6 @@ struct AdvancedIndexingSetItem:
         foreach[
             func,
             target=target,
-            _synchronous=_synchronous,
             _trace_name = _trace_name + "_p1/2_copy",
         ](output_tensor, ctx)
 
@@ -9329,7 +9194,6 @@ struct AdvancedIndexingSetItem:
         AdvancedIndexingSetItemInplace.execute[
             target=target,
             start_axis=start_axis,
-            _synchronous=_synchronous,
             _trace_name = _trace_name + "_p2/2_update",
         ](tensor, updates, indices, ctx)
 
