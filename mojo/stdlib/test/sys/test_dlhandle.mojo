@@ -15,14 +15,17 @@
 
 from pathlib import Path
 from sys import DLHandle
+from testing import assert_raises
 
 
 def check_invalid_dlhandle():
-    _ = DLHandle("/an/invalid/library")
+    with assert_raises(contains="dlopen failed"):
+        _ = DLHandle("/an/invalid/library")
 
 
 def check_invalid_dlhandle_path():
-    _ = DLHandle(Path("/an/invalid/library"))
+    with assert_raises(contains="dlopen failed"):
+        _ = DLHandle(Path("/an/invalid/library"))
 
 
 def main():
