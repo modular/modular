@@ -259,8 +259,7 @@ private:
 
     // Add all the old attributes (except the execute related attrs).
     for (NamedAttribute attr : gen->getDialectAttrs())
-      if (attr.getName() == kMOGGSynchronousLabel ||
-          attr.getName() == kMOGGTargetLabel ||
+      if (attr.getName() == kMOGGTargetLabel ||
           attr.getName() == kMOGGLambdasHaveFusionLabel ||
           attr.getName() == kMOGGTraceNameLabel) {
         outlinedFunction->setAttr(attr.getName(), attr.getValue());

@@ -769,10 +769,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
 
   // Handle extra parameters we allow on execute:
   for (auto param : func.getInputParams()) {
-    if (param.getName() == kMOGGSynchronousParameterName) {
-      func->setDiscardableAttr(builder.getStringAttr(kMOGGSynchronousLabel),
-                               param);
-    } else if (param.getName() == kMOGGTargetParameterName) {
+    if (param.getName() == kMOGGTargetParameterName) {
       func->setDiscardableAttr(builder.getStringAttr(kMOGGTargetLabel), param);
     } else if (param.getName() == kMOGGLambdasHaveFusionParameterName) {
       func->setDiscardableAttr(
