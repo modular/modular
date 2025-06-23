@@ -249,13 +249,12 @@ fn producer_main_loop[
                 @parameter
                 if partitioned_multicast:
                     var a_gmem_slice_coord = m_coord + Int(rank_n) * a_tma_rows
-
-                    var a_smem_reshape = a_smem_tile.reshape[
-                        Layout.row_major(BM, BK)
-                    ]()
+                    var a_smem_slice = __type_of(a_smem_tile)(
+                        a_smem_tile.ptr + rank_n * a_tma_load_size
+                    )
 
                     a_tma_op.async_multicast_load(
-                        a_smem_reshape.split[CLUSTER_N, 0]()[rank_n],
+                        a_smem_slice,
                         full_mbar[write_idx],
                         (
                             UInt(k_iter * pipeline_stages + j) * BK,
@@ -286,13 +285,12 @@ fn producer_main_loop[
                 @parameter
                 if partitioned_multicast:
                     var b_gmem_slice_coord = n_coord + Int(rank_m) * b_tma_rows
-
-                    var b_smem_reshape = b_smem_tile.reshape[
-                        Layout.row_major(BN, BK)
-                    ]()
+                    var b_smem_slice = __type_of(b_smem_tile)(
+                        b_smem_tile.ptr + rank_m * b_tma_load_size
+                    )
 
                     b_tma_op.async_multicast_load(
-                        b_smem_reshape.split[CLUSTER_M, 0]()[rank_m],
+                        b_smem_slice,
                         full_mbar[write_idx],
                         (
                             UInt(k_iter * pipeline_stages + j) * BK,

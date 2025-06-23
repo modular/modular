@@ -2938,7 +2938,6 @@ struct LayoutTensor[
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
-            alignment=alignment,
         ],
     ):
         """Returns a the type of a tile view of the tensor with specified
@@ -4703,7 +4702,6 @@ struct LayoutTensor[
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
             masked=masked,
-            alignment=alignment,
         ],
     ):
         """Create a view of the tensor with a different shape.
