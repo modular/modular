@@ -1289,14 +1289,18 @@ struct CPython(Copyable, Defaultable, Movable):
         return ob_raw.unsized_obj_ptr[].object_type
 
     fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
-        """[Rereference](
+        """Retrieve the name of the Python type.
+
+        [Rereference](
         https://docs.python.org/3/c-api/type.html#c.PyType_GetName).
         """
         if self.version.minor >= 11:
-            return self.lib.call["PyType_GetName", PyObjectPtr](type)
+            result = self.lib.call["PyType_GetName", PyObjectPtr](type)
+            self._inc_total_rc()
+            return result
         else:
-            var result = self.lib.call["PyObject_GetAttrString", PyObjectPtr](
-                type, "__name__".unsafe_cstr_ptr()
+            var result = self.PyObject_GetAttrString(
+                rebind[PyObjectPtr](type), "__name__"
             )
             self._inc_total_rc()
             return result
