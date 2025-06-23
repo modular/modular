@@ -324,14 +324,6 @@ class Tensor:
     def __init__(
         self, shape: Annotated[ArrayLike, dict(writable=False)], device: Device
     ) -> None: ...
-    @overload
-    def __init__(self, other: Tensor) -> None:
-        """
-        Moves the internals from an existing Tensor object into a new Tensor object.
-
-        Primarily used for initializing subclasses with existing Tensors.
-        """
-
     @property
     def device(self) -> Device:
         """Device on which tensor is resident."""
