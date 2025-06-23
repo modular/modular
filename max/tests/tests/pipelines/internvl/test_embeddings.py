@@ -36,8 +36,10 @@ def create_test_vision_config(
         head_dim=hidden_size // 16,
         layer_norm_eps=1e-6,
         qk_normalization=True,
+        qkv_bias=False,
         num_hidden_layers=24,
         use_mean_pooling=True,
+        o_proj_bias=True,
     )
 
 
