@@ -2488,6 +2488,8 @@ fn _matmul_gpu[
             or c_type is DType.bfloat16
             or c_type is DType.float16
         )
+        # to disable vendor fallback, run export MODULAR_DISABLE_VENDOR_FALLBACK=1 in the environment
+        and not env_get_bool["MODULAR_DISABLE_VENDOR_FALLBACK", False]()
     ):
         try:
             return matmul_vendor[
