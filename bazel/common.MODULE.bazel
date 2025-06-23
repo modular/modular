@@ -21,7 +21,7 @@ bazel_dep(name = "rules_shell", version = "0.4.1")
 # TODO: Remove when transitives bump to this version or above
 bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 
-bazel_dep(name = "rules_mypy", version = "0.32.0", dev_dependency = True)
+bazel_dep(name = "rules_mypy", version = "0.36.0", dev_dependency = True)
 bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
 
 single_version_override(
