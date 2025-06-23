@@ -73,6 +73,9 @@ class MAXModelConfig(MAXModelConfigBase):
     quantization_encoding: Optional[SupportedEncoding] = None
     """Weight encoding type."""
 
+    allow_dtype_casting: bool = True
+    """Whether to allow automatic dtype casting when quantization encoding is set, if needed."""
+
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
     huggingface_model_revision: str = hf_hub_constants.DEFAULT_REVISION
@@ -98,12 +101,11 @@ class MAXModelConfig(MAXModelConfigBase):
     use_subgraphs: bool = False
     """Whether to use subgraphs for the model."""
 
-    # TODO: This can be made more generic for arbitrary dtypes.
-    cast_safetensor_weights_from_float32_to_bfloat16: bool = False
-    """Whether to cast safetensor weights from float32 to bfloat16."""
+    _applied_dtype_cast_from: Optional[SupportedEncoding] = None
+    """Property to track the dtype that safetensor weights were casted from. None means no casting was applied. This should only be set by internal code."""
 
-    applied_bfloat16_downcast: bool = False
-    """If safetensor weights were downcasted from float32 to bfloat16."""
+    _applied_dtype_cast_to: Optional[SupportedEncoding] = None
+    """Property to track the dtype that safetensor weights were casted to. None means no casting was applied. This should only be set by internal code."""
 
     _huggingface_config: Optional[AutoConfig] = None
     """Hugging Face config. This should only be set by internal code."""
@@ -133,6 +135,7 @@ class MAXModelConfig(MAXModelConfigBase):
         and update other fields which may not be determined / initialized in the
         default factory.
         """
+
         # Validate that the device_specs provided are available
         if not devices_exist(self.device_specs):
             available_devices = scan_available_devices()
@@ -359,11 +362,78 @@ class MAXModelConfig(MAXModelConfigBase):
         except ValueError:
             _weights_format = None
 
+        if self.quantization_encoding:
+            self._validate_and_resolve_with_given_quantization_encoding(
+                weights_format=_weights_format
+            )
+        else:
+            self._validate_and_resolve_without_given_quantization_encoding(
+                weights_format=_weights_format,
+                default_encoding=default_encoding,
+            )
+
+    def validate_and_resolve_rope_type(self, arch_rope_type: RopeType) -> None:
+        if self.rope_type is None:
+            self.rope_type = arch_rope_type
+
+    def validate_and_resolve_with_resolved_quantization_encoding(
+        self,
+        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
+        default_weights_format: WeightsFormat,
+    ) -> None:
+        """
+        Validates that the model path, and weight path
+        provided are consistent with a set quantization encoding. Also resolves
+        the KV cache strategy and finalizes the encoding config.
+        """
+        self._validate_quantization_encoding_device_compatibility(
+            supported_encodings_list=list(supported_encodings.keys())
+        )
+        self._finalize_encoding_config()
+        self._resolve_weight_path(default_weights_format=default_weights_format)
+        self._resolve_kv_cache_strategy(supported_encodings=supported_encodings)
+        self._validate_final_architecture_model_path_weight_path()
+
+    def _validate_and_resolve_dtype_casting(
+        self, from_encoding: SupportedEncoding, to_encoding: SupportedEncoding
+    ) -> None:
+        """Validates that the dtype casting is allowed and resolves the dtype casting if needed.
+        It will also update the quantization_encoding to the desired encoding.
+
+        Args:
+            to_encoding: The desired encoding to cast to.
+        """
+        assert self.allow_dtype_casting, (
+            "allow_dtype_casting must be set to True"
+        )
+
+        if from_encoding == to_encoding:
+            return
+
+        if not to_encoding.supported_on(device_spec=self.device_specs[0]):
+            raise ValueError(
+                f"Cannot cast from '{from_encoding}' to '{to_encoding}' on device '{self.device_specs[0]}' because '{to_encoding}' is not supported on this device."
+                f"Please use a different device or a different encoding."
+            )
+        self._applied_dtype_cast_from = from_encoding
+        self._applied_dtype_cast_to = to_encoding
+        # TODO: This set might not be needed? Invariant: quantization_encoding == to_encoding?
+        self.quantization_encoding = to_encoding
+
+    def _validate_and_resolve_with_given_quantization_encoding(
+        self, weights_format: Optional[WeightsFormat]
+    ) -> None:
+        """
+        Helper function to validate the quantization encoding when it is provided by the user.
+        """
+        assert self.quantization_encoding, (
+            "quantization_encoding must be set (given by user)."
+        )
+
         if (
             self.weight_path
-            and self.quantization_encoding
             # Cannot validate quantization_encoding for pytorch.
-            and _weights_format != WeightsFormat.pytorch
+            and weights_format != WeightsFormat.pytorch
         ):
             # Get the encoding of the first weight path file.
             if os.path.exists(self.weight_path[0]):
@@ -375,16 +445,55 @@ class MAXModelConfig(MAXModelConfigBase):
                     self.weight_path[0]
                 )
 
-            if file_encoding:
-                if file_encoding != self.quantization_encoding:
+            if file_encoding and file_encoding != self.quantization_encoding:
+                if self.allow_dtype_casting:
+                    self._validate_and_resolve_dtype_casting(
+                        from_encoding=self.quantization_encoding,
+                        to_encoding=file_encoding,
+                    )
+                else:
                     msg = f"weight_path provided '{self.weight_path[0]}' has an inconsistent encoding '{file_encoding}' than quantization_encoding provided '{self.quantization_encoding}'. Please update one."
                     raise ValueError(msg)
+        else:
+            if self.allow_dtype_casting:
+                # Check if the repo only has one quantization_encoding.
+                supported_encodings = (
+                    self.huggingface_weight_repo.supported_encodings
+                )
+                for supported_encoding in supported_encodings:
+                    weight_files = (
+                        self.huggingface_weight_repo.files_for_encoding(
+                            encoding=supported_encoding
+                        )
+                    )
+                    if weight_files:
+                        self._validate_and_resolve_dtype_casting(
+                            from_encoding=supported_encoding,
+                            to_encoding=self.quantization_encoding,
+                        )
+                        return
+            else:
+                weight_files = self.huggingface_weight_repo.files_for_encoding(
+                    encoding=self.quantization_encoding
+                )
+                if not weight_files:
+                    msg = f"quantization_encoding '{self.quantization_encoding}' is not supported by the repo '{self.huggingface_weight_repo.repo_id}'"
+                    raise ValueError(msg)
+
+    def _validate_and_resolve_without_given_quantization_encoding(
+        self,
+        weights_format: Optional[WeightsFormat],
+        default_encoding: SupportedEncoding,
+    ) -> None:
+        """
+        Validates and resolves the quantization encoding when it is not specified by user.
+        """
+        assert self.quantization_encoding is None, (
+            "quantization_encoding must be None (not specified by user)."
+        )
+
         # If weight path is not None, infer the quantization_encoding from the weight_path.
-        elif (
-            self.weight_path
-            and not self.quantization_encoding
-            and _weights_format != WeightsFormat.pytorch
-        ):
+        if self.weight_path and weights_format != WeightsFormat.pytorch:
             if os.path.exists(self.weight_path[0]):
                 # Not currently supported. Infer encoding from local path.
                 if self.weight_path[0].suffix == ".safetensors":
@@ -408,7 +517,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 else:
                     msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
                     raise ValueError(msg)
-        elif not self.quantization_encoding:
+        else:
             # Check if the repo only has one quantization_encoding.
             supported_encodings = (
                 self.huggingface_weight_repo.supported_encodings
@@ -416,23 +525,7 @@ class MAXModelConfig(MAXModelConfigBase):
             if len(supported_encodings) == 1:
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
-
-                # Special case for when we allow for float32 safetensors weights
-                # to be downcasted to bfloat16.
-                if (
-                    self.cast_safetensor_weights_from_float32_to_bfloat16
-                    and supported_encodings[0] == SupportedEncoding.float32
-                ):
-                    # if no GPUs are available, we can't possibly downcast to bfloat16.
-                    if not any(
-                        d.device_type == "gpu" for d in self.device_specs
-                    ):
-                        msg = "No GPUs available, cannot downcast from float32 to bfloat16."
-                        raise ValueError(msg)
-                    self.applied_bfloat16_downcast = True
-                    self.quantization_encoding = SupportedEncoding.bfloat16
-                else:
-                    self.quantization_encoding = supported_encodings[0]
+                self.quantization_encoding = supported_encodings[0]
             elif not self.device_specs[0].device_type == "cpu":
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
@@ -444,28 +537,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 msg = f"encoding not provided, using default encoding of {default_encoding}"
                 logger.debug(msg)
                 self.quantization_encoding = default_encoding
-
-    def validate_and_resolve_rope_type(self, arch_rope_type: RopeType) -> None:
-        if self.rope_type is None:
-            self.rope_type = arch_rope_type
-
-    def validate_and_resolve_with_set_quantization_encoding(
-        self,
-        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
-        default_weights_format: WeightsFormat,
-    ) -> None:
-        """
-        Validates that the model path, and weight path
-        provided are consistent with a set quantization encoding. Also resolves
-        the KV cache strategy and finalizes the encoding config.
-        """
-        self._validate_quantization_encoding_device_compatibility(
-            supported_encodings_list=list(supported_encodings.keys())
-        )
-        self._finalize_encoding_config()
-        self._resolve_weight_path(default_weights_format=default_weights_format)
-        self._resolve_kv_cache_strategy(supported_encodings=supported_encodings)
-        self._validate_final_architecture_model_path_weight_path()
 
     def _validate_quantization_encoding_device_compatibility(
         self,
@@ -527,13 +598,11 @@ class MAXModelConfig(MAXModelConfigBase):
             weight_files = self.huggingface_weight_repo.files_for_encoding(
                 encoding=self.quantization_encoding
             )
-            if (
-                not weight_files
-                and self.cast_safetensor_weights_from_float32_to_bfloat16
-            ):
+
+            if not weight_files and self._applied_dtype_cast_from:
                 # We allow ourselves to load float32 safetensors weights as bfloat16.
                 weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding=SupportedEncoding.float32
+                    encoding=self._applied_dtype_cast_from
                 )
 
             if default_weight_files := weight_files.get(
@@ -702,6 +771,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
+            "allow_dtype_casting": "Specify whether to allow automatic dtype casting if needed when quantization encoding is set.",
             "huggingface_model_revision": "Branch or Git revision of Hugging Face model repository to use.",
             "huggingface_weight_revision": "Branch or Git revision of Hugging Face weight repository to use.",
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",

@@ -495,7 +495,7 @@ class PipelineConfig(MAXConfig):
                 self.engine = PipelineEngine.HUGGINGFACE
                 return
 
-        model_config.validate_and_resolve_with_set_quantization_encoding(
+        model_config.validate_and_resolve_with_resolved_quantization_encoding(
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )

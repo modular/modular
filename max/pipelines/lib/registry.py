@@ -355,10 +355,8 @@ class PipelineRegistry:
         quantization_encoding_str = str(
             pipeline_config.model_config.quantization_encoding
         )
-        if pipeline_config.model_config.applied_bfloat16_downcast:
-            quantization_encoding_str = (
-                f"{quantization_encoding_str} (downcasted from float32)"
-            )
+        if pipeline_config.model_config._applied_dtype_cast_from:
+            quantization_encoding_str = f"{quantization_encoding_str} (cast from {pipeline_config.model_config._applied_dtype_cast_from})"
 
         message = f"""
 
