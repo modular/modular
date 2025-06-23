@@ -104,7 +104,6 @@ struct NonInputTensorList:
         type: DType,
         rank: Int,
         target: StringLiteral,
-        _synchronous: Bool,
     ](
         output: List[
             OutputTensor[
