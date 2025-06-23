@@ -149,6 +149,17 @@ def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
     if isinstance(array, Tensor):
         return array.copy() if copy else array
 
+    # Check for torch tensors by looking for the is_contiguous method rather
+    # than importing torch.
+    if hasattr(array, "is_contiguous") and callable(
+        getattr(array, "is_contiguous")
+    ):
+        if not array.is_contiguous():
+            raise ValueError(
+                "driver tensor's from_dlpack only accepts contiguous tensors. "
+                "First call .contiguous() on the tensor"
+            )
+
     if copy is not None:
         raise ValueError(
             "`Tensor.from_dlpack` supports the `copy` flag only for numpy"
