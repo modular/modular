@@ -38,3 +38,12 @@ fi
 
 # Run the tests
 lit -sv "${TEST_PATH}"
+
+# Run the python specific tests.
+VERSION_SPECIFIC="$TEST_PATH/python/test_version_specific.mojo"
+if [[ -f "$VERSION_SPECIFIC" ]]; then
+  for py in py39 py310 py311 py312 py312; do
+    echo "Running Python tests in environment: $py"
+    pixi run --environment=$py lit -sv "$VERSION_SPECIFIC"
+  done
+fi
