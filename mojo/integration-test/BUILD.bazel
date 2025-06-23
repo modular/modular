@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "lit_tests")
+load("//bazel:api.bzl", "lit_tests", "requirement")
 
 lit_tests(
     name = "lit",
@@ -19,5 +19,8 @@ lit_tests(
     }),
     tools = [
         "//KGEN/tools/mojo",
+    ],
+    deps = [
+        requirement("numpy"),
     ],
 )
