@@ -1293,11 +1293,9 @@ struct CPython(Copyable, Defaultable, Movable):
 
         [Rereference](
         https://docs.python.org/3/c-api/type.html#c.PyType_GetName).
-
-        C-function signature:
-            PyObject *PyType_GetName(PyTypeObject *type)
         """
         if self.version.minor >= 11:
+            # PyObject *PyType_GetName(PyTypeObject *type)
             var r = self.lib.call["PyType_GetName", PyObjectPtr](type)
             self._inc_total_rc()
             return r
