@@ -58,6 +58,26 @@ case `bazel` automatically skips building and testing them. `bazel` also
 automatically detects the current GPU hardware, so tests that are
 specific to individual GPUs can be run.
 
+## Running linters
+
+A few linters and formatters can be run easily from bazel.
+
+To just see the output of the linters, you can run:
+
+```sh
+./bazelw run //:lint
+```
+
+To automatically apply the fixes (where possible), you can run:
+
+```sh
+./bazelw run //:format
+```
+
+See the `lint` and `format` targets defined in
+[bazel/lint/BUILD.bazel](https://github.com/modular/modular/blob/main/bazel/lint/BUILD.bazel)
+to see what the current tools being run are.
+
 ## Using a different Mojo version
 
 The Mojo version in
