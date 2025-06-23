@@ -288,8 +288,8 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
 fn _get_global_handle[
     backend: Backend = _resolve_backend[Backend.AUTOMATIC]()
 ](ctx: DeviceContext) raises -> Handle[backend]:
-    alias HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend)
-    if global_ptr := _get_global_or_null[HANDLE_NAME]().bitcast[
+    var HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend)
+    if global_ptr := _get_global_or_null(HANDLE_NAME).bitcast[
         Handle[backend]
     ]():
         _attach_handle_to_stream(ctx, global_ptr[])

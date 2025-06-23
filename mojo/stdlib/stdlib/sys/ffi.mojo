@@ -460,8 +460,8 @@ fn _get_dylib_function[
     func_name: StaticString,
     result_type: AnyTrivialRegType,
 ]() -> result_type:
-    alias func_cache_name = String(dylib_global.name) + "/" + String(func_name)
-    var func_ptr = _get_global_or_null[func_cache_name]()
+    var func_cache_name = String(dylib_global.name, "/", func_name)
+    var func_ptr = _get_global_or_null(func_cache_name)
     if func_ptr:
         var result = UnsafePointer(to=func_ptr).bitcast[result_type]()[]
         _ = func_ptr
@@ -634,7 +634,7 @@ fn _get_global[
 
 
 @always_inline
-fn _get_global_or_null[name: StaticString]() -> OpaquePointer:
+fn _get_global_or_null(name: StringSlice) -> OpaquePointer:
     return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
         name.unsafe_ptr(), name.byte_length()
     )

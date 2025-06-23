@@ -202,11 +202,11 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
     alias p2p_not_available = Scalar[DType.index](1)
     alias p2p_available = Scalar[DType.index](2)
 
-    alias cache_name = "MOJO_GPU_COMM_ALLREDUCE_P2P_CHECK"
+    var cache_name = "MOJO_GPU_COMM_ALLREDUCE_P2P_CHECK"
     # We use 0 to indicate that the cache is not found, 1 to indicate that it is
     # found and p2p is not present and 2 to indicate that the cache is found and
     # that p2p is present.
-    var found = Scalar[DType.index](Int(_get_global_or_null[cache_name]()))
+    var found = Scalar[DType.index](Int(_get_global_or_null(cache_name)))
     if found:
         return found == p2p_available
 

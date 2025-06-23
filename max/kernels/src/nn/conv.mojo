@@ -3161,8 +3161,8 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     Returns:
         The cuDNN metadata.
     """
-    alias name = String("CUDA_CUDNN_META")
-    if ptr_meta := _get_global_or_null[name]().bitcast[CuDNNConvMeta]():
+    var name = "CUDA_CUDNN_META"
+    if ptr_meta := _get_global_or_null(name).bitcast[CuDNNConvMeta]():
         check_cudnn_error(
             cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
         )
