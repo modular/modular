@@ -146,7 +146,10 @@ fn memcmp[
     var byte_count = count * sizeof[type]()
 
     @parameter
-    if sizeof[type]() >= sizeof[DType.int32]():
+    if (
+        sizeof[type]() >= sizeof[DType.int32]()
+        and sizeof[type]() % sizeof[DType.int32]() == 0
+    ):
         return _memcmp_impl(
             s1.bitcast[Int32](),
             s2.bitcast[Int32](),

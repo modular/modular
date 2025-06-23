@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo --debug-level full %s
 
-from sys import simdwidthof
+from sys import simdwidthof, sizeof
 
 from memory import (
     AddressSpace,
@@ -121,6 +121,29 @@ def test_memcmp():
     assert_equal(errors, 0)
     _ = pair1
     _ = pair2
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct SixByteStruct:
+    var a: Int16
+    var b: Int16
+    var c: Int16
+
+
+def test_memcmp_non_multiple_of_int32():
+    var triple1 = SixByteStruct(0, 0, 0)
+    var triple2 = SixByteStruct(0, 0, 1)
+
+    constrained[sizeof[SixByteStruct]() == 6]()
+
+    var ptr1 = UnsafePointer(to=triple1)
+    var ptr2 = UnsafePointer(to=triple2)
+    var errors = memcmp(ptr1, ptr2, 1)
+    assert_equal(errors, -1)
+
+    _ = triple1
+    _ = triple2
 
 
 def test_memcmp_overflow():
@@ -485,6 +508,7 @@ def main():
     test_memcpy()
     test_memcpy_dtype()
     test_memcmp()
+    test_memcmp_non_multiple_of_int32()
     test_memcmp_overflow()
     test_memcmp_simd()
     test_memcmp_extensive()
