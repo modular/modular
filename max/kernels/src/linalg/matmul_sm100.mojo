@@ -22,7 +22,7 @@ from gpu import lane_id as get_lane_id
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, lane_id, thread_idx
-from gpu.memory import AddressSpace, external_memory
+from gpu.memory import AddressSpace, external_memory, tma_store_fence
 from gpu.mma_sm100 import *
 from gpu.tcgen05 import *
 from layout import Layout, LayoutTensor
@@ -56,17 +56,19 @@ fn blackwell_matmul_tma_umma_kernel[
     c_layout: Layout,
     a_desc_layout: Layout,
     b_desc_layout: Layout,
+    c_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: UInt = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     num_iters: UInt,
 ):
     constrained[num_threads == 128 or num_threads == 256]()
@@ -123,6 +125,13 @@ fn blackwell_matmul_tma_umma_kernel[
         address_space = AddressSpace.SHARED,
         alignment=128,
     ]
+    alias c_smem_tile_t = LayoutTensor[
+        c_type,
+        c_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128,
+    ]
     alias sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
@@ -139,19 +148,26 @@ fn blackwell_matmul_tma_umma_kernel[
     ]
     alias a_size = a_smem_layout.size()
     alias b_size = b_smem_layout.size()
+    alias c_size = c_layout.size()
 
     constrained[
         ((a_size * sizeof[a_type]()) % 128) == 0, "preserve alignment"
     ]()
     constrained[((b_size * sizeof[b_type]()) % 16) == 0, "preserve alignment"]()
+    constrained[
+        ((c_size * sizeof[c_type]()) % 128) == 0, "preserve alignment"
+    ]()
+
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
+    var c_smem = (b_smem + b_size).bitcast[Scalar[c_type]]()
 
     var a_smem_tile = a_smem_tile_t(a_smem)
     var b_smem_tile = b_smem_tile_t(b_smem)
+    var c_smem_tile = c_smem_tile_t(c_smem)
 
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (
-        (b_smem + b_size)
+        (c_smem + c_size)
         .bitcast[UInt32]()
         .static_alignment_cast[alignment=16]()
     )
@@ -215,7 +231,9 @@ fn blackwell_matmul_tma_umma_kernel[
         transpose_b=transpose_b,
     ]()
 
+    # finish mma and store result in tensor memory
     for i in range(num_iters):
+        # load A and B from global memory to shared memory
         if elect_one_thread:
             tma_mbar[0].expect_bytes(expected_bytes)
 
@@ -246,33 +264,29 @@ fn blackwell_matmul_tma_umma_kernel[
         tma_phase ^= 1
 
         if elect_one_thread:
-            if i == 0:
-                mma[c_scale=0](adesc, bdesc, tmem_addr, idesc)
 
-                @parameter
-                for j in range(1, num_k_mmas):
-                    alias idx = IntTuple(0, MMA_K * j)
-                    alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                    alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
-                    mma[c_scale=1](
-                        adesc + a_offset, bdesc + b_offset, tmem_addr, idesc
-                    )
-            else:
+            @parameter
+            for j in range(num_k_mmas):
+                alias idx = IntTuple(0, MMA_K * j)
+                alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
+                alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
 
-                @parameter
-                for j in range(num_k_mmas):
-                    alias idx = IntTuple(0, MMA_K * j)
-                    alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
-                    alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
-                    mma[c_scale=1](
-                        adesc + a_offset, bdesc + b_offset, tmem_addr, idesc
-                    )
+                # use c_scale=0 for the first mma only on the first iteration to initialize
+                var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
+                mma(
+                    adesc + a_offset,
+                    bdesc + b_offset,
+                    tmem_addr,
+                    idesc,
+                    c_scale=c_scale_value,
+                )
 
             mma_arrive(mma_mbar)
 
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
+    # load result from tensor memory to registers
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
@@ -284,14 +298,10 @@ fn blackwell_matmul_tma_umma_kernel[
 
     tcgen05_load_wait()
 
-    if elect_one_warp:
-        tcgen05_release_allocation_lock[1]()
-        tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
+    # store from tensor memory to smem using the swizzling pattern
 
     alias num_warps = num_threads // WARP_SIZE
     warp_id = thread_idx.x // WARP_SIZE
-
-    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     @parameter
     for m_mma in range(num_m_mmas):
@@ -300,16 +310,16 @@ fn blackwell_matmul_tma_umma_kernel[
         for n_mma in range(num_n_mmas):
             alias mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
+            c_smem_warp_tile = c_smem_tile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id, n_mma
             )
 
-            c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+            c_smem_frag = c_smem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
 
-            alias num_vecs_m = c_gmem_frag.layout.shape[0].value()
-            alias num_vecs_n = c_gmem_frag.layout.shape[1].value()
+            alias num_vecs_m = c_smem_frag.layout.shape[0].value()
+            alias num_vecs_n = c_smem_frag.layout.shape[1].value()
 
             @parameter
             for n_vec in range(num_vecs_n):
@@ -318,13 +328,31 @@ fn blackwell_matmul_tma_umma_kernel[
                 for m_vec in range(num_vecs_m):
                     alias i_vec = n_vec * num_vecs_m + m_vec
 
-                    c_gmem_frag[m_vec, n_vec] = rebind[
-                        c_gmem_frag.element_type
+                    c_smem_frag[m_vec, n_vec] = rebind[
+                        c_smem_frag.element_type
                     ](
                         SIMD[accum_type, 2](
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
                     )
+    barrier()
+
+    # SMEM -> GMEM: Direct TMA store
+    # UMMA (tensor memory) → registers → shared memory → global memory
+    #           c_frag                   c_smem_tile      c_tma_op
+    if elect_one_thread:
+        tma_store_fence()
+        c_tma_op.async_store(
+            c_smem_tile,
+            ((block_idx.x * BN), (block_idx.y * BM)),
+        )
+        c_tma_op.commit_group()
+        # wait for the store to complete
+        c_tma_op.wait_group[0]()
+
+    if elect_one_warp:
+        tcgen05_release_allocation_lock[1]()
+        tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
 
 fn blackwell_matmul_tma_umma[
@@ -372,8 +400,14 @@ fn blackwell_matmul_tma_umma[
         is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
+    c_tma_op = create_tma_tile[BM, BN](ctx, c)
 
-    alias smem_use = (BM * sizeof[a_type]() + BN * sizeof[b_type]()) * BK + 24
+    alias smem_use = (
+        BM * BK * sizeof[a_type]()
+        + BN * BK * sizeof[b_type]()
+        + BM * BN * sizeof[c_type]()
+        + 24
+    )
 
     alias block_dim = 128
 
@@ -383,9 +417,10 @@ fn blackwell_matmul_tma_umma[
         c_type,
         __type_of(a_tma_op).layout,
         __type_of(b_tma_op).layout,
-        __type_of(c).layout,
+        __type_of(c_tma_op).layout,
         __type_of(a_tma_op).desc_layout,
         __type_of(b_tma_op).desc_layout,
+        __type_of(c_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -397,7 +432,7 @@ fn blackwell_matmul_tma_umma[
     ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
-        c,
+        c_tma_op,
         K // BK,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
