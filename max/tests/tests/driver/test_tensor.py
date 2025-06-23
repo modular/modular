@@ -627,6 +627,18 @@ def test_from_dlpack_noncontiguous() -> None:
         tensor = Tensor.from_dlpack(array)
 
 
+def test_from_dlpack_torch_noncontiguous() -> None:
+    """Test that Tensor.from_dlpack correctly handles non-contiguous torch tensors."""
+    # Create a non-contiguous torch tensor via transpose.
+    torch_tensor = torch.arange(12, dtype=torch.float32).reshape(3, 4).T
+    assert not torch_tensor.is_contiguous()
+
+    with pytest.raises(
+        ValueError, match="from_dlpack only accepts contiguous tensors"
+    ):
+        max_tensor = Tensor.from_dlpack(torch_tensor)
+
+
 def test_item_success() -> None:
     """Test successful item() calls for valid single-element tensors."""
     # Zero-rank case
