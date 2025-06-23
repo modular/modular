@@ -1293,17 +1293,18 @@ struct CPython(Copyable, Defaultable, Movable):
 
         [Rereference](
         https://docs.python.org/3/c-api/type.html#c.PyType_GetName).
+
+        C-function signature:
+            PyObject *PyType_GetName(PyTypeObject *type)
         """
         if self.version.minor >= 11:
-            result = self.lib.call["PyType_GetName", PyObjectPtr](type)
+            var r = self.lib.call["PyType_GetName", PyObjectPtr](type)
             self._inc_total_rc()
-            return result
+            return r
         else:
-            var result = self.PyObject_GetAttrString(
+            return self.PyObject_GetAttrString(
                 rebind[PyObjectPtr](type), "__name__"
             )
-            self._inc_total_rc()
-            return result
 
     fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
         """[Reference](
