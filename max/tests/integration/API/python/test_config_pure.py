@@ -117,6 +117,7 @@ def test_config__test_incompatible_quantization_encoding(
             max_batch_size=1,
             max_length=1,
             engine=PipelineEngine.MAX,
+            allow_dtype_casting=False,
         )
 
     # This should not raise, as float32 == f32.
@@ -128,6 +129,36 @@ def test_config__test_incompatible_quantization_encoding(
                 "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
             )
         ],
+        max_batch_size=1,
+        max_length=1,
+        engine=PipelineEngine.MAX,
+    )
+
+
+@prepare_registry
+@mock_estimate_memory_footprint
+def test_config__test_quantization_encoding_with_dtype_casting(
+    llama_3_1_8b_instruct_local_path,
+):
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    with pytest.raises(ValueError):
+        # This should raise, as allow_dtype_casting is set to False, which means
+        # it will not cast the (bfloat16) quantization encoding to float32.
+        config = PipelineConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            quantization_encoding=SupportedEncoding.float32,
+            max_batch_size=1,
+            max_length=1,
+            engine=PipelineEngine.MAX,
+            allow_dtype_casting=False,
+        )
+
+    # This should not raise, as allow_dtype_casting is set to True, which means
+    # it will safely cast the quantization encoding to float32.
+    config = PipelineConfig(
+        model_path=llama_3_1_8b_instruct_local_path,
+        quantization_encoding=SupportedEncoding.float32,
         max_batch_size=1,
         max_length=1,
         engine=PipelineEngine.MAX,

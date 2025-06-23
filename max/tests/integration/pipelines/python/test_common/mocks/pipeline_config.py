@@ -36,7 +36,7 @@ class DummyMAXModelConfig(MAXModelConfig):
     ) -> None:
         pass
 
-    def validate_and_resolve_with_set_quantization_encoding(
+    def validate_and_resolve_with_resolved_quantization_encoding(
         self,
         supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
         default_weights_format: WeightsFormat,
