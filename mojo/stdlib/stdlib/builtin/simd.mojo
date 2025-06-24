@@ -326,13 +326,9 @@ struct SIMD[dtype: DType, size: Int](
         return Self.get_type_name()
 
     # Fields
-    alias _Mask = SIMD[DType.bool, size]
-
-    alias element_type = dtype
     alias _mlir_type = __mlir_type[
         `!pop.simd<`, size.value, `, `, dtype.value, `>`
     ]
-
     var value: Self._mlir_type
     """The underlying storage for the vector."""
 
@@ -348,6 +344,7 @@ struct SIMD[dtype: DType, size: Int](
     alias MIN_FINITE = Self(_min_finite[dtype]())
     """Returns the minimum (lowest) finite value of SIMD value."""
 
+    alias _Mask = SIMD[DType.bool, size]
     alias _default_alignment = alignof[Scalar[dtype]]() if is_gpu() else 1
 
     # ===-------------------------------------------------------------------===#
