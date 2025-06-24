@@ -144,7 +144,7 @@ class WeightData:
         # Compute the new shape for the updated dtype.
         if dtype == DType.bfloat16:
             assert torch is not None
-            data = torch.from_numpy(self.data).view(dtype)
+            data = torch.from_numpy(self.data).view(dtype.to_torch())
         else:
             data = self.data.view(dtype.to_numpy())
         return dataclasses.replace(self, dtype=dtype, shape=Shape(data.shape))
