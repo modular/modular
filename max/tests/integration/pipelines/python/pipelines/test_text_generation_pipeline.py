@@ -89,11 +89,15 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
         ) as (tokenizer, pipeline)
     ):
         prompts = [
+            # These next two prompts should definitely generate at least 1 and 4 tokens.
+            # Using them to ensure we return the correct number of new tokens.
+            "The definition of hypothetical is ",
+            "The definition of hypothetical is ",
             "This is a test prompt",
             "This is a slightly longer test prompt " * 2,
             "This is a very very long test prompt " * 4,
         ]
-        _max_new_tokens = [25, 100, None]
+        _max_new_tokens = [1, 4, 25, 100, None]
         context_batch = {}
         max_new_tokens = {}
         for i, prompt in enumerate(prompts):
@@ -117,7 +121,8 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
             output = pipeline.next_token(context_batch, num_steps=1)
             assert len(output) == len(context_batch)
 
-            for i, (request_idx, response) in enumerate(output.items()):
+            for request_idx, response in output.items():
+                i = int(request_idx[len("request_") :])
                 length[i] += len(response.tokens)
                 # Check that we are not overrunning, the request max new tokens
                 if _max := max_new_tokens[request_idx]:
@@ -131,3 +136,7 @@ def test_text_generation_pipeline(mock_load_weights, weights_format):
             # Break
             if not context_batch:
                 break
+
+        # These two prompts should generate the full max new tokens.
+        assert length[0] == _max_new_tokens[0]
+        assert length[1] == _max_new_tokens[1]
