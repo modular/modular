@@ -1,0 +1,267 @@
+"""Define bazel dependencies common to the internal and external repos."""
+
+bazel_dep(name = "aspect_bazel_lib", version = "2.19.2")
+bazel_dep(name = "aspect_rules_js", version = "2.3.8")
+
+# TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
+bazel_dep(name = "aspect_rules_py", version = "1.4.0")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "protobuf", version = "29.1")
+bazel_dep(name = "rules_cc", version = "0.0.17")
+bazel_dep(name = "rules_mojo", version = "0.4.1")
+bazel_dep(name = "rules_multirun", version = "0.12.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "rules_proto", version = "7.0.2")
+bazel_dep(name = "rules_pycross", version = "0.7.1")
+bazel_dep(name = "rules_python", version = "1.4.0-rc4")
+bazel_dep(name = "rules_shell", version = "0.4.1")
+
+# TODO: Remove when transitives bump to this version or above
+bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
+
+bazel_dep(name = "rules_mypy", version = "0.32.0", dev_dependency = True)
+bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
+
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/bazelbuild/rules_python/issues/2622
+        "//bazel/public-patches:rules_python_skip.patch",
+        # https://github.com/bazel-contrib/rules_python/pull/2807
+        "//bazel/public-patches:rules_python_py_wheel_requires_file.patch",
+        # https://github.com/bazel-contrib/rules_python/pull/2813
+        "//bazel/public-patches:rules_python_override_hub.patch",
+    ],
+)
+
+DEFAULT_PYTHON_VERSION = "3.12"
+
+PYTHON_VERSIONS = [
+    "3_9",
+    "3_10",
+    "3_11",
+    "3_12",
+    "3_13",
+]
+
+DEFAULT_TORCH_VERSION = "2_7_0"
+
+TORCH_VERSIONS = [
+    "2_5_0",
+    "2_5_1",
+    "2_6_0",
+    "2_7_0",
+]
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+
+[
+    python.toolchain(
+        ignore_root_user_error = True,
+        is_default = version.replace("_", ".") == DEFAULT_PYTHON_VERSION,
+        python_version = version.replace("_", "."),
+    )
+    for version in PYTHON_VERSIONS
+]
+
+[
+    use_repo(python, "python_{}".format(version))
+    for version in PYTHON_VERSIONS
+]
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.whl_mods(
+    additive_build_content = """
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["site-packages/torch/include/**/*.h"]),
+    includes = ["site-packages/torch/include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "api",
+    hdrs = glob(["site-packages/torch/include/torch/csrc/api/include/**/*.h"]),
+    includes = ["site-packages/torch/include/torch/csrc/api/include"],
+    visibility = ["//visibility:public"],
+)
+""",
+    hub_name = "whl_mods_hub",
+    whl_name = "torch",
+)
+pip.override(
+    file = "xgrammar-0.1.18-cp{version}-cp{version}-manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version = DEFAULT_PYTHON_VERSION.replace(".", "")),
+    hub_name = "modular_amd_gpu_pip_deps",
+    patch_strip = 1,
+    patches = [
+        "//bazel/third-party:xgrammar-amd-triton.patch",
+        "//bazel/third-party:xgrammar-record.patch",
+    ],
+)
+use_repo(pip, "whl_mods_hub")
+
+pip.parse(
+    extra_hub_aliases = {
+        "torch": [
+            "headers",
+            "api",
+        ],
+    },
+    hub_name = "modular_amd_gpu_pip_deps",
+    python_version = DEFAULT_PYTHON_VERSION,
+    requirements_by_platform = {
+        "//:bazel/pip/requirements/amd-gpu-requirements.txt": "linux_x86_64",
+    },
+    whl_modifications = {
+        "@whl_mods_hub//:torch.json": "torch",
+    },
+)
+pip.parse(
+    extra_hub_aliases = {
+        "torch": [
+            "headers",
+            "api",
+        ],
+    },
+    hub_name = "modular_nvidia_gpu_pip_deps",
+    python_version = DEFAULT_PYTHON_VERSION,
+    requirements_by_platform = {
+        "//:bazel/pip/requirements/nvidia-gpu-requirements.txt": "linux_x86_64",
+    },
+    whl_modifications = {
+        "@whl_mods_hub//:torch.json": "torch",
+    },
+)
+
+[pip.parse(
+    extra_hub_aliases = {
+        "torch": [
+            "headers",
+            "api",
+        ],
+    },
+    hub_name = "pip_torch-{}_deps".format(version),
+    python_version = DEFAULT_PYTHON_VERSION,
+    requirements_by_platform = {
+        "//:bazel/pip/requirements/torch/requirements-{}.txt".format(version): "linux_x86_64,linux_aarch64,osx_aarch64",
+    },
+    whl_modifications = {
+        "@whl_mods_hub//:torch.json": "torch",
+    },
+) for version in TORCH_VERSIONS]
+
+use_repo(
+    pip,
+    "modular_amd_gpu_pip_deps",
+    "modular_nvidia_gpu_pip_deps",
+)
+
+[use_repo(
+    pip,
+    "pip_torch-{}_deps".format(version),
+) for version in TORCH_VERSIONS]
+
+module_versions = use_repo_rule("//bazel/pip:module_versions.bzl", "module_versions")
+
+module_versions(
+    name = "module_versions",
+    default_python_version = DEFAULT_PYTHON_VERSION,
+    default_torch_version = DEFAULT_TORCH_VERSION,
+    python_versions = PYTHON_VERSIONS,
+    torch_versions = TORCH_VERSIONS,
+)
+
+types = use_extension("@rules_mypy//mypy:types.bzl", "types")
+types.requirements(
+    name = "pip_types",
+    pip_requirements = "@pip_torch-{}_deps//:requirements.bzl".format(DEFAULT_TORCH_VERSION),
+    requirements_txt = "//:bazel/pip/requirements/torch/requirements-{}.txt".format(DEFAULT_TORCH_VERSION),
+)
+use_repo(types, "pip_types")
+
+pip_requirements = use_repo_rule("//bazel/pip:pip_requirements.bzl", "pip_requirements")
+
+pip_requirements(
+    name = "modular_pip_requirements",
+    amd_gpu_requirements = [
+        "//bazel/pip/requirements:amd-gpu-requirements.txt",
+    ],
+    nvidia_gpu_requirements = [
+        "//bazel/pip/requirements:nvidia-gpu-requirements.txt",
+    ],
+    requirements = [
+        "//:bazel/pip/requirements/torch/requirements-{}.txt".format(DEFAULT_TORCH_VERSION),
+    ],
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+RUFF_VERSION = "0.11.13"
+
+[
+    http_archive(
+        name = "ruff-{arch}".format(arch = arch),
+        build_file_content = 'exports_files(["ruff"])',
+        sha256 = sha,
+        strip_prefix = "ruff-{arch}".format(arch = arch),
+        url = "https://github.com/astral-sh/ruff/releases/download/{version}/ruff-{arch}.tar.gz".format(
+            arch = arch,
+            version = RUFF_VERSION,
+        ),
+    )
+    for arch, sha in [
+        ("x86_64-unknown-linux-gnu", "01aa32d29d00876b8d1429c617ed63a00b1fc81abfa4183bb05c9cb647fbc3d0"),
+        ("aarch64-unknown-linux-gnu", "551af2ebc439d8268dcaf871ea60ad035f688728d30943dcbb2bf775e105213e"),
+        ("aarch64-apple-darwin", "7d5e8feea7ee5c3962807996cad557e8a0c4d676c1cba6223bfb0e8b2ca07723"),
+    ]
+]
+
+mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
+mojo.gpu_toolchains(
+    # nvidia-smi / amd-smi output -> GPU name, empty string to ignore GPU
+    gpu_mapping = {
+        " A10G": "a10",
+        "A100-": "a100",
+        " H100": "h100",
+        " H200": "h200",
+        " L4": "l4",
+        " Ada ": "l4",
+        " A3000 ": "a3000",
+        "B100": "b100",
+        "B200": "b200",
+        " RTX 5090": "rtx5090",
+        "Laptop GPU": "",
+        "RTX 4070 Ti": "",
+        "RTX 4080 SUPER": "",
+        "RTX 4090": "rtx4090",
+        "NVIDIA GeForce RTX 3090": "",
+        "MI300X": "mi300x",
+        "MI325": "mi325",
+        "MI355": "mi355",
+        "Navi": "radeon",
+        "AMD Radeon Graphics": "radeon",
+    },
+    # GPU name -> target accelerator
+    supported_gpus = {
+        "780M": "amdgpu:gfx1103",
+        "a10": "nvidia:86",
+        "a100": "nvidia:80",
+        "a3000": "nvidia:86",
+        "b100": "nvidia:100a",
+        "b200": "nvidia:100a",
+        "h100": "nvidia:90a",
+        "h200": "nvidia:90a",
+        "l4": "nvidia:89",
+        "mi300x": "amdgpu:gfx942",
+        "mi325": "amdgpu:gfx942",
+        "mi355": "amdgpu:gfx950",
+        "rtx4090": "nvidia:89",
+        "rtx5090": "nvidia:120a",
+    },
+)
+use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")

@@ -14,8 +14,7 @@
 from math import iota
 
 from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
-from memory import UnsafePointer
+from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_equal
 
 
@@ -23,14 +22,14 @@ from testing import assert_equal
 fn vec_func(
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],
-    out: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
     len: Int,
     supplement: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + supplement
+    output[tid] = in0[tid] + in1[tid] + supplement
 
 
 def test_is_compatible(ctx: DeviceContext):
@@ -80,7 +79,18 @@ fn test_basic(ctx: DeviceContext) raises:
     # Wait for the computation to be completed
     ctx.synchronize()
 
-    var expected = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0]
+    var expected: List[Float32] = [
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+        16.0,
+    ]
     for i in range(10):
         print("at index", i, "the value is", out_host[i])
         assert_equal(out_host[i], expected[i])

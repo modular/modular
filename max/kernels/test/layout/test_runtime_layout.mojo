@@ -13,7 +13,7 @@
 
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import coalesce as coalesce_layout
-from layout.layout import crd2idx, print_layout
+from layout.layout import crd2idx
 from layout.runtime_layout import (
     IntTuple,
     Layout,

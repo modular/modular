@@ -21,7 +21,6 @@ from buffer.dimlist import Dim, DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
-    get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )

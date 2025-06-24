@@ -29,9 +29,7 @@ coordinate transformations (`idx2crd`, `crd2idx`), and specialized tensor operat
 like shape division and prefix products.
 """
 
-from collections import InlineArray
 from os import abort
-from sys import bitwidthof
 
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten
@@ -72,7 +70,7 @@ fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
 @register_passable("trivial")
 struct RuntimeTuple[
     S: IntTuple = UNKNOWN_VALUE, /, *, element_type: DType = DType.int64
-](Intable, Stringable, Sized, Writable):
+](Defaultable, Intable, Sized, Stringable, Writable):
     """A struct representing tuple-like data with compile-time and runtime elements.
     RuntimeTuple combines static (compile-time) and dynamic (runtime) handling of
     tuple-like data structures, typically used for tensor shapes, indices, and coordinates
@@ -100,7 +98,7 @@ struct RuntimeTuple[
         For dimensions with known compile-time values in S, uses those values.
         For unknown dimensions, initializes them to UNKNOWN_VALUE.
         """
-        self.value = __type_of(self.value)()
+        self.value = {}
 
         alias f = flatten(S)
 
@@ -569,7 +567,14 @@ fn crd2idx[
         constrained[
             shape_t.is_tuple()
             and (len(crd_t) == len(shape_t) == len(stride_t)),
-            "Inputs should have same rank",
+            String(
+                "Inputs should have same rank but got crd_t: ",
+                len(crd_t),
+                " shape_t: ",
+                len(shape_t),
+                " stride_t: ",
+                len(stride_t),
+            ),
         ]()
         var r: Scalar[out_type] = 0
         alias size = min(min(len(crd_t), len(shape_t)), len(stride_t))
@@ -593,7 +598,7 @@ fn crd2idx[
 
             @parameter
             for i in range(last_elem_idx):
-                divisor, quotient = divmod(Int(int_crd), product(shape[i]))
+                var divisor, quotient = divmod(Int(int_crd), product(shape[i]))
                 result += crd2idx[crd_t, out_type=out_type](
                     quotient, shape[i], stride[i]
                 )

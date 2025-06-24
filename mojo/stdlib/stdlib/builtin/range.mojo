@@ -18,15 +18,6 @@ These are Mojo built-ins, so you don't need to import them.
 
 from math import ceildiv
 
-# FIXME(MOCO-658): Explicit conformance to these traits shouldn't be needed.
-from builtin._stubs import (
-    _IntIter,
-    _IntIterable,
-    _StridedIterable,
-    _UIntIter,
-    _UIntIterable,
-    _UIntStridedIterable,
-)
 from python import PythonObject
 
 from utils._select import _select_register_value as select
@@ -50,8 +41,8 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
-    alias _IndexType = Int
+struct _ZeroStartingRange(IteratorTrait, Movable, ReversibleRange, Sized):
+    alias Element = Int
     var curr: Int
     var end: Int
 
@@ -91,8 +82,8 @@ struct _ZeroStartingRange(Sized, ReversibleRange, _IntIterable, Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
-    alias _IndexType = Int
+struct _SequentialRange(IteratorTrait, ReversibleRange, Sized):
+    alias Element = Int
     var start: Int
     var end: Int
 
@@ -126,8 +117,8 @@ struct _SequentialRange(Sized, ReversibleRange, _IntIterable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRangeIterator(Sized, _IntIter):
-    alias _IndexType = Int
+struct _StridedRangeIterator(IteratorTrait, Sized):
+    alias Element = Int
     var start: Int
     var end: Int
     var step: Int
@@ -154,8 +145,8 @@ struct _StridedRangeIterator(Sized, _IntIter):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRange(Sized, ReversibleRange, _StridedIterable):
-    alias _IndexType = Int
+struct _StridedRange(IteratorTrait, ReversibleRange, Sized):
+    alias Element = Int
     var start: Int
     var end: Int
     var step: Int
@@ -394,8 +385,8 @@ fn range(
 
 
 @register_passable("trivial")
-struct _UIntZeroStartingRange(UIntSized, _UIntIterable):
-    alias _IndexType = UInt
+struct _UIntZeroStartingRange(IteratorTrait, UIntSized):
+    alias Element = UInt
     var curr: UInt
     var end: UInt
 
@@ -431,8 +422,8 @@ struct _UIntZeroStartingRange(UIntSized, _UIntIterable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _UIntStridedRangeIterator(UIntSized, _UIntIter):
-    alias _IndexType = UInt
+struct _UIntStridedRangeIterator(IteratorTrait, UIntSized):
+    alias Element = UInt
     var start: UInt
     var end: UInt
     var step: UInt
@@ -453,8 +444,8 @@ struct _UIntStridedRangeIterator(UIntSized, _UIntIter):
 
 
 @register_passable("trivial")
-struct _UIntStridedRange(UIntSized, _UIntStridedIterable):
-    alias _IndexType = UInt
+struct _UIntStridedRange(IteratorTrait, UIntSized):
+    alias Element = UInt
     var start: UInt
     var end: UInt
     var step: UInt
@@ -538,7 +529,7 @@ fn range(start: UInt, end: UInt, step: UInt = 1) -> _UIntStridedRange:
 
 @register_passable("trivial")
 struct _ZeroStartingScalarRange[dtype: DType]:
-    alias _IndexType = Scalar[dtype]
+    alias Element = Scalar[dtype]
     var curr: Scalar[dtype]
     var end: Scalar[dtype]
 
@@ -582,7 +573,7 @@ struct _ZeroStartingScalarRange[dtype: DType]:
 @fieldwise_init
 @register_passable("trivial")
 struct _SequentialScalarRange[dtype: DType]:
-    alias _IndexType = Scalar[dtype]
+    alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
 
@@ -617,7 +608,7 @@ struct _SequentialScalarRange[dtype: DType]:
 @fieldwise_init
 @register_passable("trivial")
 struct _StridedScalarRangeIterator[dtype: DType]:
-    alias _IndexType = Scalar[dtype]
+    alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
     var step: Scalar[dtype]
@@ -643,7 +634,7 @@ struct _StridedScalarRangeIterator[dtype: DType]:
 @fieldwise_init
 @register_passable("trivial")
 struct _StridedScalarRange[dtype: DType]:
-    alias _IndexType = Scalar[dtype]
+    alias Element = Scalar[dtype]
     var start: Scalar[dtype]
     var end: Scalar[dtype]
     var step: Scalar[dtype]

@@ -21,6 +21,7 @@ from max.dtype import DType
 class KVCacheStrategy(str, Enum):
     MODEL_DEFAULT = "model_default"
     CONTINUOUS = "continuous"
+    """Deprecated. Use ``PAGED`` instead."""
     PAGED = "paged"
 
     def kernel_substring(self) -> str:
@@ -46,7 +47,7 @@ class KVCacheParams:
     n_devices: int = 1
 
     def __post_init__(self):
-        self.n_kv_heads_per_device = self.n_kv_heads // self.n_devices
+        self.n_kv_heads_per_device = max(self.n_kv_heads // self.n_devices, 1)
 
         # Validate inputs
         if (

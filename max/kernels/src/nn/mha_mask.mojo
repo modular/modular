@@ -13,13 +13,12 @@
 
 from collections import OptionalReg
 from math import iota
-from sys import bitwidthof, is_nvidia_gpu
+from sys import is_nvidia_gpu
 
 from buffer import DimList, NDBuffer
 from builtin.dtype import _int_type_of_width, _uint_type_of_width
 
 from utils.index import IndexList
-from utils.numerics import min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#
 # MaskName
@@ -59,9 +58,11 @@ struct MaskName(Stringable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TileMaskStatus(EqualityComparable, Stringable, Writable):
+struct TileMaskStatus(
+    Copyable, EqualityComparable, Movable, Stringable, Writable
+):
     """A tile's masking status."""
 
     var status: UInt8
@@ -159,9 +160,9 @@ trait MHAMask:
 alias MASK_VALUE = -10_000
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct CausalMask(MHAMask):
+struct CausalMask(Copyable, MHAMask, Movable):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
     alias apply_log2e_after_mask: Bool = False
@@ -241,9 +242,9 @@ struct CausalMask(MHAMask):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct NullMask(MHAMask):
+struct NullMask(Copyable, MHAMask, Movable):
     """Mask that's effectively a noop."""
 
     alias apply_log2e_after_mask: Bool = False
@@ -277,9 +278,9 @@ struct NullMask(MHAMask):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ChunkedMask[local_window_size: Int](MHAMask):
+struct ChunkedMask[local_window_size: Int](Copyable, MHAMask, Movable):
     """Mask implementing Chunked attention.
 
     This groups the mask into chunks of size `local_window_size`.
@@ -389,9 +390,9 @@ struct ChunkedMask[local_window_size: Int](MHAMask):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct SlidingWindowCausalMask[window_size: Int](MHAMask):
+struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
     """Mask implementing Sliding Window attention.
 
     Considering the following case:
@@ -469,9 +470,22 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask):
 
         # Case 2: If the entire tile is too far to the left
         # (all query positions are more than window_size away from all key positions)
-        var queries_too_far_ahead_of_keys = tile_offset.data[
-            0
-        ] - window_size + 1 >= (tile_offset.data[1] + tile_size.data[1])
+        # Rewrite the inequality to use only addition so that we never subtract
+        # `window_size` from an unsigned value (which can underflow).
+        # Original condition:
+        #     q_start - window_size + 1 >= k_start + k_size
+        # is equivalent to:
+        #     q_start + 1 >= k_start + k_size + window_size
+        # where
+        #     q_start = tile_offset[0]
+        #     k_start = tile_offset[1]
+        #     k_size  = tile_size[1]
+        # Hence we compare two *added* terms, avoiding any risk of wrapping
+        # around zero.
+
+        var lhs = tile_offset.data[0] + 1
+        var rhs = tile_offset.data[1] + tile_size.data[1] + window_size
+        var queries_too_far_ahead_of_keys = lhs >= rhs
 
         if query_ends_before_keys_begin or queries_too_far_ahead_of_keys:
             return TileMaskStatus.FULL_MASK
@@ -505,9 +519,10 @@ struct SlidingWindowCausalMask[window_size: Int](MHAMask):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
+struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
+    Copyable, MHAMask, Movable
+):
     """Mask that's backed by a materialized tensor."""
 
     alias apply_log2e_after_mask: Bool = True
@@ -606,9 +621,11 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](MHAMask):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
+struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
+    Copyable, MHAMask, Movable
+):
     """Mask that's the AND of two masks."""
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
@@ -654,9 +671,11 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](MHAMask):
+struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
+    Copyable, MHAMask, Movable
+):
     """Mask that's the OR of two masks."""
 
     alias apply_log2e_after_mask: Bool = T.apply_log2e_after_mask or S.apply_log2e_after_mask
@@ -724,4 +743,4 @@ fn ChunkedCausalMask[
         5 | 0 0 0 0 0 0 0 0 1 0
         6 | 0 0 0 0 0 0 0 0 1 1
     """
-    res = __type_of(res)()
+    res = {}

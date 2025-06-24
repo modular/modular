@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from collections.string import StaticString
 from math import align_down, align_up, ceildiv, exp
-from sys import alignof, has_avx512f, has_neon, simdwidthof
+from sys import alignof, simdwidthof
+from sys.info import CompilationTarget
 
 from algorithm import sync_parallelize, tile, vectorize
 from algorithm.reduction import (
@@ -31,7 +30,7 @@ from linalg.accumulate import _Accumulator
 from linalg.apple_accelerate import _cblas_f32, use_apple_accelerate_lib
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 from nn.mha_mask import MHAMask
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -61,14 +60,14 @@ struct _MatmulConfig:
     @staticmethod
     fn _get_config() -> _MatmulConfig:
         @parameter
-        if has_neon():
+        if CompilationTarget.has_neon():
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),
                 gemv_sizes=VariadicList[Int](32, 4, 1),
                 pack_sizes=VariadicList[Int](32, 8, 4, 1),
             )
-        elif has_avx512f():
+        elif CompilationTarget.has_avx512f():
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),
@@ -206,7 +205,7 @@ struct _Matmul[
                     c_tile.init(0.0)
 
                 @parameter
-                if has_neon():
+                if CompilationTarget.has_neon():
                     Self._inner_loop_a_lane(
                         K, am_ptr, a_stride, bn_ptr, N, c_tile
                     )
@@ -492,7 +491,7 @@ struct _FlashAttentionConfig[
     rank: Int,
     simd_width: Int,
     output_static_shape: DimList,
-]:
+](Defaultable):
     var block_m: Int
     var qk_block_n: Int
     var o_block_n: Int

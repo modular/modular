@@ -20,7 +20,6 @@ from gpu.host.device_context import (
     _DeviceContextPtr,
     _DeviceStreamPtr,
 )
-from memory import UnsafePointer
 
 
 struct _ihipDevice_t:

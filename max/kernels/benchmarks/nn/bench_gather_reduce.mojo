@@ -14,11 +14,11 @@
 from random import random_si64
 from sys import simdwidthof, sizeof
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from nn.gather_scatter import gather_reduce
 
-from utils import Index, IndexList
+from utils import IndexList
 
 
 @always_inline

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList

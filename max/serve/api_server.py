@@ -19,22 +19,19 @@ import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
+from typing import Union
 
-import uvloop
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from max.nn.kv_cache import KVTransferEngineMetadata
 from max.pipelines.core import (
-    PipelineAudioTokenizer,
     PipelinesFactory,
     PipelineTask,
     PipelineTokenizer,
 )
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
-from max.serve.pipelines.echo_gen import (
-    EchoPipelineTokenizer,
-    EchoTokenGenerator,
-)
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.kvcache_worker import start_kvcache_agent
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
@@ -46,14 +43,14 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler import TokenGeneratorSchedulerConfig
-from max.serve.telemetry.common import (
-    configure_logging,
-    configure_metrics,
-    send_telemetry_log,
+from max.serve.scheduler import (
+    PrefillRequest,
+    PrefillResponse,
+    TokenGeneratorSchedulerConfig,
 )
+from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
-from uvicorn import Config, Server
+from uvicorn import Config
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
@@ -95,7 +92,18 @@ async def lifespan(
     try:
         async with AsyncExitStack() as exit_stack:
             # create dispatcher factory
-            dispatcher_factory = DispatcherFactory(settings.dispatcher_config)
+            dispatcher_factory = DispatcherFactory[
+                Union[PrefillRequest, PrefillResponse, KVTransferEngineMetadata]
+            ](
+                settings.dispatcher_config,
+                transport_payload_type=TransportMessage[
+                    Union[
+                        PrefillRequest,
+                        PrefillResponse,
+                        KVTransferEngineMetadata,
+                    ]
+                ],
+            )
 
             if settings.experimental_enable_kvcache_agent:
                 logger.info("Starting KV Cache Agent...")
@@ -135,9 +143,6 @@ async def lifespan(
             elif (
                 serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION
             ):
-                assert isinstance(
-                    serving_settings.tokenizer, PipelineAudioTokenizer
-                )
                 pipeline = AudioGeneratorPipeline(
                     model_name=serving_settings.model_name,
                     tokenizer=serving_settings.tokenizer,
@@ -190,9 +195,7 @@ def fastapi_app(
     app = FastAPI(
         title="MAX Serve",
         lifespan=partial(
-            lifespan,
-            settings=settings,
-            serving_settings=serving_settings,
+            lifespan, settings=settings, serving_settings=serving_settings
         ),
     )
 
@@ -235,28 +238,3 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
     for route in app.routes:
         logger.debug("Route enabled : %s", route)
     return config
-
-
-async def main() -> None:
-    server_settings = Settings()
-    configure_logging(server_settings)
-    configure_metrics(server_settings)
-
-    pipeline_settings = ServingTokenGeneratorSettings(
-        model_name="echo",
-        model_factory=EchoTokenGenerator,
-        pipeline_config=TokenGeneratorSchedulerConfig.continuous_heterogenous(
-            tg_batch_size=1, ce_batch_size=1
-        ),
-        tokenizer=EchoPipelineTokenizer(),
-    )
-
-    app = fastapi_app(server_settings, pipeline_settings)
-
-    config = fastapi_config(app=app, server_settings=server_settings)
-    server = Server(config)
-    await server.serve()
-
-
-if __name__ == "__main__":
-    uvloop.run(main())

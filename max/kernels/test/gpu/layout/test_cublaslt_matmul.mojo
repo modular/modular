@@ -13,7 +13,7 @@
 
 from math import ceildiv
 
-from buffer import DimList, NDBuffer
+from buffer import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
@@ -24,7 +24,6 @@ from internal_utils import (
 )
 from linalg.matmul_gpu import matmul_kernel_naive
 from linalg.vendor_blas import Backend, Handle, matmul
-from testing import assert_true
 
 
 fn test_cublaslt[

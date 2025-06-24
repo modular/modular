@@ -11,14 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, sqrt
-from sys import simdwidthof
+from math import sqrt
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
-from memory import UnsafePointer
+from gpu.host import DeviceContext
 from nn.normalization import *
 from testing import assert_almost_equal
 

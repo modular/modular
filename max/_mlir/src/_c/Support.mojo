@@ -22,7 +22,6 @@
 
 from collections.string import StaticString
 
-from memory import UnsafePointer
 
 from .ffi import MLIR_func
 
@@ -57,17 +56,17 @@ struct MlirLlvmThreadPool:
     """Re-export llvm::ThreadPool so as to avoid including the LLVM C API directly.
     """
 
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirTypeID:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 @register_passable("trivial")
 struct MlirTypeIDAllocator:
-    var ptr: UnsafePointer[NoneType]
+    var ptr: OpaquePointer
 
 
 # ===----------------------------------------------------------------------===//
@@ -86,7 +85,7 @@ alias MlirStringRef = StaticString
 #  Constructs a string reference from the pointer and length. The pointer need
 #  not reference to a null-terminated string.
 
-# FIXEME(codegen): static function mlirStringRefCreate
+# FIXME(codegen): static function mlirStringRefCreate
 
 
 fn mlirStringRefCreateFromCString(str: UnsafePointer[Int8]) -> MlirStringRef:
@@ -105,9 +104,9 @@ fn mlirStringRefEqual(string: MlirStringRef, other: MlirStringRef) -> Bool:
 # ===----------------------------------------------------------------------===//
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct MlirLogicalResult:
+struct MlirLogicalResult(Copyable, Movable):
     """A logical result value, essentially a boolean with named states. LLVM
     convention for using boolean values to designate success or failure of an
     operation is a moving target, so MLIR opted for an explicit class.
@@ -117,13 +116,13 @@ struct MlirLogicalResult:
     var value: Int8
 
 
-# FIXEME(codegen): static function mlirLogicalResultIsSuccess
+# FIXME(codegen): static function mlirLogicalResultIsSuccess
 
-# FIXEME(codegen): static function mlirLogicalResultIsFailure
+# FIXME(codegen): static function mlirLogicalResultIsFailure
 
-# FIXEME(codegen): static function mlirLogicalResultSuccess
+# FIXME(codegen): static function mlirLogicalResultSuccess
 
-# FIXEME(codegen): static function mlirLogicalResultFailure
+# FIXME(codegen): static function mlirLogicalResultFailure
 
 # ===----------------------------------------------------------------------===//
 #  MlirLlvmThreadPool.
@@ -146,13 +145,13 @@ fn mlirLlvmThreadPoolDestroy(pool: MlirLlvmThreadPool) -> None:
 # ===----------------------------------------------------------------------===//
 
 
-fn mlirTypeIDCreate(ptr: UnsafePointer[NoneType]) -> MlirTypeID:
+fn mlirTypeIDCreate(ptr: OpaquePointer) -> MlirTypeID:
     """`ptr` must be 8 byte aligned and unique to a type valid for the duration of
     the returned type id's usage."""
     return MLIR_func["mlirTypeIDCreate", MlirTypeID](ptr)
 
 
-# FIXEME(codegen): static function mlirTypeIDIsNull
+# FIXME(codegen): static function mlirTypeIDIsNull
 
 
 fn mlirTypeIDEqual(type_id1: MlirTypeID, type_id2: MlirTypeID) -> Bool:

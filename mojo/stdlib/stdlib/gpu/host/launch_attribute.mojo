@@ -31,7 +31,6 @@ at a granular level, similar to CUDA's native launch attribute system.
 
 from sys import sizeof
 
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
@@ -242,7 +241,7 @@ struct LaunchAttributeID(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttributeValue:
+struct LaunchAttributeValue(Defaultable):
     """Represents a value for a CUDA launch attribute.
 
     This struct emulates a C union to store different types of launch attribute values.
@@ -402,7 +401,7 @@ struct AccessProperty(Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct LaunchAttribute(Copyable, Movable):
+struct LaunchAttribute(Copyable, Defaultable, Movable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -422,8 +421,8 @@ struct LaunchAttribute(Copyable, Movable):
     fn __init__(out self):
         """Initializes a new LaunchAttribute with IGNORE ID and zeroed value."""
         self.id = LaunchAttributeID.IGNORE
-        self.__pad = __type_of(self.__pad)()
-        self.value = LaunchAttributeValue()
+        self.__pad = {}
+        self.value = {}
 
     fn __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
         """Initializes a `LaunchAttribute` with a specific ID and value.
@@ -433,7 +432,7 @@ struct LaunchAttribute(Copyable, Movable):
             value: The `LaunchAttributeValue` to set.
         """
         self.id = id
-        self.__pad = __type_of(self.__pad)()
+        self.__pad = {}
         self.value = value
 
     @implicit
@@ -468,7 +467,7 @@ struct LaunchAttribute(Copyable, Movable):
 
 
 @register_passable("trivial")
-struct AccessPolicyWindow(Writable):
+struct AccessPolicyWindow(Defaultable, Writable):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and
@@ -485,7 +484,7 @@ struct AccessPolicyWindow(Writable):
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: UnsafePointer[NoneType]
+    var base_ptr: OpaquePointer
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -505,7 +504,7 @@ struct AccessPolicyWindow(Writable):
 
     fn __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
-        self.base_ptr = UnsafePointer[NoneType]()
+        self.base_ptr = OpaquePointer()
         self.num_bytes = 0
         self.hit_ratio = 0
         self.hit_prop = AccessProperty.NORMAL

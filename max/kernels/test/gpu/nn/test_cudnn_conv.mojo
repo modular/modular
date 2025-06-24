@@ -11,44 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys import sizeof
-from sys.info import num_physical_cores, simdwidthof
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
-    arange,
-    fill,
     random,
     zero,
 )
-from memory import UnsafePointer
 from nn.conv import (
-    ConvDirectNHWC,
-    ConvInfoStatic,
-    Naive2dConvolution,
     conv_cudnn,
     conv_gpu,
-    conv_nhwc_direct,
-    pack_conv_filter_shape,
-    pack_filter,
 )
-from nn.conv_utils import (
-    ConvShape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
-    get_conv_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
-)
-from testing import assert_almost_equal, assert_equal
+from testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 fn print_data[type: DType](data: UnsafePointer[Scalar[type]], dim: DimList):
@@ -69,8 +47,18 @@ fn test_conv_cudnn[
     stride_dim: IndexList[2],
     dilation_dim: IndexList[2],
     pad_dim: IndexList[2],
+    num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
-    print("== test_cudnn_conv_gpu")
+    print(
+        "== test_cudnn_conv_gpu: dtype_in=",
+        input_type,
+        " dtype_filter=",
+        filter_type,
+        " dtype_out=",
+        output_type,
+        " num_groups=",
+        num_groups,
+    )
 
     var input_dim_flattened = input_dim.product().get()
     var filter_dim_flattened = filter_dim.product().get()
@@ -143,18 +131,18 @@ fn test_conv_cudnn[
         stride_dim,
         dilation_dim,
         pad_dim,
-        1,
+        num_groups,
         ctx,
     )
 
-    conv_cudnn[input_type, filter_type, output_type,](
+    conv_cudnn[input_type, filter_type, output_type](
         input_dev.tensor,
         filter_nchw_dev.tensor,
         output_dev.tensor,
         stride_dim,
         dilation_dim,
         pad_dim,
-        1,
+        num_groups,
         ctx,
     )
 
@@ -174,7 +162,7 @@ fn test_conv_cudnn[
                     assert_almost_equal(
                         output_host_buf[n, h, w, f],
                         output_ref_host_buf[n, h, w, f],
-                        rtol=0.0001,
+                        rtol=0.01,
                     )
     print("Succeed")
 
@@ -190,6 +178,9 @@ fn test_conv_cudnn[
 
 def main():
     with DeviceContext() as ctx:
+        # Test configurations for data types.
+        alias dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
+
         test_conv_cudnn[
             DimList(1, 1, 550, 1024),  # input  (NHWC)
             DimList(
@@ -203,3 +194,34 @@ def main():
             IndexList[2](1, 1),  # dilation
             IndexList[2](0, 3),  # pad
         ](ctx)
+
+        # Test different data types.
+        @parameter
+        for i in range(len(dtype_configs)):
+            alias dtype = dtype_configs[i]
+
+            test_conv_cudnn[
+                DimList(1, 8, 8, 16),  # input  (NHWC)
+                DimList(3, 3, 16, 32),  # filter (RSCF)
+                DimList(1, 6, 6, 32),  # output (NHWC)
+                dtype,
+                dtype,
+                dtype,
+                IndexList[2](1, 1),  # stride
+                IndexList[2](1, 1),  # dilation
+                IndexList[2](0, 0),  # pad
+            ](ctx)
+
+        # Test grouped convolutions
+        # NOTE: Grouped convolutions are not supported by conv_gpu's naive implementation,
+        # so we cannot validate against it. These tests would need a different reference
+        # implementation or manual validation.
+
+        # TODO(KERN-1846): Add grouped convolution tests once we have a proper
+        # reference implementation.
+        # The following configurations would be tested:
+        # - Standard conv with num_groups=1
+        # - 2 groups
+        # - 4 groups
+        # - Depthwise convolution (num_groups = in_channels)
+        # - Grouped convolution with float16

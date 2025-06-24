@@ -18,7 +18,7 @@ from memory import bitcast
 
 fn print_bits[type: DType](val: Scalar[type]):
     var u8 = bitcast[DType.uint8](val)
-    var bits = String()
+    var bits = String(capacity=32)
 
     @parameter
     for i in reversed(range(8)):

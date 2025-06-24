@@ -20,57 +20,25 @@ import multiprocessing.process
 import os
 import queue
 from collections.abc import AsyncGenerator, Generator
-from dataclasses import dataclass
-from enum import Enum
 from typing import Generic, Optional, TypeVar
 
 import sentinel
 import zmq
-from max.pipelines.core import InputContext
+from max.pipelines.core import (
+    InputContext,
+    msgpack_numpy_encoder,
+)
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 logger = logging.getLogger("max.serve")
 
 ReqId = TypeVar("ReqId")
-ReqInput = TypeVar("ReqInput")
+ReqInput = TypeVar("ReqInput", bound=InputContext)
 ReqOutput = TypeVar("ReqOutput")
 
 """The sentinel used to indicate a queue is finished."""
 STOP_STREAM = sentinel.create("STOP_STREAM")
-
-
-class BatchingStrategy(Enum):
-    DYNAMIC = "dynamic"
-    """ Constructs a dynamic batch of no more than N=config.size requests.
-    Execution of the batch is started at the same time and requests are removed
-    from the batch as they are completed.
-    """
-    CONTINUOUS = "continuous"
-    """ Requests are added or removed from the batch as they arrive or
-    are completed. The batch never exceeds N=config.size requests.
-    """
-
-
-@dataclass(frozen=True)
-class BatchQueueConfig:
-    strategy: BatchingStrategy
-    size: int
-
-    timeout: float = 0.0
-    """How long to wait (in seconds) if a queue is empty."""
-
-    max_forward_steps: int = 1
-    """Maximum number of forwards steps to schedule at a time."""
-
-    enable_chunked_prefill: bool = True
-    """Enable chunked prefill to splits requests into chunks."""
-
-    enable_in_flight_batching: bool = False
-    """Enable chunked prefill to prioritize token generation requests."""
-
-    target_sum_seq_len: Optional[int] = None
-    """Target sum of the sequence lengths in the batch."""
 
 
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
@@ -94,14 +62,14 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.context = context
 
         # Create Queues
-        self.request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
-            zmq_ctx, request_zmq_endpoint
+        self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
+            zmq_ctx, request_zmq_endpoint, serialize=msgpack_numpy_encoder()
         )
         self.response_pull_socket = ZmqPullSocket[list[dict[ReqId, ReqOutput]]](
             zmq_ctx, response_zmq_endpoint
         )
         self.cancel_push_socket = ZmqPushSocket[list[str]](
-            zmq_ctx, cancel_zmq_endpoint
+            zmq_ctx, cancel_zmq_endpoint, serialize=msgpack_numpy_encoder()
         )
 
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
@@ -180,7 +148,4 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         except asyncio.CancelledError:
             raise
         finally:
-            logger.debug(
-                "Terminating response worker [self=%s]",
-                os.getpid(),
-            )
+            logger.debug("Terminating response worker [self=%s]", os.getpid())

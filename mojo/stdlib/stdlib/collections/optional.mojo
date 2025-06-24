@@ -39,11 +39,7 @@ from utils import Variant
 
 # TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(
-    Copyable,
-    ExplicitlyCopyable,
-    Movable,
-):
+struct _NoneType(Copyable, ExplicitlyCopyable, Movable):
     fn __init__(out self, *, other: Self):
         pass
 
@@ -60,10 +56,7 @@ struct _NoneType(
 
 
 struct Optional[T: Copyable & Movable](
-    Copyable,
-    ExplicitlyCopyable,
-    Movable,
-    Boolable,
+    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable
 ):
     """A type modeling a value which may or may not be present.
 
@@ -446,7 +439,7 @@ struct Optional[T: Copyable & Movable](
 
 
 @register_passable("trivial")
-struct OptionalReg[T: AnyTrivialRegType](Boolable):
+struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register

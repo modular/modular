@@ -22,7 +22,6 @@ from sys import bitwidthof
 
 from builtin.math import Absable
 
-from utils import Writable, Writer
 from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -33,17 +32,18 @@ struct UInt(
     Absable,
     Boolable,
     CeilDivable,
-    Copyable,
-    Movable,
     Comparable,
+    Copyable,
+    Defaultable,
     ExplicitlyCopyable,
     Hashable,
-    _HashableWithHasher,
     Indexer,
     KeyElement,
+    Movable,
     Representable,
     Stringable,
     Writable,
+    _HashableWithHasher,
 ):
     """This type represents an unsigned integer.
 

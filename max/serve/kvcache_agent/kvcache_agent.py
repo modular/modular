@@ -32,7 +32,7 @@ from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2_grpc import (
 )
 from max.serve.queue.zmq_queue import ZmqPullSocket
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 @dataclass
@@ -333,9 +333,7 @@ def start_kvcache_agent_service(
     """
 
     config = KVCacheAgentServerConfig(
-        host=host,
-        port=port,
-        num_workers=num_workers,
+        host=host, port=port, num_workers=num_workers
     )
     server = KVCacheAgentServer(config, zmq_ctx, kv_cache_events_zmq_endpoint)
     server.start()

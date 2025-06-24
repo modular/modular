@@ -20,7 +20,7 @@ from os import abort
 from sys import sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import Pointer, Span, UnsafePointer, memcpy
+from memory import Pointer, memcpy
 
 from .optional import Optional
 
@@ -36,7 +36,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     list_origin: Origin[list_mutability],
     forward: Bool = True,
-](Copyable, Movable):
+](Copyable, IteratorTrait, Movable):
     """Iterator for List.
 
     Parameters:
@@ -48,15 +48,13 @@ struct _ListIter[
         forward: The iteration direction. `False` is backwards.
     """
 
+    alias Element = T  # FIXME(MOCO-2068): shouldn't be needed.
     alias list_type = List[T, hint_trivial_type]
 
     var index: Int
     var src: Pointer[Self.list_type, list_origin]
 
-    fn __iter__(self) -> Self:
-        return self
-
-    fn __next__(mut self) -> ref [list_origin] T:
+    fn __next_ref__(mut self) -> ref [list_origin] T:
         @parameter
         if forward:
             self.index += 1
@@ -66,8 +64,16 @@ struct _ListIter[
             return self.src[][self.index]
 
     @always_inline
+    fn __next__(mut self) -> T:
+        return self.__next_ref__()
+
+    @always_inline
     fn __has_next__(self) -> Bool:
         return self.__len__() > 0
+
+    @always_inline
+    fn __iter__(self) -> Self:
+        return self
 
     fn __len__(self) -> Int:
         @parameter
@@ -78,11 +84,7 @@ struct _ListIter[
 
 
 struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
-    Boolable,
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
-    Sized,
+    Boolable, Copyable, Defaultable, ExplicitlyCopyable, Movable, Sized
 ):
     """The `List` type is a dynamically-allocated list.
 
@@ -121,7 +123,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             A copy of the value.
         """
         var copy = Self(capacity=self.capacity)
-        for ref e in self:
+        for e in self:
             copy.append(e)
         return copy^
 
@@ -186,7 +188,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             span: The span of values to populate the list with.
         """
         self = Self(capacity=len(span))
-        for ref value in span:
+        for value in span:
             self.append(value)
 
     @always_inline
@@ -252,7 +254,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if len(self) != len(other):
             return False
         var index = 0
-        for ref element in self:
+        for element in self:
             if element != other[index]:
                 return False
             index += 1
@@ -306,7 +308,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
-        for ref i in self:
+        for i in self:
             if i == value:
                 return True
         return False
@@ -551,7 +553,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         if hint_trivial_type:
             memcpy(self.data + i, elements.unsafe_ptr(), elements_len)
         else:
-            for ref elt in elements:
+            for elt in elements:
                 UnsafePointer(to=self[i]).init_pointee_copy(elt)
                 i += 1
 
@@ -646,7 +648,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         Args:
             value: The value to append.
-            count: The ammount of items to append. Must be less than or equal to
+            count: The amount of items to append. Must be less than or equal to
                 `value.size`.
 
         Notes:
@@ -905,11 +907,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         Returns:
             A new list containing the list at the specified slice.
         """
-
-        var start: Int
-        var end: Int
-        var step: Int
-        start, end, step = slice.indices(len(self))
+        var start, end, step = slice.indices(len(self))
         var r = range(start, end, step)
 
         if not len(r):
@@ -1024,7 +1022,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             The number of occurrences of the value in the list.
         """
         var count = 0
-        for ref elem in self:
+        for elem in self:
             if elem == value:
                 count += 1
         return count

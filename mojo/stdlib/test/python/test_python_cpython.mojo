@@ -13,10 +13,9 @@
 # XFAIL: asan && !system-darwin
 # RUN: %mojo %s
 
-from memory import UnsafePointer
 from python import Python, PythonObject
 from python._cpython import PyObjectPtr
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import assert_equal, assert_raises
 
 
 def test_PyObject_HasAttrString(mut python: Python):
@@ -43,15 +42,14 @@ fn destructor(capsule: PyObjectPtr) -> None:
 def test_PyCapsule(mut python: Python):
     var cpython_env = python.cpython()
 
-    # Not a PyCapsule, a NULL pointer is expected.
+    # Passing an invalid PyCapsule so it should raise an error.
     var the_object = PythonObject(0)
-    var result = cpython_env.PyCapsule_GetPointer(
-        the_object.py_object, "some_name"
-    )
-    var expected_none = UnsafePointer[NoneType]()
-    assert_equal(expected_none, result)
+    with assert_raises(
+        contains="PyCapsule_GetPointer called with invalid PyCapsule object"
+    ):
+        _ = cpython_env.PyCapsule_GetPointer(the_object.py_object, "some_name")
 
-    # Build a capsule.
+    # Build a capsule and retrieve a pointer to it.
     var capsule_impl = UnsafePointer[UInt64].alloc(1)
     var capsule = cpython_env.PyCapsule_New(
         capsule_impl.bitcast[NoneType](), "some_name", destructor
@@ -59,9 +57,13 @@ def test_PyCapsule(mut python: Python):
     var capsule_pointer = cpython_env.PyCapsule_GetPointer(capsule, "some_name")
     assert_equal(capsule_impl.bitcast[NoneType](), capsule_pointer)
 
-    # Use a different name.
-    result = cpython_env.PyCapsule_GetPointer(capsule, "some_other_name")
-    assert_equal(expected_none, result)
+    # PyCapsule for this name hasn't been created, so it should raise an error.
+    with assert_raises(
+        contains="PyCapsule_GetPointer called with incorrect name"
+    ):
+        _ = cpython_env.PyCapsule_GetPointer(
+            capsule, "this name does not exist in the capsule"
+        )
 
 
 def main():

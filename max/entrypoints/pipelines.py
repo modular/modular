@@ -20,7 +20,7 @@ from typing import Any
 
 import click
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
 
 
 class WithLazyPipelineOptions(click.Command):
@@ -131,12 +131,6 @@ def common_server_options(func):
         help="Fake the engine performance (for benchmarking)",
     )
     @click.option(
-        "--batch-timeout",
-        type=float,
-        default=0.0,
-        help="Custom timeout for any particular batch.",
-    )
-    @click.option(
         "--model-name",
         type=str,
         help="Deprecated, please use `model_path` instead. Optional model alias for serving the model.",
@@ -154,11 +148,7 @@ def common_server_options(func):
         default=False,
         help="Experimental: Enable KV Cache Agent support.",
     )
-    @click.option(
-        "--port",
-        type=int,
-        help="Port to run the server on.",
-    )
+    @click.option("--port", type=int, help="Port to run the server on.")
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -166,22 +156,15 @@ def common_server_options(func):
     return wrapper
 
 
-@main.command(
-    name="serve",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
 @click.option(
-    "--task",
-    type=str,
-    default="text_generation",
-    help="The task to run.",
+    "--task", type=str, default="text_generation", help="The task to run."
 )
 @click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
 def cli_serve(
     profile_serve: bool,
     performance_fake: str,
-    batch_timeout: float,
     model_name: str | None,
     sim_failure: int,
     experimental_enable_kvcache_agent: bool,
@@ -209,7 +192,7 @@ def cli_serve(
     # Load tokenizer & pipeline.
     pipeline_config: PipelineConfig
     if task == PipelineTask.AUDIO_GENERATION:
-        pipeline_config = AudioGenerationConfig(
+        pipeline_config = AudioGenerationConfig.from_flags(
             parse_task_flags(task_flags), **config_kwargs
         )
     else:
@@ -221,7 +204,6 @@ def cli_serve(
         pipeline_config=pipeline_config,
         profile=profile_serve,
         performance_fake=performance_fake,
-        batch_timeout=batch_timeout,
         model_name=model_name,
         failure_percentage=failure_percentage,
         experimental_enable_kvcache_agent=experimental_enable_kvcache_agent,
@@ -230,10 +212,7 @@ def cli_serve(
     )
 
 
-@main.command(
-    name="generate",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="generate", cls=WithLazyPipelineOptions)
 @click.option(
     "--prompt",
     type=str,
@@ -286,10 +265,7 @@ def cli_pipeline(
     )
 
 
-@main.command(
-    name="encode",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="encode", cls=WithLazyPipelineOptions)
 @click.option(
     "--prompt",
     type=str,
@@ -314,58 +290,10 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
 
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
-    pipeline_encode(
-        pipeline_config,
-        prompt=prompt,
-        num_warmups=num_warmups,
-    )
+    pipeline_encode(pipeline_config, prompt=prompt, num_warmups=num_warmups)
 
 
-@main.command(
-    name="text-to-speech",
-    cls=WithLazyPipelineOptions,
-)
-@click.option(
-    "--prompt",
-    type=str,
-    default="42 is the meaning of life.",
-    help="The text prompt to synthesize to audio.",
-)
-@click.option(
-    "--output",
-    type=click.Path(),
-    default=None,
-    help="Path to the output WAV audio file.",
-)
-@click.option(
-    "--voice",
-    type=str,
-    default=None,
-    help="Name of the speaker to use for the synthesis. If set, `--audio-prompt-speakers` must also be provided.",
-)
-@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
-def text_to_speech(
-    prompt: str,
-    output: str | None,
-    voice: str | None,
-    task_flags: list[str],
-    **config_kwargs: Any,
-) -> None:
-    """Generate speech from text."""
-    from max.entrypoints.cli.config import parse_task_flags
-    from max.entrypoints.cli.synthesize_speech import synthesize_speech
-    from max.pipelines import AudioGenerationConfig
-
-    config = AudioGenerationConfig(
-        parse_task_flags(task_flags), **config_kwargs
-    )
-    synthesize_speech(config, prompt, voice, output or "output.wav")
-
-
-@main.command(
-    name="warm-cache",
-    cls=WithLazyPipelineOptions,
-)
+@main.command(name="warm-cache", cls=WithLazyPipelineOptions)
 def cli_warm_cache(**config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
     from max.pipelines import PIPELINE_REGISTRY, PipelineConfig

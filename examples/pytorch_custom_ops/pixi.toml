@@ -8,6 +8,7 @@ version = "0.1.0"
 
 [tasks]
 addition = "python addition.py"
+grayscale = "python grayscale.py"
 test = { depends-on = [
   # FIXME
   #"whisper",
@@ -20,6 +21,8 @@ whisper = "python whisper.py"
 python = ">=3.9,<3.14"
 max = ">=24.6.0.dev2024090821"
 pytorch-gpu = ">=2.5.0,<=2.7.0"
+pillow = "*"
+numpy = "*"
 
 [system-requirements]
 cuda = "12.6"

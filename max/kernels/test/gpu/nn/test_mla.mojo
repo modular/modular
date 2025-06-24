@@ -12,18 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
-from random import rand, randn
+from math import ceildiv, isclose
+from random import randn
 from sys import argv
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import assert_with_measure
-from internal_utils._measure import cosine
-from memory import UnsafePointer
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import NDBufferMHAOperand
@@ -139,7 +135,7 @@ fn test[
         randn[qkv_type](k_ptr, k_size)
         randn[mask_type](mask_ptr, mask_size)
 
-    # Contruct buffers.
+    # Construct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
@@ -180,7 +176,7 @@ fn test[
     ctx.enqueue_copy(k_device_ptr, k_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](

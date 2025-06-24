@@ -16,15 +16,17 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, Optional, TypeVar, cast
+from typing import Any, Generic, Optional, TypeVar, Union, cast
 
 import zmq
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
-    InputContext,
+    TextAndVisionContext,
+    TextContext,
     TextGenerationResponse,
     TextResponse,
     TokenGenerator,
+    msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Trace, traced
@@ -73,9 +75,6 @@ class TokenGenerationSchedulerConfig:
 
     target_tokens_per_batch_ce: Optional[int]
     """The target total number of tokens to encode in the context encoding batch."""
-
-    batch_timeout: Optional[float]
-    """The maximum amount of time to wait before creating a context encoding batch."""
 
     enable_chunked_prefill: bool = True
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
@@ -144,7 +143,9 @@ class GenericSchedulerOutput(Generic[T]):
         )
 
 
-class SchedulerOutput(GenericSchedulerOutput[InputContext]):
+class SchedulerOutput(
+    GenericSchedulerOutput[Union[TextContext, TextAndVisionContext]]
+):
     pass
 
 
@@ -167,22 +168,31 @@ class TokenGenerationScheduler(Scheduler):
         # Multiprocessing resources.
         self.pc = process_control
 
-        self.request_q = ZmqPullSocket[tuple[str, InputContext]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=request_zmq_endpoint
+        self.request_q = ZmqPullSocket[
+            tuple[str, Union[TextContext, TextAndVisionContext]]
+        ](
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=request_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(
+                tuple[str, Union[TextContext, TextAndVisionContext]]
+            ),
         )
         self.response_q = ZmqPushSocket[list[dict[str, TextResponse]]](
             zmq_ctx=zmq_ctx, zmq_endpoint=response_zmq_endpoint
         )
         self.cancel_q = ZmqPullSocket[list[str]](
-            zmq_ctx=zmq_ctx, zmq_endpoint=cancel_zmq_endpoint
+            zmq_ctx=zmq_ctx,
+            zmq_endpoint=cancel_zmq_endpoint,
+            deserialize=msgpack_numpy_decoder(list[str]),
         )
 
         # Initialize Scheduler state.
-        self.active_batch: dict[str, InputContext] = {}
+        self.active_batch: dict[
+            str, Union[TextContext, TextAndVisionContext]
+        ] = {}
         self.available_cache_indices = set(
             range(self.scheduler_config.max_batch_size_tg)
         )
-        self.ce_batch_start_time: Optional[float] = None
 
         # Optional reference to the paged kv cache manager.
         # Note that the paged manager is shared with the model worker thread.
@@ -197,10 +207,6 @@ class TokenGenerationScheduler(Scheduler):
         # No CE to schedule if queue is empty
         if self.request_q.empty():
             return False
-
-        # At this point there are incoming requests, we start the batch timer if not yet
-        if self.ce_batch_start_time is None:
-            self.ce_batch_start_time = time.monotonic()
 
         # If TG batch is full then no reason to schedule CE
         if len(self.active_batch) >= self.scheduler_config.max_batch_size_tg:
@@ -217,30 +223,13 @@ class TokenGenerationScheduler(Scheduler):
         ):
             return False
 
-        # If batch timeout is set
-        if self.scheduler_config.batch_timeout:
-            # If batch timeout is reached then schedule CE
-            if (
-                self.ce_batch_start_time is not None
-                and time.monotonic()
-                >= self.ce_batch_start_time
-                + self.scheduler_config.batch_timeout
-            ):
-                return True
-            messages_needed = self.scheduler_config.max_batch_size_tg - len(
-                self.active_batch
-            )
-            if self.request_q.qsize() >= messages_needed:
-                # If there are enough request to fill the TG batch then schedule CE
-                return True
-            # If not enough requests then hold off the CE and continue with TG
-            return False
-
         return True
 
     @traced
     def _maybe_chunk_prefill_request(
-        self, data: InputContext, tot_input_tokens: int
+        self,
+        data: Union[TextContext, TextAndVisionContext],
+        tot_input_tokens: int,
     ) -> int:
         """Chunks a prefill request if it exceeds the target tokens per batch."""
         if not (
@@ -277,7 +266,7 @@ class TokenGenerationScheduler(Scheduler):
             self.scheduler_config.max_batch_size_tg - len(self.active_batch),
         )
 
-        ce_batch: dict[str, InputContext] = {}
+        ce_batch: dict[str, Union[TextContext, TextAndVisionContext]] = {}
         tot_input_tokens = 0
         tot_cached_tokens = 0
 
@@ -355,7 +344,9 @@ class TokenGenerationScheduler(Scheduler):
         )
 
     @traced
-    def _return_to_request_queue(self, req_id: Any, data: InputContext):
+    def _return_to_request_queue(
+        self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
+    ):
         """Resets a request and returns it to the request queue"""
         self.available_cache_indices.add(data.cache_seq_id)
         self.pipeline.release(data)
@@ -363,7 +354,9 @@ class TokenGenerationScheduler(Scheduler):
         self.request_q.put_front_nowait((req_id, data))
 
     @traced
-    def _preempt_request(self, req_id: Any, data: InputContext):
+    def _preempt_request(
+        self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
+    ):
         """Preempts the most recently received request from active batch"""
         self._return_to_request_queue(req_id, data)
         # Limit logging about preemptions to at most once per second
@@ -782,13 +775,9 @@ class TokenGenerationScheduler(Scheduler):
     def _schedule_ce(self, sch_output: SchedulerOutput):
         batch_to_execute = sch_output.batch_inputs
 
-        # we about to execute the batch, reset the CE batch timer
-        self.ce_batch_start_time = None
-
         # execute the batch
         batch_responses = self.pipeline.next_token(
-            batch_to_execute,
-            num_steps=sch_output.num_steps,
+            batch_to_execute, num_steps=sch_output.num_steps
         )
         # put the unfinished request back into the queue, and delete its responses
         if self.scheduler_config.enable_chunked_prefill:
@@ -809,8 +798,7 @@ class TokenGenerationScheduler(Scheduler):
         METRICS.batch_size(len(batch_to_execute))
         # execute the batch
         batch_responses = self.pipeline.next_token(
-            batch_to_execute,
-            num_steps=sch_output.num_steps,
+            batch_to_execute, num_steps=sch_output.num_steps
         )
         # remove terminated requests from the batch
         self._handle_terminated_responses(batch_to_execute, batch_responses)
@@ -840,7 +828,6 @@ def load_text_generation_scheduler(
     max_batch_size_ce: int,
     max_forward_steps_ce: int,
     target_tokens_per_batch_ce: Optional[int],
-    batch_timeout: Optional[float],
     enable_chunked_prefill: bool = True,
     enable_in_flight_batching: bool = False,
 ) -> TokenGenerationScheduler:
@@ -852,7 +839,6 @@ def load_text_generation_scheduler(
         max_batch_size_ce=max_batch_size_ce,
         max_forward_steps_ce=max_forward_steps_ce,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        batch_timeout=batch_timeout,
         enable_chunked_prefill=enable_chunked_prefill,
         enable_in_flight_batching=enable_in_flight_batching,
     )

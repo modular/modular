@@ -19,7 +19,7 @@ from testing import assert_equal
 
 def test_polynomial_evaluate_degree3():
     # Evaluate 1000 + x + x^2
-    alias coeffs = List[SIMD[DType.float64, 1]](1000.0, 1.0, 1.0)
+    alias coeffs = List[Float64](1000.0, 1.0, 1.0)
 
     assert_equal(_horner_evaluate[coeffs](1.0), 1002.0)
     assert_equal(polynomial_evaluate[coeffs](1.0), 1002.0)
@@ -29,9 +29,7 @@ def test_polynomial_evaluate_degree3():
 
 def test_polynomial_evaluate_degree4():
     # Evalaute 1000 + 99 x - 43 x^2 + 12 x^3 - 14 x^4
-    alias coeffs = List[SIMD[DType.float64, 1]](
-        1000.0, 99.0, -43.0, 12.0, -14.0
-    )
+    alias coeffs = List[Float64](1000.0, 99.0, -43.0, 12.0, -14.0)
 
     assert_equal(_horner_evaluate[coeffs](1.0), 1054.0)
     assert_equal(polynomial_evaluate[coeffs](1.0), 1054.0)
@@ -42,7 +40,7 @@ def test_polynomial_evaluate_degree4():
 def test_polynomial_evaluate_degree10():
     # Evaluate 20.0 + 9.0 x + 1.0 x^2 + 1.0 x^3 + 1.0 x^4 + 1.0 x^5 + 1.0 x^6 +
     # 1.0 x^7 + 1.0 x^8 + 43.0 x^9 + 10.0 x^10
-    alias coeffs = List[SIMD[DType.float64, 1]](
+    alias coeffs = List[Float64](
         20.0, 9.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 43.0, 10.0
     )
 

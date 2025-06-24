@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import cos, sin
-from pathlib import Path
 
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 
@@ -27,7 +25,7 @@ fn run_func[
     ref_: Scalar[type],
     ctx: DeviceContext,
 ) raises:
-    print("test trignometric functions on gpu")
+    print("test trigonometric functions on gpu")
 
     var out = ctx.enqueue_create_buffer[type](1)
 

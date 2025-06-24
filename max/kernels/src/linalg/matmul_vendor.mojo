@@ -17,11 +17,11 @@ from sys import alignof, simdwidthof
 from algorithm import elementwise
 from buffer.buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 
 from utils import Index, IndexList
 
-from .utils import apply_epilogue, elementwise_epilogue_type
+from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig
 from .vendor_blas import matmul as vendor_matmul
 
@@ -56,7 +56,7 @@ fn matmul[
         return
     else:
         alias epilogue = elementwise_lambda_fn.value()
-        alias simd_size = simdwidthof[c.type, target = _get_gpu_target()]()
+        alias simd_size = simdwidthof[c.type, target = get_gpu_target()]()
 
         @parameter
         @__copy_capture(c)

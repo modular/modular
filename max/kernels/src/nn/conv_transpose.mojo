@@ -12,11 +12,49 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv
-from sys.info import simdwidthof
+from sys import alignof, simdwidthof
+from nn.conv import (
+    check_cudnn_error,
+    CuDNNConvMeta,
+    _get_cudnn_meta,
+)
+from .conv_utils import elementwise_simd_epilogue_type
+
+from gpu.host import DeviceContext
+from gpu._cudnn.cnn_infer import (
+    cudnnConvolutionForward,
+    cudnnConvolutionMode_t,
+    cudnnConvolutionStruct,
+    cudnnCreateConvolutionDescriptor,
+    cudnnDestroyConvolutionDescriptor,
+    cudnnDestroyFilterDescriptor,
+    cudnnSetConvolution2dDescriptor,
+    # Back-prop data helpers
+    cudnnConvolutionBackwardData,
+    cudnnGetConvolutionBackwardDataWorkspaceSize,
+)
+from gpu._cudnn.infer import (
+    cudnnContext,
+    cudnnConvolutionFwdAlgo_t,
+    cudnnConvolutionBwdDataAlgo_t,
+    cudnnCreate,
+    cudnnCreateFilterDescriptor,
+    cudnnCreateTensorDescriptor,
+    cudnnDataType_t,
+    cudnnDestroy,
+    cudnnDestroyTensorDescriptor,
+    cudnnFilterStruct,
+    cudnnSetFilter4dDescriptor,
+    cudnnSetStream,
+    cudnnSetTensor4dDescriptor,
+    cudnnStatus_t,
+    cudnnTensorFormat_t,
+    cudnnTensorStruct,
+)
 
 from algorithm import (
+    elementwise,
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
@@ -26,8 +64,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import UnsafePointer
-from register import register_internal
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -287,7 +323,7 @@ fn conv_transpose_shape[
 fn get_num_partitions[
     micro_kernel_height: Int, micro_kernel_f_size: Int
 ](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
-    """Partition the worload in (batch&group, C, F, H) dimensions.
+    """Partition the workload in (batch&group, C, F, H) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
     """
@@ -352,7 +388,7 @@ fn get_partition(
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct ConvTransposedPacked[
     input_mut: Bool,
     filter_mut: Bool, //,
@@ -370,7 +406,7 @@ struct ConvTransposedPacked[
     output_type: DType,
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-]:
+](Copyable, Movable):
     var output: NDBuffer[output_type, output_rank, output_origin, output_shape]
     var input: NDBuffer[input_type, input_rank, input_origin, input_shape]
     var filter: NDBuffer[filter_type, filter_rank, filter_origin, filter_shape]
@@ -1203,7 +1239,11 @@ fn pack_filter_shape(
 
 
 @always_inline
-fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
+fn pack_filter(
+    filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
+    num_groups: Int,
+):
     """This packs the filter form RSFC to FRSCf."""
 
     alias simd_size = simdwidthof[filter.type]()
@@ -1312,7 +1352,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
 # ===----------------------------------------------------------------------=== #
 
 
-fn conv_transposed[
+fn conv_transposed_cpu[
     input_rank: Int,
     filter_rank: Int,
     input_shape: DimList,
@@ -1322,6 +1362,7 @@ fn conv_transposed[
     filter_type: DType,
     output_type: DType,
     filter_packed: Bool,
+    filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
     elementwise_lambda: fn[type: DType, rank: Int, width: Int] (
         IndexList[rank], SIMD[type, width]
@@ -1329,7 +1370,7 @@ fn conv_transposed[
 ](
     output: NDBuffer[mut=True, output_type, input_rank, _, output_shape],
     input: NDBuffer[input_type, input_rank, _, input_shape],
-    filter: NDBuffer[filter_type, filter_rank, _, filter_shape],
+    filter: NDBuffer[mut=True, filter_type, filter_rank, _, filter_shape],
     stride: IndexList[input_rank - 2],
     dilation: IndexList[input_rank - 2],
     pad_d: IndexList[2],
@@ -1351,6 +1392,8 @@ fn conv_transposed[
             ";padding_w=", pad_w,
         )
         # fmt: on
+
+    constrained[not filter_is_cfrs, "Filter layout CFRS is not supported"]()
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](
         "conv_transposed",
@@ -1409,7 +1452,7 @@ fn conv_transposed[
             @always_inline
             @parameter
             fn body[width: Int](idx: Int):
-                # Cooridates of the current index.
+                # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
@@ -1440,3 +1483,181 @@ fn conv_transposed[
         @parameter
         if not filter_packed:
             packed_filter_ptr.free()
+
+
+# ===----------------------------------------------------------------------=== #
+# cuDNN Convolution Backward Data (i.e., Transposed Convolution) Helper        #
+# ===----------------------------------------------------------------------=== #
+
+
+fn conv_transposed_gpu[
+    input_rank: Int,
+    filter_rank: Int,
+    input_shape: DimList,
+    filter_shape: DimList,
+    output_shape: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    elementwise_epilogue: OptionalReg[elementwise_simd_epilogue_type] = None,
+](
+    output: NDBuffer[mut=True, output_type, input_rank, _, output_shape],
+    input: NDBuffer[input_type, input_rank, _, input_shape],
+    filter: NDBuffer[mut=True, filter_type, filter_rank, _, filter_shape],
+    stride: IndexList[input_rank - 2],
+    dilation: IndexList[input_rank - 2],
+    padding: IndexList[input_rank - 2],
+    ctx: DeviceContext,
+) raises:
+    @parameter
+    if elementwise_epilogue:
+        alias epilogue = elementwise_epilogue.value()
+
+        var output_tmp_data = ctx.enqueue_create_buffer[output_type](
+            output.num_elements()
+        )
+
+        var output_tmp = output
+        output_tmp.data = output_tmp_data.unsafe_ptr()
+
+        conv_transposed_cudnn[input_type, filter_type, output_type,](
+            rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+            rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+            rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](output_tmp),
+            rebind[IndexList[2]](stride),
+            rebind[IndexList[2]](dilation),
+            rebind[IndexList[2]](padding),
+            ctx,
+        )
+
+        @parameter
+        @__copy_capture(output_tmp)
+        @always_inline
+        fn epilogue_wrapper[_width: Int, _rank: Int](coords: IndexList[_rank]):
+            alias alignment = alignof[SIMD[output_type, _width]]()
+            vec = output_tmp.load[width=_width, alignment=alignment](
+                rebind[IndexList[4]](coords)
+            )
+            epilogue(coords, vec)
+
+        elementwise[epilogue_wrapper, simdwidthof[output_type](), target="gpu"](
+            output.dynamic_shape, ctx
+        )
+
+        _ = output_tmp_data^
+
+    else:
+        conv_transposed_cudnn[input_type, filter_type, output_type,](
+            rebind[NDBuffer[input_type, 4, MutableAnyOrigin]](input),
+            rebind[NDBuffer[filter_type, 4, MutableAnyOrigin]](filter),
+            rebind[NDBuffer[output_type, 4, MutableAnyOrigin]](output),
+            rebind[IndexList[2]](stride),
+            rebind[IndexList[2]](dilation),
+            rebind[IndexList[2]](padding),
+            ctx,
+        )
+
+
+fn conv_transposed_cudnn[
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: NDBuffer[input_type, 4, MutableAnyOrigin, *_, **_],
+    filter: NDBuffer[filter_type, 4, MutableAnyOrigin, *_, **_],
+    output: NDBuffer[output_type, 4, MutableAnyOrigin, *_, **_],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    ctx: DeviceContext,
+) raises:
+    var cudnn_handle = _get_cudnn_meta(ctx)
+
+    # basically, vibes are that a cuda handle is the gateway to using cudnn
+    # we want all the work from that handle to be done on a separate stream
+    # than the main stream, otherwise, everything goes on main stream and
+    # slows down the whole thing. binding handle to stream unclocks parallelism, and now
+    # 2 handles , with 2 separate functions, can work at same time.
+
+    # ---------------- Tensor / filter descriptors -------------------------
+    check_cudnn_error(
+        cudnnSetFilter4dDescriptor(
+            cudnn_handle[].ptr_filter_desc,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,  # cudnn documentation correction: cudnnSetFilter4dDescriptor() takes CKRS, not KCRS
+            filter.dim[0](),  # C (out channels)
+            filter.dim[1](),  # K (in channels)
+            filter.dim[2](),  # R (kernel height)
+            filter.dim[3](),  # S (kernel width)
+        )
+    )
+
+    check_cudnn_error(
+        cudnnSetTensor4dDescriptor(
+            cudnn_handle[].ptr_input_desc,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            input.dim[0](),  # N
+            input.dim[1](),  # C_in
+            input.dim[2](),  # H_in
+            input.dim[3](),  # W_in
+        )
+    )
+
+    check_cudnn_error(
+        cudnnSetTensor4dDescriptor(
+            cudnn_handle[].ptr_output_desc,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            output.dim[0](),  # N
+            output.dim[1](),  # C_out
+            output.dim[2](),  # H_out
+            output.dim[3](),  # W_out
+        )
+    )
+
+    check_cudnn_error(
+        cudnnSetConvolution2dDescriptor(
+            cudnn_handle[].ptr_conv_desc,
+            padding[0],
+            padding[1],
+            stride[0],
+            stride[1],
+            dilation[0],
+            dilation[1],
+            cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+        )
+    )
+
+    # ---------------- Algorithm & workspace -------------------------------
+    var algo = cudnnConvolutionBwdDataAlgo_t.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0
+
+    # For now, use no workspace since UnsafePointer.alloc() only allocates host memory,
+    var workspace_bytes = Int(0)
+    var workspace_ptr = UnsafePointer[Int8]()
+
+    var alpha = Float32(1.0)
+    var beta = Float32(0.0)
+
+    check_cudnn_error(
+        cudnnConvolutionBackwardData(
+            cudnn_handle[].ptr_handle,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            cudnn_handle[].ptr_filter_desc,
+            rebind[OpaquePointer](filter.data.bitcast[NoneType]()),
+            cudnn_handle[].ptr_input_desc,
+            rebind[OpaquePointer](input.data.bitcast[NoneType]()),
+            cudnn_handle[].ptr_conv_desc,
+            algo,
+            UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
+            0,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            cudnn_handle[].ptr_output_desc,
+            rebind[OpaquePointer](output.data.bitcast[NoneType]()),
+        )
+    )
+
+    # ---------------- Cleanup ---------------------------------------------
+    if workspace_ptr:
+        workspace_ptr.free()

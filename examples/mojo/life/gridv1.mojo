@@ -15,8 +15,8 @@ import random
 from collections import Optional
 
 
-@value
-struct Grid(StringableRaising):
+@fieldwise_init
+struct Grid(Copyable, Movable, StringableRaising):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#

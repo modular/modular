@@ -20,7 +20,6 @@ from sys.param_env import is_defined
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
@@ -32,7 +31,7 @@ from .tracing import TraceLevel
 
 
 @register_passable("trivial")
-struct _Chain(Boolable):
+struct _Chain(Boolable, Defaultable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
@@ -279,9 +278,9 @@ struct Task[type: AnyType, origins: OriginSet]:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TaskGroupContext:
+struct TaskGroupContext(Copyable, Movable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -337,7 +336,7 @@ struct _TaskGroupBox(Copyable, Movable):
         return abort[Self]("_TaskGroupBox.copy should never get called")
 
 
-struct TaskGroup:
+struct TaskGroup(Defaultable):
     """A group of tasks that can be executed concurrently.
 
     TaskGroup manages a collection of coroutines that can be executed in parallel.
@@ -452,7 +451,7 @@ struct TaskGroup:
 
 
 @register_passable("trivial")
-struct DeviceContextPtr:
+struct DeviceContextPtr(Defaultable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -461,7 +460,7 @@ struct DeviceContextPtr:
     by the graph compiler.
     """
 
-    var _handle: UnsafePointer[NoneType]
+    var _handle: OpaquePointer
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -470,10 +469,10 @@ struct DeviceContextPtr:
 
         This creates a `DeviceContextPtr` that doesn't point to any device context.
         """
-        self._handle = UnsafePointer[NoneType]()
+        self._handle = OpaquePointer()
 
     @implicit
-    fn __init__(out self, handle: UnsafePointer[NoneType]):
+    fn __init__(out self, handle: OpaquePointer):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:
@@ -490,7 +489,7 @@ struct DeviceContextPtr:
         Args:
             device: The `DeviceContext` to wrap in this pointer.
         """
-        self._handle = rebind[UnsafePointer[NoneType]](device._handle)
+        self._handle = rebind[OpaquePointer](device._handle)
 
     fn __getitem__(self) -> DeviceContext:
         """Dereference the pointer to get the `DeviceContext`.

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import InlineArray
 from math import floor
 from sys import sizeof
 
@@ -22,10 +21,8 @@ from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,
     allreduce,
-    elementwise_epilogue_type,
 )
 from gpu.host import DeviceBuffer, DeviceContext
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList, StaticTuple

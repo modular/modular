@@ -19,13 +19,13 @@ from utils.numerics import FPUtils
 ```
 """
 
-from sys import CompilationTarget, bitwidthof, has_neon, llvm_intrinsic
+from sys import CompilationTarget, bitwidthof, llvm_intrinsic
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
 
 from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from builtin.simd import _simd_apply
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 # ===----------------------------------------------------------------------=== #
 # FPUtils
@@ -386,7 +386,7 @@ struct FPUtils[
 # ===----------------------------------------------------------------------=== #
 
 
-struct FlushDenormals:
+struct FlushDenormals(Defaultable):
     """Flushes and denormals are set to zero within the context and the state
     is restored to the prior value on exit."""
 
@@ -412,7 +412,8 @@ struct FlushDenormals:
     fn _set_flush(self, enable: Bool, force: Bool = False):
         @parameter
         if (
-            not CompilationTarget.has_sse4() and not has_neon()
+            not CompilationTarget.has_sse4()
+            and not CompilationTarget.has_neon()
         ):  # not supported, so skip
             return
         # Unless we forced to restore the prior state, we check if the flag
@@ -465,7 +466,8 @@ struct FlushDenormals:
 
         @parameter
         if (
-            not CompilationTarget.has_sse4() and not has_neon()
+            not CompilationTarget.has_sse4()
+            and not CompilationTarget.has_neon()
         ):  # not supported, so skip
             return 0
 

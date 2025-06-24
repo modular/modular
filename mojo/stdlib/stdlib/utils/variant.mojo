@@ -42,18 +42,13 @@ from os import abort
 from sys import alignof, sizeof
 from sys.intrinsics import _type_is_eq
 
-from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------=== #
 # Variant
 # ===----------------------------------------------------------------------=== #
 
 
-struct Variant[*Ts: Copyable & Movable](
-    Copyable,
-    Movable,
-    ExplicitlyCopyable,
-):
+struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
     """A runtime-variant type.
 
     Data for this type is stored internally. Currently, its size is the

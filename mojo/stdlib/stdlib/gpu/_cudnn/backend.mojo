@@ -17,7 +17,6 @@ from sys.ffi import _find_dylib
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
-from memory import UnsafePointer
 
 from .infer import cudnnStatus_t, cudnnContext
 
@@ -26,7 +25,10 @@ from .infer import cudnnStatus_t, cudnnContext
 # ===-----------------------------------------------------------------------===#
 
 alias CUDA_CUDNN_LIBRARY_PATHS = List[Path](
+    "libcudnn.so",
+    "libcudnn.so.9",
     "libcudnn.so.8",
+    "/usr/lib/x86_64-linux-gnu/libcudnn.so.9",
     "/usr/lib/x86_64-linux-gnu/libcudnn.so.8",
 )
 
@@ -55,9 +57,9 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-fn cudnnBackendInitialize(descriptor: UnsafePointer[NoneType]) -> cudnnStatus_t:
+fn cudnnBackendInitialize(descriptor: OpaquePointer) -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendInitialize", fn (UnsafePointer[NoneType]) -> cudnnStatus_t
+        "cudnnBackendInitialize", fn (OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -570,20 +572,20 @@ struct cudnnBackendDescriptorType_t(Writable):
 
 
 fn cudnnBackendSetAttribute(
-    descriptor: UnsafePointer[NoneType],
+    descriptor: OpaquePointer,
     attribute_name: cudnnBackendAttributeName_t,
     attribute_type: cudnnBackendAttributeType_t,
     element_count: Int64,
-    array_of_elements: UnsafePointer[NoneType],
+    array_of_elements: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendSetAttribute",
         fn (
-            UnsafePointer[NoneType],
+            OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,
             Int64,
-            UnsafePointer[NoneType],
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(
         descriptor,
@@ -871,12 +873,12 @@ struct cudnnBackendNumericalNote_t(Writable):
 
 fn cudnnBackendCreateDescriptor(
     descriptor_type: cudnnBackendDescriptorType_t,
-    descriptor: UnsafePointer[UnsafePointer[NoneType]],
+    descriptor: UnsafePointer[OpaquePointer],
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendCreateDescriptor",
         fn (
-            cudnnBackendDescriptorType_t, UnsafePointer[UnsafePointer[NoneType]]
+            cudnnBackendDescriptorType_t, UnsafePointer[OpaquePointer]
         ) -> cudnnStatus_t,
     ]()(descriptor_type, descriptor)
 
@@ -1054,9 +1056,9 @@ struct cudnnRngDistribution_t(Writable):
         return Int(self._value)
 
 
-fn cudnnBackendFinalize(descriptor: UnsafePointer[NoneType]) -> cudnnStatus_t:
+fn cudnnBackendFinalize(descriptor: OpaquePointer) -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnBackendFinalize", fn (UnsafePointer[NoneType]) -> cudnnStatus_t
+        "cudnnBackendFinalize", fn (OpaquePointer) -> cudnnStatus_t
     ]()(descriptor)
 
 
@@ -1970,7 +1972,7 @@ struct cudnnSignalMode_t(Writable):
         return Int(self._value)
 
 
-alias cudnnBackendDescriptor_t = UnsafePointer[NoneType]
+alias cudnnBackendDescriptor_t = OpaquePointer
 
 
 @fieldwise_init
@@ -2057,25 +2059,25 @@ struct cudnnGenStatsMode_t(Writable):
 
 
 fn cudnnBackendDestroyDescriptor(
-    descriptor: UnsafePointer[NoneType],
+    descriptor: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendDestroyDescriptor",
-        fn (UnsafePointer[NoneType]) -> cudnnStatus_t,
+        fn (OpaquePointer) -> cudnnStatus_t,
     ]()(descriptor)
 
 
 fn cudnnBackendExecute(
     handle: UnsafePointer[cudnnContext],
-    execution_plan: UnsafePointer[NoneType],
-    variant_pack: UnsafePointer[NoneType],
+    execution_plan: OpaquePointer,
+    variant_pack: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendExecute",
         fn (
             UnsafePointer[cudnnContext],
-            UnsafePointer[NoneType],
-            UnsafePointer[NoneType],
+            OpaquePointer,
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(handle, execution_plan, variant_pack)
 
@@ -2139,22 +2141,22 @@ alias cudnnFraction_t = cudnnFractionStruct
 
 
 fn cudnnBackendGetAttribute(
-    descriptor: UnsafePointer[NoneType],
+    descriptor: OpaquePointer,
     attribute_name: cudnnBackendAttributeName_t,
     attribute_type: cudnnBackendAttributeType_t,
     requested_element_count: Int64,
     element_count: UnsafePointer[Int64],
-    array_of_elements: UnsafePointer[NoneType],
+    array_of_elements: OpaquePointer,
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnBackendGetAttribute",
         fn (
-            UnsafePointer[NoneType],
+            OpaquePointer,
             cudnnBackendAttributeName_t,
             cudnnBackendAttributeType_t,
             Int64,
             UnsafePointer[Int64],
-            UnsafePointer[NoneType],
+            OpaquePointer,
         ) -> cudnnStatus_t,
     ]()(
         descriptor,

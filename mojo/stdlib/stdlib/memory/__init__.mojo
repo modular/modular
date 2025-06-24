@@ -19,4 +19,4 @@ from .owned_pointer import OwnedPointer
 from .pointer import AddressSpace, Pointer
 from .span import Span
 from .unsafe import bitcast, pack_bits
-from .unsafe_pointer import UnsafePointer
+from .unsafe_pointer import UnsafePointer, OpaquePointer

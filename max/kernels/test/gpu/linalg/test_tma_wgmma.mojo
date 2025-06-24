@@ -14,7 +14,7 @@
 from math import ceildiv
 from sys import sizeof
 
-from gpu import WARP_SIZE, barrier
+from gpu import barrier
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -38,7 +38,6 @@ from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 
 fn _compute_reg_tile_layout(layout: Layout, frag_size: Int) -> Layout:

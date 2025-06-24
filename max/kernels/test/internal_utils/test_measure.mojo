@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import DimList
-from internal_utils import TestTensor, assert_with_measure, correlation
-from memory import UnsafePointer
+from internal_utils import TestTensor, assert_with_measure, correlation, kl_div
 from testing import assert_almost_equal
 
 
@@ -64,6 +63,25 @@ fn test_correlation() raises:
     x.free()
 
 
+fn test_kl_div() raises:
+    alias dtype = DType.float32
+    alias out_dtype = DType.float64
+    alias len = 10
+
+    var a = InlineArray[Scalar[dtype], len](uninitialized=True)
+    var b = InlineArray[Scalar[dtype], len](uninitialized=True)
+    for i in range(len):
+        a[i] = Scalar[dtype](1 / len)
+        b[i] = Scalar[dtype](2 * (i + 1) / (len * (len + 1)))
+
+    var aa = kl_div[out_type=out_dtype](a.unsafe_ptr(), a.unsafe_ptr(), len)
+    var ab = kl_div[out_type=out_dtype](a.unsafe_ptr(), b.unsafe_ptr(), len)
+    assert_almost_equal(0.0, aa)
+    # exact value computed using Mathematica
+    assert_almost_equal(0.19430683493087375, ab)
+
+
 def main():
     test_assert_with_custom_measure()
     test_correlation()
+    test_kl_div()

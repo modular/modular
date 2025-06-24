@@ -16,7 +16,6 @@ from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
 from nn.flash_attention import flash_attention, flash_attention_split_kv
 from testing import assert_equal
 
@@ -135,9 +134,9 @@ def reference_attention_bshd[
     score_ptr.free()
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct TestCaseConfig[batch_rank: Int]:
+struct TestCaseConfig[batch_rank: Int](Copyable, Movable):
     """Test case workload configuration hyperparameters."""
 
     alias rank = batch_rank + 2

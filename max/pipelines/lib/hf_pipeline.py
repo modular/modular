@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING, Optional, cast
 
 import numpy as np
@@ -120,12 +119,6 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
             device=self._torch_device,
         )
 
-        # TODO(deep): Implement sampling and remove this warning
-        if self._pipeline_config.sampling_config.top_k > 1:
-            warnings.warn(
-                "Only argmax sampling is currently implemented, and the top_k config will be ignored",
-            )
-
     def next_token(
         self, batch: dict[str, TextContext], num_steps: int
     ) -> dict[str, TextGenerationResponse]:
@@ -183,8 +176,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
                 # Next inputs preparation
                 input_ids, attention_mask, cache_position = (
                     self._prepare_next_token_inputs(
-                        cache_seq_ids,
-                        next_tokens=next_token.unsqueeze(-1),
+                        cache_seq_ids, next_tokens=next_token.unsqueeze(-1)
                     )
                 )
 
@@ -269,8 +261,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
             for seq_id in cache_seq_ids:
                 pattern = self._cache.attention_patterns[seq_id]
                 self._cache.update_attention_pattern(
-                    seq_id,
-                    torch.cat([pattern, ones]),
+                    seq_id, torch.cat([pattern, ones])
                 )
 
         # Get complete attention mask for all sequences
@@ -280,9 +271,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         seq_length = input_ids.size(1)
         max_length = attention_mask.size(1)
         cache_position = torch.arange(
-            max_length - seq_length,
-            max_length,
-            device=self._torch_device,
+            max_length - seq_length, max_length, device=self._torch_device
         )
 
         return input_ids, attention_mask, cache_position
@@ -304,8 +293,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         for seq_id in cache_seq_ids:
             pattern = self._cache.attention_patterns[seq_id]
             self._cache.update_attention_pattern(
-                seq_id,
-                torch.cat([pattern, ones]),
+                seq_id, torch.cat([pattern, ones])
             )
 
         attention_mask = self._cache.get_attention_mask(cache_seq_ids)
@@ -314,9 +302,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         seq_length = input_ids.size(1)
         max_length = attention_mask.size(1)
         cache_position = torch.arange(
-            max_length - seq_length,
-            max_length,
-            device=self._torch_device,
+            max_length - seq_length, max_length, device=self._torch_device
         )
 
         return input_ids, attention_mask, cache_position

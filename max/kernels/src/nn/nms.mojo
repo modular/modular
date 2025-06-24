@@ -11,18 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from math import iota
 
-from layout import Layout, LayoutTensor, RuntimeTuple
-from memory import Span, UnsafePointer
+from memory import UnsafePointer
+from layout import LayoutTensor, RuntimeTuple
 
 from utils import IndexList
-from utils.index import Index
 
 
-@value
-struct BoundingBox[type: DType]:
+@fieldwise_init
+struct BoundingBox[type: DType](Copyable, Movable):
     var nw: SIMD[type, 2]
     var se: SIMD[type, 2]
 
@@ -240,9 +238,9 @@ fn non_max_suppression[
                         num_boxes_remaining -= 1
                 pred_idx += 1
                 # don't need to sort all of box_idxs because:
-                #   1. the start of the array contains already outputed predictions whose order cannot change
+                #   1. the start of the array contains already outputted predictions whose order cannot change
                 #   2. the end of the array contains neginf values
-                # note we need to use num_boxes_curr_pred instead of num_boxes_remainig
+                # note we need to use num_boxes_curr_pred instead of num_boxes_remaining
                 # because num_boxes_remaining has been adjusted for the high IOU boxes above
                 sort[_greater_than](
                     Span[box_idxs.T, __origin_of(box_idxs)](

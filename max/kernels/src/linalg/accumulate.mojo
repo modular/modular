@@ -11,16 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from collections.optional import OptionalReg
 from math import fma
 from sys import alignof, prefetch
-from sys.info import has_neon
+from sys.info import CompilationTarget
 from sys.intrinsics import PrefetchOptions
 
 from algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from memory import UnsafePointer
 
 from utils.index import IndexList
 
@@ -36,7 +34,7 @@ struct _Accumulator[
     simd_width: Int,
     row_start: Int = 0,
     row_stop: Int = num_rows,
-]:
+](Defaultable):
     """
     Parameters:
         type: DType of accumulator.
@@ -222,7 +220,7 @@ struct _Accumulator[
             if is_load:
 
                 @parameter
-                if has_neon():
+                if CompilationTarget.has_neon():
                     var data = row_ptrs[row].load[width=column_step](col)
                     self._partial_set(row * Self.tile_columns + col, data)
                 else:
@@ -236,7 +234,7 @@ struct _Accumulator[
                 )
 
                 @parameter
-                if has_neon():
+                if CompilationTarget.has_neon():
                     row_ptrs[row].store(col, data)
                 else:
                     row_ptrs[0].store(stride * row + col, data)
@@ -264,7 +262,7 @@ struct _Accumulator[
         remaining non-pairwise elements."""
         alias tile_columns_remaining = Self.tile_columns - base_column
         # Support fusion of LDP/STP instructions by emitting pairs of load/store with neon
-        alias column_groups = 2 if has_neon() else 1
+        alias column_groups = 2 if CompilationTarget.has_neon() else 1
 
         # vector instructions.
         @parameter
@@ -282,7 +280,7 @@ struct _Accumulator[
         if tile_columns_remaining >= simd_width:
 
             @parameter
-            if has_neon():
+            if CompilationTarget.has_neon():
                 self._transfer_tail[base_column, simd_width, is_load](
                     transfer_count, row_ptrs, stride
                 )
@@ -496,7 +494,7 @@ struct _Accumulator[
         """
 
         @parameter
-        if has_neon():
+        if CompilationTarget.has_neon():
             self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
@@ -573,7 +571,7 @@ struct _Accumulator[
         """
 
         @parameter
-        if has_neon():
+        if CompilationTarget.has_neon():
             self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
@@ -652,7 +650,7 @@ struct _Accumulator[
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
-        constrained[not has_neon()]()
+        constrained[not CompilationTarget.has_neon()]()
 
         alias kernel_width = num_cols * simd_width
         var b_ptr = b
@@ -715,7 +713,7 @@ struct _Accumulator[
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
-        constrained[not has_neon()]()
+        constrained[not CompilationTarget.has_neon()]()
 
         alias kernel_width = num_cols * simd_width
         var b_ptr = b
@@ -816,7 +814,7 @@ struct _Accumulator[
         partial_load_b_size: OptionalReg[Int] = None,
     ):
         """Accumulation optimized for NEON."""
-        constrained[has_neon()]()
+        constrained[CompilationTarget.has_neon()]()
 
         @parameter
         @always_inline
@@ -874,7 +872,7 @@ struct _Accumulator[
         partial_load_b_size: OptionalReg[Int] = None,
     ):
         """Accumulation optimized for NEON."""
-        constrained[has_neon()]()
+        constrained[CompilationTarget.has_neon()]()
 
         @parameter
         @always_inline

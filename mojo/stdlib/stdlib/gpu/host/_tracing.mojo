@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys import (
@@ -23,8 +22,6 @@ from sys import (
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib
 from sys.param_env import env_get_int
-
-from memory import UnsafePointer, stack_allocation
 
 from utils.variant import Variant
 
@@ -145,6 +142,32 @@ struct Color(Intable):
     alias RED = Self(0xFF0000)
     alias WHITE = Self(0xFFFFFF)
     alias YELLOW = Self(0xFFFF00)
+
+    fn __init__(out self, colorname: StaticString):
+        """Initialize Color from a StaticString color name.
+
+        Args:
+            colorname: The name of the color to use.
+        """
+        if colorname == "modular_max":
+            self = Color.MODULAR_MAX
+        elif colorname == "blue":
+            self = Color.BLUE
+        elif colorname == "green":
+            self = Color.GREEN
+        elif colorname == "orange":
+            self = Color.ORANGE
+        elif colorname == "purple":
+            self = Color.PURPLE
+        elif colorname == "red":
+            self = Color.RED
+        elif colorname == "white":
+            self = Color.WHITE
+        elif colorname == "yellow":
+            self = Color.YELLOW
+        else:
+            # Default to MODULAR_MAX for unknown color names
+            self = Color.MODULAR_MAX
 
     fn __int__(self) -> Int:
         return self._value
@@ -295,7 +318,7 @@ alias _roctxRangeStop = _dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Mark:
+struct _Mark(Defaultable):
     var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
 
     fn __init__(out self):
@@ -314,7 +337,7 @@ struct _Mark:
         self._fn[_roctxMarkA.fn_type](val)
 
 
-struct _RangeStart:
+struct _RangeStart(Defaultable):
     var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
 
     fn __init__(out self):
@@ -333,7 +356,7 @@ struct _RangeStart:
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
-struct _RangeEnd:
+struct _RangeEnd(Defaultable):
     var _fn: fn (RangeID) -> NoneType
 
     fn __init__(out self):
@@ -347,7 +370,7 @@ struct _RangeEnd:
         self._fn(val)
 
 
-struct _RangePush:
+struct _RangePush(Defaultable):
     var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
 
     fn __init__(out self):
@@ -366,7 +389,7 @@ struct _RangePush:
         return self._fn[_roctxRangePushA.fn_type](val)
 
 
-struct _RangePop:
+struct _RangePop(Defaultable):
     var _fn: _nvtxRangePop.fn_type
 
     fn __init__(out self):

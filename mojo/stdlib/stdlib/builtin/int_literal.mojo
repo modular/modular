@@ -19,6 +19,7 @@ from math import Ceilable, Floorable, Truncable
 @register_passable("trivial")
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Ceilable,
+    Defaultable,
     Floorable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
@@ -212,18 +213,16 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
 
     @always_inline("builtin")
     fn __sub__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<sub `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<sub `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self - rhs`.
 
         Args:
@@ -232,22 +231,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self - rhs` value.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __mul__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<mul `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<mul `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self * rhs`.
 
         Args:
@@ -256,24 +253,22 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self * rhs` value.
         """
-        result = __type_of(result)()
+        return {}
 
     # TODO: implement __pow__
 
     @always_inline("builtin")
     fn __floordiv__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<floordiv `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<floordiv `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self // rhs`.
 
         Args:
@@ -282,22 +277,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self // rhs` value.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __mod__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<mod `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<mod `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return the remainder of self divided by rhs.
 
         Args:
@@ -306,22 +299,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             The remainder of dividing self by rhs.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __lshift__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<lshift `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<lshift `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self << rhs`.
 
         Args:
@@ -330,22 +321,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self << rhs`.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __rshift__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<rshift `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<rshift `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self >> rhs`.
 
         Args:
@@ -354,22 +343,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self >> rhs`.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __and__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<and `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<and `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self & rhs`.
 
         Args:
@@ -378,22 +365,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self & rhs`.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __xor__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<xor `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<xor `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self ^ rhs`.
 
         Args:
@@ -402,22 +387,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self ^ rhs`.
         """
-        result = __type_of(result)()
+        return {}
 
     @always_inline("builtin")
     fn __or__(
-        self,
-        rhs: IntLiteral[_],
-        out result: IntLiteral[
-            __mlir_attr[
-                `#pop<int_literal_bin<or `,
-                self.value,
-                `,`,
-                rhs.value,
-                `>> : !pop.int_literal`,
-            ]
-        ],
-    ):
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<or `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
         """Return `self | rhs`.
 
         Args:
@@ -426,7 +409,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             `self | rhs`.
         """
-        result = __type_of(result)()
+        return {}
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -517,10 +500,8 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
 
     @always_inline("builtin")
     fn __ceildiv__(
-        self,
-        denominator: IntLiteral,
-        out result: __type_of(-(self // -denominator)),
-    ):
+        self, denominator: IntLiteral
+    ) -> __type_of(-(self // -denominator)):
         """Return the rounded-up result of dividing self by denominator.
 
 
@@ -530,7 +511,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         Returns:
             The ceiling of dividing numerator by denominator.
         """
-        result = __type_of(result)()
+        return {}
 
     # ===-------------------------------------------------------------------===#
     # Methods

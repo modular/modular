@@ -40,7 +40,7 @@ def test_bool_none():
 
 
 @fieldwise_init
-struct MyTrue:
+struct MyTrue(ImplicitlyBoolable):
     fn __bool__(self) -> Bool:
         return True
 

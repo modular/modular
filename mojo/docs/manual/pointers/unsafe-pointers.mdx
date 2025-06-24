@@ -28,8 +28,6 @@ point to any type of value, and the value type is specified as a parameter. The
 value pointed to by a pointer is sometimes called a *pointee*.
 
 ```mojo
-from memory import UnsafePointer
-
 # Allocate memory to hold a value
 var ptr = UnsafePointer[Int].alloc(1)
 # Initialize the allocated memory
@@ -390,8 +388,8 @@ data types and byte order. For more information, see
 
 ### Creating a Mojo pointer from a Python pointer
 
-The `PythonObject` type defines
-an [`unsafe_get_as_pointer()`](/mojo/stdlib/python/object/PythonObject#unsafe_get_as_pointer)
+The `PythonObject` type defines an
+[`unsafe_get_as_pointer()`](/mojo/stdlib/python/python_object/PythonObject/#unsafe_get_as_pointer)
 method to construct an `UnsafePointer` from a Python address.
 
 For example, the following code creates a NumPy array and then accesses the
@@ -399,7 +397,6 @@ data using a Mojo pointer:
 
 ```mojo
 from python import Python
-from memory import UnsafePointer
 
 def share_array():
     np = Python.import_module("numpy")

@@ -14,7 +14,7 @@
 
 from math.math import _Expable, exp
 from random import randn_float64, seed
-from sys import has_neon
+from sys import CompilationTarget
 
 from test_utils import libm_call
 from testing import assert_almost_equal, assert_equal
@@ -23,7 +23,7 @@ from testing import assert_almost_equal, assert_equal
 def test_exp_bfloat16():
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(exp(BFloat16(2.0)), 7.375)
 
 

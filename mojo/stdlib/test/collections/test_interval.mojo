@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections.interval import Interval, IntervalTree
+from collections.interval import Interval, IntervalTree, IntervalElement
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
@@ -113,7 +113,9 @@ def test_interval():
     assert_false(Bool(Interval(0, 0)))
 
 
-struct MyType:
+struct MyType(
+    Comparable, Copyable, Floatable, IntervalElement, Movable, Stringable
+):
     var value: Float64
 
     fn __init__(out self):
@@ -167,8 +169,8 @@ def test_interval_floating():
     var interval = Interval(MyType(2.4), MyType(3.5))
 
     # Verify the interval start and end values are correctly set.
-    assert_equal(rebind[Float64](interval.start.value), 2.4)
-    assert_equal(rebind[Float64](interval.end.value), 3.5)
+    assert_equal(interval.start.value, 2.4)
+    assert_equal(interval.end.value, 3.5)
 
     # Test union operation with overlapping interval.
     var union = interval.union(Interval(MyType(3.0), MyType(4.5)))

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from builtin.io import _printf
-from gpu import WARP_SIZE, barrier, lane_id
+from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext
 from gpu.id import thread_idx
 from gpu.memory import _GPUAddressSpace as AddressSpace
@@ -22,7 +22,7 @@ from layout._utils import ManagedLayoutTensor, load_to_simd
 from layout.layout_tensor import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 
 
 fn mma_load_and_multiply[
@@ -140,14 +140,14 @@ fn mma_write_operand_kernel[
     dtype: DType,
     layout: Layout,
     inst_shape: IndexList[3],
-](out: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
+](output: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
     var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
     thread_reg_tile_v[0, 0] = rebind[__type_of(thread_reg_tile_v[0, 0])](
         mma.c_reg_type(thread_idx.x)
     )
-    mma.store_d(out, thread_reg_tile)
+    mma.store_d(output, thread_reg_tile)
 
 
 def test_load_and_mma_and_multiply_operands[

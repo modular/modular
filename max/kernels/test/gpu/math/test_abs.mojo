@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from memory import UnsafePointer
-from testing import assert_false, assert_true
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
+from testing import assert_true
 
-alias A100_TARGET = _get_gpu_target["sm_80"]()
-alias MI300X_TARGET = _get_gpu_target["mi300x"]()
+alias A100_TARGET = get_gpu_target["sm_80"]()
+alias MI300X_TARGET = get_gpu_target["mi300x"]()
 
 
 def test_abs():
@@ -85,12 +85,8 @@ def test_abs():
             do_abs_noreturn[DType.bfloat16, width=1], target=MI300X_TARGET
         ]()
     )
-    # Should be able to mask with 0x7fff7fff
-    # but instead it does low and high halfs sequentially. Like this
-    # s_and_b32 s3, s2, 0x7fff
-    # s_lshr_b32 s2, s2, 16
-    # s_and_b32 s2, s2, 0x7fff
-    assert_false(
+    # Mask out the lower and upper half sign bit.
+    assert_true(
         "s_and_b32 s0, s4, 0x7fff7fff"
         in _compile_code_asm[
             do_abs_noreturn[DType.bfloat16, width=2], target=MI300X_TARGET

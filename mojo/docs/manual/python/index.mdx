@@ -58,7 +58,7 @@ By defining a suitable `PyInit_*()` function, Mojo performs the necessary
 low-level binding calls to inform Python how to call Mojo code:
 
 ```python title="main.py"
-import max._mojo.mojo_importer
+import max.mojo.importer
 import mojo_module
 
 mojo_module.mojo_greet("Python")

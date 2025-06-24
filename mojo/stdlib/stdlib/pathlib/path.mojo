@@ -14,14 +14,12 @@
 """
 
 import os
-from collections import InlineArray, List
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, listdir, stat_result
 from sys import external_call, os_is_windows
 from sys.ffi import c_char
 
 from builtin._location import __call_location, _SourceLocation
-from memory import UnsafePointer
 
 alias DIR_SEPARATOR = "\\" if os_is_windows() else "/"
 
@@ -62,16 +60,17 @@ fn _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
     return Path(file_name[0:i])
 
 
-@value
 struct Path(
-    Stringable,
     Boolable,
-    Writable,
     Copyable,
-    Movable,
+    EqualityComparable,
     ExplicitlyCopyable,
-    PathLike,
+    Hashable,
     KeyElement,
+    Movable,
+    PathLike,
+    Stringable,
+    Writable,
     _HashableWithHasher,
 ):
     """The Path object."""

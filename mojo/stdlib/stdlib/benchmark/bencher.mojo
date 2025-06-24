@@ -12,20 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections.string import StaticString, StringSlice
-from collections.string.string import _calc_initial_buffer_size_int32
+from collections import Dict, Optional
 from os import abort
 from pathlib import Path
 from sys.arg import argv
 
 from gpu.host import DeviceContext
-from stdlib.builtin.file import FileHandle
-from stdlib.builtin.io import _snprintf
-from testing import assert_true
 
 from utils.numerics import FlushDenormals
 
-from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
 
 
@@ -122,7 +117,7 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
         Returns:
             The selected metric.
         """
-        for ref m in metric_list:
+        for m in metric_list:
             if m.check_name(name):
                 return m
 
@@ -134,7 +129,7 @@ struct BenchMetric(Copyable, Movable, Stringable, Writable):
             "Couldn't match metric [" + name + "]\n",
             "Available throughput metrics (case-insensitive) in the list:\n",
         )
-        for ref m in metric_list:
+        for m in metric_list:
             err += String("    metric: [" + m.name.lower(), "]\n")
         err += String(
             sep, sep, "[ERROR]: metric [", name, "] is NOT supported!\n"
@@ -187,7 +182,7 @@ struct ThroughputMeasure(Copyable, Movable):
         """Gets a string representation of this `ThroughputMeasure`.
 
         Returns:
-            The string represntation.
+            The string representation.
         """
         return String(self.metric)
 
@@ -216,7 +211,7 @@ struct ThroughputMeasure(Copyable, Movable):
 
 
 @fieldwise_init
-struct Format(Writable, Stringable, Copyable, Movable):
+struct Format(Copyable, Movable, Stringable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -337,7 +332,7 @@ struct BenchConfig(Copyable, Movable):
         num_repetitions: Int = 1,
         flush_denormals: Bool = True,
     ) raises:
-        """Constructs and initializes Benchmark config object with default and inputed values.
+        """Constructs and initializes Benchmark config object with default and inputted values.
 
         Args:
             out_file: Output file to write results to.
@@ -518,7 +513,7 @@ struct Mode(Copyable, Movable):
         return self.value == other.value
 
 
-struct Bench(Writable, Stringable):
+struct Bench(Stringable, Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
@@ -679,7 +674,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
@@ -737,7 +732,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
@@ -840,7 +835,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
@@ -892,7 +887,7 @@ struct Bench(Writable, Stringable):
             measures: Variadic arg used to represent a list of ThroughputMeasure's.
         """
         var measures_list = List[ThroughputMeasure]()
-        for ref m in measures:
+        for m in measures:
             measures_list.append(m)
         self.bench_function[bench_fn](bench_id, measures_list)
 
@@ -991,19 +986,26 @@ struct Bench(Writable, Stringable):
                 f.write(self)
             self.config.format = orig_format
 
-    fn pad(self, width: Int, string: String) -> String:
+    fn pad[
+        pad_str: StaticString = " "
+    ](self, width: Int, string: String) -> String:
         """Pads a string to a given width.
 
         Args:
             width: The width to pad the string to.
             string: The string to pad.
 
+        Parameters:
+            pad_str: The length 1 string to use for the padding.
+
         Returns:
             A string padded to the given width.
         """
+        constrained[len(pad_str) == 1, "pad_str must be length 1."]()
+
         if self.config.format == Format.csv:
             return ""
-        return " " * (width - len(string))
+        return pad_str * (width - len(string))
 
     fn __str__(self) -> String:
         """Returns a string representation of the benchmark results.
@@ -1059,10 +1061,6 @@ struct Bench(Writable, Stringable):
         var first_sep = (
             "| " if self.config.format == Format.table else StaticString("")
         )
-        var line_sep = "-" * total_width
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
         writer.write(first_sep, BENCH_LABEL, self.pad(name_width, BENCH_LABEL))
         writer.write(sep, MET_LABEL, self.pad(timing_widths[0], MET_LABEL))
@@ -1071,7 +1069,7 @@ struct Bench(Writable, Stringable):
         # Return early if no runs were benchmarked
         if len(self.info_vec) == 0:
             if self.config.format == Format.table:
-                writer.write(" |\n", line_sep, "\nNo benchmarks recorded...")
+                writer.write("No benchmarks recorded...")
             writer.write("\n")
             return
 
@@ -1083,7 +1081,7 @@ struct Bench(Writable, Stringable):
             except e:
                 abort(String(e))
 
-        # Write the timeing labels
+        # Write the timing labels
         if self.config.verbose_timing:
             var labels = self.config.VERBOSE_TIMING_LABELS
             # skip the met label
@@ -1091,8 +1089,31 @@ struct Bench(Writable, Stringable):
                 writer.write(sep, labels[i])
                 writer.write(self.pad(timing_widths[i + 1], labels[i]))
 
+        # Write the sep line between the header and the data in MD format.
         if self.config.format == Format.table:
-            writer.write(" |\n", line_sep)
+            writer.write(" |\n| ")  # , line_sep)
+            # name, met, iters
+            writer.write(self.pad["-"](name_width, ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](timing_widths[0], ""))
+            writer.write(sep)
+            writer.write(self.pad["-"](iters_width, ""))
+
+            for name in metrics:
+                writer.write(sep)
+                try:
+                    writer.write(self.pad["-"](metrics[name].max_width, ""))
+                except e:
+                    abort(String(e))
+
+            if self.config.verbose_timing:
+                var labels = self.config.VERBOSE_TIMING_LABELS
+                # skip the met label
+                for i in range(len(labels)):
+                    writer.write(sep)
+                    writer.write(self.pad["-"](timing_widths[i + 1], ""))
+            writer.write(" |")
+
         writer.write("\n")
 
         # Loop through the runs and write out the table rows
@@ -1118,7 +1139,7 @@ struct Bench(Writable, Stringable):
             var iters_pad = self.pad(iters_width, String(run.result.iters()))
             writer.write(sep, run.result.iters(), iters_pad)
 
-            for var name in metrics:
+            for name in metrics:
                 try:
                     var rates = metrics[name].rates
                     var max_width = metrics[name].max_width
@@ -1145,9 +1166,6 @@ struct Bench(Writable, Stringable):
                 writer.write(" |")
 
             writer.write("\n")
-
-        if self.config.format == Format.table:
-            writer.write(line_sep, "\n")
 
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)

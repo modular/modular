@@ -34,7 +34,7 @@ from max.pipelines.core import (
 
 from .metrics import TextGenerationMetrics
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.entrypoints")
 
 MODEL_NAME = "model"
 
@@ -72,8 +72,7 @@ async def stream_text_to_console(
         generate_again = True
         while generate_again:
             responses = pipeline.next_token(
-                pipeline_request,
-                num_steps=num_steps,
+                pipeline_request, num_steps=num_steps
             )
 
             for request_idx, response in responses.items():

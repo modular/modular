@@ -13,12 +13,10 @@
 
 from random import random_ui64
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
-from memory import stack_allocation
-from nn.index_tensor import _index_tensor_impl, index_tensor_shape
+from nn.index_tensor import _index_tensor_impl
 from testing import assert_equal, assert_true
 
 from utils import IndexList

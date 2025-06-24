@@ -30,7 +30,6 @@ from max.nn import (
     GPTQAttentionWithRope,
     GPTQLinear,
     Linear,
-    Llama3RotaryEmbedding,
     Module,
     RMSNorm,
     Transformer,
@@ -42,7 +41,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
 )
 
-from .model_config import Llama3Config
+from .model_config import Llama3Config, create_rope_embedding
 
 
 class StackedMLP(Module):
@@ -121,13 +120,14 @@ class ConstantLayerNorm(Module):
 class Llama3(Transformer):
     def __init__(self, config: Llama3Config):
         assert len(config.devices) == 1
-        rope = Llama3RotaryEmbedding(
-            dim=config.hidden_size,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
+        rope = create_rope_embedding(
+            hidden_size=config.hidden_size,
+            num_attention_heads=config.num_attention_heads,
+            rope_theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            interleaved=config.interleaved_rope_weights,
-            scaling_params=config.rope_scaling_params,
+            interleaved_rope_weights=config.interleaved_rope_weights,
+            rope_scaling_params=config.rope_scaling_params,
+            longrope_scaling_params=config.longrope_scaling_params,
             device=config.devices[0],
         )
 

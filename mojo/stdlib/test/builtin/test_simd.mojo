@@ -12,12 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
-from sys import has_neon
+from sys.info import CompilationTarget
 
 from bit import count_leading_zeros
 from builtin.simd import _modf
-from memory import UnsafePointer
 from testing import (
     assert_almost_equal,
     assert_equal,
@@ -26,7 +24,7 @@ from testing import (
     assert_true,
 )
 
-from utils import IndexList, StaticTuple
+from utils import StaticTuple
 from utils.numerics import isfinite, isinf, isnan, nan
 
 
@@ -58,7 +56,7 @@ def test_cast():
     assert_equal(Int(b.cast[DType.int16]()), 128)
 
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(
             BFloat16(33.0).cast[DType.float32]().cast[DType.bfloat16](), 33
         )
@@ -68,6 +66,17 @@ def test_cast():
         assert_equal(
             Float64(33.0).cast[DType.float32]().cast[DType.float16](), 33
         )
+
+
+def test_list_literal_ctor():
+    var s: SIMD[DType.uint8, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+    assert_equal(s[0], 1)
+    assert_equal(s[4], 5)
+    assert_equal(s[7], 8)
+
+    var s2: SIMD[DType.bool, 2] = [True, False]
+    assert_true(s2[0])
+    assert_false(s2[1])
 
 
 def test_cast_init():
@@ -104,6 +113,15 @@ def test_cast_init():
     assert_equal(
         SIMD[DType.float64, 4](Float32(21.5)), SIMD[DType.float64, 4](21.5)
     )
+
+
+def test_init_from_index():
+    alias a = UInt.MAX
+    alias a_str = String(a)
+    assert_equal(a_str, String(UInt128(a)))
+    assert_equal(a_str, String(Int128(a)))
+    assert_equal(a_str, String(UInt256(a)))
+    assert_equal(a_str, String(Int256(a)))
 
 
 def test_simd_variadic():
@@ -311,7 +329,7 @@ def test_truthy():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_dtype[DType.bfloat16]()
 
 
@@ -337,7 +355,7 @@ def test_len():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         alias BF16 = SIMD[DType.bfloat16, 2]
         var f1 = BF16(0.0)
         assert_equal(2, f1.__len__())
@@ -478,7 +496,7 @@ def test_ceil():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(BFloat16.__ceil__(BFloat16(2.5)), 3.0)
 
     alias F = SIMD[DType.float32, 4]
@@ -506,7 +524,7 @@ def test_floor():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         assert_equal(BFloat16.__floor__(BFloat16(2.5)), 2.0)
 
     alias F = SIMD[DType.float32, 4]
@@ -1391,7 +1409,7 @@ def test_reduce():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_dtype[DType.bfloat16]()
 
 
@@ -1835,7 +1853,7 @@ def test_comparison():
 
     # TODO(KERN-228): support BF16 on neon systems.
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_dtype[DType.bfloat16]()
 
 
@@ -1986,6 +2004,7 @@ def main():
     test_add()
     test_cast()
     test_cast_init()
+    test_list_literal_ctor()
     test_ceil()
     test_convert_simd_to_string()
     test_simd_repr()
@@ -1997,6 +2016,7 @@ def main():
     test_from_bytes_as_bytes()
     test_iadd()
     test_indexing()
+    test_init_from_index()
     test_insert()
     test_interleave()
     test_issue_1625()
@@ -2041,4 +2061,4 @@ def main():
     test_large_int_types()
     test_is_power_of_two_simd()
     test_comptime()
-    # TODO: add tests for __and__, __or__, anc comparison operators
+    # TODO: add tests for __and__, __or__, and comparison operators

@@ -99,10 +99,10 @@ build](https://docs.modular.com/max/packages).
 
 Thanks for your interest in contributing to this repository!
 
-We currently accept contributions to the [Mojo standard library](./mojo) and
-we'll start accepting contributions to the [Mojo kernels]([./max/kernels]) in
-early June, 2025. We aren't accepting contributions for other parts of the
-repository at this time.
+We accept contributions to the [Mojo standard library](./mojo) and
+[MAX AI kernels](./max/kernels).
+We currently aren't accepting contributions for other parts of the
+repository.
 
 Please see the [Contribution Guide](mojo/CONTRIBUTING.md) for instructions.
 

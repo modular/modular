@@ -20,7 +20,6 @@ from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext
 from kv_cache.types import KVCacheT
-from memory import UnsafePointer
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
@@ -61,9 +60,7 @@ fn _bmm0_bs[
     alias kv_num_heads = cache_t.kv_params.num_heads
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var cur_kv_len: Int
@@ -160,9 +157,7 @@ fn _bmm1_bs[
     var y = global_idx.y
 
     var batch_head = block_idx.z
-    var batch: UInt
-    var head: UInt
-    batch, head = divmod(batch_head, UInt(num_heads))
+    var batch, head = divmod(batch_head, UInt(num_heads))
 
     var cur_query_len: Int
     var cur_kv_len: Int

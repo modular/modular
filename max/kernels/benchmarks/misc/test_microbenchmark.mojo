@@ -11,18 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from random import random_si64, seed
-from sys.info import sizeof
+from random import random_si64
 
 import microbenchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from linalg.matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import UnsafePointer, bitcast
+from linalg.matmul import matmul
 from microbenchmark import Benchmarkable
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 alias alignment = 64
 
@@ -45,9 +42,9 @@ fn gemm_naive[
                 c[i, j] += a_val * b_val
 
 
-@value
+@fieldwise_init
 struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
-    Benchmarkable
+    Benchmarkable, Copyable, Movable
 ):
     var m: Int
     var n: Int
@@ -124,8 +121,10 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
         pass
 
 
-@value
-struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
+@fieldwise_init
+struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
+    Benchmarkable, Copyable, Movable
+):
     var m: Int
     var n: Int
     var k: Int

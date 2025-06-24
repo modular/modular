@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from memory import Pointer, UnsafePointer
+from memory import Pointer
 
 # ===-----------------------------------------------------------------------===#
 # VariadicList / VariadicListMem
@@ -152,7 +152,7 @@ struct _VariadicListMemIter[
         self.index = index
         self.src = Pointer(to=list)
 
-    fn __next__(mut self) -> ref [elt_origin] elt_type:
+    fn __next_ref__(mut self) -> ref [elt_origin] elt_type:
         self.index += 1
         return rebind[Self.variadic_list_type.reference_type](
             Pointer(to=self.src[][self.index - 1])
@@ -331,6 +331,10 @@ struct VariadicPack[
 
     @doc_private
     @always_inline("nodebug")
+    # This disables nested origin exclusivity checking because it is taking a
+    # raw variadic pack which can have nested origins in it (which this does not
+    # dereference).
+    @__unsafe_disable_nested_origin_exclusivity
     fn __init__(out self, value: Self._mlir_type):
         """Constructs a VariadicPack from the internal representation.
 

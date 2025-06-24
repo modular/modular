@@ -12,18 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import isclose, isqrt
+from math import isqrt
 from random import random_ui64, seed
-from sys import has_nvidia_gpu_accelerator
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -31,7 +30,7 @@ from tensor_internal import IOUnknown, ManagedTensorSlice
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
-from utils import Index, IndexList
+from utils import IndexList
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -48,12 +47,10 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[
-        type, kv_params, WRITE_MODE_MEM
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
 
     var batch_size = len(valid_lengths)
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test (",
         batch_size,
@@ -61,7 +58,7 @@ def execute_ragged_flash_attention[
         num_blocks,
         ")",
     )
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         len(valid_lengths) == len(cache_lengths),
         "expected valid_lengths and cache_lengths size to be equal",
     )

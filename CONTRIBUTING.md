@@ -1,16 +1,21 @@
 # External Contribution Workflow for Modular Repo
 
-We welcome and value contributions from the community! This document explains
-the lifecycle of a pull request (PR) in the
-[Modular repository](https://github.com/modular/modular), from submission
+Thanks for your interest in contributing to this repository!
+
+We accept contributions to the [Mojo standard library](./mojo) and
+[MAX AI kernels](./max/kernels). We currently aren't accepting
+contributions for other parts of the repository.
+
+This document explains
+the overall lifecycle of a pull request (PR), from submission
 through review and final merge.
 
-If you're looking for guidance on *how* to contribute, please refer to the
-[CONTRIBUTING guide](mojo/CONTRIBUTING.md) for the Mojo standard library.
+If you're looking for guidance on *how* to contribute to either
+the Mojo standard library or MAX AI kernels, please refer to the
+corresponding contributing guides:
 
-The MAX Kernel Library will also be open for contributions soon. For details
-on contributing to this component, please see its dedicated
-[CONTRIBUTING guide](max/kernels/CONTRIBUTING.md).
+- [Mojo standard library contributing guide](mojo/CONTRIBUTING.md)
+- [MAX AI kernels contributing guide](max/kernels/CONTRIBUTING.md)
 
 ---
 

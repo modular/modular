@@ -12,13 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
 from sys.info import sizeof
 
-from memory import UnsafePointer
 from memory.maybe_uninitialized import UnsafeMaybeUninitialized
 from test_utils import DelRecorder
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_true
 
 
 def test_array_unsafe_get():
@@ -87,7 +85,7 @@ def test_array_int():
         var arr = InlineArray[Scalar[dt], size].__init__[batch_size=batch_size](
             fill=arg
         )
-        for var i in range(size):
+        for i in range(size):
             assert_equal(arr[i], arg)
 
     def test_init_fill_scalars[

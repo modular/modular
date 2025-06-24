@@ -9,6 +9,7 @@ _DATA = [
 _TEST_UTILS = [
     "test_utils/__init__.mojo",
     "test_utils/compare_helpers.mojo",
+    "test_utils/hash.mojo",
     "test_utils/math_helpers.mojo",
     "test_utils/test_utils.mojo",
     "test_utils/types.mojo",

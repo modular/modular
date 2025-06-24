@@ -14,16 +14,15 @@
 from math import fma, isclose
 from os import abort
 from random import rand
-from sys import CompilationTarget, argv, has_avx512f, simdwidthof, sizeof
+from sys import CompilationTarget, argv, simdwidthof, sizeof
 
 import benchmark
 from algorithm.functional import vectorize
-from layout import Layout, RuntimeLayout, RuntimeTuple
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple, size
-from layout.layout import coalesce, expand_modes_alike, flatten
+from layout import Layout, RuntimeLayout
+from layout.int_tuple import IntTuple, size
+from layout.layout import expand_modes_alike, flatten
 from layout.layout_tensor import LayoutTensor
-from layout.math import outer_product_acc
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from memory import stack_allocation
 from testing import assert_false
 
 from utils import StaticTuple
@@ -681,7 +680,7 @@ fn matmulb2b[
                     # B[Kc, Nc]   - held
                     #
                     # If we use nontemporal prefetches (i.e. `prefetchnta`
-                    # on x86) on `A`, then it won't necessarilly be stored in the
+                    # on x86) on `A`, then it won't necessarily be stored in the
                     # L2 cache, or it might be stored but not in a recently used
                     # position, so that it would be quickly evicted, and unlikely
                     # to use more than 1-way from each set it occupies.
@@ -693,7 +692,7 @@ fn matmulb2b[
                         # A[Mr, Kc]   - held
                         # B[Kc, WNr]  - replaced
                         #
-                        # These sizes roughly indicate how mcuh data is needed at
+                        # These sizes roughly indicate how much data is needed at
                         # a cache level. Here, bbecause `A` is the only array that
                         # can be held, `matmul_ukern` strides across it, touching
                         # only one element per cacheline at a time, while streaming
@@ -746,7 +745,7 @@ fn matmulb2b[
                 # checks of the arrays vs the actual cache size, since you wouldn't
                 # want to forcefully flush it for smaller arrays, when everything
                 # would have actually fit. Having not tried it, I don't know if it's
-                # likely to help perforamnce.
+                # likely to help performance.
                 # We might be able to load `D` with `prefetchnta` when updating it,
                 # and using a streaming store to write? Although, this would
                 # necessitate fences.
@@ -949,14 +948,14 @@ fn bench_b2b[
 
 fn getMr() -> Int:
     if CompilationTarget.is_x86():
-        if has_avx512f():
+        if CompilationTarget.has_avx512f():
             return 9
     return 6
 
 
 fn getNr() -> Int:
     if CompilationTarget.is_x86():
-        if has_avx512f():
+        if CompilationTarget.has_avx512f():
             return 3
         else:
             return 2

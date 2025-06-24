@@ -13,17 +13,15 @@
 
 from os import Atomic
 from sys import external_call
-from sys.ffi import OpaquePointer
 from time import sleep
 
-from memory import UnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter
 # ===-----------------------------------------------------------------------===#
 
 
-struct SpinWaiter:
+struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
     var storage: OpaquePointer
@@ -50,7 +48,7 @@ struct SpinWaiter:
         )
 
 
-struct BlockingSpinLock:
+struct BlockingSpinLock(Defaultable):
     """A basic locking implementation that uses an integer to represent the
     owner of the lock."""
 

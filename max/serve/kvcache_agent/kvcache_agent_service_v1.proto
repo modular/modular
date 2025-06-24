@@ -10,7 +10,7 @@ syntax = "proto3";
 
 package max.serve.kvcache_agent.v1;
 
-option go_package = "github.com/modularml/max-cluster/pkg/api/v1";
+option go_package = "github.com/modularml/mammoth/pkg/api/v1";
 
 // Service that exposes the KV Cache Agent state
 service KVCacheAgentService {

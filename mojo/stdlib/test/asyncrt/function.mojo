@@ -15,7 +15,6 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 alias T = DType.float64
 alias S = Scalar[T]
@@ -34,7 +33,7 @@ struct TwoS:
 struct OneS(DevicePassable):
     alias device_type: AnyTrivialRegType = TwoS
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = TwoS(self.s)
 
     @staticmethod
@@ -54,14 +53,14 @@ struct OneS(DevicePassable):
 fn vec_func(
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     s: TwoS,
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
+    output[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
 
 
 fn test_function_unchecked(ctx: DeviceContext) raises:

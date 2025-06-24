@@ -288,7 +288,7 @@ fn main() raises:
 ## Compiler limitations
 
 Current compiler does not allow parameters on trait definition.
-A parametrization on Hasher trait for for hash value dtype would be
+A parameterization on Hasher trait for for hash value dtype would be
 beneficial as a hashing algorithm might differ.
 For example in [Fowler–Noll–Vo hash function](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV_hash_parameters)
 parameters prime and offset basis depend on hash value width.

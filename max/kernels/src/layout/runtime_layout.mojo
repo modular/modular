@@ -22,17 +22,20 @@ from layout.runtime_layout import RuntimeLayout, make_layout
 ```
 """
 
-from sys import bitwidthof
 
 from utils import IndexList
 
 from . import IntTuple, Layout
 from .int_tuple import UNKNOWN_VALUE, flatten
 from .layout import coalesce as coalesce_layout
-from .layout import composition as composition_layout
-from .layout import is_tuple
 from .layout import make_layout as make_layout_static
-from .runtime_tuple import RuntimeTuple, crd2idx, product
+from .runtime_tuple import (
+    RuntimeTuple,
+    crd2idx,
+    product,
+    idx2crd_int_tuple,
+    idx2crd,
+)
 
 # A `Layout` like type that uses RuntimeTuple as its storage instead of
 # IntTuple.
@@ -45,12 +48,12 @@ struct RuntimeLayout[
     *,
     element_type: DType = DType.int64,
     linear_idx_type: DType = DType.int64,
-](Stringable, Writable):
+](Defaultable, Stringable, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,
-    unlike the static [`Layout`](/mojo/stdlib/layout/layout/Layout) type. It
-    uses [`RuntimeTuple`](/mojo/stdlib/layout/runtime_tuple/RuntimeTuple) for
+    unlike the static [`Layout`](/mojo/kernels/layout/layout/Layout) type. It
+    uses [`RuntimeTuple`](/mojo/kernels/layout/runtime_tuple/RuntimeTuple) for
     shape and stride storage.
 
     Parameters:
@@ -94,8 +97,8 @@ struct RuntimeLayout[
             layout.all_dims_known(), "Static layout with known dims is required"
         ]()
 
-        self.shape = __type_of(self.shape)()
-        self.stride = __type_of(self.stride)()
+        self.shape = {}
+        self.stride = {}
 
     @always_inline
     fn __init__(
@@ -142,6 +145,29 @@ struct RuntimeLayout[
             The corresponding flat linear index in the layout.
         """
         return crd2idx[out_type=linear_idx_type](idx, self.shape, self.stride)
+
+    @always_inline("nodebug")
+    fn idx2crd[
+        t: IntTuple
+    ](self, idx: RuntimeTuple[t, **_]) -> RuntimeTuple[
+        idx2crd_int_tuple(t, layout.shape, layout.stride),
+        element_type=element_type,
+    ]:
+        """Converts a linear index to logical coordinates.
+
+        This is the inverse operation of the __call__ method, mapping from
+        a memory index back to the corresponding logical coordinates.
+
+        Parameters:
+            t: The `IntTuple` type for the index.
+
+        Args:
+            idx: The linear index to convert.
+
+        Returns:
+            The logical coordinates corresponding to the given index.
+        """
+        return idx2crd(idx, self.shape, self.stride)
 
     @always_inline
     fn size(self) -> Int:
@@ -229,17 +255,6 @@ struct RuntimeLayout[
             A `RuntimeLayout` with row-major stride ordering.
         """
 
-        constrained[
-            shape.element_type == element_type,
-            String(
-                "Element type mismatch, shape has element type",
-                shape.element_type,
-                "but layout has element type",
-                element_type,
-                sep=" ",
-            ),
-        ]()
-
         var stride = IndexList[rank, element_type=linear_idx_type]()
         var c_stride = 1
         stride[rank - 1] = c_stride
@@ -249,7 +264,7 @@ struct RuntimeLayout[
             var dim = shape[i + 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return __type_of(result)(shape, stride)
+        return __type_of(result)(shape.cast[element_type](), stride)
 
     @staticmethod
     fn col_major[
@@ -277,17 +292,6 @@ struct RuntimeLayout[
             A `RuntimeLayout` with column-major stride ordering.
         """
 
-        constrained[
-            shape.element_type == element_type,
-            String(
-                "Element type mismatch, shape has element type",
-                shape.element_type,
-                "but layout has element type",
-                element_type,
-                sep=" ",
-            ),
-        ]()
-
         var stride = IndexList[rank, element_type=linear_idx_type]()
         var c_stride = 1
         stride[0] = c_stride
@@ -297,7 +301,7 @@ struct RuntimeLayout[
             var dim = shape[i - 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return __type_of(result)(shape, stride)
+        return __type_of(result)(shape.cast[element_type](), stride)
 
     @no_inline
     fn write_to[W: Writer](self, mut writer: W):

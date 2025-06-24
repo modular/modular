@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/build-custom-ops.mdx
+
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +35,8 @@ if __name__ == "__main__":
         # The custom Mojo operation is referenced by its string name, and we
         # need to provide inputs as a list as well as expected output types.
         forward=lambda x: ops.custom(
-            name="add_one_custom",
+            name="add_one",
+            device=DeviceRef.from_device(device),
             values=[x],
             out_types=[
                 TensorType(
@@ -64,10 +67,10 @@ if __name__ == "__main__":
     # Fill an input matrix with random values.
     x_values = np.random.uniform(size=(rows, columns)).astype(np.float32)
 
-    # Create a driver tensor from this, and move it to the accelerator.
+    # Create a tensor and move it to the device (CPU or GPU).
     x = Tensor.from_numpy(x_values).to(device)
 
-    # Perform the calculation on the target device.
+    # Run inference with the input tensor.
     result = model.execute(x)[0]
 
     # Copy values back to the CPU to be read.

@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StringSlice
 
 from gpu import thread_idx
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.intrinsics import ldg
-from memory import UnsafePointer
 from testing import *
 
 
@@ -59,7 +58,7 @@ fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
 
 def test_register_intrinsics_sm80():
     var asm = _compile_code_asm[
-        register_intrinsics, target = _get_gpu_target["sm_80"]()
+        register_intrinsics, target = get_gpu_target["sm_80"]()
     ]()
     _verify_register_intrinsics(asm)
 
@@ -67,7 +66,7 @@ def test_register_intrinsics_sm80():
 def test_register_intrinsics_sm90():
     var asm = _compile_code_asm[
         register_intrinsics,
-        target = _get_gpu_target["sm_90"](),
+        target = get_gpu_target["sm_90"](),
     ]()
     _verify_register_intrinsics(asm)
 

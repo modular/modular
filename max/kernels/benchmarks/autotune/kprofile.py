@@ -348,7 +348,7 @@ def diff_baseline(
 
 
 class ComplexParamList(click.Option):
-    """Complext parameter list
+    """Complex parameter list
     Example:
         --pivot=[M] --pivot=[N] --pivot=[K] is equivalent to --pivot=[M,N,K] and vice versa.
     """

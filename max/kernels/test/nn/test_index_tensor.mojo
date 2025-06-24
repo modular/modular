@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from random import random_ui64
 
 from buffer import NDBuffer
@@ -28,7 +27,6 @@ from nn.index_tensor import (
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList, StaticTuple
-from utils.index import Index
 
 
 # TODO: It is like example 5 ONNX.

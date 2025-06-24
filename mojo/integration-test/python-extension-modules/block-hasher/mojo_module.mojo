@@ -14,7 +14,6 @@
 from os import abort
 from sys import sizeof
 
-from memory import UnsafePointer
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
 from python._cpython import PyObjectPtr
@@ -85,7 +84,7 @@ fn _mojo_block_hasher[
     # Initial hash seed value
     alias initial_hash = String("None").__hash__()
 
-    # Perfoming hashing
+    # Performing hashing
     var prev_hash = initial_hash
     var num_bytes = block_size * sizeof[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
@@ -118,7 +117,7 @@ fn mojo_block_hasher(
     # Parse block size
     var block_size = Int(block_size_obj)
 
-    # Perfoming hashing
+    # Performing hashing
     var results = _mojo_block_hasher(py_array_object_ptr, block_size)
 
     return results^

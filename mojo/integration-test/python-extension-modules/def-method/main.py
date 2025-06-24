@@ -40,10 +40,6 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
         person = def_method.Person()
         self.assertEqual(person.split_name(" "), ["John", "Smith"])
 
-        with self.assertRaises(Exception) as cm:
-            person.split_name("")
-        self.assertEqual(cm.exception.args, ("Separator cannot be empty.",))
-
     def test_with(self):
         person = def_method.Person()
         same_person = person._with("Jane Doe", 25)

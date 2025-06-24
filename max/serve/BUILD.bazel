@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 modular_py_library(
     name = "config",
@@ -41,24 +41,6 @@ modular_py_library(
         requirement("pyinstrument"),
         requirement("sse-starlette"),
         requirement("transformers"),
-        requirement("uvicorn"),
-        requirement("uvloop"),
-    ],
-)
-
-modular_py_binary(
-    name = "api_server",
-    srcs = ["api_server.py"],
-    main = "api_server.py",
-    deps = [
-        ":serve",
-        "//SDK/lib/API/python/max/engine",
-        "//SDK/lib/API/python/max/serve/kvcache_agent",
-        "//SDK/lib/API/python/max/serve/recordreplay",
-        "//SDK/lib/API/python/max/serve/telemetry",
-        requirement("fastapi"),
-        requirement("prometheus-client"),
-        requirement("pydantic-settings"),
         requirement("uvicorn"),
         requirement("uvloop"),
     ],

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import exp2, iota
-from sys import bitwidthof
 
 from bit import prev_power_of_two
 
@@ -122,9 +121,9 @@ struct AlibiScoreMod[
         return score_mod_vec
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct IdentityScoreMod(ScoreModTrait):
+struct IdentityScoreMod(Copyable, Movable, ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
 
     alias name_str: String = "no_pos"

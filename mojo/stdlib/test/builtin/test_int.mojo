@@ -14,7 +14,6 @@
 
 from sys.info import bitwidthof
 
-from memory import UnsafePointer
 from python import PythonObject
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
@@ -103,9 +102,7 @@ def test_mod():
 
 
 def test_divmod():
-    var a: Int
-    var b: Int
-    a, b = divmod(7, 3)
+    var a, b = divmod(7, 3)
     assert_equal(a, 2)
     assert_equal(b, 1)
 

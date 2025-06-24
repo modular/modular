@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 
 from algorithm import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, IndexList

@@ -17,11 +17,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from linalg.apple_amx_intrinsics import *
 from testing import *
-
-from utils.index import IndexList
 
 
 fn fill_a(buf: NDBuffer[mut=True, *_]):
@@ -38,7 +35,7 @@ fn fill_b(buf: NDBuffer[mut=True, *_]):
             buf[i, j] = Scalar[buf.type](i // (j + 1) + j)
 
 
-fn clear_c(buf: NDBuffer):
+fn clear_c(buf: NDBuffer[mut=True, *_, **_]):
     buf.zero()
 
 

@@ -51,9 +51,6 @@ fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
     return result
 
 
-var inputs = make_inputs(0, 10_000, 1_000_000)
-var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
-
 # ===-----------------------------------------------------------------------===#
 # Benchmark math_func
 # ===-----------------------------------------------------------------------===#
@@ -65,8 +62,11 @@ fn bench_math[
         dtype, size
     ]
 ](mut b: Bencher) raises:
+    var inputs = make_inputs(0, 10_000, 1_000_000)
+
     @always_inline
     @parameter
+    @__copy_capture(inputs)
     fn call_fn() raises:
         for input in inputs:
             var result = math_f1p(input)
@@ -84,8 +84,11 @@ fn bench_math3[
         SIMD[dtype, size], SIMD[dtype, size], SIMD[dtype, size]
     ) -> SIMD[dtype, size]
 ](mut b: Bencher) raises:
+    var inputs = make_inputs(0, 10_000, 1_000_000)
+
     @always_inline
     @parameter
+    @__copy_capture(inputs)
     fn call_fn() raises:
         for input in inputs:
             var result = math_f3p(input, input, input)
@@ -99,8 +102,11 @@ fn bench_math3[
 # ===-----------------------------------------------------------------------===#
 @parameter
 fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
+    var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
+
     @always_inline
     @parameter
+    @__copy_capture(int_inputs)
     fn call_fn() raises:
         for i in range(len(int_inputs) // 2):
             var result = keep(math_f2p(int_inputs[i], int_inputs[-(i + 1)]))

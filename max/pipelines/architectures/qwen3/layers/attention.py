@@ -21,8 +21,8 @@ from typing import Callable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn import RMSNorm
+from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import (
-    MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.nn.rotary_embedding import OptimizedRotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 class Qwen3Attention(Module):
@@ -49,7 +49,7 @@ class Qwen3Attention(Module):
     def __init__(
         self,
         *,
-        rope: OptimizedRotaryEmbedding,
+        rope: RotaryEmbedding,
         num_attention_heads: int,
         num_key_value_heads: int,
         hidden_size: int,
@@ -179,7 +179,7 @@ class Qwen3Attention(Module):
         x: TensorValue,
         kv_collection: ContinuousBatchingKVCacheCollection
         | PagedKVCacheCollection,
-        **kwargs,
+        input_row_offsets: TensorValue,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -191,7 +191,7 @@ class Qwen3Attention(Module):
             input=x,
             wqkv=wqkv,
             bias=self.wqkv_bias,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
@@ -210,7 +210,7 @@ class Qwen3Attention(Module):
             epsilon=self.qk_norm_eps,
             layer_idx=layer_idx,
             total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             weight_offset=0.0,
         )
 
@@ -222,7 +222,7 @@ class Qwen3Attention(Module):
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
-            kwargs["input_row_offsets"],
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -236,7 +236,7 @@ class Qwen3Attention(Module):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
+            input_row_offsets=input_row_offsets,
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )

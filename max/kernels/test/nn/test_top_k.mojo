@@ -11,16 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
+from collections import OptionalReg
 from math import iota
 from random import rand, seed
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from internal_utils import HostNDBuffer
-from memory import UnsafePointer
-from nn.arange import arange
-from nn.topk import _top_k_cpu, _top_k_sampling, fused_token_sampling_cpu
+from nn.topk import _top_k_cpu, _top_k_sampling
 
 from utils import IndexList
 
@@ -86,10 +83,43 @@ fn test_case_sampling[
     )
 
     fill_fn[rank, type](input)
-    # input.fill(4)
+
+    var max_k = K
+
+    @parameter
+    if rank == 1:
+        batch_size = 1
+    elif rank == 2:
+        batch_size = input_shape.get[0]()
+    else:
+        batch_size = input_shape.get[0]() * input_shape.get[1]()
+    var temperature_ptr = UnsafePointer[Scalar[DType.float32]].alloc(batch_size)
+    for i in range(batch_size):
+        temperature_ptr[i] = temperature.cast[DType.float32]()
+    var temperature_buf = OptionalReg[
+        NDBuffer[DType.float32, 1, MutableAnyOrigin]
+    ](
+        NDBuffer[DType.float32, 1, MutableAnyOrigin](
+            temperature_ptr, DimList(batch_size)
+        )
+    )
+
+    var seed_ptr = UnsafePointer[Scalar[DType.uint64]].alloc(batch_size)
+    for i in range(batch_size):
+        seed_ptr[i] = 12
+    var seed_buf = OptionalReg[NDBuffer[DType.uint64, 1, MutableAnyOrigin]](
+        NDBuffer[DType.uint64, 1, MutableAnyOrigin](
+            seed_ptr, DimList(batch_size)
+        )
+    )
 
     _top_k_sampling(
-        K, input, out_vals, out_idxs, temperature=temperature, seed=12
+        max_k,
+        input,
+        out_vals,
+        out_idxs,
+        temperature=temperature_buf,
+        seed=seed_buf,
     )
 
     var _xxx_no_lifetimes = input  # intentionally bad name

@@ -15,20 +15,14 @@ from __future__ import annotations
 """Token sampling algorithms."""
 
 from max.dtype import DType
-from max.graph import (
-    BufferType,
-    DeviceRef,
-    Dim,
-    Graph,
-    TensorType,
-    ops,
-)
+from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
 from max.nn.kernels import (
     apply_penalties_to_logits,
+    scatter_set_constant,
     topk_fused_sampling,
     update_frequency_data,
 )
-from max.nn.sampling import RejectionSampler
+from max.nn.sampling import RejectionSampler, RejectionSamplerWithResiduals
 
 from .max_config import SamplingConfig
 
@@ -48,9 +42,7 @@ def _sampling_input_types(
         inputs["logits"] = logits_in_type
     else:
         logits_in_type = BufferType(
-            sampling_config.in_dtype,
-            ["batch", "vocab_size"],
-            device=device,
+            sampling_config.in_dtype, ["batch", "vocab_size"], device=device
         )
         inputs["logits"] = logits_in_type
 
@@ -59,6 +51,21 @@ def _sampling_input_types(
         DType.int64, ["batch", "num_prev_steps"], device=device
     )
     inputs["prev_tokens"] = prev_tokens_type
+
+    top_k_type = TensorType(DType.int64, ["batch"], device=device)
+    inputs["top_k"] = top_k_type
+
+    max_k_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
+    inputs["max_k"] = max_k_type
+
+    temperature_type = TensorType(DType.float32, ["batch"], device=device)
+    inputs["temperature"] = temperature_type
+
+    top_p_type = TensorType(DType.float32, ["batch"], device=device)
+    inputs["top_p"] = top_p_type
+
+    seed_type = TensorType(DType.uint64, ["batch"], device=device)
+    inputs["seed"] = seed_type
 
     # If we need to return logits, introduce tensor to append to.
     if return_logits:
@@ -82,10 +89,7 @@ def _sampling_input_types(
         inputs["bitmask"] = bitmask_type
 
     # If we have frequency or presence penalties enabled
-    if (
-        sampling_config.frequency_penalty != 0
-        or sampling_config.presence_penalty != 0
-    ):
+    if sampling_config.do_penalties:
         penalty_freq_data_type = BufferType(
             DType.int32, ["unique_tokens", 2], device=device
         )
@@ -96,8 +100,6 @@ def _sampling_input_types(
         )
         inputs["penalty_freq_offsets"] = penalty_freq_offsets_type
 
-    # If we have repetition penalty enabled
-    if sampling_config.repetition_penalty != 1:
         repetition_freq_data_type = BufferType(
             DType.int32, ["unique_tokens_2", 2], device=device
         )
@@ -106,6 +108,17 @@ def _sampling_input_types(
             DType.uint32, ["batch_add_1"], device=device
         )
         inputs["repetition_freq_offsets"] = repetition_freq_offsets_type
+        penalty_type = TensorType(DType.float32, ["batch"], device=device)
+        inputs["frequency_penalty"] = penalty_type
+        inputs["presence_penalty"] = penalty_type
+        inputs["repetition_penalty"] = penalty_type
+
+    # If we have min_tokens enabled
+    if sampling_config.enable_min_tokens:
+        min_tokens_mask_type = TensorType(
+            DType.int32, ["num_token_masks", 2], device=device
+        )
+        inputs["min_tokens_mask"] = min_tokens_mask_type
 
     return inputs
 
@@ -125,41 +138,55 @@ def token_sampler(
         # quite brittle.
         logits_buffer = graph.inputs[list(_input_dict).index("logits")].buffer
         if sampling_config.do_penalties:
-            if (
-                sampling_config.frequency_penalty != 0
-                or sampling_config.presence_penalty != 0
-            ):
-                penalty_freq_data = graph.inputs[
-                    list(_input_dict).index("penalty_freq_data")
-                ].buffer
+            penalty_freq_data = graph.inputs[
+                list(_input_dict).index("penalty_freq_data")
+            ].buffer
 
-                penalty_freq_offsets = graph.inputs[
-                    list(_input_dict).index("penalty_freq_offsets")
-                ].tensor
+            penalty_freq_offsets = graph.inputs[
+                list(_input_dict).index("penalty_freq_offsets")
+            ].tensor
 
-                apply_penalties_to_logits(
-                    logits_buffer,
-                    ops.buffer_load(penalty_freq_data),
-                    penalty_freq_offsets,
-                    frequency_penalty=sampling_config.frequency_penalty,
-                    presence_penalty=sampling_config.presence_penalty,
-                )
+            repetition_freq_data = graph.inputs[
+                list(_input_dict).index("repetition_freq_data")
+            ].buffer
 
-            if sampling_config.repetition_penalty != 1:
-                repetition_freq_data = graph.inputs[
-                    list(_input_dict).index("repetition_freq_data")
-                ].buffer
+            repetition_freq_offsets = graph.inputs[
+                list(_input_dict).index("repetition_freq_offsets")
+            ].tensor
 
-                repetition_freq_offsets = graph.inputs[
-                    list(_input_dict).index("repetition_freq_offsets")
-                ].tensor
+            frequency_penalty = graph.inputs[
+                list(_input_dict).index("frequency_penalty")
+            ].tensor
+            presence_penalty = graph.inputs[
+                list(_input_dict).index("presence_penalty")
+            ].tensor
+            repetition_penalty = graph.inputs[
+                list(_input_dict).index("repetition_penalty")
+            ].tensor
 
-                apply_penalties_to_logits(
-                    logits_buffer,
-                    ops.buffer_load(repetition_freq_data),
-                    repetition_freq_offsets,
-                    repetition_penalty=sampling_config.repetition_penalty,
-                )
+            apply_penalties_to_logits(
+                logits_buffer,
+                ops.buffer_load(penalty_freq_data),
+                penalty_freq_offsets,
+                frequency_penalty=frequency_penalty,
+                presence_penalty=presence_penalty,
+            )
+
+            apply_penalties_to_logits(
+                logits_buffer,
+                ops.buffer_load(repetition_freq_data),
+                repetition_freq_offsets,
+                repetition_penalty=repetition_penalty,
+            )
+
+        if sampling_config.enable_min_tokens:
+            min_tokens_mask = graph.inputs[
+                list(_input_dict).index("min_tokens_mask")
+            ].tensor
+
+            scatter_set_constant(
+                logits_buffer, min_tokens_mask, fill_val=-10000
+            )
 
         # freeze the logits buffer (no more writes)
         logits = ops.buffer_load(logits_buffer)
@@ -183,39 +210,43 @@ def token_sampler(
 
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
-            logits = ops.select(
+            logits = ops.where(
                 bitmask,
                 logits,
                 ops.constant(-10000, dtype=DType.float32, device=device),
             )
 
         # Apply top_k sampling
+        temperature = graph.inputs[
+            list(_input_dict).index("temperature")
+        ].tensor
+        top_k = graph.inputs[list(_input_dict).index("top_k")].tensor
+        max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
+        top_p = graph.inputs[list(_input_dict).index("top_p")].tensor
+        seed = graph.inputs[list(_input_dict).index("seed")].tensor
+
         tokens = topk_fused_sampling(
             logits=logits,
-            top_k=sampling_config.top_k,
-            temperature=sampling_config.temperature,
-            top_p=sampling_config.top_p,
-            seed=sampling_config.seed,
+            top_k=top_k,
+            max_k=max_k,
+            temperature=temperature,
+            top_p=top_p,
+            seed=seed,
         )
 
         # Update frequency data for penalties that are actually enabled
         if sampling_config.do_penalties:
-            if (
-                sampling_config.frequency_penalty != 0
-                or sampling_config.presence_penalty != 0
-            ):
-                update_frequency_data(
-                    penalty_freq_data,
-                    penalty_freq_offsets,
-                    ops.squeeze(tokens, axis=1),
-                )
+            update_frequency_data(
+                penalty_freq_data,
+                penalty_freq_offsets,
+                ops.squeeze(tokens, axis=1),
+            )
 
-            if sampling_config.repetition_penalty != 1:
-                update_frequency_data(
-                    repetition_freq_data,
-                    repetition_freq_offsets,
-                    ops.squeeze(tokens, axis=1),
-                )
+            update_frequency_data(
+                repetition_freq_data,
+                repetition_freq_offsets,
+                ops.squeeze(tokens, axis=1),
+            )
         # Concat tokens to previous tokens.
         all_tokens = ops.concat([prev_tokens, tokens], -1)
 
@@ -255,7 +286,6 @@ def token_sampler(
 
 
 def rejection_sampler(
-    top_k: int,
     device: DeviceRef,
     *,
     seed: int = 0,
@@ -278,9 +308,7 @@ def rejection_sampler(
         TensorType(DType.float32, ["batch_size", "num_steps"], device=device),
         # Target Logits
         TensorType(
-            DType.float32,
-            ["total_output_len", "vocab_size"],
-            device=device,
+            DType.float32, ["total_output_len", "vocab_size"], device=device
         ),
         # Target Logit Offsets
         TensorType(DType.int64, ["logit_offsets_len"], device=device),
@@ -293,7 +321,7 @@ def rejection_sampler(
             target_logit_offsets,
         ) = graph.inputs
 
-        sampler = RejectionSampler(device=device, top_k=top_k, seed=seed)
+        sampler = RejectionSampler(device=device, seed=seed)
         first_rejected_token, sampled_target_tokens = sampler(
             draft_tokens.tensor,
             draft_logits_for_sampled_tokens.tensor,
@@ -301,5 +329,97 @@ def rejection_sampler(
             target_logit_offsets.tensor,
         )
         graph.output(first_rejected_token, sampled_target_tokens)
+
+        return graph
+
+
+def rejection_sampler_with_residuals(
+    device: DeviceRef,
+    *,
+    seed: int = 0,
+    debug: bool = False,
+) -> Graph:
+    """
+    Rejection sampler with residual sampling for speculative decoding.
+
+    Computes acceptance ratios for draft tokens, finds first rejection,
+    samples from residual distribution (target - draft), and generates bonus tokens.
+
+    """
+
+    graph_inputs = [
+        # Sampled Draft Tokens
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
+        # Logits for Sampled Tokens
+        TensorType(DType.float32, ["batch_size", "num_steps"], device=device),
+        # Target Logits
+        TensorType(
+            DType.float32,
+            ["total_output_len", "vocab_size"],
+            device=device,
+        ),
+        # Target Logit Offsets
+        TensorType(DType.int64, ["logit_offsets_len"], device=device),
+        # All draft logits, num_steps first so that slice indexing is contiguous
+        TensorType(
+            DType.float32,
+            ["num_steps", "batch_size", "vocab_size"],
+            device=device,
+        ),
+    ]
+    if debug:
+        # random number input for rejection sampling
+        graph_inputs.append(
+            TensorType(
+                DType.float32, ["batch_size", "num_steps"], device=device
+            ),
+        )
+        # random number input for multinomial sampling
+        graph_inputs.append(
+            TensorType(
+                DType.float32,
+                ["batch_size", "num_steps", "vocab_size"],
+                device=device,
+            ),
+        )
+    with Graph(
+        "rejection_sampler_with_residuals", input_types=graph_inputs
+    ) as graph:
+        if debug:
+            (
+                draft_tokens,
+                draft_logits_for_sampled_tokens,
+                target_logits,
+                target_logit_offsets,
+                full_draft_logits,
+                rejection_rand,
+                residual_rand,
+            ) = graph.inputs
+        else:
+            (
+                draft_tokens,
+                draft_logits_for_sampled_tokens,
+                target_logits,
+                target_logit_offsets,
+                full_draft_logits,
+            ) = graph.inputs
+
+        sampler = RejectionSamplerWithResiduals(
+            device=device, seed=seed, debug=debug
+        )
+        first_rejected_token_idx, sampled_target_tokens, bonus_token_ids = (
+            sampler(
+                draft_tokens.tensor,
+                draft_logits_for_sampled_tokens.tensor,
+                target_logits.tensor,
+                target_logit_offsets.tensor,
+                full_draft_logits.tensor,
+                rejection_rand.tensor if debug else None,
+                residual_rand.tensor if debug else None,
+            )
+        )
+        graph.output(
+            first_rejected_token_idx, sampled_target_tokens, bonus_token_ids
+        )
 
         return graph

@@ -28,14 +28,14 @@ from math.polynomial import polynomial_evaluate
 @always_inline
 fn polynomial_evaluate[
     dtype: DType,
-    simd_width: Int, //,
-    coefficients: List[SIMD[dtype, simd_width], *_],
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    width: Int, //,
+    coefficients: List[Scalar[dtype], *_],
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial.
 
     Parameters:
         dtype: The dtype of the value.
-        simd_width: The simd_width of the computed value.
+        width: The width of the computed value.
         coefficients: The coefficients.
 
     Args:
@@ -56,9 +56,9 @@ fn polynomial_evaluate[
 @always_inline
 fn _horner_evaluate[
     dtype: DType,
-    simd_width: Int, //,
-    coefficients: List[SIMD[dtype, simd_width], *_],
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    width: Int, //,
+    coefficients: List[Scalar[dtype], *_],
+](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Evaluates the polynomial using the passed in value and the specified
     coefficients using the Horner scheme. The Horner scheme evaluates the
     polynomial at point x as `horner(x, coeffs)` where x is a scalar and coeffs
@@ -71,7 +71,7 @@ fn _horner_evaluate[
 
     Parameters:
         dtype: The dtype of the value.
-        simd_width: The simd_width of the computed value.
+        width: The width of the computed value.
         coefficients: The coefficients.
 
     Args:

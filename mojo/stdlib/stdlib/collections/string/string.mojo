@@ -73,7 +73,7 @@ var ascii_str = ascii("Hello")  # ASCII-only string
 ```
 """
 
-from collections import KeyElement, List, Optional
+from collections import KeyElement
 from collections._index_normalization import normalize_index
 from collections.string import CodepointsIter
 from collections.string._parsing_numbers.parsing_floats import _atof
@@ -94,14 +94,14 @@ from os import PathLike, abort
 from os.atomic import Atomic
 from sys import bitwidthof, is_compile_time, sizeof
 from sys.ffi import c_char
-from sys.intrinsics import _type_is_eq
 
 from bit import count_leading_zeros
-from memory import Span, UnsafePointer, memcpy, memset
+from memory import memcpy, memset
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
-from utils import IndexList, Variant, Writable, Writer, write_args
-from utils.write import write_buffered
+from utils import IndexList, Variant
+from utils._select import _select_register_value as select
+from utils.write import _WriteBufferStack
 
 # ===----------------------------------------------------------------------=== #
 # String Implementation Details
@@ -120,19 +120,17 @@ struct _StringCapacityField:
     # This is the number of bytes that can be stored inline in the string value.
     # 'String' is 3 words in size and we use the top byte of the capacity field
     # to store flags.
-    alias NUM_SSO_BYTES = Int.BITWIDTH // 8 * 3 - 1
+    alias INLINE_CAPACITY = Int.BITWIDTH // 8 * 3 - 1
     # The start of the length field in the storage: this is the top byte, which
     # gives us 5 bits for the length.
     alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
-    alias INLINE_LENGTH_MASK = UInt(0b11111 << Self.INLINE_LENGTH_START)
+    alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
 
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
     alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
-    # When FLAG_IS_STATIC_CONSTANT is set, the _data pointer is to static
-    # constant string.  capacity() will always be zero for these strings, so any
-    # attempt to append will reallocate.
-    alias FLAG_IS_STATIC_CONSTANT = UInt(1) << (UInt.BITWIDTH - 2)
+    # UNUSED_FLAG is not used, but might be used in the future.
+    alias UNUSED_FLAG = UInt(1) << (UInt.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string data is inline as the first bytes
     # of the string value (the "Small string optimization").
     alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
@@ -141,37 +139,35 @@ struct _StringCapacityField:
     # be rounded up, so clients should check the capacity() after construction.
     @always_inline("nodebug")
     fn __init__(out self, capacity: UInt):
-        # Round the capacity to allocate up to the next multiple of 8.  Most
+        # If the capacity needed fits inline, use the inline form.
+        if capacity <= Self.INLINE_CAPACITY and not is_compile_time():
+            self._storage = Self.FLAG_IS_INLINE
+        else:
+            self = Self(out_of_line_capacity=capacity)
+
+    @always_inline("nodebug")
+    fn __init__(out self, *, out_of_line_capacity: UInt):
         # memory allocators work on this granularity anyway, so we might as well
         # use it. We store the capacity with the top 3 bits of the storage used
         # for flags.
-        if capacity > Self.NUM_SSO_BYTES or is_compile_time():
-            self = Self(out_of_line_capacity=capacity)
-        else:
-            # If the capacity needed fits inline, use the inline form.
-            self._storage = Self.FLAG_IS_INLINE
-
-    @always_inline("nodebug")
-    @staticmethod
-    fn __init__(out self, *, out_of_line_capacity: UInt):
         self._storage = (out_of_line_capacity + 7) >> 3
 
     @always_inline("nodebug")
-    @staticmethod
     fn __init__(out self, *, static_const_length: Int):
         # Short constant strings that can fit inline *with a nul terminator*
         # added are stored inline.
-        if static_const_length < Self.NUM_SSO_BYTES and not is_compile_time():
+        if static_const_length < Self.INLINE_CAPACITY and not is_compile_time():
             self._storage = Self.FLAG_IS_INLINE
         else:
-            self = Self(capacity=0)
-            self._storage = Self.FLAG_IS_STATIC_CONSTANT
+            # We set the capacity to 0 to always force reallocation if we
+            # want the capacity to change.
+            self._storage = 0
 
     @always_inline("nodebug")
-    fn get_capacity(self) -> UInt:
+    fn capacity(self) -> UInt:
         # In the inline form, we hold the data inline.
         if self.is_inline():
-            return Self.NUM_SSO_BYTES
+            return Self.INLINE_CAPACITY
         return self._storage << 3
 
     @always_inline("nodebug")
@@ -179,22 +175,9 @@ struct _StringCapacityField:
         return self._storage & Self.FLAG_HAS_NUL_TERMINATOR != 0
 
     @always_inline("nodebug")
-    fn set_has_nul_terminator(mut self, is_set: Bool):
-        if is_set:
-            self._storage = self._storage | Self.FLAG_HAS_NUL_TERMINATOR
-        else:
-            self._storage = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
-
-    @always_inline("nodebug")
-    fn is_static_constant(self) -> Bool:
-        return self._storage & Self.FLAG_IS_STATIC_CONSTANT != 0
-
-    @always_inline("nodebug")
-    fn set_is_static_constant(mut self, is_set: Bool):
-        if is_set:
-            self._storage = self._storage | Self.FLAG_IS_STATIC_CONSTANT
-        else:
-            self._storage = self._storage & ~Self.FLAG_IS_STATIC_CONSTANT
+    fn set_has_nul_terminator(mut self, value: Bool):
+        var unset = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
+        self._storage = unset | select(value, Self.FLAG_HAS_NUL_TERMINATOR, 0)
 
     @always_inline("nodebug")
     fn is_inline(self) -> Bool:
@@ -212,7 +195,7 @@ struct _StringCapacityField:
     @always_inline("nodebug")
     fn set_len(mut self, new_len: Int, mut len_or_data: Int):
         if self.is_inline():
-            debug_assert(new_len <= Self.NUM_SSO_BYTES)
+            debug_assert(new_len <= Self.INLINE_CAPACITY)
             self._storage = (self._storage & ~Self.INLINE_LENGTH_MASK) | (
                 new_len << Self.INLINE_LENGTH_START
             )
@@ -222,9 +205,9 @@ struct _StringCapacityField:
 
 # This is a private struct used to store the reference count of a out-of-line
 # mutable string buffer.
-struct _StringOutOfLineHeader:
+struct _StringOutOfLineHeader(Defaultable):
     var refcount: Atomic[DType.index]
-    alias _self_size = sizeof[Self]()
+    alias _SIZE = sizeof[Self]()
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -241,7 +224,7 @@ struct _StringOutOfLineHeader:
         """Atomically decrement the refcount and deallocate self if the result
         hits zero."""
         if self.refcount.fetch_sub(1) == 1:
-            UnsafePointer(to=self).bitcast[UInt8]().free()
+            UnsafePointer(to=self).bitcast[Byte]().free()
 
     @always_inline("nodebug")
     fn is_unique(mut self) -> Bool:
@@ -249,26 +232,22 @@ struct _StringOutOfLineHeader:
         return self.refcount.load() == 1
 
     @staticmethod
-    fn alloc(capacity: Int) -> UnsafePointer[UInt8]:
+    fn alloc(capacity: Int) -> UnsafePointer[Byte]:
         """Allocate space for a new out-of-line string buffer."""
-        var ptr = UnsafePointer[UInt8].alloc(capacity + Self._self_size)
+        var ptr = UnsafePointer[Byte].alloc(capacity + Self._SIZE)
 
         # Initialize the header.
-        __get_address_as_uninit_lvalue(
-            ptr.bitcast[_StringOutOfLineHeader]().address
-        ) = _StringOutOfLineHeader()
+        __get_address_as_uninit_lvalue(ptr.bitcast[Self]().address) = Self()
 
         # Return a pointer to right after the header, which is where the string
         # data will be stored.
-        return ptr + sizeof[Self]()
+        return ptr + Self._SIZE
 
     @always_inline("nodebug")
     @staticmethod
-    fn get(
-        ptr: UnsafePointer[UInt8, origin=_]
-    ) -> ref [ptr.origin] _StringOutOfLineHeader:
+    fn get(ptr: UnsafePointer[Byte, origin=_]) -> ref [ptr.origin] Self:
         # The header is stored before the string data.
-        return (ptr - Self._self_size).bitcast[Self]()[]
+        return (ptr - Self._SIZE).bitcast[Self]()[]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -277,23 +256,23 @@ struct _StringOutOfLineHeader:
 
 
 struct String(
-    Sized,
-    Defaultable,
-    Stringable,
-    Representable,
-    IntableRaising,
-    KeyElement,
-    Comparable,
     Boolable,
-    Writable,
-    Writer,
+    Comparable,
+    ConvertibleFromPython,
+    Defaultable,
     ExplicitlyCopyable,
     FloatableRaising,
-    _HashableWithHasher,
+    IntableRaising,
+    KeyElement,
     PathLike,
-    _CurlyEntryFormattable,
     PythonConvertible,
-    ConvertibleFromPython,
+    Representable,
+    Sized,
+    Stringable,
+    Writable,
+    Writer,
+    _CurlyEntryFormattable,
+    _HashableWithHasher,
 ):
     """Represents a mutable string.
 
@@ -335,11 +314,7 @@ struct String(
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
-        self._ptr_or_data = UnsafePointer[UInt8]()
-        self._len_or_data = 0
-        # Note: we treat a nul pointer as a "static constant" pointer because
-        # in the out-of-line form, it has no ARC header.
-        self._capacity_or_data = _StringCapacityField(static_const_length=0)
+        self = Self(capacity=0)
 
     @always_inline
     fn __init__(out self, *, capacity: Int):
@@ -358,7 +333,7 @@ struct String(
         else:
             self._len_or_data = 0
             self._ptr_or_data = _StringOutOfLineHeader.alloc(
-                cap_field.get_capacity()
+                cap_field.capacity()
             )
             self._capacity_or_data = cap_field
 
@@ -403,7 +378,7 @@ struct String(
         self = StaticString(data)
         # All string literals are nul terminated by the compiler but the inline
         # String overwrites it at any given point
-        if not self._capacity_or_data.is_inline():
+        if not self._is_inline():
             self._capacity_or_data.set_has_nul_terminator(True)
 
     @always_inline
@@ -469,10 +444,20 @@ struct String(
         var string = String(1, 2.0, "three", sep=", ")
         print(string) # "1, 2.0, three"
         ```
-        .
         """
         self = String()
-        write_buffered(self, args, sep=sep, end=end)
+        var buffer = _WriteBufferStack(self)
+        alias length = args.__len__()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(buffer)
+
+            if i < length - 1:
+                sep.write_to(buffer)
+
+        end.write_to(buffer)
+        buffer.flush()
 
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
     # to declare sep/end as StringSlice.
@@ -513,7 +498,18 @@ struct String(
         .
         """
         self = String()
-        write_buffered(self, args, sep=sep, end=end)
+        var buffer = _WriteBufferStack(self)
+        alias length = args.__len__()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(buffer)
+
+            if i < length - 1:
+                sep.write_to(buffer)
+
+        end.write_to(buffer)
+        buffer.flush()
 
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
@@ -551,11 +547,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline
     fn __init__(
@@ -571,11 +563,7 @@ struct String(
             - `unsafe_from_utf8_ptr` MUST be null terminated.
         """
         # Copy the data.
-        self = String(
-            StringSlice[MutableAnyOrigin](
-                unsafe_from_utf8_ptr=unsafe_from_utf8_ptr
-            )
-        )
+        self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
     fn __moveinit__(out self, owned other: Self):
@@ -606,7 +594,7 @@ struct String(
             _StringOutOfLineHeader.get(self._ptr_or_data).add_ref()
 
     # ===------------------------------------------------------------------=== #
-    # Factory dunders
+    # Field getters
     # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
@@ -616,7 +604,28 @@ struct String(
         Returns:
             The capacity of the string.
         """
-        return self._capacity_or_data.get_capacity()
+        return self._capacity_or_data.capacity()
+
+    @always_inline("nodebug")
+    fn _is_inline(self) -> Bool:
+        return self._capacity_or_data.is_inline()
+
+    @always_inline("nodebug")
+    fn _is_indirect_static_constant(self) -> Bool:
+        """Checks if the string is a static constant.
+
+        Returns:
+            True if the string is a static constant, False otherwise.
+        """
+        return Bool(self._ptr_or_data) & (self.capacity() == 0)
+
+    @always_inline("nodebug")
+    fn _has_mutable_buffer(self) -> Bool:
+        return ~(self._is_indirect_static_constant() | self._is_inline())
+
+    # ===------------------------------------------------------------------=== #
+    # Factory dunders
+    # ===------------------------------------------------------------------=== #
 
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         """Write a byte span to this String.
@@ -662,25 +671,21 @@ struct String(
 
         This is used only when reusing the `write_to` method for
         `__str__` in order to avoid an endless loop recalling
-        the constructor:
-
-        ```mojo
-        fn write_to[W: Writer](self, mut writer: W):
-            writer.write_bytes(self.as_bytes())
-
-        fn __str__(self) -> String:
-            return String.write(self)
-        ```
-
-        Otherwise you can use the `String` constructor directly without calling
-        the `String.write` static method:
-
-        ```mojo
-        var msg = String("my message", 42, 42.2, True)
-        ```
+        the constructor.
         """
         var string = String()
-        write_buffered(string, args, sep=sep, end=end)
+        var buffer = _WriteBufferStack(string)
+        alias length = args.__len__()
+
+        @parameter
+        for i in range(length):
+            args[i].write_to(buffer)
+
+            if i < length - 1:
+                sep.write_to(buffer)
+
+        end.write_to(buffer)
+        buffer.flush()
         return string^
 
     # ===------------------------------------------------------------------=== #
@@ -996,7 +1001,7 @@ struct String(
         """
         return self
 
-    fn to_python_object(owned self) -> PythonObject:
+    fn to_python_object(owned self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1047,7 +1052,9 @@ struct String(
         Returns:
             The joined string.
         """
-        var sep = StaticString(ptr=self.unsafe_ptr(), length=len(self))
+        var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
+            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
+        )
         return String(elems, sep=sep)
 
     fn join[
@@ -1176,7 +1183,7 @@ struct String(
             The pointer to the underlying memory.
         """
         # If out of line, make sure it is uniquely owned and mutable.
-        if not self._capacity_or_data.is_inline():
+        if not self._is_inline():
             self._make_unique_mutable()
         return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
@@ -1193,7 +1200,7 @@ struct String(
         # Add a nul terminator.
         # Reallocate the out-of-line static strings to ensure mutability.
         if not self._capacity_or_data.has_nul_terminator() or (
-            self._capacity_or_data.is_static_constant()
+            self._is_indirect_static_constant()
         ):
             var len = self.byte_length()
             self.reserve(len + 1)  # This will reallocate if constant.
@@ -1324,8 +1331,7 @@ struct String(
         """
         return self.as_string_slice().isspace()
 
-    # TODO(MSTDL-590): String.split() should return `StringSlice`s.
-    fn split(self, sep: StringSlice, maxsplit: Int = -1) raises -> List[String]:
+    fn split(self, sep: StringSlice, maxsplit: Int = -1) -> List[String]:
         """Split the string by a separator.
 
         Args:
@@ -1336,9 +1342,6 @@ struct String(
         Returns:
             A List of Strings containing the input split by the separator.
 
-        Raises:
-            If the separator is empty.
-
         Examples:
 
         ```mojo
@@ -1348,8 +1351,9 @@ struct String(
         _ = String("hello,,world").split(",") # ["hello", "", "world"]
         # Splitting with maxsplit
         _ = String("1,2,3").split(",", 1) # ['1', '2,3']
+        # Splitting with an empty separator
+        _ = StringSlice("123").split("") # ["", "1", "2", "3", ""]
         ```
-        .
         """
         return _to_string_list(
             self.as_string_slice().split(sep, maxsplit=maxsplit)
@@ -1789,13 +1793,15 @@ struct String(
             return
         self._realloc_mutable(new_capacity)
 
-    # This is called whne the string is known to be indirect.  This checks to
+    # This is called when the string is known to be indirect. This checks to
     # make sure the indirect representation is uniquely owned and mutable,
     # copying if necessary.
     fn _make_unique_mutable(mut self):
+        debug_assert(not self._is_inline())
+
         # If already mutable and uniquely owned, we're done.
         if (
-            not self._capacity_or_data.is_static_constant()
+            not self._is_indirect_static_constant()
             and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
         ):
             return
@@ -1804,41 +1810,28 @@ struct String(
         self._realloc_mutable(self.byte_length())
 
     # This is the out-of-line implementation of reserve called when we need
-    # to grow the capacity of the string.
+    # to grow the capacity of the string. Make sure our capacity at least
+    # doubles to avoid O(n^2) behavior, and make use of extra space if it exists.
     @no_inline
-    fn _realloc_mutable(mut self, owned new_capacity: UInt):
-        # Get these fields before we change _capacity_or_data, which can modify
-        # where they are stored.
+    fn _realloc_mutable(mut self, capacity: UInt):
+        # Get these fields before we change _capacity_or_data
         var len = self.byte_length()
-        var old_ptr = self.unsafe_ptr()
+        var ptr = self.unsafe_ptr()
         var should_drop_ref = self._has_mutable_buffer()
-
-        # Make sure our capacity at least doubles to avoid O(n^2) behavior, and
-        # make use of extra space if it exists.
 
         # We always use the inline representation for short strings (even when
         # they are constant) so any need to grow will use an indirect represent.
-        new_capacity = max(new_capacity, self.capacity() * 2)
-        var new_capacity_field = _StringCapacityField(
-            out_of_line_capacity=new_capacity
+        var new_capacity = _StringCapacityField(
+            out_of_line_capacity=max(capacity, self.capacity() * 2)
         )
-        var new_data = _StringOutOfLineHeader.alloc(
-            new_capacity_field.get_capacity()
-        )
-        memcpy(new_data, old_ptr, len)
-        self._len_or_data = len  # May have been stored in capacity before.
-        self._ptr_or_data = new_data
-        self._capacity_or_data = new_capacity_field
+        var new_ptr = _StringOutOfLineHeader.alloc(new_capacity.capacity())
+        memcpy(new_ptr, ptr, len)
         if should_drop_ref:
-            _StringOutOfLineHeader.get(
-                old_ptr.origin_cast[mut=True]()
-            ).drop_ref()
+            _StringOutOfLineHeader.get(ptr.origin_cast[mut=True]()).drop_ref()
 
-    @always_inline("nodebug")
-    fn _has_mutable_buffer(self) -> Bool:
-        return (not self._capacity_or_data.is_static_constant()) & (
-            not self._capacity_or_data.is_inline()
-        )
+        self._len_or_data = len
+        self._ptr_or_data = new_ptr
+        self._capacity_or_data = new_capacity
 
 
 # ===----------------------------------------------------------------------=== #

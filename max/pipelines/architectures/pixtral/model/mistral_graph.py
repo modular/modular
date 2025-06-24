@@ -23,8 +23,8 @@ from max.nn import (
     AttentionWithRopeV1,
     EmbeddingV1,
     LinearV1,
-    OptimizedRotaryEmbedding,
     RMSNormV1,
+    RotaryEmbedding,
     TransformerBlock,
 )
 from max.nn.kv_cache import (
@@ -46,24 +46,9 @@ def feed_forward(
     weights: Weights,
 ):
     return MLPV1(
-        linear(
-            dtype,
-            feed_forward_length,
-            hidden_dim,
-            weights.mlp.gate_proj,
-        ),
-        linear(
-            dtype,
-            hidden_dim,
-            feed_forward_length,
-            weights.mlp.down_proj,
-        ),
-        linear(
-            dtype,
-            feed_forward_length,
-            hidden_dim,
-            weights.mlp.up_proj,
-        ),
+        linear(dtype, feed_forward_length, hidden_dim, weights.mlp.gate_proj),
+        linear(dtype, hidden_dim, feed_forward_length, weights.mlp.down_proj),
+        linear(dtype, feed_forward_length, hidden_dim, weights.mlp.up_proj),
     )
 
 
@@ -105,7 +90,7 @@ def embedding(
 def _attention_opaque(
     kv_params: KVCacheParams,
     params: PipelineConfig,
-    rope: OptimizedRotaryEmbedding,
+    rope: RotaryEmbedding,
     weights: Weights,
     huggingface_config: AutoConfig,
     dtype: DType,
@@ -162,7 +147,7 @@ def _transformer(
     dtype: DType,
 ):
     with graph:
-        rope = OptimizedRotaryEmbedding(
+        rope = RotaryEmbedding(
             dim=huggingface_config.text_config.num_attention_heads
             * huggingface_config.text_config.head_dim,
             n_heads=huggingface_config.text_config.num_attention_heads,

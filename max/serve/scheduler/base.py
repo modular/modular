@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from typing import Union
 
-from max.pipelines.core import InputContext
+import msgspec
+from max.nn.kv_cache import XferReqData
+from max.pipelines.core import TextAndVisionContext, TextContext
 
 
 class Scheduler(ABC):
@@ -54,8 +56,9 @@ class Scheduler(ABC):
         return False
 
 
-@dataclass
-class PrefillRequest:
+class PrefillRequest(
+    msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
+):
     """A request for prefill (context encoding) processing.
 
     Contains the request ID, input context, and transfer engine details needed to
@@ -69,13 +72,14 @@ class PrefillRequest:
     """
 
     id: str
-    context: InputContext
+    context: Union[TextContext, TextAndVisionContext]
     transfer_engine_name: str
     block_ids: list[int]
 
 
-@dataclass
-class PrefillResponse:
+class PrefillResponse(
+    msgspec.Struct, tag=True, omit_defaults=True, kw_only=True
+):
     """A response for prefill (context encoding) processing.
 
     Contains the request ID and input context needed to run decode
@@ -87,4 +91,5 @@ class PrefillResponse:
     """
 
     id: str
-    context: InputContext
+    context: Union[TextContext, TextAndVisionContext]
+    transfer_metadata: XferReqData

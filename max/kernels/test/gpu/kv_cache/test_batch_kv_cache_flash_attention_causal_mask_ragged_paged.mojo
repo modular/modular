@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Set
-from math import ceildiv, isclose, isqrt
+from math import ceildiv, isqrt
 from random import random_ui64, seed
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import Dim, DimList
 from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
+from internal_utils import HostNDBuffer, random
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -31,7 +31,7 @@ from tensor_internal import IOUnknown, ManagedTensorSlice
 from tensor_internal.managed_tensor_slice import StaticTensorSpec
 from testing import assert_almost_equal
 
-from utils import Index, IndexList
+from utils import IndexList
 
 alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
@@ -49,7 +49,7 @@ def execute_ragged_flash_attention[
     alias page_size = 512
 
     var batch_size = len(valid_lengths)
-    debug_assert[WRITE_MODE_MEM](
+    debug_assert(
         len(valid_lengths) == len(cache_lengths),
         "expected valid_lengths and cache_lengths size to be equal",
     )
@@ -130,7 +130,7 @@ def execute_ragged_flash_attention[
     var lookup_table_device = lookup_table_continuous_host.copy_to_device(ctx)
 
     kv_collection_continuous_device = ContinuousBatchingKVCacheCollection[
-        type, kv_params, WRITE_MODE_MEM
+        type, kv_params
     ](
         kv_block_continuous_device.tensor,
         cache_lengths_device.tensor,
@@ -187,7 +187,7 @@ def execute_ragged_flash_attention[
     kv_block_paged_device = kv_block_paged_host.copy_to_device(ctx)
 
     kv_collection_paged_device = PagedKVCacheCollection[
-        type, kv_params, page_size, WRITE_MODE_MEM
+        type, kv_params, page_size
     ](
         kv_block_paged_device.tensor,
         cache_lengths_device.tensor,

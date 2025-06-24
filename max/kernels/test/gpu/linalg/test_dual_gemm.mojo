@@ -20,17 +20,16 @@ from sys import argv, simdwidthof
 import benchmark
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from linalg._multistage_gemm_gpu import distance, multistage_gemm_kernel
+from linalg._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import StaticTuple
@@ -122,7 +121,7 @@ fn naive_dual_gemm[
         ](c01, a, b01, ctx)
 
         alias simd_width = simdwidthof[
-            c_type, target = _get_gpu_target["sm_80"]()
+            c_type, target = get_gpu_target["sm_80"]()
         ]()
         alias align = alignof[SIMD[c_type, simd_width]]()
 

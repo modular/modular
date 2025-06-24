@@ -11,12 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _is_sm_8x, _is_sm_9x
 
-from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
 from gpu.id import thread_idx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -28,9 +25,7 @@ from gpu.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout import print_layout
 from memory import bitcast
 
 
@@ -109,10 +104,10 @@ fn wgmma_f32_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c_reg[0]
-    th_local_res[0][1] = c_reg[1]
-    th_local_res[1][0] = c_reg[2]
-    th_local_res[1][1] = c_reg[3]
+    th_local_res[0, 0][0] = c_reg[0]
+    th_local_res[0, 0][1] = c_reg[1]
+    th_local_res[1, 0][0] = c_reg[2]
+    th_local_res[1, 0][1] = c_reg[3]
 
 
 fn wgmma_f16_kernel[
@@ -192,10 +187,10 @@ fn wgmma_f16_kernel[
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lan_id)
     )
-    th_local_res[0][0] = c0[0]
-    th_local_res[0][1] = c0[1]
-    th_local_res[1][0] = c0[2]
-    th_local_res[1][1] = c0[3]
+    th_local_res[0, 0][0] = c0[0]
+    th_local_res[0, 0][1] = c0[1]
+    th_local_res[1, 0][0] = c0[2]
+    th_local_res[1, 0][1] = c0[3]
 
 
 # CHECK-LABEL: wgmma_e4m3_e4m3_f32_64x8x32

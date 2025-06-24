@@ -15,12 +15,10 @@ from sys import alignof, env_get_int, env_get_string, simdwidthof
 
 from algorithm._gpu.reduction import reduce_launch
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.dimlist import DimList, _make_tuple
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from internal_utils import DeviceNDBuffer
-from memory import UnsafePointer
 from testing import assert_equal
 
 from utils import IndexList, StaticTuple
@@ -50,7 +48,7 @@ fn run_reduce[
     var in_size = shape.flattened_length()
     var out_size = product(shape, rank - 1)
 
-    alias align = alignof_simd[type, simd_target = _get_gpu_target()]()
+    alias align = alignof_simd[type, simd_target = get_gpu_target()]()
     var expected_vals = UnsafePointer[Scalar[type], alignment=align].alloc(
         out_size
     )

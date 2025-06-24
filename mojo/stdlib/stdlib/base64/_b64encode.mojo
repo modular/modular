@@ -24,11 +24,10 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from collections import InlineArray
 from math import iota
 from sys import llvm_intrinsic
 
-from memory import Span, UnsafePointer, bitcast, memcpy
+from memory import Span, bitcast, memcpy
 
 from utils import IndexList
 
@@ -270,7 +269,7 @@ fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
 
     @parameter
     if width == v.size:
-        return rebind[SIMD[v.dtype, width]](v)
+        return v._refine[size=width]()
     return _repeat_until[width](v.join(v))
 
 

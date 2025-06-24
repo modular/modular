@@ -102,7 +102,7 @@ operation).  We don’t want to special case the methods themselves into the
 compiler, but we do necessarily have a tight coupling and want type checking.
 
 This new level of `always_inline` would have the same behavior as `"nodebug"`
-(e.g. get the same LLVM represention, still disable debug info generation etc)
+(e.g. get the same LLVM representation, still disable debug info generation etc)
 but add two more behaviors.
 
 ### Function definition body-resolution checking

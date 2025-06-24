@@ -11,13 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
 from random import rand, randint
 
 from benchmark import *
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
+from buffer.dimlist import Dim
 from nn.gather_scatter import gather_elements
 
 from utils.index import Index
@@ -82,8 +80,8 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
     _ = output_tensor
 
 
-@value
-struct GatherSpec(Stringable):
+@fieldwise_init
+struct GatherSpec(Copyable, Movable, Stringable):
     var axis: Int
     var m1: Int
     var m2: Int

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, OptionalReg
-from collections.string.string_slice import StaticString, get_static_string
+from collections import OptionalReg
+from collections.string.string_slice import get_static_string
 from math import align_down, ceildiv
-from sys import has_neon, simdwidthof, sizeof
-from sys.info import _current_target
+from sys import simdwidthof, sizeof
+from sys.info import CompilationTarget, _current_target
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
@@ -23,16 +23,15 @@ from algorithm.functional import tile
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
+from layout import LayoutTensor
+from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 from tensor_internal import ManagedTensorSlice
 
-from utils import Index, IndexList, StaticTuple
-
-from .reshape import reshape
+from utils import IndexList, StaticTuple
 
 
 @always_inline
@@ -84,9 +83,8 @@ fn normalize_neg_index[
     raise Error("indices must be in range [-dim_size, dim_size)")
 
 
-@value
 @register_passable("trivial")
-struct Axis(Intable, Indexer):
+struct Axis(Indexer, Intable):
     var axis: Int
 
     @always_inline
@@ -213,13 +211,13 @@ fn gather_reduce[
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
         alias k_tile_sizes = VariadicList[Int](
             2 * simd_width, 1
-        ) if has_neon() else VariadicList[Int](
+        ) if CompilationTarget.has_neon() else VariadicList[Int](
             8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
         )
         # unroll the j loop on neon because it benefits from vectorized
         # blend instructions and avoids conditional flag dependencies
         # does not appear to help on other archs
-        alias j_tile_size = 4 if has_neon() else 1
+        alias j_tile_size = 4 if CompilationTarget.has_neon() else 1
 
         for i in range(out_vec_start, out_vec_end):
 
@@ -324,7 +322,7 @@ fn gather[
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
-            # assumes that indices are layed out in row major order
+            # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
@@ -423,7 +421,7 @@ fn gather[
             var indices_remaining = (
                 Int(end_indices_ptr) - Int(indices_ptr)
             ) // sizeof[indices_type]()
-            # assumes that indices are layed out in row major order
+            # assumes that indices are laid out in row major order
             var next_idx_ptr = indices._offset(indices_coords) + min(
                 indices_remaining - 1, prefetch_offset
             )
@@ -715,7 +713,7 @@ fn gather[
     """
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
 
     gather_guards(axis, input_shape, indices_shape, output_shape)
     with Trace[TraceLevel.OP, target=target]("gather"):
@@ -838,20 +836,8 @@ fn scatter_nd_generator[
 
         var output_flat = output.flatten()
         var data_flat = data.flatten()
-        var updates_flat = updates.flatten()
 
-        var data_shape = data.get_shape()
-        var indices_shape = indices.get_shape()
-        var last_shape_of_indices = indices_shape[indices_rank - 1]
-
-        # Depending on r_minus_m = data_rank - last_shape_of_indices,
-        # we will be copying (gather):
-        #   element (r_minus_m = 0),
-        #   row (r_minus_m = 1),
-        #   sheet (r_minus_m = 2),
-        #   cuboid (r_minus_m = 3), etc.
-        var r_minus_m = data_rank - last_shape_of_indices
-
+        # Always copy input to output first.
         @parameter
         if is_gpu[target]():
             # TODO: Does it matter if output.data or output_flat.data (and data)?
@@ -874,6 +860,24 @@ fn scatter_nd_generator[
         @parameter
         if is_cpu[target]():
             memcpy(output_flat.data, data_flat.data, len(output_flat))
+
+        if updates.num_elements() == 0:
+            # Nothing to update.
+            return
+
+        var updates_flat = updates.flatten()
+
+        var data_shape = data.get_shape()
+        var indices_shape = indices.get_shape()
+        var last_shape_of_indices = indices_shape[indices_rank - 1]
+
+        # Depending on r_minus_m = data_rank - last_shape_of_indices,
+        # we will be copying (gather):
+        #   element (r_minus_m = 0),
+        #   row (r_minus_m = 1),
+        #   sheet (r_minus_m = 2),
+        #   cuboid (r_minus_m = 3), etc.
+        var r_minus_m = data_rank - last_shape_of_indices
 
         @__copy_capture(
             r_minus_m,
@@ -1160,11 +1164,11 @@ fn scatter_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: ManagedTensorSlice[type=input_type, rank=rank],
-    indices: ManagedTensorSlice[type=indices_type, rank=rank],
-    updates: ManagedTensorSlice[type=input_type, rank=rank],
+    input: ManagedTensorSlice[dtype=input_type, rank=rank],
+    indices: ManagedTensorSlice[dtype=indices_type, rank=rank],
+    updates: ManagedTensorSlice[dtype=input_type, rank=rank],
     _axis: Int,
-    output: ManagedTensorSlice[type=input_type, rank=rank],
+    output: ManagedTensorSlice[dtype=input_type, rank=rank],
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1181,7 +1185,7 @@ fn scatter_elements[
 
     if indices.shape() != updates.shape():
         raise Error(
-            "inidices and updates shape in scatter_elements must be the same"
+            "indices and updates shape in scatter_elements must be the same"
         )
 
     if not (-rank <= _axis < rank):
@@ -1542,7 +1546,7 @@ fn _gather_nd_impl[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     # Only use SIMD if:
@@ -1592,3 +1596,80 @@ fn _gather_nd_impl[
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output.get_shape(), cuda_ctx)
+
+
+# ===-----------------------------------------------------------------------===#
+# ScatterSetConstant
+# ===-----------------------------------------------------------------------===#
+
+
+fn scatter_set_constant[
+    data_type: DType,
+    index_type: DType, //,
+    target: StaticString,
+    single_thread_blocking_override: Bool = False,
+](
+    data: LayoutTensor[mut=True, data_type, **_],
+    indices: LayoutTensor[index_type, **_],
+    fill_value: Scalar[data_type],
+    ctx: DeviceContextPtr,
+) raises:
+    """
+    Scatter the fill_value into the data at the specified indices.
+
+    Example:
+        Suppose we have a 3x3 matrix `data` initialized to zeros:
+
+        data = [[0, 0, 0],
+                [0, 0, 0],
+                [0, 0, 0]]
+
+        And `indices` is a 2D tensor with shape [2, 2]:
+
+        indices = [[0, 1],
+                   [2, 0]]
+
+        If `fill_value` is 5, after calling `scatter_set_constant`, `data` will be:
+
+        data = [[0, 5, 0],
+                [0, 0, 0],
+                [5, 0, 0]]
+
+    Arguments:
+        data: The data to scatter the updates into.
+        indices: The indices to scatter the updates into.
+        fill_value: The value to fill the data with.
+        ctx: The device context.
+    """
+    constrained[
+        index_type.is_integral(),
+        "index_type must be an integer type",
+    ]()
+    constrained[
+        data.layout.rank() == 2,
+        "scatter_set: data must have rank 2",
+    ]()
+    constrained[
+        indices.layout.rank() == 2,
+        "scatter_set: indices must have rank 2",
+    ]()
+    debug_assert(
+        indices.dim[1]() == 2,
+        "scatter_set: indices must have shape [total_seq_len, 2]",
+    )
+
+    @always_inline
+    @parameter
+    fn scatter_set_constant_fn[width: Int, rank_: Int](idx: IndexList[rank_]):
+        constrained[rank_ == 1, "scatter_set_constant_fn: rank must be 1"]()
+
+        data[Int(indices[idx[0], 0]), Int(indices[idx[0], 1])] = fill_value
+
+    var dispatch_shape = IndexList[1](indices.dim[0]())
+    elementwise[
+        func=scatter_set_constant_fn,
+        simd_width=1,
+        target=target,
+        use_blocking_impl=single_thread_blocking_override,
+        _trace_description="scatter_set_constant",
+    ](dispatch_shape, ctx)

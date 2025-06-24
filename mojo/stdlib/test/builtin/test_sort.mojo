@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from pathlib import Path, _dir_of_current_file
+from pathlib import _dir_of_current_file
 from random import random_float64, random_si64, random_ui64, seed
 
 from builtin.sort import _quicksort, _small_sort, _SortWrapper
@@ -536,7 +536,7 @@ def test_sort_strings():
 
 
 @fieldwise_init
-struct Person(Copyable, Movable, Comparable):
+struct Person(Comparable, Copyable, Movable):
     var name: String
     var age: Int
 

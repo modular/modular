@@ -14,10 +14,8 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-from collections import InlineArray, OptionalReg
-from collections.string import StaticString
-from math import ceil, fma, iota
-from random import rand
+from collections import OptionalReg
+from math import ceil, fma
 from sys import alignof, simdwidthof
 from sys.info import is_gpu
 from sys.intrinsics import strided_load, strided_store
@@ -27,15 +25,14 @@ from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_partially_static_index_list
 from builtin.device_passable import DevicePassable
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
-from layout import Layout, LayoutTensor, RuntimeLayout
-from memory import UnsafePointer
+from layout import LayoutTensor
 from memory.pointer import _GPUAddressSpace
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from runtime.tracing import trace_arg
 from tensor_internal import RuntimeTensorSpec
 
 from utils import IndexList, StaticTuple
@@ -74,21 +71,21 @@ fn _gcd_pow2[a: Int, b: Int]() -> Int:
 @register_internal("simd_store_into_managed_tensor_slice")
 @no_inline
 fn simd_store_into_managed_tensor_slice[
-    type: DType,
+    dtype: DType,
     rank: Int,
     simd_width: Int,
-    static_spec: StaticTensorSpec[type, rank],
+    static_spec: StaticTensorSpec[dtype, rank],
     element_alignment: Int = 1,
 ](
     tensor: ManagedTensorSlice[static_spec=static_spec],
     indices: IndexList[rank],
-    value: SIMD[type, simd_width],
+    value: SIMD[dtype, simd_width],
 ):
     var flat_index = tensor._compute_offset(indices)
 
     # Store alignment cannot exceed the data type's alignment.
     alias max_alignment = _gcd_pow2[
-        tensor.alignment, element_alignment * alignof[type]()
+        tensor.alignment, element_alignment * alignof[dtype]()
     ]()
 
     alias static_stride = tensor._static_strides.at[rank - 1]()
@@ -98,7 +95,7 @@ fn simd_store_into_managed_tensor_slice[
     @always_inline
     fn store_stride1():
         @parameter
-        if type is DType.bool:
+        if dtype is DType.bool:
             var v = value.cast[DType.uint8]()
             tensor._ptr.bitcast[UInt8]().store(flat_index, v)
         else:
@@ -109,7 +106,7 @@ fn simd_store_into_managed_tensor_slice[
     @always_inline
     fn store_strided(stride: Int):
         @parameter
-        if type is DType.bool:
+        if dtype is DType.bool:
             var v = value.cast[DType.uint8]()
             strided_store(
                 v,
@@ -144,32 +141,32 @@ fn simd_store_into_managed_tensor_slice[
 @register_internal("simd_load_from_managed_tensor_slice")
 @no_inline
 fn simd_load_from_managed_tensor_slice[
-    type: DType,
+    dtype: DType,
     rank: Int,
     simd_width: Int,
-    static_spec: StaticTensorSpec[type, rank],
+    static_spec: StaticTensorSpec[dtype, rank],
 ](
     tensor: ManagedTensorSlice[static_spec=static_spec],
     indices: IndexList[rank],
-) -> SIMD[type, simd_width]:
+) -> SIMD[dtype, simd_width]:
     var flat_index = tensor._compute_offset(indices)
     alias static_stride = tensor._static_strides.at[rank - 1]()
 
     # Load alignment cannot exceed the data type's alignment.
-    alias max_alignment = _gcd_pow2[tensor.alignment, alignof[type]()]()
+    alias max_alignment = _gcd_pow2[tensor.alignment, alignof[dtype]()]()
     alias invariant = not tensor.io_spec.mut
 
     # Stride = 1
     @parameter
     @always_inline
-    fn load_stride1() -> SIMD[type, simd_width]:
+    fn load_stride1() -> SIMD[dtype, simd_width]:
         @parameter
-        if type is DType.bool:
+        if dtype is DType.bool:
             var v = tensor._ptr.bitcast[UInt8]().load[
                 width=simd_width,
                 invariant=invariant,
             ](flat_index)
-            return v.cast[type]()
+            return v.cast[dtype]()
         else:
             return tensor._ptr.load[
                 width=simd_width, alignment=max_alignment, invariant=invariant
@@ -178,14 +175,14 @@ fn simd_load_from_managed_tensor_slice[
     # Stride > 1
     @parameter
     @always_inline
-    fn load_strided(stride: Int) -> SIMD[type, simd_width]:
+    fn load_strided(stride: Int) -> SIMD[dtype, simd_width]:
         @parameter
-        if type is DType.bool:
+        if dtype is DType.bool:
             var v = strided_load[simd_width, invariant=invariant](
                 tensor._ptr.bitcast[UInt8]().offset(flat_index),
                 stride,
             )
-            return v.cast[type]()
+            return v.cast[dtype]()
         else:
             return strided_load[simd_width, invariant=invariant](
                 tensor._ptr.offset(flat_index), stride
@@ -219,9 +216,9 @@ fn simd_load_from_managed_tensor_slice[
 
 @no_inline
 fn _extract_tensor_spec[
-    type: DType,
+    dtype: DType,
     rank: Int, //,
-    static_spec: StaticTensorSpec[type, rank],
+    static_spec: StaticTensorSpec[dtype, rank],
 ]() -> __type_of(static_spec):
     return static_spec
 
@@ -230,13 +227,13 @@ fn _extract_tensor_spec[
 @no_inline
 fn rebuild_static_tensor_specs_with_input_lambda[
     func_type: AnyTrivialRegType, //,
-    type: DType,
+    dtype: DType,
     rank: Int,
 ](
-    spec: StaticTensorSpec[type, rank],
+    spec: StaticTensorSpec[dtype, rank],
     in_lambda: func_type,
-) -> StaticTensorSpec[type, rank]:
-    return StaticTensorSpec[type, rank](
+) -> StaticTensorSpec[dtype, rank]:
+    return StaticTensorSpec[dtype, rank](
         shape=spec.shape,
         strides=spec.strides,
         alignment=spec.alignment,
@@ -252,13 +249,13 @@ fn rebuild_static_tensor_specs_with_input_lambda[
 @no_inline
 fn rebuild_static_tensor_specs_with_output_lambda[
     func_type: AnyTrivialRegType, //,
-    type: DType,
+    dtype: DType,
     rank: Int,
 ](
-    spec: StaticTensorSpec[type, rank],
+    spec: StaticTensorSpec[dtype, rank],
     out_lambda: func_type,
-) -> StaticTensorSpec[type, rank]:
-    return StaticTensorSpec[type, rank](
+) -> StaticTensorSpec[dtype, rank]:
+    return StaticTensorSpec[dtype, rank](
         shape=spec.shape,
         strides=spec.strides,
         alignment=spec.alignment,
@@ -276,24 +273,24 @@ fn rebuild_static_tensor_specs_with_output_lambda[
 @no_inline
 fn _input_fusion_hook_impl[
     mut: Bool, //,
-    type: DType,
+    dtype: DType,
     rank: Int,
     io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[type, rank],
+    static_spec: StaticTensorSpec[dtype, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> __type_of(static_spec):
     @always_inline
     @parameter
-    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
+    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[dtype, _w]:
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
-        return rebind[SIMD[type, _w]](
+        return rebind[SIMD[dtype, _w]](
             simd_load_from_managed_tensor_slice[simd_width=_w](tensor, i)
         )
 
     return _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_input_lambda[type, rank](
+        rebuild_static_tensor_specs_with_input_lambda[dtype, rank](
             static_spec,
             _input_lambda,
         )
@@ -306,10 +303,10 @@ fn _input_fusion_hook_impl[
 @no_inline
 fn _output_fusion_hook_impl[
     mut: Bool, //,
-    type: DType,
+    dtype: DType,
     rank: Int,
     io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[type, rank],
+    static_spec: StaticTensorSpec[dtype, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
 ) -> __type_of(static_spec):
@@ -317,16 +314,16 @@ fn _output_fusion_hook_impl[
     @parameter
     fn _output_lambda[
         _w: Int, _elem_align: Int = 1
-    ](i: IndexList[rank], v: SIMD[type, _w]):
+    ](i: IndexList[rank], v: SIMD[dtype, _w]):
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
         simd_store_into_managed_tensor_slice[
             simd_width=_w,
             element_alignment=_elem_align,
-        ](tensor, i, rebind[SIMD[type, _w]](v))
+        ](tensor, i, rebind[SIMD[dtype, _w]](v))
 
     return _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_output_lambda[type, rank](
+        rebuild_static_tensor_specs_with_output_lambda[dtype, rank](
             static_spec,
             _output_lambda,
         )
@@ -338,58 +335,48 @@ fn _output_fusion_hook_impl[
 # ===----------------------------------------------------------------------=== #
 
 
-@no_inline
-fn rebuild_mix_precision_static_tensor_specs_with_output_lambda[
-    func_type: AnyTrivialRegType, //,
-    dst_type: DType,
-    src_type: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[dst_type, rank],
-    out_lambda: func_type,
-    out result: StaticTensorSpec[src_type, rank],
-):
-    return StaticTensorSpec[src_type, rank](
-        shape=spec.shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=None,
-        out_lambda=rebind[result.out_lambda_t](out_lambda),
-        out_compute_lambda=None,
-    )
-
-
 @__mogg_intrinsic_attr("mogg.dps_mixed_precision_output_fusion_hook")
 @register_internal("mogg.dps_mixed_precision_output_fusion_hook")
 @no_inline
 fn _mixed_precision_output_fusion_hook_impl[
     mut: Bool, //,
-    dst_type: DType,  # The DType after casting.
-    src_type: DType,  # The DType before casting.
+    # DType and rank after casting/view fusion.
     rank: Int,
+    dst_type: DType,
+    # DType and shape before casting/view fusion.
+    src_rank: Int,
+    src_shape: DimList,
+    src_type: DType,
     io_spec: IOSpec[mut],
     static_spec: StaticTensorSpec[dst_type, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> StaticTensorSpec[src_type, rank]:
+) -> StaticTensorSpec[src_type, src_rank]:
     @always_inline
     @parameter
     fn _output_lambda[
         _w: Int, _elem_align: Int = 1
-    ](i: IndexList[rank], v: SIMD[src_type, _w]):
+    ](i: IndexList[src_rank], v: SIMD[src_type, _w]):
         # .... compiler-generated-code insert here!
         simd_store_into_managed_tensor_slice[
             simd_width=_w,
             element_alignment=_elem_align,
-        ](tensor, i, rebind[SIMD[dst_type, _w]](v))
+        ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_type, _w]](v))
+
+    alias mixed_in_spec = StaticTensorSpec[src_type, src_rank](
+        shape=src_shape,
+        strides=static_spec.strides,
+        alignment=static_spec.alignment,
+        address_space=static_spec.address_space,
+        exclusive=static_spec.exclusive,
+        in_lambda=None,
+        out_lambda=None,
+        out_compute_lambda=None,
+    )
 
     return _extract_tensor_spec[
-        rebuild_mix_precision_static_tensor_specs_with_output_lambda[
-            dst_type, src_type, rank
-        ](
-            static_spec,
+        rebuild_static_tensor_specs_with_output_lambda[src_type, src_rank](
+            mixed_in_spec,
             _output_lambda,
         )
     ]()
@@ -472,25 +459,25 @@ alias _FusedComputeOutputTensor = ManagedTensorSlice[
 
 
 struct DynamicTensor[
-    type: DType,
+    dtype: DType,
     rank: Int,
 ]:
     alias Type = ManagedTensorSlice[
         io_spec=IOUnknown,
-        static_spec = StaticTensorSpec[type, rank].create_unknown(),
+        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
     ]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct ManagedTensorSlice[
     mut: Bool,
     input: IO,
-    type: DType,
+    dtype: DType,
     rank: Int, //,
     io_spec: IOSpec[mut, input],
     *,
-    static_spec: StaticTensorSpec[type, rank],
+    static_spec: StaticTensorSpec[dtype, rank],
 ](Copyable, DevicePassable, Movable, Stringable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
@@ -505,10 +492,10 @@ struct ManagedTensorSlice[
 
     # `trait DevicePassable` implementation
     alias device_type: AnyTrivialRegType = LayoutTensor[
-        type, static_spec.to_layout(), MutableAnyOrigin
+        dtype, static_spec.to_layout(), MutableAnyOrigin
     ]
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self.to_layout_tensor()
 
     @staticmethod
@@ -516,8 +503,8 @@ struct ManagedTensorSlice[
         return (
             "ManagedTensorSlice[mut = "
             + String(mut)
-            + ", type = "
-            + String(type)
+            + ", dtype = "
+            + String(dtype)
             + ", rank = "
             + String(rank)
             + ", static_spec (as Layout) = "
@@ -548,15 +535,15 @@ struct ManagedTensorSlice[
     alias _in_lambda = static_spec.in_lambda
     alias _out_lambda = static_spec.out_lambda
 
-    var _ptr: UnsafePointer[Scalar[type]]
-    var _spec: RuntimeTensorSpec[type, rank]
+    var _ptr: UnsafePointer[Scalar[dtype]]
+    var _spec: RuntimeTensorSpec[dtype, rank]
     var _runtime_strides: IndexList[rank]
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[type]],
+        ptr: UnsafePointer[Scalar[dtype]],
         slices: InlineArray[Slice, rank],
-        slicer_spec: RuntimeTensorSpec[type, rank],
+        slicer_spec: RuntimeTensorSpec[dtype, rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer, array of slices and
         tensor spec.
@@ -588,7 +575,7 @@ struct ManagedTensorSlice[
         var adjusted_shape = IndexList[rank]()
         for i in range(rank):
             adjusted_shape[i] = Int(ceil((stop[i] - start[i]) / step[i]))
-        var slice_spec = RuntimeTensorSpec[type](adjusted_shape)
+        var slice_spec = RuntimeTensorSpec[dtype](adjusted_shape)
 
         var slicer_strides = _row_major_strides(adjusted_shape)
         var start_offset = _dot_prod(start, slicer_strides)
@@ -603,7 +590,7 @@ struct ManagedTensorSlice[
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[type]],
+        ptr: UnsafePointer[Scalar[dtype]],
         shape: IndexList[rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer and shape.
@@ -613,12 +600,12 @@ struct ManagedTensorSlice[
         engine.
         """
         self._ptr = ptr
-        self._spec = RuntimeTensorSpec[type, rank](shape)
+        self._spec = RuntimeTensorSpec[dtype, rank](shape)
         self._runtime_strides = _row_major_strides(shape)
 
     fn __init__(
         out self,
-        ptr: UnsafePointer[Scalar[type]],
+        ptr: UnsafePointer[Scalar[dtype]],
         shape: IndexList[rank],
         strides: IndexList[rank],
     ):
@@ -630,13 +617,13 @@ struct ManagedTensorSlice[
         """
         self = Self(
             ptr,
-            RuntimeTensorSpec[type, rank](shape),
+            RuntimeTensorSpec[dtype, rank](shape),
             strides,
         )
 
     @doc_private
     @implicit
-    fn __init__(out self, ndbuffer: NDBuffer[type, rank]):
+    fn __init__(out self, ndbuffer: NDBuffer[dtype, rank]):
         """Initializes a ManagedTensorSlice from an NDBuffer.
 
         Note that forwarding of static shape, strides, and lambdas won't work.
@@ -644,7 +631,7 @@ struct ManagedTensorSlice[
         self = Self(ndbuffer.data, ndbuffer.get_shape())
 
     @always_inline
-    fn __getitem__(self, indices: IndexList[rank]) -> Scalar[type]:
+    fn __getitem__(self, indices: IndexList[rank]) -> Scalar[dtype]:
         """Gets the value at the specified indices.
 
         Args:
@@ -661,7 +648,7 @@ struct ManagedTensorSlice[
         return self._ptr[offset]
 
     @always_inline
-    fn __getitem__(self, *indices: Int) -> Scalar[type]:
+    fn __getitem__(self, *indices: Int) -> Scalar[dtype]:
         """Gets the value at the specified indices.
 
         Args:
@@ -680,7 +667,7 @@ struct ManagedTensorSlice[
         return self[indices]
 
     @always_inline
-    fn __setitem__(self, *indices: Int, val: Scalar[type]):
+    fn __setitem__(self, *indices: Int, val: Scalar[dtype]):
         """Stores the value at the specified indices.
 
         Args:
@@ -698,7 +685,7 @@ struct ManagedTensorSlice[
         self[indices] = val
 
     @always_inline
-    fn __setitem__(self, indices: IndexList[rank], val: Scalar[type]):
+    fn __setitem__(self, indices: IndexList[rank], val: Scalar[dtype]):
         """Stores the value at the specified indices.
 
         Args:
@@ -713,7 +700,7 @@ struct ManagedTensorSlice[
         var offset = _dot_prod(indices, self.strides())
         self._ptr[offset] = val
 
-    fn spec(self) -> RuntimeTensorSpec[type, rank]:
+    fn spec(self) -> RuntimeTensorSpec[dtype, rank]:
         """Gets the `TensorSpec` of this tensor slice, which provides meta-data
         about the tensor slice.
 
@@ -822,7 +809,7 @@ struct ManagedTensorSlice[
         return product
 
     @always_inline
-    fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
+    fn unsafe_ptr[__type: DType = dtype](self) -> UnsafePointer[Scalar[__type]]:
         """Get the pointer stored in this tensor slice.
 
         Since this method obtains the pointer stored in this tensor slice, it
@@ -842,7 +829,7 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-    ](self, index: IndexList[_rank]) -> SIMD[type, width]:
+    ](self, index: IndexList[_rank]) -> SIMD[dtype, width]:
         """Gets data from this tensor slice as a `SIMD`.
 
         Parameters:
@@ -870,7 +857,7 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-    ](self, index: IndexList[_rank]) capturing -> SIMD[type, width]:
+    ](self, index: IndexList[_rank]) capturing -> SIMD[dtype, width]:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
 
@@ -893,7 +880,7 @@ struct ManagedTensorSlice[
         width: Int,
         # Necessary to make it simpler on the call site.
         _rank: Int,
-    ](self, index: IndexList[_rank]) -> SIMD[type, width]:
+    ](self, index: IndexList[_rank]) -> SIMD[dtype, width]:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
         alias in_lambda = static_spec.in_lambda
@@ -958,7 +945,7 @@ struct ManagedTensorSlice[
             static_spec=static_spec,
         ],
         index: IndexList[_rank],
-        val: SIMD[type, width],
+        val: SIMD[dtype, width],
     ):
         """Sets data in this tensor slice from a `SIMD`.
 
@@ -989,7 +976,7 @@ struct ManagedTensorSlice[
     ](
         self: ManagedTensorSlice[mut=True, static_spec=static_spec],
         index: IndexList[_rank],
-        val: SIMD[type, width],
+        val: SIMD[dtype, width],
     ) capturing:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -1021,7 +1008,7 @@ struct ManagedTensorSlice[
             static_spec=static_spec,
         ],
         index: IndexList[_rank],
-        val: SIMD[type, width],
+        val: SIMD[dtype, width],
     ):
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -1038,8 +1025,8 @@ struct ManagedTensorSlice[
     ](
         self: ManagedTensorSlice[mut=True, static_spec=static_spec],
         index: IndexList[_rank],
-        val: SIMD[type, width],
-    ) capturing -> SIMD[type, width]:
+        val: SIMD[dtype, width],
+    ) capturing -> SIMD[dtype, width]:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
 
@@ -1061,7 +1048,7 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_rank],
         new_runtime_strides: IndexList[new_rank],
-        offset_ptr: OptionalReg[UnsafePointer[Scalar[type]]] = None,
+        offset_ptr: OptionalReg[UnsafePointer[Scalar[dtype]]] = None,
         out result: ManagedTensorSlice[
             rank=new_rank,
             io_spec=io_spec,
@@ -1092,11 +1079,11 @@ struct ManagedTensorSlice[
     fn to_layout_tensor(
         self,
         out result: LayoutTensor[
-            type, static_spec.to_layout(), MutableAnyOrigin
+            dtype, static_spec.to_layout(), MutableAnyOrigin
         ],
     ):
         alias layout = static_spec.to_layout()
-        return LayoutTensor[type, layout](
+        return LayoutTensor[dtype, layout](
             self.unsafe_ptr(),
             __type_of(result.runtime_layout)(
                 self.shape().cast[result.layout_int_type](),
@@ -1188,7 +1175,7 @@ fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
     Returns:
         A string representation of the buffer with its shape and data type.
     """
-    return trace_arg(name, buf._runtime_strides, buf.type)
+    return trace_arg(name, buf._runtime_strides, buf.dtype)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1203,22 +1190,22 @@ alias _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
 alias _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct VariadicTensors[
     mut: Bool,
     input: IO, //,
-    type: DType,
+    dtype: DType,
     rank: Int,
     size: Int,
     io_spec: IOSpec[mut, input],
     *,
-    static_specs: StaticTuple[StaticTensorSpec[type, rank], size],
-](Sized):
+    static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
+](Copyable, Movable, Sized):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 
-    var _tensors: StaticTuple[DynamicTensor[type, rank].Type, size]
+    var _tensors: StaticTuple[DynamicTensor[dtype, rank].Type, size]
 
     fn __len__(self) -> Int:
         """Returns the number of variadic arguments in the pack.
@@ -1258,34 +1245,34 @@ struct VariadicTensors[
 
 
 @doc_private
-fn get_kernel_simd_width[type: DType, target: StaticString]() -> Int:
+fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     @parameter
     if _is_gpu[target]():
-        return simdwidthof[type, target = _get_gpu_target()]()
+        return simdwidthof[dtype, target = get_gpu_target()]()
 
-    return simdwidthof[type]()
+    return simdwidthof[dtype]()
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
 @__mogg_intrinsic_attr("mogg.elemwise_for_each")
 @no_inline
 fn foreach[
-    type: DType,
+    dtype: DType,
     rank: Int, //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
+    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
     *,
     target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[type, target](),
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
     _synchronous: Bool = False,
     _trace_name: StaticString = "mogg.for_each",
 ](
-    tensor: ManagedTensorSlice[mut=True, type=type, rank=rank],
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
     Parameters:
-        type: The data type of the elements in the tensor slice.
+        dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
         func: The function to apply to each element of the tensor slice.
         target: Indicates the type of the target device (e.g. "cpu", "gpu").
@@ -1323,23 +1310,23 @@ fn foreach[
 @__mogg_intrinsic_attr("mogg.for_each.out_func")
 @no_inline
 fn foreach[
-    type: DType,
+    dtype: DType,
     rank: Int, //,
-    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
+    func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[dtype, width],
     out_func: fn[width: Int] (IndexList[rank]) capturing [_] -> None,
     *,
     target: StaticString = "cpu",
-    simd_width: Int = get_kernel_simd_width[type, target](),
+    simd_width: Int = get_kernel_simd_width[dtype, target](),
     _synchronous: Bool = False,
     _trace_name: StaticString = "mogg.for_each",
 ](
-    tensor: ManagedTensorSlice[type=type, rank=rank],
+    tensor: ManagedTensorSlice[dtype=dtype, rank=rank],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
 
     Parameters:
-        type: The data type of the elements in the tensor slice.
+        dtype: The data type of the elements in the tensor slice.
         rank: The rank of the tensor slice.
         func: The function to apply to each element of the tensor slice.
         out_func: The function to apply on each output element.
@@ -1380,15 +1367,15 @@ fn foreach[
 @doc_private
 @no_inline
 fn view_copy_impl[
-    type: DType,
+    dtype: DType,
     rank: Int,
-    spec: StaticTensorSpec[type, rank], //,
+    spec: StaticTensorSpec[dtype, rank], //,
     *,
     target: StaticString,
     _synchronous: Bool,
     _trace_name: StaticString = "mogg.view_copy_impl",
 ](
-    z: ManagedTensorSlice[mut=True, type=type, rank=rank],
+    z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
     x: ManagedTensorSlice[static_spec=spec],
     ctx: DeviceContextPtr,
 ) raises:
@@ -1400,7 +1387,7 @@ fn view_copy_impl[
 
     @parameter
     @always_inline
-    fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
+    fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.dtype, width]:
         return simd_load_from_managed_tensor_slice[simd_width=width](x, idx)
 
     foreach[

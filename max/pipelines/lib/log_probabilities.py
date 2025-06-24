@@ -19,7 +19,7 @@ from collections.abc import Sequence
 import numpy as np
 from max.pipelines.core import LogProbabilities
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.pipelines")
 
 
 def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:

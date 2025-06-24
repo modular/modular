@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
 from buffer.dimlist import DimList
 from internal_utils import TestTensor, assert_equal
 from nn.gather_scatter import gather_elements

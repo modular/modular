@@ -12,14 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 from collections import OptionalReg
 from math import ceildiv
-from pathlib import Path
-from sys import alignof, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from sys import simdwidthof, sizeof
 
-import linalg.vendor_blas
 from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from buffer.dimlist import DimList, _make_tuple
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -32,7 +29,8 @@ from gpu.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.host.info import H100
 from gpu.id import (
@@ -54,18 +52,14 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from gpu.sync import cp_async_bulk_wait_group, named_barrier
-from gpu.warp import broadcast
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
     LayoutTensorIter,
     copy_local_to_dram,
     copy_sram_to_dram,
 )
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
     st_matrix_n_layout,
@@ -84,10 +78,7 @@ from linalg.matmul_sm90 import (
     producer_main_loop,
     warp_specialized_gemm_output,
 )
-from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
-from memory import bitcast, stack_allocation
 from memory.pointer import _GPUAddressSpace
-from stdlib.bit import log2_floor
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
@@ -506,7 +497,7 @@ fn grouped_matmul_kernel[
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
-    var num_k_iters = K // BK
+    alias num_k_iters = K // BK
 
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
@@ -552,12 +543,12 @@ fn grouped_matmul_kernel[
                 block_tile_shape=block_tile_shape,
                 cluster_shape=cluster_shape,
                 partitioned_multicast=False,
+                num_k_iters=num_k_iters,
             ](
                 a_tma_op,
                 b_tma_op,
                 a_smem_iter,
                 b_smem_iter,
-                num_k_iters,
                 m_coord,
                 n_coord,
                 rank_n,
@@ -610,6 +601,7 @@ fn grouped_matmul_kernel[
         consumer_main_loop[
             cluster_shape=cluster_shape,
             num_consumer=num_consumer,
+            num_k_iters=num_k_iters,
         ](
             dummy_c_reg_tile,
             c_reg_tile,
@@ -619,7 +611,6 @@ fn grouped_matmul_kernel[
             full,
             empty,
             wgmma_op,
-            num_k_iters,
             local_warp_group_idx,
             warp_group_thread_idx,
         )

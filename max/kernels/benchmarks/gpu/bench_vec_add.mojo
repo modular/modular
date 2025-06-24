@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
 from sys import env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -19,20 +18,19 @@ from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.host import DeviceContext
 from internal_utils import update_bench_config
-from memory import UnsafePointer
 from testing import assert_equal
 
 
 fn vec_func(
     in0: UnsafePointer[Float32],
     in1: UnsafePointer[Float32],
-    out: UnsafePointer[Float32],
+    output: UnsafePointer[Float32],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid]
+    output[tid] = in0[tid] + in1[tid]
 
 
 @no_inline

@@ -20,7 +20,6 @@ from benchmark import *
 from benchmark import keep
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import UnsafePointer
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -206,8 +205,8 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     output_ptr.free()
 
 
-@value
-struct ConvSpecStatic:
+@fieldwise_init
+struct ConvSpecStatic(Copyable, Movable):
     # Conv rank, 1d, 2d, or 3d. The input rank is rank + 2.
     var rank: Int
     var input_type: DType
@@ -215,8 +214,8 @@ struct ConvSpecStatic:
     var output_type: DType
 
 
-@value
-struct ConvSpec[static_info: ConvSpecStatic](Stringable):
+@fieldwise_init
+struct ConvSpec[static_info: ConvSpecStatic](Copyable, Movable, Stringable):
     var n: Int
     var input_dims: IndexList[static_info.rank]
     var c: Int

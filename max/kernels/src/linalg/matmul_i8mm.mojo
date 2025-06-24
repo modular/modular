@@ -15,11 +15,7 @@ from math import align_up
 from sys import prefetch
 from sys.info import alignof
 from sys.intrinsics import PrefetchOptions
-
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from buffer.dimlist import DimList
-from memory import UnsafePointer, stack_allocation
-
 from utils.index import Index, IndexList
 
 from .accumulate import _Accumulator
@@ -150,8 +146,8 @@ struct LoadStore_i8mm[
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the I8MM microkernel.
-@value
-struct Inner_matmul_i8mm(InnerMatmulKernel):
+@fieldwise_init
+struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
     # Parameters for global reference.
 
     @always_inline

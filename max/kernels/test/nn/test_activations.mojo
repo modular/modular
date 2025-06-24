@@ -13,9 +13,8 @@
 
 from math import iota
 from random import randn, seed
-from sys.info import has_neon
+from sys.info import CompilationTarget
 
-from memory import UnsafePointer
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
 from test_utils import compare, libm_call
 from testing import assert_almost_equal
@@ -216,5 +215,5 @@ def main():
     test_gelu_libm()
 
     @parameter
-    if not has_neon():
+    if not CompilationTarget.has_neon():
         test_gelu_bfloat16()

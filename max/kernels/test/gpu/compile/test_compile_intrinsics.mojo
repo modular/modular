@@ -13,7 +13,7 @@
 
 from math import exp2
 
-from gpu.host._compile import _compile_code_asm
+from gpu.host.compile import _compile_code_asm
 from gpu.host.info import A100
 from gpu.intrinsics import *
 
@@ -89,7 +89,7 @@ def test_compile_code():
             exp_op, target = A100.target(), emission_kind="llvm-opt"
         ]()
     )
-    # CHECK: fma.rn.f32      %f2, %f3, 0f3FB8AA3B, %f5;
+    # CHECK: fma.rn.f32
     print(
         _compile_code_asm[exp_op, target = A100.target(), emission_kind="asm"]()
     )

@@ -17,7 +17,6 @@ These are Mojo built-ins, so you don't need to import them.
 
 from sys.intrinsics import _type_is_eq
 
-from memory import UnsafePointer
 
 from utils._visualizers import lldb_formatter_wrapping_type
 
@@ -27,11 +26,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @lldb_formatter_wrapping_type
-struct Tuple[*element_types: Copyable & Movable](
-    Copyable,
-    Movable,
-    Sized,
-):
+struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
     """The type of a literal tuple expression.
 
     A tuple consists of zero or more values, separated by commas.

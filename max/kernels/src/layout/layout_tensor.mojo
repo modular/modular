@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
-from collections import Optional, OptionalReg
+from collections import OptionalReg
 from math import align_up, ceildiv, exp
+from math.math import _Expable
 from sys import (
     alignof,
     bitwidthof,
@@ -36,8 +37,8 @@ from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
 from layout._fillers import BATCH_SIZE
-from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory import stack_allocation
+from memory.pointer import _GPUAddressSpace
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -57,7 +58,6 @@ from .int_tuple import (
 )
 from .layout import *
 from .runtime_layout import RuntimeLayout
-from .runtime_layout import coalesce as runtime_coalesce
 from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
@@ -163,9 +163,7 @@ fn _get_slice_size(layout: Layout, slc: Slice, dim: Int) -> Int:
     Returns:
         The number of elements in the slice for the specified dimension.
     """
-    var start: Int
-    var end: Int
-    start, end, _ = slc.indices(Int(layout.shape[dim]))
+    var start, end, _ = slc.indices(Int(layout.shape[dim]))
     return end - start
 
 
@@ -286,7 +284,7 @@ struct LayoutTensor[
     linear_idx_type: DType = _get_index_type(layout, address_space),
     masked: Bool = False,
     alignment: Int = alignof[dtype](),
-](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable):
+](Copyable, Movable, ExplicitlyCopyable, Stringable, Writable, _Expable):
     """A high-performance tensor with explicit memory layout and
     hardware-optimized access patterns.
 
@@ -392,8 +390,8 @@ struct LayoutTensor[
         ]()
 
         self.ptr = span.unsafe_ptr()
-        self.runtime_layout = __type_of(self.runtime_layout)()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_layout = {}
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -425,7 +423,7 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, linear_idx_type=linear_idx_type
         ]()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -493,8 +491,8 @@ struct LayoutTensor[
         ]()
 
         self.ptr = ptr
-        self.runtime_layout = __type_of(self.runtime_layout)()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_layout = {}
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -527,7 +525,7 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout.cast[
             layout_int_type, linear_idx_type=linear_idx_type
         ]()
-        self.runtime_element_layout = __type_of(self.runtime_element_layout)()
+        self.runtime_element_layout = {}
 
     @always_inline
     fn __init__(
@@ -1748,7 +1746,7 @@ struct LayoutTensor[
         )
 
     @always_inline("nodebug")
-    fn __getitem__(self, *dims: Int) -> Self.element_type:
+    fn __getitem__(self, arg0: Int) -> Self.element_type:
         """Retrieves a single element from the tensor at the specified indices.
 
         This method provides array-like indexing for the tensor. The number of
@@ -1756,15 +1754,347 @@ struct LayoutTensor[
         will occur at runtime.
 
         Args:
-            dims: The indices specifying the element's position in each
-                dimension. For example, in a 3D tensor, you would use (i, j, k).
+            arg0: The index specifying the element's position in the first
+                dimension.
 
         Returns:
             The element at the specified position with the tensor's data type.
         """
 
+        constrained[
+            len(layout.shape.flatten()) == 1,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                1,
+            ),
+        ]()
+
         var strides = self.runtime_layout.stride.value
-        var offset = Self._get_offset(strides, dims)
+        var offset = Self._get_offset(strides, arg0)
+        return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn __getitem__(self, arg0: Int, arg1: Int) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            arg0: The index specifying the element's position in the first
+                dimension.
+            arg1: The index specifying the element's position in the second
+                dimension.
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+        constrained[
+            len(layout.shape.flatten()) == 2,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                2,
+            ),
+        ]()
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(strides, VariadicList[Int](arg0, arg1))
+        return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn __getitem__(self, arg0: Int, arg1: Int, arg2: Int) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            arg0: The index specifying the element's position in the first
+                dimension.
+            arg1: The index specifying the element's position in the second
+                dimension.
+            arg2: The index specifying the element's position in the third
+                dimension.
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+        constrained[
+            len(layout.shape.flatten()) == 3,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                3,
+            ),
+        ]()
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(
+            strides, VariadicList[Int](arg0, arg1, arg2)
+        )
+        return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn __getitem__(
+        self, arg0: Int, arg1: Int, arg2: Int, arg3: Int
+    ) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            arg0: The index specifying the element's position in the first
+                dimension.
+            arg1: The index specifying the element's position in the second
+                dimension.
+            arg2: The index specifying the element's position in the third
+                dimension.
+            arg3: The index specifying the element's position in the fourth
+                dimension.
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+        constrained[
+            len(layout.shape.flatten()) == 4,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                4,
+            ),
+        ]()
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(
+            strides, VariadicList[Int](arg0, arg1, arg2, arg3)
+        )
+        return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn __getitem__(
+        self, arg0: Int, arg1: Int, arg2: Int, arg3: Int, arg4: Int
+    ) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            arg0: The index specifying the element's position in the first
+                dimension.
+            arg1: The index specifying the element's position in the second
+                dimension.
+            arg2: The index specifying the element's position in the third
+                dimension.
+            arg3: The index specifying the element's position in the fourth
+                dimension.
+            arg4: The index specifying the element's position in the fifth
+                dimension.
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+        constrained[
+            len(layout.shape.flatten()) == 5,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                5,
+            ),
+        ]()
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(
+            strides, VariadicList[Int](arg0, arg1, arg2, arg3, arg4)
+        )
+        return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn __getitem__(
+        self, arg0: Int, arg1: Int, arg2: Int, arg3: Int, arg4: Int, arg5: Int
+    ) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            arg0: The index specifying the element's position in the first
+                dimension.
+            arg1: The index specifying the element's position in the second
+                dimension.
+            arg2: The index specifying the element's position in the third
+                dimension.
+            arg3: The index specifying the element's position in the fourth
+                dimension.
+            arg4: The index specifying the element's position in the fifth
+                dimension.
+            arg5: The index specifying the element's position in the sixth
+                dimension.
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+        constrained[
+            len(layout.shape.flatten()) == 6,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                6,
+            ),
+        ]()
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(
+            strides, VariadicList[Int](arg0, arg1, arg2, arg3, arg4, arg5)
+        )
+
+        return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn __getitem__(
+        self,
+        arg0: Int,
+        arg1: Int,
+        arg2: Int,
+        arg3: Int,
+        arg4: Int,
+        arg5: Int,
+        arg6: Int,
+    ) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            arg0: The index specifying the element's position in the first
+                dimension.
+            arg1: The index specifying the element's position in the second
+                dimension.
+            arg2: The index specifying the element's position in the third
+                dimension.
+            arg3: The index specifying the element's position in the fourth
+                dimension.
+            arg4: The index specifying the element's position in the fifth
+                dimension.
+            arg5: The index specifying the element's position in the sixth
+                dimension.
+            arg6: The index specifying the element's position in the seventh
+                dimension.
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+        constrained[
+            len(layout.shape.flatten()) == 7,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                7,
+            ),
+        ]()
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(
+            strides, VariadicList[Int](arg0, arg1, arg2, arg3, arg4, arg5, arg6)
+        )
+        return self._load_offset(offset)
+
+    @always_inline("nodebug")
+    fn __getitem__(
+        self,
+        arg0: Int,
+        arg1: Int,
+        arg2: Int,
+        arg3: Int,
+        arg4: Int,
+        arg5: Int,
+        arg6: Int,
+        arg7: Int,
+    ) -> Self.element_type:
+        """Retrieves a single element from the tensor at the specified indices.
+
+        This method provides array-like indexing for the tensor. The number of
+        indices provided must match the rank of the tensor, otherwise an error
+        will occur at runtime.
+
+        Args:
+            arg0: The index specifying the element's position in the first
+                dimension.
+            arg1: The index specifying the element's position in the second
+                dimension.
+            arg2: The index specifying the element's position in the third
+                dimension.
+            arg3: The index specifying the element's position in the fourth
+                dimension.
+            arg4: The index specifying the element's position in the fifth
+                dimension.
+            arg5: The index specifying the element's position in the sixth
+                dimension.
+            arg6: The index specifying the element's position in the seventh
+                dimension.
+            arg7: The index specifying the element's position in the eighth
+                dimension.
+
+        Returns:
+            The element at the specified position with the tensor's data type.
+        """
+        constrained[
+            len(layout.shape.flatten()) == 8,
+            String(
+                (
+                    "Number of indices must match the flattened rank of the"
+                    " tensor, flattened rank: "
+                ),
+                len(layout.shape.flatten()),
+                ", number of indices: ",
+                8,
+            ),
+        ]()
+
+        var strides = self.runtime_layout.stride.value
+        var offset = Self._get_offset(
+            strides,
+            VariadicList[Int](arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7),
+        )
         return self._load_offset(offset)
 
     @always_inline("nodebug")
@@ -2211,7 +2541,7 @@ struct LayoutTensor[
         ]()
 
         var ptr = stack_allocation[
-            layout.size(),
+            layout.size() * element_layout.size(),
             dtype,
             alignment=alignment,
             address_space=address_space,
@@ -2608,6 +2938,7 @@ struct LayoutTensor[
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
+            alignment=alignment,
         ],
     ):
         """Returns a the type of a tile view of the tensor with specified
@@ -4372,6 +4703,7 @@ struct LayoutTensor[
             layout_int_type=layout_int_type,
             linear_idx_type=linear_idx_type,
             masked=masked,
+            alignment=alignment,
         ],
     ):
         """Create a view of the tensor with a different shape.
@@ -4765,7 +5097,7 @@ struct LayoutTensor[
 
         ```mojo
         from layout import LayoutTensor, Layout
-        from gpu import thread_idx, block_idx, block_dim, global_idx, grid_dim
+        from gpu import thread_idx, block_idx, block_dim
         from gpu.memory import AddressSpace, async_copy_wait_all
 
         alias dtype = DType.float32
@@ -5417,9 +5749,8 @@ fn stack_allocation_like[
     return __type_of(result).stack_allocation()
 
 
-@value
 @register_passable("trivial")
-struct ThreadScope:
+struct ThreadScope(Copyable, Movable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -6513,7 +6844,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)
@@ -6571,7 +6902,7 @@ fn copy_sram_to_dram[
                     alias src_idx_base = src_idx % swizzle_fn.size()
                     alias src_idx_diff = src_idx - src_idx_base
                     # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # in the unrolled loop. Hopefully compiler can eliminate the duplicated
                     # xor computation.
                     swizzled_idx = (
                         swizzle_fn(src_frag_offset + src_idx_base)
@@ -6836,8 +7167,6 @@ fn copy_local_to_dram[
             src.ptr.offset(src_idx),
             src.runtime_element_layout,
         )
-
-        alias dst_element_type = Element[dst.dtype, dst.linear_idx_type]
 
         alias element_stride = dst_fragments.element_layout.stride[1].value()
 
@@ -7437,7 +7766,7 @@ struct LayoutTensorIter[
     layout_int_type: DType = _get_index_type(address_space),
     linear_idx_type: DType = _get_index_type(address_space),
     masked: Bool = False,
-]:
+](Defaultable):
     """Iterator for traversing a memory buffer with a specific layout.
 
     `LayoutTensorIter` provides a way to iterate through memory according to a
@@ -7514,11 +7843,11 @@ struct LayoutTensorIter[
                 "Circular use case is not supported if an axis is defined.",
             ]()
 
-        self.ptr = __type_of(self.ptr)()
+        self.ptr = {}
         self.offset = 0
         self.stride = 0
         self.bound = 0
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
         self.dimension_bound = 0
         self.idx = 0
 
@@ -7564,7 +7893,7 @@ struct LayoutTensorIter[
         self.ptr = ptr
         self.bound = bound
         self.stride = stride
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
         self.offset = offset
         self.dimension_bound = 0
         self.idx = 0

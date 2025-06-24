@@ -56,13 +56,12 @@ var tiled = blocked_product(layout, Layout([2, 2]))
 """
 
 import sys
-from collections import InlineArray, Optional
 from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 
 from buffer.dimlist import DimList
 
-from utils import Writable, Writer
+from utils import IndexList
 
 from .int_tuple import (
     INT_TUPLE_VALIDATION,
@@ -251,8 +250,8 @@ fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
     return Layout(shape, stride)
 
 
-@value
-struct _LayoutIter[origin: ImmutableOrigin]:
+@fieldwise_init
+struct _LayoutIter[origin: ImmutableOrigin](Copyable, Movable):
     """Iterator for traversing Layout dimensions.
 
     This internal iterator allows traversing the dimensions of a Layout object,
@@ -307,12 +306,15 @@ struct _LayoutIter[origin: ImmutableOrigin]:
 
 struct Layout(
     Copyable,
+    Defaultable,
+    EqualityComparable,
+    EqualityComparable,
     LayoutTrait,
+    Movable,
+    Movable,
     Sized,
     Stringable,
     Writable,
-    Movable,
-    EqualityComparable,
 ):
     """Represents a memory layout for multi-dimensional data.
 
@@ -555,6 +557,80 @@ struct Layout(
             c_stride *= dim
 
         return Layout(shape, reverse(stride))
+
+    @staticmethod
+    fn row_major[rank: Int](tuple: IndexList[rank]) -> Layout:
+        """Creates a row-major layout from a DimList with compile-time rank.
+
+        This method creates a row-major layout where the last dimension varies fastest in memory.
+        It handles both known and unknown dimensions at compile time, properly calculating
+        strides for each dimension. If any dimension is unknown, subsequent strides will
+        also be marked as unknown.
+
+        Parameters:
+            rank: The compile-time rank (number of dimensions) of the layout.
+
+        Args:
+            tuple: An IndexList containing the dimensions of the layout.
+
+        Returns:
+            A row-major Layout with the specified dimensions and computed strides.
+
+        Example:
+
+            ```mojo
+            from layout import Layout
+            from layout.layout import DimList
+
+            # Create a row-major layout with compile-time rank
+            var dims = DimList(3, 4)
+            var layout = Layout.row_major[2](dims)
+            # Result: Layout with shape (3,4) and stride (4,1)
+            ```
+            .
+        """
+        var c_stride = 1
+        var shape = IntTuple()
+        var stride = IntTuple(c_stride)
+
+        @parameter
+        for i in range(rank):
+            shape.append(tuple[i])
+
+        @parameter
+        for i in range(rank - 1):
+            var dim = tuple[rank - 1 - i]
+            stride.append(dim * c_stride)
+            c_stride *= dim
+
+        return Layout(shape, reverse(stride))
+
+    @staticmethod
+    fn row_major[rank: Int]() -> Layout:
+        """Creates a row-major layout with unknown values for each axis from a compile-time rank.
+
+        Parameters:
+            rank: The compile-time rank (number of dimensions) of the layout.
+
+        Returns:
+            A row-major Layout with the given rank.
+
+        Example:
+
+            ```mojo
+            from layout import Layout
+
+            var layout = Layout.row_major[2]()
+            # Result: Layout with shape (UNKNOWN_VALUE, UNKNOWN_VALUE)
+            ```
+        """
+        var shape = IntTuple()
+
+        @parameter
+        for i in range(rank):
+            shape.append(UNKNOWN_VALUE)
+
+        return Layout.row_major(shape)
 
     @staticmethod
     fn row_major(shape: IntTuple) -> Layout:
@@ -930,7 +1006,7 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
                 coalesce(layout[0], False).stride,
             )
 
-        # Coalesce each mode and concat the results to perserve rank.
+        # Coalesce each mode and concat the results to preserve rank.
         var shapes = IntTuple()
         var strides = IntTuple()
         for mode in layout:

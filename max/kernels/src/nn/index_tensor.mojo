@@ -11,23 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string import StaticString
 from math import ceildiv
 from sys import simdwidthof
 from sys.info import _current_target
 
 from algorithm import elementwise, sync_parallelize
 from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import DeviceContext
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
-from memory import UnsafePointer, memcpy, memset_zero
-from nn.gather_scatter import normalize_neg_index
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList
 
 
 @always_inline
@@ -146,9 +141,9 @@ fn index_tensor_shape[
 # FOLLOW-UP: See example with [:, indA] indexing.
 # FOLLOW-UP: Simplify if not needed to be that complex.
 # Note: We could have used original gather_nd but then would need to materialize
-# an unneded huge index tensor (would broadcast to : dimension(s)).
-# Note: Currently, the `_index_tensor_1d` is retained as the CPU implemetation
-# (see PR #38365). The `_index_tensor_impl` is introduced as the gpu implemetation.
+# an unneeded huge index tensor (would broadcast to : dimension(s)).
+# Note: Currently, the `_index_tensor_1d` is retained as the CPU implementation
+# (see PR #38365). The `_index_tensor_impl` is introduced as the gpu implementation.
 # We intend to merge `index_tensor` with the `gather_nd` operations in the future.
 
 
@@ -353,7 +348,7 @@ fn _index_tensor_impl[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     # Only use SIMD if:
@@ -556,7 +551,7 @@ fn advanced_indexing_getitem[
 
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank
@@ -781,7 +776,7 @@ fn advanced_indexing_setitem_inplace[
     alias last_indexed_dim = start_axis + num_index_tensors - 1
     alias compile_target = _current_target() if is_cpu[
         target
-    ]() else _get_gpu_target()
+    ]() else get_gpu_target()
     alias target_simd_width = simdwidthof[input_type, target=compile_target]()
     var use_simd = _advanced_indexing_use_simd[
         start_axis, num_index_tensors, input_rank

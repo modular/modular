@@ -20,8 +20,8 @@ from math import floor
 """
 
 from sys import (
+    CompilationTarget,
     bitwidthof,
-    has_avx512f,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
@@ -38,7 +38,7 @@ from algorithm import vectorize
 from bit import count_leading_zeros, count_trailing_zeros
 from builtin.dtype import _integral_type_of
 from builtin.simd import _modf, _simd_apply
-from memory import Span, UnsafePointer
+from memory import Span
 
 from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
@@ -133,10 +133,8 @@ fn ceildiv[T: CeilDivableRaising, //](numerator: T, denominator: T) raises -> T:
 # before overload resolution.
 @always_inline("builtin")
 fn ceildiv(
-    numerator: IntLiteral,
-    denominator: IntLiteral,
-    out result: __type_of(numerator.__ceildiv__(denominator)),
-):
+    numerator: IntLiteral, denominator: IntLiteral
+) -> __type_of(numerator.__ceildiv__(denominator)):
     """Return the rounded-up result of dividing numerator by denominator.
 
     Args:
@@ -146,7 +144,7 @@ fn ceildiv(
     Returns:
         The ceiling of dividing numerator by denominator.
     """
-    result = __type_of(result)()
+    return {}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -437,17 +435,23 @@ fn exp2[
         ](x)
 
     @parameter
-    if dtype not in (DType.float32, DType.float64):
+    if dtype is DType.float32:
+        return _exp2_float32(x._refine[DType.float32]())._refine[dtype]()
+    elif dtype is DType.float64:
+        return 2**x
+    else:
         return exp2(x.cast[DType.float32]()).cast[dtype]()
 
+
+@always_inline
+fn _exp2_float32(x: SIMD[DType.float32, _]) -> __type_of(x):
+    alias u32 = DType.uint32
     var xc = x.clamp(-126, 126)
-
-    var m = xc.cast[__type_of(x.to_bits()).dtype]()
-
-    xc -= m.cast[dtype]()
+    var m = xc.cast[DType.int32]()
+    xc -= m.cast[x.dtype]()
 
     var r = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Float32](
             1.0,
             0.693144857883,
             0.2401793301105,
@@ -456,8 +460,9 @@ fn exp2[
             1.33336498402e-3,
         ),
     ](xc)
-    return __type_of(r).from_bits(
-        (r.to_bits() + (m << FPUtils[dtype].mantissa_width()))
+    return __type_of(x).from_bits(
+        r.to_bits[u32]()
+        + (m.cast[u32]() << FPUtils[DType.float32].mantissa_width())
     )
 
 
@@ -491,7 +496,11 @@ fn _ldexp_impl[
     alias hardware_width = simdwidthof[dtype]()
 
     @parameter
-    if has_avx512f() and dtype is DType.float32 and width >= hardware_width:
+    if (
+        CompilationTarget.has_avx512f()
+        and dtype is DType.float32
+        and width >= hardware_width
+    ):
         var res: SIMD[dtype, width] = 0
         var zero: SIMD[dtype, hardware_width] = 0
 
@@ -566,7 +575,7 @@ trait _Expable:
 fn _exp_taylor[
     dtype: DType, width: Int, //
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    alias coefficients = List[SIMD[dtype, width]](
+    alias coefficients = List[Scalar[dtype]](
         1.0,
         1.0,
         0.5,
@@ -773,7 +782,7 @@ fn _log_base[
 
     var y = (
         polynomial_evaluate[
-            List[SIMD[dtype, width]](
+            List[Scalar[dtype]](
                 3.3333331174e-1,
                 -2.4999993993e-1,
                 2.0000714765e-1,
@@ -852,16 +861,18 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
         Vector containing result of performing log base 2 on x.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    if not is_compile_time():
 
         @parameter
-        if sizeof[dtype]() < sizeof[DType.float32]():
-            return log2(x.cast[DType.float32]()).cast[dtype]()
-        elif dtype is DType.float32:
-            return _call_ptx_intrinsic[
-                instruction="lg2.approx.f32", constraints="=f,f"
-            ](x)
+        if is_nvidia_gpu():
+
+            @parameter
+            if sizeof[dtype]() < sizeof[DType.float32]():
+                return log2(x.cast[DType.float32]()).cast[dtype]()
+            elif dtype is DType.float32:
+                return _call_ptx_intrinsic[
+                    instruction="lg2.approx.f32", constraints="=f,f"
+                ](x)
 
     return _log_base[2](x)
 
@@ -894,16 +905,17 @@ fn copysign[
     Returns:
         Copies the sign from sign to magnitude.
     """
+    constrained[dtype.is_numeric(), "operands must be a numeric type"]()
 
     @parameter
-    if dtype.is_integral():
+    if dtype.is_unsigned():
+        return magnitude
+    elif dtype.is_integral():
         var mag_abs = abs(magnitude)
-        return (sign > 0).select(mag_abs, -mag_abs)
-    else:
-        constrained[dtype.is_numeric(), "operands must be a numeric type"]()
-        return llvm_intrinsic[
-            "llvm.copysign", SIMD[dtype, width], has_side_effect=False
-        ](magnitude, sign)
+        return (sign < 0).select(-mag_abs, mag_abs)
+    return llvm_intrinsic[
+        "llvm.copysign", SIMD[dtype, width], has_side_effect=False
+    ](magnitude, sign)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -934,7 +946,7 @@ fn erf[
     var x_abs = abs(x)
 
     var r_large = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             1.28717512e-1,
             6.34846687e-1,
             1.06777847e-1,
@@ -949,7 +961,7 @@ fn erf[
     r_large = copysign(1 - exp(-r_large), x)
 
     var r_small = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             1.28379151e-1,
             -3.76124859e-1,
             1.12818025e-1,
@@ -1025,7 +1037,7 @@ fn tanh[
     var x_squared = xc * xc
 
     var numerator = xc * polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             4.89352455891786e-03,
             6.37261928875436e-04,
             1.48572235717979e-05,
@@ -1037,7 +1049,7 @@ fn tanh[
     ](x_squared)
 
     var denominator = polynomial_evaluate[
-        List[SIMD[dtype, width]](
+        List[Scalar[dtype]](
             4.89352518554385e-03,
             2.26843463243900e-03,
             1.18534705686654e-04,
@@ -1053,10 +1065,12 @@ fn tanh[
 # ===----------------------------------------------------------------------=== #
 
 
-# TODO: control symmetric behavior with flag so we can be compatible with Python
 @always_inline
 fn isclose[
-    dtype: DType, width: Int
+    dtype: DType,
+    width: Int,
+    *,
+    symmetrical: Bool = True,
 ](
     a: SIMD[dtype, width],
     b: SIMD[dtype, width],
@@ -1065,44 +1079,55 @@ fn isclose[
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ) -> SIMD[DType.bool, width]:
-    """Checks if the two input values are numerically within a tolerance.
+    """Returns a boolean SIMD vector indicating which element pairs of `a` and `b`
+    are equal within a given tolerance.
 
-    When the type is integral, then equality is checked. When the type is
-    floating point, then this checks if the two input values are numerically the
-    close using the $abs(a - b) <= max(rtol * max(abs(a), abs(b)), atol)$
-    formula.
+    For floating-point dtypes, the following criteria apply:
 
-    Unlike Pythons's `math.isclose`, this implementation is symmetric. I.e.
-    `isclose(a,b) == isclose(b,a)`.
+    - Symmetric (Python `math.isclose` style), when `symmetrical` is true:
+        ```
+        |a - b| ≤ max(atol, rtol * max(|a|, |b|))
+        ```
+    - Asymmetric (NumPy style), when `symmetrical` is false:
+        ```
+        |a - b| ≤ atol + rtol * |b|
+        ```
+
+    NaN values are considered equal only if `equal_nan` is true.
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
-        width: The width of the input and output SIMD vector.
+        dtype: Element type of the input and output vectors.
+        width: Number of lanes in each SIMD vector.
+        symmetrical: If true, use the symmetric comparison formula (default: true).
 
     Args:
-        a: The first value to compare.
-        b: The second value to compare.
-        atol: The absolute tolerance.
-        rtol: The relative tolerance.
-        equal_nan: Whether to treat nans as equal.
+        a: First input vector.
+        b: Second input vector.
+        atol: Absolute tolerance.
+        rtol: Relative tolerance.
+        equal_nan: If true, treat NaNs as equal (default: false).
 
     Returns:
-        A boolean vector where a and b are equal within the specified tolerance.
+        A boolean vector where `a` and `b` are equal within the given tolerance.
     """
-
     constrained[
-        a.dtype is DType.bool or a.dtype.is_numeric(),
-        "input type must be boolean, integral, or floating-point",
+        a.dtype.is_floating_point(),
+        "isclose only supports floating-point types",
     ]()
     alias T = __type_of(a)
 
+    var check_nan = isnan(a) & isnan(b)
+    var check_fin: SIMD[DType.bool, width]
+    var in_range: SIMD[DType.bool, width]
+
     @parameter
-    if a.dtype is DType.bool or a.dtype.is_integral():
-        return a == b
-    var both_nan = isnan(a) & isnan(b)
-    var both_finite = isfinite(a) & isfinite(b)
-    var in_range = abs(a - b) <= max(T(atol), T(rtol) * max(abs(a), abs(b)))
-    return (a == b) | (both_nan & equal_nan) | (both_finite & in_range)
+    if symmetrical:
+        check_fin = isfinite(a) & isfinite(b)
+        in_range = abs(a - b) <= max(T(atol), T(rtol) * max(abs(a), abs(b)))
+    else:
+        check_fin = isfinite(b)
+        in_range = abs(a - b) <= T(atol) + T(rtol) * abs(b)
+    return (a == b) | (check_nan & equal_nan) | (check_fin & in_range)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1634,9 +1659,9 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     """This computes the `atanh` of the inputs for float32. It uses the same
     approximation used by Eigen library."""
 
-    alias nan_val = __type_of(x)(nan[x.dtype]())
-    alias inf_val = __type_of(x)(inf[x.dtype]())
-    alias neg_inf_val = __type_of(x)(-inf[x.dtype]())
+    alias nan_val = nan[x.dtype]()
+    alias inf_val = inf[x.dtype]()
+    alias neg_inf_val = -inf[x.dtype]()
 
     var is_neg = x < 0
     var x_abs = abs(x)
@@ -1646,7 +1671,7 @@ fn _atanh_float32(x: SIMD) -> __type_of(x):
     # When x is in the range [0, 0.5], we use a polynomial approximation.
     # P(x) = x + x^3*(c[4] + x^2 * (c[3] + x^2 * (... x^2 * c[0]) ... )).
     var p = polynomial_evaluate[
-        List[__type_of(x)](
+        List[Scalar[x.dtype]](
             0.3333373963832855224609375,
             0.1997792422771453857421875,
             0.14672131836414337158203125,
@@ -2325,7 +2350,6 @@ fn lcm(m: Int, n: Int, /) -> Int:
     Returns:
         The least common multiple of the two integers.
     """
-    var d: Int
     if d := gcd(m, n):
         return abs((m // d) * n if m > n else (n // d) * m)
     return 0
@@ -2586,7 +2610,7 @@ fn _call_libm[
 
     @parameter
     if not _type_is_libm_supported(arg_type):
-        # Coerse to f32 if the value is not representable by libm.
+        # Coerce to f32 if the value is not representable by libm.
         return _call_libm_impl[func_name, result_type = DType.float32](
             arg.cast[DType.float32]()
         ).cast[result_type]()
@@ -2769,8 +2793,8 @@ trait Ceilable:
     ```mojo
     from math import Ceilable, ceil
 
-    @value
-    struct Complex(Ceilable):
+    @fieldwise_init
+    struct Complex(Ceilable, Copyable):
         var re: Float64
         var im: Float64
 
@@ -2806,8 +2830,8 @@ trait Floorable:
     ```mojo
     from math import Floorable, floor
 
-    @value
-    struct Complex(Floorable):
+    @fieldwise_init
+    struct Complex(Floorable, Copyable):
         var re: Float64
         var im: Float64
 
@@ -2844,8 +2868,8 @@ trait CeilDivable:
     ```mojo
     from math import CeilDivable
 
-    @value
-    struct Foo(CeilDivable):
+    @fieldwise_init
+    struct Foo(CeilDivable, Copyable):
         var x: Float64
 
         fn __ceildiv__(self, denominator: Self) -> Self:
@@ -2877,8 +2901,8 @@ trait CeilDivableRaising:
     ```mojo
     from math import CeilDivableRaising
 
-    @value
-    struct Foo(CeilDivableRaising):
+    @fieldwise_init
+    struct Foo(CeilDivableRaising, Copyable):
         var x: Float64
 
         fn __ceildiv__(self, denominator: Self) raises -> Self:
@@ -2915,8 +2939,8 @@ trait Truncable:
     ```mojo
     from math import Truncable, trunc
 
-    @value
-    struct Complex(Truncable):
+    @fieldwise_init
+    struct Complex(Truncable, Copyable):
         var re: Float64
         var im: Float64
 

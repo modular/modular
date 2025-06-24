@@ -100,18 +100,18 @@ fn _build_list[start: Int, stop: Int]() -> List[Int]:
 
 
 alias width = bitwidthof[Int]()
-var int_values = _build_list[-(2 ** (width - 1)), 2 ** (width - 1) - 1]()
-var uint_values = _build_list[0, 2**width - 1]()
 
 
 @parameter
 fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
+    var values = _build_list[0, 2**width - 1]()
+
     @always_inline
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(uint_values)):
-                var result = func(uint_values.unsafe_get(i))
+            for i in range(len(values)):
+                var result = func(values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()
@@ -119,12 +119,14 @@ fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
 
 @parameter
 fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
+    var values = _build_list[0, 2**width - 1]()
+
     @always_inline
     @parameter
     fn call_fn() raises:
         for _ in range(10_000):
-            for i in range(len(uint_values)):
-                var result = func(uint_values.unsafe_get(i))
+            for i in range(len(values)):
+                var result = func(values.unsafe_get(i))
                 keep(result)
 
     b.iter[call_fn]()
@@ -168,5 +170,5 @@ def main():
         avg, amnt = results.get(n, (Float64(0), 0))
         results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
     print("")
-    for ref k_v in results.items():
+    for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=",")

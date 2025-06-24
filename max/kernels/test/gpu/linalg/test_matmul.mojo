@@ -13,38 +13,30 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import Optional, OptionalReg
-from math import ceildiv
+from collections.optional import OptionalReg
 from sys import alignof, bitwidthof, has_nvidia_gpu_accelerator, simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from gpu import barrier, block_dim, block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
-from gpu.host.info import DEFAULT_GPU_ARCH
+from buffer.dimlist import DimList
+from gpu.host import DeviceContext
+from gpu.host import get_gpu_target
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     arange,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg import vendor_blas
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from memory import UnsafePointer, memset_zero, stack_allocation
-from memory.pointer import _GPUAddressSpace as GPUAddressSpace
+from linalg.matmul_gpu import _matmul_gpu
+from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
-from testing import assert_almost_equal, assert_true
+from testing import assert_almost_equal
 
 from utils import IndexList
 from utils.index import Index
-from utils.numerics import FPUtils
 
 alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 
@@ -231,7 +223,7 @@ fn test[
     )
 
     var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)
@@ -390,7 +382,7 @@ def main():
 
         print("===> bfloat16-float32 mma with epilogue")
         # Our default split-k reduction precision is output precision. For
-        # bfloat16, we need a larger tolerance since the referece may reduce
+        # bfloat16, we need a larger tolerance since the reference may reduce
         # in float32.
         test[
             DType.bfloat16,

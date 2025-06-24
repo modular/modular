@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import isqrt, sqrt
-from sys import has_neon, simdwidthof
+from sys import simdwidthof
 
 from algorithm.functional import elementwise
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from gpu import *
-from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import DeviceContext, HostBuffer
+from gpu.host import get_gpu_target
 from testing import *
 
 from utils import Index, IndexList
@@ -32,14 +32,16 @@ def run_elementwise[
 ](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[type](length)
     var out_device = ctx.enqueue_create_buffer[type](length)
 
-    with in_device.map_to_host() as in_host:
+    var in_host: HostBuffer[type]
+    with in_device.map_to_host() as in_host2:
         for i in range(length):
-            in_host[i] = 0.001 * abs(Scalar[type](i) - length // 2)
+            in_host2[i] = 0.001 * abs(Scalar[type](i) - length // 2)
+        in_host = in_host2^
 
     var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
     var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))

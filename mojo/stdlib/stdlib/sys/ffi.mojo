@@ -17,7 +17,6 @@ from os import PathLike, abort
 from pathlib import DIR_SEPARATOR, Path
 from sys._libc import dlclose, dlerror, dlopen, dlsym
 
-from memory import UnsafePointer
 
 from .info import is_64bit, os_is_linux, os_is_macos, os_is_windows
 from .intrinsics import _mlirtype_is_eq
@@ -71,9 +70,6 @@ alias c_float = Float32
 
 alias c_double = Float64
 """C `double` type."""
-
-alias OpaquePointer = UnsafePointer[NoneType]
-"""An opaque pointer, equivalent to the C `void*` type."""
 
 
 fn _c_long_dtype() -> DType:
@@ -164,7 +160,7 @@ struct _OwnedDLHandle(Movable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
+struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
     """Represents a dynamically linked library that can be loaded and unloaded.
 
     The library is loaded on initialization and unloaded by `close`.
@@ -178,11 +174,12 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
         """Initialize a dynamic library handle to all global symbols in the
         current process.
 
-        On POXIX-compatible operating systems, this performs
-        `dlopen(nullptr, flags)`.
-
         Args:
             flags: The flags to load the dynamic library.
+
+        Notes:
+            On POSIX-compatible operating systems, this performs
+            `dlopen(nullptr, flags)`.
         """
         self = Self._dlopen(UnsafePointer[c_char](), flags)
 
@@ -446,9 +443,11 @@ struct DLHandle(Copyable, Movable, ExplicitlyCopyable, Boolable):
             The result.
         """
 
-        debug_assert(
-            self.check_symbol(String(name)), String("symbol not found: ") + name
-        )
+        @parameter
+        fn _check_symbol() -> Bool:
+            return self.check_symbol(String(name))
+
+        debug_assert[_check_symbol]("symbol not found: ", name)
         var v = args.get_loaded_kgen_pack()
         return self.get_function[fn (__type_of(v)) -> return_type](
             String(name)
@@ -498,7 +497,7 @@ fn _try_find_dylib[
         Error: If the library could not be loaded from any of the provided paths.
     """
     alias dylib_name = name if name != "" else "dynamic library"
-    for ref path in paths:
+    for path in paths:
         # If we are given a library name like libfoo.so, pass it directly to
         # dlopen(), which will invoke the system linker to find the library.
         # We can't check the existence of the path ahead of time, we have to
@@ -524,7 +523,7 @@ fn _try_find_dylib[
     """
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
-    for ref path in paths:
+    for path in paths:
         paths_list.append(path)
     return _try_find_dylib[name](paths_list)
 
@@ -555,7 +554,7 @@ fn _find_dylib[name: StaticString = ""](*paths: Path) -> _OwnedDLHandle:
     """
     # Convert the variadic pack to a list.
     var paths_list = List[Path]()
-    for ref path in paths:
+    for path in paths:
         paths_list.append(path)
     return _find_dylib[name](paths_list)
 
@@ -571,7 +570,7 @@ struct _Global[
     name: StaticString,
     StorageType: Movable,
     init_fn: fn () -> StorageType,
-]:
+](Defaultable):
     alias ResultType = UnsafePointer[StorageType]
 
     fn __init__(out self):

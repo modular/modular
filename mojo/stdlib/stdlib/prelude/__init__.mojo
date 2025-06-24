@@ -47,12 +47,7 @@ from builtin.comparable import (
 )
 from builtin.constrained import constrained
 from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
-from builtin.debug_assert import (
-    WRITE_MODE,
-    WRITE_MODE_MEM,
-    WRITE_MODE_REG,
-    debug_assert,
-)
+from builtin.debug_assert import debug_assert
 from builtin.dtype import DType
 from builtin.equality_comparable import EqualityComparable
 from builtin.error import Error
@@ -130,9 +125,15 @@ from builtin.type_aliases import (
     StaticConstantOrigin,
 )
 from builtin.uint import UInt
-from builtin.value import Copyable, Defaultable, ExplicitlyCopyable, Movable
+from builtin.value import (
+    Copyable,
+    Defaultable,
+    ExplicitlyCopyable,
+    IteratorTrait,
+    Movable,
+)
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack
 from documentation import doc_private
-from memory import AddressSpace, Pointer, Span
+from memory import AddressSpace, Pointer, Span, UnsafePointer, OpaquePointer
 
 from utils import Writable, Writer

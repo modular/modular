@@ -12,26 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose, isqrt
 from random import rand
-from sys import env_get_dtype, env_get_int, env_get_string, is_defined
+from sys import env_get_dtype, env_get_int
 
 from benchmark import (
     Bench,
-    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    keep,
 )
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import arg_parse, bench_compile_time
-from memory import UnsafePointer
+from internal_utils import arg_parse
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -108,7 +104,7 @@ fn run_mha[
     ctx.enqueue_copy(v_device_ptr, v_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, MutableAnyOrigin, DimList(Dim(), Dim(), num_heads, depth)
     ](
@@ -263,8 +259,8 @@ fn run_mha[
     flash_output_ptr.free()
 
 
-@value
-struct MHA_cfg:
+@fieldwise_init
+struct MHA_cfg(Copyable, Movable):
     # params
     var qkv_type: DType
     var mask_type: DType

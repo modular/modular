@@ -27,7 +27,7 @@ fn clobber_memory():
     to memory reads and writes.
     """
 
-    # This opereration corresponds to  atomic_signal_fence(memory_order_acq_rel)
+    # This operation corresponds to  atomic_signal_fence(memory_order_acq_rel)
     # in C++.
     __mlir_op.`pop.fence`[
         _type=None,

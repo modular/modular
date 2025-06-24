@@ -22,9 +22,12 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from json.decoder import JSONDecodeError
+from pathlib import Path
 from time import perf_counter_ns
 from typing import Any, Literal, Optional, Union, cast
+from urllib.parse import unquote, urlparse
 
+import aiofiles
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
@@ -37,7 +40,9 @@ from max.pipelines.core import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+from max.pipelines.core.interfaces.text_generation import SamplingParams
 from max.profiler import Tracer, traced
+from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
@@ -115,9 +120,9 @@ class OpenAIResponseGenerator(ABC):
         self,
         pipeline: TokenGeneratorPipeline,
     ):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
+        self.logger = logging.getLogger(
+            "max.serve.router.OpenAIResponseGenerator"
+        )
         self.pipeline = pipeline
 
     @abstractmethod
@@ -151,10 +156,7 @@ def get_pipeline(
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
     async def stream(self, request: TokenGeneratorRequest):
-        self.logger.debug(
-            "Streaming: Start: %s",
-            request,
-        )
+        self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
@@ -207,11 +209,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 payload = response.model_dump_json()
                 yield payload
 
-            logger.debug(
-                "Streaming: Done: %s, %d tokens",
-                request,
-                n_tokens,
-            )
+            logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
             yield "[DONE]"
         except Exception as e:
             # Note that for SSE, the server will have already responded with a
@@ -438,21 +436,19 @@ class OpenAISpeechResponseGenerator:
         self,
         pipeline: AudioGeneratorPipeline,
     ):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(
+            "max.serve.router.OpenAISpeechResponseGenerator"
+        )
         self.pipeline = pipeline
 
     async def synthesize_speech(
         self, request: AudioGenerationRequest
     ) -> CreateAudioGenerationResponse:
-        self.logger.debug(
-            "Streaming: Start: %s",
-            request,
-        )
+        self.logger.debug("Streaming: Start: %s", request)
         response = await self.pipeline.generate_full_audio(request)
         audio_data = response.audio_data.numpy().tobytes()
         response = CreateAudioGenerationResponse(
-            audio_data=base64.b64encode(audio_data),
-            metadata=response.metadata,
+            audio_data=base64.b64encode(audio_data), metadata=response.metadata
         )
         return response
 
@@ -499,7 +495,9 @@ def openai_parse_chat_completion_request(
     return messages, image_refs
 
 
-async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
+async def resolve_image_from_url(
+    image_ref: AnyUrl, settings: Settings
+) -> bytes:
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         # TODO: Evaluate creating a single AsyncClient for the app.
         async with AsyncClient() as client:
@@ -516,6 +514,67 @@ async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
             "ResolvedImageB64: %s -> %d bytes",
             str(image_ref)[:16],
             len(images_bytes),
+        )
+        return images_bytes
+    elif image_ref.scheme == "file":
+        if settings is None:
+            raise ValueError("Settings required for file URI resolution")
+
+        # Parse the file URI.
+        parsed = urlparse(str(image_ref))
+
+        # Check host - only allow empty or localhost.
+        if parsed.netloc and parsed.netloc not in ("", "localhost"):
+            raise ValueError(
+                f"File URI with remote host '{parsed.netloc}' is not supported"
+            )
+
+        # Extract and decode the path.
+        file_path = Path(unquote(parsed.path))
+
+        # Validate against allowed roots.
+        allowed_roots = [Path(root) for root in settings.allowed_image_roots]
+        if not allowed_roots:
+            raise ValueError(
+                "File URI access denied: no allowed roots configured"
+            )
+
+        # Resolve the path, following symlinks.
+        try:
+            resolved_path = file_path.resolve(strict=True)
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"File not found: {file_path}") from e
+
+        # Check if it's a directory.
+        if resolved_path.is_dir():
+            raise ValueError(f"Path is a directory: {resolved_path}")
+
+        # Check if path is within allowed roots.
+        path_allowed = False
+        for root in allowed_roots:
+            try:
+                resolved_path.relative_to(root)
+                path_allowed = True
+                break
+            except ValueError:
+                continue
+
+        if not path_allowed:
+            raise ValueError(
+                f"Path forbidden: {resolved_path} is outside allowed roots"
+            )
+
+        # Read the file with size limit.
+        max_bytes = settings.max_local_image_bytes
+
+        async with aiofiles.open(resolved_path, "rb") as f:
+            images_bytes = await f.read(max_bytes + 1)
+            if len(images_bytes) > max_bytes:
+                raise ValueError(
+                    f"File exceeds size limit of {max_bytes} bytes"
+                )
+        logger.debug(
+            "ResolvedFileUri: %s -> %d bytes", resolved_path, len(images_bytes)
         )
         return images_bytes
     raise ValueError(f"Invalid image ref '{image_ref}'")
@@ -551,8 +610,9 @@ async def openai_create_chat_completion(
 
         request_images = None
         if request_images_urls:
+            settings: Settings = request.app.state.settings
             resolve_image_tasks = [
-                resolve_image_from_url(image_url)
+                resolve_image_from_url(image_url, settings)
                 for image_url in request_images_urls
             ]
             request_images = await asyncio.gather(*resolve_image_tasks)
@@ -571,6 +631,11 @@ async def openai_create_chat_completion(
         )
 
         response_generator = OpenAIChatResponseGenerator(pipeline)
+        sampling_params = SamplingParams(
+            max_new_tokens=completion_request.max_tokens,
+            stop=completion_request.stop,
+            ignore_eos=completion_request.ignore_eos,
+        )
         token_request = TokenGeneratorRequest(
             id=request_id,
             index=0,
@@ -578,12 +643,10 @@ async def openai_create_chat_completion(
             messages=request_messages,
             images=request_images,
             tools=tools,
-            max_new_tokens=completion_request.max_tokens,
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
             response_format=response_format,
-            stop=completion_request.stop,
-            ignore_eos=completion_request.ignore_eos,
+            sampling_params=sampling_params,
         )
 
         if completion_request.stream:
@@ -772,10 +835,7 @@ def _process_log_probabilities(
 
 class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
     async def stream(self, request: TokenGeneratorRequest):
-        logger.debug(
-            "Streaming: Start: %s",
-            request,
-        )
+        logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_tokens = 0
@@ -799,9 +859,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 # https://platform.openai.com/docs/api-reference/chat/object
                 choices = [
                     CompletionResponseStreamChoice(
-                        index=0,
-                        text=token.decoded_token,
-                        logprobs=log_probs,
+                        index=0, text=token.decoded_token, logprobs=log_probs
                     )
                 ]
                 # Each chunk is expected to have the same id
@@ -822,11 +880,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
 
                 yield payload
 
-            logger.debug(
-                "Streaming: Done: %s, %d tokens",
-                request,
-                n_tokens,
-            )
+            logger.debug("Streaming: Done: %s, %d tokens", request, n_tokens)
             yield "[DONE]"
         except queue.Full as qe:
             status_code = 529
@@ -982,18 +1036,21 @@ async def openai_create_completion(
         token_requests = []
         for i, prompt in enumerate(prompts):
             prompt = cast(Union[str, Sequence[int]], prompt)
+            sampling_params = SamplingParams(
+                max_new_tokens=completion_request.max_tokens,
+                ignore_eos=completion_request.ignore_eos,
+            )
             tgr = TokenGeneratorRequest(
                 # Generate a unique id for each prompt in the request
                 id=f"{http_req_id}_{i}",
                 index=i,
                 model_name=completion_request.model,
                 prompt=prompt,
-                max_new_tokens=completion_request.max_tokens,
                 timestamp_ns=request.state.request_timer.start_ns,
                 request_path=request.url.path,
                 logprobs=completion_request.logprobs,
                 echo=completion_request.echo,
-                ignore_eos=completion_request.ignore_eos,
+                sampling_params=sampling_params,
             )
             token_requests.append(tgr)
 
@@ -1037,12 +1094,7 @@ async def health() -> Response:
 async def openai_get_models(request: Request) -> ListModelsResponse:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     model_list = [
-        Model(
-            id=pipeline.model_name,
-            object="model",
-            created=None,
-            owned_by="",
-        )
+        Model(id=pipeline.model_name, object="model", created=None, owned_by="")
     ]
 
     return ListModelsResponse(object="list", data=model_list)
@@ -1052,10 +1104,7 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 async def openai_get_model(model_id: str, request: Request) -> Model:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     pipeline_model = Model(
-        id=pipeline.model_name,
-        object="model",
-        created=None,
-        owned_by="",
+        id=pipeline.model_name, object="model", created=None, owned_by=""
     )
 
     if model_id == pipeline.model_name:
@@ -1085,13 +1134,17 @@ async def create_streaming_audio_speech(
         )
         pipeline = get_pipeline(request, audio_generation_request.model)
         assert isinstance(pipeline, AudioGeneratorPipeline)
-
+        sampling_params = SamplingParams(
+            min_new_tokens=audio_generation_request.min_tokens
+        )
         audio_request = AudioGenerationRequest(
             id=request_id,
             input=audio_generation_request.input,
             index=audio_generation_request.index,
             model=audio_generation_request.model,
-            voice=audio_generation_request.voice,
+            sampling_params=sampling_params,
+            audio_prompt_tokens=audio_generation_request.audio_prompt_tokens,
+            audio_prompt_transcription=audio_generation_request.audio_prompt_transcription,
             # TODO: Add support for these options.
             # instructions=audio_generation_request.instructions,
             # response_format=audio_generation_request.response_format,

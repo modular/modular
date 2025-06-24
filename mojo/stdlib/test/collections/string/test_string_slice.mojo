@@ -13,10 +13,9 @@
 # RUN: %mojo %s
 
 from collections.string.string_slice import get_static_string
-from sys.info import alignof, sizeof
+from sys.info import sizeof
 
-from memory import Span, UnsafePointer
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import assert_equal, assert_false, assert_true
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data
@@ -68,6 +67,18 @@ fn test_string_slice_layout() raises:
     assert_equal(first_word_ptr - base_ptr, 0)
     # 2nd field should at 1-word offset from base ptr
     assert_equal(second_word_ptr - base_ptr, sizeof[Int]())
+
+
+def test_constructors():
+    def some_func_immut(b: StringSlice[mut=False]):
+        assert_false(b.mut)
+
+    def some_func_mut(b: StringSlice[mut=True]):
+        assert_true(b.mut)
+
+    var a = String("123")
+    some_func_immut(a)
+    some_func_mut(StringSlice(a))
 
 
 fn test_string_literal_byte_span() raises:
@@ -498,7 +509,7 @@ def test_split():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
     # TODO add line and paragraph separator as StringLiteral once unicode
-    # escape secuences are accepted
+    # escape sequences are accepted
     var univ_sep_var = String(
         " ",
         "\t",
@@ -526,17 +537,13 @@ def test_split():
     assert_true(len(S("").split(" ")) == 1)
     assert_true(len(S(",").split(",")) == 2)
     assert_true(len(S(" ").split(" ")) == 2)
-    # assert_true(len(S("").split("")) == 2) # TODO(#3528)
+    assert_true(len(S("").split("")) == 2)
     assert_true(len(S("  ").split(" ")) == 3)
     assert_true(len(S("   ").split(" ")) == 4)
 
     # should split into maxsplit + 1 items
     assert_equal(S("1,2,3").split(",", 0), L("1,2,3"))
     assert_equal(S("1,2,3").split(",", 1), L("1", "2,3"))
-
-    # TODO(#3528): delete this test
-    with assert_raises():
-        _ = S("").split("")
 
     # Split in middle
     assert_equal(S("faang").split("n"), L("faa", "g"))
@@ -566,11 +573,10 @@ def test_split():
     s3 = S("Лорем ипсум долор сит амет").split("м")
     assert_equal(s3, L("Лоре", " ипсу", " долор сит а", "ет"))
 
-    # TODO(#3528)
-    # assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
-    # assert_equal(S("").join(S("123").split("")), "123")
-    # assert_equal(S(",1,2,3,").split(","), S("123").split(""))
-    # assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
@@ -1023,6 +1029,7 @@ def test_merge():
 
 def main():
     test_string_slice_layout()
+    test_constructors()
     test_string_literal_byte_span()
     test_string_byte_span()
     test_heap_string_from_string_slice()

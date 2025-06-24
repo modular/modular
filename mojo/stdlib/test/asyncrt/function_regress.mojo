@@ -17,7 +17,6 @@ from asyncrt_test_utils import create_test_device_context, expect_eq
 from builtin.device_passable import DevicePassable
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
 
 alias T = DType.float64
 alias S = Scalar[T]
@@ -31,10 +30,10 @@ trait MaybeZeroSized:
 
 @fieldwise_init
 @register_passable("trivial")
-struct ZeroSized(MaybeZeroSized, DevicePassable, Writable):
+struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -61,10 +60,10 @@ struct ZeroSized(MaybeZeroSized, DevicePassable, Writable):
 
 @fieldwise_init
 @register_passable("trivial")
-struct NotZeroSized(MaybeZeroSized, DevicePassable, Writable):
+struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
     alias device_type: AnyTrivialRegType = Self
 
-    fn _to_device_type(self, target: UnsafePointer[NoneType]):
+    fn _to_device_type(self, target: OpaquePointer):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
@@ -98,26 +97,26 @@ fn _vec_func_zero(
     zs: ZeroSized,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn _vec_func_not_zero(
     zs: NotZeroSized,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn _vec_func[
@@ -126,13 +125,13 @@ fn _vec_func[
     zs: zero_sized_t,
     in0: UnsafePointer[S],
     in1: UnsafePointer[S],
-    out: UnsafePointer[S],
+    output: UnsafePointer[S],
     len: Int,
 ):
     var tid = global_idx.x
     if tid >= len:
         return
-    out[tid] = in0[tid] + in1[tid] + zs.value()
+    output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
 fn test_function_compilation(ctx: DeviceContext) raises:

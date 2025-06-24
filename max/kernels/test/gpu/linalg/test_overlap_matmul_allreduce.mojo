@@ -11,23 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from collections import InlineArray
-from math import floor
 from sys import sizeof
 
 from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.comm.allreduce import (
     MAX_GPUS,
     Signal,
     allreduce,
-    elementwise_epilogue_type,
 )
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 from testing import assert_almost_equal
 from utils import IndexList, StaticTuple
 
@@ -48,7 +42,7 @@ fn overlap_matmul_allreduce_test[
     # The matmul is sharded in K dim. The original matmul before sharding is M x N x (K x ngpus).
     # The results of shape M x N is allreduced over ngpus.
 
-    # To overlap, we partition in M dimension. The matmul can overlapp with the allreduce
+    # To overlap, we partition in M dimension. The matmul can overlap with the allreduce
     # for previous partition.
     #      matmul part 0
     #      matmul part 1 | allreduce partition 0

@@ -7,6 +7,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/serve/pipelines",
         "//SDK/lib/API/python/max/serve/scheduler",
         "//SDK/lib/API/python/max/serve/schemas",
+        requirement("aiofiles"),
         requirement("fastapi"),
         requirement("httpx"),
         requirement("sse-starlette"),

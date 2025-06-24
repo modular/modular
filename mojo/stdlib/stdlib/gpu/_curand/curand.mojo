@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _find_dylib
@@ -19,7 +18,6 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle
 
 from gpu.host._nvidia_cuda import CUstream
-from memory import UnsafePointer
 
 from utils import StaticTuple
 
@@ -285,7 +283,7 @@ fn curandGetScrambleConstants64(
 
     Get a pointer to an array of scramble constants that can be used
     for quasirandom number generation.  The resulting pointer will
-    reference an array of unsinged long longs in host memory.
+    reference an array of unsigned long longs in host memory.
 
     The array contains constants for many dimensions.  Each dimension
     has a single unsigned long long constant.
@@ -1154,7 +1152,7 @@ fn curandGenerateNormalDouble(
 
 
 fn curandGetDirectionVectors32(
-    vectors: UnsafePointer[NoneType], set: curandDirectionVectorSet
+    vectors: OpaquePointer, set: curandDirectionVectorSet
 ) -> curandStatus:
     """
     \\brief Get direction vectors for 32-bit quasirandom number generation.
@@ -1179,7 +1177,7 @@ fn curandGetDirectionVectors32(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors32",
-        fn (UnsafePointer[NoneType], curandDirectionVectorSet) -> curandStatus,
+        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)
 
 
@@ -1503,7 +1501,7 @@ fn curandGetScrambleConstants32(
 
     Get a pointer to an array of scramble constants that can be used
     for quasirandom number generation.  The resulting pointer will
-    reference an array of unsinged ints in host memory.
+    reference an array of unsigned ints in host memory.
 
     The array contains constants for many dimensions.  Each dimension
     has a single unsigned int constant.
@@ -1520,7 +1518,7 @@ fn curandGetScrambleConstants32(
 
 
 fn curandGetDirectionVectors64(
-    vectors: UnsafePointer[NoneType], set: curandDirectionVectorSet
+    vectors: OpaquePointer, set: curandDirectionVectorSet
 ) -> curandStatus:
     """
     \\brief Get direction vectors for 64-bit quasirandom number generation.
@@ -1545,5 +1543,5 @@ fn curandGetDirectionVectors64(
     ."""
     return _get_dylib_function[
         "curandGetDirectionVectors64",
-        fn (UnsafePointer[NoneType], curandDirectionVectorSet) -> curandStatus,
+        fn (OpaquePointer, curandDirectionVectorSet) -> curandStatus,
     ]()(vectors, set)

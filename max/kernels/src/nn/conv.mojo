@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_down, ceildiv
+from sys.ffi import _get_global_or_null, external_call
 from sys.info import alignof, simdwidthof
 
 from algorithm import (
@@ -39,6 +39,9 @@ from gpu._cudnn.cnn_infer import (
     cudnnDestroyConvolutionDescriptor,
     cudnnDestroyFilterDescriptor,
     cudnnSetConvolution2dDescriptor,
+    cudnnSetConvolutionGroupCount,
+    cudnnSetConvolutionMathType,
+    cudnnGetConvolutionForwardWorkspaceSize,
 )
 from gpu._cudnn.infer import (
     cudnnContext,
@@ -51,17 +54,18 @@ from gpu._cudnn.infer import (
     cudnnDestroyTensorDescriptor,
     cudnnFilterStruct,
     cudnnSetFilter4dDescriptor,
+    cudnnSetStream,
     cudnnSetTensor4dDescriptor,
     cudnnStatus_t,
     cudnnTensorFormat_t,
     cudnnTensorStruct,
+    cudnnMathType_t,
 )
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.device_context import _DeviceBufferPtr
+from gpu.host import DeviceContext
+from gpu.host._nvidia_cuda import CUDA
 from gpu.id import block_dim, block_idx, thread_idx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from memory import UnsafePointer, stack_allocation
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -87,12 +91,12 @@ from .conv_utils import (
 from .shapes import get_sliding_window_out_dim
 
 
-@value
+@fieldwise_init
 struct Naive2dConvolution[
     output_type: DType,
     input_type: DType,
     filter_type: DType,
-]:
+](Copyable, Movable):
     """Struct wrapper for naive 2d convolution implementation."""
 
     # Input params.
@@ -349,7 +353,7 @@ fn _reduce_output[
 # ===----------------------------------------------------------------------=== #
 
 
-@value
+@fieldwise_init
 struct ConvDirectNHWC[
     input_mut: Bool,
     filter_mut: Bool, //,
@@ -368,7 +372,7 @@ struct ConvDirectNHWC[
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[input_rank - 2],
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
-]:
+](Copyable, Movable):
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
     The tile factor for C and F are chosen by a heuristic prioritizing C.
@@ -1304,7 +1308,7 @@ struct ConvDirectNHWC[
     ):
         alias simd_size = simdwidthof[output_type]()
 
-        # Offset by -pad_w because s loop starts from the leftmost neightbor
+        # Offset by -pad_w because s loop starts from the leftmost neighbor
         # in padding. The kernel skip the padding point and increment the
         # pointer.
         var input_base = input - self.conv_shape.c * self.conv_shape.pad_w[0]
@@ -1381,7 +1385,7 @@ struct ConvDirectNHWC[
             var h = ho * self.conv_shape.stride[0] - self.conv_shape.pad_h[0]
 
             # Points input to the start of the row.
-            # Offset by -pad_w because s loop starts from the leftmost neightbor
+            # Offset by -pad_w because s loop starts from the leftmost neighbor
             # in padding. The kernel skip the padding point and increment the
             # pointer.
             var input_base = input + self.conv_shape.c * (
@@ -1468,7 +1472,7 @@ struct ConvDirectNHWC[
                 # fmt: on
 
                 # Points input to the start of the row.
-                # Offset by -pad_w because s loop starts from the leftmost neightbor
+                # Offset by -pad_w because s loop starts from the leftmost neighbor
                 # in padding. The kernel skip the padding point and increment the
                 # pointer.
                 var input_base = input + self.conv_shape.c * (
@@ -2663,7 +2667,7 @@ fn _get_group_filter_base(
 @always_inline
 fn pack_filter(
     filter: NDBuffer,
-    packed_filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
@@ -2691,7 +2695,11 @@ fn pack_filter(
 fn pack_filter[
     simd_size: Int,
     micro_kernel_f_size: Int,  # 64
-](filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
+](
+    filter: NDBuffer,
+    packed_filter: NDBuffer[mut=True, *_, **_],
+    num_groups: Int,
+):
     """This packs the filter form RSCF to FRSCf.
 
     Parameters:
@@ -2707,7 +2715,7 @@ fn pack_filter[
             f       - the index within a continuous segments.
         num_groups: The number of groups in the convolution.
 
-    F is first broken down to segements of size micro_kernel_f_size, then the
+    F is first broken down to segments of size micro_kernel_f_size, then the
     remainder is further divided by simd_size. The last residual elements if
     any is padded with zero to fill simd_size.
     """
@@ -2983,7 +2991,7 @@ fn conv_nhwc_direct[
             @always_inline
             @parameter
             fn body[width: Int](idx: Int):
-                # Cooridates of the current index.
+                # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
 
@@ -3089,10 +3097,103 @@ fn conv2d_gpu_naive_nhwc_rscf[
             output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
 
 
+# ===----------------------------------------------------------------------=== #
+# GPU Convolution using cuDNN                                                  #
+# ===----------------------------------------------------------------------=== #
+
+
 @always_inline
 fn check_cudnn_error(stat: cudnnStatus_t):
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
         print(stat)
+
+
+@register_passable
+struct CuDNNConvMeta(Copyable, Defaultable, Movable):
+    var ptr_handle: UnsafePointer[cudnnContext]
+    var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
+    var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
+    var ptr_conv_desc: UnsafePointer[cudnnConvolutionStruct]
+    var ptr_output_desc: UnsafePointer[cudnnTensorStruct]
+
+    fn __init__(out self):
+        self.ptr_handle = UnsafePointer[cudnnContext]()
+        check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
+
+        self.ptr_input_desc = UnsafePointer[cudnnTensorStruct]()
+        check_cudnn_error(
+            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc))
+        )
+
+        self.ptr_filter_desc = UnsafePointer[cudnnFilterStruct]()
+        check_cudnn_error(
+            cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc))
+        )
+
+        self.ptr_conv_desc = UnsafePointer[cudnnConvolutionStruct]()
+        check_cudnn_error(
+            cudnnCreateConvolutionDescriptor(
+                UnsafePointer(to=self.ptr_conv_desc)
+            )
+        )
+
+        self.ptr_output_desc = UnsafePointer[cudnnTensorStruct]()
+        check_cudnn_error(
+            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
+        )
+
+    fn __del__(owned self):
+        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_output_desc))
+        check_cudnn_error(cudnnDestroyConvolutionDescriptor(self.ptr_conv_desc))
+        check_cudnn_error(cudnnDestroyFilterDescriptor(self.ptr_filter_desc))
+        check_cudnn_error(cudnnDestroyTensorDescriptor(self.ptr_input_desc))
+        check_cudnn_error(cudnnDestroy(self.ptr_handle))
+
+
+fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
+    """Get the cuDNN metadata.
+    If the metadata is not found, create a new one and insert it into the global
+    cache.
+
+    Args:
+        ctx: The device context.
+
+    Returns:
+        The cuDNN metadata.
+    """
+    alias name = String("CUDA_CUDNN_META")
+    if ptr_meta := _get_global_or_null[name]().bitcast[CuDNNConvMeta]():
+        check_cudnn_error(
+            cudnnSetStream(ptr_meta[].ptr_handle, CUDA(ctx.stream()))
+        )
+        return ptr_meta
+
+    ptr_meta = UnsafePointer[CuDNNConvMeta].alloc(1)
+    ptr_meta.init_pointee_move(CuDNNConvMeta())
+
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(name),
+        ptr_meta.bitcast[NoneType](),
+    )
+
+    return ptr_meta
+
+
+fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
+    """Map Mojo DType to cuDNN data type.
+
+    Support only floating point dtypes for now.
+    """
+
+    @parameter
+    if dtype == DType.float32:
+        return cudnnDataType_t.CUDNN_DATA_FLOAT
+    elif dtype == DType.float16:
+        return cudnnDataType_t.CUDNN_DATA_HALF
+    elif dtype == DType.bfloat16:
+        return cudnnDataType_t.CUDNN_DATA_BFLOAT16
+    else:
+        raise Error("unsupported dtype", dtype, "for cuDNN")
 
 
 fn conv_cudnn[
@@ -3109,16 +3210,13 @@ fn conv_cudnn[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    var cudnn_handle = UnsafePointer[cudnnContext]()
-    check_cudnn_error(cudnnCreate(UnsafePointer(to=cudnn_handle)))
+    var ptr_meta = _get_cudnn_meta(ctx)
 
-    var input_desc = UnsafePointer[cudnnTensorStruct]()
-    check_cudnn_error(cudnnCreateTensorDescriptor(UnsafePointer(to=input_desc)))
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            input_desc,
+            ptr_meta[].ptr_input_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            get_cudnn_dtype[input_type](),
             input.dim[0](),
             input.dim[3](),
             input.dim[1](),
@@ -3126,14 +3224,10 @@ fn conv_cudnn[
         )
     )
 
-    var filter_desc = UnsafePointer[cudnnFilterStruct]()
-    check_cudnn_error(
-        cudnnCreateFilterDescriptor(UnsafePointer(to=filter_desc))
-    )
     check_cudnn_error(
         cudnnSetFilter4dDescriptor(
-            filter_desc,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            ptr_meta[].ptr_filter_desc,
+            get_cudnn_dtype[filter_type](),
             cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
             filter.dim[0](),
             filter.dim[1](),
@@ -3142,13 +3236,9 @@ fn conv_cudnn[
         )
     )
 
-    var conv_desc = UnsafePointer[cudnnConvolutionStruct]()
-    check_cudnn_error(
-        cudnnCreateConvolutionDescriptor(UnsafePointer(to=conv_desc))
-    )
     check_cudnn_error(
         cudnnSetConvolution2dDescriptor(
-            conv_desc,
+            ptr_meta[].ptr_conv_desc,
             padding[0],
             padding[1],
             stride[0],
@@ -3156,19 +3246,23 @@ fn conv_cudnn[
             dilation[0],
             dilation[1],
             cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
+            # cuDNN 8+ requires float32 accumulation when the I/O tensors are
+            # bfloat16.
+            # Note that this is correct for float16, bfloat16, and float32 but
+            # would have to be adjusted for other input dtypes, such as int8.
             cudnnDataType_t.CUDNN_DATA_FLOAT,
         )
     )
 
-    var output_desc = UnsafePointer[cudnnTensorStruct]()
     check_cudnn_error(
-        cudnnCreateTensorDescriptor(UnsafePointer(to=output_desc))
+        cudnnSetConvolutionGroupCount(ptr_meta[].ptr_conv_desc, num_groups)
     )
+
     check_cudnn_error(
         cudnnSetTensor4dDescriptor(
-            output_desc,
+            ptr_meta[].ptr_output_desc,
             cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
-            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            get_cudnn_dtype[output_type](),
             output.dim[0](),
             output.dim[3](),
             output.dim[1](),
@@ -3180,28 +3274,49 @@ fn conv_cudnn[
     var beta = Float32(0.0)
 
     check_cudnn_error(
-        cudnnConvolutionForward(
-            cudnn_handle,
-            UnsafePointer(to=alpha).bitcast[NoneType](),
-            input_desc,
-            rebind[UnsafePointer[NoneType]](input.data.bitcast[NoneType]()),
-            filter_desc,
-            rebind[UnsafePointer[NoneType]](filter.data.bitcast[NoneType]()),
-            conv_desc,
-            cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
-            UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
-            0,
-            UnsafePointer(to=beta).bitcast[NoneType](),
-            output_desc,
-            rebind[UnsafePointer[NoneType]](output.data.bitcast[NoneType]()),
+        cudnnSetConvolutionMathType(
+            ptr_meta[].ptr_conv_desc,
+            cudnnMathType_t.CUDNN_DEFAULT_MATH,  # this is the line that enables tf32
         )
     )
-
-    check_cudnn_error(cudnnDestroyTensorDescriptor(output_desc))
-    check_cudnn_error(cudnnDestroyConvolutionDescriptor(conv_desc))
-    check_cudnn_error(cudnnDestroyFilterDescriptor(filter_desc))
-    check_cudnn_error(cudnnDestroyTensorDescriptor(input_desc))
-    check_cudnn_error(cudnnDestroy(cudnn_handle))
+    # to disable tf32, run export NVIDIA_TF32_OVERRIDE=0 in the environment
+    algo = (
+        cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
+    )
+    var workspace_size_var = 0
+    var workspace_size_ptr = UnsafePointer(to=workspace_size_var)
+    check_cudnn_error(
+        cudnnGetConvolutionForwardWorkspaceSize(
+            ptr_meta[].ptr_handle,
+            ptr_meta[].ptr_input_desc,
+            ptr_meta[].ptr_filter_desc,
+            ptr_meta[].ptr_conv_desc,
+            ptr_meta[].ptr_output_desc,
+            algo,
+            workspace_size_ptr,
+        )
+    )
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size_var
+    )
+    check_cudnn_error(
+        cudnnConvolutionForward(
+            ptr_meta[].ptr_handle,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            ptr_meta[].ptr_input_desc,
+            rebind[OpaquePointer](input.data.bitcast[NoneType]()),
+            ptr_meta[].ptr_filter_desc,
+            rebind[OpaquePointer](filter.data.bitcast[NoneType]()),
+            ptr_meta[].ptr_conv_desc,
+            algo,
+            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            workspace_size_var,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            ptr_meta[].ptr_output_desc,
+            rebind[OpaquePointer](output.data.bitcast[NoneType]()),
+        )
+    )
+    _ = workspace_buffer^
 
 
 fn conv_gpu[

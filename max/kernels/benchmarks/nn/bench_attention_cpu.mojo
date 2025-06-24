@@ -11,21 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
 from random import rand
 
 from benchmark import *
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
 from nn.flash_attention import flash_attention
 
 from utils import IndexList
 from utils.index import Index
 
 
-@value
-struct AttentionSpec(Stringable):
+@fieldwise_init
+struct AttentionSpec(Copyable, Movable, Stringable):
     var batch_size: Int
     var seq_len: Int
     var kv_seq_len: Int

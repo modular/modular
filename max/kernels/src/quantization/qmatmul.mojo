@@ -10,15 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, Optional, OptionalReg
+from collections import OptionalReg
 from math import ceildiv
 from sys import (
+    CompilationTarget,
     alignof,
-    has_avx2,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
-    has_vnni,
     is_apple_silicon,
     simdwidthof,
     sizeof,
@@ -32,7 +28,7 @@ from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
 from linalg.utils import partition_work
 from linalg.vnni_intrinsics import dot_i8_to_i32_saturated_x86, pmaddubs, pmaddw
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -236,7 +232,7 @@ fn _unpack_weights[
                     var b_hi = bitcast[DType.int32, simd_width](b_data_i4_hi)
 
                     @parameter
-                    if has_vnni():
+                    if CompilationTarget.has_vnni():
                         b_column_sums[col] = dot_i8_to_i32_saturated_x86(
                             b_column_sums[col], a_zp, b_lo
                         )
@@ -298,7 +294,9 @@ fn _unpack_weights[
             for col in range(tile_n):
                 b_correction_ptr.store(
                     simd_width * col,
-                    -b_column_sums[col] if has_vnni() else b_column_sums[col],
+                    -b_column_sums[
+                        col
+                    ] if CompilationTarget.has_vnni() else b_column_sums[col],
                 )
 
             b_correction_ptr += tile_n * simd_width
@@ -333,11 +331,14 @@ fn _scale_and_accumulate[
         for col in range(tile_n):
             var dot = c_int32[row, col]
 
-            # Withtout VNNI on x86 the 2-wide 8-bit to 16-bit dot
-            # product was calculed in process_group_packed.
+            # Without VNNI on x86 the 2-wide 8-bit to 16-bit dot
+            # product was calculated in process_group_packed.
             # Now complete the 4-wide 8-bit to 32-bit dot product.
             @parameter
-            if has_avx2() and not has_vnni():
+            if (
+                CompilationTarget.has_avx2()
+                and not CompilationTarget.has_vnni()
+            ):
                 dot = pmaddw(
                     dot,
                     bitcast[DType.int32, simd_width](
@@ -352,7 +353,7 @@ fn _scale_and_accumulate[
     # Convert and rescale the integer accumulators and accumulate to the output
     # float accumulators.
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # NEON supports a multiply instruction that can broadcast from a
         # vector element, so help the compiler produce that by doing a vector
         # load.
@@ -1261,13 +1262,13 @@ fn matmul_qint4[
         ](a, b, c)
 
     @parameter
-    if has_vnni():
+    if CompilationTarget.has_vnni():
         kernel_dispatch[_MatmulQInt4Kernel_x86_vnni]()
-    elif has_avx2():
+    elif CompilationTarget.has_avx2():
         kernel_dispatch[_MatmulQInt4Kernel_x86_avx]()
-    elif has_neon_int8_matmul() and not is_apple_silicon():
+    elif CompilationTarget.has_neon_int8_matmul() and not is_apple_silicon():
         kernel_dispatch[_MatmulQInt4Kernel_neon_i8mm]()
-    elif has_neon_int8_dotprod():
+    elif CompilationTarget.has_neon_int8_dotprod():
         kernel_dispatch[_MatmulQInt4Kernel_neon_dotprod]()
     else:
         constrained[False, "unsupported architecture"]()

@@ -21,7 +21,6 @@ from random import rand
 from algorithm import sum
 from benchmark import Unit, benchmark, keep
 from buffer import NDBuffer
-from memory import UnsafePointer
 from python import Python
 
 # Change these numbers to reduce on different sizes

@@ -35,11 +35,11 @@ from gpu import (
 )
 from gpu import warp_id as get_warp_id
 from gpu.host import DeviceAttribute, DeviceContext, LaunchAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.tensor_ops import tc_reduce_gevm_8x
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import memset_zero, stack_allocation
 
 from utils import IndexList
 from utils.index import Index
@@ -50,8 +50,8 @@ from .matmul_gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
 
 
-@value
-struct GEMVAlgorithm:
+@fieldwise_init
+struct GEMVAlgorithm(Copyable, Movable):
     var _value: Int
 
     alias GEMV_KERNEL = Self(0)
@@ -508,7 +508,7 @@ fn gemv_gpu_dispatch[
     var n = shape.N
     var k = shape.K
     alias WARPS_PER_BLOCK = 1024 // WARP_SIZE
-    alias simd_width = simdwidthof[a.type, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[a.type, target = get_gpu_target()]()
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         alias num_threads = 128
@@ -733,7 +733,7 @@ fn gemv_gpu[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    alias simd_width = simdwidthof[a.type, target = _get_gpu_target()]()
+    alias simd_width = simdwidthof[a.type, target = get_gpu_target()]()
 
     # Kernel selection
     var kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR

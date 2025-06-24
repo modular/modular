@@ -142,6 +142,7 @@ def main():
         results = ops.custom(
             # This is the custom op name defined in `kernels/top_k.mojo`.
             name="top_k_custom",
+            device=device_ref,
             # Passes `K` as a compile-time Mojo `Int`.
             parameters={"K": K},
             # Passes the probabilities as a single input to the graph.

@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from nn.mha_mask import (
     AndMask,
     CausalMask,
@@ -22,7 +23,6 @@ from nn.mha_mask import (
 from testing import assert_equal, assert_true
 
 from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
 
 
 def test_causal_mask():
@@ -93,7 +93,7 @@ def test_causal_mask_asm():
 
         return vec[2]
 
-    var asm = _compile_code_asm[kernel, target = _get_gpu_target()]()
+    var asm = _compile_code_asm[kernel, target = get_gpu_target()]()
     assert_true("setp.lt.u64" not in asm)
     assert_true("setp.lt.s64" not in asm)
 
@@ -211,7 +211,7 @@ def test_sliding_window_causal_mask_asm():
 
         return vec[2]
 
-    var asm = _compile_code_asm[kernel, target = _get_gpu_target()]()
+    var asm = _compile_code_asm[kernel, target = get_gpu_target()]()
     print(asm)
     assert_true("setp.lt.u64" not in asm)
     assert_true("setp.lt.s64" not in asm)

@@ -15,8 +15,9 @@
 # NOTE: to test changes on the current branch using run-benchmarks.sh, remove
 # the -t flag. Remember to replace it again before pushing any code.
 
-from collections.string import String
+from collections import Dict, Optional
 from collections.string._utf8 import _is_valid_utf8
+from collections.string.string_slice import _split
 from memory import stack_allocation
 from os import abort
 from pathlib import _dir_of_current_file
@@ -106,18 +107,20 @@ fn bench_string_split[
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
-    var items = make_string[length](filename + ".txt")
+    var items = (
+        make_string[length](filename + ".txt").as_string_slice().get_immutable()
+    )
 
     @always_inline
     @parameter
     fn call_fn() raises:
-        var res: List[String]
+        var res: List[__type_of(items)]
 
         @parameter
         if sequence:
-            res = items.split(sequence.value())
+            res = _split[has_maxsplit=False](items, sequence.value(), -1)
         else:
-            res = items.split()
+            res = _split[has_maxsplit=False](items, None, -1)
         keep(res.data)
 
     b.iter[call_fn]()
@@ -239,11 +242,13 @@ fn bench_write_utf8[
     @always_inline
     @parameter
     fn call_fn() raises:
-        var data = stack_allocation[4, Byte]()
+        var data = InlineArray[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):
-                var res = codepoints.unsafe_get(i).unsafe_write_utf8(data)
+                var res = codepoints.unsafe_get(i).unsafe_write_utf8(
+                    data.unsafe_ptr()
+                )
                 keep(Bool(res))
 
     b.iter[call_fn]()
@@ -334,11 +339,11 @@ def main():
             )
 
     results = Dict[String, (Float64, Int)]()
-    for ref info in m.info_vec:
+    for info in m.info_vec:
         n = info.name
         time = info.result.mean("ms")
         avg, amnt = results.get(n, (Float64(0), 0))
         results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
     print("")
-    for ref k_v in results.items():
+    for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=",")

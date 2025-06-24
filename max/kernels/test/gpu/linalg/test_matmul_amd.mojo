@@ -13,21 +13,17 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from math import ceildiv
 from random import random_si64
 
 import linalg.vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 
 from utils import IndexList
-from utils.index import Index
 
 alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
     IndexList[2], IndexList[2], SIMD[type, width]
@@ -280,5 +276,11 @@ def main():
             out_type = DType.float32,
             transpose_b=True,
         ](bench, ctx, dynamic(1024), static[1024](), static[1024]())
+
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.bfloat16,
+            transpose_b=True,
+        ](bench, ctx, dynamic(256), static[284](), static[256]())
 
     bench.dump_report()

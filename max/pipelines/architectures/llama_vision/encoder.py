@@ -47,8 +47,7 @@ class VisionEncoderLayer(Layer):
         hidden_state = self.input_layernorm(hidden_state)
 
         hidden_state = self.self_attn(
-            x=hidden_state,
-            attention_mask=attention_mask,
+            x=hidden_state, attention_mask=attention_mask
         )
 
         if self.is_gated:

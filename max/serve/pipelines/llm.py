@@ -27,7 +27,6 @@ from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import (
     AudioGenerationRequest,
     AudioGeneratorOutput,
-    PipelineAudioTokenizer,
     PipelineTask,
     PipelineTokenizer,
     TokenGeneratorRequest,
@@ -76,9 +75,10 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
     ) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(
+            "max.serve.pipelines.TokenGeneratorPipeline"
+        )
         # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
         self.logger.info("%s: Constructed", model_name)
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
@@ -134,7 +134,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             with record_ms(METRICS.output_time):
                 # stop detector is stateful, so new it up here for
                 # use in the response stream
-                stop_detector = StopDetector(stop=request.stop)
+                stop_detector = StopDetector(stop=request.sampling_params.stop)
 
                 n_tokens = 0
                 async for response in self.engine_queue.stream(
@@ -179,9 +179,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                             token_log_probabilities,
                             top_log_probabilities,
                         ) = await self._collect_log_probs(
-                            log_prob,
-                            context,
-                            skip_special_tokens,
+                            log_prob, context, skip_special_tokens
                         )
                         del tracer  # collect_log_probs
 
@@ -327,12 +325,11 @@ def get_target_ce_batch_tokens(pipeline_config: PipelineConfig) -> int:
 def batch_config_from_pipeline_config(
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
-    batch_timeout: float = 0.0,
 ) -> TokenGeneratorSchedulerConfig:
     assert pipeline_config.max_batch_size is not None
     if pipeline_task == PipelineTask.EMBEDDINGS_GENERATION:
         logger.info(
-            "Server configured with no cache and batch size %s",
+            "Scheduler configured with no cache and batch size %s",
             pipeline_config.max_batch_size,
         )
         return TokenGeneratorSchedulerConfig.no_cache(
@@ -351,7 +348,6 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
-            ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
@@ -365,19 +361,22 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_batch_size,
                 pipeline_config.max_ce_batch_size,
             ),
-            ce_batch_timeout=batch_timeout,
             max_forward_steps=pipeline_config.max_num_steps,
             target_ce_batch_tokens=target_ce_batch_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
+            max_queue_size_tg=pipeline_config.max_queue_size_tg,
+            min_batch_size_tg=pipeline_config.min_batch_size_tg,
+            ce_delay_ms=pipeline_config.ce_delay_ms,
+            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
         )
     else:
         raise ValueError(
             f"{cache_strategy} caching strategy is not supported by Serving."
         )
 
-    log_str = "Server configured with:\n"
+    log_str = "Scheduler configured with:\n\n"
     log_str += f"\tCache Strategy: {cache_strategy}\n"
     if cache_strategy == KVCacheStrategy.PAGED:
         log_str += f"\tKVCache Page Size: {kv_cache_config.kv_cache_page_size} Tokens\n"
@@ -404,19 +403,18 @@ def batch_config_from_pipeline_config(
 AudioGeneratorContext = TypeVar("AudioGeneratorContext")
 
 
-# TODO: Implement this
 class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
     """Base class for LLM audio generation pipelines."""
 
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineAudioTokenizer,
+        tokenizer: PipelineTokenizer,
         engine_queue: EngineQueue,
     ) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
-        # This logger is too verbose to expose to end users. Disable propagation to the root logger by default.
-        self.logger.propagate = False
+        self.logger = logging.getLogger(
+            "max.serve.pipelines.AudioGeneratorPipeline"
+        )
         self.logger.info("%s: Constructed", model_name)
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
@@ -490,7 +488,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
 
         if len(audio_chunks) == 0:
             return AudioGeneratorOutput(
-                audio_data=torch.tensor([]),
+                audio_data=torch.tensor([], dtype=torch.float32),
                 metadata={},
                 is_done=True,
             )

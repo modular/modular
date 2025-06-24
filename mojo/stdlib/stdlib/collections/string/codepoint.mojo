@@ -44,7 +44,6 @@ var s = String(c)  # "A"
 from sys.intrinsics import likely
 
 from bit import count_leading_zeros
-from memory import UnsafePointer
 
 
 @always_inline
@@ -62,13 +61,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    Copyable,
-    Movable,
-    EqualityComparable,
-    Intable,
-    Stringable,
-):
+struct Codepoint(Copyable, EqualityComparable, Intable, Movable, Stringable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -95,7 +88,7 @@ struct Codepoint(
     validly appear in UTF-16 encoded text.
 
     The difference between codepoints and scalar values is a technical
-    distiction related to the backwards-compatible workaround chosen to enable
+    distinction related to the backwards-compatible workaround chosen to enable
     UTF-16 to encode the full range of the Unicode codespace. For simplicities
     sake, and to avoid a confusing clash with the Mojo `Scalar` type, this type
     is pragmatically named `Codepoint`, even though it is restricted to valid

@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import exp
-from pathlib import Path
-from sys._assembly import inlined_assembly
 
 from gpu import (
     AMDScheduleBarrierMask,
@@ -26,13 +24,12 @@ from gpu import (
     thread_idx,
 )
 from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from gpu.intrinsics import load_acquire, store_release
 from gpu.warp import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
-from memory import UnsafePointer
 
-alias MI300X_TARGET = _get_gpu_target["mi300x"]()
+alias MI300X_TARGET = get_gpu_target["mi300x"]()
 alias FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 

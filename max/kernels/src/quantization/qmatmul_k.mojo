@@ -10,24 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, OptionalReg
+from collections import OptionalReg
 from math import ceildiv
 from sys import (
     CompilationTarget,
     alignof,
-    has_avx512f,
-    has_neon,
-    has_neon_int8_dotprod,
-    has_neon_int8_matmul,
     is_apple_silicon,
     simdwidthof,
     sizeof,
 )
 from sys.intrinsics import llvm_intrinsic
 
-from algorithm import sync_parallelize, tile, vectorize
+from algorithm import sync_parallelize, tile
 from buffer import NDBuffer
-from buffer.dimlist import DimList
 from linalg.accumulate import _Accumulator
 from linalg.matmul import elementwise_epilogue_type
 from linalg.neon_intrinsics import _neon_dotprod_lane, _neon_matmul
@@ -36,7 +31,7 @@ from linalg.vnni_intrinsics import (
     dot_i8_to_i32_saturated_x86,
     dot_i16_to_i32_x86,
 )
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from runtime.asyncrt import parallelism_level
 
 from utils.index import Index
@@ -512,7 +507,7 @@ fn _pack_block_Q4_K[
                 var reorder_idx = g * block_n + n * 2
                 q_mins_reorder_buf[reorder_idx + 0] = q_mins_row_0_val
                 q_mins_reorder_buf[reorder_idx + 1] = q_mins_row_1_val
-            elif has_neon():
+            elif CompilationTarget.has_neon():
                 alias split_width = simdwidthof[DType.int32]()
                 var n_idx_hi = n // split_width
                 var n_idx_lo = n % split_width
@@ -756,7 +751,7 @@ fn _matmul_group_stream[
         return _matmul_group_stream_x86[group_size, stream_b_vals_fn](
             a_q_bits_ptr, c_int32_group
         )
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return _matmul_group_stream_neon_dotprod[group_size, stream_b_vals_fn](
             a_q_bits_ptr, c_int32_group
         )
@@ -864,7 +859,7 @@ fn _apply_zero_point_correction[
                         bitcast[DType.int32, 1](a_group_sums),
                     )
 
-        elif has_neon():
+        elif CompilationTarget.has_neon():
             # Use `smull(2)` and `smlal(2)` instructions to do an `int16*int16`
             # widening multiply/add to an int32 accumulator.
             var group_sums = (a_group_sums_ptr + g * tile_m).load[
@@ -889,7 +884,7 @@ fn _apply_zero_point_correction[
                     # Note: The ARM64 backend fuses `smull` with an int32 add to
                     # form `smlal` instructions. Also, the element broadcast is
                     # fused to with the instruction to generate the form
-                    # `smlal r, a, b[lane]`. The instrinsic `vmlal_lane_s16` uses
+                    # `smlal r, a, b[lane]`. The intrinsic `vmlal_lane_s16` uses
                     # the same IR pattern to emit this instruction.
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
@@ -934,7 +929,7 @@ fn _apply_a_scales[
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     @parameter
-    if has_neon():
+    if CompilationTarget.has_neon():
         # NEON supports a multiply instruction that can broadcast from a
         # vector element, so help the compiler produce that by doing a
         # vector load.
@@ -1401,7 +1396,7 @@ fn _matmul_Q6_K_columns[
 
     # NEON has support for s8s8 dot products, so shift the quantized bits down
     # to avoid performing any zero point corrections.
-    alias b_zero_point = 32 if has_neon() else 0
+    alias b_zero_point = 32 if CompilationTarget.has_neon() else 0
 
     # Fast path for M=1 that avoids materializing the unpacked weights.
     if M == 1:

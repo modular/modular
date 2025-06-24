@@ -18,7 +18,7 @@ from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
 from gpu.host import DeviceContext
 from gpu.host.info import Info, is_cpu, is_gpu
 from gpu.memory import AddressSpace
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr
 from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
 
@@ -28,9 +28,9 @@ from utils.index import IndexList
 alias bin_width = Int(UInt8.MAX)
 
 
-fn _histogram_cpu(out: ManagedTensorSlice, input: ManagedTensorSlice):
+fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
     for i in range(input.dim_size(0)):
-        out[Int(input[i])] += 1
+        output[Int(input[i])] += 1
 
 
 fn _histogram_gpu(
@@ -95,10 +95,10 @@ struct Histogram:
     fn execute[
         target: StaticString
     ](
-        out: OutputTensor[type = DType.int64, rank=1],
-        input: InputTensor[type = DType.uint8, rank=1],
+        output: OutputTensor[dtype = DType.int64, rank=1],
+        input: InputTensor[dtype = DType.uint8, rank=1],
         ctx: DeviceContextPtr,
     ) raises:
-        _histogram_cpu(out, input) if is_cpu[target]() else _histogram_gpu(
-            out, input, ctx
+        _histogram_cpu(output, input) if is_cpu[target]() else _histogram_gpu(
+            output, input, ctx
         )

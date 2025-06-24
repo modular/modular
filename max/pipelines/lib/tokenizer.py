@@ -162,7 +162,6 @@ class TextTokenizer(
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         try:
@@ -193,6 +192,7 @@ class TextTokenizer(
         self._encode_without_special_tokens = functools.partial(
             self.delegate.encode, add_special_tokens=False
         )
+        self.max_length = max_length or self.delegate.model_max_length
 
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
@@ -202,6 +202,9 @@ class TextTokenizer(
             self._llama_whitespace_fix_dummy_token_id,
             self._llama_whitespace_fix_dummy_token_len,
         ) = self._llama_whitespace_fix_dummy_token
+
+        # cache tokenizer eos token ids
+        self._default_eos_token_ids = set([self.eos])
 
     def apply_chat_template(
         self,
@@ -214,10 +217,7 @@ class TextTokenizer(
         }
         try:
             templated_message = self.delegate.apply_chat_template(
-                messages,
-                tokenize=False,
-                tools=tools,
-                **chat_template_options,
+                messages, tokenize=False, tools=tools, **chat_template_options
             )
             return cast(str, templated_message)
         except Exception:
@@ -254,11 +254,12 @@ class TextTokenizer(
                     self._encode_without_special_tokens, prompt
                 )
 
-            max_length = self.max_length or self.delegate.model_max_length
-            if max_length and len(encoded_prompt) > max_length:
+            if self.max_length and len(encoded_prompt) > self.max_length:
                 raise ValueError(
-                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {max_length})."
+                    f"Input string is larger than tokenizer's max length ({len(encoded_prompt)} > {self.max_length})."
                 )
+
+            encoded_prompt = np.array(encoded_prompt)
         else:
             encoded_prompt = np.array(list(prompt))
 
@@ -283,42 +284,58 @@ class TextTokenizer(
 
         return self.delegate.decode(encoded, **kwargs)
 
+    async def _generate_prompt_and_token_ids(
+        self,
+        prompt: Optional[Union[Sequence[int], str]],
+        messages: Optional[list[TokenGeneratorRequestMessage]],
+        tools: Optional[list[TokenGeneratorRequestTool]] = None,
+        chat_template_options: Optional[dict[str, Any]] = None,
+    ) -> tuple[Union[str, list[int]], np.ndarray]:
+        if prompt and messages:
+            raise ValueError("both prompt and messages cannot be provided.")
+
+        if isinstance(prompt, str):
+            return prompt, await self.encode(prompt, add_special_tokens=True)
+        elif isinstance(prompt, list):
+            return prompt, await self.encode(prompt, add_special_tokens=True)
+        elif isinstance(messages, list):
+            prompt = self.apply_chat_template(
+                messages, tools, chat_template_options
+            )
+            return prompt, await self.encode(prompt, add_special_tokens=False)
+        else:
+            raise ValueError(
+                "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TokenGeneratorRequestMessage]"
+            )
+
+    async def _get_eos_variables(
+        self,
+        ignore_eos: bool,
+        stop_token_ids: Optional[list[int]],
+        stop: Optional[list[str]],
+    ) -> tuple[set[int], list[list[int]]]:
+        eos_token_ids = self._default_eos_token_ids
+        eos_sequences = list()
+
+        if ignore_eos:
+            eos_token_ids = set()
+        elif stop_token_ids:
+            eos_token_ids.update(stop_token_ids)
+        elif stop:
+            eos_sequences = await self._encode_stop_criteria(stop)
+
+        return eos_token_ids, eos_sequences
+
     async def new_context(self, request: TokenGeneratorRequest) -> TextContext:
         """Create a new TextContext object, leveraging necessary information like
         cache_seq_id and prompt from TokenGeneratorRequest."""
 
-        prompt: Union[str, list[int]]
-        add_special_tokens = True
-        if request.prompt is not None:
-            if isinstance(request.prompt, str):
-                prompt = str(request.prompt)
-            else:
-                prompt = [int(t) for t in request.prompt]
-        elif request.messages is not None:
-            prompt = self.apply_chat_template(
-                request.messages, request.tools, request.chat_template_options
-            )
-            # Chat templating already adds special tokens, therefore we step around this here.
-            add_special_tokens = False
-        else:
-            raise ValueError(f"{request} does not provide messages or prompt.")
-
-        encoded_prompt = await self.encode(
-            prompt, add_special_tokens=add_special_tokens
-        )
-
-        # TODO(zheng): We should probably just make max_new_tokens an optional
-        # instead of -1.
-        max_new_tokens = None
-        if request.max_new_tokens is not None:
-            max_new_tokens = request.max_new_tokens
-        elif self.max_new_tokens != -1:
-            max_new_tokens = self.max_new_tokens
-
-        max_gen_tokens = max_tokens_to_generate(
-            len(encoded_prompt),
-            self.max_length,
-            max_new_tokens,
+        # Encode Prompt / Messages
+        prompt, token_ids = await self._generate_prompt_and_token_ids(
+            prompt=request.prompt,
+            messages=request.messages,
+            tools=request.tools,
+            chat_template_options=request.chat_template_options,
         )
 
         json_schema = (
@@ -326,18 +343,38 @@ class TextTokenizer(
             if request.response_format
             else None
         )
+
+        eos_token_ids, eos_sequences = await self._get_eos_variables(
+            request.sampling_params.ignore_eos,
+            request.sampling_params.stop_token_ids,
+            request.sampling_params.stop,
+        )
+
+        # Calculate Max Length
+        max_new_tokens = None
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
+        elif self.max_new_tokens != -1:
+            max_new_tokens = self.max_new_tokens
+
+        max_gen_tokens = max_tokens_to_generate(
+            len(token_ids), self.max_length, max_new_tokens
+        )
+
         context = TextContext(
             prompt=prompt,
-            cache_seq_id=request.index,
-            max_length=len(encoded_prompt) + max_gen_tokens
+            eos_token_ids=eos_token_ids,
+            eos_sequences=eos_sequences,
+            max_length=len(token_ids) + max_gen_tokens
             if max_gen_tokens is not None
-            else None,
-            tokens=np.array(encoded_prompt),
+            else self.max_length,
+            tokens=np.array(token_ids),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             json_schema=json_schema,
-            ignore_eos=request.ignore_eos,
+            sampling_params=request.sampling_params,
         )
+        context.assign_to_cache(request.index)
         return context
 
     @property
@@ -370,6 +407,17 @@ class TextTokenizer(
         )
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
 
+    async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
+        """Encodes `stop` to be used as stop criteria during generation."""
+        stop_tokenized: list[list[int]] = []
+        for stop_crit in stop:
+            tokenized: list[int] = (
+                await self.encode(stop_crit, False)
+            ).tolist()
+            stop_tokenized.append(tokenized)
+
+        return stop_tokenized
+
 
 class TextAndVisionTokenizer(
     PipelineTokenizer[TextAndVisionContext, np.ndarray, TokenGeneratorRequest],
@@ -387,7 +435,6 @@ class TextAndVisionTokenizer(
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
-        self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
@@ -398,6 +445,8 @@ class TextAndVisionTokenizer(
             # from the HuggingFace tokenizer_config.
             model_max_length=max_length,
         )
+        self.max_length = max_length or self.delegate.model_max_length
+
         # As we are adding special tokens during chat templating prior to tokenization,
         # when add_special_tokens=True, we duplicate BOS tokens specifically.
         self._encode_with_special_tokens = functools.partial(
@@ -407,10 +456,9 @@ class TextAndVisionTokenizer(
             self.delegate.encode, add_special_tokens=False
         )
         self.processor = AutoProcessor.from_pretrained(
-            model_path,
-            revision=revision,
-            trust_remote_code=trust_remote_code,
+            model_path, revision=revision, trust_remote_code=trust_remote_code
         )
+        self._default_eos_token_ids = set([self.eos])
 
     def _wrap_str_message_content(
         self, messages: list[TokenGeneratorRequestMessage]
@@ -527,30 +575,31 @@ class TextAndVisionTokenizer(
             else None
         )
         # PixtralProcessor returns a torch tensor or a list of torch tensors.
-        # LlamaVision returns a np Array.
+        # LlamaVision & InternVL returns a python list
         processed_inputs = self.processor(
-            text=prompt,
-            images=images,
-            add_special_tokens=add_special_tokens,
+            text=prompt, images=images, add_special_tokens=add_special_tokens
         )
 
         if "input_ids" not in processed_inputs:
             msg = "input_ids not provided in AutoProcessor output, please ensure you are using the correct processor for multi-modal inputs."
             raise ValueError(msg)
-        encoded_prompt = np.array(processed_inputs["input_ids"][0])
+
+        # TODO: This is a hack to support both LlamaVision, Pixtral and InternVL.
+        if isinstance(processed_inputs["input_ids"][0], int):
+            encoded_prompt = np.array(processed_inputs["input_ids"])
+        else:
+            encoded_prompt = np.array(processed_inputs["input_ids"][0])
 
         # TODO(zheng): We should probably just make max_new_tokens an optional
         # instead of -1.
         max_new_tokens = None
-        if request.max_new_tokens is not None:
-            max_new_tokens = request.max_new_tokens
+        if request.sampling_params.max_new_tokens is not None:
+            max_new_tokens = request.sampling_params.max_new_tokens
         elif self.max_new_tokens != -1:
             max_new_tokens = self.max_new_tokens
 
         max_gen_tokens = max_tokens_to_generate(
-            encoded_prompt.shape[0],
-            self.max_length,
-            max_new_tokens,
+            encoded_prompt.shape[0], self.max_length, max_new_tokens
         )
 
         extra_model_args = dict()
@@ -567,6 +616,9 @@ class TextAndVisionTokenizer(
                 )
             elif torch.is_tensor(pixel_values):
                 pixel_values = (pixel_values.numpy(),)
+            elif isinstance(pixel_values, np.ndarray):
+                pixel_values = (pixel_values,)
+
             if "aspect_ratio_ids" in processed_inputs:
                 extra_model_args["aspect_ratio_ids"] = (
                     processed_inputs.aspect_ratio_ids
@@ -576,7 +628,13 @@ class TextAndVisionTokenizer(
                     processed_inputs.aspect_ratio_mask
                 )
         else:
-            pixel_values = ()
+            pixel_values = tuple()
+
+        # Pass through image token indices if present
+        if "image_token_indices" in processed_inputs:
+            extra_model_args["image_token_indices"] = processed_inputs[
+                "image_token_indices"
+            ]
 
         json_schema = (
             json.dumps(request.response_format.get("json_schema", None))
@@ -584,16 +642,21 @@ class TextAndVisionTokenizer(
             else None
         )
 
+        if request.sampling_params.ignore_eos:
+            eos_token_ids = set()
+        else:
+            eos_token_ids = self._default_eos_token_ids
+
         context = TextAndVisionContext(
             prompt=prompt,
+            eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,
             extra_model_args=extra_model_args,
-            cache_seq_id=request.index,
             tokens=encoded_prompt,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
-            else None,
+            else self.max_length,
             json_schema=json_schema,
-            ignore_eos=request.ignore_eos,
         )
+        context.assign_to_cache(request.index)
         return context

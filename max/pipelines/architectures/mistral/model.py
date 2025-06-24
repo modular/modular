@@ -125,9 +125,7 @@ class MistralModel(PipelineModel[TextContext]):
         self.signal_buffers = (
             [
                 Tensor.zeros(
-                    shape=(Signals.NUM_BYTES,),
-                    dtype=DType.uint8,
-                    device=dev,
+                    shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
                 )
                 for dev in self.devices
             ]
@@ -307,8 +305,7 @@ class MistralModel(PipelineModel[TextContext]):
             ),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(
-                pipeline_config,
-                huggingface_config=huggingface_config,
+                pipeline_config, huggingface_config=huggingface_config
             ),
             num_layers=MistralConfig.get_num_layers(huggingface_config),
             available_cache_memory=available_cache_memory,
@@ -340,9 +337,7 @@ class MistralModel(PipelineModel[TextContext]):
 
         # Construct general input types
         return_n_logits_type = TensorType(
-            DType.int64,
-            shape=["return_n_logits"],
-            device=DeviceRef.CPU(),
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
         kv_inputs = self.kv_manager.input_symbols()
@@ -430,8 +425,7 @@ class MistralModel(PipelineModel[TextContext]):
             head_dim=self.huggingface_config.head_dim,
             rope_theta=self.huggingface_config.rope_theta,
             max_seq_len=self.calculate_max_seq_len(
-                self.pipeline_config,
-                huggingface_config=self.huggingface_config,
+                self.pipeline_config, huggingface_config=self.huggingface_config
             ),
             rms_norm_eps=self.huggingface_config.rms_norm_eps,
             feed_forward_length=self.huggingface_config.intermediate_size,
@@ -452,10 +446,7 @@ class MistralModel(PipelineModel[TextContext]):
             )
             self.state_dict = nn_model.state_dict()
 
-            with Graph(
-                "mistral",
-                input_types=[*graph_inputs],
-            ) as graph:
+            with Graph("mistral", input_types=[*graph_inputs]) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
                     graph.inputs
                 )
@@ -476,8 +467,8 @@ class MistralModel(PipelineModel[TextContext]):
                     tokens.tensor,
                     signal_buffers,
                     kv_caches_per_dev,
-                    input_row_offsets=input_row_offsets,
-                    return_n_logits=return_n_logits.tensor,
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
                 )
 
                 graph.output(*outputs)
@@ -492,18 +483,15 @@ class MistralModel(PipelineModel[TextContext]):
             )
             self.state_dict = nn_model.state_dict()
 
-            with Graph(
-                "mistral",
-                input_types=graph_inputs,
-            ) as graph:
+            with Graph("mistral", input_types=graph_inputs) as graph:
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )
                 outputs = nn_model(
                     tokens.tensor,
                     [inp.tensor for inp in kv_cache_inputs],
-                    input_row_offsets=input_row_offsets,
-                    return_n_logits=return_n_logits.tensor,
+                    return_n_logits.tensor,
+                    input_row_offsets.tensor,
                 )
                 graph.output(*outputs)
                 return graph

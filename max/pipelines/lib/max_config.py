@@ -103,37 +103,11 @@ class KVCacheConfig(MAXConfig):
 
 @dataclass
 class SamplingConfig(MAXConfig):
-    top_k: int = 1
-    """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
-
-    top_p: float = 1
-    """Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens."""
-
-    temperature: float = 1
-    """Controls the randomness of the model's output; higher values produce more diverse responses."""
-
     in_dtype: DType = DType.float32
     """The data type of the input tokens."""
 
     out_dtype: DType = DType.float32
     """The data type of the output logits."""
-
-    frequency_penalty: float = 0.0
-    """The frequency penalty to apply to the model's output. A positive value will penalize new tokens
-    based on their frequency in the generated text: tokens will receive a penalty proportional to the
-    count of appearances."""
-
-    presence_penalty: float = 0.0
-    """The presence penalty to apply to the model's output. A positive value will penalize new tokens
-    that have already appeared in the generated text at least once by applying a constant penalty."""
-
-    repetition_penalty: float = 1.0
-    """The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens
-    that have already appeared in prompt and generated text at least once by dividing the logits by the
-    repetition penalty."""
-
-    seed: int = 0
-    """The seed to use for the random number generator."""
 
     enable_structured_output: bool = False
     """Enable structured generation/guided decoding for the server. This allows the user to pass a json
@@ -147,17 +121,21 @@ class SamplingConfig(MAXConfig):
     do_penalties: bool = False
     """Whether to apply frequency and presence penalties to the model's output."""
 
+    enable_min_tokens: bool = False
+    """Whether to enable min_tokens, which blocks the model from generating
+    stopping tokens before the min_tokens count is reached. This defaults to
+    false.
+    """
+
     @staticmethod
     def help() -> dict[str, str]:
         return {
-            "top_k": "Limit sampling to the top K most probable tokens during generation. This can help control randomness and improve output quality. This defaults to 1, which defaults to greedy sampling.",
-            "top_p": "Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens.",
-            "temperature": "Controls the randomness of the model's output; higher values produce more diverse responses.",
-            "frequency_penalty": "The frequency penalty to apply to the model's output. A positive value will penalize new tokens based on their frequency in the generated text: tokens will receive a penalty proportional to the count of appearances.",
-            "presence_penalty": "The presence penalty to apply to the model's output. A positive value will penalize new tokens that have already appeared in the generated text at least once by applying a constant penalty.",
-            "repetition_penalty": "The repetition penalty to apply to the model's output. Values > 1 will penalize new tokens that have already appeared in prompt and generated text at least once by dividing the logits by the repetition penalty.",
-            "seed": "The seed to use for the random number generator. This defaults to 0.",
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
+            "enable_variable_logits": "Whether to enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with their associated logit_offsets. This is needed to produce additional logits for echo and speculative decoding purposes. This defaults to false.",
+            "enable_min_tokens": "Whether to enable min_tokens, which blocks the model from generating stopping tokens before the min_tokens count is reached. This defaults to false.",
+            "do_penalties": "Whether to apply frequency and presence penalties to the model's output. This defaults to false.",
+            "in_dtype": "The data type of the input tokens. This defaults to float32.",
+            "out_dtype": "The data type of the output logits. This defaults to float32.",
         }
 
 
@@ -182,4 +160,30 @@ class ProfilingConfig(MAXConfig):
     def help() -> dict[str, str]:
         return {
             "gpu_profiling": "Whether to turn on GPU profiling for the model. This defaults to 'off'.",
+        }
+
+
+@dataclass
+class LoRAConfig(MAXConfig):
+    lora_paths: list[str]
+    """List of statically defined LoRA paths"""
+
+    max_lora_rank: int = 16
+    """Maximum rank of all possible LoRAs"""
+
+    max_num_loras: int = 100
+    """The maximum number of active LoRAs in a batch"""
+
+    def __post_init__(self):
+        if len(self.lora_paths) > self.max_num_loras:
+            raise ValueError(
+                "Number of statically defined LoRAs exceeds the number of maximum loadable LoRAs."
+            )
+
+    @staticmethod
+    def help() -> dict[str, str]:
+        return {
+            "lora_paths": "List of paths to the LoRAs.",
+            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16",
+            "max_num_loras": "The maximum number of active LoRAs in a batch",
         }

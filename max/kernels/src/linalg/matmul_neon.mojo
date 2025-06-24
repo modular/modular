@@ -11,13 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
 from math import fma
-from sys.info import alignof
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from memory import UnsafePointer
 
 from utils.index import Index, IndexList
 
@@ -28,8 +24,8 @@ from .utils import GemmShape
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the Neon microkernel.
-@value
-struct Inner_matmul_neon(InnerMatmulKernel):
+@fieldwise_init
+struct Inner_matmul_neon(InnerMatmulKernel, Movable):
     @always_inline
     fn _accumulate_lane[
         simd_size: Int,

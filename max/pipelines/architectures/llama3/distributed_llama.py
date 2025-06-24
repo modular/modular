@@ -27,7 +27,6 @@ from max.nn import (
     DistributedTransformer,
     DistributedTransformerBlock,
     Linear,
-    Llama3RotaryEmbedding,
     VocabParallelEmbedding,
 )
 from max.nn.kv_cache import (
@@ -37,7 +36,7 @@ from max.nn.kv_cache import (
 )
 
 logger = logging.getLogger("max.pipelines")
-from .model_config import Llama3Config
+from .model_config import Llama3Config, create_rope_embedding
 
 
 class DistributedLlama3(DistributedTransformer):
@@ -51,7 +50,7 @@ class DistributedLlama3(DistributedTransformer):
 
         if config.stacked_mlp:
             raise ValueError(
-                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs.",
+                "Model contains stacked MLP weights. This is currently not supported with multiple GPUs."
             )
 
         if config.norm_method != "rms_norm" or config.rms_norm_eps is None:
@@ -60,13 +59,14 @@ class DistributedLlama3(DistributedTransformer):
                 "None for model that uses `RMSNorm`."
             )
 
-        rope = Llama3RotaryEmbedding(
-            dim=config.hidden_size,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
+        rope = create_rope_embedding(
+            hidden_size=config.hidden_size,
+            num_attention_heads=config.num_attention_heads,
+            rope_theta=config.rope_theta,
             max_seq_len=config.max_seq_len,
-            interleaved=config.interleaved_rope_weights,
-            scaling_params=config.rope_scaling_params,
+            interleaved_rope_weights=config.interleaved_rope_weights,
+            rope_scaling_params=config.rope_scaling_params,
+            longrope_scaling_params=config.longrope_scaling_params,
             device=config.devices[0],
         )
 
@@ -110,6 +110,7 @@ class DistributedLlama3(DistributedTransformer):
                         rope=rope,
                         linear_cls=linear_cls,
                         devices=config.devices,
+                        has_bias=config.attention_bias,
                         # Only pass the float8 config if this attention layer is quantized.
                         float8_config=(
                             fp8_cfg
@@ -135,7 +136,6 @@ class DistributedLlama3(DistributedTransformer):
                     attention_norm=create_distributed_norm(),
                     mlp_norm=create_distributed_norm(),
                     devices=config.devices,
-                    use_subgraph=config.use_subgraphs,
                     # TODO: Support residual_multiplier
                     # residual_multiplier=config.residual_multiplier,
                 )
@@ -195,6 +195,7 @@ class DistributedLlama3(DistributedTransformer):
             ),
             devices=config.devices,
             return_logits=config.return_logits,
+            use_subgraphs=config.use_subgraphs,
             # TODO: Support the following config options.
             # embedding_multiplier=config.embedding_multiplier,
             # logits_postprocessor=config.logits_postprocessor,

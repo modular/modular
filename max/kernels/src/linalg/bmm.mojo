@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from collections.string import StaticString
 from math import align_up, ceildiv, gcd
 from sys import alignof
 from sys.info import simdwidthof
@@ -25,7 +24,7 @@ from buffer.dimlist import DimList
 from gpu import block_idx, global_idx
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from memory import UnsafePointer, memset_zero
+from memory import memset_zero
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -613,7 +612,7 @@ fn _batched_matmul_gpu[
             return
 
     alias BLOCK_DIM = 16
-    alias unkown_shape = DimList.create_unknown[3]()
+    alias unknown_shape = DimList.create_unknown[3]()
 
     var m = a_buf_reshaped.dim[1]()
     var n = b_buf_reshaped.dim[2]()
@@ -621,11 +620,11 @@ fn _batched_matmul_gpu[
     alias bmm = batched_matmul_kernel[
         rank,
         c_type,
-        unkown_shape,
+        unknown_shape,
         a_type,
-        unkown_shape,
+        unknown_shape,
         b_type,
-        unkown_shape,
+        unknown_shape,
         elementwise_epilogue_fn,
     ]
     ctx.enqueue_function[bmm](

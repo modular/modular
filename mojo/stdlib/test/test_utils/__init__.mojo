@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .compare_helpers import compare
+from .hash import dif_bits, assert_dif_hashes, assert_fill_factor
 from .math_helpers import ulp_distance
 from .test_utils import libm_call
 from .types import (
@@ -28,5 +29,15 @@ from .types import (
     MoveOnly,
     ObservableDel,
     ObservableMoveOnly,
-    g_dtor_count,
+)
+
+from .words import (
+    gen_word_pairs,
+    words_ar,
+    words_el,
+    words_en,
+    words_he,
+    words_lv,
+    words_pl,
+    words_ru,
 )

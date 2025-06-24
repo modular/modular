@@ -13,7 +13,7 @@
 
 
 from collections import OptionalReg
-from math import ceildiv, exp, recip
+from math import ceildiv, recip
 from math.constants import log2e
 from sys import alignof, has_nvidia_gpu_accelerator, simdwidthof, sizeof
 
@@ -37,9 +37,8 @@ from gpu import (
     thread_idx,
 )
 from gpu.host import DeviceContext
-from gpu.host import Dim as LaunchDim
 from gpu.host import FuncAttribute
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import A100, H100
 from gpu.memory import (
     AddressSpace,
@@ -61,23 +60,21 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from layout.swizzle import Swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from layout.tensor_builder import static
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
-from linalg.transpose import transpose
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
-from memory.unsafe import bitcast
 from nn._ragged_utils import get_batch_from_row_offsets
-from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
+from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
     NDBufferMHAOperand,
     RaggedMHAOperand,
 )
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
+from nn.mha_score_mod import ScoreModTrait
 from nn.mha_utils import (
     FlashAttentionAlgorithm,
     MHAConfig,
@@ -88,7 +85,7 @@ from nn.softmax import _exp2_concrete
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf, neg_inf
+from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
@@ -346,7 +343,7 @@ fn flare_mla_decoding_dispatch[
     alias BK = 64  # need 8 mma_tile per row the resolve the bank conflict
     alias WM = BM
     alias WN = 16
-    # num warps in M and N, multipled by warp size.
+    # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
     alias accum_type = get_accum_type[q.type]()
@@ -594,7 +591,7 @@ fn mla_decoding_single_batch[
     var lane = lane_id()
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = BM * depth
@@ -695,7 +692,7 @@ fn mla_decoding_single_batch[
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
     @parameter
-    for i in range(Int(WM)):
+    for i in range(WM):
         rowmax[i] = min_or_neg_inf[accum_type]()
         rowsum[i] = 0.0
 
@@ -739,7 +736,7 @@ fn mla_decoding_single_batch[
     )
 
     @parameter
-    for q_id in range(Int(depth // BK)):
+    for q_id in range(depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -806,7 +803,7 @@ fn mla_decoding_single_batch[
         )
 
         @parameter
-        for k_id in range(Int(rope_dim // BK)):
+        for k_id in range(rope_dim // BK):
             var k_rope_smem_tile = k_rope_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -842,7 +839,7 @@ fn mla_decoding_single_batch[
             nope_dim // BK,
         )
 
-        # Cacluate the last `rope_dim` part of Q @ K
+        # Calculate the last `rope_dim` part of Q @ K
         multistage_mma[
             BM,
             BN,
@@ -876,10 +873,10 @@ fn mla_decoding_single_batch[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -1033,12 +1030,12 @@ fn mla_decoding_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(Int(WN_O // 8)):
+        for n_mma in range(WN_O // 8):
 
             @parameter
             for i in range(p_frag_size // 2):
@@ -1830,7 +1827,7 @@ fn mla_prefill_single_batch[
     )
 
     @parameter
-    for q_id in range(Int(q_depth // BK)):
+    for q_id in range(q_depth // BK):
         var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
 
         copy_dram_to_sram_async[
@@ -1920,7 +1917,7 @@ fn mla_prefill_single_batch[
         )
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, depth, axis=0](0, 0)
 
-        # here we set up varibles for k_rope tensor
+        # here we set up variables for k_rope tensor
         alias k_rope_gmem_layout = Layout(
             IntTuple(Int(BN), Int(cache_depth)),
             IntTuple(Int(cache_num_heads * cache_depth), 1),
@@ -1984,7 +1981,7 @@ fn mla_prefill_single_batch[
 
         # load K tile into smem
         @parameter
-        for k_id in range(Int(depth // BK)):
+        for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -2001,7 +1998,7 @@ fn mla_prefill_single_batch[
             k_gmem_iter._incr()
 
         @parameter
-        for k_id in range(Int(depth // BK), Int(q_depth // BK), 1):
+        for k_id in range(depth // BK, q_depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
 
             copy_dram_to_sram_async[
@@ -2055,10 +2052,10 @@ fn mla_prefill_single_batch[
             )
 
             @parameter
-            for m_mma in range(Int(num_m_mmas)):
+            for m_mma in range(num_m_mmas):
 
                 @parameter
-                for n_mma in range(Int(num_n_mmas)):
+                for n_mma in range(num_n_mmas):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -2180,7 +2177,7 @@ fn mla_prefill_single_batch[
 
         # load V tile into smem
         @parameter
-        for v_id in range(Int(BN // BK)):
+        for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
 
             @parameter
@@ -2353,7 +2350,7 @@ fn mla_prefill_single_batch[
 
         # and add them together.
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             alias row_0 = 2 * m_mma
             alias row_1 = 2 * m_mma + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
@@ -2401,7 +2398,7 @@ fn mla_prefill_single_batch[
             rowmax[row_1] = max(prev_rowmax_1, rowmax[row_1])
 
             @parameter
-            for n_mma in range(Int(num_n_mmas_output)):
+            for n_mma in range(num_n_mmas_output):
                 var mma_id = n_mma * num_m_mmas + m_mma
 
                 @parameter
@@ -2424,7 +2421,7 @@ fn mla_prefill_single_batch[
     if write_softmax_info:
 
         @parameter
-        for m_mma in range(Int(num_m_mmas)):
+        for m_mma in range(num_m_mmas):
             alias row_0 = 2 * m_mma
             alias row_1 = 2 * m_mma + 1
             var thd_row_ind = Int(lane // 4 + WM * warp_y)
@@ -2440,12 +2437,12 @@ fn mla_prefill_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(Int(num_m_mmas)):
+    for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(Int(num_n_mmas_output)):
+        for n_mma in range(num_n_mmas_output):
 
             @parameter
             for i in range(p_frag_size // 2):
@@ -2625,7 +2622,7 @@ fn mla_prefill_plan_kernel[
 
 
 # ===-----------------------------------------------------------------------===#
-# Helper fucntion that copies K cache to a contiguous buffer
+# Helper function that copies K cache to a contiguous buffer
 # ===-----------------------------------------------------------------------===#
 
 
@@ -2675,7 +2672,7 @@ fn _k_cache_to_buffer[
         Int(length),
         buffer.dim[1](),
     )
-    alias compile_target = _get_gpu_target()
+    alias compile_target = get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     _elementwise_impl_gpu[func=copy_fn, simd_width=target_simd_width](

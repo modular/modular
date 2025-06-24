@@ -10,13 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray, Optional, OptionalReg
-from collections.string import StaticString
-from math import gcd, isqrt
-from sys.info import _current_target, simdwidthof
+from collections import OptionalReg
+from sys.info import _current_target
 from sys.intrinsics import _type_is_eq
 
-from algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext
@@ -30,24 +27,20 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
-from memory import UnsafePointer, memcpy
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import MaterializedMask, MHAMask
+from nn.mha_mask import MHAMask
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import (
     dispatch_mask_and_score_mod,
     dispatch_materialized_mask_and_score_mod,
 )
 from nn.normalization import _rms_norm_impl
-from register import register_internal
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_internal import ManagedTensorSlice, trace_slice_arg
@@ -218,7 +211,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     fn write_to_cache[
         type_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[type_, width]):
-        b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
+        var b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
                 Index(Int(b_idx), Int(t_idx), idx[1]),
@@ -391,7 +384,7 @@ fn generic_flash_attention_kv_cache_padded[
     q: NDBuffer[type, 4, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -451,7 +444,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     kv_collection: collection_t,
     layer_idx: UInt32,
     mask: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -506,7 +499,7 @@ fn _flash_attention_dispatch[
     q: NDBuffer[type, 4, *_],
     kv_cache: collection_t,
     layer_idx: UInt32,
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -555,7 +548,7 @@ fn _flash_attention_dispatch_materialized_mask[
     kv_cache: collection_t,
     layer_idx: UInt32,
     mask_nd: NDBuffer[type, *_],
-    valid_lengths: ManagedTensorSlice[type = DType.uint32, rank=1],
+    valid_lengths: ManagedTensorSlice[dtype = DType.uint32, rank=1],
     scale: Float32,
     output: NDBuffer[mut=True, type, 4, *_],
     context: DeviceContextPtr,
@@ -604,6 +597,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     head_dim: Int, //,
     target: StaticString,
     multiply_before_cast: Bool,
+    per_head_norm: Bool,
 ](
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
@@ -641,20 +635,26 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     output type or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
-    alias rank = 3
+    alias rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
     alias rms_norm_cols = gamma.shape.get[0]()
 
     constrained[gamma.shape.has_value[0](), "Need static shape for gamma"]()
     constrained[
-        rms_norm_cols <= kv_collection.kv_params.head_size,
-        "Size of gamma must be smaller or equal to head size",
+        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm,
+        "Length of gamma must be smaller or equal to head size",
     ]()
 
-    var shape = IndexList[rank](
-        Int(total_seq_len), kv_params.num_heads, rms_norm_cols
-    )
+    var shape = IndexList[rank]()
+    shape[0] = Int(total_seq_len)
+
+    @parameter
+    if per_head_norm:
+        shape[1] = Int(kv_params.num_heads)
+        shape[2] = Int(rms_norm_cols)
+    else:
+        shape[1] = Int(rms_norm_cols)
 
     @always_inline
     @parameter
@@ -664,7 +664,8 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     ](idx: IndexList[rank_]) -> SIMD[type, width]:
         constrained[
             rank_ == rank,
-            "rms_norm_key_cache input lambda index should have rank 3",
+            "rms_norm_key_cache input lambda index should have rank "
+            + String(rank),
         ]()
 
         var global_token_idx = idx[0]
@@ -676,11 +677,22 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
+
         return k_cache.load[width=width](
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
         )
 
     @always_inline
@@ -698,11 +710,22 @@ def rms_norm_kv_cache_ragged_continuous_batching[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
+
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
             val=val,
         )
 
@@ -728,6 +751,7 @@ def rms_norm_kv_cache_ragged_paged[
     head_dim: Int, //,
     target: StaticString,
     multiply_before_cast: Bool,
+    per_head_norm: Bool,
 ](
     kv_collection: PagedKVCacheCollection[
         type,
@@ -765,20 +789,26 @@ def rms_norm_kv_cache_ragged_paged[
     output type or not. We set it to `True` by default.
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
-    alias rank = 3
+    alias rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
     alias rms_norm_cols = gamma.shape.get[0]()
 
     constrained[gamma.shape.has_value[0](), "Need static shape for gamma"]()
     constrained[
-        rms_norm_cols <= kv_collection.kv_params.head_size,
+        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm,
         "Length of gamma must be smaller or equal to head size",
     ]()
 
-    var shape = IndexList[rank](
-        Int(total_seq_len), kv_params.num_heads, rms_norm_cols
-    )
+    var shape = IndexList[rank]()
+    shape[0] = Int(total_seq_len)
+
+    @parameter
+    if per_head_norm:
+        shape[1] = Int(kv_params.num_heads)
+        shape[2] = Int(rms_norm_cols)
+    else:
+        shape[1] = Int(rms_norm_cols)
 
     @always_inline
     @parameter
@@ -788,7 +818,8 @@ def rms_norm_kv_cache_ragged_paged[
     ](idx: IndexList[rank_]) -> SIMD[type, width]:
         constrained[
             rank_ == rank,
-            "rms_norm_key_cache input lambda index should have rank 3",
+            "rms_norm_key_cache input lambda index should have rank "
+            + String(rank),
         ]()
 
         var global_token_idx = idx[0]
@@ -800,11 +831,22 @@ def rms_norm_kv_cache_ragged_paged[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
+
         return k_cache.load[width=width](
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
         )
 
     @always_inline
@@ -822,11 +864,21 @@ def rms_norm_kv_cache_ragged_paged[
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
 
+        var head_idx: Int
+        var head_dim_idx: Int
+
+        @parameter
+        if per_head_norm:
+            head_idx = idx[1]
+            head_dim_idx = idx[2]
+        else:
+            head_idx = idx[1] // head_dim
+            head_dim_idx = idx[1] % head_dim
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
-            head_idx=idx[1],
-            head_dim_idx=idx[2],
+            head_idx=head_idx,
+            head_dim_idx=head_dim_idx,
             val=val,
         )
 
@@ -927,12 +979,9 @@ def print_kv_cache_paged_generic_cpu[
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[
-        type, kv_params, page_size, assert_write_mode
-    ],
+    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
@@ -1056,12 +1105,9 @@ def print_kv_cache_paged_generic_gpu[
     type: DType,
     kv_params: KVCacheStaticParams,
     page_size: Int,
-    assert_write_mode: WRITE_MODE = WRITE_MODE_REG,
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
-    kv_collection: PagedKVCacheCollection[
-        type, kv_params, page_size, assert_write_mode
-    ],
+    kv_collection: PagedKVCacheCollection[type, kv_params, page_size],
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
@@ -1208,7 +1254,7 @@ fn generic_get_paged_cache[
 fn managed_tensor_slice_to_ndbuffer[
     spec: StaticTensorSpec, //
 ](tensor: ManagedTensorSlice[static_spec=spec]) -> NDBuffer[
-    spec.type,
+    spec.dtype,
     spec.rank,
     MutableAnyOrigin,
     spec.shape,
@@ -1219,7 +1265,7 @@ fn managed_tensor_slice_to_ndbuffer[
 ]:
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
     return NDBuffer[
-        spec.type,
+        spec.dtype,
         spec.rank,
         _,
         spec.shape,

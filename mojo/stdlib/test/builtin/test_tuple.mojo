@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from sys import os_is_macos
 
 from testing import assert_false, assert_true, assert_equal
 

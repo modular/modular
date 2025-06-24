@@ -11,13 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from collections.string import StaticString
-from os import abort
-from pathlib import Path
 from random import rand, random_float64
-from sys import argv, bitwidthof, env_get_string, is_defined
-from sys.info import alignof
+from sys import argv, env_get_string
 
 from benchmark import (
     Bench,
@@ -34,17 +29,15 @@ from builtin.dtype import _integral_type_of
 from compile import compile_info
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from memory import UnsafePointer
-from memory.unsafe import bitcast
 from stdlib.builtin.io import _snprintf
-from tensor_internal import DynamicTensor, ManagedTensorSlice
-from testing import assert_almost_equal, assert_equal, assert_true
+from tensor_internal import DynamicTensor
+from testing import assert_equal, assert_true
 
-from utils import Index, IndexList
+from utils import IndexList
 from utils.index import product
 
 
-struct ValOrDim[dim: Dim = Dim()]:
+struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):
@@ -59,13 +52,13 @@ struct ValOrDim[dim: Dim = Dim()]:
         self.value = v
 
 
-@value
+@fieldwise_init
 struct HostNDBuffer[
     type: DType,
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-]:
+](Copyable, Movable):
     var tensor: NDBuffer[type, rank, MutableAnyOrigin, shape]
 
     @always_inline
@@ -134,13 +127,13 @@ struct HostNDBuffer[
         )
 
 
-@value
+@fieldwise_init
 struct DeviceNDBuffer[
     type: DType,
     rank: Int,
     /,
     shape: DimList = DimList.create_unknown[rank](),
-]:
+](Copyable, Movable):
     var buffer: DeviceBuffer[type]
     var tensor: NDBuffer[
         type,
@@ -240,8 +233,8 @@ struct DeviceNDBuffer[
 
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
-@value
-struct TestTensor[type: DType, rank: Int]:
+@fieldwise_init
+struct TestTensor[type: DType, rank: Int](Copyable, Movable):
     var ndbuffer: NDBuffer[type, rank, MutableAnyOrigin]
     var shape: DimList
     var num_elements: Int
@@ -281,8 +274,7 @@ struct TestTensor[type: DType, rank: Int]:
         return DynamicTensor[type, rank].Type(self.ndbuffer)
 
 
-@value
-struct InitializationType:
+struct InitializationType(Copyable, Movable):
     var _value: Int
     alias zero = InitializationType(0)
     alias one = InitializationType(1)
@@ -340,7 +332,7 @@ fn arange(buffer: NDBuffer[mut=True, *_]):
             buffer.data[i] = i
 
 
-fn zero(buffer: NDBuffer):
+fn zero(buffer: NDBuffer[mut=True, *_, **_]):
     buffer.zero()
 
 
@@ -619,9 +611,9 @@ fn array_equal[
         assert_equal(x_array.data[i], y_array.data[i])
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Mode(Stringable):
+struct Mode(Copyable, Movable, Stringable):
     var _value: Int
     var handle: StaticString
     alias NONE = Self(0x0, "none")

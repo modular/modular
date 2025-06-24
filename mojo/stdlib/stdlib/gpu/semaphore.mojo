@@ -36,7 +36,6 @@ Example:
 from sys import is_nvidia_gpu, llvm_intrinsic
 from sys._assembly import inlined_assembly
 
-from memory import UnsafePointer
 
 from .intrinsics import Scope, load_acquire, store_release
 from .sync import barrier

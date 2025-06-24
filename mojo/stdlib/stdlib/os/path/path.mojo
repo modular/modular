@@ -20,12 +20,10 @@ from os.path import isdir
 ```
 """
 
-from collections import InlineArray, List
 from pwd import getpwuid
 from stat import S_ISDIR, S_ISLNK, S_ISREG
-from sys import has_neon, os_is_linux, os_is_macos, os_is_windows
+from sys import CompilationTarget, os_is_linux, os_is_macos, os_is_windows
 
-from memory import Span
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -53,7 +51,7 @@ fn _get_stat_st_mode(owned path: String) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_stat_macos(path^).st_mode)
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
     else:
         return Int(_stat_linux_x86(path^).st_mode)
@@ -64,7 +62,7 @@ fn _get_lstat_st_mode(owned path: String) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_lstat_macos(path^).st_mode)
-    elif has_neon():
+    elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)
     else:
         return Int(_lstat_linux_x86(path^).st_mode)
@@ -352,7 +350,7 @@ fn join(owned path: String, *paths: String) -> String:
     """
     var joined_path = path
 
-    for ref cur_path in paths:
+    for cur_path in paths:
         if cur_path.startswith(sep):
             joined_path = cur_path
         elif not joined_path or path.endswith(sep):
@@ -386,9 +384,9 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
     Returns:
         A tuple containing two strings: (head, tail).
     """
-    fspath = path.__fspath__()
-    i = fspath.rfind(os.sep) + 1
-    head, tail = fspath[:i], fspath[i:]
+    var fspath = path.__fspath__()
+    var i = fspath.rfind(os.sep) + 1
+    var head, tail = fspath[:i], fspath[i:]
     if head and head != String(os.sep) * len(head):
         head = String(head.rstrip(sep))
     return head, tail
@@ -663,7 +661,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
                 buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
-            name, length = _parse_variable_name(bytes[j + 1 :])
+            var name, length = _parse_variable_name(bytes[j + 1 :])
 
             # Invalid syntax (`${}` or `${`) or $ was not followed by a name; write as is.
             if name.startswith("{") or name == "":

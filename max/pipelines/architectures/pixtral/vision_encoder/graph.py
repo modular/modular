@@ -51,10 +51,7 @@ def _patch_conv2d(
         ),
         [2, 3, 1, 0],
     )
-    return Conv2DV1(
-        filter_weights,
-        stride=(patch_size, patch_size),
-    )
+    return Conv2DV1(filter_weights, stride=(patch_size, patch_size))
 
 
 def _linear(
@@ -88,10 +85,7 @@ def _feed_forward(
             weights.feed_forward.down_proj,
         ),
         _linear(  # up_proj
-            dtype,
-            feed_forward_length,
-            hidden_dim,
-            weights.feed_forward.up_proj,
+            dtype, feed_forward_length, hidden_dim, weights.feed_forward.up_proj
         ),
     )
 
@@ -111,30 +105,10 @@ def _encoder_attention(
 ) -> Attention:
     # TODO: Do we need to transpose weights? Not obvious from shapes. Both dims are the same.
     hidden_dim = huggingface_config.vision_config.hidden_size
-    wq = _linear(
-        dtype,
-        hidden_dim,
-        hidden_dim,
-        weights.attention.q_proj,
-    )
-    wk = _linear(
-        dtype,
-        hidden_dim,
-        hidden_dim,
-        weights.attention.k_proj,
-    )
-    wv = _linear(
-        dtype,
-        hidden_dim,
-        hidden_dim,
-        weights.attention.v_proj,
-    )
-    wo = _linear(
-        dtype,
-        hidden_dim,
-        hidden_dim,
-        weights.attention.o_proj,
-    )
+    wq = _linear(dtype, hidden_dim, hidden_dim, weights.attention.q_proj)
+    wk = _linear(dtype, hidden_dim, hidden_dim, weights.attention.k_proj)
+    wv = _linear(dtype, hidden_dim, hidden_dim, weights.attention.v_proj)
+    wo = _linear(dtype, hidden_dim, hidden_dim, weights.attention.o_proj)
 
     return Attention(
         n_heads=huggingface_config.vision_config.num_attention_heads,

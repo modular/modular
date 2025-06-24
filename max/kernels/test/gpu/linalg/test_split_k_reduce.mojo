@@ -14,11 +14,9 @@
 from math import isclose
 from random import rand
 
-from buffer import Dim, DimList, NDBuffer
+from buffer import DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import split_k_reduce
-from linalg.utils_gpu import MatmulConfig
-from memory import UnsafePointer, memcpy
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -103,7 +101,7 @@ def test_split_k_reduce_rank3[
     var c_host = UnsafePointer[Scalar[c_type]].alloc(M * N)
     var c_host_ref = UnsafePointer[Scalar[c_type]].alloc(M * N)
 
-    # Randome buffer for host computation.
+    # Random buffer for host computation.
     var epilogue_data_host = UnsafePointer[Scalar[c_type]].alloc(M * N)
     rand[c_type](epilogue_data_host, M * N)
 

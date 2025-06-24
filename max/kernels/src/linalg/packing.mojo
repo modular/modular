@@ -10,20 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up, ceildiv
-from sys import alignof, has_neon, simdwidthof
+from math import align_down, align_up
+from sys import alignof, simdwidthof
+from sys.info import CompilationTarget
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
-from memory import UnsafePointer, memcpy, stack_allocation
+from memory import memcpy, stack_allocation
 from register import register_internal
 
 from utils.index import Index, IndexList
 
 from .apple_accelerate import use_apple_accelerate_lib
-from .gemv import gemv
 from .transpose import transpose, transpose_inplace
 from .utils import (
     GemmShape,
@@ -39,7 +39,7 @@ from .utils import (
 )
 
 
-@value
+@fieldwise_init
 struct PackMatrixRows[
     original_mut: Bool, //,
     # original matrix shape list
@@ -51,7 +51,7 @@ struct PackMatrixRows[
     row_inner_size: Int,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-]:
+](Copyable, Movable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
@@ -280,7 +280,7 @@ struct PackMatrixRows[
             row_idx += simd_size
 
 
-@value
+@fieldwise_init
 struct PackMatrixCols[
     original_mut: Bool, //,
     # original matrix shape list
@@ -294,7 +294,7 @@ struct PackMatrixCols[
     use_i8mm: Bool,
     packed_origin: MutableOrigin,
     original_origin: Origin[original_mut],
-]:
+](Copyable, Movable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
@@ -412,7 +412,7 @@ struct PackMatrixCols[
 
         @parameter
         if skip_row_bound:
-            if not has_neon():
+            if not CompilationTarget.has_neon():
 
                 @parameter
                 for i in range(unroll_factor):
@@ -881,7 +881,7 @@ fn pack_transposed_b_ndbuffer[
     ](b_input, output_buffer, kernel_type_m)
 
 
-@value
+@fieldwise_init
 struct BTileGenerator[
     mut: Bool, //,
     config: KernelConfig,
@@ -892,7 +892,7 @@ struct BTileGenerator[
     transpose_b: Bool,
     b_packed: Bool,
     origin: Origin[mut],
-]:
+](Copyable, Movable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
     If b_packed is true, calls to get_tile will return a buffer view from B.
@@ -1038,7 +1038,7 @@ struct BTileGenerator[
                 # a bit of trickieness going on here, this works because:
                 #   1. tile_k is the same for every thread (tile_n is not) since threads
                 #       don't currently partition on the K dimension
-                #   2. the n dimension of each thread's tile is gauranteed to be an
+                #   2. the n dimension of each thread's tile is guaranteed to be an
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
                 b_flat.data.offset(

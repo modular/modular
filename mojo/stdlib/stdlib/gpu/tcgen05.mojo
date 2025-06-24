@@ -22,7 +22,7 @@ from sys.info import _has_blackwell_tcgen05
 
 from gpu.memory import AddressSpace, external_memory
 from gpu.mma import _str_iota  # TODO: move to a string module
-from memory import UnsafePointer, bitcast
+from memory import bitcast
 
 from gpu.mma_sm100 import MMASmemDescriptor
 
@@ -144,7 +144,7 @@ fn tcgen05_ld[
         repeat: The repeat factor.
         type: The data type to load.
         pack: Whether to pack two 16-bit chunks of adjacent columns into a single 32-bit register.
-        width: The nubmer elements in the result vector.
+        width: The number elements in the result vector.
 
     Args:
         tmem_addr: The address of the tensor memory to load from.
@@ -159,7 +159,11 @@ fn tcgen05_ld[
         or (datapaths == 16 and bits == 128)
         or (datapaths == 16 and bits == 256)
         or (datapaths == 32 and bits == 32),
-        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b.",
+        "`datapaths`x`bits`b must be 16x64b, 16x128b, 16x256b or 32x32b, got "
+        + String(datapaths)
+        + "x"
+        + String(bits)
+        + "b.",
     ]()
 
     constrained[
@@ -295,7 +299,7 @@ fn tcgen05_st[
     """Stores data from registers into tensor memory.
 
     Parameters:
-        type: The data type to load.
+        type: The data type to store.
         width: The number of elements in the data vector.
         datapaths: The first dimension of the shape.
         bits: The second dimension of the shape.
@@ -337,7 +341,7 @@ fn tcgen05_st[
 
     alias shape_str = String(datapaths) + "x" + String(bits)
     alias num_str = String(repeat)
-    alias pack_str = ".pack::16b" if pack else ""
+    alias pack_str = ".unpack::16b" if pack else ""
     alias constraints_str = "r," * width + "r"
     alias addr_str = "[$" + String(width) + "]"
     alias input_args_str = "{" + _str_iota[width, prefix="$", sep=","]() + "}"

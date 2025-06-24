@@ -22,9 +22,8 @@ from os import listdir
 
 from collections import InlineArray, List
 from sys import external_call, is_gpu, os_is_linux, os_is_windows
-from sys.ffi import OpaquePointer, c_char
+from sys.ffi import c_char
 
-from memory import UnsafePointer
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -290,7 +289,7 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
     if error != 0:
         # TODO get error message, the following code prints it
         # var error_str = String("Something went wrong")
-        # _ = external_call["perror", UnsafePointer[NoneType]](error_str.unsafe_ptr())
+        # _ = external_call["perror", OpaquePointer](error_str.unsafe_ptr())
         # _ = error_str
         raise Error("Can not remove file: " + fspath)
 
@@ -350,7 +349,7 @@ def makedirs[
       mode: The mode to create the directory with.
       exist_ok: Ignore error if `True` and path exists (default `False`).
     """
-    head, tail = split(path)
+    var head, tail = split(path)
     if not tail:
         head, tail = split(head)
     if head and tail and not os.path.exists(head):
@@ -406,7 +405,7 @@ def removedirs[PathLike: os.PathLike](path: PathLike) -> None:
       path: The path to the directory.
     """
     rmdir(path)
-    head, tail = os.path.split(path)
+    var head, tail = os.path.split(path)
     if not tail:
         head, tail = os.path.split(head)
     while head and tail:

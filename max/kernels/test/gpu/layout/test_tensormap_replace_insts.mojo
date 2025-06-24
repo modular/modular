@@ -11,20 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
 from sys import sizeof
 
-from builtin.io import _printf
 from gpu import barrier
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
 from gpu.id import block_idx, thread_idx
 from gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import copy_dram_to_sram, copy_sram_to_dram
+from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -32,12 +29,11 @@ from layout.tma_async import (
     TMATensorTileArray,
     create_tma_tile,
 )
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 from memory.pointer import _GPUAddressSpace
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal
 
 from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
 
 
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
@@ -559,6 +555,7 @@ def main():
         ](ctx)
 
         print("test_tma_replace_global_dim_in_smem_descriptor")
+        print(" - SWIZZLE_NONE")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(16, 8),
@@ -577,6 +574,7 @@ def main():
             ctx,
             Index(0, 9, 16, 25, 29),
         )
+        print(" - SWIZZLE_32B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(29, 16),
@@ -586,6 +584,7 @@ def main():
             ctx,
             Index(0, 9, 16, 25, 29),
         )
+        print(" - SWIZZLE_64B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(29, 32),
@@ -595,6 +594,7 @@ def main():
             ctx,
             Index(0, 9, 16, 25, 29),
         )
+        print(" - SWIZZLE_128B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
             src_layout = Layout.row_major(15, 64),

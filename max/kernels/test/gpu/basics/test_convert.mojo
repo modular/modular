@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from memory import UnsafePointer
+from gpu.host.compile import _compile_code_asm
+from gpu.host import get_gpu_target
 from testing import *
 
 
@@ -29,7 +29,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = _get_gpu_target["sm_80"](),
+            target = get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -38,7 +38,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = _get_gpu_target["mi300x"](),
+            target = get_gpu_target["mi300x"](),
         ]()
     )
 
@@ -47,7 +47,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = _get_gpu_target["sm_80"](),
+            target = get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -56,7 +56,7 @@ def test_convert_asm():
         in _compile_code_asm[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = _get_gpu_target["mi300x"](),
+            target = get_gpu_target["mi300x"](),
         ]()
     )
 
@@ -72,7 +72,7 @@ fn convert_kernel[
 
 
 fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
-    """Test the convertion ptx instruction.
+    """Test the conversion ptx instruction.
 
     We can't verify this just by compilation. The instruction converts two values
      and swaps their reorder, which should be verified by checking runtime results.
@@ -93,5 +93,5 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
 fn main() raises:
     with DeviceContext() as ctx:
         test_convert_asm()
-        # Only support 2xFP32 -> 2xBF16 convertion via ptx.
+        # Only support 2xFP32 -> 2xBF16 conversion via ptx.
         test_convert[DType.float32, DType.bfloat16](ctx)

@@ -14,11 +14,9 @@
 from random import rand, randint
 
 from benchmark import *
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from memory import UnsafePointer
+from buffer.dimlist import Dim
 from nn.gather_scatter import scatter_elements
-from tensor_internal import DynamicTensor, ManagedTensorSlice
+from tensor_internal import DynamicTensor
 
 from utils.index import Index
 
@@ -107,8 +105,8 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
     _ = output_tensor
 
 
-@value
-struct ScatterSpec(Stringable):
+@fieldwise_init
+struct ScatterSpec(Copyable, Movable, Stringable):
     var axis: Int
     var m1: Int
     var m2: Int

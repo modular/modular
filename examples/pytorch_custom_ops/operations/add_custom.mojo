@@ -27,15 +27,15 @@ struct AddConstantCustom[value: Int]:
     fn execute[
         target: StaticString,
     ](
-        out: OutputTensor,
-        x: InputTensor[type = out.type, rank = out.rank],
+        outp: OutputTensor,
+        x: InputTensor[dtype = outp.dtype, rank = outp.rank],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
         fn add_constant[
             width: Int
-        ](idx: IndexList[x.rank]) -> SIMD[x.type, width]:
+        ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + value
 
-        foreach[add_constant, target=target](out, ctx)
+        foreach[add_constant, target=target](outp, ctx)

@@ -29,8 +29,10 @@ from .hf_utils import (
     generate_local_model_path,
     repo_exists_with_retry,
 )
+from .lora import LoRAManager
 from .max_config import (
     KVCacheConfig,
+    LoRAConfig,
     ProfilingConfig,
     SamplingConfig,
 )
@@ -47,7 +49,11 @@ from .pipeline import (
 )
 from .ragged_token_merger import ragged_token_merger
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
-from .sampling import rejection_sampler, token_sampler
+from .sampling import (
+    rejection_sampler,
+    rejection_sampler_with_residuals,
+    token_sampler,
+)
 from .speculative_decoding import SpeculativeDecodingTextGenerationPipeline
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
@@ -68,6 +74,8 @@ __all__ = [
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
     "KVCacheMixin",
+    "LoRAConfig",
+    "LoRAManager",
     "MAXModelConfig",
     "MAXModelConfigBase",
     "MEMORY_ESTIMATOR",
@@ -83,6 +91,7 @@ __all__ = [
     "ProfilingConfig",
     "ragged_token_merger",
     "rejection_sampler",
+    "rejection_sampler_with_residuals",
     "repo_exists_with_retry",
     "RepoType",
     "RopeType",

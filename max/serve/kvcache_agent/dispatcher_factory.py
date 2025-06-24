@@ -21,7 +21,7 @@ Client Side:                    Server Side:
 └─────────┬───────┘            └─────────┬───────┘
           │                              │
 ┌─────────▼───────┐            ┌─────────▼───────┐
-│ DispatcherService│            │DispatcherService│
+│DispatcherService│            │DispatcherService│
 │   (transport)   │◄──────────►│   (transport)   │
 └─────────────────┘            └─────────────────┘
 """
@@ -32,25 +32,28 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Generic, Optional
 
 import zmq
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
-from max.serve.kvcache_agent.dispatcher_service import DispatcherService
+from max.serve.kvcache_agent.dispatcher_service import (
+    DispatcherMessagePayload,
+    DispatcherService,
+)
 from max.serve.kvcache_agent.dispatcher_transport import (
     DispatcherTransport,
     DynamicZmqTransport,
 )
 from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 class TransportType(Enum):
     DYNAMIC_ZMQ = "dynamic_zmq"
 
 
-class TransportFactory:
+class TransportFactory(Generic[DispatcherMessagePayload]):
     """
     Factory class for creating transport instances.
 
@@ -70,18 +73,20 @@ class TransportFactory:
     def create_dynamic_zmq_transport(
         zmq_ctx: zmq.Context,
         config: DynamicZmqTransportConfig,
-    ) -> DynamicZmqTransport:
+        payload_type: Any,
+    ) -> DynamicZmqTransport[DispatcherMessagePayload]:
         """
         Create a dynamic ZMQ transport for N:M communication patterns.
         """
         logger.debug(
             f"Creating DynamicZmqTransport: bind_address={config.bind_address}, instance_id={config.instance_id}"
         )
-        return DynamicZmqTransport(
+        return DynamicZmqTransport[DispatcherMessagePayload](
             zmq_ctx=zmq_ctx,
             bind_address=config.bind_address,
             instance_id=config.instance_id,
             default_destination_address=config.default_destination_address,
+            payload_type=payload_type,
         )
 
     @classmethod
@@ -90,6 +95,7 @@ class TransportFactory:
         transport_type: TransportType,
         config: DynamicZmqTransportConfig,
         zmq_ctx: zmq.Context,
+        payload_type: Any,
     ) -> DispatcherTransport:
         """
         Create transport instance from configuration object.
@@ -97,8 +103,7 @@ class TransportFactory:
         if transport_type == TransportType.DYNAMIC_ZMQ:
             assert isinstance(config, cls.DynamicZmqTransportConfig)
             return cls.create_dynamic_zmq_transport(
-                zmq_ctx=zmq_ctx,
-                config=config,
+                zmq_ctx=zmq_ctx, config=config, payload_type=payload_type
             )
 
 
@@ -115,7 +120,7 @@ class DispatcherConfig:
     )
 
 
-class DispatcherFactory:
+class DispatcherFactory(Generic[DispatcherMessagePayload]):
     """
     Simple factory for creating dispatcher servers and clients.
 
@@ -124,37 +129,44 @@ class DispatcherFactory:
     """
 
     def __init__(
-        self,
-        config: DispatcherConfig,
-    ):
+        self, config: DispatcherConfig, transport_payload_type: Any
+    ) -> None:
         """
         Initialize factory with a transport instance.
         """
         self._config = config
         self._service_to_client = generate_zmq_ipc_path()
         self._client_to_service = generate_zmq_ipc_path()
+        self._transport_payload_type = transport_payload_type
 
-    def create_service(self, zmq_ctx: zmq.Context) -> DispatcherService:
+    def create_service(
+        self, zmq_ctx: zmq.Context
+    ) -> DispatcherService[DispatcherMessagePayload]:
         """
         Create a dispatcher service using the provided ZMQ context.
         """
-        transport = TransportFactory.create_transport_from_config(
+        transport = TransportFactory[
+            DispatcherMessagePayload
+        ].create_transport_from_config(
             transport_type=self._config.transport,
             config=self._config.transport_config,
             zmq_ctx=zmq_ctx,
+            payload_type=self._transport_payload_type,
         )
-        return DispatcherService(
+        return DispatcherService[DispatcherMessagePayload](
             zmq_ctx=zmq_ctx,
             send_endpoint=self._service_to_client,
             recv_endpoint=self._client_to_service,
             transport=transport,
         )
 
-    def create_client(self, zmq_ctx: zmq.Context) -> DispatcherClient:
+    def create_client(
+        self, zmq_ctx: zmq.Context
+    ) -> DispatcherClient[DispatcherMessagePayload]:
         """
         Create a dispatcher client using the provided ZMQ context.
         """
-        return DispatcherClient(
+        return DispatcherClient[DispatcherMessagePayload](
             zmq_ctx=zmq_ctx,
             send_endpoint=self._client_to_service,
             recv_endpoint=self._service_to_client,

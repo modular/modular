@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
+from sys import alignof
 
-from gpu import WARP_SIZE, barrier
+from gpu import barrier
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import TensorMapSwizzle
 from gpu.id import block_idx, thread_idx
@@ -26,18 +25,13 @@ from gpu.memory import (
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.element import Element, MemoryElement
-from layout.int_tuple import IntTuple, product
 from layout.layout_tensor import (
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
     cp_async_k_major,
     cp_async_mn_major,
 )
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
+from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
     tile_layout_mn_major,
     wgmma_c_layout,
 )
@@ -46,7 +40,6 @@ from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 
 fn cpasync_wgmma_kernel[

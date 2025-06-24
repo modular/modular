@@ -216,7 +216,7 @@ def test_iter():
     assert_equal(sum, 0)
 
     sum = 0
-    for var e in {1, 2, 3}:
+    for e in {1, 2, 3}:
         sum += e
 
     assert_equal(sum, 6)

@@ -14,7 +14,7 @@
 from layout import *
 from layout.layout import Layout
 from layout.swizzle import ComposedLayout, Swizzle
-from testing import assert_equal, assert_not_equal
+from testing import assert_equal
 
 
 fn test_composed_layout() raises:

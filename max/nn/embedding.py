@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Optional
 
@@ -131,11 +132,7 @@ class Embedding(Module):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        result = ops.gather(
-            TensorValue(self.weight),
-            indices,
-            axis=0,
-        )
+        result = ops.gather(TensorValue(self.weight), indices, axis=0)
         if self.weight.quantization_encoding is not None:
             result = ops.dequantize(self.weight.quantization_encoding, result)
         return result
@@ -204,7 +201,7 @@ class VocabParallelEmbedding(Module):
         self.allreduce = Allreduce(num_accelerators=self.num_devices)
 
     def __call__(
-        self, indices: TensorValueLike, signal_buffers: list[BufferValue]
+        self, indices: TensorValueLike, signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
         """Embeds the input indices by looking up corresponding vectors.
 
@@ -254,11 +251,7 @@ class VocabParallelEmbedding(Module):
         # Apply mask to avoid searching for out-of-bound tokens
         indices *= input_mask
 
-        result = ops.gather(
-            embedding_shard,
-            indices,
-            axis=0,
-        )
+        result = ops.gather(embedding_shard, indices, axis=0)
         if self.weight.quantization_encoding is not None:
             result = ops.dequantize(self.weight.quantization_encoding, result)
         result *= ops.cast(

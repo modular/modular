@@ -11,26 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
 from collections import InlineArray
 from math import floor
 from sys import env_get_dtype, env_get_int, sizeof
 
 from benchmark import (
     Bench,
-    BenchConfig,
     Bencher,
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    keep,
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.comm.allreduce import MAX_GPUS, Signal, allreduce, can_enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils.index import IndexList, StaticTuple

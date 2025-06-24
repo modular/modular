@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: max/tutorials/build-an-mlp-block.mdx
+
 from __future__ import annotations
 
 from typing import Any, Callable, Optional
@@ -79,7 +81,7 @@ class MLPBlock(nn.Module):
 
         # Count different layer types
         linear_count = sum(
-            1 for layer in layers if isinstance(layer, nn.Linear)
+            1 for layer in layers if layer.__class__.__name__ == "Linear"
         )
         activation_count = len(layers) - linear_count
 

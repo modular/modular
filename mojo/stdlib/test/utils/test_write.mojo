@@ -24,7 +24,7 @@ from utils.write import (
 
 
 @fieldwise_init
-struct Point(Writable, Stringable):
+struct Point(Stringable, Writable):
     var x: Int
     var y: Int
 

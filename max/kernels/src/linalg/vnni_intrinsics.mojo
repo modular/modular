@@ -17,7 +17,7 @@
 # ===-----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
-from sys.info import has_vnni
+from sys import CompilationTarget
 
 from memory.unsafe import bitcast
 
@@ -476,7 +476,7 @@ fn dot_i8_to_i32_x86[
     """
 
     @parameter
-    if has_vnni():
+    if CompilationTarget.has_vnni():
         return vpdpbusd(src, a, b)
     else:
         return dot_i8_to_i32_AVX2(src, a, b)
@@ -512,7 +512,7 @@ fn dot_i8_to_i32_saturated_x86[
     """
 
     @parameter
-    if has_vnni():
+    if CompilationTarget.has_vnni():
         return vpdpbusd(src, a, b)
     else:
         return dot_i8_to_i32_saturated_AVX2(src, a, b)
@@ -594,7 +594,7 @@ fn dot_i16_to_i32_x86[
     """
 
     @parameter
-    if has_vnni():
+    if CompilationTarget.has_vnni():
         return vpdpwssd(src, a, b)
     else:
         return dot_i16_to_i32_AVX2(src, a, b)

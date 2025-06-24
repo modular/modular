@@ -13,7 +13,6 @@
 from buffer import NDBuffer
 from kv_cache.types import KVCacheT
 from layout.layout import DimList
-from memory import UnsafePointer
 
 
 @register_passable("trivial")

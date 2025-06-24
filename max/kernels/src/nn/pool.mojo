@@ -14,19 +14,22 @@
 from sys.info import simdwidthof
 
 from algorithm import stencil, stencil_gpu
-from buffer import NDBuffer
 from gpu.host import DeviceContext
+from gpu.host.info import is_cpu, is_gpu
+from layout import LayoutTensor, RuntimeTuple
+from layout.int_tuple import fill_like
 
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
+from runtime.asyncrt import DeviceContextPtr
 
 from .shapes import get_sliding_window_out_dim
 
 
 # Pooling method.
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct PoolMethod:
+struct PoolMethod(Copyable, Movable):
     var value: Int
     alias MAX = PoolMethod(0)  # Max pooling.
     alias AVG = PoolMethod(1)  # Average pooling not counting padded regions.
@@ -42,7 +45,6 @@ struct PoolMethod:
 
 @always_inline
 fn pool_shape_ceil[
-    input_rank: Int,
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -50,14 +52,13 @@ fn pool_shape_ceil[
     paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[input_type, input_rank],
-    filter_buf: NDBuffer[filter_type, 1],
-    strides_buf: NDBuffer[strides_type, 1],
-    dilations_buf: NDBuffer[dilations_type, 1],
-    paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> IndexList[input_rank]:
+    input_buf: LayoutTensor[input_type, **_],
+    filter_buf: LayoutTensor[filter_type, **_],
+    strides_buf: LayoutTensor[strides_type, **_],
+    dilations_buf: LayoutTensor[dilations_type, **_],
+    paddings_buf: LayoutTensor[paddings_type, **_],
+) raises -> IndexList[input_buf.rank]:
     return pool_shape_impl[
-        input_rank,
         input_type,
         filter_type,
         strides_type,
@@ -70,7 +71,6 @@ fn pool_shape_ceil[
 
 @always_inline
 fn pool_shape[
-    input_rank: Int,
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -78,14 +78,13 @@ fn pool_shape[
     paddings_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[input_type, input_rank],
-    filter_buf: NDBuffer[filter_type, 1],
-    strides_buf: NDBuffer[strides_type, 1],
-    dilations_buf: NDBuffer[dilations_type, 1],
-    paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> IndexList[input_rank]:
+    input_buf: LayoutTensor[input_type, **_],
+    filter_buf: LayoutTensor[filter_type, **_],
+    strides_buf: LayoutTensor[strides_type, **_],
+    dilations_buf: LayoutTensor[dilations_type, **_],
+    paddings_buf: LayoutTensor[paddings_type, **_],
+) raises -> IndexList[input_buf.rank]:
     return pool_shape_impl[
-        input_rank,
         input_type,
         filter_type,
         strides_type,
@@ -98,7 +97,6 @@ fn pool_shape[
 
 @always_inline
 fn pool_shape_impl[
-    input_rank: Int,
     input_type: DType,
     filter_type: DType,
     strides_type: DType,
@@ -107,18 +105,17 @@ fn pool_shape_impl[
     single_thread_blocking_override: Bool,
     ceil_mode: Bool,
 ](
-    input_buf: NDBuffer[input_type, input_rank],
-    filter_buf: NDBuffer[filter_type, 1],
-    strides_buf: NDBuffer[strides_type, 1],
-    dilations_buf: NDBuffer[dilations_type, 1],
-    paddings_buf: NDBuffer[paddings_type, 1],
-) raises -> IndexList[input_rank]:
+    input_buf: LayoutTensor[input_type, **_],
+    filter_buf: LayoutTensor[filter_type, **_],
+    strides_buf: LayoutTensor[strides_type, **_],
+    dilations_buf: LayoutTensor[dilations_type, **_],
+    paddings_buf: LayoutTensor[paddings_type, **_],
+) raises -> IndexList[input_buf.rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
     compatible. Works for 2D pool operations only in the NHWC format.
 
     Parameters:
-        input_rank: Rank of the input tensor.
         input_type: Type of the input tensor.
         filter_type: Type of the filter tensor.
         strides_type: Type of the strides tensor.
@@ -138,20 +135,20 @@ fn pool_shape_impl[
     Returns:
         The output shape.
     """
-    if input_rank != 4:
+    if input_buf.rank != 4:
         raise Error("[pooling] requires (input_rank == 4)")
 
     if (
-        filter_buf.dim(0) != input_rank - 2
-        or strides_buf.dim(0) != input_rank - 2
-        or dilations_buf.dim(0) != input_rank - 2
+        filter_buf.dim(0) != input_buf.rank - 2
+        or strides_buf.dim(0) != input_buf.rank - 2
+        or dilations_buf.dim(0) != input_buf.rank - 2
     ):
         raise Error(
             "[pooling] requires (len(filter) == len(strides) == len(dilations)"
             " == input rank - 2)"
         )
 
-    if paddings_buf.dim(0) != 2 * (input_rank - 2):
+    if paddings_buf.dim(0) != 2 * (input_buf.rank - 2):
         raise Error(
             "[pooling] requires (len(paddings) == 2 * (input rank - 2))"
         )
@@ -159,12 +156,12 @@ fn pool_shape_impl[
     # Assume input has layout NHWC
     var batch_size = input_buf.dim(0)
     var input_channels = input_buf.dim(3)
-    var output_shape = IndexList[input_rank]()
+    var output_shape = IndexList[input_buf.rank]()
     output_shape[0] = batch_size
-    output_shape[input_rank - 1] = input_channels
+    output_shape[input_buf.rank - 1] = input_channels
 
     @parameter
-    for i in range(0, input_rank - 2):
+    for i in range(0, input_buf.rank - 2):
         var input_spatial_dim = Int(input_buf.dim(i + 1))
         var filter = Int(filter_buf[i])
         var stride = Int(strides_buf[i])
@@ -181,15 +178,15 @@ fn pool_shape_impl[
 
 
 @always_inline
-fn max_pool[
-    type: DType, int_type: DType, rank: Int = 4
+fn max_pool_cpu[
+    type: DType, int_type: DType
 ](
-    input: NDBuffer[type, rank],
-    filter: NDBuffer[int_type, 1],
-    strides: NDBuffer[int_type, 1],
-    dilations: NDBuffer[int_type, 1],
-    paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[mut=True, type, rank],
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
     ceil_mode: Bool = False,
 ):
     """Computes fp32 pooling.
@@ -230,7 +227,9 @@ fn max_pool[
     var dilation_w = Int(dilations[1])
 
     alias stencil_rank = 2
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[
+        stencil_rank, element_type = output.layout_int_type
+    ](1, 2)
 
     @always_inline
     @__copy_capture(
@@ -246,9 +245,9 @@ fn max_pool[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank]) -> (
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
+    ](point: IndexList[stencil_rank, **_]) -> (
+        IndexList[stencil_rank, **_],
+        IndexList[stencil_rank, **_],
     ):
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride_h - padding_h_low,
@@ -264,9 +263,23 @@ fn max_pool[
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
-    ](point: IndexList[rank]) -> SIMD[type, simd_width]:
+    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        var indices = IndexList[
+            output.rank, element_type = input.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = input.runtime_layout(
+            RuntimeTuple[
+                fill_like(input.layout.shape, 1),
+                element_type = input.layout_int_type,
+            ](indices)
+        )
         return rebind[SIMD[type, simd_width]](
-            input.load[width=simd_width](point)
+            input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
@@ -279,7 +292,7 @@ fn max_pool[
     fn max_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank],
+        point: IndexList[output.rank, **_],
         val: SIMD[type, simd_width],
         result: SIMD[type, simd_width],
     ) -> SIMD[type, simd_width]:
@@ -289,8 +302,23 @@ fn max_pool[
     @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank], val: SIMD[type, simd_width]):
-        output.store(point, val)
+    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+        var indices = IndexList[
+            output.rank, element_type = output.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = output.runtime_layout(
+            RuntimeTuple[
+                fill_like(output.layout.shape, 1),
+                element_type = output.layout_int_type,
+            ](indices)
+        )
+
+        output.ptr.store(i, val)
 
     @always_inline
     @parameter
@@ -298,7 +326,7 @@ fn max_pool[
         return Int(dilations[dim])
 
     alias stencil_with_padding = stencil[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -312,7 +340,7 @@ fn max_pool[
     ]
 
     alias stencil_empty_padding = stencil[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -327,22 +355,36 @@ fn max_pool[
     # ceil_mode = True implies padding to the right/bottom with neginfinity
     # value, so in that case we use stencil_with_padding
     if empty_padding and not ceil_mode:
-        return stencil_empty_padding(output.get_shape(), input.get_shape())
+        return stencil_empty_padding(
+            rebind[
+                IndexList[output.rank, element_type = output.layout_int_type]
+            ](output.runtime_layout.shape.value),
+            rebind[
+                IndexList[output.rank, element_type = input.layout_int_type]
+            ](input.runtime_layout.shape.value),
+        )
     else:
-        return stencil_with_padding(output.get_shape(), input.get_shape())
+        return stencil_with_padding(
+            rebind[
+                IndexList[output.rank, element_type = output.layout_int_type]
+            ](output.runtime_layout.shape.value),
+            rebind[
+                IndexList[output.rank, element_type = input.layout_int_type]
+            ](input.runtime_layout.shape.value),
+        )
 
 
 @always_inline
 fn max_pool_gpu[
-    type: DType, int_type: DType, rank: Int = 4
+    type: DType, int_type: DType
 ](
     ctx: DeviceContext,
-    input: NDBuffer[type, rank],
-    filter: NDBuffer[int_type, 1],
-    strides: NDBuffer[int_type, 1],
-    dilations: NDBuffer[int_type, 1],
-    paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[mut=True, type, rank],
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
     ceil_mode: Bool = False,
 ) raises:
     """Computes max pooling on GPU.
@@ -382,11 +424,13 @@ fn max_pool_gpu[
 
     var dilation_h = Int(dilations[0])
     var dilation_w = Int(dilations[1])
-    if dilations.get_shape().flattened_length() > 2:
+    if dilations.runtime_layout.shape.value.flattened_length() > 2:
         raise Error("Dilation not supported for size > 2")
 
     alias stencil_rank = 2
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[
+        stencil_rank, element_type = output.layout_int_type
+    ](1, 2)
 
     @always_inline
     @__copy_capture(
@@ -402,7 +446,7 @@ fn max_pool_gpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> (
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ):
@@ -420,9 +464,23 @@ fn max_pool_gpu[
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
-    ](point: IndexList[rank]) -> SIMD[type, simd_width]:
+    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        var indices = IndexList[
+            output.rank, element_type = input.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = input.runtime_layout(
+            RuntimeTuple[
+                fill_like(input.layout.shape, 1),
+                element_type = input.layout_int_type,
+            ](indices)
+        )
         return rebind[SIMD[type, simd_width]](
-            input.load[width=simd_width](point)
+            input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
@@ -435,7 +493,7 @@ fn max_pool_gpu[
     fn max_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank],
+        point: IndexList[output.rank, **_],
         val: SIMD[type, simd_width],
         result: SIMD[type, simd_width],
     ) -> SIMD[type, simd_width]:
@@ -445,8 +503,22 @@ fn max_pool_gpu[
     @parameter
     fn max_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank], val: SIMD[type, simd_width]):
-        output.store(point, val)
+    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
+        var indices = IndexList[
+            output.rank, element_type = input.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = output.runtime_layout(
+            RuntimeTuple[
+                fill_like(output.layout.shape, 1),
+                element_type = output.layout_int_type,
+            ](indices)
+        )
+        output.ptr.store(i, val)
 
     @always_inline
     @__copy_capture(
@@ -461,7 +533,7 @@ fn max_pool_gpu[
             return dilation_w
 
     alias stencil_gpu_fn = stencil_gpu[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -473,22 +545,30 @@ fn max_pool_gpu[
         max_pool_compute,
         max_pool_compute_finalize,
     ]
-    return stencil_gpu_fn(ctx, output.get_shape(), input.get_shape())
+    return stencil_gpu_fn(
+        ctx,
+        rebind[IndexList[output.rank, element_type = output.layout_int_type]](
+            output.runtime_layout.shape.value
+        ),
+        rebind[IndexList[output.rank, element_type = input.layout_int_type]](
+            input.runtime_layout.shape.value
+        ),
+    )
 
 
 @always_inline
-fn avg_pool[
+fn avg_pool_cpu[
     type: DType,
     int_type: DType,
     rank: Int = 4,
     count_boundary: Bool = False,
 ](
-    input: NDBuffer[type, rank],
-    filter: NDBuffer[int_type, 1],
-    strides: NDBuffer[int_type, 1],
-    dilations: NDBuffer[int_type, 1],
-    paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[mut=True, type, rank],
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
     ceil_mode: Bool = False,
 ):
     """Computes the average pool.
@@ -543,8 +623,8 @@ fn avg_pool[
 
     alias simd_width = simdwidthof[type]()
 
-    var output_height = output.dim(1)
-    var output_width = output.dim(2)
+    var output_height = output.dim[1]()
+    var output_width = output.dim[2]()
 
     var pool_window_h = Int(filter[0])
     var pool_window_w = Int(filter[1])
@@ -556,7 +636,9 @@ fn avg_pool[
     var dilation_w = Int(dilations[1])
 
     alias stencil_rank = 2
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[
+        stencil_rank, element_type = output.layout_int_type
+    ](1, 2)
 
     @always_inline
     @__copy_capture(
@@ -573,7 +655,7 @@ fn avg_pool[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> (
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ):
@@ -591,9 +673,24 @@ fn avg_pool[
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
-    ](point: IndexList[rank]) -> SIMD[type, simd_width]:
+    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        var indices = IndexList[
+            output.rank, element_type = input.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = input.runtime_layout(
+            RuntimeTuple[
+                fill_like(input.layout.shape, 1),
+                element_type = input.layout_int_type,
+            ](indices)
+        )
+
         return rebind[SIMD[type, simd_width]](
-            input.load[width=simd_width](point)
+            input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
@@ -606,7 +703,7 @@ fn avg_pool[
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank],
+        point: IndexList[output.rank, **_],
         val: SIMD[type, simd_width],
         result: SIMD[type, simd_width],
     ) -> SIMD[type, simd_width]:
@@ -639,7 +736,7 @@ fn avg_pool[
     @parameter
     fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
-    ](point: IndexList[rank], val: SIMD[type, simd_width]):
+    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
         var window_h = pool_dim_size(
             point[1],
             output_height,
@@ -651,16 +748,46 @@ fn avg_pool[
             point[2], output_width, padding_w_low, padding_w_high, pool_window_w
         )
         var res = val / (window_h * window_w)
-        output.store(point, res)
+
+        var indices = IndexList[
+            output.rank, element_type = output.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = output.runtime_layout(
+            RuntimeTuple[
+                fill_like(output.layout.shape, 1),
+                element_type = output.layout_int_type,
+            ](indices)
+        )
+
+        output.ptr.store(i, res)
 
     @always_inline
     @__copy_capture(pool_window_h, pool_window_w)
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank], val: SIMD[type, simd_width]):
+    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
         var res = val / (pool_window_h * pool_window_w)
-        output.store(point, res)
+        var indices = IndexList[
+            output.rank, element_type = output.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = output.runtime_layout(
+            RuntimeTuple[
+                fill_like(output.layout.shape, 1),
+                element_type = output.layout_int_type,
+            ](indices)
+        )
+        output.ptr.store(i, res)
 
     @always_inline
     @parameter
@@ -668,7 +795,7 @@ fn avg_pool[
         return Int(dilations[dim])
 
     alias stencil_with_padding = stencil[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -682,7 +809,7 @@ fn avg_pool[
     ]
 
     alias stencil_with_padding_count_exclude_boundary = stencil[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -696,7 +823,7 @@ fn avg_pool[
     ]
 
     alias stencil_empty_padding = stencil[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -710,15 +837,38 @@ fn avg_pool[
     ]
 
     if empty_padding and not ceil_mode:
-        return stencil_empty_padding(output.get_shape(), input.get_shape())
+        return stencil_empty_padding(
+            rebind[
+                IndexList[output.rank, element_type = output.layout_int_type]
+            ](output.runtime_layout.shape.value),
+            rebind[
+                IndexList[output.rank, element_type = input.layout_int_type]
+            ](input.runtime_layout.shape.value),
+        )
     else:
 
         @parameter
         if count_boundary:
-            return stencil_with_padding(output.get_shape(), input.get_shape())
+            return stencil_with_padding(
+                rebind[
+                    IndexList[
+                        output.rank, element_type = output.layout_int_type
+                    ]
+                ](output.runtime_layout.shape.value),
+                rebind[
+                    IndexList[output.rank, element_type = input.layout_int_type]
+                ](input.runtime_layout.shape.value),
+            )
         else:
             return stencil_with_padding_count_exclude_boundary(
-                output.get_shape(), input.get_shape()
+                rebind[
+                    IndexList[
+                        output.rank, element_type = output.layout_int_type
+                    ]
+                ](output.runtime_layout.shape.value),
+                rebind[
+                    IndexList[output.rank, element_type = input.layout_int_type]
+                ](input.runtime_layout.shape.value),
             )
 
 
@@ -726,16 +876,15 @@ fn avg_pool[
 fn avg_pool_gpu[
     type: DType,
     int_type: DType,
-    rank: Int = 4,
     count_boundary: Bool = False,
 ](
     ctx: DeviceContext,
-    input: NDBuffer[type, rank],
-    filter: NDBuffer[int_type, 1],
-    strides: NDBuffer[int_type, 1],
-    dilations: NDBuffer[int_type, 1],
-    paddings: NDBuffer[int_type, 1],
-    output: NDBuffer[mut=True, type, rank],
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
     ceil_mode: Bool = False,
 ) raises:
     """Computes the average pool on GPU.
@@ -802,11 +951,13 @@ fn avg_pool_gpu[
 
     var dilation_h = Int(dilations[0])
     var dilation_w = Int(dilations[1])
-    if dilations.get_shape().flattened_length() > 2:
+    if dilations.runtime_layout.shape.value.flattened_length() > 2:
         raise Error("Dilation not supported for size > 2")
 
     alias stencil_rank = 2
-    alias stencil_axis = IndexList[stencil_rank](1, 2)
+    alias stencil_axis = IndexList[
+        stencil_rank, element_type = output.layout_int_type
+    ](1, 2)
 
     @always_inline
     @__copy_capture(
@@ -823,7 +974,7 @@ fn avg_pool_gpu[
     @parameter
     fn map_fn[
         rank: Int
-    ](point: IndexList[stencil_rank]) -> (
+    ](point: IndexList[stencil_rank, **_]) -> (
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ):
@@ -841,9 +992,23 @@ fn avg_pool_gpu[
     @parameter
     fn load_fn[
         simd_width: Int, type: DType
-    ](point: IndexList[rank]) -> SIMD[type, simd_width]:
+    ](point: IndexList[output.rank, **_]) -> SIMD[type, simd_width]:
+        var indices = IndexList[
+            output.rank, element_type = input.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = input.runtime_layout(
+            RuntimeTuple[
+                fill_like(input.layout.shape, 1),
+                element_type = input.layout_int_type,
+            ](indices)
+        )
         return rebind[SIMD[type, simd_width]](
-            input.load[width=simd_width](point)
+            input.ptr.load[width=simd_width](i)
         )
 
     @always_inline
@@ -856,7 +1021,7 @@ fn avg_pool_gpu[
     fn avg_pool_compute[
         simd_width: Int
     ](
-        point: IndexList[rank],
+        point: IndexList[output.rank, **_],
         val: SIMD[type, simd_width],
         result: SIMD[type, simd_width],
     ) -> SIMD[type, simd_width]:
@@ -889,7 +1054,7 @@ fn avg_pool_gpu[
     @parameter
     fn avg_pool_compute_finalize_exclude_boundary[
         simd_width: Int
-    ](point: IndexList[rank], val: SIMD[type, simd_width]):
+    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
         var window_h = pool_dim_size(
             point[1],
             output_height,
@@ -901,16 +1066,44 @@ fn avg_pool_gpu[
             point[2], output_width, padding_w_low, padding_w_high, pool_window_w
         )
         var res = val / (window_h * window_w)
-        output.store(point, res)
+        var indices = IndexList[
+            output.rank, element_type = output.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = output.runtime_layout(
+            RuntimeTuple[
+                fill_like(output.layout.shape, 1),
+                element_type = output.layout_int_type,
+            ](indices)
+        )
+        output.ptr.store(i, res)
 
     @always_inline
     @__copy_capture(pool_window_h, pool_window_w)
     @parameter
     fn avg_pool_compute_finalize[
         simd_width: Int
-    ](point: IndexList[rank], val: SIMD[type, simd_width]):
+    ](point: IndexList[output.rank, **_], val: SIMD[type, simd_width],):
         var res = val / (pool_window_h * pool_window_w)
-        output.store(point, res)
+        var indices = IndexList[
+            output.rank, element_type = output.layout_int_type
+        ]()
+
+        @parameter
+        for i in range(output.rank):
+            indices[i] = point[i]
+
+        var i = output.runtime_layout(
+            RuntimeTuple[
+                fill_like(output.layout.shape, 1),
+                element_type = output.layout_int_type,
+            ](indices)
+        )
+        output.ptr.store(i, res)
 
     @always_inline
     @__copy_capture(
@@ -925,7 +1118,7 @@ fn avg_pool_gpu[
             return dilation_w
 
     alias stencil_gpu_fn = stencil_gpu[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -939,7 +1132,7 @@ fn avg_pool_gpu[
     ]
 
     alias stencil_gpu_count_exclude_boundary = stencil_gpu[
-        rank,
+        output.rank,
         stencil_rank,
         stencil_axis,
         simd_width,
@@ -953,13 +1146,98 @@ fn avg_pool_gpu[
     ]
 
     if empty_padding and not ceil_mode:
-        return stencil_gpu_fn(ctx, output.get_shape(), input.get_shape())
+        return stencil_gpu_fn(
+            ctx,
+            rebind[
+                IndexList[output.rank, element_type = output.layout_int_type]
+            ](output.runtime_layout.shape.value),
+            rebind[
+                IndexList[output.rank, element_type = input.layout_int_type]
+            ](input.runtime_layout.shape.value),
+        )
     else:
 
         @parameter
         if count_boundary:
-            return stencil_gpu_fn(ctx, output.get_shape(), input.get_shape())
+            return stencil_gpu_fn(
+                ctx,
+                rebind[
+                    IndexList[
+                        output.rank, element_type = output.layout_int_type
+                    ]
+                ](output.runtime_layout.shape.value),
+                rebind[
+                    IndexList[output.rank, element_type = input.layout_int_type]
+                ](input.runtime_layout.shape.value),
+            )
         else:
             return stencil_gpu_count_exclude_boundary(
-                ctx, output.get_shape(), input.get_shape()
+                ctx,
+                rebind[
+                    IndexList[
+                        output.rank, element_type = output.layout_int_type
+                    ]
+                ](output.runtime_layout.shape.value),
+                rebind[
+                    IndexList[output.rank, element_type = input.layout_int_type]
+                ](input.runtime_layout.shape.value),
             )
+
+
+@always_inline
+fn avg_pool[
+    type: DType,
+    int_type: DType,
+    count_boundary: Bool = False,
+    target: StaticString = "cpu",
+](
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
+    ceil_mode: Bool = False,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    @parameter
+    if is_cpu[target]():
+        avg_pool_cpu[count_boundary=count_boundary](
+            input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
+        avg_pool_gpu[count_boundary=count_boundary](
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    else:
+        constrained[False, String("Unknown target ") + target]()
+
+
+@always_inline
+fn max_pool[
+    type: DType,
+    int_type: DType,
+    target: StaticString = "cpu",
+](
+    input: LayoutTensor[type, **_],
+    filter: LayoutTensor[int_type, **_],
+    strides: LayoutTensor[int_type, **_],
+    dilations: LayoutTensor[int_type, **_],
+    paddings: LayoutTensor[int_type, **_],
+    output: LayoutTensor[mut=True, type, **_],
+    ceil_mode: Bool = False,
+    ctx_ptr: DeviceContextPtr = DeviceContextPtr(),
+) raises:
+    @parameter
+    if is_cpu[target]():
+        max_pool_cpu(
+            input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    elif is_gpu[target]():
+        ctx = ctx_ptr.get_device_context()
+        max_pool_gpu(
+            ctx, input, filter, strides, dilations, paddings, output, ceil_mode
+        )
+    else:
+        constrained[False, String("Unknown target ") + target]()

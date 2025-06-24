@@ -63,9 +63,7 @@ class TransformerBlock(Layer):
             self.residual_multiplier, x.dtype, device=DeviceRef.CPU()
         )
         attn_out = self.attention(
-            self.attention_norm(x),
-            attention_mask,
-            position_embeddings,
+            self.attention_norm(x), attention_mask, position_embeddings
         )
 
         if self.residual_multiplier != 1.0:

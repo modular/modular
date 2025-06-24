@@ -30,7 +30,7 @@ def test_explicit_conformance():
 
 
 @fieldwise_init
-struct Cat:
+struct Cat(Representable):
     var name: String
     var age: Int
 

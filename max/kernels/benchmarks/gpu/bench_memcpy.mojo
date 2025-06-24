@@ -13,13 +13,12 @@
 
 from math import floor, iota
 from os import abort
-from sys import env_get_int, sizeof
+from sys import sizeof
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse
-from memory import UnsafePointer
 from testing import assert_almost_equal, assert_true
 
 from utils import IndexList
@@ -51,8 +50,8 @@ fn _human_memory(size: Int) -> String:
     return String(size) + "B"
 
 
-@value
-struct Config(Writable):
+@fieldwise_init
+struct Config(Copyable, Movable, Writable):
     var direction: Int
     var pinned_memory: Bool
     # Definitions for direction field.

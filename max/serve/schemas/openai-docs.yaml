@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: MAX Serve API reference
+  title: MAX REST API reference
   description: |
 
-    MAX Serve is a high-performance, Python-based inference server for
+    MAX is a high-performance, Python-based inference server for
     deploying large language models (LLMs) locally or in the cloud. It provides
     efficient request handling through advanced batching and scheduling, and
     an OpenAI-compatible REST endpoint.
@@ -16,18 +16,18 @@ info:
 
     When you want to deploy your model to a cloud-hosted endpoint, you can use
     our [MAX container](/max/container)—see our [Get started with
-    MAX](/max/get-started) and then see our tutorials on using MAX Serve:
+    MAX](/max/get-started) and then see our tutorials on using MAX:
 
     - [Start a chat endpoint](/max/tutorials/start-a-chat-endpoint)
-    - [Run embeddings with MAX Serve](/max/tutorials/run-embeddings-with-max-serve)
+    - [Serve an embedding model with MAX](/max/tutorials/run-embeddings-with-max-serve)
     - [Generate image descriptions with Llama 3.2 Vision](/max/tutorials/deploy-llama-vision)
     - [Deploy Llama 3 on GPU-powered Kubernetes clusters](/max/tutorials/max-serve-local-to-cloud)
 
     ## OpenAI API compatibility
 
-    MAX Serve is compatible with a subset of the [OpenAI REST
+    The MAX REST API is compatible with a subset of the [OpenAI REST
     API](https://platform.openai.com/docs/api-reference/introduction). This
-    allows you to use many existing OpenAI client applications with MAX Serve
+    allows you to use many existing OpenAI client applications with MAX
     endpoints.
 
     - **Supported endpoints:**
@@ -41,9 +41,9 @@ info:
     OpenAI body parameters are implemented. Some may be accepted as no-ops
     (ignored but won't cause errors) to maintain client compatibility. The
     specific endpoint documentation below details only the parameters that
-    actively affect behavior in MAX Serve.
+    actively affect behavior in MAX.
 
-    In addition to the OpenAI APIs, MAX Serve provides a Prometheus-formatted
+    In addition to the OpenAI APIs, MAX provides a Prometheus-formatted
     [metrics endpoint](/max/container#metrics) to help track your model's
     performance.
 
@@ -53,7 +53,7 @@ paths:
       operationId: createChatCompletion
       summary: Create chat completion
       description: |
-        Creates a completion for the chat message. MAX Serve supports a subset of
+        Creates a completion for the chat message. MAX supports a subset of
         OpenAI's chat completion parameters.
         Streaming is supported, but
         [chat-object](https://platform.openai.com/docs/api-reference/chat-streaming/streaming)
@@ -238,7 +238,7 @@ paths:
       summary: Create completion
       description: |
         Creates a completion for the provided prompt.
-        MAX Serve supports a subset of OpenAI's completion parameters.
+        MAX supports a subset of OpenAI's completion parameters.
       x-codeSamples:
         - lang: Python
           source: |
@@ -353,8 +353,7 @@ paths:
       operationId: createEmbedding
       summary: Create embeddings
       description: |
-        Creates an embedding vector representing the input text. MAX Serve
-        supports
+        Creates an embedding vector representing the input text. MAX supports
         [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2)
         model. Only string and list of strings are supported for the
         input parameter.
@@ -452,7 +451,7 @@ paths:
       summary: List models
       description: |
         Lists the currently available models.
-        MAX Serve only returns the one model that it is currently serving.
+        MAX returns only the one model that it's currently serving.
       x-codeSamples:
         - lang: Python
           source: |
@@ -511,14 +510,14 @@ components:
           type: string
           description: |
             ID of the model to use.
-            Supported by MAX Serve but handled by frontend load balancer to route traffic to nodes.
+            Supported by MAX but handled by frontend load balancer to route traffic to nodes.
         messages:
           type: array
           items:
             $ref: '#/components/schemas/ChatCompletionMessage'
           description: |
             A list of messages comprising the conversation so far.
-            MAX Serve supports content and role parameters.
+            MAX supports content and role parameters.
         max_tokens:
           type: integer
           minimum: 1
@@ -680,7 +679,7 @@ components:
             $ref: '#/components/schemas/ChatCompletionChoice'
           description: |
             A list of chat completion choices.
-            MAX Serve does not support `finish_reason` and `logprobs` in choices.
+            MAX does not support `finish_reason` and `logprobs` in choices.
         usage:
           $ref: '#/components/schemas/Usage'
           description: |
@@ -797,7 +796,7 @@ components:
         model:
           type: string
           description: |
-            ID of the model to use. MAX Serve supports
+            ID of the model to use. MAX supports
             [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2).
         input:
           oneOf:
@@ -807,7 +806,7 @@ components:
                 type: string
           description: |
             The text to embed.
-            MAX Serve supports strings and list of strings.
+            MAX supports strings and list of strings.
         encoding_format:
           type: string
           enum: [float, base64]
@@ -881,7 +880,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Model'
-          description: A list of model objects. MAX Serve only returns one model.
+          description: A list of model objects. MAX returns only one model.
     Model:
       type: object
       required:
@@ -922,7 +921,7 @@ components:
     ErrorResponse:
       type: object
       description: |
-        An error response from the MAX Serve API.
+        An error response from the MAX REST API.
       required:
         - error
       properties:

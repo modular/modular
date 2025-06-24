@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
@@ -44,7 +44,7 @@ from .kernels import (
     quantize_static_scaled_float8,
     swish_glu,
 )
-from .layer import Layer, Module
+from .layer import Layer, Module, Shardable
 
 
 class Float8ScaleGranularity(Enum):
@@ -162,7 +162,7 @@ class Float8Config:
         return self.input_scale.origin == Float8ScaleOrigin.DYNAMIC
 
 
-class Linear(Module):
+class Linear(Module, Shardable):
     """
     Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
@@ -281,25 +281,20 @@ class Linear(Module):
                 )
 
             weight_scale_shape: tuple[int, ...]
-            if (
-                float8_config.weight_scale.granularity
-                == Float8ScaleGranularity.ROWWISE
-            ):
+            weight_scale = float8_config.weight_scale
+            if weight_scale.is_rowwise:
                 weight_scale_shape = (int(self.weight.shape[0]), 1)
-            elif (
-                float8_config.weight_scale.granularity
-                == Float8ScaleGranularity.TENSOR
-            ):
-                weight_scale_shape = (1,)
+            elif weight_scale.is_tensor:
+                weight_scale_shape = ()
             else:
                 raise ValueError(
                     "only row-wise and tensor scaling are "
-                    f"supported currently, but got {float8_config.weight_scale.granularity}"
+                    f"supported currently, but got {weight_scale.granularity}"
                 )
 
             self.weight_scale = Weight(
                 name=f"{name}.weight_scale" if name else "weight_scale",
-                dtype=float8_config.weight_scale.dtype,
+                dtype=weight_scale.dtype,
                 # TODO: Pass a per-layer quantization type.
                 # For now since we only support row-wise
                 shape=weight_scale_shape,
@@ -307,13 +302,19 @@ class Linear(Module):
                 quantization_encoding=quantization_encoding,
             )
 
-    def set_sharding(self, strategy: ShardingStrategy) -> None:
-        """Sets the weight sharding for this linear layer.
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the weight sharding strategy."""
+        return self.weight.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the weight sharding strategy.
 
         Args:
             strategy: The strategy describing the weight sharding.
         """
-        self.weight.set_sharding_strategy(strategy)
+        self.weight.sharding_strategy = strategy
 
         if self.weight_scale:
             # Weight scale should only be added when a float8 config is passed.
@@ -326,7 +327,7 @@ class Linear(Module):
                 strategy.is_colwise
                 and self.float8_config.weight_scale.is_rowwise
             )
-            self.weight_scale.set_sharding_strategy(
+            self.weight_scale.sharding_strategy = (
                 ShardingStrategy.replicate(strategy.num_devices)
                 if should_replicate
                 else strategy
@@ -334,11 +335,72 @@ class Linear(Module):
 
         if self.bias:
             # Only shard the bias when the weight sharding is rowwise.
-            self.bias.set_sharding_strategy(
+            self.bias.sharding_strategy = (
                 strategy
                 if strategy.is_rowwise
                 else ShardingStrategy.replicate(strategy.num_devices)
             )
+
+    def shard(self, shard_idx: int, device: DeviceRef) -> Linear:
+        """Creates a sharded view of this Linear layer for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded Linear instance.
+        """
+        if not self.weight.sharding_strategy:
+            raise ValueError(
+                "Linear layer cannot be sharded because no sharding strategy was provided."
+            )
+
+        # Calculate sharded dimensions.
+        out_dim = (
+            int(self.weight.shape[0])
+            // self.weight.sharding_strategy.num_devices
+            if self.weight.sharding_strategy.is_rowwise
+            else int(self.weight.shape[0])
+        )
+
+        # Create new Linear with same configuration.
+        sharded = Linear(
+            in_dim=int(self.weight.shape[1]),
+            out_dim=out_dim,
+            dtype=self.weight.dtype,
+            device=device,
+            has_bias=self.bias is not None,
+            float8_config=self.float8_config,
+            clip_weight=self.clip_weight,
+        )
+
+        # Replace the weights with sharded versions.
+        sharded.weight = self.weight.shard(shard_idx, device)
+
+        # Handle bias sharding
+        if self.bias is not None:
+            sharded.bias = self.bias.shard(shard_idx, device)
+
+        # Handle float8 scales.
+        if self.float8_config:
+            if self.input_scale is not None:
+                # Input scale is always shared (scalar), which should be
+                # checked upstream.
+                assert len(self.input_scale.shape) == 0
+                sharded.input_scale = self.input_scale
+
+            if self.weight_scale is not None:
+                # Share a reference to the original weight scale if scalar, and
+                # shard if on device.
+                # This is because scalars are always on CPU by convention.
+                sharded.weight_scale = (
+                    self.weight_scale
+                    if len(self.weight_scale.shape) == 0
+                    else self.weight_scale.shard(shard_idx, device)
+                )
+
+        return sharded
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a linear transformation to the input data.
@@ -361,10 +423,7 @@ class Linear(Module):
 
         if self.weight.quantization_encoding:
             res = ops.qmatmul(
-                self.weight.quantization_encoding,
-                None,
-                x,
-                weight,
+                self.weight.quantization_encoding, None, x, weight
             )
         elif self.float8_config:
             assert self.weight_scale is not None
@@ -385,11 +444,7 @@ class Linear(Module):
                     weight_scale = weight_scale.to(self.device)
 
                 res = dynamic_scaled_matmul(
-                    x,
-                    weight,
-                    x_scales,
-                    weight_scale,
-                    out_type=DType.bfloat16,
+                    x, weight, x_scales, weight_scale, out_type=DType.bfloat16
                 )
         else:
             res = x @ weight.T
@@ -494,7 +549,7 @@ class ColumnParallelLinear(Linear):
         self.devices = devices
         self.num_devices = len(self.devices)
 
-        self.set_sharding(ShardingStrategy.rowwise(self.num_devices))
+        self.sharding_strategy = ShardingStrategy.rowwise(self.num_devices)
 
         # Create normal Linear layers for each device. These layers and weights
         # are not recorded by the nn.Module and do not appear in the state dict.
@@ -529,7 +584,7 @@ class ColumnParallelLinear(Linear):
             self.distributed_linear_layers[i](x[i])
             for i in range(self.num_devices)
         ]
-        return ops.allgather(linear_outs, dim=-1)
+        return ops.allgather(linear_outs, axis=-1)
 
 
 def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:
@@ -643,12 +698,7 @@ class QLinearV1(LinearV1):
         assert self.quantization_encoding is not None
         weight = TensorValue(self.weight)
         weight = weight.to(x.type.device)
-        res = ops.qmatmul(
-            self.quantization_encoding,
-            None,
-            x,
-            weight,
-        )
+        res = ops.qmatmul(self.quantization_encoding, None, x, weight)
         if self.bias is not None:
             bias = TensorValue(self.bias).to(x.type.device or DeviceRef.CPU())
             res += bias
@@ -707,10 +757,7 @@ class GPTQLinearV1(QLinearV1):
             ).transpose(0, 1)
 
             if desc_act:
-                perm_idx = weights.g_idx.allocate(
-                    DType.int32,
-                    [out_features],
-                )
+                perm_idx = weights.g_idx.allocate(DType.int32, [out_features])
                 # hack: argsort the perm_idx array
                 weights._allocated[perm_idx.name] = np.argsort(  # type: ignore
                     weights._allocated[perm_idx.name]  # type: ignore
@@ -749,10 +796,7 @@ class GPTQLinearV1(QLinearV1):
             )
         else:
             res = ops.qmatmul(
-                self.quantization_encoding,
-                self.quantization_config,
-                x,
-                weight,
+                self.quantization_encoding, self.quantization_config, x, weight
             )
         if self.bias is not None:
             res += TensorValue(self.bias)
@@ -823,10 +867,7 @@ class GPTQLinear(Linear):
         self.perm_idx = None
         if desc_act:
             self.perm_idx = Weight(
-                "perm_idx",
-                DType.int32,
-                [in_dim],
-                device=device,
+                "perm_idx", DType.int32, [in_dim], device=device
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -889,11 +930,7 @@ class MLPV1(Layer):
             and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
         ):
             return self.down_proj(
-                swish_glu(
-                    x,
-                    self.gate_proj.weight,
-                    self.up_proj.weight,
-                )
+                swish_glu(x, self.gate_proj.weight, self.up_proj.weight)
             )
 
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
@@ -990,11 +1027,7 @@ class MLP(Module):
             and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
         ):
             return self.down_proj(
-                swish_glu(
-                    x,
-                    self.gate_proj.weight,
-                    self.up_proj.weight,
-                )
+                swish_glu(x, self.gate_proj.weight, self.up_proj.weight)
             )
         if self.quantization_encoding or self.float8_config:
             return self.down_proj(
@@ -1053,11 +1086,15 @@ class DistributedMLP(MLP):
 
         self.num_devices = len(self.devices)
 
-        self.gate_proj.set_sharding(ShardingStrategy.rowwise(self.num_devices))
-        self.down_proj.set_sharding(
-            ShardingStrategy.columnwise(self.num_devices)
+        self.gate_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.num_devices
         )
-        self.up_proj.set_sharding(ShardingStrategy.rowwise(self.num_devices))
+        self.down_proj.sharding_strategy = ShardingStrategy.columnwise(
+            self.num_devices
+        )
+        self.up_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.num_devices
+        )
 
         # Create normal MLP layers for each device. These layers and weights are
         # not recorded by the nn.Module and do not appear in the state dict.
@@ -1065,43 +1102,16 @@ class DistributedMLP(MLP):
         for n, device in enumerate(self.devices):
             layer = MLP(*args, **kwargs)
 
-            layer.gate_proj.device = device
-            layer.gate_proj.weight = self.gate_proj.weight.shard(n, device)
-
-            layer.down_proj.device = device
-            layer.down_proj.weight = self.down_proj.weight.shard(n, device)
-
-            layer.up_proj.device = device
-            layer.up_proj.weight = self.up_proj.weight.shard(n, device)
-
-            if self.float8_config:
-                if self.gate_proj.weight_scale and (
-                    len(self.gate_proj.weight_scale.shape) == 2
-                ):
-                    layer.gate_proj.weight_scale = (
-                        self.gate_proj.weight_scale.shard(n, device)
-                    )
-
-                if self.down_proj.weight_scale and (
-                    len(self.down_proj.weight_scale.shape) == 2
-                ):
-                    layer.down_proj.weight_scale = (
-                        self.down_proj.weight_scale.shard(n, device)
-                    )
-
-                if self.up_proj.weight_scale and (
-                    len(self.up_proj.weight_scale.shape) == 2
-                ):
-                    layer.up_proj.weight_scale = (
-                        self.up_proj.weight_scale.shard(n, device)
-                    )
+            layer.gate_proj = self.gate_proj.shard(n, device)
+            layer.down_proj = self.down_proj.shard(n, device)
+            layer.up_proj = self.up_proj.shard(n, device)
 
             self.list_of_mlps.append(layer)
 
         self.allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def __call__(  # type: ignore[override]
-        self, x: list[TensorValue], signal_buffers: list[BufferValue]
+        self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 

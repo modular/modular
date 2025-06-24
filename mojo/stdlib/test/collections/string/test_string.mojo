@@ -20,7 +20,7 @@ from collections.string.string import (
 )
 from math import isinf, isnan
 
-from memory import UnsafePointer, memcpy
+from memory import memcpy
 from python import Python, PythonObject
 from testing import (
     assert_equal,
@@ -42,6 +42,11 @@ def test_stringable():
     assert_equal("0", String(0))
     assert_equal("AAA", String(StringSlice("AAA")))
     assert_equal("a string", String(AString()))
+
+    # Should not produce an exclusivity error.
+    # Incorrect exclusivity error when printing a StringSlice
+    # https://github.com/modular/modular/issues/4790
+    print(String("test").removeprefix(""))
 
 
 def test_constructors():
@@ -66,11 +71,11 @@ def test_constructors():
 
     # Construction with capacity
     var s4 = String(capacity=1)
-    assert_equal(s4.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s4.capacity(), _StringCapacityField.INLINE_CAPACITY)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_equal(s5.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s5.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s5, "A")
 
 
@@ -679,6 +684,9 @@ def test_rfind():
 
 
 def test_split():
+    alias S = StaticString
+    alias L = List[StaticString]
+
     # empty separators default to whitespace
     var d = String("hello world").split()
     assert_true(len(d) == 2)
@@ -741,11 +749,9 @@ def test_split():
     assert_true(len(String(" ").split()) == 0)
     assert_true(len(String().split(" ")) == 1)
     assert_true(len(String(" ").split(" ")) == 2)
+    assert_true(len(S("").split("")) == 2)
     assert_true(len(String("  ").split(" ")) == 3)
     assert_true(len(String("   ").split(" ")) == 4)
-
-    with assert_raises():
-        _ = String().split("")
 
     # Split in middle
     var d1 = String("n")
@@ -818,8 +824,10 @@ def test_split():
     assert_equal(res6[3], "сит")
     assert_equal(res6[4], "амет")
 
-    with assert_raises(contains="Separator cannot be empty."):
-        _ = String("1, 2, 3").split("")
+    assert_equal(S("123").split(""), L("", "1", "2", "3", ""))
+    assert_equal(S("").join(S("123").split("")), "123")
+    assert_equal(S(",1,2,3,").split(","), S("123").split(""))
+    assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
 def test_splitlines():
@@ -864,7 +872,7 @@ def test_splitlines():
     var unicode_line_sep = List[UInt8](0xE2, 0x80, 0xA8)
     var unicode_paragraph_sep = List[UInt8](0xE2, 0x80, 0xA9)
 
-    for ref elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
+    for elt in [next_line, unicode_line_sep, unicode_paragraph_sep]:
         u = String(bytes=elt)
         item = String().join("hello", u, "world", u, "mojo", u, "language", u)
         assert_equal(item.splitlines(), hello_mojo)
@@ -899,13 +907,13 @@ def test_isspace():
         String(bytes=unicode_paragraph_sep),
     ]
 
-    for ref i in univ_sep_var:
+    for i in univ_sep_var:
         assert_true(i.isspace())
 
-    for var i in List[String]("not", "space", "", "s", "a", "c"):
+    for i in List[String]("not", "space", "", "s", "a", "c"):
         assert_false(i.isspace())
 
-    for var i in range(len(univ_sep_var)):
+    for i in range(len(univ_sep_var)):
         var sep = String()
         for j in range(len(univ_sep_var)):
             sep += univ_sep_var[i]
@@ -1096,20 +1104,30 @@ def test_endswith():
     assert_false(str.endswith("llo", 2, 3))
 
 
+# TODO: Remove the explicit conversion to `String` once #4790 is resolved.
 def test_removeprefix():
-    assert_equal(String("hello world").removeprefix(""), String("hello world"))
-    assert_equal(String("hello world").removeprefix("hello"), " world")
-    assert_equal(String("hello world").removeprefix("world"), "hello world")
-    assert_equal(String("hello world").removeprefix("hello world"), "")
-    assert_equal(String("hello world").removeprefix("llo wor"), "hello world")
+    assert_equal(String(String("hello world").removeprefix("")), "hello world")
+    assert_equal(String(String("hello world").removeprefix("hello")), " world")
+    assert_equal(
+        String(String("hello world").removeprefix("world")), "hello world"
+    )
+    assert_equal(String(String("hello world").removeprefix("hello world")), "")
+    assert_equal(
+        String(String("hello world").removeprefix("llo wor")), "hello world"
+    )
 
 
+# TODO: Remove the explicit conversion to `String` once #4790 is resolved.
 def test_removesuffix():
-    assert_equal(String("hello world").removesuffix(""), String("hello world"))
-    assert_equal(String("hello world").removesuffix("world"), "hello ")
-    assert_equal(String("hello world").removesuffix("hello"), "hello world")
-    assert_equal(String("hello world").removesuffix("hello world"), "")
-    assert_equal(String("hello world").removesuffix("llo wor"), "hello world")
+    assert_equal(String(String("hello world").removesuffix("")), "hello world")
+    assert_equal(String(String("hello world").removesuffix("world")), "hello ")
+    assert_equal(
+        String(String("hello world").removesuffix("hello")), "hello world"
+    )
+    assert_equal(String(String("hello world").removesuffix("hello world")), "")
+    assert_equal(
+        String(String("hello world").removesuffix("llo wor")), "hello world"
+    )
 
 
 def test_intable():
@@ -1223,7 +1241,7 @@ def test_string_char_slices_iter():
         var ptr = item.unsafe_ptr()
         var amnt_characters = 0
         var byte_idx = 0
-        for var v in item.codepoint_slices():
+        for v in item.codepoint_slices():
             var byte_len = v.byte_length()
             for i in range(byte_len):
                 assert_equal(ptr[byte_idx + i], v.unsafe_ptr()[i])
@@ -1232,7 +1250,7 @@ def test_string_char_slices_iter():
 
         assert_equal(amnt_characters, items_amount_characters[item_idx])
         var concat = String()
-        for var v in item.__reversed__():
+        for v in item.__reversed__():
             concat += v
         assert_equal(rev[item_idx], concat)
         item_idx += 1
@@ -1520,7 +1538,7 @@ def test_variadic_ctors():
 def test_sso():
     # String literals are stored inline when short and not nul-terminated.
     var s: String = String("hello")
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
     assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
@@ -1534,20 +1552,22 @@ def test_sso():
 
     # Empty strings are stored inline.
     s = String()
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
     assert_equal(s._capacity_or_data.has_nul_terminator(), False)
 
-    s += "f" * _StringCapacityField.NUM_SSO_BYTES
-    assert_equal(len(s), _StringCapacityField.NUM_SSO_BYTES)
-    assert_equal(s.capacity(), _StringCapacityField.NUM_SSO_BYTES)
+    s += "f" * _StringCapacityField.INLINE_CAPACITY
+    assert_equal(len(s), _StringCapacityField.INLINE_CAPACITY)
+    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
     assert_equal(s._capacity_or_data.is_inline(), True)
 
     # One more byte.
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (_StringCapacityField.NUM_SSO_BYTES * 2 + 7) & ~7
+    alias expected_capacity = (
+        _StringCapacityField.INLINE_CAPACITY * 2 + 7
+    ) & ~7
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._capacity_or_data.is_inline(), False)
 

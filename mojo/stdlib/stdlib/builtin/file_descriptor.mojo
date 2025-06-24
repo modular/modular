@@ -36,7 +36,7 @@ from sys._amdgpu import printf_append_string_n, printf_begin
 from sys.ffi import c_ssize_t, external_call
 
 from builtin.io import _printf
-from memory import Span, UnsafePointer
+from memory import Span
 
 
 @register_passable("trivial")
@@ -77,10 +77,7 @@ struct FileDescriptor(Writer):
         )
         debug_assert(
             written == len(bytes),
-            "expected amount of bytes not written. expected: ",
-            len(bytes),
-            "but got: ",
-            written,
+            "expected amount of bytes not written",
         )
 
     @always_inline
@@ -138,6 +135,7 @@ struct FileDescriptor(Writer):
             ]()
             return abort[UInt]()
 
+    @always_inline
     fn write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 

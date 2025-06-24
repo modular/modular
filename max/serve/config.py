@@ -77,10 +77,7 @@ class Settings(BaseSettings):
     #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="",
-        extra="allow",
-        populate_by_name=False,
+        env_file=".env", env_prefix="", extra="allow", populate_by_name=False
     )
 
     # Server configuration
@@ -121,8 +118,20 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
     )
 
+    # File URI configuration
+    allowed_image_roots: list[str] = Field(
+        description="List of allowed root directories for file:// URI access",
+        default_factory=list,
+        alias="MAX_SERVE_ALLOWED_IMAGE_ROOTS",
+    )
+    max_local_image_bytes: int = Field(
+        description="Maximum size in bytes for local image files accessed via file:// URIs",
+        default=20_000_000,  # 20MB
+        alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
+    )
+
     # Telemetry and logging configuration
-    logs_console_level: str = Field(
+    logs_console_level: Union[str, None] = Field(
         default="INFO",
         description="Logging level",
         alias="MAX_SERVE_LOGS_CONSOLE_LEVEL",
@@ -147,6 +156,11 @@ class Settings(BaseSettings):
         description="Structured logging for deployed services",
         alias="MODULAR_STRUCTURED_LOGGING",
     )
+    logs_enable_components: Union[str, None] = Field(
+        default=None,
+        description="Comma separated list of additional components to enable for logging",
+        alias="MAX_SERVE_LOGS_ENABLE_COMPONENTS",
+    )
 
     disable_telemetry: bool = Field(
         default=False,
@@ -161,9 +175,7 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_USE_HEARTBEAT",
     )
     mw_timeout_s: float = Field(
-        default=20 * 60.0,
-        description="",
-        alias="MAX_SERVE_MW_TIMEOUT",
+        default=20 * 60.0, description="", alias="MAX_SERVE_MW_TIMEOUT"
     )
     mw_health_fail_s: float = Field(
         # TODO: we temporarily set it to 1 minute to handle long context input

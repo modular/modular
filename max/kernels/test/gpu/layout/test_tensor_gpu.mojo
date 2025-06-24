@@ -11,8 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.io import _printf
-from gpu import barrier, block_idx, grid_dim, thread_idx
+from gpu import block_idx, grid_dim
 from gpu.host import DeviceContext
 from gpu.memory import (
     _GPUAddressSpace,
@@ -22,7 +21,6 @@ from gpu.memory import (
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import Layout, LayoutTensor
-from memory import UnsafePointer
 from testing import assert_true
 
 

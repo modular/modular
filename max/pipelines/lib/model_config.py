@@ -31,11 +31,7 @@ from max.graph.weights import WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
 
-from .config_enums import (
-    RepoType,
-    RopeType,
-    SupportedEncoding,
-)
+from .config_enums import RepoType, RopeType, SupportedEncoding
 from .hf_utils import HuggingFaceRepo, repo_exists_with_retry
 from .max_config import KVCacheConfig, MAXConfig
 from .registry import PIPELINE_REGISTRY
@@ -102,6 +98,13 @@ class MAXModelConfig(MAXModelConfigBase):
     use_subgraphs: bool = False
     """Whether to use subgraphs for the model."""
 
+    # TODO: This can be made more generic for arbitrary dtypes.
+    cast_safetensor_weights_from_float32_to_bfloat16: bool = False
+    """Whether to cast safetensor weights from float32 to bfloat16."""
+
+    applied_bfloat16_downcast: bool = False
+    """If safetensor weights were downcasted from float32 to bfloat16."""
+
     _huggingface_config: Optional[AutoConfig] = None
     """Hugging Face config. This should only be set by internal code."""
 
@@ -120,7 +123,7 @@ class MAXModelConfig(MAXModelConfigBase):
     # it also sets and updates other fields which may not be determined /
     # initialized in the default factory.
     # Realistically, this shouldn't become a problem in the long term once we
-    # instantiate these MAXConfigs with probably DAG depedency flows in our
+    # instantiate these MAXConfigs with probably DAG dependency flows in our
     # larger config refactor.
     def resolve(self) -> None:
         """Validates and resolves the config.
@@ -149,7 +152,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 path = Path(path)
             elif not isinstance(path, Path):
                 raise ValueError(
-                    "weight_path provided must either be string or Path:"
+                    "weight-path provided must either be string or Path:"
                     f" '{path}'"
                 )
             elif path.is_file():
@@ -173,7 +176,7 @@ class MAXModelConfig(MAXModelConfigBase):
                         path = Path(file_name)
                 elif self.model_path == "":
                     raise ValueError(
-                        "Unable to derive model_path from weight_path, "
+                        "Unable to derive model-path from weight-path, "
                         "please provide a valid Hugging Face repository id."
                     )
 
@@ -186,7 +189,7 @@ class MAXModelConfig(MAXModelConfigBase):
         if len(self.weight_path) == 0:
             if self.model_path == "":
                 raise ValueError(
-                    "model_path must be provided and must be a valid Hugging Face repository"
+                    "model-path must be provided and must be a valid Hugging Face repository"
                 )
             elif (not os.path.exists(os.path.expanduser(self.model_path))) and (
                 not repo_exists_with_retry(
@@ -255,15 +258,16 @@ class MAXModelConfig(MAXModelConfigBase):
 
         for file_path in self.weight_path:
             file_path_str = str(file_path)
+            full_file_path = Path(repo.repo_id) / file_path
 
             # 1. Check if the file exists locally (direct path, local repo, or cache)
-            if local_file_location := self._local_weight_path(file_path):
+            if local_file_location := self._local_weight_path(full_file_path):
                 total_weights_size += os.path.getsize(local_file_location)
                 continue
 
             # 2. File not found locally or non-existence is cached.
             if repo.repo_type == RepoType.local:
-                if not self._local_weight_path(Path(repo.repo_id) / file_path):
+                if not self._local_weight_path(full_file_path):
                     raise FileNotFoundError(
                         f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
                     )
@@ -354,6 +358,7 @@ class MAXModelConfig(MAXModelConfigBase):
             _weights_format = weights_format(self.weight_path)
         except ValueError:
             _weights_format = None
+
         if (
             self.weight_path
             and self.quantization_encoding
@@ -401,7 +406,7 @@ class MAXModelConfig(MAXModelConfigBase):
                     logger.debug(msg)
                     self.quantization_encoding = encoding
                 else:
-                    msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explictly."
+                    msg = f"encoding cannot be inferred from weights file: {self.weight_path[0]}, please pass a quantization_encoding explicitly."
                     raise ValueError(msg)
         elif not self.quantization_encoding:
             # Check if the repo only has one quantization_encoding.
@@ -411,7 +416,23 @@ class MAXModelConfig(MAXModelConfigBase):
             if len(supported_encodings) == 1:
                 msg = f"huggingface repo only has '{supported_encodings[0]}' weights, using '{supported_encodings[0]}'"
                 logger.debug(msg)
-                self.quantization_encoding = supported_encodings[0]
+
+                # Special case for when we allow for float32 safetensors weights
+                # to be downcasted to bfloat16.
+                if (
+                    self.cast_safetensor_weights_from_float32_to_bfloat16
+                    and supported_encodings[0] == SupportedEncoding.float32
+                ):
+                    # if no GPUs are available, we can't possibly downcast to bfloat16.
+                    if not any(
+                        d.device_type == "gpu" for d in self.device_specs
+                    ):
+                        msg = "No GPUs available, cannot downcast from float32 to bfloat16."
+                        raise ValueError(msg)
+                    self.applied_bfloat16_downcast = True
+                    self.quantization_encoding = SupportedEncoding.bfloat16
+                else:
+                    self.quantization_encoding = supported_encodings[0]
             elif not self.device_specs[0].device_type == "cpu":
                 # TODO(AITLIB-137): replace this with more full featured logic.
                 # If we are running on an accelerator and the quantiziation encoding is not set, override to bfloat16.
@@ -439,7 +460,7 @@ class MAXModelConfig(MAXModelConfigBase):
         the KV cache strategy and finalizes the encoding config.
         """
         self._validate_quantization_encoding_device_compatibility(
-            supported_encodings_list=list(supported_encodings.keys()),
+            supported_encodings_list=list(supported_encodings.keys())
         )
         self._finalize_encoding_config()
         self._resolve_weight_path(default_weights_format=default_weights_format)
@@ -504,8 +525,16 @@ class MAXModelConfig(MAXModelConfigBase):
         if not self.weight_path:
             # Retrieve the default files for each weights format.
             weight_files = self.huggingface_weight_repo.files_for_encoding(
-                encoding=self.quantization_encoding,
+                encoding=self.quantization_encoding
             )
+            if (
+                not weight_files
+                and self.cast_safetensor_weights_from_float32_to_bfloat16
+            ):
+                # We allow ourselves to load float32 safetensors weights as bfloat16.
+                weight_files = self.huggingface_weight_repo.files_for_encoding(
+                    encoding=SupportedEncoding.float32
+                )
 
             if default_weight_files := weight_files.get(
                 default_weights_format, []

@@ -14,10 +14,9 @@
 from math import isclose
 from random import rand
 
-from memory import UnsafePointer
 from nn.conv import Naive2dConvolution
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 fn winograd_1d_convolution_3[

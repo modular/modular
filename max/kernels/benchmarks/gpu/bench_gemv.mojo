@@ -14,8 +14,8 @@
 from math import ceildiv
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from buffer import Dim, DimList
+from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, arg_parse
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 

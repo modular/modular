@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def add_one(y: Int):
-    # def creates an implicit copy of the value because it's mutated
+def add_one(owned y: Int):
     y += 1
     print("y:", y)
 

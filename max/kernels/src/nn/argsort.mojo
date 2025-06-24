@@ -12,20 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections.string import StaticString
 from math import ceildiv, iota
-from sys.info import alignof, bitwidthof, simdwidthof
+from sys.info import simdwidthof
 
 from algorithm import elementwise
 from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
 from runtime.tracing import Trace, TraceLevel
 
-from utils.index import Index, IndexList, StaticTuple
+from utils.index import IndexList, StaticTuple
 
 
 fn _argsort_cpu[
@@ -214,7 +213,7 @@ fn _argsort_gpu[
         elementwise[
             fill_indices_iota_no_padding,
             simd_width = simdwidthof[
-                indices.dtype, target = _get_gpu_target()
+                indices.dtype, target = get_gpu_target()
             ](),
             target="gpu",
         ](n, ctx)
@@ -292,7 +291,7 @@ fn _argsort_gpu[
     # Extract the unpadded indices from the padded indices.
     elementwise[
         extract_indices,
-        simd_width = simdwidthof[indices.dtype, target = _get_gpu_target()](),
+        simd_width = simdwidthof[indices.dtype, target = get_gpu_target()](),
         target="gpu",
     ](n, ctx)
 

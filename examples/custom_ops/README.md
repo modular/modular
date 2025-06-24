@@ -6,6 +6,9 @@ Each operation in one of these graphs is defined in
 [Mojo](https://docs.modular.com/mojo/), an easy-to-use language for writing
 high-performance code.
 
+For an API walkthrough, see the tutorial to [build custom ops for
+GPUs](https://docs.modular.com/max/tutorials/build-custom-ops/).
+
 The examples here illustrate how to construct custom graph operations in Mojo
 that run on GPUs and CPUs, as well as how to build computational graphs that
 contain and run them on different hardware architectures.

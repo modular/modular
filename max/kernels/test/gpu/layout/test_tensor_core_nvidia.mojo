@@ -13,15 +13,12 @@
 
 from gpu.host import DeviceContext
 from tensor_core_kernels import (
-    mma_load_and_multiply,
-    mma_load_and_print_operands_kernel_ldmatrix,
-    mma_write_operand_kernel,
     test_load_and_mma_and_multiply_operands,
     test_load_operands_ldmatrix,
     test_write_res_operand,
 )
 
-from utils.index import Index, IndexList
+from utils.index import Index
 
 
 # CHECK-LABEL: test_load_and_mma_f32_f32_16x8x8

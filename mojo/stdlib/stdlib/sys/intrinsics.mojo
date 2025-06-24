@@ -24,7 +24,7 @@ from collections.string.string_slice import _get_kgen_string
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
-from memory import AddressSpace, UnsafePointer
+from memory import AddressSpace
 from memory.pointer import _GPUAddressSpace
 
 from ._assembly import inlined_assembly
@@ -76,35 +76,19 @@ fn llvm_intrinsic[
 
     @parameter
     if _mlirtype_is_eq[type, NoneType]():
+        __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=None,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
+        return rebind[type](None)
 
-        @parameter
-        if has_side_effect:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-            ](loaded_pack)
-            return rebind[type](None)
-        else:
-            __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=None,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
-            return rebind[type](None)
     else:
-
-        @parameter
-        if has_side_effect:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-            ](loaded_pack)
-        else:
-            return __mlir_op.`pop.call_llvm_intrinsic`[
-                intrin=intrin_kgen_string,
-                _type=type,
-                hasSideEffects = __mlir_attr.false,
-            ](loaded_pack)
+        return __mlir_op.`pop.call_llvm_intrinsic`[
+            intrin=intrin_kgen_string,
+            _type=type,
+            hasSideEffects = has_side_effect.value,
+        ](loaded_pack)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -364,7 +348,7 @@ struct PrefetchCache:
 
 
 @register_passable("trivial")
-struct PrefetchOptions:
+struct PrefetchOptions(Defaultable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -1069,7 +1053,7 @@ fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
 
 
 @register_passable("trivial")
-struct _ThreadIdx:
+struct _ThreadIdx(Defaultable):
     """ThreadIdx provides static methods for getting the x/y/z coordinates of
     a thread within a block."""
 
@@ -1109,7 +1093,7 @@ alias thread_idx = _ThreadIdx()
 
 
 @register_passable("trivial")
-struct _BlockIdx:
+struct _BlockIdx(Defaultable):
     """BlockIdx provides static methods for getting the x/y/z coordinates of
     a block within a grid."""
 
@@ -1158,7 +1142,7 @@ fn _get_gcn_idx[offset: Int, dtype: DType]() -> UInt:
 
 
 @register_passable("trivial")
-struct _BlockDim:
+struct _BlockDim(Defaultable):
     """BlockDim provides static methods for getting the x/y/z dimension of a
     block."""
 
@@ -1209,7 +1193,7 @@ alias block_dim = _BlockDim()
 
 
 @register_passable("trivial")
-struct _GridDim:
+struct _GridDim(Defaultable):
     """GridDim provides static methods for getting the x/y/z dimension of a
     grid."""
 
@@ -1260,7 +1244,7 @@ alias grid_dim = _GridDim()
 
 
 @register_passable("trivial")
-struct _GridIdx:
+struct _GridIdx(Defaultable):
     """GlobalIdx provides static methods for getting the x/y/z global offset of
     the kernel launch."""
 
@@ -1292,7 +1276,7 @@ alias global_idx = _GridIdx()
 
 
 @register_passable("trivial")
-struct _ClusterDim:
+struct _ClusterDim(Defaultable):
     """ClusterDim provides static methods for getting the x/y/z dimension of a
     Cluster."""
 
@@ -1327,7 +1311,7 @@ alias cluster_dim = _ClusterDim()
 
 
 @register_passable("trivial")
-struct _ClusterIdx:
+struct _ClusterIdx(Defaultable):
     """_ClusterIdx provides static methods for getting the x/y/z coordinates of
     a cluster within a grid."""
 
@@ -1367,7 +1351,7 @@ alias cluster_idx = _ClusterIdx()
 
 
 @register_passable("trivial")
-struct _Cluster_BlockIdx:
+struct _Cluster_BlockIdx(Defaultable):
     """_Cluster_BlockIdx provides static methods for getting the x/y/z coordinates of
     a threadblock within a cluster."""
 

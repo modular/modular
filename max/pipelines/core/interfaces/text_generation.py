@@ -13,6 +13,8 @@
 
 """Interfaces for text generation pipeline behaviors."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import (
@@ -86,11 +88,16 @@ class TokenGeneratorRequestMessage(TypedDict):
 
 @dataclass(frozen=True)
 class SamplingParams:
+    """Request Specific Sampling Parameters that are only known at run time."""
+
     top_k: int = 1
     """Limits the sampling to the K most probable tokens. This defaults to 1, which enables greedy sampling."""
 
     top_p: float = 1
     """Only use the tokens whose cumulative probability within the top_p threshold. This applies to the top_k tokens."""
+
+    min_p: float = 0.0
+    """Float that represents the minimum probability for a token to be considered, relative to the probability of the most likely token. Must be in [0, 1]. Set to 0 to disable this."""
 
     temperature: float = 1
     """Controls the randomness of the model's output; higher values produce more diverse responses."""
@@ -109,17 +116,46 @@ class SamplingParams:
     that have already appeared in the generated text at least once by dividing the logits by the
     repetition penalty."""
 
-    enable_structured_output: bool = False
-    """Enable structured generation/guided decoding for the server. This allows the user to pass a json
-    schema in the response_format field, which the LLM will adhere to."""
+    max_new_tokens: int | None = None
+    """The maximum number of new tokens to generate in the response. If not set,
+    the model may generate tokens until it reaches its internal limits or based
+    on other stopping criteria."""
 
-    enable_variable_logits: bool = False
-    """Enable the sampling graph to accept a ragged tensor of different sequences as inputs, along with
-    their associated logit_offsets. This is needed to produce additional logits for echo and speculative
-    decoding purposes."""
+    min_new_tokens: int = 0
+    """The minimum number of tokens to generate in the response."""
 
-    do_penalties: bool = False
-    """Whether to apply frequency and presence penalties to the model's output."""
+    ignore_eos: bool = False
+    """If True, the response will ignore the EOS token, and continue to
+    generate until the max tokens or a stop string is hit."""
+
+    stop: Optional[list[str]] = None
+    """A list of detokenized sequences that can be used as stop criteria when generating a new sequence."""
+
+    stop_token_ids: Optional[list[int]] = None
+    """A list of token ids that are used as stopping criteria when generating a new sequence."""
+
+    detokenize: bool = True
+    """Whether to detokenize the output tokens into text."""
+
+    seed: int = 0
+    """The seed to use for the random number generator."""
+
+    def __post_init__(self):
+        if self.min_p < 0.0 or self.min_p > 1.0:
+            raise ValueError("min_p must be in [0.0, 1.0]")
+
+        if self.min_p != 0.0 and self.top_k != 1:
+            raise ValueError(
+                "We currently do not handle explicit min_p and top_k at the same time."
+            )
+        if self.repetition_penalty <= 0:
+            raise ValueError("repetition_penalty must be greater than 0.")
+
+        if self.top_k <= 0 or self.top_k > 256:
+            # TODO(E2EOPT-315) -- this is a temporary band-aid, we will add support for top_k = -1 in the future.
+            raise ValueError(
+                f"top_k must be greater than 0 and less than or equal to 256, was {self.top_k}."
+            )
 
 
 @dataclass(frozen=True)
@@ -172,12 +208,6 @@ class TokenGeneratorRequest:
     Specifies the desired format for the model's output. When set, it enables
     structured generation, which adheres to the json_schema provided.
     """
-    max_new_tokens: Optional[int] = None
-    """
-    The maximum number of new tokens to generate in the response. If not set,
-    the model may generate tokens until it reaches its internal limits or based
-    on other stopping criteria.
-    """
     timestamp_ns: int = 0
     """
     The time (in nanoseconds) when the request was received by the server. This
@@ -204,25 +234,18 @@ class TokenGeneratorRequest:
     """
     Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
     """
-    ignore_eos: bool = False
-    """
-    If set to True, the response will ignore the EOS token, and continue to generate until the Max tokens or a
-    stop string is hit.
-    """
     chat_template_options: Optional[dict[str, Any]] = None
     """
     Optional dictionary of options to pass when applying the chat template.
     """
 
     sampling_params: SamplingParams = SamplingParams()
-    """
-    Token sampling configuration parameters for the request.
-    """
+    """Token sampling configuration parameters for the request."""
 
     def __str__(self) -> str:
         txt = f"Id: {self.id}"
-        if self.max_new_tokens:
-            txt += f", MaxNewTokens: {self.max_new_tokens}"
+        if self.sampling_params.max_new_tokens is not None:
+            txt += f", MaxNewTokens: {self.sampling_params.max_new_tokens}"
         return txt
 
 

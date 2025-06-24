@@ -24,7 +24,6 @@ from .interfaces import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
     LogProbabilities,
-    PipelineAudioTokenizer,
     PipelineTask,
     PipelineTokenizer,
     SamplingParams,
@@ -39,6 +38,7 @@ from .interfaces import (
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
 )
+from .serialization import msgpack_numpy_decoder, msgpack_numpy_encoder
 
 PipelinesFactory = _Callable[
     [], _Union[TokenGenerator, EmbeddingsGenerator, AudioGenerator]
@@ -54,7 +54,6 @@ __all__ = [
     "EmbeddingsResponse",
     "InputContext",
     "LogProbabilities",
-    "PipelineAudioTokenizer",
     "PipelineTask",
     "PipelineTokenizer",
     "PipelinesFactory",
@@ -72,4 +71,6 @@ __all__ = [
     "TokenGeneratorRequestTool",
     "TokenGeneratorResponseFormat",
     "TTSContext",
+    "msgpack_numpy_encoder",
+    "msgpack_numpy_decoder",
 ]

@@ -11,14 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
-from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import IndexList
@@ -159,7 +156,7 @@ fn matmul_test_case[
     _ = mat_c_dev^
 
 
-struct ValOrDim[dim: Dim = Dim()]:
+struct ValOrDim[dim: Dim = Dim()](Defaultable):
     var value: Int
 
     fn __init__(out self):

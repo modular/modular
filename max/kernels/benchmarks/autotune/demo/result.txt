@@ -47,4 +47,4 @@ params:
   NUM_STAGES: 4
   TRANSPOSE_B: False
 --------------------------------------------------------------------------------
-Elasped tuning time: 259.3 (s)
+Elapsed tuning time: 259.3 (s)

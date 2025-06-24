@@ -13,47 +13,19 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import alignof, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from sys import alignof, sizeof
 
 import linalg.vendor_blas
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu import WARP_SIZE, barrier
-from gpu.cluster import (
-    block_rank_in_cluster,
-    cluster_sync,
-    cluster_sync_relaxed,
-    elect_one_sync,
-)
+from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from gpu.host import Dim as ClusterDim
-from gpu.host import FuncAttribute
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
-from gpu.id import block_dim, block_idx, thread_idx
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.mma import (
-    WGMMADescriptor,
-    wgmma_async,
-    wgmma_commit_group_sync,
-    wgmma_fence_aligned,
-    wgmma_wait_group_sync,
-)
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
-    fill,
     random,
     zero,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import LayoutTensorIter, copy_local_to_dram
-from layout.tensor_core_async import TensorCoreAsync, tile_layout_k_major
-from layout.tma_async import PipelineState, TMATensorTile, create_tma_tile
 from linalg.matmul_sm90 import warp_specialize_gemm_with_multicasting
 from linalg.matmul_tile_scheduler import MatmulSchedule
 from linalg.utils import (
@@ -61,11 +33,8 @@ from linalg.utils import (
     elementwise_epilogue_type,
 )
 from linalg.utils_gpu import MatmulConfig
-from memory import stack_allocation
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4
@@ -137,8 +106,8 @@ def test_warp_specialize_gemm_with_multicasting[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
     ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
-    alias block_tile_shape = Index(128, wgmma_n, 64)
-    alias wgmma_shape = Index(64, wgmma_n, 16)
+    alias block_tile_shape = Index(128, wgmma_n, 128 // sizeof[a_type]())
+    alias wgmma_shape = Index(64, wgmma_n, 32 // sizeof[a_type]())
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -159,24 +128,20 @@ def test_warp_specialize_gemm_with_multicasting[
 
     debug_assert(
         (ceildiv(M, BM) % (CLUSTER_M)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. M",
-            "(M // BM=",
-            String(M // BM),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_M),
-        ),
+        "Number of blocks on M axis should be multiple of cluster dim. M",
+        "(M // BM=",
+        M // BM,
+        ") CLUSTER SIZE:",
+        CLUSTER_M,
     )
 
     debug_assert(
         (ceildiv(N, BN) % (CLUSTER_N)) == 0,
-        String(
-            "Number of blocks on M axis should be multiple of cluster dim. N",
-            "N // BN=(",
-            String(N // BN),
-            ") CLUSTER SIZE:",
-            String(CLUSTER_N),
-        ),
+        "Number of blocks on M axis should be multiple of cluster dim. N",
+        "N // BN=(",
+        N // BN,
+        ") CLUSTER SIZE:",
+        CLUSTER_N,
     )
 
     var c_tensor = c_device.tensor
@@ -195,7 +160,7 @@ def test_warp_specialize_gemm_with_multicasting[
         )
 
     alias matmul_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b, mma_shape = Index(64, wgmma_n, 16)
+        a_type, b_type, c_type, transpose_b, mma_shape=wgmma_shape
     ](
         block_tile_shape=block_tile_shape,
         cluster_shape=cluster_shape,
@@ -512,3 +477,23 @@ def main():
                 partitioned_multicast=False,
                 schedule = MatmulSchedule.TILE2D,
             ](ctx, dynamic(1024), static[wgmma_n * 6](), static[128]())
+
+        # FP32-TF32
+        test_warp_specialize_gemm_with_multicasting[
+            128,
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            Index(1, 1, 1),
+            num_consumer=2,
+        ](ctx, dynamic(277), static[2560](), static[128]())
+        test_warp_specialize_gemm_with_multicasting[
+            256,
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            Index(2, 2, 1),
+            num_consumer=2,
+            partitioned_multicast=False,
+            schedule = MatmulSchedule.TILE2D,
+        ](ctx, dynamic(1024), static[256 * 6](), static[128]())

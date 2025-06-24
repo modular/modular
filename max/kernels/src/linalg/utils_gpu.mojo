@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
 from hashlib._hasher import _Hasher
 from math import ceildiv
 from sys import (
@@ -22,15 +21,17 @@ from sys import (
     has_nvidia_gpu_accelerator,
     sizeof,
 )
+from sys.ffi import _get_global_or_null, external_call
 
 from gpu import WARP_SIZE
 from gpu.grid_controls import PDLLevel
 from gpu.host import DeviceContext
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
-from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
+from layout.tensor_core import get_mma_shape
 
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
+from gpu.host.device_context import DeviceBuffer
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -63,15 +64,25 @@ fn _block_swizzle_by_scale[
     This helps when N is very large e.g. 1024 x 32768 x 3072 in Replit 3B.
     """
     var scale = scale0
+    # basically num_partitions = 2^3 = 8
     var num_partitions = 1 << scale
+    # while griddim_x not divisible by num_partitions, reduce scale till scale is 0
     while (grid_dim.data[0] & (num_partitions - 1)) and scale > 0:
         scale -= 1
         num_partitions = 1 << scale
 
+    # bx is the x coordinate of the block
+    # by is the y coordinate of the block
+    # bx = block_idx.data[0] >> scale
     var bx = block_idx.data[0] >> scale
     var by = (block_idx.data[1] << scale) + (
         (block_idx.data[0]) & ((1 << scale) - 1)
     )
+
+    # for the number of rows of overflow, we want to move to next stripe
+    # So if one overflow occurs and a stripe is six blocks wide, we slide bx six places to the right.
+    # where a stripe is determined by remaining blocks of x
+    # bx is now 5 + 1 * rows in a stripe or width of stripe
     bx = bx + by // grid_dim.data[1] * (grid_dim.data[0] >> scale)
     by = by % grid_dim.data[1]
 
@@ -79,11 +90,10 @@ fn _block_swizzle_by_scale[
 
 
 # ===------------------------------------------------------------------===#
-# GPU Matmul Cofiguration
+# GPU Matmul Configuration
 # ===------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
 struct MatmulConfig[
     a_type: DType,
@@ -91,7 +101,7 @@ struct MatmulConfig[
     c_type: DType,
     transpose_b: Bool = False,
     mma_shape: IndexList[3] = get_mma_shape[a_type, get_accum_type[a_type]()](),
-](Stringable, Writable):
+](Stringable, Writable, Copyable, Movable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -120,7 +130,7 @@ struct MatmulConfig[
 
     # MMA is typically accumulated in FP32. The reduction over partitions may be
     # done in lower precision to reduce traffic to intermediate buffer. This is
-    # acceptible since the number of partitions is small, typically < 8.
+    # acceptable since the number of partitions is small, typically < 8.
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 
@@ -288,11 +298,11 @@ fn _shared_memory_usage[
     return max(max(a_usage + b_usage, c_usage), slice_k_reduction)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-]:
+](Copyable, Movable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.
@@ -509,256 +519,92 @@ fn select_config[
     )
 
 
-fn get_config_from_shape[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    static_N: Int,
-    static_K: Int,
-    transpose_b: Bool = False,
-    target: StaticString = DEFAULT_GPU_ARCH,
-](dyn_M: Int, ctx: DeviceContext) -> MatmulConfig[
-    a_type, b_type, c_type, transpose_b
-]:
-    # This part code may be useful when replacing alias with runtime variables.
-    # Construct the config before hand and use index map to retrieve the config.
-    # var block_shape_list = List[IndexList[3]]()
-    # var mn_list = [64, 128, 256]
-    # var k_list = [32, 64]
+fn create_hilbert_lut(
+    ctx: DeviceContext, grid_x: Int, grid_y: Int
+) raises -> DeviceBuffer[DType.uint32]:
+    """Precompute Hilbert-curve block swizzle lookup-table for a rectangular grid.
 
-    # @parameter
-    # for i in range(3):
+    The returned device pointer refers to a 1-D UInt32 array of length
+        grid_x * grid_y.
+    For linear (row-major) block id `id`, the packed value at `lut[id]`
+    encodes the swizzled coordinates:  upper 16-bits = y, lower 16-bits = x.
+    """
+    var num_blocks = grid_x * grid_y
+    # Allocate temporary host buffer.
+    var host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(num_blocks)
 
-    #     @parameter
-    #     for j in range(3):
+    # Next power-of-two square dimension enclosing the rectangle.
+    var dim_pow2 = 1
+    while dim_pow2 < grid_x or dim_pow2 < grid_y:
+        dim_pow2 <<= 1
 
-    #         @parameter
-    #         for k in range(2):
-    #             block_shape_list.append(Index(mn_list.get[i, Int](), mn_list.get[j, Int](), k_list.get[k, Int]()))
+    var seen: Int = 0
+    var d: UInt32 = 0
+    while seen < num_blocks:
+        # Decode Hilbert distance d to (hx,hy).
+        var hx: UInt32 = 0
+        var hy: UInt32 = 0
+        var t: UInt32 = d
+        var s: UInt32 = 1
+        while s < UInt32(dim_pow2):
+            var rx = (t >> 1) & 1
+            var ry = (t ^ rx) & 1
+            if ry == 0:
+                if rx == 1:
+                    hx = UInt32(s) - 1 - hx
+                    hy = UInt32(s) - 1 - hy
+                # rotate
+                var tmp = hx
+                hx = hy
+                hy = tmp
+            hx += UInt32(s) * rx
+            hy += UInt32(s) * ry
+            t >>= 2
+            s <<= 1
 
-    alias warp_shape = Index(64, 64, 2 * _bk_base[a_type]())
+        if hx < UInt32(grid_x) and hy < UInt32(grid_y):
+            host_ptr[seen] = Scalar[DType.uint32]((hy << 16) | hx)  # pack (y,x)
+            seen += 1
+        d += 1
 
-    var default_config = select_config[a_type, b_type, c_type, transpose_b](
-        dyn_M, static_N, static_K, ctx
-    )
-    # MatmulConfig for N=K=4096
-    alias M128_N4096_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(64, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias M256_N4096_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(64, 256, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias M512_N4096_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=2,
-    )
-    alias M1024_N4096_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias M2048_N4096_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-
-    # MatmulConfig for N=4096 K = 14336
-    alias M128_N4096_K14336_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(64, 256, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=3,
-    )
-    alias M512_N4096_K14336_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(256, 128, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=3,
-        num_k_partitions=3,
-    )
-    alias M1024_N4096_K14336_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=2,
-    )
-    alias M2048_N4096_K14336_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-    )
-
-    # MatmulConfig for N=128256 K = 4096
-    alias M128_N128256_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 256, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-    )
-    alias MXXXX_N128256_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(256, 128, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-    )
-
-    # MatmulConfig for N = 28672 K=4096
-    alias M128_N28672_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias M256_N28672_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(64, 256, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias M512_N28672_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias MXXXX_N28672_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(256, 128, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-    )
-
-    # MatmulConfig for N = 6144 K=4096
-    alias M128_N6144_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 32),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias M256_N6144_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(128, 128, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=4,
-        num_k_partitions=1,
-    )
-    alias MXXXX_N6144_K4096_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b
-    ](
-        block_tile_shape=Index(256, 128, 64),
-        warp_tile_shape=warp_shape,
-        num_pipeline_stages=3,
-        num_k_partitions=1,
-    )
-
-    # dispatch config for N = 4096 K = 4096
-    @parameter
-    if static_N == 4096 and static_K == 4096:
-        if dyn_M <= 128:
-            return M128_N4096_K4096_config
-        elif dyn_M <= 256:
-            return M256_N4096_K4096_config
-        elif dyn_M <= 512:
-            return M512_N4096_K4096_config
-        elif dyn_M <= 1024:
-            return M1024_N4096_K4096_config
-        elif dyn_M <= 2048:
-            return M2048_N4096_K4096_config
-
-    # dispatch config for N = 4096 K = 14336
-    @parameter
-    if static_N == 4096 and static_K == 14336:
-        if dyn_M <= 128:
-            return M128_N4096_K14336_config
-        elif dyn_M <= 512:
-            return M512_N4096_K14336_config
-        elif dyn_M <= 1024:
-            return M1024_N4096_K14336_config
-        elif dyn_M <= 2048:
-            return M2048_N4096_K14336_config
-
-    # dispatch config for N = 128256 K = 4096
-    @parameter
-    if static_N == 128256 and static_K == 4096:
-        if dyn_M <= 128:
-            return M128_N128256_K4096_config
-        elif dyn_M <= 2048:
-            return MXXXX_N128256_K4096_config
-
-    # dispatch config for N = 28672 K = 4096
-    @parameter
-    if static_N == 4096 and static_K == 4096:
-        if dyn_M <= 128:
-            return M128_N28672_K4096_config
-        elif dyn_M <= 256:
-            return M256_N28672_K4096_config
-        elif dyn_M <= 512:
-            return M512_N28672_K4096_config
-        elif dyn_M <= 2048:
-            return MXXXX_N28672_K4096_config
-
-    # dispatch config for N = 6144 K = 4096
-    @parameter
-    if static_N == 6144 and static_K == 4096:
-        if dyn_M <= 128:
-            return M128_N6144_K4096_config
-        elif dyn_M <= 256:
-            return M256_N6144_K4096_config
-        elif dyn_M <= 2048:
-            return MXXXX_N6144_K4096_config
-
-    return default_config
+    # Allocate device buffer and copy.
+    var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
+    ctx.enqueue_copy(device_buf, host_ptr)
+    host_ptr.free()
+    return device_buf
 
 
-@parameter
-fn _get_block_warp_tile_shape[
-    BM: Int, BN: Int, BK: Int
-]() -> List[IndexList[3]]:
-    alias WM = 64
-    alias WN = 64
-    alias WK = BK
-    return List[IndexList[3]](Index(BM, BN, BK), Index(WM, WN, WK))
+fn get_hilbert_lut_with_cache(
+    ctx: DeviceContext, grid_x: Int, grid_y: Int
+) raises -> DeviceBuffer[DType.uint32]:
+    """Get Hilbert lookup table using global cache (no struct needed)."""
+    var key_str = String("hilbert_lut_") + String(grid_x) + "_" + String(grid_y)
+
+    # use runtime lookup since key is computed at runtime
+    var cached_ptr = external_call[
+        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
+    ](key_str.unsafe_cstr_ptr(), key_str.byte_length())
+
+    if cached_ptr:
+        var device_ptr = cached_ptr.bitcast[Scalar[DType.uint32]]()
+        var num_blocks = grid_x * grid_y
+        # the cached buffer stays alive as long as the program runs
+        return DeviceBuffer[DType.uint32](
+            ctx, device_ptr, num_blocks, owning=False
+        )
+
+    # not in cache :(
+    var buf = create_hilbert_lut(ctx, grid_x, grid_y)
+    var device_ptr = buf._unsafe_ptr()
+    var num_blocks = grid_x * grid_y
+
+    # store the device pointer directly in global cache
+    external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+        StringSlice(key_str),
+        device_ptr.bitcast[NoneType](),
+    )
+
+    # the buffer will live for the duration of the program
+    _ = buf.take_ptr()
+
+    return DeviceBuffer[DType.uint32](ctx, device_ptr, num_blocks, owning=False)

@@ -18,7 +18,6 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel
 from linalg.matmul_gpu import matmul_kernel_naive
-from memory import UnsafePointer
 from testing import assert_false
 
 from utils.numerics import isnan

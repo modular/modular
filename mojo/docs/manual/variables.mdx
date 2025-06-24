@@ -11,24 +11,29 @@ can't change at runtime, see the
 
 Mojo has two kinds of variables:
 
-* Explicitly-declared variables are created with the `var` keyword, and may include
-  [type annotations](#type-annotations).
+* Explicitly-declared variables are created with the `var` keyword.
 
-  ```mojo
+  ```mojo {doctest="foo"}
   var a = 5
   var b: Float64 = 3.14
+  var c: String
   ```
 
-* Implicitly-declared variables are created with an assignment statement:
+* Implicitly-declared variables are created the first time the variable is used,
+  either with an assignment statement, or with a type annotation:
 
   ```mojo
   a = 5
-  b = 3.14
+  b: Float64 = 3.14
+  c: String
   ```
 
-Both types of variables are strongly-typed: the variable receives a type when
-it's created, and the type never changes. You can't assign a variable a value of
-a different type:
+Both types of variables are strongly typed—the type is either set explicitly
+with a [type annotation](#type-annotations) or implicitly when the variable is
+first initialized with a value.
+
+Either way, the variable receives a type when it's created, and the type never
+changes. So you can't assign a variable a value of a different type:
 
 ```mojo
 count = 8 # count is type Int
@@ -66,6 +71,16 @@ first value assigned to them. For example, the `user_id` variable above is type
 `Int`, while the `name` variable is type `String`. You can't assign a string to
 `user_id` or an integer to `name`.
 
+You can also use a type annotation with an implicitly-declared variable, either
+as part of an assignment statement, or on its own:
+
+```mojo
+name: String = "Sam"
+user_id: Int
+```
+
+Here the `user_id` variable has a type, but is uninitialized.
+
 Implicitly-declared variables are scoped at the function level. You create an
 implicitly-declared variable the first time you assign a value to a given name
 inside a function. Any subsequent references to that name inside the function
@@ -83,10 +98,7 @@ var user_id: Int
 ```
 
 The `name` variable is initialized to the string "Sam". The `user_id` variable
-is uninitialized, but it has a declared type, `Int` for an integer value. All
-explicitly-declared variables are typed—either explicitly with a
-[type annotation](#type-annotations) or implicitly when they're initialized with
-a value.
+is uninitialized, but it has a declared type, `Int` for an integer value.
 
 Since variables are strongly typed, you can't assign a variable a
 value of a different type, unless those types can be
@@ -97,17 +109,8 @@ not compile:
 var user_id: Int = "Sam"
 ```
 
-There are several main differences between explicitly-declared variables and
-implicitly-declared variables:
-
-* An explicitly-declared variable can be declared without initializing it:
-
-  ```mojo
-  var value: Float64
-  ```
-
-* Explicitly-declared variables follow [lexical scoping](#variable-scopes),
-  unlike implicitly-declared variables.
+Explicitly-declared variables follow [lexical scoping](#variable-scopes), unlike
+implicitly-declared variables.
 
 ## Type annotations
 
@@ -119,17 +122,13 @@ To specify the type for a variable, add a colon followed by the type name:
 
 ```mojo
 var name: String = get_name()
+# Or
+name: String = get_name()
 ```
 
 This makes it clear that `name` is type `String`, without knowing what the
 `get_name()` function returns. The `get_name()` function may return a `String`,
 or a value that's implicitly convertible to a `String`.
-
-:::note
-
-You must declare a variable with `var` to use type annotations.
-
-:::
 
 If a type has a constructor with just one argument, you can initialize it in
 two ways:
@@ -270,7 +269,10 @@ num: 1
 dig: 2
 ```
 
-Note that the `var` statement inside the `if` creates a **new** variable with the same name as the outer variable. This prevents the inner loop from accessing the outer `num` variable. (This is called "variable shadowing," where the inner scope variable hides or "shadows" a variable from an outer scope.)
+Note that the `var` statement inside the `if` creates a **new** variable with
+the same name as the outer variable. This prevents the inner loop from accessing
+the outer `num` variable. (This is called "variable shadowing," where the inner
+scope variable hides or "shadows" a variable from an outer scope.)
 
 The lifetime of the inner `num` ends exactly where the `if` code block ends,
 because that's the scope in which the variable was defined.
@@ -304,3 +306,31 @@ function_scopes()
 Now, the last `print()` function sees the updated `num` value from the inner
 scope, because implicitly-declared variables (Python-style variables) use function-level
 scope (instead of lexical scope).
+
+## Reference bindings
+
+Some APIs return
+[references](/mojo/manual/values/lifetimes#working-with-references) to values
+owned elsewhere. References can be useful to avoid copying values. For example,
+when you retrieve a value from a collection, the collection returns a reference.
+Assigning a reference to an variable creates a copy:
+
+```mojo
+items = [99, 77, 33, 12]
+item = items[1]  # item is a copy of items[1]
+item += 1  # increments item
+```
+
+To hold on to reference, use the `ref` keyword to create a reference binding:
+
+```mojo
+ref item_ref = items[1] # item_ref is a reference to item[1]
+item_ref += 1 # increments items[1]
+```
+
+Here the name `item_ref` is bound to the reference to `items[1]`. Once this
+binding is assigned, it can't be changed. All reads and writes to `item_ref` go
+to the referenced item.
+
+For more information on references, see
+[Working with references](/mojo/manual/values/lifetimes#working-with-references).

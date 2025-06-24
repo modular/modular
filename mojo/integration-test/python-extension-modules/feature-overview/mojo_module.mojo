@@ -18,7 +18,6 @@ from builtin._pybind import (
     check_and_get_or_convert_arg,
     check_arguments_arity,
 )
-from memory import UnsafePointer
 from python import Python, PythonObject
 from python.bindings import (
     PyMojoObject,
@@ -128,7 +127,7 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, Representable, Copyable, Movable):
+struct Person(Copyable, Defaultable, Movable, Representable):
     var name: String
     var age: Int
 
@@ -172,7 +171,7 @@ struct Person(Defaultable, Representable, Copyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Movable, Defaultable, Representable):
+struct FailToInitialize(Defaultable, Movable, Representable):
     fn __init__(out self):
         pass
 

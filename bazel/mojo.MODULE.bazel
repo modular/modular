@@ -1,10 +1,41 @@
 """Define the Mojo toolchain"""
 
-MOJO_VERSION = "25.4.0.dev2025060220"
+MOJO_VERSION = "25.5.0.dev2025062305"
+
+# NOTE: Used internally when pushing new releases
+URL_OVERRIDE = ""
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
+    url_override = URL_OVERRIDE,
     use_prebuilt_packages = False,
     version = MOJO_VERSION,
 )
 use_repo(mojo, "mojo_toolchains")
+
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+_PLATFORM_MAPPINGS = {
+    "linux_aarch64": "manylinux_2_34_aarch64",
+    "linux_x86_64": "manylinux_2_34_x86_64",
+    "macos_arm64": "macosx_13_0_arm64",
+}
+
+[
+    http_file(
+        name = "modular_{}".format(platform),
+        downloaded_file_path = "max-{}-py3-none-{}.whl".format(
+            MOJO_VERSION,
+            _PLATFORM_MAPPINGS[platform],
+        ),
+        url = URL_OVERRIDE or "https://dl.modular.com/public/nightly/python/max-{}-py3-none-{}.whl".format(
+            MOJO_VERSION,
+            _PLATFORM_MAPPINGS[platform],
+        ),
+    )
+    for platform in [
+        "linux_x86_64",
+        "linux_aarch64",
+        "macos_arm64",
+    ]
+]

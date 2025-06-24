@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
 from random import rand
 from sys import argv, has_amd_gpu_accelerator
 
@@ -20,9 +19,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, DEFAULT_GPU_ARCH, H100, Info, Vendor
-from internal_utils import assert_with_measure
-from memory import UnsafePointer
+from gpu.host.info import A100, H100, Info, Vendor
 from nn.mha import (
     _naive_attention_with_transpose,
     flash_attention,
@@ -151,7 +148,7 @@ fn test[
         rand[qkv_type](v_ptr, v_size)
         rand[mask_type](mask_ptr, mask_size)
 
-    # Contruct buffers.
+    # Construct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
@@ -197,7 +194,7 @@ fn test[
     ctx.enqueue_copy(v_device_ptr, v_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](

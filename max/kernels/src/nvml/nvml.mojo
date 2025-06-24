@@ -12,14 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
-from collections import List
-from collections.string import StaticString
 from os import abort
 from pathlib import Path
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import UnsafePointer, stack_allocation
+from memory import stack_allocation
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -77,8 +75,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-@value
-struct DriverVersion:
+struct DriverVersion(Copyable, Movable, StringableRaising):
     var _value: List[String]
 
     @implicit
@@ -103,9 +100,9 @@ struct DriverVersion:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct Result(Stringable, EqualityComparable):
+struct Result(Copyable, EqualityComparable, Movable, Stringable):
     var code: Int32
 
     alias SUCCESS = Self(0)
@@ -176,7 +173,7 @@ struct Result(Stringable, EqualityComparable):
     """No data"""
 
     alias VGPU_ECC_NOT_SUPPORTED = Self(22)
-    """The requested vgpu operation is not available on target device, becasue
+    """The requested vgpu operation is not available on target device, because
     ECC is enabled"""
 
     alias INSUFFICIENT_RESOURCES = Self(23)
@@ -311,9 +308,9 @@ fn _check_error(err: Result) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct EnableState(EqualityComparable):
+struct EnableState(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias DISABLED = Self(0)
@@ -336,9 +333,9 @@ struct EnableState(EqualityComparable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct ClockType(EqualityComparable):
+struct ClockType(Copyable, EqualityComparable, Movable):
     var code: Int32
 
     alias GRAPHICS = Self(0)
@@ -367,14 +364,14 @@ struct ClockType(EqualityComparable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _DeviceImpl:
-    var handle: UnsafePointer[NoneType]
+struct _DeviceImpl(Copyable, Defaultable, Movable):
+    var handle: OpaquePointer
 
     @always_inline
     fn __init__(out self):
-        self.handle = UnsafePointer[NoneType]()
+        self.handle = OpaquePointer()
 
     @always_inline
     fn __bool__(self) -> Bool:
@@ -621,9 +618,9 @@ struct Device(Writable):
         return String.write(self)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _EnableState:
+struct _EnableState(Copyable, Movable):
     var state: Int32
 
     alias DISABLED = _EnableState(0)  # Feature disabled

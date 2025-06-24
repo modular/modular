@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, OptionalReg
-from collections.string import StaticString
+from collections import OptionalReg
 from math import align_down, align_up, ceildiv
 from sys._build import is_debug_build
-from sys.info import bitwidthof, simdwidthof, sizeof
+from sys.info import simdwidthof, sizeof
 
 from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
@@ -27,8 +26,7 @@ from buffer import NDBuffer
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from memory import UnsafePointer, memcpy
-from register import register_internal
+from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel
 
@@ -108,9 +106,9 @@ fn memcpy_or_fuse[
         elementwise[epilogue_wrapper, simd_width=1](shape_1d)
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _Span:
+struct _Span(Copyable, Movable):
     var start: Int
     var end: Int
 
@@ -123,9 +121,9 @@ struct _Span:
         return Self(max(self.start, other.start), min(self.end, other.end))
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
-struct _CanonicallyReshapedBuffer:
+struct _CanonicallyReshapedBuffer(Copyable, Movable):
     var data: UnsafePointer[Int8]
     var h: Int
     var w: Int
@@ -433,7 +431,7 @@ fn _concat_small[
     @parameter
     @always_inline
     fn concat_lambda[simd_width: Int, rank: Int](out_index: IndexList[rank]):
-        # Concating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
+        # Concatenating [:, 10, :], [:, 20, :], [:, 30, :] results in shape
         # [:, 60, :] so when the target dim is:
         #   0 >= target_dim < 10: We are loading from first input.
         #   10 >= target_dim < 20: We are loading from second input.

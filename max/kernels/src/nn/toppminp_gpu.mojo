@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
-from math import ceildiv, exp
-from sys import alignof, bitwidthof, simdwidthof, sizeof
-from sys._assembly import inlined_assembly
+from math import ceildiv
+from sys import alignof, bitwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -34,7 +32,7 @@ from gpu.host import DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from memory import UnsafePointer, bitcast, stack_allocation
+from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
@@ -88,7 +86,7 @@ fn topk_wrapper[
         in_buffer: UnsafePointer[Scalar[T]] - Input buffer containing the elements to process
         local_topk_vals: UnsafePointer[Scalar[T]] - Output buffer to store the local top-K values
         local_topk_idxs: UnsafePointer[Scalar[out_idx_type]] - Output buffer to store the indices of local top-K elements
-        p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p cofficient
+        p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
         skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
     tid = thread_idx.x

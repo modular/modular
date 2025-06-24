@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from math import align_up, ceildiv, erf, exp, fma, isqrt, log, sin, sqrt, tanh
+from math import align_up, erf, exp, isqrt, log, sin, sqrt, tanh
 from sys import (
     alignof,
     env_get_int,
     env_get_string,
-    is_nvidia_gpu,
     simdwidthof,
     sizeof,
 )
@@ -25,14 +24,11 @@ from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import DimList, NDBuffer
+from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
-from buffer.dimlist import _make_tuple
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_gpu_target
-from internal_utils import DeviceNDBuffer, arg_parse, parse_shape
-from memory import UnsafePointer
-from testing import assert_equal
+from gpu.host import DeviceContext
+from gpu.host import get_gpu_target
+from internal_utils import arg_parse, parse_shape
 
 from utils import IndexList
 from utils.index import product
@@ -124,9 +120,9 @@ fn run_elementwise[
     name: StaticString,
     ctx: DeviceContext,
 ) raises:
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
     alias align = alignof[
-        SIMD[type, pack_size], target = _get_gpu_target()
+        SIMD[type, pack_size], target = get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 

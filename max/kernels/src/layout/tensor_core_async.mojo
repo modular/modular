@@ -36,9 +36,7 @@ This implementation is specifically optimized for NVIDIA GPUs with Tensor Core s
 """
 from sys import sizeof
 
-from gpu import WARP_SIZE, barrier
 from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import thread_idx
 from gpu.memory import AddressSpace
 from gpu.mma import (
     WGMMADescriptor,
@@ -60,9 +58,8 @@ from layout.layout import (
     tile_to_shape,
     upcast,
 )
-from memory.unsafe_pointer import UnsafePointer
 
-from utils import Index, IndexList, StaticTuple
+from utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #
@@ -177,7 +174,9 @@ fn _supported_mma_shape[
     # (https://mlir.llvm.org/docs/Dialects/NVVMDialect/#nvvmwgmmamma_async-nvvmwgmmammaasyncop).
     @parameter
     if mma_shape[0] == 64 and mma_shape[2] == 8:
-        return mma_shape[1] in (8,)
+        return (
+            mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
+        )
     elif mma_shape[0] == 64 and mma_shape[2] == 16:
         return (
             mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
@@ -191,8 +190,10 @@ fn _supported_mma_shape[
 
 
 # Core matrix dimensions
-# Each core matix has 8 rows and 16 bytes per row.
+# Each core matrix has 8 rows and 16 bytes per row.
 alias _CM_NUM_ROWS = 8
+
+
 alias _CM_ROW_BYTES = 16
 alias _CM_ROW_BITS = 128
 
@@ -242,7 +243,7 @@ fn _checked_tile_shape[
     if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         alias k_bytes = BK * sizeof[type]()
         constrained[
-            k_bytes == swizzle_mode.bytes(),
+            (k_bytes % swizzle_mode.bytes()) == 0,
             "K dim "
             + String(k_bytes)
             + " doesn't match "
@@ -541,7 +542,7 @@ fn _wgmma_descriptor[
             + String(layout),
         ]()
 
-        # Ingore 4 LSB.
+        # Ignore 4 LSB.
         alias SBO = (stride01 * sizeof[type]()) >> 4
         alias LBO = (stride11 * sizeof[type]()) >> 4
 
@@ -659,7 +660,7 @@ struct TensorCoreAsync[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     transpose_b: Bool = False,
-]:
+](Defaultable):
     """High-performance asynchronous tensor core operations for matrix multiplication.
 
     This struct provides methods for utilizing NVIDIA's Tensor Cores for asynchronous

@@ -13,8 +13,7 @@
 """Provides tracing utilities."""
 
 
-from collections.optional import OptionalReg
-from collections.string import StaticString
+from collections.optional import OptionalReg, Optional
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
 
@@ -25,7 +24,7 @@ from gpu.host._tracing import _is_enabled as _gpu_is_enabled
 from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
 from gpu.host._tracing import _mark as _mark_gpu
 from gpu.host._tracing import _start_range as _start_gpu_range
-from memory import UnsafePointer
+from gpu.host._tracing import Color
 
 from utils import IndexList, Variant
 
@@ -42,7 +41,7 @@ fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct TraceCategory(EqualityComparable, Intable):
     """An enum-like struct specifying the type of tracing to perform."""
@@ -120,9 +119,8 @@ struct TraceCategory(EqualityComparable, Intable):
 # ===-----------------------------------------------------------------------===#
 
 
-@value
 @register_passable("trivial")
-struct TraceLevel(EqualityComparable):
+struct TraceLevel(Copyable, EqualityComparable, Movable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     alias ALWAYS = Self(0)
@@ -355,13 +353,13 @@ fn trace_arg(name: String, buf: NDBuffer) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-@value
+@fieldwise_init
 struct Trace[
     level: TraceLevel,
     *,
     category: TraceCategory = TraceCategory.MAX,
     target: Optional[StaticString] = None,
-]:
+](Copyable, Movable):
     """An object representing a specific trace.
 
     This struct provides functionality for creating and managing trace events
@@ -386,6 +384,9 @@ struct Trace[
     var parent_id: Int
     """Identifier of the parent trace event, used for creating hierarchical trace relationships."""
 
+    var color: Optional[Color]
+    """Color of the trace span in NSight Systems viewer, only used for NVTX markers."""
+
     # This constructor is intentionally hidden because Variant is too flexible
     # about what it allows and we want to ensure that only StaticString or
     # String are used.
@@ -397,6 +398,7 @@ struct Trace[
         detail: String = "",
         parent_id: Int = 0,
         task_id: OptionalReg[Int] = None,
+        color: Optional[Color] = None,
     ):
         """Creates a Mojo trace with the given name.
 
@@ -406,10 +408,12 @@ struct Trace[
             parent_id: Parent to associate the trace with. Trace name will be
                 appended to parent name. 0 (default) indicates no parent.
             task_id: Int that is appended to name.
+            color: Color of the trace span when visualized.
         """
 
         self.event_id = 0  # Known only when begin recording in __enter__
         self.parent_id = parent_id
+        self.color = color
 
         # Debug assert the AsyncRT profiler => StaticString invariant for now,
         # to avoid making this raising.
@@ -450,6 +454,7 @@ struct Trace[
         owned name: String,
         detail: String = "",
         parent_id: Int = 0,
+        color: Optional[Color] = None,
         *,
         task_id: OptionalReg[Int] = None,
     ):
@@ -460,6 +465,7 @@ struct Trace[
             detail: Details of the trace entry.
             parent_id: Parent to associate the trace with. Trace name will be
                 appended to parent name. 0 (default) indicates no parent.
+            color: Color of the trace span when visualized.
             task_id: Int that is appended to name.
         """
         self = Self(
@@ -467,6 +473,7 @@ struct Trace[
             detail=detail,
             parent_id=parent_id,
             task_id=task_id,
+            color=color,
         )
 
     @always_inline
@@ -475,6 +482,7 @@ struct Trace[
         name: StaticString,
         detail: String = "",
         parent_id: Int = 0,
+        color: Optional[Color] = None,
         *,
         task_id: OptionalReg[Int] = None,
     ):
@@ -485,6 +493,7 @@ struct Trace[
             detail: Details of the trace entry.
             parent_id: Parent to associate the trace with. Trace name will be
                 appended to parent name. 0 (default) indicates no parent.
+            color: Color of the trace span when visualized.
             task_id: Int that is appended to name.
         """
         self = Self(
@@ -492,6 +501,7 @@ struct Trace[
             detail=detail,
             parent_id=parent_id,
             task_id=task_id,
+            color=color,
         )
 
     @always_inline
@@ -500,6 +510,7 @@ struct Trace[
         name: StringLiteral,
         detail: String = "",
         parent_id: Int = 0,
+        color: Optional[Color] = None,
         *,
         task_id: OptionalReg[Int] = None,
     ):
@@ -510,6 +521,7 @@ struct Trace[
             detail: Details of the trace entry.
             parent_id: Parent to associate the trace with. Trace name will be
                 appended to parent name. 0 (default) indicates no parent.
+            color: Color of the trace span when visualized.
             task_id: Int that is appended to name.
         """
         self = Self(
@@ -517,6 +529,7 @@ struct Trace[
             detail=detail,
             parent_id=parent_id,
             task_id=task_id,
+            color=color,
         )
 
     @always_inline
@@ -539,12 +552,15 @@ struct Trace[
                         message=self.name()
                         + (("/" + self.detail) if self.detail else ""),
                         category=Int(category),
+                        color=self.color,
                     )
                 )
             else:
                 self.event_id = Int(
                     _start_gpu_range(
-                        message=self.name(), category=Int(category)
+                        message=self.name(),
+                        category=Int(category),
+                        color=self.color,
                     )
                 )
             return

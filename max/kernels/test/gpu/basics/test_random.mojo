@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt, sqrt
-from sys import has_neon, simdwidthof
+from sys import simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_gpu_target
+from gpu.host import get_gpu_target
 from gpu.random import Random
 from testing import *
 
@@ -28,7 +27,7 @@ from utils.index import Index, IndexList
 def run_elementwise[type: DType](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
+    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
         type, 1, MutableAnyOrigin, DimList(length)

@@ -11,16 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv, isclose, isqrt
+from math import isclose
 from random import rand
-from sys import sizeof
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
-from internal_utils import HostNDBuffer
-from memory import UnsafePointer
-from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha import flash_attention
 from nn.mha_mask import (
     MASK_VALUE,
     ChunkedCausalMask,
@@ -28,11 +24,9 @@ from nn.mha_mask import (
     TileMaskStatus,
 )
 from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import MHAConfig
 from testing import assert_almost_equal, assert_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
+from utils.index import Index
 
 
 def build_ChunkedCausalMask[
@@ -106,7 +100,7 @@ fn test_attention[
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
 
-    # Contruct buffers.
+    # Construct buffers.
     var q = NDBuffer[qkv_type, 4](
         q_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
@@ -146,7 +140,7 @@ fn test_attention[
     ctx.enqueue_copy(v_device_ptr, v_ptr)
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
-    # Contruct device buffers.
+    # Construct device buffers.
     var q_device = NDBuffer[
         qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
     ](

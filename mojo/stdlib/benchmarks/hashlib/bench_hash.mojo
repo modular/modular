@@ -28,7 +28,6 @@ from hashlib.hash import hash as old_hash
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 from bit import byte_swap, rotate_bits_left
-from memory import UnsafePointer
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/
 alias words_ar = """
@@ -583,15 +582,12 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 
 fn gen_word_pairs[words: String = words_en]() -> List[String]:
     var result = List[String]()
-    try:
-        var list = words.split(",")
+    var list = words.split(",")
+    for w in list:
+        var w1 = String(w.strip())
         for w in list:
-            var w1 = String(w.strip())
-            for w in list:
-                var w2 = w.strip()
-                result.append(w1 + " " + w2)
-    except:
-        pass
+            var w2 = w.strip()
+            result.append(w1 + " " + w2)
     return result
 
 

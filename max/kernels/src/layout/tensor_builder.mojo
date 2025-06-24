@@ -24,7 +24,7 @@ Key components:
 - Helper functions for dimension specification and layout creation
 """
 
-from sys import bitwidthof, is_gpu
+from sys import is_gpu
 
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import (
@@ -32,15 +32,14 @@ from layout.layout_tensor import (
     _get_index_type,
     _get_layout_type,
 )
-from memory import UnsafePointer
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from memory.pointer import _GPUAddressSpace
 
-from utils import Index, IndexList, StaticTuple
+from utils import Index, IndexList
 
 from .int_tuple import UNKNOWN_VALUE
 
 
-struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE]:
+struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE](Defaultable):
     """
     Represents either a static dimension (known at compile time) or a dynamic dimension (known at runtime).
 
@@ -135,7 +134,7 @@ fn _to_int_tuple[elements: VariadicList[Int]]() -> IntTuple:
     return int_tuple
 
 
-@value
+@fieldwise_init
 @register_passable("trivial")
 struct LayoutTensorBuild[
     dtype: DType,
@@ -146,7 +145,7 @@ struct LayoutTensorBuild[
     __layout_int_type: DType = _get_layout_type(__layout, __address_space),
     __index_type: DType = _get_index_type(__layout, __address_space),
     __circular: Bool = False,
-]:
+](Copyable, Defaultable, Movable):
     """
     Tensor layout builder providing a fluent interface for constructing tensors with various layouts.
 
@@ -177,7 +176,7 @@ struct LayoutTensorBuild[
         """
         Initializes a new `LayoutTensorBuild` instance with default values.
         """
-        self.runtime_layout = __type_of(self.runtime_layout)()
+        self.runtime_layout = {}
 
     fn row_major[
         *shapes: Int
@@ -199,7 +198,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with row-major layout.
         """
-        return __type_of(res)()
+        return {}
 
     fn row_major(
         self,
@@ -502,7 +501,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with the specified layout.
         """
-        return __type_of(res)()
+        return {}
 
     fn layout[
         rank: Int, shape: IndexList[rank], stride: IndexList[rank]
@@ -525,7 +524,7 @@ struct LayoutTensorBuild[
         Returns:
             `LayoutTensorBuild` - A new builder with the specified custom layout.
         """
-        return __type_of(res)()
+        return {}
 
     fn layout[
         rank: Int

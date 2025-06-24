@@ -16,18 +16,20 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import queue
 import threading
 import uuid
-from collections.abc import Awaitable, Sequence
-from queue import Queue
+from collections.abc import Awaitable, Mapping, Sequence
 from threading import Thread
-from typing import Callable, Optional, TypeVar, cast
+from typing import Callable, NewType, TypeVar, Union, cast
 
 import tqdm
+from max.pipelines.core import SamplingParams
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
+from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
@@ -36,11 +38,25 @@ from max.serve.pipelines.llm import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.process_control import ProcessControl
+from max.serve.scheduler import PrefillRequest, PrefillResponse
 
 T = TypeVar("T")
 U = TypeVar("U")
-RequestQueue = Queue[tuple[Sequence[str], Optional[int], bool]]
-ResponseQueue = Queue[list[str]]
+
+_RequestID = NewType("_RequestID", str)
+
+
+@dataclasses.dataclass
+class _Request:
+    id: _RequestID
+    prompts: Sequence[str]
+    max_new_tokens: int | None
+    use_tqdm: bool
+
+
+@dataclasses.dataclass
+class _Response:
+    complete_texts: Sequence[str]
 
 
 # For now, the LLM class only supports the direct token generation use case.
@@ -51,21 +67,21 @@ class LLM:
 
     _pc: ProcessControl
     _async_runner: Thread
-    _request_queue: RequestQueue
-    _response_queue: ResponseQueue
+    _request_queue: queue.Queue[_Request]
+    _pending_requests: dict[_RequestID, queue.Queue[_Response]]
 
     def __init__(self, pipeline_config: PipelineConfig) -> None:
         settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
         self._pc = ProcessControl(threading, "LLM")
-        self._request_queue = Queue()
-        self._response_queue = Queue()
+        self._request_queue = queue.Queue()
+        self._pending_requests = {}
         self._async_runner = Thread(
             target=_run_async_worker,
             args=(
                 self._pc,
                 pipeline_config,
                 self._request_queue,
-                self._response_queue,
+                self._pending_requests,
                 settings,
             ),
         )
@@ -82,8 +98,11 @@ class LLM:
         prompts: str | Sequence[str],
         max_new_tokens: int | None = 100,
         use_tqdm: bool = True,
-    ) -> list[str]:
+    ) -> Sequence[str]:
         """Generates text completions for the given prompts.
+
+        This method is thread safe and may be used on the same LLM instance
+        from multiple threads concurrently with no external synchronization.
 
         Args:
             prompts: The input string or list of strings to generate completions for.
@@ -101,20 +120,33 @@ class LLM:
             # Handle the edge case where the user passes in a single string
             prompts = (prompts,)
 
-        self._request_queue.put((prompts, max_new_tokens, use_tqdm))
-        return self._response_queue.get()
+        request = _Request(
+            id=_RequestID(str(uuid.uuid4())),
+            prompts=prompts,
+            max_new_tokens=max_new_tokens,
+            use_tqdm=use_tqdm,
+        )
+        response_queue: queue.Queue[_Response] = queue.Queue()
+        self._pending_requests[request.id] = response_queue
+
+        try:
+            self._request_queue.put(request)
+            return response_queue.get().complete_texts
+        finally:
+            # Clean up the pending request mapping
+            self._pending_requests.pop(request.id, None)
 
 
 def _run_async_worker(
     pc: ProcessControl,
     pipeline_config: PipelineConfig,
-    request_queue: RequestQueue,
-    response_queue: ResponseQueue,
+    request_queue: queue.Queue[_Request],
+    pending_requests: Mapping[_RequestID, queue.Queue[_Response]],
     settings: Settings,
 ) -> None:
     asyncio.run(
         _async_worker(
-            pc, pipeline_config, request_queue, response_queue, settings
+            pc, pipeline_config, request_queue, pending_requests, settings
         )
     )
 
@@ -144,8 +176,8 @@ async def _async_map(
 async def _async_worker(
     pc: ProcessControl,
     pipeline_config: PipelineConfig,
-    request_queue: RequestQueue,
-    response_queue: ResponseQueue,
+    request_queue: queue.Queue[_Request],
+    pending_requests: Mapping[_RequestID, queue.Queue[_Response]],
     settings: Settings,
 ) -> None:
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
@@ -153,7 +185,14 @@ async def _async_worker(
     )
     batch_config = batch_config_from_pipeline_config(pipeline_config)
     model_name = pipeline_config.model_config.model_path
-    dispatcher_factory = DispatcherFactory(settings.dispatcher_config)
+    dispatcher_factory = DispatcherFactory[
+        Union[PrefillRequest, PrefillResponse]
+    ](
+        settings.dispatcher_config,
+        transport_payload_type=TransportMessage[
+            Union[PrefillRequest, PrefillResponse]
+        ],
+    )
 
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
@@ -178,30 +217,34 @@ async def _async_worker(
             pc.beat()
             if pc.is_canceled():
                 break
-
             try:
-                (prompts, max_new_tokens, use_tqdm) = request_queue.get(
-                    timeout=0.3
-                )
+                request = request_queue.get(timeout=0.3)
             except queue.Empty:
                 continue
 
             # Lambda to do a full text generation for a request.
             async def all_tokens(prompt: str) -> str:
-                request = TokenGeneratorRequest(
+                sampling_params = SamplingParams(
+                    max_new_tokens=request.max_new_tokens
+                )
+                gen_request = TokenGeneratorRequest(
                     id=str(uuid.uuid4()),
                     index=0,
                     model_name=model_name,
                     prompt=prompt,
-                    max_new_tokens=max_new_tokens,
+                    sampling_params=sampling_params,
                 )
 
                 # Generate this request until complete
-                tokens = await pipeline.all_tokens(request)
+                tokens = await pipeline.all_tokens(gen_request)
                 return "".join(t.decoded_token for t in tokens)
 
-            responses = await _async_map(all_tokens, prompts, use_tqdm=use_tqdm)
+            responses = await _async_map(
+                all_tokens, request.prompts, use_tqdm=request.use_tqdm
+            )
 
-            response_queue.put(responses)
+            # Put the response in the specific queue for this request ID
+            if response_queue := pending_requests.get(request.id):
+                response_queue.put(_Response(complete_texts=responses))
 
         pc.set_completed()

@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+import msgspec
 
 
 class MessageType(Enum):
@@ -21,10 +22,16 @@ class MessageType(Enum):
 
     PREFILL_REQUEST = "prefill_request"
     PREFILL_RESPONSE = "prefill_response"
+    TRANSFER_ENGINE_REQUEST = "transfer_engine_request"
+    TRANSFER_ENGINE_RESPONSE = "transfer_engine_response"
 
 
-@dataclass(frozen=True)
-class ReplyContext:
+class ReplyContext(
+    msgspec.Struct,
+    tag=True,
+    omit_defaults=True,
+    frozen=True,
+):
     """
     Transport-agnostic reply context containing routing information for message replies.
 
@@ -34,4 +41,4 @@ class ReplyContext:
 
     reply_address: str
     correlation_id: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = msgspec.field(default_factory=dict)
