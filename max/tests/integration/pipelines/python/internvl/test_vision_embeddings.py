@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import numpy as np
 import pytest
 import torch
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
@@ -12,6 +13,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.internvl.internvl import InternVisionEmbeddings
 from max.pipelines.architectures.internvl.model_config import VisionConfig
+from max.pipelines.architectures.internvl.tokenizer import (
+    extract_patches_from_image,
+)
 from torch.utils.dlpack import from_dlpack
 
 
@@ -19,7 +23,7 @@ from torch.utils.dlpack import from_dlpack
 class InternVisionEmbeddingsReference(torch.nn.Module):
     """Reference implementation from vLLM."""
 
-    def __init__(self, hidden_size: int, image_size: int, patch_size: int):
+    def __init__(self, *, hidden_size: int, image_size: int, patch_size: int):
         super().__init__()
         self.embed_dim = hidden_size
         self.image_size = image_size
@@ -178,6 +182,30 @@ def generate_max_outputs(
     # Convert from PyTorch's NCHW to MAX's NHWC format
     pixel_values = pixel_values.permute(0, 2, 3, 1).contiguous()
 
+    # Extract shape information
+    batch_size = pixel_values.shape[0]
+
+    # Convert to numpy for processing
+    # Convert to float32 first since numpy doesn't support bfloat16
+    pixel_values_np = pixel_values.cpu().float().numpy()
+
+    # Split each image in the batch into patches.
+    all_patches = []
+    for i in range(batch_size):
+        img = pixel_values_np[i]
+        patches = extract_patches_from_image(
+            img, patch_size=vision_config.patch_size
+        )
+        all_patches.append(patches)
+
+    # Stack all patches - shape: (batch_size, height_patches, width_patches, channels, patch_size, patch_size)
+    pixel_values_np = np.stack(all_patches)
+
+    # Convert back to torch tensor and move to device
+    pixel_values = (
+        torch.from_numpy(pixel_values_np).to(dtype=torch.bfloat16).cuda()
+    ).contiguous()
+
     # Create a minimal config object for InternVisionEmbeddings
     class MinimalConfig:
         def __init__(self, vision_config: VisionConfig):
@@ -197,12 +225,8 @@ def generate_max_outputs(
     )
 
     # Build the graph with symbolic batch dim.
-    # Get actual image dimensions from pixel_values.
-    batch_size, height, width, channels = pixel_values.shape
-    # InternVisionEmbeddings expects BHWC format.
-    input_type = TensorType(
-        dtype, shape=(batch_size, height, width, channels), device=device_ref
-    )
+    # pixel_values now has shape: (batch_size, height_patches, width_patches, channels, patch_size, patch_size)
+    input_type = TensorType(dtype, shape=pixel_values.shape, device=device_ref)
 
     graph = Graph(
         "InternVisionEmbeddings", forward=embeddings, input_types=(input_type,)
@@ -366,14 +390,22 @@ def test_vision_embeddings_multi_gpu(
     state_dict = prepare_embeddings_weights_for_max(embeddings_weights)
 
     # Build graph to test sharding
-    batch_size = 2
+    # Calculate expected patch dimensions
+    patch_size = vision_config.patch_size
+    height_patches = vision_config.image_size // patch_size
+    width_patches = vision_config.image_size // patch_size
+    channels = 3
+    batch_size = 2  # Simulating 2 images
+
     input_type = TensorType(
         vision_config.dtype,
         shape=(
             batch_size,
-            vision_config.image_size,
-            vision_config.image_size,
-            3,
+            height_patches,
+            width_patches,
+            channels,
+            patch_size,
+            patch_size,
         ),
         device=DeviceRef.GPU(0),
     )
@@ -424,15 +456,29 @@ def test_vision_embeddings_multi_gpu_execution(
     # Use large image dimensions to stress test
     # Dimensions must be divisible by patch_size (14)
     height, width = 2688, 2044
-    batch_size = 1
+    batch_size = 1  # Define batch_size explicitly
 
-    # Create f32 inputs to match the failing case
+    # Create test inputs
     pixel_values = torch.randn(
         batch_size, 3, height, width, dtype=torch.float32
     ).to("cuda")
 
-    # Convert to NHWC for MAX
-    pixel_values_nhwc = pixel_values.permute(0, 2, 3, 1).contiguous()
+    # Convert to patches for the test
+    pixel_values_np = (
+        pixel_values.permute(0, 2, 3, 1).cpu().numpy()
+    )  # NCHW -> NHWC
+
+    # Split each image in the batch into patches.
+    all_patches = []
+    for i in range(batch_size):
+        patches = extract_patches_from_image(
+            pixel_values_np[i], patch_size=vision_config.patch_size
+        )
+        all_patches.append(patches)
+    patches = np.stack(all_patches).astype(np.float32)
+
+    # Shape is now (batch_size, height_patches, width_patches, channels, patch_size, patch_size)
+    input_shape = patches.shape
 
     # Create multi-GPU config
     class MultiGPUConfig:
@@ -447,10 +493,10 @@ def test_vision_embeddings_multi_gpu_execution(
 
     state_dict = prepare_embeddings_weights_for_max(embeddings_weights)
 
-    # Build graph with f32 input
+    # Build graph with f32 input using patch dimensions
     input_type_gpu0 = TensorType(
         DType.float32,  # f32 input
-        shape=("batch_size", height, width, 3),
+        shape=input_shape,
         device=DeviceRef.GPU(0),
     )
 
@@ -478,7 +524,7 @@ def test_vision_embeddings_multi_gpu_execution(
 
     input_type_gpu1 = TensorType(
         DType.float32,
-        shape=("batch_size", height, width, 3),
+        shape=input_shape,
         device=DeviceRef.GPU(1),
     )
 
@@ -495,18 +541,19 @@ def test_vision_embeddings_multi_gpu_execution(
     compiled0 = session0.load(graph0, weights_registry=state_dict)
     compiled1 = session1.load(graph1, weights_registry=state_dict)
 
+    # Convert patches to torch tensor for execution.
+    patches_tensor = torch.from_numpy(patches).to(torch.float32)
+
     # Execute on GPU 0
-    input_tensor0 = Tensor.from_dlpack(pixel_values_nhwc).to(Accelerator(0))
+    patches_gpu0 = patches_tensor.to("cuda:0")
+    input_tensor0 = Tensor.from_dlpack(patches_gpu0).to(Accelerator(0))
     result0 = compiled0.execute(input_tensor0)[0]
     assert isinstance(result0, Tensor)
     result0 = result0.to(CPU())
 
     # Copy input to GPU 1 and execute
-    pixel_values_gpu1 = pixel_values.to("cuda:1")
-    pixel_values_nhwc_gpu1 = pixel_values_gpu1.permute(0, 2, 3, 1).contiguous()
-    input_tensor1 = Tensor.from_dlpack(pixel_values_nhwc_gpu1).to(
-        Accelerator(1)
-    )
+    patches_gpu1 = patches_tensor.to("cuda:1")
+    input_tensor1 = Tensor.from_dlpack(patches_gpu1).to(Accelerator(1))
     result1 = compiled1.execute(input_tensor1)[0]
     assert isinstance(result1, Tensor)
     result1 = result1.to(CPU())

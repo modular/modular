@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import numpy as np
 import torch
 from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
@@ -15,6 +16,9 @@ from max.pipelines.architectures.internvl.internvl import (
 )
 from max.pipelines.architectures.internvl.model_config import (
     InternVLConfig,
+)
+from max.pipelines.architectures.internvl.tokenizer import (
+    extract_patches_from_image,
 )
 from torch.utils.dlpack import from_dlpack
 from transformers.models.internvl.configuration_internvl import (
@@ -272,7 +276,6 @@ def generate_torch_outputs(
         vision_model_weights["mlp1.fc2.bias"].to(torch.bfloat16).to("cuda")
     )
 
-    # Use the model's get_image_features method which handles everything
     vision_features = model.get_image_features(
         pixel_values=pixel_values,
         vision_feature_layer=-1,
@@ -359,10 +362,32 @@ def generate_max_outputs(
 
     session = InferenceSession(devices=[Accelerator(0)])
 
-    # Build the graph
-    batch_size, height, width, channels = pixel_values.shape
+    # Extract shape information: pixel_values is NHWC here.
+    batch_size = pixel_values.shape[0]
+
+    # Convert to float32 first since numpy doesn't support bfloat16.
+    pixel_values_np = pixel_values.cpu().float().numpy()
+
+    # Split each image in the batch into patches.
+    all_patches = []
+    for i in range(batch_size):
+        img = pixel_values_np[i]
+        patches = extract_patches_from_image(
+            img, patch_size=internvl_config.vision_config.patch_size
+        )
+        all_patches.append(patches)
+
+    # Stack all patches - shape: (batch_size, height_patches, width_patches, channels, patch_size, patch_size)
+    pixel_values_np = np.stack(all_patches)
+
+    # Convert back to torch tensor and move to device
+    pixel_values_patched = (
+        torch.from_numpy(pixel_values_np).to(dtype=torch.bfloat16).cuda()
+    ).contiguous()
+
+    # Build the graph with pre-extracted patches
     input_type = TensorType(
-        dtype, [batch_size, height, width, channels], device=device_ref
+        dtype, shape=pixel_values_patched.shape, device=device_ref
     )
 
     with Graph("InternVLVisionModel", input_types=(input_type,)) as graph:
@@ -373,7 +398,9 @@ def generate_max_outputs(
     compiled = session.load(graph, weights_registry=vision_model.state_dict())
 
     # Execute the model and get the first result
-    result = compiled.execute(Tensor.from_dlpack(pixel_values).to(device))[0]
+    result = compiled.execute(
+        Tensor.from_dlpack(pixel_values_patched).to(device)
+    )[0]
     assert isinstance(result, Tensor)
     # Convert result back to torch tensor
     return from_dlpack(result)
