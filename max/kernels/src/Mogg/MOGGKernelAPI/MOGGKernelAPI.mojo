@@ -5018,11 +5018,10 @@ struct CumSum:
         axis: Scalar,
         ctx: DeviceContextPtr,
     ):
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-
-        cumsum[rank, dtype, exclusive, reverse](
-            output_buf, input_buf, _unsafe_normalize_neg_index(Int(axis), rank)
+        cumsum[dtype, exclusive, reverse](
+            output.to_layout_tensor(),
+            input.to_layout_tensor(),
+            _unsafe_normalize_neg_index(Int(axis), rank),
         )
 
 

@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
+from layout import LayoutTensor, Layout, RuntimeLayout
+from utils.index import IndexList
 
 from utils.numerics import get_accum_type
 
 
 @always_inline
 fn cumsum[
-    rank: Int,
     type: DType,
     exclusive: Bool,
     reverse: Bool,
 ](
-    output: NDBuffer[mut=True, type, rank],
-    input: NDBuffer[type, rank],
+    output: LayoutTensor[mut=True, type, **_],
+    input: LayoutTensor[type, **_],
     axis: Int,
 ):
     """
@@ -35,7 +35,6 @@ fn cumsum[
     normal or reverse (direction along a given axis).
 
     Parameters:
-        rank: Rank of the input and output tensors.
         type: Type of the input and output tensors.
         exclusive: If set to True, return exclusive sum (top element not included).
         reverse: If set to True, perform cumsum operation in reverse direction.
@@ -45,22 +44,25 @@ fn cumsum[
         input: The input tensor.
         axis: The axis on which to perform the cumsum operation.
     """
+    constrained[
+        input.rank == output.rank, "input and output should have the same rank."
+    ]()
 
     alias accum_type = DType.float64 if type is DType.float32 else get_accum_type[
         type
     ]()
     debug_assert(
-        -rank <= axis < rank,
+        -input.rank <= axis < input.rank,
         "Axis value must be in range [-rank, rank)",
     )
-    var axis_pos = axis if axis >= 0 else axis + rank
+    var axis_pos = axis if axis >= 0 else axis + input.rank
 
-    var shape = input.get_shape()
+    var shape = input.runtime_layout.shape.value
 
     var inner = 1
     var outer = 1
     var depth = 1
-    for i in range(rank):
+    for i in range(input.rank):
         if i < axis_pos:
             inner *= shape[i]
         elif i > axis_pos:
@@ -68,8 +70,18 @@ fn cumsum[
         else:
             depth = shape[i]
 
-    var output_data = output.flatten()
-    var input_data = input.flatten()
+    var output_data = LayoutTensor[output.dtype, Layout.row_major[1](), **_](
+        output.ptr,
+        RuntimeLayout[Layout.row_major[1]()].row_major(
+            IndexList[1](output.size())
+        ),
+    )
+    var input_data = LayoutTensor[input.dtype, Layout.row_major[1](), **_](
+        input.ptr,
+        RuntimeLayout[Layout.row_major[1]()].row_major(
+            IndexList[1](input.size())
+        ),
+    )
 
     for outer_index in range(outer):
         var outer_index_adj: Int
@@ -109,10 +121,10 @@ fn cumsum[
                 if exclusive:
                     output_data[index] = accumulator.cast[type]()
                     accumulator = (
-                        accumulator + input_data[index].cast[accum_type]()
+                        accumulator + input_data[index][0].cast[accum_type]()
                     )
                 else:
                     accumulator = (
-                        accumulator + input_data[index].cast[accum_type]()
+                        accumulator + input_data[index][0].cast[accum_type]()
                     )
                     output_data[index] = accumulator.cast[type]()
