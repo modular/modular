@@ -1,0 +1,58 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+servers:
+  debug_server:
+    document_root: ../web/Debug
+    listening_ports: "6686"
+    num_threads: 1
+    log_level: 3
+    access_control_allow_origin: "*"
+
+  release_server:
+    document_root: ../web
+    listening_ports: "6687"
+    num_threads: 1
+    log_level: 3
+    access_control_allow_origin: "*"
+
+flags:
+  serverDontStealMailbox:
+    description: "Don't steal the mailbox"
+    default: 0 # 0 = false, 1 = true
+  serverCycleTimeMs:
+    description: "Cycle time in milliseconds"
+    default: 10 # 10ms
+  serverQuit:
+    description: "Quit the server"
+    default: 0 # 0 = false, 1 = true
+  serverPingTimeIntervalMs:
+    description: "Ping time interval in milliseconds"
+    default: 1000 # 1000ms
+
+tasks:
+
+  motr_serverQuit:
+    command: ../../build/cli/Release/motr flags set serverQuit 1
+
+  motr_serverFaster:
+    command: ../../build/cli/Release/motr flags set serverCycleTimeMs 10
+
+  motr_serverSlower:
+    command: ../../build/cli/Release/motr flags set serverCycleTimeMs 1000
+
+  send_reload_message:
+    message: Reload
+
+watch:
+  common_watch:
+    path: ./motr.config.yaml
+    tasks: [
+      "motr_serverQuit",
+    ]
+    latency: 0.1
+
+

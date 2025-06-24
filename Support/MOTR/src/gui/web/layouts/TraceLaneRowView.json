@@ -1,0 +1,81 @@
+{
+  "type": "text",
+  "name": "TraceLaneRowView",
+  "text": "Host: mdavis/coder.a100-4",
+  "width": "90%",
+  "minHeight": 100,
+  "maxHeight": 200,
+  "height": "100%",
+  "padding": 10,
+  "children": [
+    {
+      "flex": 1,
+      "rowGap": 0,
+      "top": 10,
+      "flexDirection": "col",
+      "overflow": "hidden",
+      "children": [
+        {
+          "text": {
+            "fmt": "Process.id={}",
+            "args": ["Process.id"]
+          },
+          "height": 50,
+          "width": 200,
+          "marginInline": 10
+        },
+        {
+          "text": {
+            "fmt": "Thread.id={}",
+            "args": ["Thread.id"]
+          },
+          "flex": 2,
+          "height": "100%",
+          "top": 0,
+          "marginInline": 10,
+          "children": [
+            {
+              "name": "RowButtons",
+              "text": "Row Buttons",
+              "position": "absolute",
+              "minWidth": 100,
+              "minHeight": 32,
+              "maxHeight": 64,
+              "height": "100%",
+              "right": 0,
+              "width": "30%",
+              "flexDirection": "row",
+              "justifyContent": "space-around",
+              "children": [
+                {
+                  "height": "100%",
+                  "width": "20%",
+                  "text": "\ue752",
+                  "type": "button"
+                },
+                {
+                  "height": "100%",
+                  "width": "20%",
+                  "text": "\ue753",
+                  "type": "button"
+                },
+                {
+                  "height": "100%",
+                  "width": "20%",
+                  "text": "+",
+                  "type": "button"
+                },
+                {
+                  "height": "100%",
+                  "width": "20%",
+                  "text": "-",
+                  "type": "button"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

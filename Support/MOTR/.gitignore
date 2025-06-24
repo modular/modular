@@ -1,0 +1,7 @@
+/build/
+/src/third-party/dawn/
+/ignore/
+/install/
+.DS_Store
+.cache/
+compile_commands.json

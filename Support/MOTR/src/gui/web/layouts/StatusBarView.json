@@ -1,0 +1,70 @@
+{
+  "name": "StatusBarView",
+  "width": "90%",
+  "height": "90%",
+  "children": [
+    {
+      "name": "StatusBar",
+      "position": "absolute",
+      "bottom": 0,
+      "height": 40,
+      "width": "100%",
+      "flexDirection": "row",
+      "gap": 10,
+      "children": [
+        {
+          "width": 450,
+          "justifyContent": "flex-start",
+          "children": [
+            {
+              "type": "text",
+              "color": "${changing_color}",
+              "text": "${BuildInfo}",
+              "width": "100%",
+              "height": "100%",
+              "horizontalAlign": "left",
+              "verticalAlign": "center",
+              "margin": {
+                "left": 5
+              }
+            }
+          ]
+        },
+        {
+          "text": "",
+          "flex": 1,
+          "type": "button"
+        },
+        {
+          "width": 300,
+          "height": "100%",
+          "children": [
+//              "position": "absolute",
+//              "top": 0,
+            {
+              "type": "text",
+              "height": "100%",
+              "color": "#000000FF",
+              "horizontalAlign": "${crazy}",
+              "verticalAlign": "center",
+              "text": {
+                "fmt": "{} FPS / {}ms",
+                "args": [
+                  "${FrameRate}",
+                  "${FrameTime}"
+                ]
+              }
+            }
+          ],
+          "justifyContent": "flex-end"
+        },
+        {
+          "width": "40",
+          "text": "+",
+          "type": "button",
+          "justifyContent": "flex-end"
+        }
+      ]
+    }
+  ]
+}

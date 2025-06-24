@@ -1,0 +1,46 @@
+{
+  "width": "90%",
+  "height": "90%",
+  "name": "plot",
+  "children": [
+    {
+      "type": "plot",
+      "width": "90%",
+      "heihgt": "90%",
+      "name": "MultiLinePlot",
+      "color": "#FF9800",
+      "plot": {
+        "type": "line",
+        "title": "Performance Comparison",
+        "xLabel": "Input Size",
+        "yLabel": "Time (ms)",
+        "showLegend": true,
+        "showGrid": true,
+        "xData": [
+          10,
+          20,
+          30,
+          40,
+          50,
+          60,
+          70,
+          80,
+          90,
+          100
+        ],
+        "yData": [
+          5,
+          15,
+          30,
+          50,
+          75,
+          105,
+          140,
+          180,
+          225,
+          275
+        ]
+      }
+    }
+  ]
+}

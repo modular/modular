@@ -1,0 +1,97 @@
+{
+  "type": "widget",
+  "name": "TimeRangeView",
+  "width": "90%",
+  "minHeight": 100,
+  "maxHeight": 200,
+  "height": "100%",
+  "padding": 10,
+  "children": [
+    {
+      "top": 10,
+      "overflow": "hidden",
+      "width": "100%",
+      "height": "100%",
+      "children": [
+        {
+          "name": "TimeRangeTicks",
+          "height": "100%",
+          "children": [
+            {
+              "name": "Major",
+              "position": "absolute",
+              "height": "100%",
+              "width": "100%",
+              "flexDirection": "row",
+              "justifyContent": "space-around",
+              "children": [
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                },
+                {
+                  "height": "100%",
+                  "width": 5
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "TimeStart",
+          "position": "absolute",
+          "height": 50,
+          "width": 200,
+          "left": 0
+        },
+        {
+          "name": "TimeEnd",
+          "position": "absolute",
+          "height": 50,
+          "width": 200,
+          "right": 0
+        }
+      ]
+    }
+  ]
+}

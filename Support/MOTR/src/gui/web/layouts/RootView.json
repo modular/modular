@@ -1,0 +1,38 @@
+{
+  "name": "RootView",
+  "width": "90%",
+  "height": "90%",
+  "padding": 10,
+  "children": [
+    {
+      "width": 200,
+      "height": 50,
+      "children": [
+        {
+          "type": "text",
+          "text": "MOTR",
+          "color": "#000000FF",
+          "width": "100%",
+          "height": "100%"
+        }
+      ]
+    },
+    {
+      "flex": 1,
+      "rowGap": 10,
+      "children": [
+        {
+          "height": 60
+        },
+        {
+          "flex": 1,
+          "marginInline": 10
+        },
+        {
+          "flex": 1,
+          "marginInline": 10
+        }
+      ]
+    }
+  ]
+}

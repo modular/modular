@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <!--
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"
+    /> -->
+  <title>Modular Tracing System</title>
+  <link rel="stylesheet" href="index.css" media="all">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <link rel="preload" href="index.js" as="script">
+  <link rel="preload" href="motr_gui.js" as="script">
+  <link rel="preload" href="motr_gui.wasm" as="fetch" type="application/wasm" crossorigin="anonymous">
+</head>
+
+<body>
+  <div id="root">
+    <div id="editor-container">
+      <div id="editor-header">
+        <select id="layout-selector">
+          <option value="layout.json">layout.json</option>
+          <option value="TimeRangeView.json">TimeRangeView.json</option>
+          <option value="TraceLaneRowView.json">TraceLaneRowView.json</option>
+        </select>
+        <button id="clear-storage">Clear Local Storage</button>
+        <button id="load-all">Load All</button>
+        <div id="new-file-container">
+          <input type="text" id="new-file-name" placeholder="Enter new file name">
+          <button id="create-new-file">Create New File</button>
+          <button id="reformat-code">Reformat</button>
+        </div>
+      </div>
+      <div id="json-editor" contenteditable="true" spellcheck="false"></div>
+    </div>
+    <div id="canvas-container">
+      <canvas class="emscripten" id="main-render-window-canvas" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+  </div>
+  <script src="index.js" type="text/javascript" async></script>
+</body>
+
+</html>
