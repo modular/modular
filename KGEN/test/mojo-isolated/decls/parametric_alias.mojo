@@ -28,9 +28,11 @@ alias myDefaultAdd[x: Int, y: Int = 1] = x + y
 # CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<{value = add(mul(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">), #lit.struct.extract<:!Int *(0,2), "value">)}>>
 alias myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
+
 @fieldwise_init
 struct PS[a: Int, b: Int, c: Int]:
     pass
+
 
 # CHECK: lit.alias.decl *"PS_xy3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int *(0,0), :!Int *(0,1), :!Int {3}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int *(0,0), :!Int *(0,1), :!Int {3}>>>
 alias PS_xy3[x: Int, y: Int] = PS[x, y, 3]
@@ -44,6 +46,7 @@ alias PS_21xy[x: Int, y: Int] = PS[2, 1, x * y]
 ##===----------------------------------------------------------------------===##
 # usages
 ##===----------------------------------------------------------------------===##
+
 
 # CHECK-LABEL: lit.fn @"test_type_equality()"
 fn test_type_equality():

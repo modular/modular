@@ -125,7 +125,7 @@ global_stmt: ('global' | 'nonlocal') NAME (',' NAME)*
 exec_stmt: 'exec' expr ['in' test [',' test]]
 assert_stmt: 'assert' test [',' test]
 var_stmt: (VAR|REF) top_expr_stmt
-alias_stmt: ALIAS top_expr_stmt
+alias_stmt: ALIAS NAME [metaparams] (annassign | ('=' (yield_expr|testlist_star_expr)))
 
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt
