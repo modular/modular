@@ -24,6 +24,10 @@ what we publish.
 - `@parameter for` now works on a broader range of collection types, enabling
   things like `@parameter for i in [1, 2, 3]: ...`.
 
+- Parametric aliases are now supported: Aliases can be specified with an
+  optional parameter list (just like functions). Parametric aliases are
+  considered first class parameter values, too.
+
 ### Language changes
 
 - The `@value` decorator has been formally deprecated with a warning, it will
