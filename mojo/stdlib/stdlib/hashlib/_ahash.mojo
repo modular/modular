@@ -179,20 +179,12 @@ struct AHasher[key: U256](Defaultable, _Hasher):
         # values smaller than 8 bytes contribute only once
         # values which are multiple of 8 bytes contribute multiple times
         # e.g. int128 is 16 bytes long and evaluates to 2 rounds
-        alias rounds = new_data.dtype.sizeof() // 8 + (
-            new_data.dtype.sizeof() % 8 > 0
-        )
+        alias rounds = max(1, new_data.dtype.sizeof() // 8)
 
         @parameter
         if rounds == 1:
             # vector values are not bigger than 8 bytes each
-            var u64: SIMD[DType.uint64, new_data.size]
-
-            @parameter
-            if new_data.dtype.is_floating_point():
-                u64 = new_data.to_bits().cast[DType.uint64]()
-            else:
-                u64 = new_data.cast[DType.uint64]()
+            var u64 = new_data.to_bits[DType.uint64]()
 
             @parameter
             if u64.size == 1:

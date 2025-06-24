@@ -124,6 +124,72 @@ def test_init_from_index():
     assert_equal(a_str, String(Int256(a)))
 
 
+def test_from_bits():
+    assert_true(Scalar[DType.bool].from_bits(UInt8(0x01)))
+    assert_false(Scalar[DType.bool].from_bits(UInt8(0x00)))
+
+    assert_equal(Int64.from_bits(UInt64(0xFFFFFFFFFFFFFFFF)), -1)
+    assert_equal(UInt128.from_bits(Int128(-1)), -1)
+
+    assert_equal(Float32.from_bits(UInt32(0x3F800000)), 1.0)
+    assert_equal(Float32.from_bits(UInt32(0xBF800000)), -1.0)
+
+
+def test_to_bits():
+    assert_equal(Scalar[DType.bool](True).to_bits(), 0x01)
+    assert_equal(Scalar[DType.bool](False).to_bits(), 0x00)
+    assert_equal(Scalar[DType.bool](True).to_bits[DType.uint8](), UInt8(0x01))
+
+    assert_equal(Float32(1.0).to_bits(), 0x3F800000)
+    assert_equal(Float32(-1.0).to_bits(), 0xBF800000)
+    assert_equal(Float32(1.0).to_bits[DType.uint32](), UInt32(0x3F800000))
+    assert_equal(Float32(1.0).to_bits[DType.uint64](), UInt64(0x3F800000))
+
+
+def test_from_to_bits_roundtrip():
+    alias dtypes = [
+        DType.bool,
+        DType.index,
+        DType.uint8,
+        DType.int8,
+        DType.uint16,
+        DType.int16,
+        DType.uint32,
+        DType.int32,
+        DType.uint64,
+        DType.int64,
+        DType.uint128,
+        DType.int128,
+        DType.uint256,
+        DType.int256,
+    ]
+
+    @parameter
+    for dt in dtypes:
+        alias S = Scalar[dt]
+        for n in range(-5, 5):
+            var res = S.from_bits(S(n).to_bits())
+            assert_equal(res, S(n))
+
+    fn floating_point_dtypes() -> List[DType]:
+        var res = [DType.float16, DType.float32, DType.float64]
+
+        @parameter
+        if not CompilationTarget.has_neon():
+            res.append(DType.bfloat16)
+        return res
+
+    alias fp_dtypes = floating_point_dtypes()
+
+    @parameter
+    for dt in fp_dtypes:
+        alias S = Scalar[dt]
+        for i in range(-10, 10):
+            var v = 1 / S(i)
+            var res = S.from_bits(S(v).to_bits())
+            assert_equal(res, S(v))
+
+
 def test_simd_variadic():
     assert_equal(String(SIMD[DType.index, 4](52, 12, 43, 5)), "[52, 12, 43, 5]")
 
@@ -2005,6 +2071,9 @@ def main():
     test_cast()
     test_cast_init()
     test_list_literal_ctor()
+    test_from_bits()
+    test_to_bits()
+    test_from_to_bits_roundtrip()
     test_ceil()
     test_convert_simd_to_string()
     test_simd_repr()
