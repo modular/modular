@@ -47,7 +47,9 @@ void InferenceFailure::emitSpecificNote(
   if (isa<ValueConflictFailure>(info)) {
     auto failure = cast<ValueConflictFailure>(info);
     attachNote() << "parameter inferred to two different values: " << failure.v1
-                 << " and " << failure.v2;
+                 << " and " << failure.v2
+                 << ", try `rebind` them to one type if they will be "
+                    "concretized to the same type";
     return;
   }
 
