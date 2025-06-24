@@ -1,0 +1,23 @@
+load("//bazel:api.bzl", "modular_cc_library")
+
+modular_cc_library(
+    name = "MOTR",
+    hdrs = glob([
+        "src/common/include/motr/*.h",
+    ]),
+    # Defines to propagate MOTR_ENABLED to all dependents
+    defines = select({
+        # Default of disabled MOTR has no defines
+        "//conditions:default": [],
+        # Enabled MOTR sets MOTR_ENABLED=1 for all dependents
+        "//:experimental_motr_tracing_setting": ["MOTR_ENABLED=1"],
+    }),
+    strip_include_prefix = "src/common/include",
+    tags = ["no-clang-tidy-headers"],
+    deps = select({
+        # Default of disabled MOTR has no deps
+        "//conditions:default": [],
+        # Enabled MOTR has fmt as a header-only dependency
+        "//:experimental_motr_tracing_setting": ["//third-party/MOTR/fmt"],
+    }),
+)

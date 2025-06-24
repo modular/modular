@@ -80,6 +80,7 @@ modular_cc_library(
     deps = [
         ":Globals",
         "//Config",
+        "//Support/MOTR",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
