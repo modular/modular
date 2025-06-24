@@ -1,0 +1,93 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+servers:
+  web_server:
+    document_root: ../../build/gui/web/
+    listening_ports: "6687"
+    num_threads: 8
+    log_level: 3
+    access_control_allow_origin: "*"
+
+flags:
+  serverDontStealMailbox:
+    description: "Don't steal the mailbox"
+    default: 0 # 0 = false, 1 = true
+  serverCycleTimeMs:
+    description: "Cycle time in milliseconds"
+    default: 10 # 10ms
+  serverQuit:
+    description: "Quit the server"
+    default: 0 # 0 = false, 1 = true
+  serverPingTimeIntervalMs:
+    description: "Ping time interval in milliseconds"
+    default: 1000 # 1000ms
+
+tasks:
+  build_gui_debug:
+    command: ninja -C ../../build/gui/web/Debug
+
+  build_gui_release:
+    command: ninja -C ../../build/gui/web/Release
+
+  build_cli_debug:
+    command: ninja -C ../../build/cli/Debug
+
+  build_cli_release:
+    command: ninja -C ../../build/cli/Release
+
+  motr_serverQuit:
+    command: ../../build/cli/Release/motr flags set serverQuit 1
+
+  motr_serverFaster:
+    command: ../../build/cli/Release/motr flags set serverCycleTimeMs 10
+
+  motr_serverSlower:
+    command: ../../build/cli/Release/motr flags set serverCycleTimeMs 1000
+
+  send_layouts:
+    command: ../../bin/send-layouts.sh
+
+  send_reload_message:
+    message: Reload
+
+watch:
+  gui_watch:
+    path: ../gui/
+    tasks: [
+      "build_gui_debug",
+      # "send_reload_message",
+      "build_gui_release",
+      # "send_reload_message",
+    ]
+    latency: 0.1
+
+  common_watch:
+    path: ../common/
+    tasks: [
+      "build_cli_release",
+      "build_cli_debug",
+      "build_gui_debug",
+      "send_reload_message",
+      "motr_serverQuit",
+    ]
+    latency: 0.1
+
+  cli_watch:
+    path: ../cli/
+    tasks: [
+      "build_cli_release",
+      "build_cli_debug",
+      "motr_serverQuit",
+    ]
+    latency: 0.1
+
+  layouts_watch:
+    path: ../gui/web/layouts/
+    tasks: [
+#      "send_layouts",
+    ]
+    latency: 0.1

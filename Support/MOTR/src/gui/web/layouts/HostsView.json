@@ -1,0 +1,52 @@
+{
+  "width": 250,
+  "height": 475,
+  "padding": 10,
+  "name": "Hosts",
+  "children": [
+    {
+      "top": 10,
+      "flex": 1,
+      "rowGap": 10,
+      "children": [
+        {
+          "width": "100%",
+          "bottom": 0,
+          "height": 64,
+          "flexDirection": "row",
+          "alignItems": "center",
+          "justifyContent": "space-around",
+          "children": [
+            {
+              "height": 40,
+              "width": 40
+            },
+            {
+              "height": 40,
+              "width": 40
+            },
+            {
+              "height": 40,
+              "width": 40
+            },
+            {
+              "height": 40,
+              "width": 40
+            }
+          ]
+        },
+        {
+          "height": 60
+        },
+        {
+          "flex": 1,
+          "marginInline": 10
+        },
+        {
+          "flex": 2,
+          "marginInline": 10
+        }
+      ]
+    }
+  ]
+}

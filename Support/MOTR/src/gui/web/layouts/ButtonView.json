@@ -1,0 +1,9 @@
+// example reusable component
+{
+  "name": "StandardButton",
+  "type": "button",
+  "text": "Don't Click Me",
+  "width": "100%",
+  "height": 50,
+  "color": "#0000FF"
+}

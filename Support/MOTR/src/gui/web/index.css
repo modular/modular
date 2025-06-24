@@ -1,0 +1,88 @@
+/*===----------------------------------------------------------------------===
+ *
+ * This file is Modular Inc proprietary.
+ *
+ *===----------------------------------------------------------------------===
+ */
+
+body {
+  margin: 0;
+  background-color: black;
+  overflow: hidden; /* Prevent base level scroll bar */
+}
+
+#root {
+  display: flex;
+  height: 100vh; /* Full vertical space */
+}
+
+#editor-container {
+  display: none;
+  flex-direction: column;
+  width: 480px;
+  box-sizing: border-box;
+  padding: 10px;
+  background-color: #AAA; /* Light grey background for a greyscale look */
+}
+
+#editor-header {
+  /* No specific flex properties needed, it will take its natural height */
+}
+
+#json-editor {
+  flex-grow: 1; /* Allow json-editor to expand and fill available space */
+  overflow: auto; /* Add scrollbar if content overflows */
+  width: 100%;
+  margin: 0;
+  border: 6px inset #888; /* 3px bevel inset with a light grey color */
+  padding: 10px; /* Add padding for better text readability */
+  resize: none;
+  box-sizing: border-box;
+  /* background-color: #333; */
+  /* color: #fff; */
+  font-family: 'Courier New', Courier, monospace; /* Monospaced font for code */
+  white-space: pre-wrap; /* Allow wrapping */
+  word-wrap: break-word; /* Break long words */
+  outline: none; /* Remove outline when focused */
+  box-shadow: none; /* Remove drop shadow */
+  min-height: 200px; /* Set a minimum height */
+  font-size: 14px;
+  line-height: 1.5;
+  background-color: #EEEEEEFF;
+  /* background: #333; */
+}
+
+#canvas-container {
+  flex-grow: 1; /* Take remaining space */
+  margin: 0;
+  border: 0;
+  overflow: hidden;
+  display: block;
+  color: #F00;
+}
+
+.emscripten {
+  image-rendering: optimizeSpeed;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -o-crisp-edges;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  -ms-interpolation-mode: nearest-neighbor;
+  will-change: transform, opacity; /* Hint to the browser for optimization */
+}
+
+/* Remove focus box around lines */
+/* .token {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+} */
+
+#json-editor code {
+  display: inline-block;
+  min-height: 100%;
+  outline: none;
+}
