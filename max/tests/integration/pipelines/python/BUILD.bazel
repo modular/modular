@@ -228,6 +228,17 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "mistral-eval",
+    srcs = ["run_mistral_eval.py"],
+    ignore_collisions = True,  # duplicate examples/__init__.py from deps
+    main = "run_mistral_eval.py",
+    deps = [
+        "@mistral-evals//:evaluate",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
     name = "pipelines-lm-eval",
     srcs = ["pipelines_lm_eval.py"],
     data = [
@@ -239,6 +250,7 @@ modular_py_binary(
     main = "pipelines_lm_eval.py",
     deps = [
         ":lm-eval",
+        ":mistral-eval",
         "//SDK/integration-test/pipelines/python/eval_tasks/human_eval",
         "@mistral-evals//:evaluate",
         "@rules_python//python/runfiles",
