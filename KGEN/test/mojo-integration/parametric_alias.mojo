@@ -10,9 +10,9 @@
 # late binding
 ##===----------------------------------------------------------------------===##
 
-alias myIntAdd[x:Int, y:Int] = x + y
-alias myIntMul[x:Int, y:Int] = x * y
-alias myIntFMA[x:Int, y:Int, z:Int] = x * y + z
+alias myIntAdd[x: Int, y: Int] = x + y
+alias myIntMul[x: Int, y: Int] = x * y
+alias myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
 
 @no_inline
