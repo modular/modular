@@ -565,7 +565,7 @@ nvidia-ml-py==12.535.161 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via nvitop
 nvitop==1.4.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
-onnxruntime==1.20.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+onnxruntime==1.19.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   faster-whisper

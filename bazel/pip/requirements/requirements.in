@@ -34,7 +34,7 @@ mypy==1.13.0
 notebook
 numpy
 nvitop
-onnxruntime<=1.20.1  # Needed by faster_whisper, newer versions don't support python 3.9
+onnxruntime==1.19.2  # Needed by faster_whisper, newer versions don't support python 3.9
 opentelemetry-api
 opentelemetry-exporter-otlp-proto-http
 opentelemetry-exporter-prometheus

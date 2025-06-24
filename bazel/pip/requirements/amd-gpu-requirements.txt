@@ -571,7 +571,7 @@ nvitop==1.4.0 ; sys_platform == 'linux'
     # via -r bazel/pip/requirements/requirements.in
 nvtx==0.2.10 ; sys_platform == 'linux'
     # via -r bazel/pip/requirements/amd-gpu-requirements.in
-onnxruntime==1.20.1 ; sys_platform == 'linux'
+onnxruntime==1.19.2 ; sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/requirements.in
     #   faster-whisper
