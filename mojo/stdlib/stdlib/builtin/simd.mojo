@@ -564,13 +564,14 @@ struct SIMD[dtype: DType, size: Int](
         var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
         ](value.value)
-        alias simd_bool = SIMD[DType.bool, size]._mlir_type
 
         @parameter
         if size == 1:
-            self = rebind[simd_bool](s)
+            self.value = rebind[Self._Mask._mlir_type](s)
         else:
-            self.value = __mlir_op.`pop.simd.splat`[_type=simd_bool](s)
+            self.value = __mlir_op.`pop.simd.splat`[
+                _type = Self._Mask._mlir_type
+            ](s)
 
     @doc_private
     @always_inline("nodebug")
