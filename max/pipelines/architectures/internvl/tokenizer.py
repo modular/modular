@@ -176,18 +176,75 @@ def crop_into_patches(
     return processed_images
 
 
+def extract_patches_from_image(
+    normalized_image: np.ndarray,
+    *,
+    patch_size: int = 14,
+) -> np.ndarray:
+    """Extract patches from a normalized image array.
+
+    This replicates the exact patch extraction operations from
+    InternVisionEmbeddings.__call__ to move them to preprocessing.
+
+    Args:
+        normalized_image: Normalized image array of shape (H, W, C).
+        patch_size: Size of each patch.
+
+    Returns:
+        Array of shape (height_patches, width_patches, C, patch_size, patch_size).
+    """
+    height, width, channels = normalized_image.shape
+
+    # Calculate number of patches
+    h_patches = height // patch_size
+    w_patches = width // patch_size
+
+    # 1. Reshape to extract patches
+    # From (H, W, C) to (H/P, P, W/P, P, C)
+    reshaped = normalized_image.reshape(
+        h_patches, patch_size, w_patches, patch_size, channels
+    )
+
+    # 2. Single transpose to rearrange patches and convert HWC to CHW
+    # From (H/P, P, W/P, P, C) directly to (H/P, W/P, C, P, P)
+    # This combines the patch grouping and HWC->CHW conversion
+    return np.transpose(reshaped, (0, 2, 4, 1, 3))
+
+
 def preprocess_image_to_tensor(
     pil_image: Image.Image,
     *,
     input_size: int = 448,
     max_num: int = 12,
+    patch_size: int = 14,
 ) -> np.ndarray:
-    """Preprocess image to tensor with dynamic patching - must match InternVLProcessor."""
+    """Preprocess image to tensor with dynamic patching - must match InternVLProcessor.
+
+    This function replicates the exact patch extraction operations from
+    InternVisionEmbeddings.__call__ to move them to preprocessing for memory efficiency.
+
+    Returns:
+        Tensor of shape (batch_size, height_patches, width_patches, C, patch_size, patch_size)
+        where each image's patches preserve spatial dimensions.
+    """
     images = crop_into_patches(
         pil_image, image_size=input_size, use_thumbnail=True, max_num=max_num
     )
-    pixel_values = [imagenet_normalize(image, input_size) for image in images]
-    return np.stack(pixel_values)
+
+    # Process each image separately to maintain batch structure
+    processed_images = []
+    for image in images:
+        # Normalize the image - shape: (H, W, C)
+        normalized = imagenet_normalize(image, input_size)
+
+        # Extract patches using the shared function
+        patches = extract_patches_from_image(normalized, patch_size=patch_size)
+
+        processed_images.append(patches)
+
+    # Stack all images together - shape: (batch_size, num_patches, features)
+    # batch_size = number of images (including thumbnail if applicable)
+    return np.stack(processed_images).astype(np.float32)
 
 
 class InternVLProcessor:
@@ -321,6 +378,7 @@ class InternVLProcessor:
                 image,
                 input_size=self.image_size,
                 max_num=self.max_dynamic_patch,
+                patch_size=self.config.vision_config.patch_size,
             )
             raw_pixel_values.append(image_array)
 

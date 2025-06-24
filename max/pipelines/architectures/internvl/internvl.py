@@ -491,55 +491,46 @@ class InternVisionEmbeddings(Module, Shardable):
         """Computes embeddings for input pixel values.
 
         Args:
-            pixel_values: Input image tensor of shape (batch, height, width, channels).
+            pixel_values: Input tensor of pre-extracted patches of shape
+                         (batch_size, num_patches_h, num_patches_w, channels, patch_size, patch_size).
 
         Returns:
-            Embeddings tensor of shape (batch, num_positions, embed_dim).
+            Embeddings tensor of shape (batch_size, num_positions, embed_dim).
         """
-        # pixel_values is in BHWC format
-        batch_size = pixel_values.shape[0]
-        img_height = pixel_values.shape[1]
-        img_width = pixel_values.shape[2]
+        # Extract dimensions from input shape.
+        (
+            batch_size,
+            num_patches_h,
+            num_patches_w,
+            channels,
+            patch_size_h,
+            patch_size_w,
+        ) = pixel_values.shape
+        assert channels == 3
+        assert patch_size_h == self.patch_size
+        assert patch_size_w == self.patch_size
 
-        # Calculate number of patches
-        height = img_height // self.patch_size
-        width = img_width // self.patch_size
-
-        # Check that we have static dimensions for height and width
-        if not isinstance(height, StaticDim) or not isinstance(
-            width, StaticDim
+        # Check that we have static dimensions for height and width.
+        if not isinstance(num_patches_h, StaticDim) or not isinstance(
+            num_patches_w, StaticDim
         ):
             raise ValueError(
                 f"InternVisionEmbeddings requires static image dimensions, "
-                f"got height={height}, width={width}"
+                f"got {num_patches_h=}, {num_patches_w=}"
             )
 
-        # 1. Reshape to extract patches
-        # From (B, H, W, C) to (B, H/P, P, W/P, P, C)
-        pixel_values = ops.reshape(
-            pixel_values,
-            [batch_size, height, self.patch_size, width, self.patch_size, 3],
-        )
-
-        # 2. Permute to group patch pixels together
-        # From (B, H/P, P, W/P, P, C) to (B, H/P, W/P, P, P, C)
-        pixel_values = ops.permute(pixel_values, [0, 1, 3, 2, 4, 5])
-
-        # 2.5. Permute within each patch from HWC to CHW to match Conv2D weight layout
-        # From (B, H/P, W/P, P, P, C) to (B, H/P, W/P, C, P, P)
-        pixel_values = ops.permute(pixel_values, [0, 1, 2, 5, 3, 4])
-
-        # 3. Reshape to (B, num_patches, channels * patch_size * patch_size)
+        # Reshape pre-extracted patches to (batch_size, num_patches, channels * patch_size * patch_size).
+        # The patches are already extracted by the tokenizer, so we just need to reshape them.
         pixel_values = ops.reshape(
             pixel_values,
             [
                 batch_size,
-                height * width,
-                3 * self.patch_size * self.patch_size,
+                num_patches_h * num_patches_w,
+                channels * self.patch_size * self.patch_size,
             ],
         )
 
-        # 4. Apply linear transformation
+        # Apply linear transformation directly
         pixel_values = pixel_values.cast(self.patch_embedding.weight.dtype)
         patch_embeds = self.patch_embedding(pixel_values)
 
@@ -549,9 +540,10 @@ class InternVisionEmbeddings(Module, Shardable):
         )
         embeddings = ops.concat([class_embeds, patch_embeds], axis=1)
 
-        # 4. Add position embeddings
-        # Handle both static and symbolic dimensions
-        position_embedding = self._get_position_embedding(height, width)
+        # 4. Add position embeddings.
+        position_embedding = self._get_position_embedding(
+            num_patches_h, num_patches_w
+        )
         embeddings = embeddings + position_embedding
 
         return embeddings

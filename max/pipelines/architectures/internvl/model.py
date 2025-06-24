@@ -296,12 +296,23 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Define input types for the vision model
         # Use static dimensions from the vision config
         image_size = config.vision_config.image_size
+        patch_size = config.vision_config.patch_size
+        # Calculate number of patches in each dimension
+        height_patches = image_size // patch_size
+        width_patches = image_size // patch_size
+
+        # Expect pre-extracted patches from the tokenizer.
         pixel_values_type = TensorType(
             DType.float32,
-            # Expect channels last and exactly 3 (RGB).
-            # Use static dimensions for height and width
-            shape=["batch_size", image_size, image_size, 3],
-            # Expect the input image on device 0.
+            shape=[
+                "batch_size",
+                height_patches,
+                width_patches,
+                3,
+                patch_size,
+                patch_size,
+            ],
+            # Expect the input on device 0.
             device=DeviceRef.GPU(),
         )
 
@@ -480,21 +491,22 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 context.pixel_values is not None
                 and len(context.pixel_values) > 0
             ):
-                # InternVL expects images in HWC format
-                # context.pixel_values is a list of numpy arrays, take the first one
+                # context.pixel_values is a list of numpy arrays containing pre-extracted patches
                 # TODO(MODELS-638): Support multiple images per request
-                image = context.pixel_values[0]  # Shape: [patches, H, W, C]
+                image = context.pixel_values[
+                    0
+                ]  # Shape: [num_patches, height_patches, width_patches, channels, patch_size, patch_size]
 
-                # Each patch needs to be processed separately by the vision model
-                # So we add each patch as a separate "batch" item
-                for patch in image:
-                    images.append(patch)
+                # Each image patch group needs to be processed separately by the vision model
+                # So we add each patch group as a separate "batch" item
+                for patch_group in image:
+                    images.append(patch_group)
 
         if not images:
             return None
 
         # Convert the list into a single NumPy array with shape
-        # (total_patches, H, W, C).
+        # (total_patch_groups, height_patches, width_patches, channels, patch_size, patch_size).
         final_images = np.stack(images, axis=0)
 
         return Tensor.from_numpy(final_images).to(self.devices[0])
