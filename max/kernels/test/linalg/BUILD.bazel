@@ -68,9 +68,9 @@ lit_tests(
     srcs = _LIT_TESTS,
     data = ["lit.local.cfg"],
     mojo_deps = [
-        "@mojo//:stdlib",
-        "@mojo//:linalg",
         "@mojo//:internal_utils",
+        "@mojo//:linalg",
+        "@mojo//:stdlib",
     ],
     tools = [
         "//KGEN/tools/mojo",
