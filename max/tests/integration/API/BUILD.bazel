@@ -34,8 +34,8 @@ lit_tests(
         "MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false",
     },
     mojo_deps = [
-        "@mojo//:stdlib",
         "@mojo//:register",
+        "@mojo//:stdlib",
     ],
     tags = ["gpu"],
     tools = [
