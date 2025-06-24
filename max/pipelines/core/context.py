@@ -687,6 +687,8 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
             self._status = TextGenerationStatus.END_OF_SEQUENCE
         elif self.active_idx >= self.max_length:
             self._status = TextGenerationStatus.MAXIMUM_LENGTH
+            # We must return the last token that fits in max length.
+            self._completion_end_idx += 1
 
         if self._status == TextGenerationStatus.ACTIVE:
             self._completion_end_idx += 1
