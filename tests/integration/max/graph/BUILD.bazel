@@ -41,8 +41,8 @@ modular_py_test(
     mojo_deps = [
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:test_user_op",
-        "@mojo//:register",
         "//SDK/lib/API/mojo/max/tensor",
+        "@mojo//:register",
         "@mojo//:stdlib",
     ],
     tags = [
