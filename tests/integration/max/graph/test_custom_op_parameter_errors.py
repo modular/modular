@@ -304,6 +304,121 @@ def test_op_with_static_string_parameter_passed_as_int(
             )
 
 
+def test_op_with_unused_parameter_int(
+    kernel_verification_ops_path: Path,
+) -> None:
+    tensor_type = TensorType(DType.int32, [1], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_op_with_unused_parameter_int",
+        input_types=[tensor_type],
+        output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
+    )
+    with graph:
+        with pytest.raises(
+            ValueError,
+            match="parameter 'UnusedParameter' supplied to custom op 'op_with_int_parameter' does not exist in the corresponding Mojo code",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_int_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={"IntParameter": 42, "UnusedParameter": 123},
+                )[0]
+            )
+
+
+def test_op_with_unused_parameter_dtype(
+    kernel_verification_ops_path: Path,
+) -> None:
+    tensor_type = TensorType(DType.int32, [1], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_op_with_unused_parameter_dtype",
+        input_types=[tensor_type],
+        output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
+    )
+    with graph:
+        with pytest.raises(
+            ValueError,
+            match="parameter 'UnusedParameter' supplied to custom op 'op_with_dtype_parameter' does not exist in the corresponding Mojo code",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_dtype_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={
+                        "DTypeParameter": DType.float32,
+                        "UnusedParameter": DType.int64,
+                    },
+                )[0]
+            )
+
+
+def test_op_with_unused_parameter_string(
+    kernel_verification_ops_path: Path,
+) -> None:
+    tensor_type = TensorType(DType.int32, [1], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_op_with_unused_parameter_string",
+        input_types=[tensor_type],
+        output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
+    )
+    with graph:
+        with pytest.raises(
+            ValueError,
+            match="parameter 'UnusedParameter' supplied to custom op 'op_with_static_string_parameter' does not exist in the corresponding Mojo code",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_static_string_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={
+                        "StringParameter": "valid_string",
+                        "UnusedParameter": "unused_value",
+                    },
+                )[0]
+            )
+
+
+def test_op_with_multiple_unused_parameters(
+    kernel_verification_ops_path: Path,
+) -> None:
+    tensor_type = TensorType(DType.int32, [1], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_op_with_multiple_unused_parameters",
+        input_types=[tensor_type],
+        output_types=[tensor_type],
+        custom_extensions=[kernel_verification_ops_path],
+    )
+    with graph:
+        with pytest.raises(
+            ValueError,
+            match="parameter 'UnusedParam1' supplied to custom op 'op_with_int_parameter' does not exist in the corresponding Mojo code",
+        ):
+            graph.output(
+                ops.custom(
+                    "op_with_int_parameter",
+                    device=DeviceRef.CPU(),
+                    values=[graph.inputs[0]],
+                    out_types=[tensor_type],
+                    parameters={
+                        "IntParameter": 42,
+                        "UnusedParam1": "unused1",
+                        "UnusedParam2": 999,
+                        "UnusedParam3": DType.float16,
+                    },
+                )[0]
+            )
+
+
 def test_op_with_static_string_parameter_passed_as_dtype(
     kernel_verification_ops_path: Path,
 ) -> None:

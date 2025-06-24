@@ -186,37 +186,6 @@ class TestCustomKernelValidation:
             graph.output(result[0])
             # Test documents that missing parameters don't cause immediate errors
 
-    def test_custom__unknown_parameter_behavior(
-        self, kernel_verification_ops_path
-    ):
-        """Test behavior when providing parameter not expected by kernel."""
-        input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
-
-        graph = Graph(
-            "test_custom_unknown_parameter",
-            input_types=[input_type],
-            output_types=[input_type],
-            custom_extensions=[kernel_verification_ops_path],
-        )
-        with graph:
-            with pytest.raises(
-                ValueError,
-                match=(
-                    "parameter 'UnknownParameter' supplied to custom op does not "
-                    "exist in the corresponding Mojo code"
-                ),
-            ):
-                result = ops.custom(
-                    name="op_with_device_context",
-                    device=DeviceRef.CPU(),
-                    values=[graph.inputs[0]],
-                    out_types=[input_type],
-                    parameters={
-                        "UnknownParameter": 42
-                    },  # Extra parameter - but this succeeds
-                )
-                graph.output(result[0])
-
     def test_custom__different_parameter_types(
         self, kernel_verification_ops_path
     ):
