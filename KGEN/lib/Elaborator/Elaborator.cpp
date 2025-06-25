@@ -904,6 +904,10 @@ static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
 
 static LogicalResult
 concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
+  // Location concretization cannot yield and restart. Add a blocker to ensure
+  // no blockers are set for this node while concretizing locations. Empty
+  // concretization results will result in UnknownLoc.
+  inode->blocker = std::make_pair(inode->inst.getLoc(), nullptr);
   for (Operation &op : scope) {
     op.walk([&](Operation *op) {
       if (failed(concretizeLocOf(*op, inode)))
@@ -940,6 +944,7 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
       return WalkResult::advance();
     });
   }
+  inode->blocker.reset();
   return success(!inode->error);
 }
 
@@ -997,7 +1002,7 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [this, resultBool, debug = config.elaborateDebugInfo](
+  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
                         ImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
@@ -1011,7 +1016,6 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 
     // First update the locations if necessary
     if (debug) {
-      std::lock_guard<std::mutex> guard(debugInfoMutex);
       if (failed(concretizeLocsInScope(block, node)))
         return failure();
     }
@@ -1189,11 +1193,10 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   while (isa<ParamApplyOp>(*elseBegin))
     elseBegin++;
 
-  auto onElseComplete = [this, debug = config.elaborateDebugInfo,
-                         begin = &*elseBegin, yield, op,
+  auto onElseComplete = [debug = config.elaborateDebugInfo, begin = &*elseBegin,
+                         yield, op,
                          parent](ImplNode *node) mutable -> LogicalResult {
     if (debug) {
-      std::lock_guard<std::mutex> guard(debugInfoMutex);
       if (failed(concretizeLocsInScope(
               {begin->getIterator(), yield->getIterator()}, node)))
         return failure();
@@ -1221,11 +1224,10 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   // Upon completion of elaboration of each such generated loop, replace the
   // `kgen.param.for` terminators with the appropriate HLCF ones.
   auto makeCompletion =
-      [this, debug = config.elaborateDebugInfo,
+      [debug = config.elaborateDebugInfo,
        outerLabel](Region &region) -> std::function<LogicalResult(ImplNode *)> {
-    return [this, debug, &region, outerLabel](ImplNode *node) -> LogicalResult {
+    return [debug, &region, outerLabel](ImplNode *node) -> LogicalResult {
       if (debug) {
-        std::lock_guard<std::mutex> guard(debugInfoMutex);
         if (failed(concretizeLocsInScope(region.front(), node)))
           return failure();
       }
@@ -1558,7 +1560,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // In multi-threaded execution, call resolution is also deferred as late as
     // possible. This maximizes parallelism on the expansion graph (without
     // intra-node parallelism) while correctly handling recursion.
-    if (addWaiter) {
+    if (addWaiter && !inode->blocker.has_value()) {
       if (genNode->state.addWaiter()) {
         inode->blocker = std::make_pair(from, genNode);
         genNode->andThenAsync([inode, this] {
@@ -1707,8 +1709,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // ops and block arguments. We do this after the worklist is processed, to
     // ensure that all parameter computation is completed, e.g. we have
     // processed all kgen.param.decl ops.
-    onComplete = [this](ImplNode *inode) -> LogicalResult {
-      std::lock_guard<std::mutex> guard(debugInfoMutex);
+    onComplete = [](ImplNode *inode) -> LogicalResult {
       if (failed(concretizeLocOf(*inode->inst, inode)))
         return failure();
       if (failed(concretizeLocsInScope(inode->inst.getBodyRegion().front(),
@@ -1728,7 +1729,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
                           std::move(evaluator)};
   newFuncNode->stack.push_back(std::move(item));
 
-  if (addWaiter) {
+  if (addWaiter && !inode->blocker.has_value()) {
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
     inode->blocker = std::make_pair(from, genNode);

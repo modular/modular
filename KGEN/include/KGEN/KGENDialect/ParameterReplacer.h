@@ -29,7 +29,7 @@ public:
   /// Remap a value.
   template <typename T>
   T replace(T value) {
-    return cast<T>(replaceImpl(value, /*depth=*/0));
+    return llvm::cast_if_present<T>(replaceImpl(value, /*depth=*/0));
   }
 
   /// Remap a range of values.
