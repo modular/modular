@@ -624,6 +624,17 @@ class PrependPromptSpeechTokens(str, Enum):
     """Prepend the prompt speech tokens to the first block of the audio decoder."""
 
 
+class PrometheusMetricsMode(str, Enum):
+    INSTRUMENT_ONLY = "instrument_only"
+    """Instrument metrics through the Prometheus client library, relying on the application to handle the metrics server."""
+
+    LAUNCH_SERVER = "launch_server"
+    """Launch a Prometheus server to handle metrics requests."""
+
+    LAUNCH_MULTIPROC_SERVER = "launch_multiproc_server"
+    """Launch a Prometheus server in multiprocess mode to report metrics."""
+
+
 @dataclass
 class AudioGenerationConfig(PipelineConfig):
     # TODO: Make these flags more discoverable.
@@ -671,6 +682,11 @@ class AudioGenerationConfig(PipelineConfig):
     the model, such as leaving the audio decoder weights empty or using a
     dummy speech language model."""
 
+    prometheus_metrics_mode: PrometheusMetricsMode = (
+        PrometheusMetricsMode.INSTRUMENT_ONLY
+    )
+    """The mode to use for Prometheus metrics."""
+
     def __init__(
         self,
         audio_decoder: str,
@@ -681,6 +697,7 @@ class AudioGenerationConfig(PipelineConfig):
         prepend_prompt_speech_tokens: PrependPromptSpeechTokens = PrependPromptSpeechTokens.NEVER,
         prepend_prompt_speech_tokens_causal: bool = False,
         run_model_test_mode: bool = False,
+        prometheus_metrics_mode: PrometheusMetricsMode = PrometheusMetricsMode.INSTRUMENT_ONLY,
         **kwargs: Any,
     ) -> None:
         # Must call the superclass's __init__ first, otherwise PipelineConfig's
@@ -703,6 +720,7 @@ class AudioGenerationConfig(PipelineConfig):
             prepend_prompt_speech_tokens_causal
         )
         self._run_model_test_mode = run_model_test_mode
+        self.prometheus_metrics_mode = prometheus_metrics_mode
 
     @classmethod
     def from_flags(
@@ -742,6 +760,10 @@ class AudioGenerationConfig(PipelineConfig):
             "run_model_test_mode",
         )
 
+        prometheus_metrics_mode = PrometheusMetricsMode(
+            audio_flags.pop("prometheus_metrics_mode", "instrument_only"),
+        )
+
         if audio_flags:
             raise ValueError(
                 f"Unknown audio generation option(s): {audio_flags}"
@@ -756,5 +778,6 @@ class AudioGenerationConfig(PipelineConfig):
             prepend_prompt_speech_tokens=prepend_prompt_speech_tokens,
             prepend_prompt_speech_tokens_causal=prepend_prompt_speech_tokens_causal,
             run_model_test_mode=run_model_test_mode,
+            prometheus_metrics_mode=prometheus_metrics_mode,
             **config_flags,
         )

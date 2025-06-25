@@ -40,6 +40,7 @@ from .lib.config import (
     AudioGenerationConfig,
     PipelineConfig,
     PrependPromptSpeechTokens,
+    PrometheusMetricsMode,
 )
 from .lib.config_enums import (
     PipelineEngine,
@@ -108,6 +109,7 @@ __all__ = [
     "PipelineTokenizer",
     "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
+    "PrometheusMetricsMode",
     "ProfilingConfig",
     "repo_exists_with_retry",
     "RepoType",
