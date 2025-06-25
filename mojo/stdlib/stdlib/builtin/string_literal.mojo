@@ -562,7 +562,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return String(self).islower()
 
-    fn strip(self) -> String:
+    fn strip(self) -> StaticString:
         """Return a copy of the string literal with leading and trailing
         whitespaces removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -570,9 +570,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A string with no leading or trailing whitespaces.
         """
-        return String(self.lstrip().rstrip())
+        return self.lstrip().rstrip()
 
-    fn strip(self, chars: StringSlice) -> String:
+    fn strip(self, chars: StringSlice) -> StaticString:
         """Return a copy of the string literal with leading and trailing characters
         removed.
 
@@ -583,9 +583,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             A string with no leading or trailing characters.
         """
 
-        return String(self.lstrip(chars).rstrip(chars))
+        return self.lstrip(chars).rstrip(chars)
 
-    fn rstrip(self, chars: StringSlice) -> String:
+    fn rstrip(self, chars: StringSlice) -> StaticString:
         """Return a copy of the string literal with trailing characters removed.
 
         Args:
@@ -594,9 +594,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A string with no trailing characters.
         """
-        return String(String(self).rstrip(chars))
+        return self.as_string_slice().rstrip(chars)
 
-    fn rstrip(self) -> String:
+    fn rstrip(self) -> StaticString:
         """Return a copy of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -604,9 +604,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A copy of the string with no trailing whitespaces.
         """
-        return String(self.as_string_slice().rstrip())
+        return self.as_string_slice().rstrip()
 
-    fn lstrip(self, chars: StringSlice) -> String:
+    fn lstrip(self, chars: StringSlice) -> StaticString:
         """Return a copy of the string with leading characters removed.
 
         Args:
@@ -615,9 +615,9 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A copy of the string with no leading characters.
         """
-        return String(self.as_string_slice().lstrip(chars))
+        return self.as_string_slice().lstrip(chars)
 
-    fn lstrip(self) -> String:
+    fn lstrip(self) -> StaticString:
         """Return a copy of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
@@ -625,4 +625,4 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
             A copy of the string with no leading whitespaces.
         """
-        return String(String(self).lstrip())
+        return self.as_string_slice().lstrip()
