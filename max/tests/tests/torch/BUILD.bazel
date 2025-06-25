@@ -14,7 +14,7 @@ modular_py_test(
         "@mojo//:stdlib",
         "@mojo//:tensor_internal",
     ],
-    tags = [],
+    tags = ["gpu"],
     deps = [
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",

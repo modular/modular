@@ -75,6 +75,7 @@ struct MyAdd:
         C: OutputTensor[dtype=type, rank=rank],
         A: InputTensor[dtype=type, rank=rank],
         B: InputTensor[dtype=type, rank=rank],
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -85,7 +86,7 @@ struct MyAdd:
             var b = B.load[simd_width](idx)
             return a + b
 
-        foreach[doit, target=target](C)
+        foreach[doit, target=target](C, ctx)
 
 
 @register("parameter_increment")
@@ -96,6 +97,7 @@ struct ParameterIncrement:
     ](
         B: OutputTensor[dtype=type, rank=rank],
         A: InputTensor[dtype=type, rank=rank],
+        ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -105,7 +107,7 @@ struct ParameterIncrement:
             var a = A.load[simd_width](idx)
             return a + __type_of(a)(increment)
 
-        foreach[doit, target=target](B)
+        foreach[doit, target=target](B, ctx)
 
 
 @register("scalar_add")
