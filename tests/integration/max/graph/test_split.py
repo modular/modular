@@ -20,7 +20,9 @@ from max.graph import DeviceRef, Graph, Shape, TensorType, ops
         ([5, 10, 20], [4, 6, 4, 2, 4], 2),
     ],
 )
-def test_split(session, input_shape: Shape, split_sizes: list[int], axis: int):
+def test_split(
+    session, input_shape: Shape, split_sizes: list[int], axis: int
+) -> None:
     input = np.random.uniform(size=input_shape).astype(np.float32)
 
     with Graph(

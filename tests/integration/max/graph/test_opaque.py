@@ -101,11 +101,11 @@ def test_opaque_simple(
 
 
 class PythonCounter:
-    def __init__(self, a=0, b=0):
+    def __init__(self, a=0, b=0) -> None:
         self.a = a
         self.b = b
 
-    def bump(self):
+    def bump(self) -> None:
         self.a += 1
         self.b += self.a
 
@@ -150,7 +150,7 @@ def test_opaque_type_parameterization(
     session: InferenceSession,
     custom_ops_mojopkg: Path,
     monkeypatch,
-):
+) -> None:
     # Opaque parameterization is only supported using the new MOGG dialect based
     # compilation path.
     monkeypatch.setenv("MOGG_USE_EXP_KERNELS", "1")

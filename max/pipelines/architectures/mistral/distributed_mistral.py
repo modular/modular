@@ -37,7 +37,7 @@ from .model_config import MistralConfig
 class DistributedMistral(DistributedTransformer):
     """The Mistral text transformer model."""
 
-    def __init__(self, config: MistralConfig):
+    def __init__(self, config: MistralConfig) -> None:
         assert len(config.devices) > 1
 
         rope = RotaryEmbedding(

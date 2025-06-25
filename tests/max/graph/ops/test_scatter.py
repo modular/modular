@@ -28,7 +28,7 @@ def test_scatter(
     input_type: TensorType,
     indices_type: TensorType,
     axis: int,
-):
+) -> None:
     """Tests that the scatter op preserves shape and dtype."""
     updates_type = input_type
 
@@ -60,7 +60,7 @@ def test_scatter_input_and_updates_different_dtypes(
     updates_type: TensorType,
     indices_type: TensorType,
     axis: int,
-):
+) -> None:
     """Tests that the scatter op raises an error with different input and updates dtypes."""
     assume(input_type.dtype != updates_type.dtype)
 
@@ -73,7 +73,9 @@ def test_scatter_input_and_updates_different_dtypes(
             ops.scatter(input_tensor, updates, indices, axis=axis)
 
 
-def test_scatter_input_and_updates_different_dtypes_specific_error_message():
+def test_scatter_input_and_updates_different_dtypes_specific_error_message() -> (
+    None
+):
     """Test that the scatter op raises an error with different input and updates dtypes."""
     with Graph(
         "scatter_input_and_updates_different_dtypes",
@@ -103,7 +105,7 @@ def test_scatter_invalid_indices_type(
     input_type: TensorType,
     indices_type: TensorType,
     axis: int,
-):
+) -> None:
     """Test that the scatter op raises an error with an invalid indices type."""
     updates_type = input_type
 
@@ -116,7 +118,7 @@ def test_scatter_invalid_indices_type(
             ops.scatter(input_tensor, updates, indices, axis=axis)
 
 
-def test_scatter_invalid_indices_type_specific_error_message():
+def test_scatter_invalid_indices_type_specific_error_message() -> None:
     """Test that the scatter op raises an error with an invalid indices type."""
     with Graph(
         "scatter_with_invalid_indices_type",
@@ -146,7 +148,7 @@ def test_scatter_invalid_axis(
     input_type: TensorType,
     indices_type: TensorType,
     axis: int,
-):
+) -> None:
     """Test that the scatter op raises an error with an invalid axis."""
     updates_type = input_type
 
@@ -161,7 +163,7 @@ def test_scatter_invalid_axis(
             ops.scatter(input_tensor, updates, indices, axis=axis)
 
 
-def test_scatter_invalid_axis_specific_error_message():
+def test_scatter_invalid_axis_specific_error_message() -> None:
     """Test that the scatter op raises an error with an invalid axis."""
     with Graph(
         "scatter_with_invalid_axis",
@@ -191,7 +193,7 @@ def test_scatter_nd_shape_preservation(
     input_type: TensorType,
     num_updates: int,
     index_rank: int,
-):
+) -> None:
     """Tests that scatter_nd preserves input shape and dtype."""
     # Ensure index_rank doesn't exceed input rank
     index_rank = min(index_rank, input_type.rank)
@@ -229,7 +231,7 @@ def test_scatter_nd_dtype_mismatch(
     input_type: TensorType,
     updates_type: TensorType,
     indices_type: TensorType,
-):
+) -> None:
     """Tests that scatter_nd raises error when input and updates have different dtypes."""
     assume(input_type.dtype != updates_type.dtype)
 
@@ -247,7 +249,7 @@ def test_scatter_nd_dtype_mismatch(
             ops.scatter_nd(input_tensor, updates, indices)
 
 
-def test_scatter_nd_invalid_indices_dtype():
+def test_scatter_nd_invalid_indices_dtype() -> None:
     """Tests that scatter_nd raises error with invalid indices dtype."""
     with Graph(
         "scatter_nd_invalid_indices",
@@ -271,7 +273,7 @@ def test_scatter_nd_invalid_indices_dtype():
             ops.scatter_nd(input_tensor, updates, indices)
 
 
-def test_scatter_nd_device_mismatch():
+def test_scatter_nd_device_mismatch() -> None:
     """Tests that scatter_nd raises error when tensors are on different devices."""
     with Graph(
         "scatter_nd_device_mismatch",

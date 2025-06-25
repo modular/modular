@@ -19,13 +19,13 @@ from main import app
 client = TestClient(app)
 
 
-def test_root():
+def test_root() -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert response.json() == {"message": "Hello, magic!"}
 
 
-def test_zero():
+def test_zero() -> None:
     mock_process = MagicMock()
     mock_process.stdout.readline.return_value = "tensor([0.])\n"
     mock_process.poll.return_value = 0
@@ -36,7 +36,7 @@ def test_zero():
         assert response.json() == {"message": "answer is tensor([0.])\n"}
 
 
-def test_zero_failure():
+def test_zero_failure() -> None:
     mock_process = MagicMock()
     mock_process.stdout.readline.return_value = ""
     mock_process.poll.return_value = 1

@@ -56,11 +56,21 @@ ignore = [
   "D209", # new-line-after-last-paragraph
   "D212", # multi-line-summary-first-line (to allow init with args only)
   "UP007", # TODO: Enable when we drop 3.9
+  "ANN001", # TODO: Missing type annotation for function argument
+  "ANN002", # TODO: Missing type annotation for *args
+  "ANN003", # TODO: Missing type annotation for **kwargs
+  "ANN201", # TODO: Missing return type annotation for public function
+  "ANN202", # TODO: Missing return type annotation for private function
+  "ANN204", # TODO: Missing return type annotation for special method
+  "ANN205", # TODO: Missing return type annotation for staticmethod
+  "ANN206", # TODO: Missing return type annotation for classmethod
+  "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
 ]
 extend-select = [
   "I",
   "D",
   "UP",
+  "ANN",
 ]
 
 [tool.ruff.lint.pydocstyle]

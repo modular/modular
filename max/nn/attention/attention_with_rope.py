@@ -172,7 +172,7 @@ class AttentionWithRope(Module):
         has_bias: bool = False,
         float8_config: Float8Config | None = None,
         clip_qkv: float | None = None,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
@@ -497,7 +497,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
@@ -677,7 +677,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         dtype: DType = DType.float32,
         scale: float | None = None,
         linear_cls: Callable[..., Linear] = Linear,
-    ):
+    ) -> None:
         # Skip AttentionWithRope.__init__ because the weights are created
         # differently.
         Module.__init__(self)

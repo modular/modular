@@ -13,7 +13,7 @@
 
 
 class Simple:
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
 
@@ -31,7 +31,7 @@ class WithGetItemException:
 
 
 class With2DGetItem:
-    def __init__(self):
+    def __init__(self) -> None:
         self.data = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 
     def __getitem__(self, key):

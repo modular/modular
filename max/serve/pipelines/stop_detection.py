@@ -19,7 +19,7 @@ class StopDetector:
     Utility to detect a stop sequence in a continuation
     """
 
-    def __init__(self, stop: Optional[Union[str, list[str]]]):
+    def __init__(self, stop: Optional[Union[str, list[str]]]) -> None:
         self.continuation_tail = ""
         self.stop: list[str]
 

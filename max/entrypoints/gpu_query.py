@@ -17,7 +17,7 @@ import sys
 from ._package_root import get_package_root
 
 
-def exec_gpu_query():
+def exec_gpu_query() -> None:
     root = get_package_root()
 
     # We shouldn't run this through Bazel

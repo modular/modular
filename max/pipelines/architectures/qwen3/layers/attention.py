@@ -61,7 +61,7 @@ class Qwen3Attention(Module):
         scale: float | None = None,
         has_bias: bool = False,
         qk_norm_eps: float = 1e-6,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:

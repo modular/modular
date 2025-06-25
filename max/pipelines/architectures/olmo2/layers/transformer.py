@@ -36,7 +36,7 @@ class Olmo2TransformerBlock(Module):
         post_attention_layer_norm: Layer,
         post_feedforward_layer_norm: Layer,
         residual_multiplier: float = 1.0,
-    ):
+    ) -> None:
         super().__init__()
         self.self_attn = attention
         self.mlp = mlp

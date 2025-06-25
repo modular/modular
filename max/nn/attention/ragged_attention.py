@@ -52,7 +52,7 @@ class RaggedAttention(Module):
         scale: float | None = None,
         has_bias: bool = False,
         clip_qkv: float | None = None,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:

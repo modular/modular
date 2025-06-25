@@ -21,7 +21,9 @@ supported_tensor_types = tensor_types(
 @given(
     input_type=supported_tensor_types,
 )
-def test_argsort_output_tensor_types(graph_builder, input_type: TensorType):
+def test_argsort_output_tensor_types(
+    graph_builder, input_type: TensorType
+) -> None:
     expected_type = input_type.cast(DType.int64)
     with graph_builder(input_types=[input_type]) as graph:
         idx_tensor = ops.argsort(graph.inputs[0].tensor, ascending=True)
@@ -30,7 +32,7 @@ def test_argsort_output_tensor_types(graph_builder, input_type: TensorType):
         assert idx_tensor.type == expected_type
 
 
-def test_argsort_with_input_rank_greater_than_1(graph_builder):
+def test_argsort_with_input_rank_greater_than_1(graph_builder) -> None:
     input_shape = [0, 1, 2, 3, 4, 5]
     ascending = True
 

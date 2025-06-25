@@ -47,7 +47,7 @@ def test_split_valid_inputs(
     base_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
-):
+) -> None:
     assume(-(2**63) <= sum(int(s) for s in split_sizes) < 2**63 - 1)
     input_type, axis = with_dim(base_type, sum(split_sizes, start=Dim(0)), axis)
 
@@ -78,7 +78,7 @@ def test_split__non_static_split_dims(
     split_sizes: list[Dim],
     dim: StaticDim,
     axis: int,
-):
+) -> None:
     assume(not all(isinstance(dim, StaticDim) for dim in split_sizes))
     input_type, axis = with_dim(base_type, dim, axis)
     with graph_builder(input_types=[input_type]) as graph:
@@ -96,7 +96,7 @@ def test_split__invalid_axis(
     input_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
-):
+) -> None:
     assume(not -input_type.rank <= axis < input_type.rank)
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(Exception):
@@ -115,7 +115,7 @@ def test_split__splits_dont_sum_to_dim(
     split_sizes: list[StaticDim],
     split_dim: StaticDim,
     axis: int,
-):
+) -> None:
     assume(-(2**63) <= sum(int(s) for s in split_sizes) < 2**63 - 1)
     assume(sum(split_sizes) != split_dim)
     input_type, axis = with_dim(base_type, split_dim, axis)
@@ -134,7 +134,7 @@ def test_split__non_static_dim(
     input_type: TensorType,
     split_sizes: list[StaticDim],
     axis: int,
-):
+) -> None:
     assume(not isinstance(input_type.shape[axis], StaticDim))
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(Exception):
@@ -155,7 +155,7 @@ def test_split__negative_split_sizes(
     split_sizes: list[int],
     split_dim: StaticDim,
     axis: int,
-):
+) -> None:
     assume(any(dim < 0 for dim in split_sizes))
     assume(-(2**63) <= sum(split_sizes) < 2**63 - 1)
 
@@ -183,7 +183,7 @@ def test_split__negative_split_sizes(
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_invalid_split_full_error_message(graph_builder):
+def test_invalid_split_full_error_message(graph_builder) -> None:
     input_shape = [15]
     split_sizes = [10, 6]
     axis = 0
@@ -194,7 +194,7 @@ def test_invalid_split_full_error_message(graph_builder):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_invalid_axis_full_error_message(graph_builder):
+def test_invalid_axis_full_error_message(graph_builder) -> None:
     input_shape = [15]
     split_sizes = [10, 6]
     axis = 2
@@ -205,7 +205,7 @@ def test_invalid_axis_full_error_message(graph_builder):
             ops.split(graph.inputs[0].tensor, split_sizes, axis)
 
 
-def test_negative_split_size_full_error_message(graph_builder):
+def test_negative_split_size_full_error_message(graph_builder) -> None:
     input_shape = [4]
     split_sizes = [10, -6]
     axis = 0

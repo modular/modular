@@ -19,7 +19,7 @@ from max.graph import DeviceRef, Shape, StaticDim, TensorType, ops
 )
 def test_hann_window_valid_inputs(
     graph_builder, window_length: int, periodic: bool, dtype: DType
-):
+) -> None:
     """Test hann_window with valid inputs using property-based testing."""
     with graph_builder(input_types=[]) as graph:
         result = ops.hann_window(
@@ -45,7 +45,7 @@ def test_hann_window_valid_inputs(
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
 def test_hann_window_specific_cases(
     graph_builder, window_length: int, periodic: bool, dtype: DType
-):
+) -> None:
     """Test hann_window with specific parameter combinations."""
     with graph_builder(input_types=[]) as graph:
         result = ops.hann_window(
@@ -66,7 +66,9 @@ def test_hann_window_specific_cases(
 
 
 @given(window_length=st.integers(max_value=-1))
-def test_hann_window_negative_length_raises(graph_builder, window_length: int):
+def test_hann_window_negative_length_raises(
+    graph_builder, window_length: int
+) -> None:
     """Test that negative window_length raises ValueError."""
     with pytest.raises(ValueError):
         with graph_builder(input_types=[]) as graph:
@@ -78,7 +80,7 @@ def test_hann_window_negative_length_raises(graph_builder, window_length: int):
             )
 
 
-def test_hann_window_negative_length_error_message(graph_builder):
+def test_hann_window_negative_length_error_message(graph_builder) -> None:
     """Test specific error message for negative window_length."""
     with pytest.raises(ValueError, match="window_length must be non-negative"):
         with graph_builder(input_types=[]) as graph:
@@ -90,7 +92,7 @@ def test_hann_window_negative_length_error_message(graph_builder):
             )
 
 
-def test_hann_window_non_integer_length_raises(graph_builder):
+def test_hann_window_non_integer_length_raises(graph_builder) -> None:
     """Test that non-integer window_length raises TypeError."""
     with pytest.raises(TypeError):
         with graph_builder(input_types=[]) as graph:
@@ -102,7 +104,7 @@ def test_hann_window_non_integer_length_raises(graph_builder):
             )
 
 
-def test_hann_window_non_integer_length_error_message(graph_builder):
+def test_hann_window_non_integer_length_error_message(graph_builder) -> None:
     """Test specific error message for non-integer window_length."""
     with pytest.raises(
         TypeError, match="window_length must be an integer, got float"
@@ -117,7 +119,9 @@ def test_hann_window_non_integer_length_error_message(graph_builder):
 
 
 @pytest.mark.parametrize("device", [DeviceRef.CPU(), DeviceRef.GPU()])
-def test_hann_window_different_devices(graph_builder, device: DeviceRef):
+def test_hann_window_different_devices(
+    graph_builder, device: DeviceRef
+) -> None:
     """Test hann_window works with different devices."""
     with graph_builder(input_types=[]) as graph:
         result = ops.hann_window(
@@ -131,7 +135,7 @@ def test_hann_window_different_devices(graph_builder, device: DeviceRef):
         graph.output(result)
 
 
-def test_hann_window_edge_case_zero_length(graph_builder):
+def test_hann_window_edge_case_zero_length(graph_builder) -> None:
     """Test hann_window with zero length returns empty tensor."""
     with graph_builder(input_types=[]) as graph:
         result = ops.hann_window(
@@ -145,7 +149,7 @@ def test_hann_window_edge_case_zero_length(graph_builder):
         graph.output(result)
 
 
-def test_hann_window_edge_case_length_one(graph_builder):
+def test_hann_window_edge_case_length_one(graph_builder) -> None:
     """Test hann_window with length one returns single value."""
     with graph_builder(input_types=[]) as graph:
         result = ops.hann_window(
@@ -162,7 +166,7 @@ def test_hann_window_edge_case_length_one(graph_builder):
 @pytest.mark.parametrize(
     "dtype", [DType.float32, DType.float64, DType.bfloat16, DType.float16]
 )
-def test_hann_window_supported_dtypes(graph_builder, dtype: DType):
+def test_hann_window_supported_dtypes(graph_builder, dtype: DType) -> None:
     """Test hann_window works with various floating point dtypes."""
     with graph_builder(input_types=[]) as graph:
         result = ops.hann_window(
@@ -182,7 +186,7 @@ def test_hann_window_supported_dtypes(graph_builder, dtype: DType):
 )
 def test_hann_window_graph_invariants(
     graph_builder, window_length: int, periodic: bool
-):
+) -> None:
     """Test that hann_window maintains graph construction invariants."""
     with graph_builder(input_types=[]) as graph:
         result = ops.hann_window(
@@ -205,7 +209,7 @@ def test_hann_window_graph_invariants(
         graph.output(result)
 
 
-def test_hann_window_large_window_length(graph_builder):
+def test_hann_window_large_window_length(graph_builder) -> None:
     """Test hann_window with large window length."""
     large_length = 10000
     with graph_builder(input_types=[]) as graph:

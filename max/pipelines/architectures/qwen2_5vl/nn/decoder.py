@@ -131,7 +131,7 @@ class Qwen2_5VLDecoderTransformer(Module):
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.dim = dim
         self.n_heads = n_heads

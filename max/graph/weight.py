@@ -396,7 +396,7 @@ class Weight(TensorValue):
         align: Optional[int] = None,
         sharding_strategy: Optional[ShardingStrategy] = None,
         _placeholder: bool = False,
-    ):
+    ) -> None:
         self.name = name
         self._dtype = dtype
         self._shape = shape
@@ -448,7 +448,7 @@ class Weight(TensorValue):
         tensor_value = tensor_value.to(self._device)
         return tensor_value._mlir_value
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         device_str = f", {self._device}"
         if self.quantization_encoding:
             return f"Weight({self.name}, {self.dtype}, {self.shape}{device_str}, {self.quantization_encoding})"

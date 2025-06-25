@@ -37,7 +37,7 @@ from .model_config import DeepseekV2Config
 class DeepseekV2(Transformer):
     """Defines the DeepseekV2 transformer model."""
 
-    def __init__(self, config: DeepseekV2Config):
+    def __init__(self, config: DeepseekV2Config) -> None:
         assert len(config.devices) == 1
         assert config.rope_scaling is not None
         scaling_params = DeepseekYarnRopeScalingParams(

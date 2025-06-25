@@ -65,7 +65,7 @@ class LoRAModel:
     Manages LoRA weights and configuration for a single adapter.
     """
 
-    def __init__(self, name: str, path: str, strict: bool = True):
+    def __init__(self, name: str, path: str, strict: bool = True) -> None:
         """
         Initializes a LoRAModel by loading its configuration and weights.
 
@@ -203,7 +203,7 @@ class LoRAManager:
         base_weights: Weights,
         max_num_loras: int,
         lora_paths: Optional[list[str]] = None,
-    ):
+    ) -> None:
         """
         Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 

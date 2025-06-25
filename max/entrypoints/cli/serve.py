@@ -46,7 +46,7 @@ from uvicorn import Server
 logger = logging.getLogger("max.entrypoints")
 
 
-def sigterm_handler(sig, frame):
+def sigterm_handler(sig, frame) -> None:
     # We handle SIGINT gracefully, so piggyback on that
     logger.info("Got SIGTERM, terminating...")
     os.kill(os.getpid(), signal.SIGINT)
@@ -61,7 +61,7 @@ def serve_pipeline(
     experimental_enable_kvcache_agent: bool = False,
     port: Optional[int] = None,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
-):
+) -> None:
     # Initialize settings
     settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
 

@@ -18,7 +18,7 @@ from max.graph import BufferType, BufferValue, DeviceRef, Graph, TensorType, ops
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
-def test_while_loop(session: InferenceSession):
+def test_while_loop(session: InferenceSession) -> None:
     with Graph(
         "while_loop",
         input_types=[TensorType(DType.int32, [], device=device_ref)],
@@ -40,7 +40,7 @@ def test_while_loop(session: InferenceSession):
     assert result[0].to_numpy() == 10
 
 
-def test_while_loop_lambda(session: InferenceSession):
+def test_while_loop_lambda(session: InferenceSession) -> None:
     with Graph(
         "while_loop_lambda",
         input_types=[TensorType(DType.int32, [], device=device_ref)],
@@ -55,7 +55,7 @@ def test_while_loop_lambda(session: InferenceSession):
     assert result[0].to_numpy() == 10
 
 
-def test_while_loop_body_with_multiple_args(session: InferenceSession):
+def test_while_loop_body_with_multiple_args(session: InferenceSession) -> None:
     with Graph(
         "while_loop_lambda_with_multiple_args",
         input_types=[
@@ -89,7 +89,7 @@ def custom_ops_path() -> Path:
 )
 def test_while_loop_inplace_user_supplied(
     custom_ops_path, session: InferenceSession
-):
+) -> None:
     bt = BufferType(DType.float32, [2, 2], DeviceRef.CPU())
 
     with Graph("basic", input_types=[bt]) as graph:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -60,7 +60,7 @@ class RandomWeights(Weights):
             "Cannot get raw tensor from RandomWeights. Use `allocate` instead."
         )
 
-    def items(self):
+    def items(self) -> NoReturn:
         """Iterate through all allocable weights that start with the prefix."""
         raise NotImplementedError
 

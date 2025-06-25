@@ -77,7 +77,7 @@ def create_graph(
         return graph_xxx
 
 
-def main():
+def main() -> None:
     mojo_kernels = Path(__file__).parent / "kernels"
 
     nBatches = 8

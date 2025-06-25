@@ -48,7 +48,7 @@ class GenerationModel(Module):
         logits_postprocessor: Union[
             Callable[[TensorValue], TensorValue], None
         ] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.visual = visual
         self.model = model

@@ -18,7 +18,7 @@ import json
 from max.pipelines import PIPELINE_REGISTRY
 
 
-def list_pipelines_to_console():
+def list_pipelines_to_console() -> None:
     print()
     # Print human readable format
     for arch in PIPELINE_REGISTRY.architectures.values():
@@ -41,7 +41,7 @@ def list_pipelines_to_console():
     print()
 
 
-def list_pipelines_to_json():
+def list_pipelines_to_json() -> None:
     """Print the list of pipelines architecture options in JSON format."""
     architectures = {}
     for arch in PIPELINE_REGISTRY.architectures.values():

@@ -68,7 +68,7 @@ def load_pickle(path):
         return pickle.load(handle)
 
 
-def dump_yaml(obj, out_path):
+def dump_yaml(obj, out_path) -> None:
     with open(out_path, "w") as f:
         yaml.dump(obj, f, sort_keys=False)
 
@@ -82,7 +82,7 @@ def top_idx(x, top_percentage=0.05):
     return x.where(x < threshold).dropna().index
 
 
-def replace_vals_snippet(p_spec, snippet_path, output_path):
+def replace_vals_snippet(p_spec, snippet_path, output_path) -> None:
     with open(snippet_path) as f:
         c_init = f.read()
 
@@ -114,7 +114,7 @@ def find_common_params(subset):
 
 def df_to_console_table(
     df, col_style={}, header_style="bold blue", index=False
-):
+) -> None:
     console = Console()
     table = Table(show_header=True, header_style=header_style)
 
@@ -139,7 +139,7 @@ class KbenchPKL:
     pkl_data: dict
     metric: str
 
-    def __init__(self, pickle_path, metric: str):
+    def __init__(self, pickle_path, metric: str) -> None:
         self.pkl_data = KbenchPKL.load(pickle_path)
         self.merged_df = self.pkl_data["merged_df"].drop(
             ["name", "iters"], axis=1
@@ -203,7 +203,7 @@ def profile_results(
     metric: str = "met (ms)",
     pivots: list[str] = [],
     verbose=False,
-):
+) -> None:
     pkl = KbenchPKL(pickle_path=pickle_path, metric=metric)
     merged_df, tune_df, pkl_data = (
         pkl.merged_df,
@@ -280,7 +280,7 @@ def profile_results(
         print(LINE)
 
 
-def identical_pivot_values(x, y, pivots):
+def identical_pivot_values(x, y, pivots) -> bool:
     for p in pivots:
         if (
             (p not in x.keys())
@@ -294,7 +294,7 @@ def identical_pivot_values(x, y, pivots):
 
 def diff_baseline(
     files, metric: str, pivots: list = [], head: int = -1, verbose: bool = False
-):
+) -> None:
     base_pkl = KbenchPKL(files[0], metric=metric)
     metric = base_pkl.metric
     tune_df_base = base_pkl.tune_df
@@ -508,7 +508,7 @@ def cli(
     return True
 
 
-def main():
+def main() -> None:
     cli()
 
 

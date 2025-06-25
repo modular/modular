@@ -16,7 +16,7 @@ from max.graph import (
 @given(base_type=..., target_dtype=...)
 def test_cast__tensor(
     graph_builder, base_type: TensorType, target_dtype: DType
-):
+) -> None:
     """Test that cast correctly converts tensor values between different data types."""
     expected_type = base_type.cast(target_dtype)
     with graph_builder(input_types=[base_type]) as graph:

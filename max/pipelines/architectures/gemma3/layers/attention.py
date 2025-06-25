@@ -59,7 +59,7 @@ class _Gemma3Attention(Module):
         has_bias: bool = False,
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 1024,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:

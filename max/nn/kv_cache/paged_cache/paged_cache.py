@@ -203,7 +203,7 @@ class PagedKVCacheManager(KVCacheManager):
         cache_memory: int,
         page_size: int = 128,
         enable_runtime_checks: bool = False,
-    ):
+    ) -> None:
         """
         Args:
             params: The KVCacheParams for the given pipeline.

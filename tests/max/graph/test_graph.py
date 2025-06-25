@@ -24,7 +24,7 @@ empty_graphs = st.builds(
 
 
 @given(graph=empty_graphs)
-def test_simple_graphs(graph: Graph):
+def test_simple_graphs(graph: Graph) -> None:
     assume(len(graph.inputs) > 0)
     with graph:
         graph.output(graph.inputs[0])

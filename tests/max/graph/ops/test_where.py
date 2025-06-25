@@ -24,7 +24,7 @@ from max.graph.type import Dim, StaticDim
 
 
 @given(input_types=broadcastable_tensor_types(3))
-def test_where(input_types: list[TensorType]):
+def test_where(input_types: list[TensorType]) -> None:
     input_types[0].dtype = DType.bool
 
     with Graph("where", input_types=input_types) as graph:
@@ -73,7 +73,9 @@ shared_dtypes = st.shared(st.from_type(DType))
     x=tensor_types(dtypes=shared_dtypes),
     y=tensor_types(dtypes=shared_dtypes),
 )
-def test_where_with_non_broadcastable_shapes(graph_builder, condition, x, y):
+def test_where_with_non_broadcastable_shapes(
+    graph_builder, condition, x, y
+) -> None:
     assume(not_broadcastable(condition.shape, x.shape, y.shape))
     with Graph("where", input_types=[condition, x, y]) as graph:
         cond, x, y = graph.inputs
@@ -81,7 +83,7 @@ def test_where_with_non_broadcastable_shapes(graph_builder, condition, x, y):
             ops.where(cond, x, y)
 
 
-def test_where_error_message_with_non_bool_condition():
+def test_where_error_message_with_non_bool_condition() -> None:
     with Graph(
         "where_non_bool",
         input_types=[
@@ -98,7 +100,7 @@ def test_where_error_message_with_non_bool_condition():
             ops.where(cond, x, y)
 
 
-def test_where_error_message_with_mismatched_condition_shape():
+def test_where_error_message_with_mismatched_condition_shape() -> None:
     with Graph(
         "where_mismatched_condition_shape",
         input_types=[
@@ -115,7 +117,7 @@ def test_where_error_message_with_mismatched_condition_shape():
             ops.where(cond, x, y)
 
 
-def test_where_error_message_with_mismatched_devices():
+def test_where_error_message_with_mismatched_devices() -> None:
     with Graph(
         "where_mismatched_devices",
         input_types=[
@@ -185,7 +187,7 @@ def test_where_error_message_with_mismatched_devices():
 )
 def test_where_with_promotable_dtypes(
     graph_builder, condition, x_dtype, y_dtype
-):
+) -> None:
     """Test where with dtypes that should promote according to RMO::promoteDtype rules."""
     # Skip cases where we expect promotion to fail
     assume(
@@ -412,7 +414,7 @@ def test_where_with_promotable_dtypes(
 )
 def test_where_with_incompatible_dtypes(
     graph_builder, condition, x_dtype, y_dtype
-):
+) -> None:
     """Test where with dtypes that should fail to promote according to RMO::promoteDtype rules."""
     assume(
         # Unsafe uint->sint promotions with same bitwidth
@@ -518,7 +520,7 @@ def test_where_with_incompatible_dtypes(
 )
 def test_where_with_python_scalars(
     safe_int, unsafe_int_float16, unsafe_int_float32, safe_float
-):
+) -> None:
     """Test where with Python scalar values (int, float) using hypothesis to probe boundaries."""
     with Graph(
         "where_python_scalars",
@@ -600,7 +602,7 @@ def test_where_with_python_scalars(
 )
 def test_where_with_numpy_arrays(
     safe_int32, safe_float64, unsafe_int64, unsafe_uint64
-):
+) -> None:
     """Test where with NumPy arrays using hypothesis to probe boundaries."""
     with Graph(
         "where_numpy_arrays",

@@ -43,7 +43,7 @@ class TransformerBlock(Module):
         attention_norm: Layer,
         mlp_norm: Layer,
         residual_multiplier: float = 1.0,
-    ):
+    ) -> None:
         super().__init__()
         self.self_attn = attention
         self.mlp = mlp
@@ -106,7 +106,7 @@ class Transformer(Module):
         embedding_multiplier: float = 1.0,
         logits_postprocessor: Callable[[TensorValue], TensorValue]
         | None = None,
-    ):
+    ) -> None:
         super().__init__()
         self.dim = dim
         self.n_heads = n_heads

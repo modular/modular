@@ -64,7 +64,7 @@ class RejectionSampler(nn.Module):
         temperature: float = 1.0,
         seed: int = 0,
         eps: float = 1e-5,
-    ):
+    ) -> None:
         self.device = device
         self.top_k = top_k
         self.top_p = top_p
@@ -185,7 +185,7 @@ class RejectionSamplerWithResiduals(nn.Module):
         eps: float = 1e-10,
         seed: int = 0,
         debug: bool = False,
-    ):
+    ) -> None:
         self.device = device
         self.top_k = top_k
         self.temperature = temperature

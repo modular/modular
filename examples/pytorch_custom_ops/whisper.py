@@ -59,7 +59,7 @@ class ModularWhisperAttention(nn.Module):
         is_causal: bool = False,
         layer_idx: Optional[int] = None,
         config: Optional[WhisperConfig] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -203,7 +203,7 @@ def get_model(device, backend):
     return model
 
 
-def main():
+def main() -> None:
     if not torch.cuda.is_available():
         print("This example is only available for GPUs at the moment.")
         return

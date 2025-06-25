@@ -28,7 +28,7 @@ class TorchPrintHook(BasePrintHook):
     _handle: torch.utils.hooks.RemovableHandle
     """A handle used to remove the forward hook registered by this class."""
 
-    def __init__(self, export_path: str | None = None):
+    def __init__(self, export_path: str | None = None) -> None:
         super().__init__(export_path)
         self._handle = torch.nn.modules.module.register_module_forward_hook(
             self
@@ -37,7 +37,7 @@ class TorchPrintHook(BasePrintHook):
         if export_path := self.export_path:
             os.makedirs(export_path, exist_ok=True)
 
-    def name_layers(self, model: torch.nn.Module):
+    def name_layers(self, model: torch.nn.Module) -> None:
         """Create names for all layers in the model."""
         for module_name, module in model.named_modules():
             name = f"model.{module_name}" if module_name else "model"
@@ -62,7 +62,7 @@ class TorchPrintHook(BasePrintHook):
             return True
         return False
 
-    def remove(self):
+    def remove(self) -> None:
         super().remove()
 
         if self._handle:

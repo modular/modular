@@ -18,7 +18,7 @@ import sys
 # fail if warnings are present (something like -Werror for gcc).
 
 
-def main():
+def main() -> None:
     # This is actually faster than running "mojo doc" on each file since
     # "mojo doc" only accept a single file/path as argument
     command = [

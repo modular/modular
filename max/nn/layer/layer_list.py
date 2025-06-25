@@ -23,7 +23,7 @@ class LayerList(Module):
 
     Can be used as a regular python list."""
 
-    def __init__(self, layers: Sequence[Layer]):
+    def __init__(self, layers: Sequence[Layer]) -> None:
         super().__init__()
         self.layers = list(layers)
 
@@ -43,28 +43,28 @@ class LayerList(Module):
             )
         return super().sublayers
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.layers)
 
     def __getitem__(self, i: int) -> Layer:
         return self.layers[i]
 
-    def __delitem__(self, i: int):
+    def __delitem__(self, i: int) -> None:
         del self.layers[i]
 
-    def __setitem__(self, i: int, layer: Layer):
+    def __setitem__(self, i: int, layer: Layer) -> None:
         self.layers[i] = layer
 
-    def insert(self, i, layer: Layer):
+    def insert(self, i, layer: Layer) -> None:
         self.layers.insert(i, layer)
 
-    def append(self, layer: Layer):
+    def append(self, layer: Layer) -> None:
         self.layers.append(layer)
 
-    def extend(self, layer: Layer):
+    def extend(self, layer: Layer) -> None:
         self.layers.append(layer)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.layers)
 
     def __iter__(self):

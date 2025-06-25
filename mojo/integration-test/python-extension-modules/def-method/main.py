@@ -19,7 +19,7 @@ import mojo_module as def_method
 
 
 class TestPythonTypeBuilderDefMethod(unittest.TestCase):
-    def test_get_name(self):
+    def test_get_name(self) -> None:
         person = def_method.Person()
         self.assertEqual(person.get_name(), "John Smith")
 
@@ -31,11 +31,11 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
         finally:
             delattr(sys.modules[__name__], "deny_name")
 
-    def test_split_name(self):
+    def test_split_name(self) -> None:
         person = def_method.Person()
         self.assertEqual(person.split_name(" "), ["John", "Smith"])
 
-    def test_with(self):
+    def test_with(self) -> None:
         person = def_method.Person()
         same_person = person._with("Jane Doe", 25)
         self.assertEqual(person.get_name(), "Jane Doe")
@@ -43,18 +43,18 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
         self.assertEqual(same_person.get_name(), person.get_name())
         self.assertEqual(same_person.get_age(), person.get_age())
 
-    def test_get_age(self):
+    def test_get_age(self) -> None:
         self.assertEqual(def_method.Person().get_age(), 123)
 
-    def test_get_birth_year(self):
+    def test_get_birth_year(self) -> None:
         self.assertEqual(def_method.Person()._get_birth_year(2025), 1902)
 
-    def test_with_first_last_name(self):
+    def test_with_first_last_name(self) -> None:
         person = def_method.Person()
         self.assertEqual(person._with_first_last_name("Jane", "Doe"), person)
         self.assertEqual(person.get_name(), "Jane Doe")
 
-    def test_erase_name(self):
+    def test_erase_name(self) -> None:
         person = def_method.Person()
 
         person.erase_name()
@@ -66,7 +66,7 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
             cm.exception.args, ("cannot erase name if it's already empty",)
         )
 
-    def test_set_age(self):
+    def test_set_age(self) -> None:
         person = def_method.Person()
         person.set_age(25)
         self.assertEqual(person.get_age(), 25)
@@ -75,7 +75,7 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
             person.set_age("10.5")
         self.assertEqual(cm.exception.args, ("cannot set age to 10.5",))
 
-    def test_set_name_and_age(self):
+    def test_set_name_and_age(self) -> None:
         person = def_method.Person()
         person.set_name_and_age("John Doe", 25)
         self.assertEqual(person.get_name(), "John Doe")
@@ -85,7 +85,7 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
             person.set_name_and_age("John Modular", "10.5")
         self.assertEqual(cm.exception.args, ("cannot set age to 10.5",))
 
-    def test_reset(self):
+    def test_reset(self) -> None:
         person = def_method.Person()
         person.set_name_and_age("John Doe", 25)
 
@@ -93,12 +93,12 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
         self.assertEqual(person.get_name(), "John Smith")
         self.assertEqual(person.get_age(), 123)
 
-    def test_set_name(self):
+    def test_set_name(self) -> None:
         person = def_method.Person()
         person.set_name("John Doe")
         self.assertEqual(person.get_name(), "John Doe")
 
-    def test_set_age_from_dates(self):
+    def test_set_age_from_dates(self) -> None:
         person = def_method.Person()
         person._set_age_from_dates(1991, 2025)
         self.assertEqual(person.get_age(), 34)

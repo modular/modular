@@ -552,7 +552,7 @@ class AudioGeneratorPipeline(Generic[AudioGeneratorContext]):
             len(self._background_tasks),
         )
 
-    def log_task_done(self, task: asyncio.Task, task_name: str):
+    def log_task_done(self, task: asyncio.Task, task_name: str) -> None:
         # TODO - should gracefully shut down here.
         self._background_tasks.remove(task)
         self.logger.info(

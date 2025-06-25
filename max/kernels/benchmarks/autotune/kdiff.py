@@ -36,11 +36,11 @@ def shell(arg_str: str, check: bool = False, verbose=True):
     return p.stdout.split("\n")
 
 
-def export_env(key, val):
+def export_env(key, val) -> None:
     os.environ[key] = val
 
 
-def export_arg_env():
+def export_arg_env() -> None:
     """
     export ARGO_SERVER='argo-workflows-staging-release-cea88dd5-server.argo.svc.platform-staging-karpenter-eks-cluster-3b48ea0.local:80'
     export ARGO_HTTP1=true
@@ -114,7 +114,7 @@ def download_artifacts(
     ref_branch_yaml,
     output_dir,
     extension,
-):
+) -> None:
     # print("found workflow for ", current_sha)
     # TODO: convert to PATH
 
@@ -157,7 +157,7 @@ def download_artifacts(
     print("\n".join(kp))
 
 
-def compare_to_main(target_name, branch_sha, output_dir, extension):
+def compare_to_main(target_name, branch_sha, output_dir, extension) -> None:
     export_arg_env()
     main_sha, ref_main_yaml, ref_branch_yaml = search_workflows(
         branch_sha=branch_sha
@@ -268,7 +268,7 @@ def cli(
         )
 
 
-def main():
+def main() -> None:
     cli()
 
 

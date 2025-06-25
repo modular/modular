@@ -70,7 +70,7 @@ class DecodeScheduler(Scheduler):
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
         dispatcher_client: DispatcherClient,
-    ):
+    ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -404,7 +404,7 @@ class DecodeScheduler(Scheduler):
                 del self.reserved_cache_indices[request_id]
                 del self.active_batch[request_id]
 
-    def schedule_batch(self, num_steps: int):
+    def schedule_batch(self, num_steps: int) -> None:
         """Schedules a batch of requests for token generation and handles the responses.
 
         Args:

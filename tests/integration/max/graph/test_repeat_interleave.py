@@ -24,7 +24,7 @@ def test_repeat_interleave(
     session,
     input: TensorType,
     repeats: int,
-):
+) -> None:
     with Graph(
         "repeat_interleave",
         input_types=[],
@@ -64,7 +64,7 @@ def test_repeat_interleave_vector(
     input: TensorType,
     repeats: list[int],
     axis: int,
-):
+) -> None:
     with Graph(
         "repeat_interleave_vector",
         input_types=[],

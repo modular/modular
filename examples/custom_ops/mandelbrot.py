@@ -19,7 +19,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def draw_mandelbrot(tensor: Tensor, width: int, height: int, iterations: int):
+def draw_mandelbrot(
+    tensor: Tensor, width: int, height: int, iterations: int
+) -> None:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     sr = "....,c8M@jawrpogOQEPGJ"
     for row in range(height):

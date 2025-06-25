@@ -11,7 +11,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.ops import fold
 
 
-def test_fold(session):
+def test_fold(session) -> None:
     input_shape = (1, 6, 15)
     output_size = (5, 6)
     kernel_size = (3, 2)
@@ -60,7 +60,7 @@ def test_fold(session):
     np.testing.assert_equal(actual, expected)
 
 
-def test_fold_dynamic_shape(session):
+def test_fold_dynamic_shape(session) -> None:
     """Test with dynamic kernel size and output size."""
     input_shape = (1, 6, 15)
     output_size = (5, 6)

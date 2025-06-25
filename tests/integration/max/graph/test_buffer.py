@@ -99,7 +99,9 @@ def buffer_tensor_graph(tensor_type, buffer_type) -> Graph:
     reason="TODO(GEX-2137): Crashing on gpu",
 )
 @pytest.mark.parametrize("n", [-9, 9, 100])
-def test_load_mutate_store(n, buffer_graph: Graph, session: InferenceSession):
+def test_load_mutate_store(
+    n, buffer_graph: Graph, session: InferenceSession
+) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
         x = buffer_load(input_buffer)
@@ -123,7 +125,7 @@ def test_load_mutate_store(n, buffer_graph: Graph, session: InferenceSession):
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_load_mutate_store_ellipsis(
     n, buffer_graph: Graph, session: InferenceSession
-):
+) -> None:
     with buffer_graph as graph:
         input_buffer = graph.inputs[0].buffer
         input_buffer[...] = input_buffer[...] + n
@@ -145,7 +147,7 @@ def test_load_mutate_store_ellipsis(
 @pytest.mark.parametrize("n", [-9, 9, 100])
 def test_store_slice_load_slice(
     n, buffer_tensor_graph: Graph, session: InferenceSession
-):
+) -> None:
     with buffer_tensor_graph as graph:
         tensor = graph.inputs[0].tensor
         buffer = graph.inputs[1].buffer
@@ -178,7 +180,9 @@ def test_store_slice_load_slice(
     accelerator_count() > 0,
     reason="TODO(GEX-2136): Graph generating erroneous transfer to cpu for buffer",
 )
-def test_inplace_user_supplied(custom_ops_path, session: InferenceSession):
+def test_inplace_user_supplied(
+    custom_ops_path, session: InferenceSession
+) -> None:
     bt = BufferType(DType.float32, [2, 2], device=DeviceRef.CPU())
 
     with Graph(

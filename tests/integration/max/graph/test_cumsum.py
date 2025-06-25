@@ -15,7 +15,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
-def test_cumsum(session, dtype):
+def test_cumsum(session, dtype) -> None:
     if dtype == DType.bfloat16 and platform.machine() in ["arm64", "aarch64"]:
         pytest.skip("BF16 is not supported on ARM CPU architecture")
 

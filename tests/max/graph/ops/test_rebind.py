@@ -58,7 +58,7 @@ def test_rebind() -> None:
 
 
 @given(input_type=..., shape=...)
-def test_rebind__incorrect_rank(input_type: TensorType, shape: Shape):
+def test_rebind__incorrect_rank(input_type: TensorType, shape: Shape) -> None:
     assume(input_type.rank != shape.rank)
     with Graph("rebind", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):

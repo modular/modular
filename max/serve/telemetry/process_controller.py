@@ -56,7 +56,9 @@ def _sync_commit(m: MaxMeasurement) -> None:
 
 
 class ProcessMetricClient(MetricClient):
-    def __init__(self, settings: Settings, q: multiprocessing.queues.Queue):
+    def __init__(
+        self, settings: Settings, q: multiprocessing.queues.Queue
+    ) -> None:
         self.queue = q
         # buffer detailed metrics observations until it is safe to flush
         self.detailed_buffer: list[MaxMeasurement] = []
@@ -97,7 +99,7 @@ class ProcessMetricClient(MetricClient):
         settings = Settings(metric_level=self.metric_detail_level)
         return functools.partial(_reconstruct_client, settings, self.queue)
 
-    def __del__(self):
+    def __del__(self) -> None:
         try:
             if self.detailed_buffer:
                 self.queue.put_nowait(self.detailed_buffer)
@@ -190,7 +192,7 @@ def init_and_process(
         )
         server = Server(config)
 
-        def run_server():
+        def run_server() -> None:
             logger.warning(
                 f"Starting ASGI metrics server on port {settings.metrics_port}"
             )

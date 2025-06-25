@@ -37,7 +37,7 @@ from .model_config import MistralConfig
 class Mistral(Transformer):
     """Defines the Mistral transformer model."""
 
-    def __init__(self, config: MistralConfig):
+    def __init__(self, config: MistralConfig) -> None:
         assert len(config.devices) == 1
 
         # hidden_size (5120) != num_attention_heads * head_dim (128 * 40 = 4,096)

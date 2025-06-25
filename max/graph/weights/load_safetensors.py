@@ -61,7 +61,7 @@ class SafetensorWeights(Weights):
         prefix: str = "",
         allocated=None,
         _st_weight_map: dict[str, torch.Tensor] | None = None,
-    ):
+    ) -> None:
         if safe_open is None:
             raise ImportError(
                 "Could not import safetensors package. Please install it with"

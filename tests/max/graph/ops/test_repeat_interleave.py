@@ -26,7 +26,7 @@ shared_tensor_types = st.shared(tensor_types())
 )
 def test_repeat_interleave(
     graph_builder, type: TensorType, repeats: int, axis: int
-):
+) -> None:
     dim = type.shape[axis]
     assume(not isinstance(dim, StaticDim) or int(dim) * repeats < 2**63)
     with graph_builder(input_types=[type]) as graph:
@@ -46,7 +46,7 @@ def test_repeat_interleave(
     type=shared_tensor_types,
     axis=axes(shared_tensor_types),
 )
-def test_vector_repeats(graph_builder, type: TensorType, axis: int):
+def test_vector_repeats(graph_builder, type: TensorType, axis: int) -> None:
     dim = type.shape[axis]
 
     repeats_type = TensorType(DType.int64, [dim], device=DeviceRef.CPU())
@@ -71,7 +71,7 @@ def test_vector_repeats(graph_builder, type: TensorType, axis: int):
 )
 def test_repeat_interleave__no_axis(
     graph_builder, type: TensorType, repeats: int
-):
+) -> None:
     static_product = reduce(operator.mul, type.shape.static_dims, repeats)
     assume(static_product < 2**63)
     with graph_builder(input_types=[type]) as graph:
@@ -90,7 +90,7 @@ def test_repeat_interleave__no_axis(
 )
 def test_repeat_interleave__nonpositive_repeats(
     graph_builder, type: TensorType, repeats: int, axis: Optional[int]
-):
+) -> None:
     assume(repeats <= 0)
     with graph_builder(input_types=[type]) as graph:
         with pytest.raises(ValueError):
@@ -104,7 +104,7 @@ def test_repeat_interleave__nonpositive_repeats(
 )
 def test_repeat_interleave__axis_out_of_bounds(
     graph_builder, type: TensorType, repeats: int, axis: int
-):
+) -> None:
     assume(not -type.rank <= axis < type.rank)
     with graph_builder(input_types=[type]) as graph:
         with pytest.raises(ValueError):

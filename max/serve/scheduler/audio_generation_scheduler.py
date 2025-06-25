@@ -50,7 +50,7 @@ MAX_SERVE_TTS_BATCH_INFO_FILENAME: str | None = os.environ.get(
 
 
 class SchedulerLogger:
-    def __init__(self, path: str | None):
+    def __init__(self, path: str | None) -> None:
         self.path = path
         # open a file and overwrite it
         self.f = None
@@ -141,7 +141,7 @@ class AudioGenerationSchedulerConfig(TokenGenerationSchedulerConfig):
         enable_prioritize_first_decode: bool,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.max_queue_size_tg = (
             max_queue_size_tg
@@ -167,7 +167,7 @@ class AudioGenerationSchedulerOutput:
         self,
         reqs: dict[str, TTSContext],
         batch_type: BatchType,
-    ):
+    ) -> None:
         self.start_time = time.time()
         self.reqs = reqs
         self.batch_type = batch_type

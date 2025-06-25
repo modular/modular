@@ -80,7 +80,7 @@ class RMSNorm(Module):
         eps: float = 1e-6,
         weight_offset: float = 0.0,
         multiply_before_cast: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
         self.eps = eps
@@ -120,7 +120,7 @@ class RMSNorm(Module):
 
 
 class DistributedRMSNorm(RMSNorm):
-    def __init__(self, *args, devices: Sequence[DeviceRef], **kwargs):
+    def __init__(self, *args, devices: Sequence[DeviceRef], **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.num_devices = len(devices)
 

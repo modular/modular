@@ -77,7 +77,7 @@ class BlockManager(Generic[T]):
         block_copy_engine: BlockCopyEngine | None,
         enable_prefix_caching: bool,
         enable_runtime_checks: bool = False,
-    ):
+    ) -> None:
         # The number of tokens in a single page.
         self.block_size = block_size
 
@@ -170,7 +170,7 @@ class BlockManager(Generic[T]):
     def compute_hashes_for_request(
         self,
         ctx: T,
-    ):
+    ) -> None:
         """Compute the block hashes for the request."""
 
         seq_id = ctx.cache_seq_id

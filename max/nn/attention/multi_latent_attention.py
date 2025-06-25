@@ -66,7 +66,7 @@ class LatentAttentionWithRope(Module):
         qk_rope_head_dim: int = 64,
         v_head_dim: int = 128,
         buffer_size: int = 16384,
-    ):
+    ) -> None:
         """Initializes the latent attention layer.
 
         Args:

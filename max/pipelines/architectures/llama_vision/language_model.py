@@ -276,7 +276,9 @@ def cross_attention_decoder_layer(
 
 
 class SelfAttentionDecoderLayer(Layer):
-    def __init__(self, layer_idx: int, transformer_block: TransformerBlock):
+    def __init__(
+        self, layer_idx: int, transformer_block: TransformerBlock
+    ) -> None:
         self.layer_idx = layer_idx
         self.transformer_block = transformer_block
 

@@ -13,7 +13,7 @@ from ..graph import Graph
 from ..value import TensorValue
 
 
-def print(value: str | TensorValue, label: str = "debug_tensor"):
+def print(value: str | TensorValue, label: str = "debug_tensor") -> None:
     """
     Prints the value of a tensor or a string during graph execution.
 

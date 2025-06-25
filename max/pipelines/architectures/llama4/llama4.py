@@ -52,7 +52,7 @@ class Llama4DecoderLayer(Module):
         config: Llama4Config,
         layer_idx: int,
         devices: list[DeviceRef],
-    ):
+    ) -> None:
         super().__init__()
         is_nope_layer = (layer_idx + 1) % config.no_rope_layer_interval == 0
         use_rope = not is_nope_layer
@@ -139,7 +139,7 @@ class Llama4DecoderLayer(Module):
 class Llama4TextModel(Module):
     """The Llama4 text transformer model."""
 
-    def __init__(self, config: Llama4Config):
+    def __init__(self, config: Llama4Config) -> None:
         super().__init__()
         self.rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
@@ -241,7 +241,7 @@ class Llama4TextModel(Module):
 class Llama4(Module):
     """The Llama4 model (currently text-only)."""
 
-    def __init__(self, config: Llama4Config):
+    def __init__(self, config: Llama4Config) -> None:
         self.language_model = Llama4TextModel(config)
 
     def __call__(

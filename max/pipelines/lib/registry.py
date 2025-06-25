@@ -108,7 +108,7 @@ class SupportedArchitecture:
         multi_gpu_supported: bool = False,
         rope_type: RopeType = RopeType.none,
         weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
-    ):
+    ) -> None:
         """Represents a model architecture configuration for MAX pipelines.
 
         This class defines all the necessary components and settings required to
@@ -208,7 +208,7 @@ class SupportedArchitecture:
 
 
 class PipelineRegistry:
-    def __init__(self, architectures: list[SupportedArchitecture]):
+    def __init__(self, architectures: list[SupportedArchitecture]) -> None:
         self.architectures = {arch.name: arch for arch in architectures}
         self._cached_huggingface_configs: dict[HuggingFaceRepo, AutoConfig] = {}
         self._cached_huggingface_tokenizers: dict[

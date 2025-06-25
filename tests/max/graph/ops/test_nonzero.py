@@ -15,7 +15,7 @@ shared_dtypes = st.shared(st.from_type(DType))
 
 
 @given(input_type=...)
-def test_nonzero(input_type: TensorType):
+def test_nonzero(input_type: TensorType) -> None:
     with Graph("nonzero ", input_types=[input_type]) as graph:
         out = ops.nonzero(graph.inputs[0], "nonzero")
         assert out.dtype == DType.int64
@@ -24,7 +24,7 @@ def test_nonzero(input_type: TensorType):
 
 
 @given(dtype=shared_dtypes)
-def test_nonzero_scalar_error(dtype: DType):
+def test_nonzero_scalar_error(dtype: DType) -> None:
     """Test that nonzero raises an error with a scalar input for any dtype."""
     scalar_type = TensorType(dtype, [], device=DeviceRef.CPU())
     with Graph("nonzero_scalar", input_types=[scalar_type]) as graph:

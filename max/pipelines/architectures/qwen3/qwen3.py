@@ -43,7 +43,7 @@ from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 
 class Qwen3(Transformer):
-    def __init__(self, config: Qwen3Config):
+    def __init__(self, config: Qwen3Config) -> None:
         assert len(config.devices) == 1
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,

@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test while loop operations."""
 
+from typing import NoReturn
+
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -105,7 +107,7 @@ def test_while_loop_with_raising() -> None:
         def pred(x):
             return x < 10
 
-        def body(x):
+        def body(x) -> NoReturn:
             raise Exception("raising")
 
         try:

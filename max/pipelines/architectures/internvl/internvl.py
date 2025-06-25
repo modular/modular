@@ -84,7 +84,7 @@ class InternVLDecoderLayer(Module):
         layer_idx: int,
         rope: Llama3RotaryEmbedding,
         config: InternVLConfig,
-    ):
+    ) -> None:
         """Initializes a decoder layer.
 
         Args:

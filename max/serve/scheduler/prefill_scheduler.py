@@ -63,7 +63,7 @@ class PrefillScheduler(Scheduler):
         *,
         zmq_ctx: zmq.Context,
         dispatcher_client: DispatcherClient,
-    ):
+    ) -> None:
         self.pc = process_control
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config

@@ -42,7 +42,7 @@ stride_type = st.tuples(pos_int, pos_int)
 )
 def test_conv_valid(
     graph_builder, x_type: TensorType, filter_type: TensorType, stride, padding
-):
+) -> None:
     assume(filter_type.shape[0] <= x_type.shape[1])
     assume(filter_type.shape[1] <= x_type.shape[2])
 
@@ -80,7 +80,7 @@ def test_conv_valid(
         graph.output(out)
 
 
-def test_conv_dtype_promote_np(graph_builder):
+def test_conv_dtype_promote_np(graph_builder) -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -96,7 +96,7 @@ def test_conv_dtype_promote_np(graph_builder):
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight(graph_builder):
+def test_conv_dtype_promote_weight(graph_builder) -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -117,7 +117,7 @@ def test_conv_dtype_promote_weight(graph_builder):
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight_success(graph_builder):
+def test_conv_dtype_promote_weight_success(graph_builder) -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -137,7 +137,7 @@ def test_conv_dtype_promote_weight_success(graph_builder):
         assert out.dtype == DType.float32
 
 
-def test_conv_dtype_promote_weight_failed(graph_builder):
+def test_conv_dtype_promote_weight_failed(graph_builder) -> None:
     x_type = TensorType(DType.int32, [1, 128, 128, 4], device=DeviceRef.CPU())
     filter_shape = [3, 3, 4, 5]
     filter = Weight(
@@ -161,7 +161,7 @@ def test_conv_dtype_promote_weight_failed(graph_builder):
             )
 
 
-def test_conv_symbolic_shapes(graph_builder):
+def test_conv_symbolic_shapes(graph_builder) -> None:
     input_type = TensorType(
         DType.bfloat16,
         [1, "height", "width", "channels"],

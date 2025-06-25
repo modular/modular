@@ -156,7 +156,7 @@ class ProcessOutput:
     stderr: str | None = None
     path: Path | None = None
 
-    def log(self):
+    def log(self) -> None:
         if self.stdout:
             logging.debug("output" + self.stdout + LINE)
         if self.stderr:
@@ -337,7 +337,7 @@ class SpecInstance:
 class GridSearchStrategy:
     instances: list[SpecInstance] = field(default_factory=list)
 
-    def __init__(self, name, file, params):
+    def __init__(self, name, file, params) -> None:
         self.instances: list[SpecInstance] = []
 
         # Expand the product of all the param:value-set's per each group of parameters
@@ -373,10 +373,10 @@ class GridSearchStrategy:
     def __getitem__(self, i):
         return self.instances[i]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.instances)
 
-    def extend(self, other):
+    def extend(self, other) -> None:
         self.instances.extend(other.instances)
 
 
@@ -459,7 +459,7 @@ class Spec:
             d[name].extend(vals)
         return d
 
-    def extend_params(self, param_list: list[str]):
+    def extend_params(self, param_list: list[str]) -> None:
         # Expand with CLI params
         extra_params = self.parse_params(param_list)
 
@@ -478,7 +478,7 @@ class Spec:
 
         self.setup_mesh()
 
-    def extend_shape_params(self, param_set: list[Param]):
+    def extend_shape_params(self, param_set: list[Param]) -> None:
         # TODO: check for collisions in param-names
 
         extra_params: list[ParamSpace] = []
@@ -493,7 +493,7 @@ class Spec:
             self.params = [extra_params]
         self.setup_mesh()
 
-    def dump_yaml(self, out_path: Path):
+    def dump_yaml(self, out_path: Path) -> None:
         assert self.mesh, "There are no instances to write to YAML!"
         obj = {
             "name": self.name,
@@ -538,7 +538,7 @@ class Spec:
             params=params,
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
         assert self.mesh
         return len(self.mesh)
 
@@ -580,7 +580,7 @@ class Spec:
         self.mesh = list(GridSearchStrategy(self.name, self.file, self.params))
         return len(self.mesh)
 
-    def join(self, other: Spec):
+    def join(self, other: Spec) -> None:
         assert self.name == other.name
         assert self.file == other.file
         assert len(other.mesh) > 0
@@ -589,7 +589,7 @@ class Spec:
         self.params.extend(other.params)
         self.mesh.extend(other.mesh)
 
-    def filter(self, filter_list: list[str]):
+    def filter(self, filter_list: list[str]) -> None:
         filters: dict[str, list] = {}
         for f in filter_list:
             if "=" in f:
@@ -718,7 +718,7 @@ class Scheduler:
         dryrun: bool,
         output_suffix: str = "output.csv",
         progress: Progress = Progress(),
-    ):
+    ) -> None:
         self.cpu_pool = Pool(num_cpu)
         self.obj_cache = obj_cache
         self.num_specs = len(spec_list)
@@ -753,7 +753,7 @@ class Scheduler:
         os.makedirs(output_dir, exist_ok=False)
         return output_dir
 
-    def mk_output_dirs(self):
+    def mk_output_dirs(self) -> None:
         """
         Make output directories for kbench results (one per spec-instance)
         """
@@ -867,7 +867,7 @@ class Scheduler:
 
     def execute_all(
         self, unique_build_paths, profile, exec_prefix, exec_suffix
-    ):
+    ) -> None:
         """Execute all the items in the scheduler"""
         exec_progress = self.progress.add_task(
             "run",
@@ -932,7 +932,7 @@ def run(
     verbose=False,
     output_dir=None,
     num_cpu=1,
-):
+) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
         assert len(yaml_path_list), "There should be at least 1 YAML as input."
@@ -1140,14 +1140,14 @@ def get_nvidia_smi():
     return shutil.which("nvidia-smi")
 
 
-def reset_gpu():
+def reset_gpu() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
     run_shell_command([nvidia_smi, "-r"])
 
 
-def check_gpu_clock():
+def check_gpu_clock() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
@@ -1188,7 +1188,7 @@ class FileGlobArg:
     def __iter__(self):
         return (Path(file).resolve() for file in self._files)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._files)
 
 
@@ -1448,7 +1448,7 @@ def cli(
     return True
 
 
-def main():
+def main() -> None:
     try:
         cli()
     except Exception:

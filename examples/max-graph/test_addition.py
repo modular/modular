@@ -48,12 +48,12 @@ from addition import add_tensors
         ),
     ],
 )
-def test_add_tensors(input0, input1, expected):
+def test_add_tensors(input0, input1, expected) -> None:
     result = add_tensors(input0, input1)
     np.testing.assert_almost_equal(result, expected, decimal=5)
 
 
-def test_add_tensors_type():
+def test_add_tensors_type() -> None:
     input0 = np.array([1.0], dtype=np.float32)
     input1 = np.array([2.0], dtype=np.float32)
     result = add_tensors(input0, input1)
@@ -61,7 +61,7 @@ def test_add_tensors_type():
     assert result.dtype == np.float32
 
 
-def test_add_tensors_shape():
+def test_add_tensors_shape() -> None:
     input0 = np.array([1.0], dtype=np.float32)
     input1 = np.array([2.0], dtype=np.float32)
     result = add_tensors(input0, input1)

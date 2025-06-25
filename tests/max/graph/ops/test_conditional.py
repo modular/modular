@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from typing import NoReturn
+
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -11,10 +13,10 @@ def test_conditional_no_results() -> None:
     with Graph("conditional", input_types=()) as graph:
         cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn() -> None:
             ops.print("then")
 
-        def else_fn():
+        def else_fn() -> None:
             ops.print("else")
 
         ops.cond(cond, None, then_fn, else_fn)
@@ -80,10 +82,10 @@ def test_conditional_with_raising() -> None:
         chain = graph._current_chain
         cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn() -> None:
             return
 
-        def else_fn():
+        def else_fn() -> NoReturn:
             raise Exception("else")
 
         try:

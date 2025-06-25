@@ -963,7 +963,7 @@ class MLP(Module):
         has_bias: bool = False,
         activation_function: str = "silu",
         float8_config: Float8Config | None = None,
-    ):
+    ) -> None:
         """
         Args:
             dtype: DType to use for the layer weights, which should match the

@@ -72,7 +72,7 @@ def test_irfft(
     n: int | None,
     axis: int,
     normalization: Normalization | str,
-):
+) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.dtype == DType.float32)
     assume(input_type.rank > 0)
@@ -87,7 +87,7 @@ def test_irfft(
         assert out.type.dtype == input_type.dtype
 
 
-def test_invalid_normalization():
+def test_invalid_normalization() -> None:
     input_type = TensorType(DType.float32, (1, 2, 3), DeviceRef.GPU())
     with Graph("irfft", input_types=[input_type]) as graph:
         with pytest.raises(ValueError, match="Invalid normalization: invalid"):
@@ -99,14 +99,14 @@ def test_invalid_normalization():
             )
 
 
-def test_invalid_dim():
+def test_invalid_dim() -> None:
     input_type = TensorType(DType.float32, ("batch", 2, 3), DeviceRef.GPU())
     with Graph("irfft", input_types=[input_type]) as graph:
         with pytest.raises(ValueError, match="Axis dimension must be static"):
             ops.irfft(graph.inputs[0].tensor, n=1, axis=0)
 
 
-def test_invalid_device():
+def test_invalid_device() -> None:
     input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
     with Graph("irfft", input_types=[input_type]) as graph:
         with pytest.raises(

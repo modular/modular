@@ -35,7 +35,7 @@ def with_dim(shape: Shape, axis: int, dim: StaticDim):
 )
 def test_concat__static_dim(
     graph_builder, base_type: TensorType, axis_sizes: list[StaticDim], axis: int
-):
+) -> None:
     assume(axis_sizes)
     merged_size = sum(dim.dim for dim in axis_sizes)
     # TODO: test the error for this case
@@ -62,7 +62,7 @@ def test_concat__static_dim(
 )
 def test_concat__axis_out_of_bounds(
     graph_builder, base_type: TensorType, axis: int
-):
+) -> None:
     assume(axis < -base_type.rank or axis >= base_type.rank)
 
     with graph_builder(input_types=[base_type]) as graph:
@@ -77,7 +77,7 @@ def test_concat__axis_out_of_bounds(
 )
 def test_concat__bad_dtype(
     graph_builder, type_a: TensorType, type_b: TensorType, axis: int
-):
+) -> None:
     assume(type_a.dtype != type_b.dtype)
     assert type_a.shape == type_b.shape
     assume(
@@ -91,7 +91,7 @@ def test_concat__bad_dtype(
 
 
 @given(axis=...)
-def test_concat__no_inputs(graph_builder, axis: int):
+def test_concat__no_inputs(graph_builder, axis: int) -> None:
     with graph_builder(input_types=[]) as graph:
         with pytest.raises(ValueError):
             out = ops.concat([], axis)
@@ -104,7 +104,7 @@ def test_concat__no_inputs(graph_builder, axis: int):
 )
 def test_concat__different_ranks(
     graph_builder, type_a: TensorType, type_b: TensorType, axis: int
-):
+) -> None:
     assert type_a.dtype == type_b.dtype
     assume(type_a.rank != type_b.rank)
 
@@ -125,7 +125,7 @@ def test_concat__different_ranks(
 )
 def test_concat__mismatched_dims(
     graph_builder, type_a: TensorType, type_b: TensorType, axis: int
-):
+) -> None:
     assert type_a.dtype == type_b.dtype
     assert type_a.rank == type_b.rank
     assume(
@@ -144,7 +144,7 @@ def test_concat__mismatched_dims(
 @given(base_type=shared_tensor_types, axis=symbolic_axes(shared_tensor_types))
 def test_concat__symbolic__size_1(
     graph_builder, base_type: TensorType, axis: int
-):
+) -> None:
     assume(not isinstance(base_type.shape[axis], StaticDim))
 
     with graph_builder(input_types=[base_type]) as graph:
@@ -163,7 +163,7 @@ def test_concat__symbolic__algebraic_result(
     base_type: TensorType,
     axis: int,
     axis_dims: list[Dim],
-):
+) -> None:
     assume(not all(isinstance(dim, StaticDim) for dim in axis_dims))
     merged_static_size = sum(
         dim.dim for dim in axis_dims if isinstance(dim, StaticDim)
@@ -184,7 +184,7 @@ def test_concat__symbolic__algebraic_result(
         assert out.shape == with_dim(base_type.shape, axis, sum(axis_dims))
 
 
-def test_concat_different_devices(graph_builder):
+def test_concat_different_devices(graph_builder) -> None:
     input_types = [
         TensorType(DType.float32, [12], DeviceRef.CPU(0)),
         TensorType(DType.float32, [13], DeviceRef.CPU(0)),

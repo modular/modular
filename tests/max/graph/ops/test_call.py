@@ -74,7 +74,7 @@ def create_multi_output_subgraph(graph: Graph, input_type: TensorType) -> Graph:
 
 
 @given(input_type=tensor_types())
-def test_call_simple_graph(input_type: TensorType):
+def test_call_simple_graph(input_type: TensorType) -> None:
     """Test calling a simple graph with a single input and output."""
 
     with Graph(
@@ -88,7 +88,7 @@ def test_call_simple_graph(input_type: TensorType):
 
 
 @given(input_type=tensor_types())
-def test_call_multi_output(input_type: TensorType):
+def test_call_multi_output(input_type: TensorType) -> None:
     """Test calling a graph that returns multiple outputs."""
 
     with Graph(
@@ -102,7 +102,7 @@ def test_call_multi_output(input_type: TensorType):
 
 
 @given(input_type=tensor_types())
-def test_call_nested(input_type: TensorType):
+def test_call_nested(input_type: TensorType) -> None:
     """Test nested graph calls."""
 
     with Graph(
@@ -122,7 +122,7 @@ def test_call_nested(input_type: TensorType):
         assert result[0].type == input_type
 
 
-def test_call_type_mismatch():
+def test_call_type_mismatch() -> None:
     """Test that calling a graph with mismatched types raises an error."""
     float_type = TensorType(DType.float32, [10], DeviceRef.CPU())
     int_type = TensorType(DType.int32, [10], DeviceRef.CPU())
@@ -137,7 +137,7 @@ def test_call_type_mismatch():
 
 
 @given(input_type=tensor_types())
-def test_call_multi_input(input_type: TensorType):
+def test_call_multi_input(input_type: TensorType) -> None:
     """Test calling a graph with multiple inputs."""
     input_types = [input_type] * 4
 
@@ -152,7 +152,7 @@ def test_call_multi_input(input_type: TensorType):
         assert results[0].type == input_type
 
 
-def test_call_num_inputs_mismatch():
+def test_call_num_inputs_mismatch() -> None:
     """Test calling a graph with a mismatch in the number of inputs."""
     input_types = [TensorType(DType.float32, [4], DeviceRef.CPU())] * 4
 
@@ -165,7 +165,7 @@ def test_call_num_inputs_mismatch():
             ops.call(subgraph, main_graph.inputs[0])
 
 
-def test_call_chain_updates():
+def test_call_chain_updates() -> None:
     """Test that calling a subgraph with chain input/output updates the chain."""
     buffer_type = BufferType(DType.float32, [4], DeviceRef.CPU())
     tensor_type = TensorType(DType.float32, [4], DeviceRef.CPU())
@@ -192,7 +192,7 @@ def test_call_chain_updates():
         assert chain_before != chain_after
 
 
-def test_call_tuple_operands_with_add_op():
+def test_call_tuple_operands_with_add_op() -> None:
     """Test calling a graph using _add_op with tuple for operands."""
     input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
     with Graph("main_graph_tuple_test", input_types=[input_type]) as main_graph:
@@ -217,7 +217,7 @@ def test_call_tuple_operands_with_add_op():
         main_graph.output(call_results[0])
 
 
-def test_call_with_prefix():
+def test_call_with_prefix() -> None:
     """Test calling a graph with a prefix of a subgraph that has a placeholder weight."""
     input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
     with Graph(

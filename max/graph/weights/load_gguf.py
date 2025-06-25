@@ -35,11 +35,11 @@ _FROM_QUANTIZED_GGML_DTYPES = {}
 _TO_QUANTIZED_GGML_DTYPES = {}
 
 
-def _install(package):
+def _install(package) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
 
-def _check_gguf():
+def _check_gguf() -> None:
     global \
         gguf, \
         _GGML_TO_DTYPE, \
@@ -103,7 +103,7 @@ class GGUFWeights(Weights):
         tensors=None,
         prefix: str = "",
         allocated=None,
-    ):
+    ) -> None:
         """Creates a GGUF weights reader.
 
         Args:

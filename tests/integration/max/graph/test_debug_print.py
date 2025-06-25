@@ -44,7 +44,7 @@ def compiled_buffer_model(session):
     return session.load(g)
 
 
-def test_debug_print_options(session, tmp_path):
+def test_debug_print_options(session, tmp_path) -> None:
     with pytest.raises(TypeError, match="Invalid debug print style"):
         session.set_debug_print_options("NOTVALID")
 
@@ -62,7 +62,7 @@ def test_debug_print_options(session, tmp_path):
         session.set_debug_print_options("BINARY")
 
 
-def test_debug_print_compact(compiled_model, session, capfd):
+def test_debug_print_compact(compiled_model, session, capfd) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -76,7 +76,7 @@ def test_debug_print_compact(compiled_model, session, capfd):
     )
 
 
-def test_debug_print_buffer(compiled_buffer_model, session, capfd):
+def test_debug_print_buffer(compiled_buffer_model, session, capfd) -> None:
     session.set_debug_print_options("COMPACT")
     _ = compiled_buffer_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -90,7 +90,7 @@ def test_debug_print_buffer(compiled_buffer_model, session, capfd):
     )
 
 
-def test_debug_print_full(compiled_model, session, capfd):
+def test_debug_print_full(compiled_model, session, capfd) -> None:
     session.set_debug_print_options("FULL", 2)
     _ = compiled_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -121,7 +121,7 @@ def test_debug_print_full(compiled_model, session, capfd):
     )
 
 
-def test_debug_print_none(compiled_model, session, capfd):
+def test_debug_print_none(compiled_model, session, capfd) -> None:
     session.set_debug_print_options("NONE")
     _ = compiled_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32)).to(
@@ -132,7 +132,7 @@ def test_debug_print_none(compiled_model, session, capfd):
     assert "test_x_value" not in captured.out
 
 
-def test_debug_print_binary(compiled_model, session, capfd, tmp_path):
+def test_debug_print_binary(compiled_model, session, capfd, tmp_path) -> None:
     session.set_debug_print_options("BINARY", output_directory=tmp_path)
     input = np.full([20], 1.1234567, np.float32)
     _ = compiled_model.execute(
@@ -145,7 +145,9 @@ def test_debug_print_binary(compiled_model, session, capfd, tmp_path):
     assert (input == from_file).all()
 
 
-def test_debug_print_binary_max(compiled_model, session, capfd, tmp_path):
+def test_debug_print_binary_max(
+    compiled_model, session, capfd, tmp_path
+) -> None:
     session.set_debug_print_options(
         "BINARY_MAX_CHECKPOINT", output_directory=tmp_path
     )
@@ -166,7 +168,7 @@ def test_debug_print_binary_max(compiled_model, session, capfd, tmp_path):
     platform.machine() in ["arm64", "aarch64"],
     reason="BF16 is not supported on ARM CPU architecture",
 )
-def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
+def test_debug_print_binary_max_bf16(session, capfd, tmp_path) -> None:
     def print_input(x):
         x.print("test_x_value")
         return x
@@ -203,7 +205,9 @@ def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
     reason="BF16 is not supported on ARM CPU architecture",
 )
 @pytest.mark.parametrize("shape", [(), (5,), (2, 3), (2, 3, 4)])
-def test_debug_print_binary_max_bf16_shapes(session, capfd, tmp_path, shape):
+def test_debug_print_binary_max_bf16_shapes(
+    session, capfd, tmp_path, shape
+) -> None:
     """Test bfloat16 tensor loading with various shapes including scalar"""
 
     def print_input(x):
@@ -263,7 +267,7 @@ def test_debug_print_binary_max_bf16_shapes(session, capfd, tmp_path, shape):
     "dtype",
     [dt for dt in DType.__members__.values() if dt is not DType._unknown],
 )
-def test_save_load_all_dtypes(session, tmp_path, dtype):
+def test_save_load_all_dtypes(session, tmp_path, dtype) -> None:
     """Verify round-trip save/load works for all supported DType values."""
     # Skip unsupported configurations.
     if dtype.is_half() and platform.machine() in ["arm64", "aarch64"]:

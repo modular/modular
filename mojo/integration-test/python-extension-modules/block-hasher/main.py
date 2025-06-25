@@ -69,7 +69,7 @@ def print_bench_run(
     callable,
     *,
     iter_count: int = 1000,
-):
+) -> None:
     total_time = timeit.timeit(callable, number=iter_count)
 
     print(

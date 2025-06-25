@@ -16,7 +16,7 @@ shared_shapes = st.shared(shapes(min_rank=1))
 
 
 @given(input_types=broadcastable_tensor_types(2))
-def test_min__elementwise(graph_builder, input_types):
+def test_min__elementwise(graph_builder, input_types) -> None:
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         result = ops.min(x, y)
@@ -26,7 +26,7 @@ def test_min__elementwise(graph_builder, input_types):
 
 
 @given(input_types=broadcastable_tensor_types(2))
-def test_max__elementwise(graph_builder, input_types):
+def test_max__elementwise(graph_builder, input_types) -> None:
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         result = ops.max(x, y)
@@ -36,7 +36,7 @@ def test_max__elementwise(graph_builder, input_types):
 
 
 @given(input_type=tensor_types(shapes=shared_shapes), axis=axes(shared_shapes))
-def test_min__reduction(graph_builder, input_type, axis):
+def test_min__reduction(graph_builder, input_type, axis) -> None:
     with graph_builder(input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = ops.min(x, axis=axis)
@@ -46,7 +46,7 @@ def test_min__reduction(graph_builder, input_type, axis):
 
 
 @given(input_type=tensor_types(shapes=shared_shapes), axis=axes(shared_shapes))
-def test_max__reduction(graph_builder, input_type, axis):
+def test_max__reduction(graph_builder, input_type, axis) -> None:
     with graph_builder(input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = ops.max(x, axis=axis)
@@ -56,7 +56,7 @@ def test_max__reduction(graph_builder, input_type, axis):
 
 
 @given(input_type=tensor_types(shapes=shared_shapes))
-def test_min__reduction__no_axis(graph_builder, input_type):
+def test_min__reduction__no_axis(graph_builder, input_type) -> None:
     with graph_builder(input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = ops.min(x)
@@ -66,7 +66,7 @@ def test_min__reduction__no_axis(graph_builder, input_type):
 
 
 @given(input_type=tensor_types(shapes=shared_shapes))
-def test_max__reduction__no_axis(graph_builder, input_type):
+def test_max__reduction__no_axis(graph_builder, input_type) -> None:
     with graph_builder(input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = ops.max(x)
@@ -83,7 +83,9 @@ def test_max__reduction__no_axis(graph_builder, input_type):
     axis=-1,
 ).via("ci flake")
 @given(input_types=broadcastable_tensor_types(2), axis=st.integers())
-def test_min_fail__y_and_axis_provided(graph_builder, input_types, axis):
+def test_min_fail__y_and_axis_provided(
+    graph_builder, input_types, axis
+) -> None:
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):
@@ -98,7 +100,9 @@ def test_min_fail__y_and_axis_provided(graph_builder, input_types, axis):
     axis=-1,
 ).via("ci flake")
 @given(input_types=broadcastable_tensor_types(2), axis=st.integers())
-def test_max_fail__y_and_axis_provided(graph_builder, input_types, axis):
+def test_max_fail__y_and_axis_provided(
+    graph_builder, input_types, axis
+) -> None:
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):

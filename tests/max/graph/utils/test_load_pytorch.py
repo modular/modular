@@ -11,7 +11,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import PytorchWeights
 
 
-def test_load_pytorch(testdata_directory):
+def test_load_pytorch(testdata_directory) -> None:
     # Loads the values saved in gen_external_checkpoints.py.
     weights = PytorchWeights(testdata_directory / "example_data.pt")
     with Graph("test_load_pytorch") as graph:

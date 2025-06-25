@@ -18,37 +18,37 @@ import mojo_module as feature_overview
 
 
 class TestMojoPythonInterop(unittest.TestCase):
-    def test_case_return_arg_tuple(self):
+    def test_case_return_arg_tuple(self) -> None:
         result = feature_overview.case_return_arg_tuple(
             1, 2, "three", ["four", "four.B"]
         )
 
         self.assertEqual(result, (1, 2, "three", ["four", "four.B"]))
 
-    def test_case_raise_empty_error(self):
+    def test_case_raise_empty_error(self) -> None:
         with self.assertRaises(ValueError) as cm:
             feature_overview.case_raise_empty_error()
 
         self.assertEqual(cm.exception.args, ())
 
-    def test_case_raise_string_error(self):
+    def test_case_raise_string_error(self) -> None:
         with self.assertRaises(ValueError) as cm:
             feature_overview.case_raise_string_error()
 
         self.assertEqual(cm.exception.args, ("sample value error",))
 
-    def test_case_mojo_raise(self):
+    def test_case_mojo_raise(self) -> None:
         with self.assertRaises(Exception) as cm:
             feature_overview.case_mojo_raise()
 
         self.assertEqual(cm.exception.args, ("Mojo error",))
 
-    def test_case_mojo_mutate(self):
+    def test_case_mojo_mutate(self) -> None:
         list_obj = [1, 3, 5]
         feature_overview.case_mojo_mutate(list_obj)
         self.assertEqual(list_obj[0], 2)
 
-    def test_case_downcast_unbound_type(self):
+    def test_case_downcast_unbound_type(self) -> None:
         with self.assertRaises(Exception) as err:
             feature_overview.case_downcast_unbound_type(5)
 
@@ -60,7 +60,7 @@ class TestMojoPythonInterop(unittest.TestCase):
             ),
         )
 
-    def test_case_create_mojo_type_instance(self):
+    def test_case_create_mojo_type_instance(self) -> None:
         person = feature_overview.Person()
 
         self.assertEqual(type(person).__name__, "Person")
@@ -93,7 +93,7 @@ class TestMojoPythonInterop(unittest.TestCase):
             ),
         )
 
-    def test_failed_mojo_object_creation_does_not_del(self):
+    def test_failed_mojo_object_creation_does_not_del(self) -> None:
         """Test that if a Mojo object was not fully initialized due to an
         exception raised during construction, Python will not call its
         __del__ method."""
@@ -115,7 +115,7 @@ class TestMojoPythonInterop(unittest.TestCase):
         # If we reach this point, we know `FailToInitialize.__del__()` was not
         # called, because it aborts.
 
-    def test_case_create_mojo_object_in_mojo(self):
+    def test_case_create_mojo_object_in_mojo(self) -> None:
         # Returns a new Mojo 'String' object, not derived from
         # any of the arguments. This requires creating a PythonObject from
         # within Mojo code.
@@ -123,7 +123,7 @@ class TestMojoPythonInterop(unittest.TestCase):
 
         self.assertEqual(repr(string), "'Hello'")
 
-    def test_case_mutate_wrapped_object(self):
+    def test_case_mutate_wrapped_object(self) -> None:
         mojo_int = feature_overview.Int()
         self.assertEqual(repr(mojo_int), "0")
 
@@ -183,7 +183,7 @@ class TestMojoPythonInterop(unittest.TestCase):
             ),
         )
 
-    def test_case_mojo_value_convert_from_python(self):
+    def test_case_mojo_value_convert_from_python(self) -> None:
         mojo_int = feature_overview.Int()
         self.assertEqual(repr(mojo_int), "0")
 

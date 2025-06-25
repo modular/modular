@@ -165,7 +165,7 @@ class DynamicZmqTransport(DispatcherTransport, Generic[Payload]):
         instance_id: str,
         payload_type: Any,
         default_destination_address: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Initialize dynamic ZMQ transport with ROUTER/DEALER sockets.
         """

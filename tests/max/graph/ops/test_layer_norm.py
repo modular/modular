@@ -22,7 +22,7 @@ from max.graph import Shape, StaticDim, TensorType, ops
 )
 def test_layer_norm__valid(
     graph_builder, input_type: TensorType, epsilon: float
-):
+) -> None:
     """Test layer_norm with valid inputs."""
     # Create gamma and beta with same shape as last dimension of input
     *_, last_dim = input_type.shape
@@ -53,7 +53,7 @@ static_shapes = st.shared(shapes(dims=static_positive_dims))
 )
 def test_layer_norm__error__gamma_shape_mismatch(
     graph_builder, input_type: TensorType
-):
+) -> None:
     """Test that layer_norm raises an error when gamma shape doesn't match the last dimension."""
     # Create a gamma tensor with incorrect shape
     # Use a different value that's still invalid but won't overflow
@@ -87,7 +87,7 @@ def test_layer_norm__error__gamma_shape_mismatch(
 )
 def test_layer_norm__error__beta_shape_mismatch(
     graph_builder, input_type: TensorType
-):
+) -> None:
     """Test that layer_norm raises an error when beta shape doesn't match the last dimension."""
     # Create a beta tensor with incorrect shape
     # Use a different value that's still invalid but won't overflow
@@ -120,7 +120,7 @@ def test_layer_norm__error__beta_shape_mismatch(
 )
 def test_layer_norm__error__non_positive_epsilon(
     graph_builder, input_type: TensorType, epsilon: float
-):
+) -> None:
     """Test that layer_norm raises an error when epsilon is not positive."""
     *_, last_dim = input_type.shape
     gamma_type = TensorType(input_type.dtype, [last_dim], input_type.device)
@@ -146,7 +146,7 @@ def test_layer_norm__error__non_positive_epsilon(
 )
 def test_layer_norm__error__zero_last_dim(
     graph_builder, input_type: TensorType
-):
+) -> None:
     """Test that layer_norm handles zero-sized last dimension gracefully."""
     *_, last_dim = input_type.shape
     # Create input with zero-sized last dimension

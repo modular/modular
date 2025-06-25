@@ -62,7 +62,7 @@ class KernelLibrary:
     _context: mlir.Context
     _analysis: _graph.Analysis
 
-    def __init__(self, context: mlir.Context, paths: list[Path] = []):
+    def __init__(self, context: mlir.Context, paths: list[Path] = []) -> None:
         # TODO(GEX-1846): This is a terrible workaround to initialize M::Context on the Graph API.
         # Get rid of this and properly setup the context instead.
         mock_session = InferenceSession()
@@ -80,7 +80,7 @@ class KernelLibrary:
         """
         return self._analysis.library_paths
 
-    def add_path(self, path: Path):
+    def add_path(self, path: Path) -> None:
         """Adds a kernel library path to the analysis.
 
         Args:
@@ -91,7 +91,7 @@ class KernelLibrary:
 
     def load_paths(
         self, context: mlir.Context, custom_extensions: Iterable[Path]
-    ):
+    ) -> None:
         """Loads custom operations from provided library paths.
 
         Performs additional "smart" library loading logic for custom operation
@@ -125,13 +125,13 @@ class KernelLibrary:
             raise KeyError(kernel)
         return self._analysis.kernel(kernel)
 
-    def __contains__(self, kernel: str):
+    def __contains__(self, kernel: str) -> bool:
         return kernel in self._analysis.symbol_names
 
     def __iter__(self):
         yield from sorted(self._analysis.symbol_names)
 
-    def verify_custom_op(self, custom_op: mlir.Operation):
+    def verify_custom_op(self, custom_op: mlir.Operation) -> None:
         """Verifies that a custom operation is valid within the current context.
 
         Args:
@@ -143,7 +143,7 @@ class KernelLibrary:
 
 # From https://stackoverflow.com/a/76301341
 class _classproperty:
-    def __init__(self, func):
+    def __init__(self, func) -> None:
         self.fget = func
 
     def __get__(self, instance, owner):
@@ -456,7 +456,7 @@ class Graph:
         finally:
             self._should_verify_ops = old_value
 
-    def _verify_op(self, op: mlir.Operation | mlir.OpView):
+    def _verify_op(self, op: mlir.Operation | mlir.OpView) -> None:
         if self._should_verify_ops:
             with self._capturing_mlir_diagnostics():
                 op.verify()
@@ -465,7 +465,7 @@ class Graph:
     def _capturing_mlir_diagnostics(self):
         diagnostics = []
 
-        def handler(d):
+        def handler(d) -> bool:
             diagnostics.append(str(d))
             return True
 
@@ -533,7 +533,7 @@ class Graph:
             return {k: cls._to_mlir(v) for k, v in o.items()}
         return o
 
-    def _set_output_param_decls(self, op: Operation):
+    def _set_output_param_decls(self, op: Operation) -> None:
         # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
         # - nanobind doesn't allow custom metaclasses, but __instancecheck__
         #   must be defined on a metaclass
@@ -664,7 +664,7 @@ class Graph:
         block_terminator_op: mlir.Operation | mlir.OpView,
         block_name: str,
         expected_output_types: list[Type] | None,
-    ):
+    ) -> None:
         """Builds and verifies a block within the graph.
 
         Args:
@@ -767,7 +767,7 @@ class Graph:
             for v in terminator_operands  # type: ignore
         ]
 
-    def _load_mlir(self, path: Path):
+    def _load_mlir(self, path: Path) -> None:
         self._context_state = []
         with open(path) as f:
             with mlir.Context() as ctx, self._location() as loc:
@@ -888,7 +888,7 @@ class Graph:
 
         return _graph.frame_loc(mlir.Context.current, tb)
 
-    def _import_kernels(self, paths: Iterable[Path]):
+    def _import_kernels(self, paths: Iterable[Path]) -> None:
         with self._context:
             self._kernel_library.load_paths(self._context, paths)
 

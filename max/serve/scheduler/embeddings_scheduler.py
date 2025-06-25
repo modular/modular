@@ -49,7 +49,7 @@ class EmbeddingsScheduler(Scheduler):
         response_zmq_endpoint: str,
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
-    ):
+    ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
 
@@ -80,7 +80,7 @@ class EmbeddingsScheduler(Scheduler):
 
         return batch
 
-    def run(self):
+    def run(self) -> None:
         """The Scheduler loop that creates batches and schedules them on GPU"""
         i = 0
         while i % 10 or not self.pc.is_canceled():
@@ -102,7 +102,7 @@ class EmbeddingsScheduler(Scheduler):
         self,
         batch_executed: dict[str, Any],
         batch_response: dict[str, Any],
-    ):
+    ) -> None:
         """Task that handles responses"""
         already_terminated = set()
         terminated = batch_executed.keys() - batch_response.keys()
@@ -114,7 +114,7 @@ class EmbeddingsScheduler(Scheduler):
             already_terminated.add(req_id)
 
     @traced
-    def _schedule_encode(self, batch_to_execute):
+    def _schedule_encode(self, batch_to_execute) -> None:
         # execute the batch
         batch_responses = self.pipeline.encode(batch_to_execute)
         # remove terminated requests from the batch

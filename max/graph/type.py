@@ -310,7 +310,7 @@ class SymbolicDim(Dim):
     name: str
     """The name of the dimension."""
 
-    def __init__(self, name: str | SymbolicDim):
+    def __init__(self, name: str | SymbolicDim) -> None:
         # Can't assign directly to frozen dataclasses.
         super().__setattr__("name", str(name))
         # TODO(MSDK-695): less restrictive names
@@ -320,7 +320,7 @@ class SymbolicDim(Dim):
     def __str__(self) -> str:
         return self.name
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Dim({self.name!r})"
 
     def __eq__(self, other: Any) -> bool:
@@ -387,7 +387,7 @@ class AlgebraicDim(Dim):
 
     attr: kgen.ParamOperatorAttr
 
-    def __init__(self, attr: kgen.ParamOperatorAttr | AlgebraicDim):
+    def __init__(self, attr: kgen.ParamOperatorAttr | AlgebraicDim) -> None:
         super().__setattr__(
             "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
         )
@@ -402,7 +402,7 @@ class AlgebraicDim(Dim):
         )
         return Dim.from_mlir(attr)
 
-    def __format__(self, format_spec: str):
+    def __format__(self, format_spec: str) -> str:
         formatters: Mapping[str, Callable[[Any], str]] = {
             "str": str,
             "repr": repr,
@@ -428,10 +428,10 @@ class AlgebraicDim(Dim):
             return f" {opcodes[opcode]} ".join(map(format, dims))
         return formatter(self.attr)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self:str}"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self:repr}"
 
     def __eq__(self, other: Any) -> bool:
@@ -474,16 +474,16 @@ class StaticDim(Dim):
     dim: int
     """The size of the static dimension."""
 
-    def __init__(self, dim: int | StaticDim):
+    def __init__(self, dim: int | StaticDim) -> None:
         # Can't assign directly to frozen dataclasses.
         super().__setattr__("dim", int(dim))
         if not -(2**63) <= self.dim < 2**63:
             raise ValueError("Dim value must be -2**63 <= dim < 2**63")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.dim)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Dim({repr(self.dim)})"
 
     def __int__(self) -> int:
@@ -539,7 +539,7 @@ def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
 
 
 class Shape(list[Dim]):
-    def __init__(self, dims: ShapeLike = ()):
+    def __init__(self, dims: ShapeLike = ()) -> None:
         super().__init__(Dim(dim) for dim in dims)
 
     @property
@@ -616,7 +616,9 @@ class DeviceRef:
         """Static Method for creating a GPU device."""
         return DeviceRef(DeviceKind.GPU, id)
 
-    def __init__(self, device_type: Union[DeviceKind, str], id: int = 0):
+    def __init__(
+        self, device_type: Union[DeviceKind, str], id: int = 0
+    ) -> None:
         if isinstance(device_type, DeviceKind):
             self.device_type = device_type
         else:
@@ -628,7 +630,7 @@ class DeviceRef:
     def __str__(self) -> str:
         return str(self.device_type) + ":" + str(self.id)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self)
 
     def __eq__(self, other: Any) -> bool:

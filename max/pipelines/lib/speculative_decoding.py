@@ -59,7 +59,7 @@ logger = logging.getLogger("max.pipelines")
 class SpeculativeDecodingMetrics:
     """Metrics tracker for speculative decoding performance."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize metrics counters."""
         self.bonus_tokens_used = 0
         self.draft_tokens_accepted = 0
@@ -73,7 +73,7 @@ class SpeculativeDecodingMetrics:
         draft_tokens_accepted: int,
         bonus_tokens_used: int,
         acceptance_lengths: list[int],
-    ):
+    ) -> None:
         """Update metrics with results from a batch.
 
         Args:
@@ -707,7 +707,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         """
         return self._metrics
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Log metrics when the pipeline is destroyed."""
         if (
             hasattr(self, "_metrics")

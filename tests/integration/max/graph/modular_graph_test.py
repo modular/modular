@@ -177,7 +177,7 @@ def modular_graph_test(
             max_magnitude=max_magnitude,
             **kwargs,
         )
-        def test_correctness(inputs):
+        def test_correctness(inputs) -> None:
             model_execute = functools.partial(execute, model)
 
             torch_inputs = [torch.from_dlpack(t) for t in inputs]

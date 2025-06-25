@@ -19,7 +19,7 @@ approximate = st.sampled_from(["none", "tanh", "quick"])
     tensor_type=tensor_types(dtypes=st.just(DType.float32)),
     approximate=approximate,
 )
-def test_gelu__same_type(tensor_type: TensorType, approximate: str):
+def test_gelu__same_type(tensor_type: TensorType, approximate: str) -> None:
     with Graph("gelu", input_types=[tensor_type]) as graph:
         (x,) = graph.inputs
         op = gelu(x, approximate)

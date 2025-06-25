@@ -16,7 +16,7 @@ from max.pipelines.lib.registry import PIPELINE_REGISTRY
 _MODELS_ALREADY_REGISTERED = False
 
 
-def register_all_models():
+def register_all_models() -> None:
     """Imports model architectures, thus registering the architecture in the shared :obj:`~max.pipelines.registry.PipelineRegistry`."""
     global _MODELS_ALREADY_REGISTERED
 

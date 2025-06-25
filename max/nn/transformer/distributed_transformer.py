@@ -62,7 +62,7 @@ class DistributedTransformerBlock(Module):
         attention_norm: DistributedRMSNorm,
         mlp_norm: DistributedRMSNorm,
         devices: list[DeviceRef],
-    ):
+    ) -> None:
         super().__init__()
         self.self_attn = attention
         self.mlp = mlp
@@ -114,7 +114,7 @@ class DistributedTransformer(Module):
         devices: list[DeviceRef],
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         use_subgraphs: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         self.dim = dim
         self.n_heads = n_heads

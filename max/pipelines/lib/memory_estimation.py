@@ -43,7 +43,7 @@ class MemoryEstimator:
         pipeline_model: type[PipelineModel],
         model_config: MAXModelConfig,
         devices: list[Device],
-    ):
+    ) -> None:
         huggingface_config = model_config.huggingface_config
 
         try:

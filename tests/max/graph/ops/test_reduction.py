@@ -24,7 +24,7 @@ ALL_REDUCTIONS = SAME_TYPE_REDUCTIONS + INDEX_REDUCTIONS
     input_type=tensor_types(shapes=shared_shapes),
     axis=axes(shared_shapes),
 )
-def test_reduction__same_type(op, input_type, axis):
+def test_reduction__same_type(op, input_type, axis) -> None:
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = op(x, axis=axis)
@@ -39,7 +39,7 @@ def test_reduction__same_type(op, input_type, axis):
     input_type=tensor_types(shapes=shared_shapes),
     axis=axes(shared_shapes),
 )
-def test_reduction__index(op, input_type, axis):
+def test_reduction__index(op, input_type, axis) -> None:
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = op(x, axis=axis)
@@ -54,7 +54,7 @@ def test_reduction__index(op, input_type, axis):
     input_type=tensor_types(shapes=shapes(min_rank=0, max_rank=0)),
     axis=st.integers(),
 )
-def test_reduction_fails__zero_rank_input(op, input_type, axis):
+def test_reduction_fails__zero_rank_input(op, input_type, axis) -> None:
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         with pytest.raises(ValueError):
@@ -66,7 +66,7 @@ def test_reduction_fails__zero_rank_input(op, input_type, axis):
     input_type=tensor_types(shapes=shared_shapes),
     axis=st.integers(),
 )
-def test_reduction_fails__axis_out_of_bounds(op, input_type, axis):
+def test_reduction_fails__axis_out_of_bounds(op, input_type, axis) -> None:
     assume(not -input_type.rank <= axis < input_type.rank)
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs

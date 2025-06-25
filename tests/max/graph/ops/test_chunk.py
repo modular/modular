@@ -20,7 +20,7 @@ chunks = st.integers(min_value=1, max_value=20)
 
 
 @given(input_type=shared_types, chunks=chunks, axis=static_axes(shared_types))
-def test_chunk(input_type: TensorType, chunks: int, axis: int):
+def test_chunk(input_type: TensorType, chunks: int, axis: int) -> None:
     assert isinstance(input_type.shape[axis], StaticDim)
     chunk_size = int(input_type.shape[axis])
 
@@ -54,7 +54,9 @@ def test_chunk(input_type: TensorType, chunks: int, axis: int):
     chunks=2,
     axis=-1,
 ).via("MAXPLAT-183")
-def test_chunk__not_exact(input_type: TensorType, chunks: int, axis: int):
+def test_chunk__not_exact(
+    input_type: TensorType, chunks: int, axis: int
+) -> None:
     assert isinstance(input_type.shape[axis], StaticDim)
     assume(int(input_type.shape[axis]) % chunks != 0)
     with Graph("chunk", input_types=[input_type]) as graph:
@@ -65,7 +67,7 @@ def test_chunk__not_exact(input_type: TensorType, chunks: int, axis: int):
 @given(
     input_type=tensor_types(shapes=shapes(min_rank=0, max_rank=0)), chunks=...
 )
-def test_chunk__split_scalar(input_type: TensorType, chunks: int):
+def test_chunk__split_scalar(input_type: TensorType, chunks: int) -> None:
     assume(chunks > 1)
     with Graph("chunk", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
@@ -73,7 +75,9 @@ def test_chunk__split_scalar(input_type: TensorType, chunks: int):
 
 
 @given(input_type=shared_types, chunks=..., axis=non_static_axes(shared_types))
-def test_chunk__non_static_dim(input_type: TensorType, chunks: int, axis: int):
+def test_chunk__non_static_dim(
+    input_type: TensorType, chunks: int, axis: int
+) -> None:
     assert not isinstance(input_type.shape[axis], StaticDim)
     with Graph("chunk", input_types=[input_type]) as graph:
         with pytest.raises(TypeError):

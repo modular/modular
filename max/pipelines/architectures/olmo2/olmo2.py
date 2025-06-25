@@ -41,7 +41,7 @@ from .layers.transformer import Olmo2TransformerBlock
 
 
 class Olmo2(Transformer):
-    def __init__(self, config: Llama3Config):
+    def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) == 1
         rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,

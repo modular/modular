@@ -41,7 +41,7 @@ The lazy rabbit rests beside the brown fox
 
 
 class NextWordFrequency:
-    def __init__(self, text):
+    def __init__(self, text) -> None:
         # nested `DefaultDict` to create the keys when first indexed
         # Structure looks like: {"word": {"next_word": count}}
         self.word_frequencies: defaultdict[str, defaultdict[str, int]] = (
@@ -98,7 +98,7 @@ class NextWordFrequency:
         return self.word_frequencies[idx]
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Top-K sampling with custom ops"
     )

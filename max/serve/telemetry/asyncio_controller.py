@@ -39,7 +39,9 @@ class NotStarted(Exception):
 
 
 class AsyncioMetricClient(MetricClient):
-    def __init__(self, level: MetricLevel, q: asyncio.Queue[MaxMeasurement]):
+    def __init__(
+        self, level: MetricLevel, q: asyncio.Queue[MaxMeasurement]
+    ) -> None:
         self.q = q
         self.level = level
 
@@ -71,16 +73,16 @@ class AsyncioTelemetryController:
     Use an asyncio Queue & Task to asynchronously commit metric measurements
     """
 
-    def __init__(self, maxsize=0):
+    def __init__(self, maxsize=0) -> None:
         self.q: asyncio.Queue[MaxMeasurement] = asyncio.Queue(maxsize=maxsize)
         self.task: Optional[asyncio.Task] = None
 
-    def start(self):
+    def start(self) -> None:
         if self.task is not None:
             raise Exception("task already started")
         self.task = asyncio.create_task(self._consume(self.q))
 
-    async def shutdown(self, timeout_s: float = 2.0):
+    async def shutdown(self, timeout_s: float = 2.0) -> None:
         if sys.version_info >= (3, 13):
             self.q.shutdown()
 
@@ -105,7 +107,7 @@ class AsyncioTelemetryController:
         return AsyncioMetricClient(level, self.q)
 
     @staticmethod
-    async def _consume(q: asyncio.Queue[MaxMeasurement]):
+    async def _consume(q: asyncio.Queue[MaxMeasurement]) -> None:
         while True:
             try:
                 m: MaxMeasurement = await q.get()

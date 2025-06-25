@@ -259,7 +259,7 @@ def configure_logging(settings: Settings) -> None:
     )
 
 
-def configure_metrics(settings: Settings):
+def configure_metrics(settings: Settings) -> None:
     egress_enabled = not settings.disable_telemetry
 
     meterProviders: list[MetricReader] = [PrometheusMetricReader(True)]
@@ -280,7 +280,7 @@ def configure_metrics(settings: Settings):
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
-def send_telemetry_log(model_name: str):
+def send_telemetry_log(model_name: str) -> None:
     request_body = f"""{{
   "resourceLogs": [
     {{

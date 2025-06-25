@@ -22,7 +22,7 @@ tensor_types_nd = tensor_types(dtypes=shared_dtypes, shapes=shapes())
 
 
 @given(lhs_type=tensor_types_1d, rhs_type=tensor_types_1d)
-def test_outer_valid(lhs_type: TensorType, rhs_type: TensorType):
+def test_outer_valid(lhs_type: TensorType, rhs_type: TensorType) -> None:
     with Graph("outer", input_types=[lhs_type, rhs_type]) as graph:
         out = ops.outer(graph.inputs[0], graph.inputs[1])
         assert out.shape == [lhs_type.shape[0], rhs_type.shape[0]]
@@ -30,7 +30,7 @@ def test_outer_valid(lhs_type: TensorType, rhs_type: TensorType):
 
 
 @given(lhs_type=tensor_types_nd, rhs_type=tensor_types_nd)
-def test_outer_nd_tensors(lhs_type: TensorType, rhs_type: TensorType):
+def test_outer_nd_tensors(lhs_type: TensorType, rhs_type: TensorType) -> None:
     assume(lhs_type.rank != 1 or rhs_type.rank != 1)
 
     with Graph("outer", input_types=[lhs_type, rhs_type]) as graph:

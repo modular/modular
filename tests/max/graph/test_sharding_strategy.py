@@ -18,7 +18,7 @@ from max.graph.weight import (
 )
 
 
-def test_row_sharding_strategy_divisible():
+def test_row_sharding_strategy_divisible() -> None:
     """Tests row sharding with dimensions divisible by num_devices."""
     with Graph("test", input_types=[]) as graph:
         weight = Weight(
@@ -37,7 +37,7 @@ def test_row_sharding_strategy_divisible():
             assert int(shard.shape[1]) == 512
 
 
-def test_row_sharding_strategy_non_divisible():
+def test_row_sharding_strategy_non_divisible() -> None:
     """Tests row sharding with dimensions NOT divisible by num_devices.
 
     This test verifies that row sharding handles cases like InternVL's
@@ -77,7 +77,7 @@ def test_row_sharding_strategy_non_divisible():
         )
 
 
-def test_col_sharding_strategy_divisible():
+def test_col_sharding_strategy_divisible() -> None:
     """Tests column sharding with dimensions divisible by num_devices."""
     with Graph("test", input_types=[]) as graph:
         weight = Weight(
@@ -96,7 +96,7 @@ def test_col_sharding_strategy_divisible():
             assert int(shard.shape[1]) == 256
 
 
-def test_col_sharding_strategy_non_divisible():
+def test_col_sharding_strategy_non_divisible() -> None:
     """Tests column sharding with dimensions NOT divisible by num_devices."""
     with Graph("test", input_types=[]) as graph:
         weight = Weight(
@@ -132,7 +132,7 @@ def test_col_sharding_strategy_non_divisible():
         )
 
 
-def test_row_sharding_small_non_divisible():
+def test_row_sharding_small_non_divisible() -> None:
     """Tests row sharding with a small example for clarity."""
     with Graph("test", input_types=[]) as graph:
         weight = Weight(
@@ -155,7 +155,7 @@ def test_row_sharding_small_non_divisible():
             )
 
 
-def test_sharding_strategy_is_rowwise():
+def test_sharding_strategy_is_rowwise() -> None:
     """Tests the is_rowwise property of ShardingStrategy."""
     # Test rowwise strategy
     rowwise_strategy = ShardingStrategy.rowwise(num_devices=4)
@@ -171,7 +171,7 @@ def test_sharding_strategy_is_rowwise():
     assert replicate_strategy.is_rowwise is False
 
 
-def test_sharding_strategy_is_colwise():
+def test_sharding_strategy_is_colwise() -> None:
     """Tests the is_colwise property of ShardingStrategy."""
     # Test columnwise strategy
     colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
@@ -187,7 +187,7 @@ def test_sharding_strategy_is_colwise():
     assert replicate_strategy.is_colwise is False
 
 
-def test_sharding_strategy_is_replicate():
+def test_sharding_strategy_is_replicate() -> None:
     """Tests the is_replicate property of ShardingStrategy."""
     # Test replicate strategy
     replicate_strategy = ShardingStrategy.replicate(num_devices=4)

@@ -54,7 +54,7 @@ class StackedMLP(Module):
         devices: Sequence[DeviceRef],
         linear_cls: Callable[..., Linear],
         has_scale: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         self.gate_up_proj = linear_cls(
             in_dim=hidden_dim,
@@ -95,7 +95,7 @@ class ConstantLayerNorm(Module):
         device: DeviceRef,
         dtype: DType,
         eps: float = 1e-5,
-    ):
+    ) -> None:
         super().__init__()
         self.gamma = np.ones(dims)
         self.beta = np.zeros(dims)
@@ -118,7 +118,7 @@ class ConstantLayerNorm(Module):
 
 
 class Llama3(Transformer):
-    def __init__(self, config: Llama3Config):
+    def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) == 1
         rope = create_rope_embedding(
             hidden_size=config.hidden_size,

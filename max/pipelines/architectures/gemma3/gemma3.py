@@ -48,7 +48,7 @@ class TransformerBlock(Module):
         post_attention_layernorm: Module,
         pre_feedforward_layernorm: Module,
         post_feedforward_layernorm: Module,
-    ):
+    ) -> None:
         super().__init__()
         self.self_attn = attention
         self.mlp = mlp
@@ -80,7 +80,7 @@ class TransformerBlock(Module):
 class Gemma3TextModel(Module):
     """The Gemma 3 language model."""
 
-    def __init__(self, config: Gemma3Config):
+    def __init__(self, config: Gemma3Config) -> None:
         assert len(config.devices) == 1, (
             "Only single-device configuration is supported."
         )
@@ -214,7 +214,7 @@ class Gemma3TextModel(Module):
 class Gemma3(Module):
     """The Gemma model (currently text-only)."""
 
-    def __init__(self, config: Gemma3Config):
+    def __init__(self, config: Gemma3Config) -> None:
         super().__init__()
         self.language_model = Gemma3TextModel(config)
 

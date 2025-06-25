@@ -23,7 +23,7 @@ from max.graph import BufferType, DeviceRef, TensorType, ops
 class TestCustomOp:
     """Tests for ops.custom function - focuses on API validation and error handling."""
 
-    def test_custom__error__buffer_input(self, graph_builder):
+    def test_custom__error__buffer_input(self, graph_builder) -> None:
         """Test that custom() rejects BufferValue inputs."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
 
@@ -46,7 +46,7 @@ class TestCustomOp:
                 or "buffer" in str(exc_info.value).lower()
             )
 
-    def test_custom__error__empty_name(self, graph_builder):
+    def test_custom__error__empty_name(self, graph_builder) -> None:
         """Test custom operation with empty name."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -59,7 +59,7 @@ class TestCustomOp:
                     out_types=[input_type],
                 )
 
-    def test_custom__error__invalid_parameter_type(self, graph_builder):
+    def test_custom__error__invalid_parameter_type(self, graph_builder) -> None:
         """Test custom operation with invalid parameter type."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -77,7 +77,7 @@ class TestCustomOp:
             error_msg = str(exc_info.value).lower()
             assert "parameter" in error_msg or "unsupported" in error_msg
 
-    def test_custom__error__mismatched_outputs(self, graph_builder):
+    def test_custom__error__mismatched_outputs(self, graph_builder) -> None:
         """Test custom operation with empty out_types."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -90,7 +90,7 @@ class TestCustomOp:
                     out_types=[],  # Empty outputs
                 )
 
-    def test_custom__error__unregistered_kernel(self, graph_builder):
+    def test_custom__error__unregistered_kernel(self, graph_builder) -> None:
         """Test dedicated error for completely unregistered kernel."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -111,7 +111,7 @@ class TestCustomOp:
                 or "register" in error_msg
             )
 
-    def test_custom__error__no_inputs(self, graph_builder):
+    def test_custom__error__no_inputs(self, graph_builder) -> None:
         """Test custom operation with no input values."""
         output_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -124,7 +124,7 @@ class TestCustomOp:
                     out_types=[output_type],
                 )
 
-    def test_custom__error__none_values(self, graph_builder):
+    def test_custom__error__none_values(self, graph_builder) -> None:
         """Test custom operation with None values."""
         output_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -137,7 +137,7 @@ class TestCustomOp:
                     out_types=[output_type],
                 )
 
-    def test_custom__error__none_out_types(self, graph_builder):
+    def test_custom__error__none_out_types(self, graph_builder) -> None:
         """Test custom operation with None out_types."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -154,7 +154,9 @@ class TestCustomOp:
 class TestInplaceCustomOp:
     """Tests for ops.inplace_custom function - focuses on API validation and error handling."""
 
-    def test_inplace_custom__error__no_buffer_input(self, graph_builder):
+    def test_inplace_custom__error__no_buffer_input(
+        self, graph_builder
+    ) -> None:
         """Test that inplace_custom() requires BufferValue inputs."""
         tensor_type = TensorType(DType.float32, (10,), DeviceRef.CPU())
 
@@ -170,7 +172,7 @@ class TestInplaceCustomOp:
             error_msg = str(exc_info.value).lower()
             assert "buffer" in error_msg or "opaque" in error_msg
 
-    def test_inplace_custom__error__empty_values(self, graph_builder):
+    def test_inplace_custom__error__empty_values(self, graph_builder) -> None:
         """Test inplace custom operation with no input values."""
         with graph_builder() as graph:
             with pytest.raises(TypeError):
@@ -180,7 +182,9 @@ class TestInplaceCustomOp:
                     values=[],  # No inputs
                 )
 
-    def test_inplace_custom__error__invalid_parameter_type(self, graph_builder):
+    def test_inplace_custom__error__invalid_parameter_type(
+        self, graph_builder
+    ) -> None:
         """Test inplace custom operation with invalid parameter type."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
 
@@ -198,7 +202,9 @@ class TestInplaceCustomOp:
             error_msg = str(exc_info.value).lower()
             assert "parameter" in error_msg or "unsupported" in error_msg
 
-    def test_inplace_custom__error__unregistered_kernel(self, graph_builder):
+    def test_inplace_custom__error__unregistered_kernel(
+        self, graph_builder
+    ) -> None:
         """Test inplace custom operation with unregistered kernel."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
 
@@ -218,7 +224,7 @@ class TestInplaceCustomOp:
                 or "register" in error_msg
             )
 
-    def test_inplace_custom__error__none_values(self, graph_builder):
+    def test_inplace_custom__error__none_values(self, graph_builder) -> None:
         """Test inplace custom operation with None values."""
         with graph_builder() as graph:
             with pytest.raises(TypeError):
@@ -228,7 +234,7 @@ class TestInplaceCustomOp:
                     values=None,  # None values
                 )
 
-    def test_inplace_custom__basic_chain_behavior(self, graph_builder):
+    def test_inplace_custom__basic_chain_behavior(self, graph_builder) -> None:
         """Test that inplace_custom returns proper chain structure."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
 
@@ -249,7 +255,9 @@ class TestInplaceCustomOp:
                 or "register" in error_msg
             )
 
-    def test_inplace_custom__with_outputs_and_chain(self, graph_builder):
+    def test_inplace_custom__with_outputs_and_chain(
+        self, graph_builder
+    ) -> None:
         """Test inplace custom operation with both outputs and chain behavior."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
         output_type = TensorType(DType.float32, (10,), DeviceRef.CPU())
@@ -292,7 +300,7 @@ class TestCustomParameterValidation:
     )
     def test_custom__parameter_types__supported(
         self, graph_builder, param_value
-    ):
+    ) -> None:
         """Test custom operation with supported parameter types."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -321,7 +329,7 @@ class TestCustomParameterValidation:
     )
     def test_custom__parameter_types__unsupported(
         self, graph_builder, param_value
-    ):
+    ) -> None:
         """Test custom operation with unsupported parameter types."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -339,7 +347,7 @@ class TestCustomParameterValidation:
             error_msg = str(exc_info.value).lower()
             assert "parameter" in error_msg or "unsupported" in error_msg
 
-    def test_custom__no_parameters(self, graph_builder):
+    def test_custom__no_parameters(self, graph_builder) -> None:
         """Test custom operation with no parameters (None)."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -356,7 +364,7 @@ class TestCustomParameterValidation:
             error_msg = str(exc_info.value).lower()
             assert "kernel" in error_msg or "mojo" in error_msg
 
-    def test_custom__empty_parameters(self, graph_builder):
+    def test_custom__empty_parameters(self, graph_builder) -> None:
         """Test custom operation with empty parameters dict."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -379,7 +387,7 @@ class TestCustomGraphStateConsistency:
 
     def test_custom__graph_state_after_verification_failure(
         self, graph_builder
-    ):
+    ) -> None:
         """Verify graph remains consistent if custom op verification fails."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -414,7 +422,7 @@ class TestCustomGraphStateConsistency:
 
     def test_inplace_custom__graph_state_after_verification_failure(
         self, graph_builder
-    ):
+    ) -> None:
         """Verify graph remains consistent if inplace custom op verification fails."""
         buffer_type = BufferType(DType.float32, (10,), DeviceRef.CPU())
 
@@ -446,7 +454,9 @@ class TestCustomGraphStateConsistency:
                     f"Graph became inconsistent after inplace custom op failure: {e}"
                 )
 
-    def test_custom__multiple_failures_preserve_state(self, graph_builder):
+    def test_custom__multiple_failures_preserve_state(
+        self, graph_builder
+    ) -> None:
         """Test that multiple failed custom op attempts don't corrupt graph state."""
         input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
@@ -528,7 +538,7 @@ class TestCustomPropertyBased:
         input_type: TensorType,
         kernel_name: str,
         parameters: dict,
-    ):
+    ) -> None:
         """Property test: custom operations should construct consistently with valid inputs."""
         # Generate matching output type with same shape and dtype
         output_type = TensorType(
@@ -561,7 +571,7 @@ class TestCustomPropertyBased:
     )
     def test_custom__property__multiple_outputs(
         self, graph_builder, input_type: TensorType, num_outputs: int
-    ):
+    ) -> None:
         """Property test: custom operations should handle multiple outputs consistently."""
         # Generate multiple output types
         output_types = [
@@ -595,7 +605,7 @@ class TestCustomPropertyBased:
     )
     def test_custom__property__multiple_inputs(
         self, graph_builder, input_types: list[TensorType], kernel_name: str
-    ):
+    ) -> None:
         """Property test: custom operations should handle multiple inputs consistently."""
         # Use first input's properties for output
         output_type = TensorType(
@@ -624,7 +634,7 @@ class TestCustomPropertyBased:
     )
     def test_custom__property__dtype_variations(
         self, graph_builder, base_type: TensorType, target_dtype: DType
-    ):
+    ) -> None:
         """Property test: custom operations should handle different dtype combinations."""
         assume(target_dtype != DType._unknown)
 
@@ -667,7 +677,7 @@ class TestCustomPropertyBased:
     )
     def test_custom__property__invalid_parameter_types(
         self, graph_builder, input_type: TensorType, invalid_param_value
-    ):
+    ) -> None:
         """Property test: custom operations should consistently reject invalid parameter types."""
         output_type = TensorType(
             input_type.dtype, input_type.shape, input_type.device
@@ -705,7 +715,7 @@ class TestInplaceCustomPropertyBased:
         buffer_type: BufferType,
         kernel_name: str,
         parameters: dict,
-    ):
+    ) -> None:
         """Property test: inplace custom operations should construct consistently with valid buffer inputs."""
         with graph_builder(input_types=[buffer_type]) as graph:
             with pytest.raises(ValueError) as exc_info:
@@ -732,7 +742,7 @@ class TestInplaceCustomPropertyBased:
     )
     def test_inplace_custom__property__multiple_buffer_inputs(
         self, graph_builder, buffer_types_list: list[BufferType]
-    ):
+    ) -> None:
         """Property test: inplace custom operations should handle multiple buffer inputs."""
         with graph_builder(input_types=buffer_types_list) as graph:
             with pytest.raises(ValueError) as exc_info:
@@ -755,7 +765,7 @@ class TestInplaceCustomPropertyBased:
     )
     def test_inplace_custom__property__with_outputs(
         self, graph_builder, buffer_type: BufferType, num_outputs: int
-    ):
+    ) -> None:
         """Property test: inplace custom operations should handle output types consistently."""
         # Generate tensor output types (inplace ops can produce tensor outputs)
         output_types = (
@@ -797,7 +807,7 @@ class TestInplaceCustomPropertyBased:
     )
     def test_inplace_custom__property__tensor_input_rejection(
         self, graph_builder, tensor_type: TensorType
-    ):
+    ) -> None:
         """Property test: inplace custom operations should consistently reject tensor inputs."""
         with graph_builder(input_types=[tensor_type]) as graph:
             with pytest.raises(TypeError) as exc_info:
@@ -828,7 +838,7 @@ class TestCustomParameterPropertyBased:
         input_type: TensorType,
         param_name: str,
         param_value,
-    ):
+    ) -> None:
         """Property test: custom operations should handle individual parameter types consistently."""
         output_type = TensorType(
             input_type.dtype, input_type.shape, input_type.device
@@ -863,7 +873,7 @@ class TestCustomParameterPropertyBased:
         input_type: TensorType,
         empty_params: dict,
         none_params,
-    ):
+    ) -> None:
         """Property test: custom operations should handle parameter edge cases consistently."""
         output_type = TensorType(
             input_type.dtype, input_type.shape, input_type.device
@@ -903,7 +913,7 @@ class TestCustomShapePropertyBased:
     )
     def test_custom__property__shape_transformations(
         self, graph_builder, input_shape, output_shape, dtype: DType
-    ):
+    ) -> None:
         """Property test: custom operations should handle arbitrary shape transformations."""
         assume(dtype != DType._unknown)
 
@@ -933,7 +943,7 @@ class TestCustomShapePropertyBased:
     )
     def test_custom__property__rank_preserving_operations(
         self, graph_builder, base_shape, dtype: DType
-    ):
+    ) -> None:
         """Property test: custom operations should handle rank-preserving transformations."""
         assume(dtype != DType._unknown)
 
