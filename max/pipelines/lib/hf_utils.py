@@ -27,17 +27,11 @@ import time
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Optional, Union, cast
+from typing import Any, Optional, Union, cast
 
 import huggingface_hub
 import torch
 from huggingface_hub import errors as hf_hub_errors
-from huggingface_hub import (
-    file_exists,
-    get_hf_file_metadata,
-    hf_hub_download,
-    hf_hub_url,
-)
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.graph.weights import WeightsFormat
 from requests.exceptions import ConnectionError as RequestsConnectionError
@@ -53,6 +47,109 @@ from .config_enums import (
 logger = logging.getLogger("max.pipelines")
 
 
+def _create_gated_repo_error_message(repo_id: str, original_error: str) -> str:
+    """Create a user-friendly error message for gated repository access issues."""
+    return (
+        f"Repository '{repo_id}' exists but requires authentication. "
+        f"This is a gated/private repository that requires an access token. "
+        f"Please ensure you have:\n"
+        f"1. A valid Hugging Face access token with appropriate permissions\n"
+        f"2. The token is properly configured (via 'huggingface-cli login' or HF_TOKEN environment variable)\n"
+        f"3. You have been granted access to this model\n\n"
+        f"Original error: {original_error}"
+    )
+
+
+def _create_repo_not_found_error_message(
+    repo_id: str, revision: str, original_error: str
+) -> str:
+    """Create a user-friendly error message for repository not found issues."""
+    return (
+        f"Repository '{repo_id}' not found. Please check:\n"
+        f"1. The repository ID is correct\n"
+        f"2. The repository exists on Hugging Face\n"
+        f"3. The revision '{revision}' exists\n\n"
+        f"Original error: {original_error}"
+    )
+
+
+def _create_repo_access_fallback_error_message(
+    repo_id: str, original_error: str
+) -> str:
+    """Create a user-friendly fallback error message for repository access issues."""
+    return (
+        f"Failed to access repository '{repo_id}'. "
+        f"This could be due to network issues, invalid repository, or authentication problems.\n\n"
+        f"Original error: {original_error}"
+    )
+
+
+def _create_repo_not_exists_error_message(repo_id: str, revision: str) -> str:
+    """Create a user-friendly error message when _repo_exists_with_retry returns False."""
+    return (
+        f"Repository '{repo_id}' not found. Please check:\n"
+        f"1. The repository ID is correct\n"
+        f"2. The repository exists on Hugging Face\n"
+        f"3. The revision '{revision}' exists"
+    )
+
+
+def try_to_load_from_cache(
+    repo_id: str, filename: str, revision: str
+) -> Union[str, Any, None]:
+    """
+    Wrapper around huggingface_hub.try_to_load_from_cache. We also validate
+    that the repo exists.
+
+    validate_hf_repo_access is called before this function to ensure the repo
+    exists.
+    """
+    validate_hf_repo_access(repo_id=repo_id, revision=revision)
+    return huggingface_hub.try_to_load_from_cache(
+        repo_id=repo_id,
+        filename=filename,
+        revision=revision,
+    )
+
+
+def validate_hf_repo_access(repo_id: str, revision: str) -> None:
+    """
+    Validate repository access and raise clear, user-friendly errors.
+
+    Args:
+        repo_id: The HuggingFace repository ID to validate
+        revision: The revision/branch to validate
+
+    Raises:
+        ValueError: With user-friendly error messages for various access issues
+    """
+    try:
+        repo_exists = _repo_exists_with_retry(
+            repo_id=repo_id, revision=revision
+        )
+        if not repo_exists:
+            raise ValueError(
+                _create_repo_not_exists_error_message(repo_id, revision)
+            )
+    except hf_hub_errors.GatedRepoError as e:
+        raise ValueError(
+            _create_gated_repo_error_message(repo_id, str(e))
+        ) from e
+    except (
+        hf_hub_errors.RepositoryNotFoundError,
+        hf_hub_errors.RevisionNotFoundError,
+        hf_hub_errors.EntryNotFoundError,
+    ) as e:
+        raise ValueError(
+            _create_repo_not_found_error_message(repo_id, revision, str(e))
+        ) from e
+    except Exception as e:
+        # Fallback for other HuggingFace or network errors
+        raise ValueError(
+            _create_repo_access_fallback_error_message(repo_id, str(e))
+        ) from e
+
+
 @dataclass(frozen=True)
 class HuggingFaceFile:
     """A simple object for tracking Hugging Face model metadata. The repo_id will
@@ -66,7 +163,7 @@ class HuggingFaceFile:
     def download(self, force_download: bool = False) -> Path:
         """Download the file and return the file path where the data is saved locally."""
         return Path(
-            hf_hub_download(
+            huggingface_hub.hf_hub_download(
                 self.repo_id,
                 self.filename,
                 revision=self.revision,
@@ -75,12 +172,18 @@ class HuggingFaceFile:
         )
 
     def size(self) -> int | None:
-        url = hf_hub_url(self.repo_id, self.filename, revision=self.revision)
-        metadata = get_hf_file_metadata(url)
+        url = huggingface_hub.hf_hub_url(
+            self.repo_id, self.filename, revision=self.revision
+        )
+        metadata = huggingface_hub.get_hf_file_metadata(url)
         return metadata.size
 
     def exists(self) -> bool:
-        return file_exists(self.repo_id, self.filename, revision=self.revision)
+        return huggingface_hub.file_exists(
+            repo_id=self.repo_id,
+            filename=self.filename,
+            revision=self.revision,
+        )
 
 
 class _ThreadingOnlyTqdmLock(TqdmDefaultWriteLock):
@@ -166,7 +269,7 @@ def download_weight_files(
         weight_paths = list(
             thread_map(
                 lambda filename: Path(
-                    hf_hub_download(
+                    huggingface_hub.hf_hub_download(
                         huggingface_model_id,
                         filename,
                         revision=revision,
@@ -186,7 +289,7 @@ def download_weight_files(
     return weight_paths
 
 
-def repo_exists_with_retry(repo_id: str, revision: str) -> bool:
+def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
     """
     Wrapper around huggingface_hub.revision_exists with retry logic.
     Uses exponential backoff with 25% jitter, starting at 1s and doubling each retry.
@@ -269,10 +372,10 @@ class HuggingFaceRepo:
             else:
                 object.__setattr__(self, "repo_type", RepoType.online)
 
-        if self.repo_type == RepoType.online and not repo_exists_with_retry(
-            repo_id=self.repo_id, revision=self.revision
-        ):
-            raise ValueError(f"model_path: {self.repo_id} does not exist")
+        if self.repo_type == RepoType.online:
+            validate_hf_repo_access(
+                repo_id=self.repo_id, revision=self.revision
+            )
 
     def __str__(self) -> str:
         return self.repo_id

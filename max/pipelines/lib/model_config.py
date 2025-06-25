@@ -23,7 +23,6 @@ from typing import Optional
 
 import torch
 from huggingface_hub import constants as hf_hub_constants
-from huggingface_hub import try_to_load_from_cache
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
@@ -31,7 +30,11 @@ from max.nn.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
 
 from .config_enums import RepoType, RopeType, SupportedEncoding
-from .hf_utils import HuggingFaceRepo, repo_exists_with_retry
+from .hf_utils import (
+    HuggingFaceRepo,
+    try_to_load_from_cache,
+    validate_hf_repo_access,
+)
 from .max_config import KVCacheConfig, MAXConfig
 from .registry import PIPELINE_REGISTRY
 from .weight_path_parser import WeightPathParser
@@ -158,14 +161,11 @@ class MAXModelConfig(MAXModelConfigBase):
                 raise ValueError(
                     "model-path must be provided and must be a valid Hugging Face repository"
                 )
-            elif (not os.path.exists(os.path.expanduser(self.model_path))) and (
-                not repo_exists_with_retry(
+            elif not os.path.exists(os.path.expanduser(self.model_path)):
+                # Check if the model_path is a valid HuggingFace repository
+                validate_hf_repo_access(
                     repo_id=self.model_path,
                     revision=self.huggingface_model_revision,
-                )
-            ):
-                raise ValueError(
-                    f"{self.model_path} is not a valid Hugging Face repository"
                 )
         elif self.model_path == "" and self._weights_repo_id is not None:
             # weight_path is used and we should derive the repo_id from it.

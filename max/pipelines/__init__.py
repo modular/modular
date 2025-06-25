@@ -53,7 +53,6 @@ from .lib.embeddings_pipeline import EmbeddingsPipeline
 from .lib.hf_utils import (
     HuggingFaceFile,
     download_weight_files,
-    repo_exists_with_retry,
 )
 from .lib.max_config import (
     KVCacheConfig,
@@ -111,7 +110,6 @@ __all__ = [
     "PrependPromptSpeechTokens",
     "PrometheusMetricsMode",
     "ProfilingConfig",
-    "repo_exists_with_retry",
     "RepoType",
     "RopeType",
     "SamplingConfig",
