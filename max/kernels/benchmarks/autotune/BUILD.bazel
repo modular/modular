@@ -17,6 +17,7 @@ modular_py_library(
     tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
+        "//Support/python:support",
         # Deps required for kbench/kplot/kprofile
         requirement("numpy"),
         requirement("click"),
@@ -25,7 +26,6 @@ modular_py_library(
         requirement("plotly"),
         requirement("kaleido"),
         requirement("pyyaml"),
-        "//GenericML/tools/model:lib",
     ],
 )
 

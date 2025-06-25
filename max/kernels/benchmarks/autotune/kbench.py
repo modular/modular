@@ -34,7 +34,6 @@ import click
 import numpy as np
 import pandas as pd
 import rich
-from model.utils.exceptions import CLIException, pretty_exception_handler
 from modular.utils import logging, yaml
 from modular.utils.subprocess import list2cmdline, run_shell_command
 from modular.utils.yaml import YAML
@@ -87,8 +86,6 @@ def configure_logging(
 
     if verbose and pretty_output:
         traceback.install(suppress=[click, yaml, rich])
-    elif pretty_output:
-        sys.excepthook = pretty_exception_handler
 
     return CONSOLE
 
@@ -129,9 +126,7 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
             output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
         )
     except Exception as exc:
-        raise CLIException(
-            cmd=cmd, err=f"Unable to run command {list2cmdline(cmd)}"
-        ) from exc
+        raise SystemExit(f"Unable to run command {list2cmdline(cmd)}") from exc
 
 
 @dataclass
