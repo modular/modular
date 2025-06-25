@@ -12,9 +12,9 @@ from max._core_mojo import block_hasher
 def test_block_hasher():
     block_size = 128
     num_tokens = 3000
-    tokens = np.arange(num_tokens, dtype=np.int32)  # Use int32 for tokens
+    tokens = np.arange(num_tokens)
 
-    hashes = block_hasher(tokens, block_size)
+    hashes = block_hasher(tokens, block_size, hash("None"))
 
     assert isinstance(hashes, list)
     assert isinstance(hashes[0], int)
