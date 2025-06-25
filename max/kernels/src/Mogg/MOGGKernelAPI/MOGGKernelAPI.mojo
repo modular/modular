@@ -5828,6 +5828,7 @@ struct IRFFT:
         dtype: DType,
         rank: Int,
         n: Int,
+        buffer_size_mb: Int,
     ](
         output: OutputTensor[dtype=dtype, rank=rank],
         input: InputTensor[dtype=dtype, rank=rank],
@@ -5842,6 +5843,7 @@ struct IRFFT:
             input_buf,
             output_buf,
             n,
+            buffer_size_mb,
             ctx.get_device_context(),
         )
 
