@@ -137,6 +137,17 @@ static constexpr StringLiteral kKernelValueParameterAttrName =
 static constexpr StringLiteral kKernelResultParameterAttrName =
     "mogg.value_result_params";
 
+/// Dictionary containing the default value assignments for parameters of
+/// a kernel.
+static constexpr StringLiteral kKernelDefaultParameterAttrName =
+    "mogg.param_default_values";
+
+/// Array of parameter names used as keys into kKernelDefaultParameterAttrName.
+/// This is needed later in the lowering workflow as parameters must be
+/// processed in declaration order.
+static constexpr StringLiteral kKernelParameterNamesAttrName =
+    "mogg.input_param_names";
+
 // An array of StringAttr corresponding to each input argument type.
 //
 // If the associated string is non-empty, it refers to the name of the
