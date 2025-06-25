@@ -97,7 +97,6 @@ scipy>=1.10.1
 tabulate>=0.8.9
 
 # Support
-find-libpython>=0.3.0
 ruamel.yaml>=0.17
 ruamel-yaml-clib
 
