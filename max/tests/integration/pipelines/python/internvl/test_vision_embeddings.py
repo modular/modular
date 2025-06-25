@@ -542,7 +542,7 @@ def test_vision_embeddings_multi_gpu_execution(
     compiled1 = session1.load(graph1, weights_registry=state_dict)
 
     # Convert patches to torch tensor for execution.
-    patches_tensor = torch.from_numpy(patches).to(torch.float32)
+    patches_tensor = torch.from_numpy(patches).to(torch.float32).contiguous()
 
     # Execute on GPU 0
     patches_gpu0 = patches_tensor.to("cuda:0")
