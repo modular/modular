@@ -1371,8 +1371,23 @@ struct CPython(Copyable, Defaultable, Movable):
         # TODO(MSTDL-950): Should use something like `addr_of!`
         return ob_raw.unsized_obj_ptr[].object_type
 
-    fn PyType_GetName(self, type: PyTypeObjectPtr) -> PyObjectPtr:
-        return self.lib.call["PyType_GetName", PyObjectPtr](type)
+    fn PyType_GetName(self, type: UnsafePointer[PyTypeObject]) -> PyObjectPtr:
+        """Retrieve the name of the Python type.
+
+        Notes:
+            This function was patched for python < 3.11.
+            [Reference](
+            https://docs.python.org/3/c-api/type.html#c.PyType_GetName).
+        """
+        if self.version.minor >= 11:
+            # PyObject *PyType_GetName(PyTypeObject *type)
+            var r = self.lib.call["PyType_GetName", PyObjectPtr](type)
+            self._inc_total_rc()
+            return r
+        else:
+            return self.PyObject_GetAttrString(
+                rebind[PyObjectPtr](type), "__name__"
+            )
 
     fn PyType_FromSpec(self, spec: UnsafePointer[PyType_Spec]) -> PyObjectPtr:
         """[Reference](
