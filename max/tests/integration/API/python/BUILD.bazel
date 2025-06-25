@@ -63,6 +63,7 @@ modular_py_test(
         "conftest.py",
         "test_config_pure.py",
         "test_tokenizer.py",
+        "test_weight_path_parser.py",
     ],
     data = [
         "//SDK/integration-test/API:inputs",
