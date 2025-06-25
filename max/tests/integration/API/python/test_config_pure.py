@@ -97,7 +97,6 @@ def test_validate_model_path__correct_repo_id_provided():
     )
 
 
-@pytest.mark.skip("FIXME: Infra issue with MI300s")
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_incompatible_quantization_encoding(
@@ -136,7 +135,6 @@ def test_config__test_incompatible_quantization_encoding(
     )
 
 
-@pytest.mark.skip("FIXME: Infra issue with MI300s")
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__test_quantization_encoding_with_dtype_casting(
@@ -297,7 +295,6 @@ def test_config__validates_supported_device():
         )
 
 
-@pytest.mark.skip("FIXME: Infra issue with MI300s")
 @prepare_registry
 @mock_estimate_memory_footprint
 def test_config__validates_invalid_supported_device(
@@ -336,7 +333,6 @@ def test_config__validates_engine_configurations(
     assert config.engine == PipelineEngine.HUGGINGFACE
 
 
-@pytest.mark.skip("FIXME: Infra issue with MI300s")
 @prepare_registry
 def test_config__validates_lora_configuration(
     llama_3_1_8b_instruct_local_path, llama_3_1_8b_lora_local_path
