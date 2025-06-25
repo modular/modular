@@ -8700,9 +8700,9 @@ struct Struct_min_p_sampling:
                 var cuda_ctx = ctx.get_device_context()
                 min_p_sampling_gpu(
                     cuda_ctx,
-                    min_ps_buf,
-                    input_buf,
-                    out_token_ids_buf,
+                    min_ps.to_layout_tensor(),
+                    input.to_layout_tensor(),
+                    out_token_ids.to_layout_tensor(),
                     temperature,
                 )
 

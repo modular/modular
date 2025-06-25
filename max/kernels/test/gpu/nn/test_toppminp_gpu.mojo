@@ -313,17 +313,17 @@ fn test_case_sampling[
             if is_top_p:
                 top_p_sampling_gpu(
                     ctx,
-                    device_p_thresholds.tensor,
-                    device_in.tensor,
-                    device_token_ids.tensor,
+                    device_p_thresholds.to_layout_tensor(),
+                    device_in.to_layout_tensor(),
+                    device_token_ids.to_layout_tensor(),
                     temperature=temperature,
                 )
             else:
                 min_p_sampling_gpu(
                     ctx,
-                    device_p_thresholds.tensor,
-                    device_in.tensor,
-                    device_token_ids.tensor,
+                    device_p_thresholds.to_layout_tensor(),
+                    device_in.to_layout_tensor(),
+                    device_token_ids.to_layout_tensor(),
                     temperature=temperature,
                 )
             ctx.synchronize()
@@ -339,17 +339,17 @@ fn test_case_sampling[
     if is_top_p:
         top_p_sampling_gpu[_test_sort=True](
             ctx,
-            device_p_thresholds.tensor,
-            device_in.tensor,
-            device_token_ids.tensor,
+            device_p_thresholds.to_layout_tensor(),
+            device_in.to_layout_tensor(),
+            device_token_ids.to_layout_tensor(),
             temperature=temperature,
         )
     else:
         min_p_sampling_gpu[_test_sort=True](
             ctx,
-            device_p_thresholds.tensor,
-            device_in.tensor,
-            device_token_ids.tensor,
+            device_p_thresholds.to_layout_tensor(),
+            device_in.to_layout_tensor(),
+            device_token_ids.to_layout_tensor(),
             temperature=temperature,
         )
     # Copy results back
