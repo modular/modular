@@ -53,7 +53,7 @@ class YAML(yaml.YAML):
         *,
         typ: str = "unsafe",
         default_flow_style: Optional[bool] = False,
-    ):
+    ) -> None:
         """Construct the YAML configuration object.
 
         For argument semantics, see ruamel.yaml.YAML:
@@ -71,7 +71,7 @@ class YAML(yaml.YAML):
         *,
         sort: bool = True,
         **kwargs: Any,
-    ):
+    ) -> None:
         """YAMLize the data into a stream.
 
         Args:
@@ -87,7 +87,7 @@ class YAML(yaml.YAML):
 def represent_as_string(
     classes: Iterable[type[Any]],
     representer: type[yaml.BaseRepresenter] = NoAliasRepresenter,
-):
+) -> None:
     """Configure the yaml parser to serialize classes as strings.
 
     Args:

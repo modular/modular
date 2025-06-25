@@ -20,7 +20,7 @@ class MojoCompilationError(Exception):
 class MojoSource:
     """Class that represents a source file."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path) -> None:
         self.path = path
 
     @staticmethod
@@ -68,7 +68,7 @@ class MojoBinary:
         self,
         source: MojoSource,
         suppress_build_output: bool = False,
-    ):
+    ) -> None:
         self.source = source
         self.suppress_build_output = suppress_build_output
         self.out_dir = tempfile.TemporaryDirectory()

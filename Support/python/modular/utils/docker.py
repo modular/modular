@@ -21,16 +21,16 @@ class ImageID:
     arch: str = "intel"
 
 
-def get_modular_ecr_url(region: str = "us-east-1"):
+def get_modular_ecr_url(region: str = "us-east-1") -> str:
     return f"466483404629.dkr.ecr.{region}.amazonaws.com"
 
 
-def get_image_url(img: ImageID, region: str = "us-east-1"):
+def get_image_url(img: ImageID, region: str = "us-east-1") -> str:
     base_url = get_modular_ecr_url(region)
     return f"{base_url}/{img.basename}:{img.sha}-{img.arch}"
 
 
-def login(region: str = "us-east-1"):
+def login(region: str = "us-east-1") -> None:
     base_url = get_modular_ecr_url(region)
     login = run_shell_command(
         f"aws ecr get-login-password --region {region}".split(),
@@ -48,7 +48,7 @@ def prune(force: bool = False):
     return run_shell_command(command.split(" "), capture_output=True)
 
 
-def pull(img: ImageID):
+def pull(img: ImageID) -> None:
     url = get_image_url(img)
     run_shell_command(["docker", "pull", url])
 

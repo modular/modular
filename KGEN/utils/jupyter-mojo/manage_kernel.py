@@ -63,7 +63,7 @@ def install_kernel(
     modular_home: str,
     kernel_name: str,
     install_channel: str,
-):
+) -> None:
     """Install the kernel spec."""
     kernel_dir = Path(__file__).parent / "kernel"
     kernel_install_dir = Path(
@@ -109,7 +109,7 @@ def install_kernel(
     kernel_json_path.write_text(json.dumps(kernel_json, indent=2))
 
 
-def uninstall_kernel(kernel_name: str):
+def uninstall_kernel(kernel_name: str) -> None:
     """Uninstall the kernel spec."""
 
     try:
@@ -118,7 +118,7 @@ def uninstall_kernel(kernel_name: str):
         print(e)
 
 
-def main():
+def main() -> None:
     parser = create_argparser()
     args = parser.parse_args()
 

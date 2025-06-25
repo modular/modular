@@ -25,7 +25,7 @@ from matplotlib._pylab_helpers import Gcf as _Gcf
 from matplotlib.backends.backend_agg import FigureCanvasAgg as _FigureCanvasAgg
 
 
-def show(close=None, block=None):
+def show(close=None, block=None) -> None:
     if close is None:
         close = show._close_figures
     try:
@@ -52,7 +52,7 @@ show._close_figures = True
 show._display = None
 
 
-def draw_if_interactive():
+def draw_if_interactive() -> None:
     manager = _Gcf.get_active()
     if manager is None:
         return
@@ -143,5 +143,5 @@ def _is_transparent(color):
     return rgba[3] < 0.5
 
 
-def set_matplotlib_close(close=True):
+def set_matplotlib_close(close=True) -> None:
     show._close_figures = close

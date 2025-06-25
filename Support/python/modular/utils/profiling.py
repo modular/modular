@@ -37,7 +37,7 @@ class TimeTrace:
     convenience functions.
     """
 
-    def __init__(self, trace: TraceDict):
+    def __init__(self, trace: TraceDict) -> None:
         self.trace = trace
 
     @classmethod
@@ -98,7 +98,7 @@ class TimeTrace:
         trace.update({"filename": tracefile})
         return cls.from_dict(trace, **kwargs)
 
-    def to_file(self, outfile: Path, **kwargs):
+    def to_file(self, outfile: Path, **kwargs) -> None:
         """Write the trace to a file as json."""
         with open(outfile, "w") as f:
             json.dump(self.trace, f)

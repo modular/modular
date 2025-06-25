@@ -14,7 +14,7 @@ def token_hash(file: str, line: int, token: str):
     # FNV-1a hash function for 64-bit hash computation
     hash_value = 0xCBF29CE484222325
 
-    def hash(value):
+    def hash(value) -> None:
         nonlocal hash_value
         hash_value ^= value
         hash_value *= 0x100000001B3
@@ -36,7 +36,7 @@ def find_token_hashes(line: str, path: str, line_number: int):
     matches = re.finditer(token_hash_pattern, line)
     results = []
 
-    def error(msg, g):
+    def error(msg, g) -> None:
         token = g["token_hash"]
         fullmatch = g["fullmatch"]
         sys.stderr.write(f"\n{path}:{line_number}\n")
@@ -99,7 +99,7 @@ def generate_reverse_mapping_text(hashes, repo_root):
     newline = "\n"
     i = 0
 
-    def emit(new_text=""):
+    def emit(new_text="") -> None:
         nonlocal text
         nonlocal i
         indent = "  " * i
@@ -188,7 +188,7 @@ def generate_reverse_mapping_text(hashes, repo_root):
     return text
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Compute MOTR_TOKEN_HASH values and generate reverse mapping."
     )

@@ -22,7 +22,7 @@ extension_dir = Path(__file__).parent.parent
 telemetry_connection_string = "InstrumentationKey=9c380139-66e8-4cbb-a16e-d2c848ff61d4;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=3546f7bc-88b0-407b-bda7-9b410227417c"
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--version",

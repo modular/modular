@@ -59,7 +59,7 @@ time_log_macos = """
 """
 
 
-def test_from_lines_static_linux():
+def test_from_lines_static_linux() -> None:
     rusage = RUsageResult.from_lines(time_log_linux.split("\n"), "Linux")
     assert rusage.time_real_ns == 51400000000
     assert rusage.time_user_ns == 36010000000
@@ -71,7 +71,7 @@ def test_from_lines_static_linux():
     assert rusage.page_faults_major == 0
 
 
-def test_from_lines_static_macos():
+def test_from_lines_static_macos() -> None:
     rusage = RUsageResult.from_lines(time_log_macos.split("\n"), "Darwin")
     assert rusage.time_real_ns == 24360000000
     assert rusage.time_user_ns == 22790000000
@@ -86,7 +86,7 @@ def test_from_lines_static_macos():
 @pytest.mark.skipif(
     not os.path.exists("/usr/bin/time"), reason="binary unavailable"
 )
-def test_from_lines_dynamic():
+def test_from_lines_dynamic() -> None:
     switch = "-l" if platform.system() == "Darwin" else "-v"
     command = f"/usr/bin/time {switch} echo Modular's Magnificent Menagerie"
     proc = run_shell_command(command.split(), capture_output=True)

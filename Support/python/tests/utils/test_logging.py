@@ -10,7 +10,7 @@ from _pytest.logging import LogCaptureFixture
 from modular.utils import logging
 
 
-def test_LoggingContext_logger(caplog: LogCaptureFixture):
+def test_LoggingContext_logger(caplog: LogCaptureFixture) -> None:
     logging.getLogger().setLevel(logging.DEBUG)
 
     levels = ["debug", "info", "warning", "error", "critical"]
@@ -25,7 +25,7 @@ def test_LoggingContext_logger(caplog: LogCaptureFixture):
     assert True
 
 
-def test_LoggingContext_level(caplog: LogCaptureFixture):
+def test_LoggingContext_level(caplog: LogCaptureFixture) -> None:
     logging.getLogger().setLevel(logging.INFO)
 
     logging.info("Some info")
@@ -38,7 +38,9 @@ def test_LoggingContext_level(caplog: LogCaptureFixture):
     assert caplog.records[1].msg == "Some other debug"
 
 
-def test_LoggingContext_handler(caplog: LogCaptureFixture, tmp_path: Path):
+def test_LoggingContext_handler(
+    caplog: LogCaptureFixture, tmp_path: Path
+) -> None:
     log_file = tmp_path / "log.txt"
     log_file.unlink(missing_ok=True)
 
