@@ -724,6 +724,95 @@ alias PyLong_FromSsize_t = ExternalFunction[
 ]
 
 
+# ===-------------------------------------------------------------------===#
+# Context Managers for Python GIL and Threading
+# ===-------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct GILAcquired(Movable):
+    """Context manager for Python Global Interpreter Lock (GIL) operations.
+
+    This struct provides automatic GIL management inspired by nanobind/pybind11.
+    It ensures the GIL is acquired on construction and released on destruction,
+    making it safe to use Python objects within the managed scope.
+
+    Example:
+        ```mojo
+        var cpython = CPython()
+        with GILAcquired(cpython):
+            # Python objects can be safely accessed here
+            var py_obj = cpython.Py_None()
+        # GIL is automatically released here
+        ```
+    """
+
+    var cpython: CPython
+    """Reference to the CPython instance."""
+    var gil_state: PyGILState_STATE
+    """The GIL state returned by PyGILState_Ensure."""
+
+    fn __init__(out self, cpython: CPython):
+        """Acquire the GIL and initialize the context manager.
+
+        Args:
+            cpython: The CPython instance to use for GIL operations.
+        """
+        self.cpython = cpython
+        self.gil_state = PyGILState_STATE(PyGILState_STATE.PyGILState_UNLOCKED)
+
+    fn __enter__(mut self):
+        """Acquire the GIL."""
+        self.gil_state = self.cpython.PyGILState_Ensure()
+
+    fn __exit__(mut self):
+        """Release the GIL."""
+        self.cpython.PyGILState_Release(self.gil_state)
+
+
+@fieldwise_init
+struct GILReleased(Movable):
+    """Context manager for Python thread state operations.
+
+    This struct provides automatic thread state management for scenarios where
+    you need to temporarily release the GIL to allow other threads to run,
+    then restore the thread state. This is useful for long-running operations
+    that don't need to access Python objects.
+
+    Example:
+        ```mojo
+        var cpython = CPython()
+        with GILReleased(cpython):
+            # GIL is released here, other threads can run
+            # Perform CPU-intensive work without Python object access
+            perform_heavy_computation()
+        # Thread state is automatically restored here
+        ```
+    """
+
+    var cpython: CPython
+    """Reference to the CPython instance."""
+    var thread_state: UnsafePointer[PyThreadState]
+    """The thread state returned by PyEval_SaveThread."""
+
+    fn __init__(out self, cpython: CPython):
+        """Save the current thread state and release the GIL.
+
+        Args:
+            cpython: The CPython instance to use for GIL operations.
+        """
+        self.cpython = cpython
+        self.thread_state = {}
+
+    fn __enter__(mut self):
+        """Save the current thread state and release the GIL."""
+        self.thread_state = self.cpython.PyEval_SaveThread()
+
+    fn __exit__(mut self):
+        """Restore the thread state and acquire the GIL."""
+        self.cpython.PyEval_RestoreThread(self.thread_state)
+
+
 @fieldwise_init
 struct CPython(Copyable, Defaultable, Movable):
     """Handle to the CPython interpreter present in the current process."""
