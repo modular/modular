@@ -30,6 +30,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
+from max.graph.weight import _compute_shard_range
 
 from ..clamp import clamp
 from ..comm import Allreduce
@@ -916,8 +917,8 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
         self.allreduce = Allreduce(num_devices)
 
         if self.stacked_qkv:
-            self.qkv_proj.sharding_strategy = ShardingStrategy.columnwise(
-                num_devices
+            self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
+                num_devices, self.n_heads, self.kv_params.head_dim
             )
         else:
             self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
@@ -929,23 +930,22 @@ class DistributedAttentionWithRope(AttentionWithRope, DistributedAttentionImpl):
             self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
                 num_devices
             )
-        self.o_proj.sharding_strategy = ShardingStrategy.columnwise(num_devices)
+        self.o_proj.sharding_strategy = ShardingStrategy.head_aware_columnwise(
+            num_devices, self.n_heads, self.kv_params.head_dim
+        )
 
         self.list_of_attentions = []
 
-        if num_attention_heads % len(self.devices) != 0:
-            # TODO(MODELS-601): Support non-divisible numbers of attention heads.
-            raise ValueError(
-                f"Number of attention heads ({num_attention_heads}) "
-                f"must be divisible by the number of devices ({len(self.devices)})"
-            )
-
-        sharded_num_heads = num_attention_heads // len(self.devices)
-
         for n, device in enumerate(self.devices):
+            # Calculate the number of heads for this device
+            head_start, head_end = _compute_shard_range(
+                num_attention_heads, n, len(self.devices)
+            )
+            device_num_heads = head_end - head_start
+
             layer = AttentionWithRope(
                 rope=rope,
-                num_attention_heads=sharded_num_heads,
+                num_attention_heads=device_num_heads,
                 num_key_value_heads=num_key_value_heads,
                 hidden_size=hidden_size,
                 kv_params=kv_params,

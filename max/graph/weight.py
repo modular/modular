@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cached_property, partial
 from typing import Callable, Optional, Union
 
 import numpy.typing as npt
@@ -16,7 +16,7 @@ from max._core.dialects import mo
 from max._core_types.driver import DLPackArray
 from max.dtype import DType
 
-from . import graph
+from . import graph, ops
 from .quantization import QuantizationEncoding
 from .type import DeviceRef, Shape, ShapeLike
 from .value import TensorValue, Value
@@ -100,6 +100,92 @@ def replicate_sharding_strategy(
     return weight[:]
 
 
+def head_aware_col_sharding_strategy(
+    weight: Weight, i: int, num_devices: int, num_heads: int, head_dim: int
+) -> TensorValue:
+    """Shards a weight tensor by column according to attention head distribution.
+
+    This strategy is designed for output projection weights in attention layers
+    where the number of heads is not evenly divisible by the number of devices.
+    It splits columns according to how heads are distributed across devices.
+
+    Args:
+        weight: The :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+        num_heads: Total number of attention heads.
+        head_dim: Dimension per attention head.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded portion for the i-th device.
+    """
+    # Compute the head range for this device
+    head_start, head_end = _compute_shard_range(num_heads, i, num_devices)
+
+    # Convert head indices to column indices
+    col_start = head_start * head_dim
+    col_end = head_end * head_dim
+
+    return weight[:, col_start:col_end]
+
+
+def stacked_qkv_sharding_strategy(
+    weight: Weight, i: int, num_devices: int, num_heads: int, head_dim: int
+) -> TensorValue:
+    """Shards a stacked QKV weight tensor for tensor parallel attention.
+
+    This strategy is designed for weights with shape [3 * hidden_size, hidden_size]
+    where the first hidden_size rows are Q, next hidden_size rows are K,
+    and last hidden_size rows are V. It shards each section separately by
+    attention heads.
+
+    Args:
+        weight: The stacked QKV :obj:`Weight` to shard.
+        i: The index of the current device.
+        num_devices: The total number of devices to shard across.
+        num_heads: Total number of attention heads.
+        head_dim: Dimension per attention head.
+
+    Returns:
+        A :obj:`TensorValue` representing the sharded QKV for the i-th device.
+    """
+    # Weight shape is [3 * hidden_size, hidden_size]
+    total_rows = int(weight.shape[0])
+    if total_rows % 3 != 0:
+        raise ValueError(
+            f"Stacked QKV weight must have shape [3*hidden_size, hidden_size], "
+            f"got shape {weight.shape}"
+        )
+
+    # Split into Q, K, V sections.
+    hidden_size = total_rows // 3
+    expected_hidden = num_heads * head_dim
+    if hidden_size != expected_hidden:
+        raise ValueError(
+            f"Weight hidden_size {hidden_size} doesn't match "
+            f"num_heads * head_dim = {num_heads} * {head_dim} = {expected_hidden}"
+        )
+
+    q_weight, k_weight, v_weight = ops.split(
+        weight, split_sizes=(hidden_size, hidden_size, hidden_size)
+    )
+
+    # Compute the head range for this device
+    head_start, head_end = _compute_shard_range(num_heads, i, num_devices)
+
+    # Convert head indices to dimension indices
+    dim_start = head_start * head_dim
+    dim_end = head_end * head_dim
+
+    # Shard each section
+    q_shard = q_weight[dim_start:dim_end]
+    k_shard = k_weight[dim_start:dim_end]
+    v_shard = v_weight[dim_start:dim_end]
+
+    # Stack the sharded sections back together.
+    return ops.concat([q_shard, k_shard, v_shard], axis=0)
+
+
 @dataclass(frozen=True)
 class ShardingStrategy:
     """Specifies how a :obj:`Weight` should be sharded across multiple devices.
@@ -142,9 +228,25 @@ class ShardingStrategy:
         return self.shard is col_sharding_strategy
 
     @property
+    def is_head_aware_colwise(self) -> bool:
+        """Whether the sharding strategy is head-aware column-wise."""
+        # Check if this is a partial function wrapping head_aware_col_sharding_strategy.
+        if isinstance(self.shard, partial):
+            return self.shard.func is head_aware_col_sharding_strategy
+        return self.shard is head_aware_col_sharding_strategy
+
+    @property
     def is_replicate(self) -> bool:
         """Whether the sharding strategy is replicate."""
         return self.shard is replicate_sharding_strategy
+
+    @property
+    def is_stacked_qkv(self) -> bool:
+        """Whether the sharding strategy is stacked QKV."""
+        # Check if this is a partial function wrapping stacked_qkv_sharding_strategy.
+        if isinstance(self.shard, partial):
+            return self.shard.func is stacked_qkv_sharding_strategy
+        return self.shard is stacked_qkv_sharding_strategy
 
     @staticmethod
     def rowwise(num_devices: int) -> ShardingStrategy:
@@ -194,6 +296,59 @@ class ShardingStrategy:
         return ShardingStrategy(
             num_devices=num_devices, shard=replicate_sharding_strategy
         )
+
+    @staticmethod
+    def stacked_qkv(
+        num_devices: int, num_heads: int, head_dim: int
+    ) -> ShardingStrategy:
+        """Creates a stacked QKV sharding strategy for tensor parallel attention.
+
+        This strategy is designed for weights with shape [3 * hidden_size, hidden_size]
+        where Q, K, and V weights are stacked together. It shards each section
+        separately by attention heads, properly handling cases where num_heads
+        is not evenly divisible by num_devices.
+
+        Args:
+            num_devices: The number of devices to shard the weight across.
+            num_heads: Total number of attention heads.
+            head_dim: Dimension per attention head.
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for stacked QKV sharding.
+        """
+        # Use partial to bind num_heads and head_dim to the sharding function
+        shard_fn = partial(
+            stacked_qkv_sharding_strategy,
+            num_heads=num_heads,
+            head_dim=head_dim,
+        )
+        return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
+
+    @staticmethod
+    def head_aware_columnwise(
+        num_devices: int, num_heads: int, head_dim: int
+    ) -> ShardingStrategy:
+        """Creates a head-aware column-wise sharding strategy for attention output projection.
+
+        This strategy shards weight columns according to attention head distribution,
+        properly handling cases where num_heads is not evenly divisible by num_devices.
+        It's designed for output projection weights in attention layers where each
+        device processes a different number of heads.
+
+        Args:
+            num_devices: The number of devices to shard the weight across.
+            num_heads: Total number of attention heads.
+            head_dim: Dimension per attention head.
+
+        Returns:
+            A :obj:`ShardingStrategy` instance configured for head-aware column sharding.
+        """
+        shard_fn = partial(
+            head_aware_col_sharding_strategy,
+            num_heads=num_heads,
+            head_dim=head_dim,
+        )
+        return ShardingStrategy(num_devices=num_devices, shard=shard_fn)
 
 
 @dataclass

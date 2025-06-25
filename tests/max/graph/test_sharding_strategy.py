@@ -12,7 +12,9 @@ from max.graph import DeviceRef, Graph, Weight
 from max.graph.weight import (
     ShardingStrategy,
     col_sharding_strategy,
+    head_aware_col_sharding_strategy,
     row_sharding_strategy,
+    stacked_qkv_sharding_strategy,
 )
 
 
@@ -199,3 +201,233 @@ def test_sharding_strategy_is_replicate():
 
     colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
     assert colwise_strategy.is_replicate is False
+
+
+def test_stacked_qkv_sharding_strategy_divisible():
+    """Tests stacked QKV sharding with dimensions divisible by num_devices."""
+    with Graph("test", input_types=[]) as graph:
+        num_heads = 32
+        head_dim = 64
+        hidden_size = num_heads * head_dim  # 2048
+
+        # Stacked QKV weight shape: [3 * hidden_size, hidden_size]
+        weight = Weight(
+            "stacked_qkv",
+            dtype=DType.float32,
+            shape=[3 * hidden_size, hidden_size],  # [6144, 2048]
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 4
+        total_q_elements = 0
+        total_k_elements = 0
+        total_v_elements = 0
+
+        for i in range(num_devices):
+            shard = stacked_qkv_sharding_strategy(
+                weight, i, num_devices, num_heads, head_dim
+            )
+
+            # Each device gets 8 heads (32 / 4 = 8)
+            expected_heads_per_device = 8
+            expected_dim_per_device = (
+                expected_heads_per_device * head_dim
+            )  # 512
+
+            # Check shard shape: should be [3 * 512, 2048]
+            assert int(shard.shape[0]) == 3 * expected_dim_per_device
+            assert int(shard.shape[1]) == hidden_size
+
+            # Track total elements
+            total_q_elements += expected_dim_per_device
+            total_k_elements += expected_dim_per_device
+            total_v_elements += expected_dim_per_device
+
+        # Verify all dimensions are accounted for
+        assert total_q_elements == hidden_size
+        assert total_k_elements == hidden_size
+        assert total_v_elements == hidden_size
+
+
+def test_stacked_qkv_sharding_strategy_non_divisible():
+    """Tests stacked QKV sharding with dimensions NOT divisible by num_devices."""
+    with Graph("test", input_types=[]) as graph:
+        num_heads = 30  # Not divisible by 4
+        head_dim = 64
+        hidden_size = num_heads * head_dim  # 1920
+
+        weight = Weight(
+            "stacked_qkv",
+            dtype=DType.float32,
+            shape=[3 * hidden_size, hidden_size],  # [5760, 1920]
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 4
+        total_rows = 0
+
+        # With 30 heads / 4 devices = 7.5 heads per device
+        # Expected distribution: 8, 8, 7, 7 heads
+        expected_heads = [8, 8, 7, 7]
+        expected_dims = [
+            h * head_dim for h in expected_heads
+        ]  # [512, 512, 448, 448]
+
+        for i in range(num_devices):
+            shard = stacked_qkv_sharding_strategy(
+                weight, i, num_devices, num_heads, head_dim
+            )
+
+            # Check shard shape
+            expected_rows = 3 * expected_dims[i]
+            assert int(shard.shape[0]) == expected_rows, (
+                f"Device {i} should have {expected_rows} rows, "
+                f"but got {int(shard.shape[0])}"
+            )
+            assert int(shard.shape[1]) == hidden_size
+
+            total_rows += int(shard.shape[0])
+
+        # Verify all rows are accounted for
+        assert total_rows == 3 * hidden_size
+
+
+def test_stacked_qkv_sharding_small_example():
+    """Tests stacked QKV sharding with a small example for clarity."""
+    with Graph("test", input_types=[]) as graph:
+        num_heads = 7  # 7 heads / 3 devices = 2.33...
+        head_dim = 2
+        hidden_size = num_heads * head_dim  # 14
+
+        weight = Weight(
+            "stacked_qkv",
+            dtype=DType.float32,
+            shape=[3 * hidden_size, hidden_size],  # [42, 14]
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 3
+
+        # Expected head distribution: 3, 2, 2
+        expected_heads = [3, 2, 2]
+        expected_dims = [h * head_dim for h in expected_heads]  # [6, 4, 4]
+
+        for i in range(num_devices):
+            shard = stacked_qkv_sharding_strategy(
+                weight, i, num_devices, num_heads, head_dim
+            )
+
+            expected_rows = 3 * expected_dims[i]
+            assert int(shard.shape[0]) == expected_rows
+            assert int(shard.shape[1]) == hidden_size
+
+
+def test_head_aware_col_sharding_strategy_divisible():
+    """Tests head-aware column sharding with dimensions divisible by num_devices."""
+    with Graph("test", input_types=[]) as graph:
+        num_heads = 32
+        head_dim = 64
+        hidden_size = num_heads * head_dim  # 2048
+
+        # Output projection weight shape: [hidden_size, hidden_size]
+        weight = Weight(
+            "o_proj",
+            dtype=DType.float32,
+            shape=[hidden_size, hidden_size],
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 4
+
+        for i in range(num_devices):
+            shard = head_aware_col_sharding_strategy(
+                weight, i, num_devices, num_heads, head_dim
+            )
+
+            # Each device gets 8 heads worth of columns
+            expected_cols = 8 * head_dim  # 512
+            assert int(shard.shape[0]) == hidden_size
+            assert int(shard.shape[1]) == expected_cols
+
+
+def test_head_aware_col_sharding_strategy_non_divisible():
+    """Tests head-aware column sharding with dimensions NOT divisible by num_devices."""
+    with Graph("test", input_types=[]) as graph:
+        num_heads = 30  # Not divisible by 4
+        head_dim = 64
+        hidden_size = num_heads * head_dim  # 1920
+
+        weight = Weight(
+            "o_proj",
+            dtype=DType.float32,
+            shape=[hidden_size, hidden_size],
+            device=DeviceRef.CPU(),
+        )
+
+        num_devices = 4
+        total_cols = 0
+
+        # Expected head distribution: 8, 8, 7, 7
+        expected_heads = [8, 8, 7, 7]
+        expected_cols = [
+            h * head_dim for h in expected_heads
+        ]  # [512, 512, 448, 448]
+
+        for i in range(num_devices):
+            shard = head_aware_col_sharding_strategy(
+                weight, i, num_devices, num_heads, head_dim
+            )
+
+            assert int(shard.shape[0]) == hidden_size
+            assert int(shard.shape[1]) == expected_cols[i], (
+                f"Device {i} should have {expected_cols[i]} columns, "
+                f"but got {int(shard.shape[1])}"
+            )
+
+            total_cols += int(shard.shape[1])
+
+        # Verify all columns are accounted for
+        assert total_cols == hidden_size
+
+
+def test_sharding_strategy_is_stacked_qkv():
+    """Tests the is_stacked_qkv property of ShardingStrategy."""
+    # Test stacked QKV strategy
+    stacked_qkv_strategy = ShardingStrategy.stacked_qkv(
+        num_devices=4, num_heads=32, head_dim=64
+    )
+    assert stacked_qkv_strategy.is_stacked_qkv is True
+    assert stacked_qkv_strategy.is_rowwise is False
+    assert stacked_qkv_strategy.is_colwise is False
+    assert stacked_qkv_strategy.is_replicate is False
+
+    # Test non-stacked QKV strategies
+    rowwise_strategy = ShardingStrategy.rowwise(num_devices=4)
+    assert rowwise_strategy.is_stacked_qkv is False
+
+    colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
+    assert colwise_strategy.is_stacked_qkv is False
+
+    replicate_strategy = ShardingStrategy.replicate(num_devices=4)
+    assert replicate_strategy.is_stacked_qkv is False
+
+
+def test_sharding_strategy_is_head_aware_colwise():
+    """Tests the is_head_aware_colwise property of ShardingStrategy."""
+    # Test head-aware columnwise strategy
+    head_aware_strategy = ShardingStrategy.head_aware_columnwise(
+        num_devices=4, num_heads=32, head_dim=64
+    )
+    assert head_aware_strategy.is_head_aware_colwise is True
+    assert (
+        head_aware_strategy.is_colwise is False
+    )  # Different from regular colwise
+    assert head_aware_strategy.is_rowwise is False
+    assert head_aware_strategy.is_replicate is False
+
+    # Test non-head-aware strategies
+    rowwise_strategy = ShardingStrategy.rowwise(num_devices=4)
+    assert rowwise_strategy.is_head_aware_colwise is False
+
+    colwise_strategy = ShardingStrategy.columnwise(num_devices=4)
+    assert colwise_strategy.is_head_aware_colwise is False
