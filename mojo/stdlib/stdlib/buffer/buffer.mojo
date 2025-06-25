@@ -572,7 +572,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn origin_cast[
         mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
     ](
         self,
         out result: NDBuffer[

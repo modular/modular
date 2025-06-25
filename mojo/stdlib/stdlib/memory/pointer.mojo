@@ -321,11 +321,10 @@ struct Pointer[
         `>`,
     ]
     alias _with_origin = Pointer[type, _, address_space]
-    alias _immutable_cast = ImmutableOrigin.cast_from[_]
 
-    alias Mutable = Self._with_origin[MutableOrigin.cast_from[origin].result]
+    alias Mutable = Self._with_origin[MutableOrigin.cast_from[origin]]
     """The mutable version of the `Pointer`."""
-    alias Immutable = Self._with_origin[Self._immutable_cast[origin].result]
+    alias Immutable = Self._with_origin[ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `Pointer`."""
     # Fields
     var _value: Self._mlir_type
@@ -340,7 +339,7 @@ struct Pointer[
     @always_inline("nodebug")
     fn __init__(
         other: Self._with_origin[_],
-        out self: Self._with_origin[Self._immutable_cast[other.origin].result],
+        out self: Self._with_origin[ImmutableOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

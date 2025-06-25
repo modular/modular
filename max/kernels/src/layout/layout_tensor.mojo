@@ -836,7 +836,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn origin_cast[
         mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
     ](
         self,
         out result: LayoutTensor[
@@ -906,7 +906,7 @@ struct LayoutTensor[
     ) -> LayoutTensor[
         dtype,
         layout,
-        ImmutableOrigin.cast_from[origin].result,
+        ImmutableOrigin.cast_from[origin],
         address_space=address_space,
         element_layout=element_layout,
         layout_int_type=layout_int_type,
@@ -923,7 +923,7 @@ struct LayoutTensor[
         return LayoutTensor[
             dtype,
             layout,
-            ImmutableOrigin.cast_from[origin].result,
+            ImmutableOrigin.cast_from[origin],
             address_space=address_space,
             element_layout=element_layout,
             layout_int_type=layout_int_type,
