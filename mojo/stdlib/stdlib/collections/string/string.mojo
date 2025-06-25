@@ -576,7 +576,7 @@ struct String(
         self._len_or_data = other._len_or_data
         self._capacity_or_data = other._capacity_or_data
 
-    @always_inline
+    @always_inline("nodebug")
     fn __copyinit__(out self, other: Self):
         """Copy initialize the string from another string.
 
@@ -737,7 +737,7 @@ struct String(
             result.append_byte(ptr[i])
         return result^
 
-    @always_inline
+    @always_inline("nodebug")
     fn __eq__(self, other: String) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -749,7 +749,7 @@ struct String(
         """
         return self.as_string_slice() == other.as_string_slice()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __eq__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -761,7 +761,7 @@ struct String(
         """
         return self.as_string_slice() == other
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ne__(self, other: String) -> Bool:
         """Compares two Strings if they do not have the same values.
 
@@ -773,7 +773,7 @@ struct String(
         """
         return not (self == other)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ne__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -785,7 +785,7 @@ struct String(
         """
         return self.as_string_slice() != other
 
-    @always_inline
+    @always_inline("nodebug")
     fn __lt__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using LT comparison.
 
@@ -798,7 +798,7 @@ struct String(
         """
         return self.as_string_slice() < rhs.as_string_slice()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __le__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using LE comparison.
 
@@ -810,7 +810,7 @@ struct String(
         """
         return not (rhs < self)
 
-    @always_inline
+    @always_inline("nodebug")
     fn __gt__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using GT comparison.
 
@@ -822,7 +822,7 @@ struct String(
         """
         return rhs < self
 
-    @always_inline
+    @always_inline("nodebug")
     fn __ge__(self, rhs: String) -> Bool:
         """Compare this String to the RHS using GE comparison.
 
@@ -923,7 +923,7 @@ struct String(
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    @always_inline
+    @always_inline("nodebug")
     fn __bool__(self) -> Bool:
         """Checks if the string is not empty.
 
@@ -932,7 +932,7 @@ struct String(
         """
         return self.byte_length() > 0
 
-    @always_inline
+    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Get the string length of in bytes.
 
@@ -973,7 +973,7 @@ struct String(
         """
         return self.byte_length()
 
-    @always_inline
+    @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets the string itself.
 
@@ -1027,6 +1027,7 @@ struct String(
     # Methods
     # ===------------------------------------------------------------------=== #
 
+    @no_inline
     fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this string to the provided Writer.
@@ -1037,8 +1038,9 @@ struct String(
         Args:
             writer: The object to write to.
         """
-
-        writer.write_bytes(self.as_bytes())
+        writer.write_bytes(
+            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
+        )
 
     fn join[*Ts: Writable](self, *elems: *Ts) -> String:
         """Joins string elements using the current string as a delimiter.
@@ -1209,7 +1211,7 @@ struct String(
 
         return self.unsafe_ptr_mut().bitcast[c_char]()
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
 
@@ -1221,7 +1223,7 @@ struct String(
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_bytes_mut(mut self) -> Span[Byte, __origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
@@ -1234,7 +1236,7 @@ struct String(
             ptr=self.unsafe_ptr_mut(), length=self.byte_length()
         )
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_string_slice(self) -> StringSlice[__origin_of(self)]:
         """Returns a string slice of the data owned by this string.
 
@@ -1246,7 +1248,7 @@ struct String(
         #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
-    @always_inline
+    @always_inline("nodebug")
     fn as_string_slice_mut(mut self) -> StringSlice[__origin_of(self)]:
         """Returns a mutable string slice of the data owned by this string.
 
@@ -1255,7 +1257,7 @@ struct String(
         """
         return StringSlice(unsafe_from_utf8=self.as_bytes_mut())
 
-    @always_inline
+    @always_inline("nodebug")
     fn byte_length(self) -> Int:
         """Get the string length in bytes.
 
@@ -1557,7 +1559,6 @@ struct String(
         """
         return self.as_string_slice().endswith(suffix, start, end)
 
-    @always_inline
     fn removeprefix(
         self, prefix: StringSlice, /
     ) -> StringSlice[__origin_of(self)]:
@@ -1579,7 +1580,6 @@ struct String(
         """
         return self.as_string_slice().removeprefix(prefix)
 
-    @always_inline
     fn removesuffix(
         self, suffix: StringSlice, /
     ) -> StringSlice[__origin_of(self)]:
@@ -1632,7 +1632,6 @@ struct String(
         """
         return self.as_string_slice() * n
 
-    @always_inline
     fn format[*Ts: _CurlyEntryFormattable](self, *args: *Ts) raises -> String:
         """Produce a formatted string using the current string as a template.
 
