@@ -429,9 +429,8 @@ static int build(llvm::StringRef code, llvm::StringRef inputName) {
 #endif
 
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
-  bool generatePythonBindings = true;
-  OwningOpRef<ModuleOp> module = LIT::importMojoFile(
-      runtime, sourceMgr, parseConfig, timing, nullptr, generatePythonBindings);
+  OwningOpRef<ModuleOp> module =
+      LIT::importMojoFile(runtime, sourceMgr, parseConfig, timing, nullptr);
 
   if (!module)
     exit(2);

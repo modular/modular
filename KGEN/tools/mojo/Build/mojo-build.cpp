@@ -162,11 +162,6 @@ enum class OutputType {
   //
   // Produced when `--emit object` is specified.
   object,
-  // Also a shared library, but with extra code generated and special file ext
-  // and linker options.
-  //
-  // Produced when `--emit shared-lib` and `--gen-py` are specified.
-  pythonExtensionModule,
   // Produce LLVM IR, with the appropriate file extension (.ll).
   //
   // Produced when `--emit llvm` is specified.
@@ -259,8 +254,6 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
       return state.reportError("module does not contain a 'main' function");
     break;
   case OutputType::sharedLibrary:
-  case OutputType::pythonExtensionModule:
-    // Python extension modules
     if (symtab.lookup("main"))
       return state.reportError(
           "shared library should not contain a 'main' function");
@@ -382,9 +375,6 @@ static int linkOutput(OutputType outputType, const State &state,
       //  that `mojo` itself was compiled for.
       // Returns `foo.(so|dylib|dll)` for a source file called `foo.mojo`.
       return PlatformLibrary::getSharedLibraryName(inputBaseName);
-    // Python modules require a .so suffix on all platforms.
-    case OutputType::pythonExtensionModule:
-      return (inputBaseName + ".so").str();
     case OutputType::llvm:
       return (inputBaseName + ".ll").str();
     case OutputType::object:
@@ -654,38 +644,6 @@ static int build(const State &subcommandState) {
         emitFileType);
   }
 
-  bool generatePythonBindings =
-      args.hasArg(options::OPT_generate_python_extension_module);
-
-  // TODO(MOCO-1375):
-  //  Remove this restriction on `--gen-py` when this feature is ready for
-  //  public usage.
-  if (generatePythonBindings) {
-    // This feature is experimental and not intended for general usage yet.
-    // To discourage use, gate this behind an additional undocumented
-    // environment variable.
-    std::optional<std::string> envValue =
-        llvm::sys::Process::GetEnv("MODULAR_MOJO_PYBIND");
-
-    if (envValue.value_or("") != "enabled") {
-      // Error message is intentionally vague about how to enable support for
-      //`--gen-py`.
-      return state.reportError("Mojo pybind is not supported yet.");
-    }
-  }
-
-  // The `--gen-py` flag is only valid when emitting a shared library.
-  // If `--gen-py` was validly specified, update `outputType` to track that
-  // we're emitting a Python extension module shared library.
-  if (generatePythonBindings) {
-    if (outputType != OutputType::sharedLibrary) {
-      return state.reportError(
-          "Mojo Python binding generation is only supported "
-          "when emitting a shared library.");
-    }
-    outputType = OutputType::pythonExtensionModule;
-  }
-
   // Lower the input file to an MLIR module.
   AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
@@ -699,7 +657,7 @@ static int build(const State &subcommandState) {
       options::OPT_mojo_search_paths,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(runtime, sourceMgr, parserConfig, ts,
-                                   nullptr, generatePythonBindings);
+                                   nullptr);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
