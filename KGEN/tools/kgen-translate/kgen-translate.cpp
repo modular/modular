@@ -73,10 +73,6 @@ int main(int argc, char *argv[]) {
       "use-mlir-diagnostics", cl::desc("Whether to use MLIR diagnostics."),
       cl::init(true)};
 
-  M::cl::MOpt<bool> genPythonBindings{
-      "gen-pybind", cl::desc("Whether to generate Python bindings."),
-      cl::init(false)};
-
   M::cl::MOpt<std::string> parserBytecodeOutput{
       "bytecode-output",
       cl::desc("If specified, the parser output is also printed as bytecode."),
@@ -113,9 +109,9 @@ int main(int argc, char *argv[]) {
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.disablePrebuiltPackages = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
-        OwningOpRef<ModuleOp> output = LIT::importMojoFile(
-            *(*ctxOr)->get<AsyncRT::Runtime>(), sourceMgr, config, ts,
-            /*includedFiles=*/nullptr, genPythonBindings);
+        OwningOpRef<ModuleOp> output =
+            LIT::importMojoFile(*(*ctxOr)->get<AsyncRT::Runtime>(), sourceMgr,
+                                config, ts, /*includedFiles=*/nullptr);
 
         if (!output)
           return {};

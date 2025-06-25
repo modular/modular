@@ -34,11 +34,7 @@ defm emitted_file_type: CommandOptionWithValues<
             "* `shared-lib`: emit a shared (dynamic) library.\n"
             "* `object`: (EXPERIMENTAL) emit a single object file.\n"
             "* `llvm`: emit LLVM IR.\n"
-            "* `asm`: emit target assembly.">,
-  Values<"exe,shared-lib,object,llvm,asm">
+            "* `asm`: emit target assembly.\n"
+            "* `py-ext`: emit a Python extension module.">,
+  Values<"exe,shared-lib,object,llvm,asm,py-ext">
 >;
-
-def generate_python_extension_module :  Flag<["--"], "gen-py">,
-  Group<OutputOptionGroup>, Index<2>,
-  HelpText<"Whether to generate a Python extension module (dynamic library). Defaults to false.">,
-  Flags<[HelpHidden]>;
