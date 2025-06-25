@@ -18,7 +18,7 @@ from test_common.context_utils import create_text_context
 
 
 @pytest.mark.asyncio
-async def test_step():
+async def test_step() -> None:
     # Initialize llama like params
     # Step is cache_type agnostic, so we can test with contiguous
     device = CPU()
@@ -64,7 +64,7 @@ async def test_step():
 
 
 @pytest.mark.asyncio
-async def test_claim_and_release():
+async def test_claim_and_release() -> None:
     # Initialize llama like params
     # claim and release are both cache_type independent,
     # so we can test with the KVCacheType.CONTINUOUS default
@@ -103,7 +103,7 @@ async def test_claim_and_release():
 
 
 @pytest.mark.asyncio
-async def test_fetch_continuous():
+async def test_fetch_continuous() -> None:
     # Initialize llama like params
     device = CPU()
     params = KVCacheParams(

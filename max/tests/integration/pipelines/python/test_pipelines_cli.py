@@ -18,7 +18,7 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-def test_pipelines_cli__smollm_float32(capsys):
+def test_pipelines_cli__smollm_float32(capsys) -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )
@@ -52,7 +52,7 @@ def test_pipelines_cli__smollm_float32(capsys):
     )
 
 
-def test_pipelines_cli__custom_model():
+def test_pipelines_cli__custom_model() -> None:
     assert isinstance(REVISION, str), (
         "REVISION must be a string and present in hf-repo-lock.tsv"
     )

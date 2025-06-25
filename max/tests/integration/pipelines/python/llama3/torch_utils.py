@@ -21,7 +21,7 @@ def torch_linear(weight, **kwargs):
 
 
 class TorchVisionEncoderMLP(nn.Module):
-    def __init__(self, w1, w2):
+    def __init__(self, w1, w2) -> None:
         super().__init__()
         self.fc1 = torch_linear(w1, bias=False)
         self.fc2 = torch_linear(w2, bias=False)
@@ -34,7 +34,9 @@ class TorchVisionEncoderMLP(nn.Module):
 
 
 class TorchVisionAttention(nn.Module):
-    def __init__(self, attn_weight, hidden_size: int, attention_heads: int):
+    def __init__(
+        self, attn_weight, hidden_size: int, attention_heads: int
+    ) -> None:
         super().__init__()
 
         self.embed_dim = hidden_size

@@ -39,7 +39,7 @@ MAX_READ_SIZE = 10 * 1024
     ],
     indirect=True,
 )
-async def test_smollm_serve_gpu(app):
+async def test_smollm_serve_gpu(app) -> None:
     # Arbitrary - just demonstrate we can submit multiple async
     # requests and collect the results later
     N_REQUESTS = 3
@@ -98,7 +98,7 @@ async def test_smollm_serve_gpu(app):
 )
 async def test_smollm_serve_gpu_nonchat_completions(
     app, prompt, expected_choices
-):
+) -> None:
     async with TestClient(app, timeout=90.0) as client:
         # Completions endpoint instead of chat completions
         raw_response = await client.post(
@@ -128,7 +128,7 @@ async def test_smollm_serve_gpu_nonchat_completions(
     indirect=True,
 )
 @pytest.mark.asyncio
-async def test_tinyllama_serve_gpu_stream(app):
+async def test_tinyllama_serve_gpu_stream(app) -> None:
     NUM_TASKS = 16
 
     def openai_completion_request(content):

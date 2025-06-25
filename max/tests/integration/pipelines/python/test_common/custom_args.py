@@ -14,13 +14,13 @@ class CommaSeparatedList(Sequence[str]):
     def __iter__(self):
         return (val for val in self._values)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._values)
 
     def __getitem__(self, idx):
         return self._values[idx]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return repr(self._values)
 
     def __eq__(self, other):

@@ -14,7 +14,7 @@ from max.dtype import DType
 from max.nn.kv_cache import KVTransferEngine
 
 
-def test_constructor():
+def test_constructor() -> None:
     tensor = Tensor(DType.int8, (10, 10), device=CPU())
 
     # ok
@@ -50,7 +50,7 @@ def test_constructor():
         )
 
 
-def test_initiate_send_xfer():
+def test_initiate_send_xfer() -> None:
     device = CPU()
     total_num_pages = 3
     elts_per_page = 3

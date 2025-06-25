@@ -19,7 +19,7 @@ from max.nn.kv_cache import (
 )
 
 
-def test_send_recv_basic():
+def test_send_recv_basic() -> None:
     # Queues for communication between threads
     sender_md_queue: Queue[KVTransferEngineMetadata] = Queue()
     receiver_md_queue: Queue[KVTransferEngineMetadata] = Queue()
@@ -30,7 +30,7 @@ def test_send_recv_basic():
     src_idxs = [2, 2]
     dst_idxs = [1, 0]
 
-    def transfer_routine_sender():
+    def transfer_routine_sender() -> None:
         device = Accelerator()
 
         blocks_np = np.array(
@@ -65,7 +65,7 @@ def test_send_recv_basic():
         # TODO(E2EOPT-299) Reenable cleanup
         # engine.cleanup()
 
-    def transfer_routine_receiver():
+    def transfer_routine_receiver() -> None:
         device = Accelerator()
 
         blocks_np = np.array(

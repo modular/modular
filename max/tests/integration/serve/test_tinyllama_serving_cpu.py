@@ -38,7 +38,7 @@ pipeline_config = PipelineConfig(
     [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_v1_chat_completions_cpu(app):
+async def test_tinyllama_serve_v1_chat_completions_cpu(app) -> None:
     async with TestClient(app, timeout=720.0) as client:
         # Test with streaming set to False
         raw_response = await client.post(
@@ -88,7 +88,7 @@ async def test_tinyllama_serve_v1_chat_completions_cpu(app):
     [pipeline_config],
     indirect=True,
 )
-async def test_tinyllama_serve_v1_completions_cpu(app):
+async def test_tinyllama_serve_v1_completions_cpu(app) -> None:
     def openai_completion_request(content):
         """Create the json request for /v1/completion (not chat)."""
         return {

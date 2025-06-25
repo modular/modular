@@ -97,7 +97,7 @@ def app(pipeline_config, settings_config):
 
 
 @pytest.fixture()
-def reset_sse_starlette_appstatus_event():
+def reset_sse_starlette_appstatus_event() -> None:
     """
     Fixture that resets the appstatus event in the sse_starlette app.
 

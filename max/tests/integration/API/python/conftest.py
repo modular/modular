@@ -145,7 +145,7 @@ def named_inputs_path(modular_path: Path) -> Path:
     )
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser) -> None:
     parser.addoption(
         "--custom-ops-path",
         type=str,
@@ -165,7 +165,7 @@ def session() -> InferenceSession:
     return InferenceSession(devices=devices)
 
 
-def pytest_collection_modifyitems(items):
+def pytest_collection_modifyitems(items) -> None:
     # Prevent pytest from trying to collect Click commands and dataclasses as tests
     for item in items:
         if item.name.startswith("Test"):

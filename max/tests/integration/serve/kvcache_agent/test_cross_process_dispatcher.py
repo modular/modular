@@ -38,7 +38,7 @@ def instance_a_service_process_fn(
         # Create dispatcher service
         instance_a_dispatcher = factory.create_service(zmq_ctx)
 
-        async def run_instance_a_service():
+        async def run_instance_a_service() -> None:
             await instance_a_dispatcher.start()
 
             # Keep running and processing messages
@@ -75,7 +75,7 @@ def instance_b_service_process_fn(
         # Create dispatcher service
         instance_b_dispatcher = factory.create_service(zmq_ctx)
 
-        async def run_instance_b_service():
+        async def run_instance_b_service() -> None:
             await instance_b_dispatcher.start()
 
             # Keep running and processing messages
@@ -99,7 +99,7 @@ def instance_b_service_process_fn(
 
 @pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
-async def test_single_request_reply():
+async def test_single_request_reply() -> None:
     """Test single request-reply pattern with dispatcher services running in separate processes."""
     mp_context = multiprocessing.get_context("spawn")
 
@@ -267,7 +267,7 @@ async def test_single_request_reply():
 
 @pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
-async def test_multiple_request_reply():
+async def test_multiple_request_reply() -> None:
     """Test multiple request-reply exchanges between cross-process dispatcher services."""
     mp_context = multiprocessing.get_context("spawn")
 
@@ -447,7 +447,7 @@ async def test_multiple_request_reply():
 
 @pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
-async def test_bidirectional_communication():
+async def test_bidirectional_communication() -> None:
     """Test that both processes can send requests to each other simultaneously."""
     mp_context = multiprocessing.get_context("spawn")
 
@@ -647,7 +647,7 @@ async def test_bidirectional_communication():
 
 @pytest.mark.skip(reason="E2EOPT-296 Reenable once not flaky")
 @pytest.mark.asyncio
-async def test_high_throughput_cross_process():
+async def test_high_throughput_cross_process() -> None:
     """Test high throughput message processing across processes."""
     mp_context = multiprocessing.get_context("spawn")
 

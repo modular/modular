@@ -268,7 +268,9 @@ def next_token_with_logits(
     return has_eos
 
 
-def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
+def compare_values(
+    actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
+) -> None:
     """Compares two dictionaries of values."""
     keys = expected[0].keys()
     if keys == {"prompt", "values"}:
@@ -288,7 +290,7 @@ def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
 
 def compare_text_generation(
     actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
-):
+) -> None:
     """Compares the values between two computed logits.
 
     The data structure of the actual/expected logits should be:
@@ -353,7 +355,7 @@ def compare_text_generation(
 
 def compare_embeddings(
     actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None
-):
+) -> None:
     """Compares the values between two computed embeddings.
 
     The data structure of the actual/expected dictionaries should be:

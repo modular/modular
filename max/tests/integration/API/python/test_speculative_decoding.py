@@ -111,7 +111,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):
 def test_config__validate_device_and_encoding_combinations(
     smollm_135m_local_path,
     llama_3_1_8b_instruct_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     # Valid device/encoding combinations
@@ -138,7 +138,7 @@ def test_config__validate_target_and_draft_architecture(
     exaone_2_4b_local_path,
     smollm_135m_local_path,
     deepseek_r1_distill_llama_8b_local_path,
-):
+) -> None:
     with pytest.raises(ValueError):
         # Test that when the target & draft architectures are different
         # we raise an error.
@@ -164,7 +164,7 @@ def test_config__validate_target_and_draft_architecture(
         )
 
 
-def test_config__validate_huggingface_engine(smollm2_135m_local_path):
+def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:
     """Test that speculative decoding is not supported with HuggingFace engine."""
     with pytest.raises(
         ValueError,
@@ -181,7 +181,7 @@ def test_config__validate_huggingface_engine(smollm2_135m_local_path):
 
 def test_speculative_decoding_no_rejection(
     setup_speculative_decoding_pipeline,
-):
+) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
     context_batch: list[TextContext] = data["context_batch"]
@@ -242,7 +242,7 @@ def test_speculative_decoding_no_rejection(
 
 def test_speculative_decoding_partial_rejection(
     setup_speculative_decoding_pipeline,
-):
+) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
     context_batch: list[TextContext] = data["context_batch"]
@@ -331,7 +331,7 @@ def test_speculative_decoding_partial_rejection(
 
 def test_speculative_decoding_multiple_token_without_rejection(
     setup_speculative_decoding_pipeline,
-):
+) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
     context1: TextContext = data["context1"]
@@ -354,7 +354,7 @@ def test_speculative_decoding_multiple_token_without_rejection(
 
 def test_speculative_decoding_context_update(
     setup_speculative_decoding_pipeline,
-):
+) -> None:
     data: dict[str, Any] = setup_speculative_decoding_pipeline
     pipeline: SpeculativeDecodingTextGenerationPipeline = data["pipeline"]
     context1: TextContext = data["context1"]

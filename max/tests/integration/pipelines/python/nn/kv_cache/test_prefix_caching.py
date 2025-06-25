@@ -415,7 +415,7 @@ async def test_prefix_caching_with_page_size_gt_1_and_num_steps_gt_1() -> None:
 class FakeModel:
     """Create a fake model that can be used to test prefix caching."""
 
-    def __init__(self, kv_manager: PagedKVCacheManager):
+    def __init__(self, kv_manager: PagedKVCacheManager) -> None:
         self.page_size = kv_manager.page_size
         self.total_num_pages = kv_manager.total_num_pages
         # block_projections maps from bid -> offset -> prefix tokens
@@ -711,7 +711,7 @@ async def test_prefix_caching_cow() -> None:
     prompt_1 = np.array([10, 11, 12, 13, 14, 15, 16, 17])
     run_forward(model, kv_manager, ctx, prompt_1, 42)
 
-    def run_forward_cow(seq_id, prompt, cache_idx):
+    def run_forward_cow(seq_id, prompt, cache_idx) -> None:
         kv_manager.external_claim([seq_id])
         ctx = create_text_context(seq_id, np.array([]))
         run_forward(

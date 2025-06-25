@@ -43,7 +43,7 @@ def convert_image_url_to_base64(image_url):
 
 
 @pytest.mark.skip("this requires authorized huggingface access")
-def test_text_and_vision_tokenizer():
+def test_text_and_vision_tokenizer() -> None:
     """This test uses gated repos on huggingface, as such its not expected to run in CI.
     It is primarily written to test out the chat templating for multi-modal models.
     """
@@ -90,7 +90,7 @@ def test_text_and_vision_tokenizer():
 
 
 @pytest.mark.skip("CI does not appear to be working well with gated repos")
-def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path):
+def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path) -> None:
     """This test uses gated repos on huggingface, as such its not expected to run in CI.
     It is written to test out chat templating and input features for tool use with Llama 3.2
     """
@@ -139,7 +139,9 @@ def test_text_tokenizer_with_tool_use(llama_3_1_8b_instruct_local_path):
     assert '"name": "get_current_weather"' in context.prompt
 
 
-def test_tokenizer__truncates_to_max_length(llama_3_1_8b_instruct_local_path):
+def test_tokenizer__truncates_to_max_length(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     max_length = 12
     tokenizer = TextTokenizer(
         llama_3_1_8b_instruct_local_path,
@@ -198,7 +200,9 @@ def test_tokenizer_regression_MODELS_467() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tokenizer__encode_and_decode(llama_3_1_8b_instruct_local_path):
+async def test_tokenizer__encode_and_decode(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
 
     test_string = "hi my name is"
@@ -218,7 +222,7 @@ async def test_tokenizer__encode_and_decode(llama_3_1_8b_instruct_local_path):
 @mock_estimate_memory_footprint
 def test_text_tokenizer_with_constrained_decoding(
     modular_ai_llama_3_1_local_path,
-):
+) -> None:
     device_specs = []
     if accelerator_count() > 0:
         device_specs.append(DeviceSpec.accelerator(id=0))
@@ -276,7 +280,9 @@ def test_text_tokenizer_with_constrained_decoding(
     assert isinstance(context.prompt, str)
 
 
-def test_tokenizer_encode_stop_criteria(llama_3_1_8b_instruct_local_path):
+def test_tokenizer_encode_stop_criteria(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
 
     prompt = "hi my name is"
@@ -304,7 +310,7 @@ def test_tokenizer_encode_stop_criteria(llama_3_1_8b_instruct_local_path):
 @pytest.mark.asyncio
 async def test_tokenizer__generate_prompt_and_token_ids(
     llama_3_1_8b_instruct_local_path,
-):
+) -> None:
     """Test the _generate_prompt_and_token_ids method of TextTokenizer."""
     tokenizer = TextTokenizer(model_path=llama_3_1_8b_instruct_local_path)
 

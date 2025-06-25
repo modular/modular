@@ -19,11 +19,11 @@ from max.nn.kv_cache import (
 from test_common.context_utils import create_text_context
 
 
-def test_kv_cache_gpu():
+def test_kv_cache_gpu() -> None:
     asyncio.run(_test_kv_cache_gpu())
 
 
-async def _test_kv_cache_gpu():
+async def _test_kv_cache_gpu() -> None:
     device = Accelerator()
     kv_params = KVCacheParams(
         n_kv_heads=8,

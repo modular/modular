@@ -17,7 +17,7 @@ from PIL import Image
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_new_context_smoke(mocker):
+async def test_internvl_tokenizer_new_context_smoke(mocker) -> None:
     """Smoke test to ensure new_context() doesn't raise"""
     # Create minimal mocks
     mock_tokenizer = MagicMock()
@@ -56,7 +56,7 @@ async def test_internvl_tokenizer_new_context_smoke(mocker):
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_image_token_indices(mocker):
+async def test_internvl_tokenizer_image_token_indices(mocker) -> None:
     """Test that the tokenizer correctly computes image token indices."""
     # Create minimal mocks
     mock_tokenizer = MagicMock()

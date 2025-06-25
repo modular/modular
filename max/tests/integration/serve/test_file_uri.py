@@ -54,7 +54,7 @@ def create_test_image_bytes() -> bytes:
     ],
     indirect=True,
 )
-async def test_chat_completion_with_file_uri(app, tmp_path):
+async def test_chat_completion_with_file_uri(app, tmp_path) -> None:
     """Test chat completion with file:// URI for images."""
     # Create a valid test image file in /tmp (which is in allowed roots)
     image_path = tmp_path / "test_image.jpg"
@@ -104,7 +104,7 @@ async def test_chat_completion_with_file_uri(app, tmp_path):
     ],
     indirect=True,
 )
-async def test_file_uri_security_check(app, tmp_path):
+async def test_file_uri_security_check(app, tmp_path) -> None:
     """Test that file URIs are rejected when no roots are allowed."""
     # Create a valid test image file
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:

@@ -33,7 +33,7 @@ def transfer_routine_sender(
     total_num_pages,
     src_idxs,
     dst_idxs,
-):
+) -> None:
     device = Accelerator()
 
     blocks_np = np.array([10, 11, 12, 13, 14, 15, 16, 17, 18])
@@ -68,7 +68,7 @@ def transfer_routine_receiver(
     receiver_md_queue,
     xfer_queue,
     total_num_pages,
-):
+) -> None:
     device = Accelerator()
 
     blocks_np = np.array([80, 81, 82, 83, 84, 85, 86, 87, 88])
@@ -98,7 +98,7 @@ def transfer_routine_receiver(
 
 
 @pytest.mark.skip(reason="❄️")
-def test_send_recv_basic():
+def test_send_recv_basic() -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
     sender_md_queue: mp.Queue[KVTransferEngineMetadata] = ctx.Queue()

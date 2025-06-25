@@ -9,7 +9,7 @@ import generate_llm_logits
 from click.testing import CliRunner
 
 
-def test_generate_llm_logits_smollm(tmp_path):
+def test_generate_llm_logits_smollm(tmp_path) -> None:
     runner = CliRunner()
     output_file = tmp_path / "output_goldens.json"
     result = runner.invoke(

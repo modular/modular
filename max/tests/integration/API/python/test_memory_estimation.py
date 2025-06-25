@@ -16,7 +16,9 @@ from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import DUMMY_ARCH, DummyLlamaPipelineModel
 
 
-def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memory():
+def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memory() -> (
+    None
+):
     with (
         patch.object(
             DummyLlamaPipelineModel,
@@ -54,7 +56,9 @@ def test_memory_estimation__raise_oom_error_weights_size_exceeds_available_memor
 
 
 @pytest.mark.skip("TODO: AITLIB-238")
-def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution():
+def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution() -> (
+    None
+):
     with (
         patch.object(
             DummyLlamaPipelineModel, "calculate_max_seq_len", return_value=10000
@@ -89,7 +93,7 @@ def test_memory_estimation__raise_oom_error_all_defaults_no_valid_solution():
 
 
 @pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
-def test_memory_estimation__raise_oom_error_all_defaults(caplog):
+def test_memory_estimation__raise_oom_error_all_defaults(caplog) -> None:
     with (
         patch.object(
             DummyLlamaPipelineModel,
@@ -126,7 +130,7 @@ def test_memory_estimation__raise_oom_error_all_defaults(caplog):
 
 
 @pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
-def test_memory_estimation__raise_oom_error_max_length_set():
+def test_memory_estimation__raise_oom_error_max_length_set() -> None:
     with (
         patch.object(
             DummyLlamaPipelineModel,
@@ -159,7 +163,7 @@ def test_memory_estimation__raise_oom_error_max_length_set():
 
 
 @pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
-def test_memory_estimation__raise_oom_error_max_batch_size_set():
+def test_memory_estimation__raise_oom_error_max_batch_size_set() -> None:
     with (
         patch.object(
             DummyLlamaPipelineModel, "calculate_max_seq_len", return_value=4096
@@ -192,7 +196,9 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set():
 
 
 @pytest.mark.skip("TODO: AITLIB-293, Use accurate mocked values")
-def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_set():
+def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_set() -> (
+    None
+):
     with (
         patch.object(
             DummyLlamaPipelineModel,

@@ -223,11 +223,11 @@ def merge_ragged_tensors_2d(device: Device, device_ref: DeviceRef) -> None:
     assert torch.all(max_merged_row_offsets == torch_merged_row_offsets)
 
 
-def test_merge_ragged_tensors_1d():
+def test_merge_ragged_tensors_1d() -> None:
     merge_ragged_tensors_1d(Accelerator(0), DeviceRef.GPU())
     merge_ragged_tensors_1d(CPU(0), DeviceRef.CPU())
 
 
-def test_merge_ragged_tensors_2d():
+def test_merge_ragged_tensors_2d() -> None:
     merge_ragged_tensors_2d(Accelerator(0), DeviceRef.GPU())
     merge_ragged_tensors_2d(CPU(0), DeviceRef.CPU())

@@ -46,7 +46,7 @@ class ValidationResultCollection:
     ValidationResultCollection.
     """
 
-    def __init__(self, *results: ValidationResult):
+    def __init__(self, *results: ValidationResult) -> None:
         self._results = {r.name: r for r in results}
 
     def any_failed(
@@ -87,7 +87,7 @@ class ValidationResultCollection:
         """Returns the ValidationResult by its name"""
         return self._results[result_name]
 
-    def add_result(self, result: ValidationResult):
+    def add_result(self, result: ValidationResult) -> None:
         """Add a new ValidationResult to the collection."""
         if result.name in self._results:
             raise ValueError(
@@ -97,7 +97,7 @@ class ValidationResultCollection:
 
         self._results[result.name] = result
 
-    def merge_with(self, other_result: "ValidationResultCollection"):
+    def merge_with(self, other_result: "ValidationResultCollection") -> None:
         """Merge self with another ValidationResultCollection."""
         for result in other_result._results.values():
             self.add_result(result)
@@ -106,7 +106,7 @@ class ValidationResultCollection:
 class ValidatorBase(ABC):
     """Base class defining the interface for custom validation metrics"""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         pass
 
     @staticmethod
@@ -276,7 +276,7 @@ class ValidatorBase(ABC):
 class MultiValidator(ValidatorBase):
     """Wrapper class to execute multiple validators"""
 
-    def __init__(self, *wrapped_validators: ValidatorBase, **kwargs):
+    def __init__(self, *wrapped_validators: ValidatorBase, **kwargs) -> None:
         super().__init__(**kwargs)
         self._validators = wrapped_validators
 
@@ -351,7 +351,7 @@ class ToleranceValidator(ValidatorBase):
     _ATOL_IDX = 2
     _RTOL_IDX = 3
 
-    def __init__(self, atol, rtol, **kwargs):
+    def __init__(self, atol, rtol, **kwargs) -> None:
         super().__init__(**kwargs)
         self._atol = atol
         self._rtol = rtol
@@ -463,7 +463,7 @@ class DistanceValidatorBase(ValidatorBase, ABC):
     Child classes must implement `_compute_distance` and `threshold_str`.
     """
 
-    def __init__(self, threshold, **kwargs):
+    def __init__(self, threshold, **kwargs) -> None:
         super().__init__(**kwargs)
         self._threshold = threshold
 
@@ -539,7 +539,7 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 class CosineSimilarityValidator(DistanceValidatorBase):
     """Validator to check Cosine similarity"""
 
-    def __init__(self, cos_threshold, **kwargs):
+    def __init__(self, cos_threshold, **kwargs) -> None:
         super().__init__(cos_threshold, **kwargs)
 
     @staticmethod
@@ -568,7 +568,7 @@ class CosineSimilarityValidator(DistanceValidatorBase):
 class KLDivergenceValidator(DistanceValidatorBase):
     """Validator to check KLDivergence of output distributions"""
 
-    def __init__(self, kl_div_threshold, **kwargs):
+    def __init__(self, kl_div_threshold, **kwargs) -> None:
         super().__init__(kl_div_threshold, **kwargs)
 
     @staticmethod

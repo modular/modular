@@ -15,7 +15,7 @@ from max.nn.kernels import scatter_set_constant
 
 
 @pytest.mark.parametrize("device", [CPU(), Accelerator()])
-def test_scatter_set_constant_2d(device: Device):
+def test_scatter_set_constant_2d(device: Device) -> None:
     vocab_size = 3
     data = Tensor.from_numpy(np.zeros((3, 3), dtype=np.float32)).to(device)
     indices = Tensor.from_numpy(

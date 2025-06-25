@@ -131,7 +131,7 @@ def test_single_image_merge_execution() -> None:
     assert torch.allclose(actual_output[7:], text_embeds[7:])
 
 
-def test_batch_merge_variable_positions_execution():
+def test_batch_merge_variable_positions_execution() -> None:
     """Test merging embeddings for batch with different placeholder positions using flattened tensors."""
     hidden_size = 768
     img_context_token_id = 100
@@ -240,7 +240,7 @@ def test_batch_merge_variable_positions_execution():
     assert torch.allclose(actual_output[18:20], text_embeds[18:20])
 
 
-def test_ragged_multimodal_embeddings_execution():
+def test_ragged_multimodal_embeddings_execution() -> None:
     """Test merging with ragged sequences of multimodal embeddings using flattened tensors."""
     hidden_size = 768
     img_context_token_id = 100
@@ -355,7 +355,7 @@ def test_ragged_multimodal_embeddings_execution():
     )
 
 
-def test_no_image_context_tokens_fast_path_execution():
+def test_no_image_context_tokens_fast_path_execution() -> None:
     """Test fast path when no image context tokens are present."""
     seq_len = 10
     hidden_size = 768
@@ -423,7 +423,7 @@ def test_no_image_context_tokens_fast_path_execution():
     )
 
 
-def test_count_mismatch_error():
+def test_count_mismatch_error() -> None:
     """Test that count mismatch is handled gracefully."""
     seq_len = 10
     hidden_size = 768
@@ -488,7 +488,7 @@ def test_count_mismatch_error():
     assert not torch.allclose(actual_output[2:4], text_embeds[2:4])
 
 
-def test_large_sequence_performance():
+def test_large_sequence_performance() -> None:
     """Test performance with large sequence lengths using flattened tensors."""
     seq_len = 2048
     hidden_size = 4096

@@ -342,7 +342,7 @@ def graph_api_whisper_encoder(weights_registry, model):
 )
 def test_encoder_stem(
     torch_inputs, graph_api_inputs, whisper_large_v3_local_path
-):
+) -> None:
     model = AutoModelForSpeechSeq2Seq.from_pretrained(
         whisper_large_v3_local_path
     )
@@ -466,7 +466,7 @@ def test_encoder_stem(
 )
 def test_whisper_encoder(
     torch_inputs, graph_api_inputs, whisper_large_v3_local_path
-):
+) -> None:
     model = AutoModelForSpeechSeq2Seq.from_pretrained(
         whisper_large_v3_local_path
     )

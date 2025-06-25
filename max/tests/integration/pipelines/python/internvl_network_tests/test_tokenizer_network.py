@@ -21,7 +21,7 @@ from PIL import Image
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_with_image():
+async def test_internvl_tokenizer_with_image() -> None:
     """Test InternVL tokenizer adds image tokens correctly."""
     model_id = "OpenGVLab/InternVL3-1B-Instruct"
     test_text = "What is this?"
@@ -72,7 +72,7 @@ async def test_internvl_tokenizer_with_image():
 
 
 @pytest.mark.asyncio
-async def test_internvl_tokenizer_apply_chat_template(mocker):
+async def test_internvl_tokenizer_apply_chat_template(mocker) -> None:
     """Test that InternVL tokenizer's apply_chat_template handles multimodal content correctly.
 
     This test verifies that the InternVL processor can handle messages with multimodal

@@ -34,7 +34,7 @@ def generate_torch_outputs(
 
     # Create a minimal config object that matches what InternVLVisionLayer expects
     class MinimalVisionConfig:
-        def __init__(self, vision_config: VisionConfig):
+        def __init__(self, vision_config: VisionConfig) -> None:
             self.hidden_size = vision_config.hidden_size
             self.num_attention_heads = vision_config.num_attention_heads
             self.intermediate_size = vision_config.intermediate_size

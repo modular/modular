@@ -25,7 +25,7 @@ class NumpyEncoder(JSONEncoder):
 
 
 class NumpyDecoder(JSONDecoder):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         JSONDecoder.__init__(
             self, object_hook=self.object_hook, *args, **kwargs
         )

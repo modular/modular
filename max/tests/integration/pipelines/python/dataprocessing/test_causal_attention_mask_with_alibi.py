@@ -37,7 +37,7 @@ def lists_of_size(strategy, size_strategy):
 )
 def test_causal_mask_with_alibi__shape(
     start_pos: list[int], seq_len: list[int]
-):
+) -> None:
     assert len(start_pos) == len(seq_len)
 
     for pad_to_multiple_of in PAD_MULTIPLES:
@@ -69,7 +69,7 @@ def test_causal_mask_with_alibi__shape(
 )
 def test_causal_mask_with_alibi__masks_padding(
     start_pos: list[int], seq_len: list[int]
-):
+) -> None:
     mask = causal_attention_mask_with_alibi(
         start_pos, seq_len, ALIBI_BIAS_MAX, N_HEADS
     )
@@ -86,7 +86,7 @@ def test_causal_mask_with_alibi__masks_padding(
 )
 def test_causal_mask_with_alibi__masks_current_and_later_tokens(
     start_pos: list[int], seq_len: list[int]
-):
+) -> None:
     assert len(start_pos) == len(seq_len)
     mask = causal_attention_mask_with_alibi(
         start_pos, seq_len, ALIBI_BIAS_MAX, N_HEADS
@@ -105,7 +105,7 @@ def test_causal_mask_with_alibi__masks_current_and_later_tokens(
 )
 def test_causal_mask_with_alibi__does_not_mask_prior_tokens(
     start_pos: list[int], seq_len: list[int]
-):
+) -> None:
     assert len(start_pos) == len(seq_len)
     mask = causal_attention_mask_with_alibi(
         start_pos, seq_len, ALIBI_BIAS_MAX, N_HEADS

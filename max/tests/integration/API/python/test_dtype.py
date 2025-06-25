@@ -36,14 +36,14 @@ float_dtype = st.sampled_from(
 )
 
 
-def test_roundtrip():
+def test_roundtrip() -> None:
     for dtype in DType:
         assert isinstance(dtype, DType)
         assert DType(dtype._mlir) == dtype
 
 
 @given(dtype=int_dtype | float_dtype)
-def test_numpy_roundtrip(dtype: DType):
+def test_numpy_roundtrip(dtype: DType) -> None:
     # There is no float8 / bf16 in numpy, so we cannot roundtrip float8 / bf16
     if dtype in [
         DType.float8_e4m3fn,
@@ -58,18 +58,18 @@ def test_numpy_roundtrip(dtype: DType):
 
 
 @given(int_dtype=int_dtype, float_dtype=float_dtype)
-def test_is_integral(int_dtype: DType, float_dtype: DType):
+def test_is_integral(int_dtype: DType, float_dtype: DType) -> None:
     assert int_dtype.is_integral()
     assert not float_dtype.is_integral()
 
 
 @given(int_dtype=int_dtype, float_dtype=float_dtype)
-def test_is_float(int_dtype: DType, float_dtype: DType):
+def test_is_float(int_dtype: DType, float_dtype: DType) -> None:
     assert not int_dtype.is_float()
     assert float_dtype.is_float()
 
 
-def test_dtype_alignment():
+def test_dtype_alignment() -> None:
     assert DType.bool.align == 1
     assert DType.int8.align == 1
     assert DType.int16.align == 2

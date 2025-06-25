@@ -36,7 +36,7 @@ def mock_weights():
     return MagicMock(name="Weights")
 
 
-def test_load_single_adapter(mock_weights, configured_mock_lora):
+def test_load_single_adapter(mock_weights, configured_mock_lora) -> None:
     manager = LoRAManager(base_weights=mock_weights, max_num_loras=2)
 
     name = manager.load_adapter("my_cool_lora=/path/to/lora")
@@ -46,7 +46,7 @@ def test_load_single_adapter(mock_weights, configured_mock_lora):
     assert manager._lora_index_to_id[0] == "my_cool_lora"
 
 
-def test_load_adapter_no_equals(mock_weights, configured_mock_lora):
+def test_load_adapter_no_equals(mock_weights, configured_mock_lora) -> None:
     manager = LoRAManager(base_weights=mock_weights, max_num_loras=1)
 
     name = manager.load_adapter("/path/to/lora")
@@ -55,7 +55,7 @@ def test_load_adapter_no_equals(mock_weights, configured_mock_lora):
     assert "/path/to/lora" in manager._loras
 
 
-def test_load_adapters_bulk(mock_weights, configured_mock_lora):
+def test_load_adapters_bulk(mock_weights, configured_mock_lora) -> None:
     manager = LoRAManager(base_weights=mock_weights, max_num_loras=2)
 
     names = manager.load_adapters(["a=/path/a", "b=/path/b"])
@@ -65,7 +65,9 @@ def test_load_adapters_bulk(mock_weights, configured_mock_lora):
     assert "b" in manager._loras
 
 
-def test_load_adapter_limit_exceeded(mock_weights, configured_mock_lora):
+def test_load_adapter_limit_exceeded(
+    mock_weights, configured_mock_lora
+) -> None:
     manager = LoRAManager(base_weights=mock_weights, max_num_loras=1)
 
     manager.load_adapter("first=/path/first")
@@ -74,7 +76,9 @@ def test_load_adapter_limit_exceeded(mock_weights, configured_mock_lora):
         manager.load_adapter("second=/path/second")
 
 
-def test_reloading_existing_adapter_warns(mock_weights, configured_mock_lora):
+def test_reloading_existing_adapter_warns(
+    mock_weights, configured_mock_lora
+) -> None:
     manager = LoRAManager(base_weights=mock_weights, max_num_loras=1)
 
     manager.load_adapter("existing=/path/existing")

@@ -353,7 +353,7 @@ def test_cross_attention_gpu(hidden_seq_lens: list[int]) -> None:
 @pytest.mark.skipif(
     accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
 )
-def test_kv_cache_paged_mla_prefill():
+def test_kv_cache_paged_mla_prefill() -> None:
     cuda = Accelerator()
     session = InferenceSession(devices=[cuda])
     num_q_heads = 32
@@ -771,7 +771,9 @@ def padded_max_flash_attn(
         (20, 128),
     ],
 )
-def test_padded_flash_attention_gpu(actual_seq_len: int, padded_seq_len: int):
+def test_padded_flash_attention_gpu(
+    actual_seq_len: int, padded_seq_len: int
+) -> None:
     dtype = DType.bfloat16
     head_dim = 128
     batch_size = 1

@@ -68,7 +68,7 @@ def golden_data_fname(
     encoding: SupportedEncoding,
     *,
     framework: Literal["max", "torch"] = "max",
-):
+) -> str:
     """Returns the golden json filename."""
     # TODO(MSDK-948): Actually support a distinction between device and encoding
     # instead of letting bfloat16 _imply_ GPU as is done multiple times in this file

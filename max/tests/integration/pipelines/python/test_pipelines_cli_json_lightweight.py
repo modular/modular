@@ -10,7 +10,7 @@ import pytest
 from max.entrypoints import pipelines
 
 
-def test_pipelines_list_json(capsys):
+def test_pipelines_list_json(capsys) -> None:
     with pytest.raises(SystemExit):
         pipelines.main(["list", "--json"])
     captured = capsys.readouterr()

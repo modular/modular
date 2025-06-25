@@ -13,7 +13,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_graph_telemetry():
+def test_graph_telemetry() -> None:
     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
         filepath = temp_file.name
     os.environ["MODULAR_TELEMETRY_EXPORTERS_LOGS_FILE_PATH"] = filepath

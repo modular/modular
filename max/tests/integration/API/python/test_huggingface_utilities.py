@@ -12,7 +12,9 @@ from max.graph.weights import WeightsFormat
 from max.pipelines.lib import HuggingFaceRepo, SupportedEncoding
 
 
-def test_huggingface_repo__formats_available(llama_3_1_8b_instruct_local_path):
+def test_huggingface_repo__formats_available(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     # Test a GGUF repo
     hf_repo = HuggingFaceRepo(
         repo_id=llama_3_1_8b_instruct_local_path,
@@ -34,7 +36,7 @@ def test_huggingface_repo__formats_available(llama_3_1_8b_instruct_local_path):
 
 def test_huggingface_repo__encodings_supported(
     llama_3_1_8b_instruct_local_path,
-):
+) -> None:
     # Test a llama based gguf repo.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     assert SupportedEncoding.bfloat16 in hf_repo.supported_encodings
@@ -58,7 +60,9 @@ def test_huggingface_repo__encodings_supported(
     assert SupportedEncoding.float32 in hf_repo.supported_encodings
 
 
-def test_huggingface_repo__file_exists(llama_3_1_8b_instruct_local_path):
+def test_huggingface_repo__file_exists(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     # Test a llama based gguf repo.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
@@ -71,7 +75,7 @@ def test_huggingface_repo__file_exists(llama_3_1_8b_instruct_local_path):
     ]
 
 
-def test_huggingface_repo__get_files_for_encoding():
+def test_huggingface_repo__get_files_for_encoding() -> None:
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
     hf_repo = HuggingFaceRepo(repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
@@ -127,7 +131,9 @@ def test_huggingface_repo__get_files_for_encoding():
     assert files[WeightsFormat.pytorch][0] == Path("pytorch_model.bin"), files
 
 
-def test_huggingface_repo__encoding_for_file(llama_3_1_8b_instruct_local_path):
+def test_huggingface_repo__encoding_for_file(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     # This repo, has one safetensors file, and its a bf16 file.
     hf_repo = HuggingFaceRepo(repo_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     model_encoding = hf_repo.encoding_for_file("model.safetensors")
@@ -154,7 +160,9 @@ def test_huggingface_repo__encoding_for_file(llama_3_1_8b_instruct_local_path):
 @pytest.mark.skip(
     "hf download is flaky. Additionally, this test may cause HF 429 errors."
 )
-def test_huggingface_repo__local_download(llama_3_1_8b_instruct_local_path):
+def test_huggingface_repo__local_download(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     # Download huggingface repo to local path.
     target_path = os.path.join(os.getcwd(), "tmp_repo")
     downloaded_path = snapshot_download(

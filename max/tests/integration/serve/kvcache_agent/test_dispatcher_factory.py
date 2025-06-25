@@ -21,7 +21,7 @@ from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_factory_dynamic_zmq():
+async def test_dispatcher_factory_dynamic_zmq() -> None:
     """Test DispatcherFactory creation from JSON configuration with dynamic transport."""
     try:
         config = DispatcherConfig(
@@ -51,7 +51,7 @@ async def test_dispatcher_factory_dynamic_zmq():
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_communication_with_config():
+async def test_end_to_end_communication_with_config() -> None:
     """Test end-to-end communication using configuration-based factory."""
     zmq_ctx = zmq.Context()
 

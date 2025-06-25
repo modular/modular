@@ -21,7 +21,7 @@ from test_common.registry import prepare_registry
 
 @prepare_registry
 @mock_estimate_memory_footprint
-def test_validate_model_path__bad_repo_provided():
+def test_validate_model_path__bad_repo_provided() -> None:
     # This test requires a HF call to check that this repo is not valid.
     with pytest.raises(Exception):
         _ = PipelineConfig(
@@ -30,14 +30,14 @@ def test_validate_model_path__bad_repo_provided():
 
 
 @mock_pipeline_config_hf_dependencies
-def test_config_init__raises_with_no_model_path():
+def test_config_init__raises_with_no_model_path() -> None:
     # We expect this to fail.
     with pytest.raises(ValueError):
         _ = PipelineConfig(weight_path="file.gguf")
 
 
 @mock_pipeline_config_hf_dependencies
-def test_config_post_init__with_weight_path_but_no_model_path():
+def test_config_post_init__with_weight_path_but_no_model_path() -> None:
     config = PipelineConfig(
         weight_path=[
             Path(
@@ -56,7 +56,9 @@ def test_config_post_init__with_weight_path_but_no_model_path():
 
 @prepare_registry
 @mock_estimate_memory_footprint
-def test_config_post_init__other_repo_weights(llama_3_1_8b_instruct_local_path):
+def test_config_post_init__other_repo_weights(
+    llama_3_1_8b_instruct_local_path,
+) -> None:
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
         weight_path=Path(
@@ -74,7 +76,7 @@ def test_config_post_init__other_repo_weights(llama_3_1_8b_instruct_local_path):
 
 
 @mock_pipeline_config_hf_dependencies
-def test_config_init__reformats_with_str_weights_path():
+def test_config_init__reformats_with_str_weights_path() -> None:
     # We expect this to convert the string.
     config = PipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
@@ -87,7 +89,7 @@ def test_config_init__reformats_with_str_weights_path():
 
 
 @mock_pipeline_config_hf_dependencies
-def test_validate_model_path__correct_repo_id_provided():
+def test_validate_model_path__correct_repo_id_provided() -> None:
     config = PipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
     )
@@ -101,7 +103,7 @@ def test_validate_model_path__correct_repo_id_provided():
 @mock_estimate_memory_footprint
 def test_config__test_incompatible_quantization_encoding(
     llama_3_1_8b_instruct_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     with pytest.raises(ValueError):
@@ -139,7 +141,7 @@ def test_config__test_incompatible_quantization_encoding(
 @mock_estimate_memory_footprint
 def test_config__test_quantization_encoding_with_dtype_casting(
     llama_3_1_8b_instruct_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     with pytest.raises(ValueError):
@@ -172,7 +174,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
 @mock_estimate_memory_footprint
 def test_config__test_retrieve_factory_with_known_architecture(
     modular_ai_llama_3_1_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
@@ -190,7 +192,7 @@ def test_config__test_retrieve_factory_with_known_architecture(
 @mock_estimate_memory_footprint
 def test_config__test_retrieve_factory_with_unsupported_model_path(
     gemma_3_1b_it_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
@@ -209,7 +211,7 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
 @mock_estimate_memory_footprint
 def test_config__test_load_factory_with_known_architecture_and_hf_repo_id(
     modular_ai_llama_3_1_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
@@ -236,7 +238,7 @@ class LimitedPickler(pickle.Unpickler):
 
 
 @mock_pipeline_config_hf_dependencies
-def test_config_is_picklable(tmp_path):
+def test_config_is_picklable(tmp_path) -> None:
     config = PipelineConfig(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
     )
@@ -253,7 +255,7 @@ def test_config_is_picklable(tmp_path):
 
 
 @mock_pipeline_config_hf_dependencies
-def test_config__validate_devices():
+def test_config__validate_devices() -> None:
     # This test should always have a cpu available.
     _ = PipelineConfig(
         model_path="HuggingFaceTB/SmolLM-135M",
@@ -275,7 +277,7 @@ def test_config__validate_devices():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_config__validates_supported_device():
+def test_config__validates_supported_device() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     # Valid device/encoding combinations.
@@ -299,7 +301,7 @@ def test_config__validates_supported_device():
 @mock_estimate_memory_footprint
 def test_config__validates_invalid_supported_device(
     llama_3_1_8b_instruct_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     with pytest.raises(
@@ -319,7 +321,7 @@ def test_config__validates_invalid_supported_device(
 @mock_estimate_memory_footprint
 def test_config__validates_engine_configurations(
     llama_3_1_8b_instruct_local_path,
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     # Test explicit HuggingFace engine with valid config
@@ -336,7 +338,7 @@ def test_config__validates_engine_configurations(
 @prepare_registry
 def test_config__validates_lora_configuration(
     llama_3_1_8b_instruct_local_path, llama_3_1_8b_lora_local_path
-):
+) -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     # Test explicit HuggingFace engine with valid config

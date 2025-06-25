@@ -43,7 +43,7 @@ PAD_MULTIPLES = [2, 1, 128]
 
 
 @given(arrays=..., pad_value=...)
-def test_collate_batch(arrays: list[list[int]], pad_value: int):
+def test_collate_batch(arrays: list[list[int]], pad_value: int) -> None:
     assume(arrays)
     # Need to be able to turn these into numpy values.
     assume(-(2**63) <= pad_value < 2**63)
@@ -71,7 +71,9 @@ def test_collate_batch(arrays: list[list[int]], pad_value: int):
 
 
 @given(arrays=..., pad_value=...)
-def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
+def test_collate_batch__pad_right(
+    arrays: list[list[int]], pad_value: int
+) -> None:
     assume(arrays)
     # Need to be able to turn these into numpy values.
     assume(-(2**63) <= pad_value < 2**63)
@@ -106,7 +108,7 @@ def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
 
 
 @given(pad_value=...)
-def test_collate_batch__no_items(pad_value: int):
+def test_collate_batch__no_items(pad_value: int) -> None:
     with pytest.raises(ValueError):
         collate_batch([], pad_value=pad_value)
 

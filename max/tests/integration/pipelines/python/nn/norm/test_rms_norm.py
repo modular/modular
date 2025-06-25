@@ -27,7 +27,7 @@ def run_test_norm(
     input_type: TensorType,
     rtol: float,
     atol: float,
-):
+) -> None:
     # Initialize Graph
     dim = input_type.shape[-1]
     weight_type = TensorType(input_type.dtype, [dim], device=input_type.device)
@@ -37,7 +37,7 @@ def run_test_norm(
         graph.output(RMSNormV1(weight=weight, multiply_before_cast=False)(x))
 
         @modular_graph_test(session, graph)
-        def test_correctness(execute, inputs, torch_inputs):
+        def test_correctness(execute, inputs, torch_inputs) -> None:
             result = torch.from_dlpack(execute(inputs))
             expected = torch_rms_norm(*torch_inputs)
             torch.testing.assert_close(
@@ -67,7 +67,7 @@ CPU_DTYPES = (DType.float32, DType.float64)
 
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("dtype", CPU_DTYPES)
-def test_norm(session, shape, dtype):
+def test_norm(session, shape, dtype) -> None:
     run_test_norm(
         session,
         TensorType(dtype, shape, device=DeviceRef.CPU()),
@@ -89,7 +89,7 @@ GPU_DTYPES = (DType.float32, DType.bfloat16)
 @pytest.mark.skipif(accelerator_api() == "cpu", reason="Test only runs on GPU")
 @pytest.mark.parametrize("shape", SHAPES)
 @pytest.mark.parametrize("dtype", GPU_DTYPES)
-def test_norm_gpu(gpu_session, shape, dtype):
+def test_norm_gpu(gpu_session, shape, dtype) -> None:
     run_test_norm(
         gpu_session,
         TensorType(dtype, shape, device=DeviceRef.GPU()),

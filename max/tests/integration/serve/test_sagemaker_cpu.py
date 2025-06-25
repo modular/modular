@@ -25,7 +25,7 @@ request = {
 
 
 @pytest.mark.asyncio
-async def test_invocations(echo_app):
+async def test_invocations(echo_app) -> None:
     async with TestClient(echo_app, timeout=720.0) as client:
         raw_response = await client.post(
             "/invocations",

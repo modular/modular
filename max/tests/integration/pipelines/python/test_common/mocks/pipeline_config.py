@@ -61,7 +61,7 @@ class DummyPipelineConfig(PipelineConfig):
         eos_prob: float | None = None,
         vocab_size: int | None = None,
         eos_token: int | None = None,
-    ):
+    ) -> None:
         self.model_path = model_path
         self.quantization_encoding = quantization_encoding
         self.max_batch_size = max_batch_size

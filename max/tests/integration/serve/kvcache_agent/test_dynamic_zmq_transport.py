@@ -29,7 +29,7 @@ def create_test_message(
 
 
 @pytest.mark.asyncio
-async def test_simple_send_receive():
+async def test_simple_send_receive() -> None:
     """Test basic send and receive between two transports."""
     zmq_ctx = zmq.Context()
 
@@ -85,7 +85,7 @@ async def test_simple_send_receive():
 
 
 @pytest.mark.asyncio
-async def test_request_reply_pattern():
+async def test_request_reply_pattern() -> None:
     """Test request-reply communication pattern."""
     zmq_ctx = zmq.Context()
 
@@ -155,7 +155,7 @@ async def test_request_reply_pattern():
 
 
 @pytest.mark.asyncio
-async def test_multiple_clients_one_server():
+async def test_multiple_clients_one_server() -> None:
     """Test multiple clients sending to one server."""
     zmq_ctx = zmq.Context()
 
@@ -228,7 +228,7 @@ async def test_multiple_clients_one_server():
 
 
 @pytest.mark.asyncio
-async def test_multiple_clients_multiple_servers():
+async def test_multiple_clients_multiple_servers() -> None:
     """Test N:M communication with proper message routing and replies."""
     zmq_ctx = zmq.Context()
 
@@ -248,7 +248,6 @@ async def test_multiple_clients_multiple_servers():
 
         # Create 3 clients
         clients = []
-        client_endpoints = []
         for i in range(3):
             client = DynamicZmqTransport[dict[str, Union[int, str]]](
                 zmq_ctx,
@@ -382,7 +381,7 @@ async def test_multiple_clients_multiple_servers():
 
 
 @pytest.mark.asyncio
-async def test_connection_failure():
+async def test_connection_failure() -> None:
     """Test behavior when connecting to non-existent endpoint."""
     zmq_ctx = zmq.Context()
 
@@ -422,7 +421,7 @@ async def test_connection_failure():
 
 
 @pytest.mark.asyncio
-async def test_high_throughput():
+async def test_high_throughput() -> None:
     """Test sending many messages quickly."""
     zmq_ctx = zmq.Context()
 
@@ -478,7 +477,7 @@ async def test_high_throughput():
 
 
 @pytest.mark.asyncio
-async def test_no_destination_address_provided():
+async def test_no_destination_address_provided() -> None:
     """Test behavior when no destination address is provided and no default is set."""
     zmq_ctx = zmq.Context()
 
@@ -562,7 +561,7 @@ async def test_no_destination_address_provided():
 
 
 @pytest.mark.asyncio
-async def test_default_destination_address():
+async def test_default_destination_address() -> None:
     """Test behavior when default destination address is set and used."""
     zmq_ctx = zmq.Context()
 

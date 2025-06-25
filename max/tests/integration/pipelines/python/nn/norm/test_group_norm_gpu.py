@@ -129,7 +129,7 @@ def test_group_norm(
     )
 
 
-def test_group_norm_invalid_input_shapes():
+def test_group_norm_invalid_input_shapes() -> None:
     with Graph(
         "group_norm",
         input_types=(TensorType(DType.float32, [10], DeviceRef.GPU()),),
@@ -148,7 +148,7 @@ def test_group_norm_invalid_input_shapes():
             _ = GroupNorm(5, 10)(graph.inputs[0].tensor)
 
 
-def test_group_norm_invalid_init():
+def test_group_norm_invalid_init() -> None:
     with pytest.raises(
         ValueError,
         match="num_channels.* should be divisible by num_groups.*",

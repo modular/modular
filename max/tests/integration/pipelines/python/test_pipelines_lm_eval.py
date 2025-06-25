@@ -20,7 +20,7 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-def test_pipelines_lm_eval_smollm(tmp_path: Path):
+def test_pipelines_lm_eval_smollm(tmp_path: Path) -> None:
     runner = CliRunner()
     output_dir = tmp_path / "lm-eval-output"
 

@@ -12,7 +12,7 @@ import numpy as np
 from max.engine import InferenceSession
 
 
-def test_api_source(mo_model_path: Path):
+def test_api_source(mo_model_path: Path) -> None:
     with tempfile.NamedTemporaryFile(delete=True) as temp_file:
         filepath = temp_file.name
     os.environ["MODULAR_TELEMETRY_EXPORTERS_LOGS_FILE_PATH"] = filepath

@@ -34,7 +34,7 @@ def generate_torch_outputs(
 
 
 class LlamaStyleRMSNorm(RMSNorm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.multiply_before_cast = False
 

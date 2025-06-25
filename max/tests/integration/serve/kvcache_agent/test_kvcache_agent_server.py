@@ -71,7 +71,7 @@ def stub(server_config):
     return KVCacheAgentServiceStub(channel)
 
 
-def test_server_initialization(server_config, zmq_ctx, zmq_endpoint):
+def test_server_initialization(server_config, zmq_ctx, zmq_endpoint) -> None:
     """Test that the server initializes correctly with ZMQ."""
     server = KVCacheAgentServer(server_config, zmq_ctx, zmq_endpoint)
     assert not server._started
@@ -83,7 +83,7 @@ def test_server_initialization(server_config, zmq_ctx, zmq_endpoint):
     assert not server._started
 
 
-def test_smoke(server, zmq_push_socket, stub):
+def test_smoke(server, zmq_push_socket, stub) -> None:
     """Smoke test using ZMQ for event delivery."""
     zmq_push_socket.put(
         KVCacheChangeMessage(
@@ -126,7 +126,7 @@ def test_smoke(server, zmq_push_socket, stub):
     assert response.cache_ids == ["id1"]
 
 
-def test_multiple_subscribers(server, zmq_push_socket, stub):
+def test_multiple_subscribers(server, zmq_push_socket, stub) -> None:
     """Test that multiple subscribers receive updates using ZMQ."""
 
     responses1 = stub.SubscribeToUpdates(SubscriptionRequest())

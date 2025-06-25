@@ -23,7 +23,9 @@ from torch.utils.dlpack import from_dlpack
 class InternVisionEmbeddingsReference(torch.nn.Module):
     """Reference implementation from vLLM."""
 
-    def __init__(self, *, hidden_size: int, image_size: int, patch_size: int):
+    def __init__(
+        self, *, hidden_size: int, image_size: int, patch_size: int
+    ) -> None:
         super().__init__()
         self.embed_dim = hidden_size
         self.image_size = image_size
@@ -208,7 +210,7 @@ def generate_max_outputs(
 
     # Create a minimal config object for InternVisionEmbeddings
     class MinimalConfig:
-        def __init__(self, vision_config: VisionConfig):
+        def __init__(self, vision_config: VisionConfig) -> None:
             self.vision_config = vision_config
             self.devices = [device_ref]  # Add devices attribute
 
@@ -380,7 +382,7 @@ def test_vision_embeddings_multi_gpu(
     class MultiGPUConfig:
         def __init__(
             self, vision_config: VisionConfig, devices: list[DeviceRef]
-        ):
+        ) -> None:
             self.vision_config = vision_config
             self.devices = devices
 
@@ -484,7 +486,7 @@ def test_vision_embeddings_multi_gpu_execution(
     class MultiGPUConfig:
         def __init__(
             self, vision_config: VisionConfig, devices: list[DeviceRef]
-        ):
+        ) -> None:
             self.vision_config = vision_config
             self.devices = devices
 

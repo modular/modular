@@ -51,7 +51,7 @@ class DummyModelInputs(ModelInputs):
         input3: Tensor | None = None,
         input4: Tensor | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
-    ):
+    ) -> None:
         self.input1 = input1
         self.input2 = input2
         self.input3 = input3

@@ -29,19 +29,19 @@ def transfer_routine_sender(
     queue: Queue,
     src_idxs: list[int],
     dst_idxs: list[int],
-):
+) -> None:
     xfer_req = engine.initiate_send_xfer(remote, src_idxs, dst_idxs)
     queue.put(xfer_req)
     engine.send_xfer_sync(xfer_req)
 
 
-def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue):
+def transfer_routine_receiver(engine: KVTransferEngine, queue: Queue) -> None:
     xfer_req = queue.get()
     engine.recv_xfer_sync(xfer_req)
 
 
 @pytest.mark.parametrize("device", [CPU()])
-def test_send_recv_basic(device: Device):
+def test_send_recv_basic(device: Device) -> None:
     total_num_pages = 3
     elts_per_page = 3
     num_elts = total_num_pages * elts_per_page

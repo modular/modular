@@ -168,7 +168,7 @@ class DeepseekV2Config(PretrainedConfig):
         attention_bias=False,
         attention_dropout=0.0,
         **kwargs,
-    ):
+    ) -> None:
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size

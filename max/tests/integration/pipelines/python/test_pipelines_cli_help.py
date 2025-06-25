@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from max.entrypoints import pipelines
 
 
-def test_main_help():
+def test_main_help() -> None:
     """Test that the top-level help message works."""
     runner = CliRunner()
     result = runner.invoke(pipelines.main, ["--help"])
@@ -21,7 +21,7 @@ def test_main_help():
 
 
 @pytest.mark.skip("AITLIB-318: flaky, cant recreate the error locally.")
-def test_subcommand_help():
+def test_subcommand_help() -> None:
     """Test that help for each subcommand works properly."""
     # Dynamically get all registered subcommands from the main command group
     subcommands = pipelines.main.commands.keys()
@@ -33,7 +33,7 @@ def test_subcommand_help():
         assert "Usage:" in result.output
 
 
-def test_help_performance():
+def test_help_performance() -> None:
     """Test that the --help command executes quickly"""
     THRESHOLD_MILLISECONDS = 500
     runner = CliRunner()

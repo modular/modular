@@ -400,7 +400,7 @@ def torch_get_rope_index(
         return position_ids, mrope_position_deltas
 
 
-def test_pos_ids():
+def test_pos_ids() -> None:
     image_grid_thw = torch.tensor([[1, 98, 146], [1, 22, 28]])
     spatial_merge_size = 2
     expected_pos_ids = torch_mrope_pos_ids_3d(
@@ -415,7 +415,7 @@ def test_pos_ids():
     )
 
 
-def test_window_index():
+def test_window_index() -> None:
     image_grid_thw = torch.tensor([[1, 98, 146], [1, 22, 28]])
     spatial_merge_size = 2
     window_size = 112
@@ -446,7 +446,7 @@ def test_window_index():
     )
 
 
-def test_generate_attention_mask():
+def test_generate_attention_mask() -> None:
     image_grid_thw = torch.tensor([[1, 98, 146], [1, 22, 28]])
     spatial_merge_size = 2
     window_size = 112
@@ -489,7 +489,7 @@ def test_generate_attention_mask():
 
 
 @pytest.mark.skip(reason="Currently failing with error 1e-2. Still debugging.")
-def test_scaled_dot_product_attention_vision_mask():
+def test_scaled_dot_product_attention_vision_mask() -> None:
     # batch_size, Target seq_len, embed_dim
     q = torch.rand(16, 14308, 80, dtype=torch.float32)
     k = torch.rand(16, 14308, 80, dtype=torch.float32)
@@ -546,7 +546,7 @@ def test_scaled_dot_product_attention_vision_mask():
         )
 
 
-def test_get_rope_index():
+def test_get_rope_index() -> None:
     """tests get_rope_index for Qwen2.5VL
     hyper-paramewters used are from Qwen2.5VL config at
     (https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/blob/main/config.json)

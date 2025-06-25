@@ -87,7 +87,7 @@ def _get_unpad_data(attention_mask):
 
 
 class DeepseekV2RMSNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-6):
+    def __init__(self, hidden_size, eps=1e-6) -> None:
         """
         DeepseekV2RMSNorm is equivalent to T5LayerNorm
         """
@@ -111,7 +111,7 @@ ALL_LAYERNORM_LAYERS.append(DeepseekV2RMSNorm)
 class DeepseekV2RotaryEmbedding(nn.Module):
     def __init__(
         self, dim, max_position_embeddings=2048, base=10000, device=None
-    ):
+    ) -> None:
         super().__init__()
 
         self.dim = dim
@@ -131,7 +131,7 @@ class DeepseekV2RotaryEmbedding(nn.Module):
         )
         self.max_seq_len_cached = None
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
         self.max_seq_len_cached = seq_len
         t = torch.arange(
             self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype
@@ -171,11 +171,11 @@ class DeepseekV2LinearScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
         base=10000,
         device=None,
         scaling_factor=1.0,
-    ):
+    ) -> None:
         self.scaling_factor = scaling_factor
         super().__init__(dim, max_position_embeddings, base, device)
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
         self.max_seq_len_cached = seq_len
         t = torch.arange(
             self.max_seq_len_cached, device=device, dtype=self.inv_freq.dtype
@@ -204,11 +204,11 @@ class DeepseekV2DynamicNTKScalingRotaryEmbedding(DeepseekV2RotaryEmbedding):
         base=10000,
         device=None,
         scaling_factor=1.0,
-    ):
+    ) -> None:
         self.scaling_factor = scaling_factor
         super().__init__(dim, max_position_embeddings, base, device)
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
         self.max_seq_len_cached = seq_len
 
         if seq_len > self.max_position_embeddings:
@@ -287,7 +287,7 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
         beta_slow=1,
         mscale=1,
         mscale_all_dim=0,
-    ):
+    ) -> None:
         self.scaling_factor = scaling_factor
         self.original_max_position_embeddings = original_max_position_embeddings
         self.beta_fast = beta_fast
@@ -296,7 +296,7 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
         self.mscale_all_dim = mscale_all_dim
         super().__init__(dim, max_position_embeddings, base, device)
 
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
+    def _set_cos_sin_cache(self, seq_len, device, dtype) -> None:
         self.max_seq_len_cached = seq_len
         dim = self.dim
 
@@ -391,7 +391,9 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
 
 
 class DeepseekV2MLP(nn.Module):
-    def __init__(self, config, hidden_size=None, intermediate_size=None):
+    def __init__(
+        self, config, hidden_size=None, intermediate_size=None
+    ) -> None:
         super().__init__()
         self.config = config
         self.hidden_size = (
@@ -422,7 +424,7 @@ class DeepseekV2MLP(nn.Module):
 
 
 class MoEGate(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config) -> None:
         super().__init__()
         self.config = config
         self.top_k = config.num_experts_per_tok
@@ -562,7 +564,7 @@ class DeepseekV2MoE(nn.Module):
     A mixed expert module containing shared experts.
     """
 
-    def __init__(self, config):
+    def __init__(self, config) -> None:
         super().__init__()
         self.config = config
         self.num_experts_per_tok = config.num_experts_per_tok
@@ -744,7 +746,7 @@ class DeepseekV2Attention(nn.Module):
 
     def __init__(
         self, config: DeepseekV2Config, layer_idx: Optional[int] = None
-    ):
+    ) -> None:
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
@@ -811,7 +813,7 @@ class DeepseekV2Attention(nn.Module):
                 mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
                 self.softmax_scale = self.softmax_scale * mscale * mscale
 
-    def _init_rope(self):
+    def _init_rope(self) -> None:
         if self.config.rope_scaling is None:
             self.rotary_emb = DeepseekV2RotaryEmbedding(
                 self.qk_rope_head_dim,
@@ -995,7 +997,7 @@ class DeepseekV2FlashAttention2(DeepseekV2Attention):
     flash attention and deal with padding tokens in case the input contains any of them.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         # TODO: Should be removed once Flash Attention for RoCm is bumped to 2.1.
@@ -1297,7 +1299,7 @@ ATTENTION_CLASSES = {
 
 
 class DeepseekV2DecoderLayer(nn.Module):
-    def __init__(self, config: DeepseekV2Config, layer_idx: int):
+    def __init__(self, config: DeepseekV2Config, layer_idx: int) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
 
@@ -1412,7 +1414,7 @@ class DeepseekV2PreTrainedModel(PreTrainedModel):
     _supports_flash_attn_2 = True
     _supports_cache_class = True
 
-    def _init_weights(self, module):
+    def _init_weights(self, module) -> None:
         std = self.config.initializer_range
         if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=std)
@@ -1493,7 +1495,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
         config: DeepseekV2Config
     """
 
-    def __init__(self, config: DeepseekV2Config):
+    def __init__(self, config: DeepseekV2Config) -> None:
         super().__init__(config)
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
@@ -1521,7 +1523,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
     def get_input_embeddings(self):
         return self.embed_tokens
 
-    def set_input_embeddings(self, value):
+    def set_input_embeddings(self, value) -> None:
         self.embed_tokens = value
 
     @add_start_docstrings_to_model_forward(DeepseekV2_INPUTS_DOCSTRING)
@@ -1699,7 +1701,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
 class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
     _tied_weights_keys = ["lm_head.weight"]
 
-    def __init__(self, config):
+    def __init__(self, config) -> None:
         super().__init__(config)
         self.model = DeepseekV2Model(config)
         self.vocab_size = config.vocab_size
@@ -1713,16 +1715,16 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
     def get_input_embeddings(self):
         return self.model.embed_tokens
 
-    def set_input_embeddings(self, value):
+    def set_input_embeddings(self, value) -> None:
         self.model.embed_tokens = value
 
     def get_output_embeddings(self):
         return self.lm_head
 
-    def set_output_embeddings(self, new_embeddings):
+    def set_output_embeddings(self, new_embeddings) -> None:
         self.lm_head = new_embeddings
 
-    def set_decoder(self, decoder):
+    def set_decoder(self, decoder) -> None:
         self.model = decoder
 
     def get_decoder(self):
@@ -1915,7 +1917,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
     DeepseekV2_START_DOCSTRING,
 )
 class DeepseekV2ForSequenceClassification(DeepseekV2PreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config) -> None:
         super().__init__(config)
         self.num_labels = config.num_labels
         self.model = DeepseekV2Model(config)
@@ -1927,7 +1929,7 @@ class DeepseekV2ForSequenceClassification(DeepseekV2PreTrainedModel):
     def get_input_embeddings(self):
         return self.model.embed_tokens
 
-    def set_input_embeddings(self, value):
+    def set_input_embeddings(self, value) -> None:
         self.model.embed_tokens = value
 
     @add_start_docstrings_to_model_forward(DeepseekV2_INPUTS_DOCSTRING)

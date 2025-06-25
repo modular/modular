@@ -17,7 +17,7 @@ def clear_hooks_between_tests():
 
 
 class OuterLayer(Layer):
-    def __init__(self):
+    def __init__(self) -> None:
         self.inner_layer_1 = InnerLayer()
         self.inner_layer_2 = InnerLayer()
 
@@ -33,7 +33,7 @@ class InnerLayer(Layer):
         return input.transpose(0, 1)
 
 
-def test_hook_nested_layers(mocker):
+def test_hook_nested_layers(mocker) -> None:
     outer_layer = OuterLayer()
 
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
@@ -81,7 +81,7 @@ def test_hook_nested_layers(mocker):
     assert outputs3 is outputs2
 
 
-def test_hook_nested_hooks_returns(mocker):
+def test_hook_nested_hooks_returns(mocker) -> None:
     # Test multiple hooks that modify the output value.
     inner_layer = InnerLayer()
     hook = mocker.Mock(side_effect=lambda *args: ops.tile(args[-1], [1, 2, 1]))
@@ -132,7 +132,7 @@ def test_hook_nested_hooks_returns(mocker):
     )
 
 
-def test_clear_hooks(mocker):
+def test_clear_hooks(mocker) -> None:
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
     hook2 = mocker.Mock(side_effect=lambda *args: args[-1])
     add_layer_hook(hook)
@@ -159,7 +159,7 @@ class LayerWithArgsKwargs(Layer):
         return arg1
 
 
-def test_hook_args_kwargs(mocker):
+def test_hook_args_kwargs(mocker) -> None:
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
     add_layer_hook(hook)
     layer = LayerWithArgsKwargs()
@@ -185,7 +185,7 @@ def test_hook_args_kwargs(mocker):
     assert kwargs == {"kwarg2": "kwarg2 value"}
 
 
-def test_hook_many_args_kwargs(mocker):
+def test_hook_many_args_kwargs(mocker) -> None:
     hook = mocker.Mock(side_effect=lambda *args: args[-1])
     add_layer_hook(hook)
     layer = LayerWithArgsKwargs()

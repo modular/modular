@@ -27,7 +27,7 @@ REVISION = hf_repo_lock.revision_for_hf_repo(REPO_ID)
 logger = logging.getLogger("max.pipelines")
 
 
-def test_mock_text_tokenizer():
+def test_mock_text_tokenizer() -> None:
     tokenizer = MockTextTokenizer()
     test_prompt = "This is a test prompt"
 
@@ -62,7 +62,7 @@ def test_mock_text_tokenizer():
 
 @patch("max.pipelines.lib.pipeline.load_weights")
 @patch("max.pipelines.lib.pipeline.weights_format")
-def test_text_generation_pipeline(mock_load_weights, weights_format):
+def test_text_generation_pipeline(mock_load_weights, weights_format) -> None:
     mock_load_weights.return_value = None
     weights_format.return_value = None
     max_length = 512

@@ -35,7 +35,7 @@ class MockTextTokenizer(
         seed: int = 42,
         vocab_size: int = 1000,
         **kwargs,
-    ):
+    ) -> None:
         self.i = 0
         self.vocab_size = vocab_size
         self.seed = seed

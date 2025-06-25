@@ -25,7 +25,7 @@ from max.pipelines.lib import (
 from transformers import AutoConfig, AutoTokenizer
 
 
-def test_sampling_top_k():
+def test_sampling_top_k() -> None:
     with pytest.raises(ValueError):
         SamplingParams(top_k=0)
 
@@ -39,7 +39,7 @@ def test_sampling_top_k():
 
 def test_bitmask_sampling_vs_xgrammar(
     session: InferenceSession, modular_ai_llama_3_1_local_path
-):
+) -> None:
     # Get Tokenizer and Model Info
     config = AutoConfig.from_pretrained(modular_ai_llama_3_1_local_path)
     tokenizer_info = xgr.TokenizerInfo.from_huggingface(
@@ -146,7 +146,7 @@ def test_bitmask_sampling_vs_xgrammar(
 
 
 @pytest.mark.skip("TODO(AITLIB-348): Fix this test")
-def test_sampling_return_logits(session: InferenceSession):
+def test_sampling_return_logits(session: InferenceSession) -> None:
     # Create one op sampling graph
     sampling_config = SamplingConfig(
         enable_structured_output=False,
@@ -211,7 +211,7 @@ def test_sampling_return_logits(session: InferenceSession):
             assert numpy_logits[i, j] == logits[i, token_idx]
 
 
-def test_rejection_sampler(session: InferenceSession):
+def test_rejection_sampler(session: InferenceSession) -> None:
     device = session.devices[0]
     sampling_config = SamplingConfig(
         in_dtype=DType.float32,
@@ -286,7 +286,7 @@ def test_rejection_sampler(session: InferenceSession):
                 break
 
 
-def test_apply_penalties_to_logits(session: InferenceSession):
+def test_apply_penalties_to_logits(session: InferenceSession) -> None:
     BATCH_SIZE = 14
     VOCAB_SIZE = 1024
     FREQ_PENALTY_SCALAR = 0.5
@@ -411,7 +411,7 @@ def test_apply_penalties_to_logits(session: InferenceSession):
     torch.testing.assert_close(max_result.to("cpu"), ref_result)
 
 
-def test_update_frequency_data(session: InferenceSession):
+def test_update_frequency_data(session: InferenceSession) -> None:
     device = session.devices[0]
     device_ref = DeviceRef.from_device(device)
     compressed_frequency_data_type = BufferType(
@@ -504,7 +504,7 @@ def test_update_frequency_data(session: InferenceSession):
     assert np.all(ref_result == np.from_dlpack(compressed_frequency_data_out))
 
 
-def test_sampling_with_seed(session: InferenceSession):
+def test_sampling_with_seed(session: InferenceSession) -> None:
     """Test that sampling with the same seed produces deterministic results."""
     device = session.devices[0]
     device_ref = DeviceRef.from_device(device)
@@ -631,7 +631,7 @@ def test_sampling_with_seed(session: InferenceSession):
     )
 
 
-def test_top_p_sampling(session: InferenceSession):
+def test_top_p_sampling(session: InferenceSession) -> None:
     """Test that top_p sampling produces the correct results."""
     device = session.devices[0]
     device_ref = DeviceRef.from_device(device)
@@ -765,7 +765,7 @@ def test_top_p_sampling(session: InferenceSession):
     assert actual_tokens_1 == expected_tokens_1
 
 
-def test_batch_sampling_arguments(session: InferenceSession):
+def test_batch_sampling_arguments(session: InferenceSession) -> None:
     device = session.devices[0]
     device_ref = DeviceRef.from_device(device)
 
@@ -786,7 +786,7 @@ def test_batch_sampling_arguments(session: InferenceSession):
 
     num_trials = 100
 
-    def test_top_p_sampling():
+    def test_top_p_sampling() -> None:
         """Test that different top_p values affect sampling correctly."""
         k = np.array([vocab_size] * batch_size, dtype=np.int64)
         temperature = np.array([1.0] * batch_size, dtype=np.float32)
@@ -830,7 +830,7 @@ def test_batch_sampling_arguments(session: InferenceSession):
         # Seed doesnt change, so it only samples 1 token
         assert len(set(batch_sampled_tokens[batch_size - 1])) == 1
 
-    def test_top_k_sampling():
+    def test_top_k_sampling() -> None:
         """Test that different top_k values affect sampling correctly."""
         logits_np = np.array(
             [[10.0, 8.0, 2.0, -1.0, -1.5, -2.0, -2.5, -3.0]],
@@ -868,7 +868,7 @@ def test_batch_sampling_arguments(session: InferenceSession):
         for i in range(1, batch_size):
             assert len(set(batch_sampled_tokens[i])) > 1
 
-    def test_temperature_sampling():
+    def test_temperature_sampling() -> None:
         """Test that different temperature values affect sampling correctly."""
         logits_np = np.array(
             [[10.0, 8.0, 2.0, -1.0, -1.5, -2.0, -2.5, -3.0]],
@@ -1018,7 +1018,7 @@ def rejection_sampler_reference(
     return first_rejected_token_idx, recovered_token_ids
 
 
-def test_rejection_sampler_with_residuals(session: InferenceSession):
+def test_rejection_sampler_with_residuals(session: InferenceSession) -> None:
     batch_size = 3
     num_steps = 4
     vocab_size = 5

@@ -295,7 +295,7 @@ def test_patch_conv(imgs, img_sizes) -> None:
 @pytest.mark.skip(reason="Test is flaky. Model works.")
 def test_vision_encoder(
     imgs, img_sizes, pytorch_pixtral_vision_encoder, vision_encoder
-):
+) -> None:
     # TODO: Check the values of pixels are expected to be in [0, 255]
     pytorch_model = pytorch_pixtral_vision_encoder
     graph_encoder, weights_registry = vision_encoder
@@ -335,7 +335,7 @@ def test_vision_encoder(
         )
 
 
-def test_attention_mask(imgs, pytorch_attention_mask):
+def test_attention_mask(imgs, pytorch_attention_mask) -> None:
     # Permute torch inputs for the graph API to be (height, width, num_channels)
     imgs = [np.ascontiguousarray(torch.permute(img, (1, 2, 0))) for img in imgs]
     # use pytorch model's fill value for testing to compare results

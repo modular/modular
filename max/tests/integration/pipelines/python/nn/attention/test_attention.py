@@ -47,7 +47,9 @@ BATCH_SIZE = 4
         (KVCacheStrategy.PAGED, MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK),
     ],
 )
-def test_kv_cache_ragged_attention(session, cache_strategy, mask_strategy):
+def test_kv_cache_ragged_attention(
+    session, cache_strategy, mask_strategy
+) -> None:
     num_q_heads = 32
     kv_params = KVCacheParams(
         dtype=DType.float32,
@@ -175,7 +177,7 @@ def test_kv_cache_ragged_attention(session, cache_strategy, mask_strategy):
             5: is_cache_empty_buf,
         },
     )
-    def test_runs_without_nan(execute, inputs, torch_inputs):
+    def test_runs_without_nan(execute, inputs, torch_inputs) -> None:
         inputs = list(inputs)
         result = execute(inputs).to_numpy()
         assert np.any(result != np.nan)

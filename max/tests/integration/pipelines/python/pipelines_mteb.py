@@ -57,7 +57,7 @@ class EmbeddingModel:
         tokenizer: PipelineTokenizer,
         pipeline: EmbeddingsGenerator,
         huggingface_config: AutoConfig,
-    ):
+    ) -> None:
         self.pipeline_config = pipeline_config
         self.tokenizer = tokenizer
         self.pipeline = pipeline

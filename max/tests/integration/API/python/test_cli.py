@@ -37,7 +37,7 @@ from test_common.registry import prepare_registry
 
 
 @click.group()
-def cli():
+def cli() -> None:
     pass
 
 
@@ -215,7 +215,7 @@ TEST_COMMANDS = [
 def testing(
     idx,
     **config_kwargs,
-):
+) -> None:
     # Retrieve test command.
     test_command = TEST_COMMANDS[idx]
 
@@ -280,7 +280,7 @@ def testing(
 )
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli_commands(command, idx):
+def test_cli_commands(command, idx) -> None:
     """
     Test individual CLI commands
 
@@ -349,7 +349,7 @@ VALID_RESULTS = {
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_pipeline_config_cli_parsing():
+def test_pipeline_config_cli_parsing() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(PipelineConfig)
     for config_field in fields(PipelineConfig):
@@ -359,7 +359,7 @@ def test_pipeline_config_cli_parsing():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli__get_default():
+def test_cli__get_default() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     for config_field in fields(CLITestConfig):
         assert (
@@ -370,7 +370,7 @@ def test_cli__get_default():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli__get_field_type():
+def test_cli__get_field_type() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
@@ -387,7 +387,7 @@ def test_cli__get_field_type():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli__option_is_flag():
+def test_cli__option_is_flag() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
@@ -400,7 +400,7 @@ def test_cli__option_is_flag():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli__option_is_multiple():
+def test_cli__option_is_multiple() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):
@@ -411,7 +411,7 @@ def test_cli__option_is_multiple():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_cli__option_is_optional():
+def test_cli__option_is_optional() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     field_types = get_type_hints(CLITestConfig)
     for config_field in fields(CLITestConfig):

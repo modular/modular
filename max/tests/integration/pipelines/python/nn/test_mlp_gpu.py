@@ -24,7 +24,7 @@ def torch_linear(weight, **kwargs):
 
 
 class TorchMLP(nn.Module):
-    def __init__(self, w1, w2, w3):
+    def __init__(self, w1, w2, w3) -> None:
         super().__init__()
         self.gate_proj = torch_linear(w1, bias=False)
         self.down_proj = torch_linear(w2, bias=False)
@@ -53,7 +53,7 @@ def mlp_graph(types: list[TensorType]) -> Graph:
         TensorType(DType.float32, ["batch", "dim"], DeviceRef.GPU(id=0)),
     ],
 )
-def test_mlp(input_type: TensorType):
+def test_mlp(input_type: TensorType) -> None:
     # Get Graph
     host = CPU(0)
     device0 = Accelerator(0)

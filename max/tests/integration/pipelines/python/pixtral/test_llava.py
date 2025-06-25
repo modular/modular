@@ -522,7 +522,7 @@ def test_connector(
     pytorch_connector: LlavaMultiModalProjector,
     graph_api_connector: tuple[LlavaMultiModalConnector, dict],
     size: tuple,
-):
+) -> None:
     weights_registry: dict = {}
     connector = graph_api_connector[0]
     weights_registry.update(graph_api_connector[1])
@@ -550,7 +550,9 @@ def test_connector(
     )
 
 
-def test_processor(img_urls_and_prompt: tuple, pytorch_pixtral_processor):
+def test_processor(
+    img_urls_and_prompt: tuple, pytorch_pixtral_processor
+) -> None:
     IMG_URLS, PROMPT = img_urls_and_prompt
     pytorch_inputs = pytorch_pixtral_processor(
         text=PROMPT, images=IMG_URLS, return_tensors="pt"
@@ -566,7 +568,7 @@ def test_pixtral(
     pytorch_pixtral_processor: PixtralProcessor,
     pytorch_pixtral: LlavaForConditionalGeneration,
     graph_api_pixtral: tuple[LlavaConditionalGeneration, dict],
-):
+) -> None:
     IMG_URLS, PROMPT = img_urls_and_prompt
     pytorch_inputs = pytorch_pixtral_processor(
         text=PROMPT, images=IMG_URLS, return_tensors="pt"

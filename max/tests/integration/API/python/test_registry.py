@@ -19,7 +19,7 @@ from test_common.registry import prepare_registry
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_registry__test_register():
+def test_registry__test_register() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
     assert "LlamaForCausalLM" in PIPELINE_REGISTRY.architectures
 
@@ -30,7 +30,7 @@ def test_registry__test_register():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_registry__test_retrieve_with_unknown_architecture_max_engine():
+def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     with pytest.raises(ValueError):
@@ -46,7 +46,9 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
 
 @prepare_registry
 @mock_pipeline_config_hf_dependencies
-def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
+def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
+    None
+):
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(

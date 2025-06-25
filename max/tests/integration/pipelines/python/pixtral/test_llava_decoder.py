@@ -242,7 +242,7 @@ def mistral_given_pytorch_mistral(
 
 
 @pytest.mark.skip("doesnt work and needs refactoring similar to llama vision")
-def test_llava_mistral_decoder(pytorch_mistral_and_config):
+def test_llava_mistral_decoder(pytorch_mistral_and_config) -> None:
     batch_size = 1
     seq_length = 7
 

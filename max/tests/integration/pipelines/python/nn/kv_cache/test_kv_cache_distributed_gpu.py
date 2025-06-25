@@ -23,7 +23,7 @@ from test_common.context_utils import create_text_context
 
 
 @pytest.mark.asyncio
-async def test_kv_cache_multi_gpu():
+async def test_kv_cache_multi_gpu() -> None:
     num_devices = accelerator_count()
 
     if num_devices > 1:
@@ -116,7 +116,9 @@ def create_paged_manager(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("enable_swapping_to_host", [True, False])
-async def test_swapping_to_host_multi_gpu(enable_swapping_to_host: bool):
+async def test_swapping_to_host_multi_gpu(
+    enable_swapping_to_host: bool,
+) -> None:
     # set seed for reproducibility
     np.random.seed(42)
 

@@ -22,7 +22,7 @@ from max.serve.queue.zmq_queue import generate_zmq_inproc_endpoint
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_client_to_service_communication():
+async def test_dispatcher_client_to_service_communication() -> None:
     """Test proper client-server communication through dispatcher services."""
     zmq_ctx = zmq.Context()
 
@@ -130,7 +130,7 @@ async def test_dispatcher_client_to_service_communication():
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_request_reply_pattern():
+async def test_dispatcher_request_reply_pattern() -> None:
     """Test request-reply pattern through dispatcher service and client."""
     zmq_ctx = zmq.Context()
 
@@ -235,7 +235,7 @@ async def test_dispatcher_request_reply_pattern():
 
 
 @pytest.mark.asyncio
-async def test_multiple_clients_one_server_dispatcher():
+async def test_multiple_clients_one_server_dispatcher() -> None:
     """Test multiple clients communicating with one server through dispatchers."""
     zmq_ctx = zmq.Context()
 
@@ -378,7 +378,7 @@ async def test_multiple_clients_one_server_dispatcher():
 
 
 @pytest.mark.asyncio
-async def test_composable_handlers():
+async def test_composable_handlers() -> None:
     """Test that both general and specific handlers are called for the same message."""
     zmq_ctx = zmq.Context()
 
@@ -514,7 +514,7 @@ async def test_composable_handlers():
 
 
 @pytest.mark.asyncio
-async def test_error_handling_and_resilience():
+async def test_error_handling_and_resilience() -> None:
     """Test error handling and system resilience."""
     zmq_ctx = zmq.Context()
 
@@ -643,7 +643,7 @@ async def test_error_handling_and_resilience():
 
 
 @pytest.mark.asyncio
-async def test_high_throughput_performance():
+async def test_high_throughput_performance() -> None:
     """Test high throughput message processing."""
     zmq_ctx = zmq.Context()
 
@@ -767,7 +767,7 @@ async def test_high_throughput_performance():
 
 
 @pytest.mark.asyncio
-async def test_connection_failure_recovery():
+async def test_connection_failure_recovery() -> None:
     """Test connection failure and recovery scenarios."""
     zmq_ctx = zmq.Context()
 
@@ -824,7 +824,7 @@ async def test_connection_failure_recovery():
 
 
 @pytest.mark.asyncio
-async def test_handler_exception_isolation():
+async def test_handler_exception_isolation() -> None:
     """Test that handler exceptions don't crash the process and other messages are still processed."""
     zmq_ctx = zmq.Context()
 
@@ -958,7 +958,7 @@ async def test_handler_exception_isolation():
 
 
 @pytest.mark.asyncio
-async def test_no_handler_registered():
+async def test_no_handler_registered() -> None:
     """Test that messages with no registered handler are handled gracefully."""
     zmq_ctx = zmq.Context()
 
@@ -1045,7 +1045,7 @@ async def test_no_handler_registered():
 
 
 @pytest.mark.asyncio
-async def test_invalid_destination_address():
+async def test_invalid_destination_address() -> None:
     """Test that sending to invalid addresses is handled gracefully."""
     zmq_ctx = zmq.Context()
 
@@ -1111,7 +1111,7 @@ async def test_invalid_destination_address():
 
 
 @pytest.mark.asyncio
-async def test_duplicate_handler_registration():
+async def test_duplicate_handler_registration() -> None:
     """Test that registering duplicate handlers raises ValueError."""
     zmq_ctx = zmq.Context()
 

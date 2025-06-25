@@ -57,7 +57,7 @@ class TorchMLP(nn.Module):
         bias_tensors: Optional[
             tuple[torch.Tensor, torch.Tensor, torch.Tensor]
         ] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.gate_proj = torch_linear(
             gate_proj,
@@ -84,7 +84,7 @@ class TorchMLP(nn.Module):
 
 
 class WrapModuleForSubgraph(Module):
-    def __init__(self, module: Module):
+    def __init__(self, module: Module) -> None:
         super().__init__()
         # The name of the variable is used to determine the prefix of the weights in the Module class
         self.prefix = module
@@ -92,7 +92,7 @@ class WrapModuleForSubgraph(Module):
     def __call__(self, *args):
         subgraph_arg_types: list[Type] = []
 
-        def flatten(t, result):
+        def flatten(t, result) -> None:
             if isinstance(t, (list, tuple)):
                 for item in t:
                     flatten(item, result)
@@ -186,7 +186,7 @@ def compare_mlp_outputs(
     is_gpu: bool = False,
     has_bias: bool = False,
     use_subgraphs: bool = True,
-):
+) -> None:
     gate_proj_w = generate_tensor((hidden_dim, dim), torch_dtype, seed=42)
     down_proj_w = generate_tensor((dim, hidden_dim), torch_dtype, seed=43)
     up_proj_w = generate_tensor((hidden_dim, dim), torch_dtype, seed=44)
@@ -264,7 +264,7 @@ def compare_mlp_outputs(
 
 
 @pytest.mark.parametrize("use_subgraphs", [True, False])
-def test_mlp(use_subgraphs: bool):
+def test_mlp(use_subgraphs: bool) -> None:
     compare_mlp_outputs(
         1024,
         1024,

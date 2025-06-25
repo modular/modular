@@ -272,7 +272,9 @@ def test_execute_devicetensor_numpy_stays_alive(
         assert isclose(arr[idx].item(), 1.0)
 
 
-def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
+def test_execute_subtensor(
+    session: InferenceSession, mo_model_path: Path
+) -> None:
     # Our engine should be able to execute tensors that are contiguous slices
     # of larger tensors. This will be important for things like our kv cache
     # implementation.
@@ -532,7 +534,7 @@ def test_execute_external_weights_resident(
 )
 def test_weight_device_mismatch(
     session: InferenceSession,
-):
+) -> None:
     cuda = Accelerator()
     # Create graph with CPU-based weight
     with Graph(
@@ -571,7 +573,7 @@ def test_weight_device_mismatch(
 )
 def test_weight_device_implicit_mismatch(
     session: InferenceSession,
-):
+) -> None:
     cuda = Accelerator()
     with Graph(
         "test_device_validation",

@@ -15,7 +15,7 @@ import os
 import platform
 import signal
 import tempfile
-from typing import Optional
+from typing import NoReturn, Optional
 
 
 def check_correctness(
@@ -32,7 +32,7 @@ def check_correctness(
         the results later even if execution finishes asynchronously.
     """
 
-    def unsafe_execute():
+    def unsafe_execute() -> None:
         with create_tempdir():
             # These system calls are needed when cleaning up tempdir.
             import os
@@ -103,7 +103,7 @@ def check_correctness(
 
 @contextlib.contextmanager
 def time_limit(seconds: float):
-    def signal_handler(signum, frame):
+    def signal_handler(signum, frame) -> NoReturn:
         raise TimeoutException("Timed out!")
 
     signal.setitimer(signal.ITIMER_REAL, seconds)
@@ -137,16 +137,16 @@ class TimeoutException(Exception):
 class WriteOnlyStringIO(io.StringIO):
     """StringIO that throws an exception when it's read from"""
 
-    def read(self, *args, **kwargs):
+    def read(self, *args, **kwargs) -> NoReturn:
         raise OSError
 
-    def readline(self, *args, **kwargs):
+    def readline(self, *args, **kwargs) -> NoReturn:
         raise OSError
 
-    def readlines(self, *args, **kwargs):
+    def readlines(self, *args, **kwargs) -> NoReturn:
         raise OSError
 
-    def readable(self, *args, **kwargs):
+    def readable(self, *args, **kwargs) -> bool:
         """Returns True if the IO object can be read."""
         return False
 
@@ -170,7 +170,7 @@ def chdir(root):
         os.chdir(cwd)
 
 
-def reliability_guard(maximum_memory_bytes: Optional[int] = None):
+def reliability_guard(maximum_memory_bytes: Optional[int] = None) -> None:
     """
     This disables various destructive functions and prevents the generated code
     from interfering with the test (e.g. fork bomb, killing other processes,

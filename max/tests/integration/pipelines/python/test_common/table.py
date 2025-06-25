@@ -35,7 +35,7 @@ class PrettyTable:
         headers: Sequence[Any],
         title: Optional[str] = None,
         paginate: bool = True,
-    ):
+    ) -> None:
         """
             Initialize table
         Args:
@@ -58,7 +58,7 @@ class PrettyTable:
         self._headers = headers
         self._paginate = paginate
 
-    def add_row(self, row: Sequence[Any]):
+    def add_row(self, row: Sequence[Any]) -> None:
         """
         Add a new row to the table
         Args:
@@ -69,7 +69,7 @@ class PrettyTable:
         )
         self._table.add_row(*[f"{col}" for col in row])
 
-    def add_rows(self, rows: Sequence[Sequence[Any]]):
+    def add_rows(self, rows: Sequence[Sequence[Any]]) -> None:
         """
         Add multiple rows to the table
         Args:
@@ -79,7 +79,7 @@ class PrettyTable:
         for row in rows:
             self.add_row(row)
 
-    def print(self):
+    def print(self) -> None:
         """
         Print the table to console
         """

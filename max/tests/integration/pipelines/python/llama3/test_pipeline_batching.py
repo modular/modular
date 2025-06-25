@@ -87,7 +87,7 @@ def pipeline(
 @pytest.mark.asyncio
 async def test_pipeline_static_batch_same_prompt_same_output(
     pipeline, pipeline_tokenizer
-):
+) -> None:
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
     All batches should complete at the same time.
@@ -129,7 +129,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 @pytest.mark.asyncio
 async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     pipeline, pipeline_tokenizer
-):
+) -> None:
     """Execute a batch which matches the batch-size of the model
     HOWEVER, we set different max-new-tokens for each batch
     For N batches, Batch1 = MaxTokens / N, BatchN = MaxTokens
@@ -200,7 +200,7 @@ def batch_sizes(request):
 )
 async def test_pipeline_dynamic_batch_same_prompt_same_output(
     pipeline, pipeline_tokenizer, batch_sizes
-):
+) -> None:
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
     All batches should complete at the same time.
@@ -248,7 +248,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 @pytest.mark.skip("AITLIB-336: Bug that causes a mismatch in matmul dimensions")
 async def test_pipeline_heterogeneous_batch_logits(
     pipeline, pipeline_tokenizer
-):
+) -> None:
     """Execute a batch with prompts with different lengths and validates the
     logits.
 

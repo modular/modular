@@ -13,7 +13,7 @@ from max.nn.layer import Layer
 
 
 class OuterLayer(Layer):
-    def __init__(self):
+    def __init__(self) -> None:
         self.inner_layer_1 = InnerLayer()
         self.inner_layer_2 = InnerLayer()
 

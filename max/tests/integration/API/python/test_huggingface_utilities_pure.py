@@ -13,7 +13,7 @@ from max.pipelines.lib import HuggingFaceRepo
 from max.pipelines.lib.hf_utils import validate_hf_repo_access
 
 
-def test_huggingface_repo__local_path():
+def test_huggingface_repo__local_path() -> None:
     temp_dir = tempfile.mkdtemp()
     mock_path = MagicMock()
     mock_path.is_dir.return_value = True
@@ -29,7 +29,7 @@ def test_huggingface_repo__local_path():
 class TestValidateHfRepoAccess:
     """Test cases for validate_hf_repo_access function."""
 
-    def test_valid_repo_access_success(self):
+    def test_valid_repo_access_success(self) -> None:
         """Test that valid repository access doesn't raise any exception."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -43,7 +43,7 @@ class TestValidateHfRepoAccess:
                 repo_id="valid/repo", revision="main"
             )
 
-    def test_repo_not_exists_raises_value_error(self):
+    def test_repo_not_exists_raises_value_error(self) -> None:
         """Test that non-existent repository raises ValueError with appropriate message."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -59,7 +59,9 @@ class TestValidateHfRepoAccess:
             assert "2. The repository exists on Hugging Face" in error_msg
             assert "3. The revision 'main' exists" in error_msg
 
-    def test_gated_repo_error_raises_value_error_with_auth_message(self):
+    def test_gated_repo_error_raises_value_error_with_auth_message(
+        self,
+    ) -> None:
         """Test that GatedRepoError raises ValueError with authentication guidance."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -90,7 +92,7 @@ class TestValidateHfRepoAccess:
             # Check that the original exception is preserved in the chain
             assert exc_info.value.__cause__ is original_error
 
-    def test_repository_not_found_error_raises_value_error(self):
+    def test_repository_not_found_error_raises_value_error(self) -> None:
         """Test that RepositoryNotFoundError raises ValueError with helpful message."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -113,7 +115,7 @@ class TestValidateHfRepoAccess:
             # Check that the original exception is preserved in the chain
             assert exc_info.value.__cause__ is original_error
 
-    def test_revision_not_found_error_raises_value_error(self):
+    def test_revision_not_found_error_raises_value_error(self) -> None:
         """Test that RevisionNotFoundError raises ValueError with helpful message."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -136,7 +138,9 @@ class TestValidateHfRepoAccess:
             # Check that the original exception is preserved in the chain
             assert exc_info.value.__cause__ is original_error
 
-    def test_generic_exception_raises_value_error_with_fallback_message(self):
+    def test_generic_exception_raises_value_error_with_fallback_message(
+        self,
+    ) -> None:
         """Test that unexpected exceptions raise ValueError with fallback message."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -158,7 +162,7 @@ class TestValidateHfRepoAccess:
             # Check that the original exception is preserved in the chain
             assert exc_info.value.__cause__ is original_error
 
-    def test_entry_not_found_error_raises_value_error(self):
+    def test_entry_not_found_error_raises_value_error(self) -> None:
         """Test that EntryNotFoundError raises ValueError with helpful message."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -176,7 +180,7 @@ class TestValidateHfRepoAccess:
             # Check that the original exception is preserved in the chain
             assert exc_info.value.__cause__ is original_error
 
-    def test_function_calls_repo_exists_with_correct_parameters(self):
+    def test_function_calls_repo_exists_with_correct_parameters(self) -> None:
         """Test that the function calls _repo_exists_with_retry with correct parameters."""
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
@@ -189,7 +193,7 @@ class TestValidateHfRepoAccess:
                 repo_id="test/repo", revision="v1.0"
             )
 
-    def test_error_message_contains_repo_and_revision_info(self):
+    def test_error_message_contains_repo_and_revision_info(self) -> None:
         """Test that error messages contain the specific repo_id and revision being validated."""
         test_cases = [
             ("my-org/my-model", "main"),

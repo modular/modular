@@ -9,7 +9,7 @@ from max.dtype import DType
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 
 
-def test_paged_kv_cache_memory_estimates_truncated():
+def test_paged_kv_cache_memory_estimates_truncated() -> None:
     kv_params = KVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
@@ -34,7 +34,7 @@ def test_paged_kv_cache_memory_estimates_truncated():
     assert estimated_cache_memory == expected_value
 
 
-def test_paged_kv_cache_memory_estimates_not_truncated():
+def test_paged_kv_cache_memory_estimates_not_truncated() -> None:
     kv_params = KVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
