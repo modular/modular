@@ -164,17 +164,17 @@ def test_config__validate_target_and_draft_architecture(
         )
 
 
-def test_config__validate_huggingface_engine(llama_3_1_8b_instruct_local_path):
+def test_config__validate_huggingface_engine(smollm2_135m_local_path):
     """Test that speculative decoding is not supported with HuggingFace engine."""
     with pytest.raises(
         ValueError,
         match="Speculative Decoding not supported with the HuggingFace Engine",
     ):
         PipelineConfig(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding=SupportedEncoding.bfloat16,
+            model_path=smollm2_135m_local_path,
+            quantization_encoding=SupportedEncoding.float32,
             device_specs=[DeviceSpec.accelerator()],
-            draft_model_path=llama_3_1_8b_instruct_local_path,
+            draft_model_path=smollm2_135m_local_path,
             engine=PipelineEngine.HUGGINGFACE,
         )
 
