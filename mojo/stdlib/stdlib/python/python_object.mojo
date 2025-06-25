@@ -24,10 +24,6 @@ from sys.ffi import c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from compile.reflection import get_type_name
 
-# NOTE: This apparently redundant import is needed so PythonBindingsGen.cpp can
-# find the StringLiteral declaration.
-from builtin.string_literal import StringLiteral
-
 from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject, GILAcquired
 from .python import Python
 from .bindings import _get_type_name, lookup_py_type_object, PyMojoObject
