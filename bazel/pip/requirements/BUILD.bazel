@@ -1,4 +1,4 @@
-load("@module_versions//:config.bzl", "TORCH_DEFAULT_VERSION", "TORCH_VERSIONS")
+load("@module_versions//:config.bzl", "TORCH_DEFAULT_VERSION")
 load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_uv//uv:pip.bzl", "pip_compile")
 
@@ -35,37 +35,32 @@ exports_files(glob(["**/*-requirements*.txt"]))
     ]
 ]
 
-[
-    pip_compile(
-        name = "generate_torch_requirements-{}".format(version),
-        args = [
-            "--no-config",
-            "--emit-index-url",
-            "--index-strategy=unsafe-best-match",  # NOTE: required because torch's index contains requests and that is preferred over pypi
-            "--no-strip-extras",
-            "--universal",
-            "--config-file",
-            "bazel/pip/requirements/default-uv.toml",
-        ] + ([] if version == TORCH_DEFAULT_VERSION else ["--no-deps"]),
-        data = [
-            "default-uv.toml",
-            "requirements.in",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
-        py3_runtime = "@python_3_9//:py3_runtime",
-        requirements_in = "torch/requirements-{}.in".format(version),
-        requirements_txt = "torch/requirements-{}.txt".format(version),
-    )
-    for version in TORCH_VERSIONS
-]
+pip_compile(
+    name = "generate_requirements",
+    args = [
+        "--no-config",
+        "--emit-index-url",
+        "--index-strategy=unsafe-best-match",  # NOTE: required because torch's index contains requests and that is preferred over pypi
+        "--no-strip-extras",
+        "--universal",
+        "--config-file",
+        "bazel/pip/requirements/default-uv.toml",
+    ],
+    data = [
+        "default-uv.toml",
+        "requirements.in",
+    ],
+    exec_properties = {"dockerNetwork": "bridge"},
+    py3_runtime = "@python_3_9//:py3_runtime",
+    requirements_in = "torch/requirements-{}.in".format(TORCH_DEFAULT_VERSION),
+    requirements_txt = "torch/requirements-{}.txt".format(TORCH_DEFAULT_VERSION),
+)
 
 multirun(
     name = "update_requirements",
     commands = [
         ":generate_amd_gpu_requirements",
         ":generate_nvidia_gpu_requirements",
-    ] + [
-        ":generate_torch_requirements-{}".format(version)
-        for version in TORCH_VERSIONS
+        ":generate_requirements",
     ],
 )
