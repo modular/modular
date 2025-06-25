@@ -23,7 +23,6 @@ from .config_enums import (
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import (
-    HuggingFaceFile,
     HuggingFaceRepo,
     download_weight_files,
     generate_local_model_path,
@@ -72,7 +71,6 @@ __all__ = [
     "EmbeddingsPipeline",
     "generate_local_model_path",
     "get_paged_manager",
-    "HuggingFaceFile",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",

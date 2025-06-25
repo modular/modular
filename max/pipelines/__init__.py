@@ -50,10 +50,7 @@ from .lib.config_enums import (
     SupportedEncoding,
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline
-from .lib.hf_utils import (
-    HuggingFaceFile,
-    download_weight_files,
-)
+from .lib.hf_utils import download_weight_files
 from .lib.max_config import (
     KVCacheConfig,
     ProfilingConfig,
@@ -89,7 +86,6 @@ __all__ = [
     "EmbeddingsGenerator",
     "EmbeddingsPipeline",
     "EmbeddingsResponse",
-    "HuggingFaceFile",
     "IdentityPipelineTokenizer",
     "InputContext",
     "KVCacheConfig",

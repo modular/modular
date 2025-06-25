@@ -150,42 +150,6 @@ def validate_hf_repo_access(repo_id: str, revision: str) -> None:
         ) from e
 
 
-@dataclass(frozen=True)
-class HuggingFaceFile:
-    """A simple object for tracking Hugging Face model metadata. The repo_id will
-    frequently be used to load a tokenizer, whereas the filename is used to
-    download model weights."""
-
-    repo_id: str
-    filename: str
-    revision: str | None = None
-
-    def download(self, force_download: bool = False) -> Path:
-        """Download the file and return the file path where the data is saved locally."""
-        return Path(
-            huggingface_hub.hf_hub_download(
-                self.repo_id,
-                self.filename,
-                revision=self.revision,
-                force_download=force_download,
-            )
-        )
-
-    def size(self) -> int | None:
-        url = huggingface_hub.hf_hub_url(
-            self.repo_id, self.filename, revision=self.revision
-        )
-        metadata = huggingface_hub.get_hf_file_metadata(url)
-        return metadata.size
-
-    def exists(self) -> bool:
-        return huggingface_hub.file_exists(
-            repo_id=self.repo_id,
-            filename=self.filename,
-            revision=self.revision,
-        )
-
-
 class _ThreadingOnlyTqdmLock(TqdmDefaultWriteLock):
     """A version of TqdmDefaultWriteLock that only uses threading locks.
 
