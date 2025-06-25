@@ -10,14 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %bare-mojo build %S/mojo_module.mojo --emit shared-lib -o mojo_module.so
-# RUN: python3 %s
 
 import sys
 import unittest
-
-# Put the current directory (containing .so) on the Python module lookup path.
-sys.path.insert(0, "")
 
 # Imports from 'mojo_module.so'
 import mojo_module as def_method

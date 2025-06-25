@@ -24,6 +24,25 @@ bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 bazel_dep(name = "rules_mypy", version = "0.36.0", dev_dependency = True)
 bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
 
+# TODO: Remove when >0.4.1 is released
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-XsI6VTuzUKH+VvZ73b9ACDGcUFiIIl6b6NCLtAB2m7k=",
+    strip_prefix = "rules_mojo-909129d91fcfe162be3c2707d58c7029ed18c0e9",
+    urls = [
+        "https://github.com/modular/rules_mojo/archive/909129d91fcfe162be3c2707d58c7029ed18c0e9.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/theoremlp/rules_mypy/pull/105
+        "//bazel/public-patches:rules_mypy_mojo_srcs.patch",
+    ],
+)
+
 single_version_override(
     module_name = "rules_python",
     patch_strip = 1,
