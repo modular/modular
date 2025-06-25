@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the NDBuffer struct.
 
-You can import these APIs from the `memory` package. For example:
+You can import these APIs from the `buffer` package. For example:
 
 ```mojo
 from buffer import NDBuffer
