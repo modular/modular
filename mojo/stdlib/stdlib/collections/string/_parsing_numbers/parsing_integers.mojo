@@ -16,6 +16,7 @@ from memory import memcmp, memcpy
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
 
+@no_inline
 fn standardize_string_slice(
     x: StringSlice[mut=False],
 ) -> InlineArray[Byte, CONTAINER_SIZE]:
@@ -46,6 +47,7 @@ fn to_integer(x: StringSlice[mut=False]) raises -> UInt64:
     return to_integer(standardize_string_slice(x))
 
 
+@no_inline
 fn to_integer(
     standardized_x: InlineArray[Byte, CONTAINER_SIZE]
 ) raises -> UInt64:
