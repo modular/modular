@@ -4,7 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
 import numpy as np
+import pytest
 from max.pipelines.core import LogProbabilities
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
@@ -211,3 +217,218 @@ def test_compute_log_probabilities_ragged() -> None:
     assert len(output[2].token_log_probabilities) == 1
     assert len(output[2].top_log_probabilities) == 1
     assert output[2].top_log_probabilities[0].keys() == {0, 1}
+
+
+@dataclass
+class InputBatchItem:
+    logits: np.ndarray | None  # shape (seq, vocab_size)
+    next_token_logits: np.ndarray  # shape (vocab_size,)
+    tokens: np.ndarray  # shape (seq,)
+    sampled_token: int
+    top_n: int
+    echo: bool
+
+    @classmethod
+    def random(
+        cls, rng: np.random.Generator, *, vocab_size: int, with_logits: bool
+    ) -> InputBatchItem:
+        seq_len = int(rng.integers(1, 300, endpoint=True))
+        want_log_probs = bool(rng.integers(0, 4) == 0)
+        fake_quantize = bool(rng.integers(0, 2) == 0)
+        if with_logits:
+            # This is absolutely the wrong distribution, but it's good enough
+            # for our purposes.  That said, if someone felt like figuring out a
+            # more representative distribution for logit outputs and could
+            # replace this, the test could have more fidelity.
+            logits = rng.normal(size=(seq_len, vocab_size))
+            if fake_quantize:
+                logits = np.round(logits, decimals=1)
+            next_token_logits = logits[-1, :]
+        else:
+            logits = None
+            next_token_logits = rng.normal(size=(vocab_size,))
+            if fake_quantize:
+                next_token_logits = np.round(next_token_logits, decimals=1)
+        return cls(
+            logits=logits,
+            next_token_logits=next_token_logits,
+            tokens=rng.integers(0, vocab_size, size=(seq_len,)),
+            sampled_token=int(rng.integers(0, vocab_size)),
+            top_n=(
+                int(rng.integers(1, min(5, vocab_size), endpoint=True))
+                if want_log_probs
+                else 0
+            ),
+            echo=(
+                bool(rng.integers(0, 4) == 0)
+                if want_log_probs and with_logits
+                else False
+            ),
+        )
+
+
+def random_batch(rng: np.random.Generator) -> Sequence[InputBatchItem]:
+    batch_size = int(rng.integers(1, 64, endpoint=True))
+    vocab_size = int(rng.integers(1, 128, endpoint=True))
+    with_logits = bool(rng.integers(0, 4) == 0)
+    return [
+        InputBatchItem.random(
+            rng, vocab_size=vocab_size, with_logits=with_logits
+        )
+        for i in range(batch_size)
+    ]
+
+
+@dataclass
+class PackedInput:
+    input_row_offsets: np.ndarray
+    logits: np.ndarray | None
+    next_token_logits: np.ndarray
+    tokens: np.ndarray
+    sampled_tokens: np.ndarray
+    batch_top_n: Sequence[int]
+    batch_echo: Sequence[bool]
+
+    @classmethod
+    def from_items(cls, batch_items: Sequence[InputBatchItem]) -> PackedInput:
+        return cls(
+            input_row_offsets=np.concatenate(
+                [
+                    np.array([0], dtype=np.uint32),
+                    np.cumsum(
+                        np.array(
+                            [item.tokens.shape[0] for item in batch_items],
+                            dtype=np.uint32,
+                        )
+                    ),
+                ]
+            ),
+            logits=np.concatenate(
+                [
+                    (
+                        item.logits
+                        if item.logits is not None
+                        else np.array([], dtype=np.float32)
+                    )
+                    for item in batch_items
+                ]
+            ),
+            next_token_logits=np.stack(
+                [item.next_token_logits for item in batch_items]
+            ),
+            tokens=np.concatenate([item.tokens for item in batch_items]),
+            sampled_tokens=np.array(
+                [item.sampled_token for item in batch_items], dtype=np.uint32
+            ),
+            batch_top_n=[item.top_n for item in batch_items],
+            batch_echo=[item.echo for item in batch_items],
+        )
+
+
+def verify_position(
+    alleged_logprob: float,
+    top_mapping: Mapping[int, float],
+    *,
+    top_n: int,
+    sampled: int,
+    logits: np.ndarray,
+) -> None:
+    logsoftmaxed_logits = log_softmax(logits)
+    threshold = 1e-4
+    # Verify logit values -- keys are checked later.
+    assert np.isclose(
+        alleged_logprob, logsoftmaxed_logits[sampled], rtol=0, atol=threshold
+    )
+    for token in top_mapping:
+        assert np.isclose(
+            top_mapping[token],
+            logsoftmaxed_logits[token],
+            rtol=0,
+            atol=threshold,
+        )
+    # Sampled token must always appear in top_mapping, even if it would cause
+    # us to exceed top_n by 1.
+    assert sampled in top_mapping
+    assert top_n <= len(top_mapping) <= top_n + 1
+    if len(top_mapping) == top_n + 1:
+        # The only time we should exceed top_n is when the sampled token was
+        # not in top_n.  So in this case, the sampled token had better have the
+        # minimum logit value.  If there is some other element with a lower
+        # logit value, that's a problem.  Relative orderings in top_mapping
+        # should be exact, so no usage of tolerance here.
+        assert not any(
+            value < top_mapping[sampled] for value in top_mapping.values()
+        )
+    if 1 < len(top_mapping) < len(logits):
+        # Sampled token aside, the items in top_mapping had better really be
+        # the top_n.  top_n is not necessarily unique (e.g. if there are tokens
+        # with identical logits, which does happen in practice), so we're
+        # basically saying "everything in top n must be at least as big as
+        # everything not in it".  Threshold isn't needed since we're comparing
+        # like-for-like -- this test's computed log-softmax rather than
+        # top_mapping's values (those we checked separately earlier).
+        min_top = min(
+            logsoftmaxed_logits[token]
+            for token in top_mapping
+            if token != sampled
+        )
+        max_not_in_mapping = max(
+            float(value)
+            for index, value in enumerate(logsoftmaxed_logits)
+            if index not in top_mapping
+        )
+        assert max_not_in_mapping <= min_top
+
+
+def verify_output(
+    item: InputBatchItem, output: LogProbabilities | None
+) -> None:
+    if item.top_n == 0:
+        assert output is None
+        return
+    assert output is not None
+    if item.echo:
+        assert len(output.token_log_probabilities) == item.tokens.shape[0]
+        assert len(output.top_log_probabilities) == item.tokens.shape[0]
+        assert item.logits is not None
+        for seq in range(item.tokens.shape[0] - 1):
+            verify_position(
+                output.token_log_probabilities[seq],
+                output.top_log_probabilities[seq],
+                top_n=item.top_n,
+                sampled=item.tokens[seq + 1],
+                logits=item.logits[seq, :],
+            )
+    else:
+        assert len(output.token_log_probabilities) == 1
+        assert len(output.top_log_probabilities) == 1
+    verify_position(
+        output.token_log_probabilities[-1],
+        output.top_log_probabilities[-1],
+        top_n=item.top_n,
+        sampled=item.sampled_token,
+        logits=item.next_token_logits,
+    )
+
+
+# The randomized test provides larger inputs than the manually-written tests
+# above, and handles some ambiguous cases for which there are multiple valid
+# answers.  (Specifically, ties in the top-n are implementation-dependent, and
+# we want to tolerate any tie-breaking strategy.)
+@pytest.mark.parametrize("seed", range(50))
+def test_log_probabilities_randomized(seed: int) -> None:
+    rng = np.random.default_rng(seed)
+    batch = random_batch(rng)
+    packed = PackedInput.from_items(batch)
+    outputs = compute_log_probabilities_ragged(
+        input_row_offsets=packed.input_row_offsets,
+        logits=packed.logits,
+        next_token_logits=packed.next_token_logits,
+        tokens=packed.tokens,
+        sampled_tokens=packed.sampled_tokens,
+        batch_top_n=packed.batch_top_n,
+        batch_echo=packed.batch_echo,
+    )
+    assert len(outputs) == len(batch)
+    for item, output in zip(batch, outputs):
+        verify_output(item, output)
