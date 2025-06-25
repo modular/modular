@@ -63,6 +63,7 @@ fn _mojo_block_hasher[
 ](
     py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
     block_size: Int,
+    parent_hash: Int,
 ) -> PythonObject:
     # Compute number of hashes
     var num_elts: Int = py_array_object_ptr[].num_elts()
@@ -74,11 +75,8 @@ fn _mojo_block_hasher[
     # results.
     var result_py_list = cpython.PyList_New(num_hashes)
 
-    # Initial hash seed value
-    alias initial_hash = String("None").__hash__()
-
     # Performing hashing
-    var prev_hash = initial_hash
+    var prev_hash = parent_hash
     var num_bytes = block_size * sizeof[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
@@ -101,16 +99,20 @@ fn _mojo_block_hasher[
 fn mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,
+    parent_hash_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], **_](
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int64], **_](
         unchecked_downcast_value=py_array_object
     )
 
-    # Parse block size
+    # Parse other arguments
     var block_size = Int(block_size_obj)
+    var parent_hash = Int(parent_hash_obj)
 
     # Performing hashing
-    var results = _mojo_block_hasher(py_array_object_ptr, block_size)
+    var results = _mojo_block_hasher(
+        py_array_object_ptr, block_size, parent_hash
+    )
 
     return results^
