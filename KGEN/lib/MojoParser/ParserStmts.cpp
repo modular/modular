@@ -2994,7 +2994,8 @@ static AnyValue emitComprehension(const ComprehensionNode *node,
   // temporary operation so we can find it later.
   auto cursor = stmtEmitter.getBuilder().create<LIT::ReturnOp>(
       location, ArrayRef<Value>());
-  IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor));
+  IREmitter cursorEmitter(emitter.declScope, OpBuilder(cursor),
+                          emitter.varDeclCursor);
   DebugInfo::DIBuilder cursorDIBuilder(emitter.getContext());
   if (shared.diBuilder)
     cursorDIBuilder = shared.diBuilder->copy();
