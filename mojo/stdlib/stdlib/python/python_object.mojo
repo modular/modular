@@ -156,12 +156,6 @@ struct _PyIter(Defaultable, Sized):
             return 1
 
 
-alias PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
-alias PyFunctionRaising = fn (
-    mut PythonObject, mut PythonObject
-) raises -> PythonObject
-
-
 @register_passable
 struct PythonObject(
     Boolable,

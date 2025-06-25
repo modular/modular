@@ -26,6 +26,7 @@ from python.bindings import (  # Imported for use by the compiler
     PythonTypeBuilder,
     _get_type_name,
     check_arguments_arity,
+    PyFunctionRaising,
 )
 from python._cpython import (
     CPython,
@@ -34,7 +35,6 @@ from python._cpython import (
     PyType_Slot,
     PyType_Spec,
 )
-from python.python_object import PyFunctionRaising
 
 
 fn get_cpython() -> CPython:

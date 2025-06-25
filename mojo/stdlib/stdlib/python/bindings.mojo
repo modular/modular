@@ -30,7 +30,6 @@ from python._cpython import (
     PyType_Spec,
     GILAcquired,
 )
-from python.python_object import PyFunction, PyFunctionRaising
 from python._python_func import PyObjectFunction
 from builtin._startup import _ensure_current_or_global_runtime_init
 
@@ -283,6 +282,24 @@ fn _tp_repr_wrapper[
 # Builders
 # ===-----------------------------------------------------------------------===#
 
+alias PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
+"""The generic function type for non-raising Python bindings.
+
+The first argument is the self object, and the second argument is a tuple of the
+positional arguments. These functions always return a Python object (could be a
+`None` object).
+"""
+
+alias PyFunctionRaising = fn (
+    mut PythonObject, mut PythonObject
+) raises -> PythonObject
+"""The generic function type for raising Python bindings.
+
+The first argument is the self object, and the second argument is a tuple of the
+positional arguments. These functions always return a Python object (could be a
+`None` object).
+"""
+
 
 struct PythonModuleBuilder:
     """A builder for creating Python modules with Mojo function and type bindings.
@@ -430,10 +447,6 @@ struct PythonModuleBuilder:
             _py_c_function_wrapper[func], func_name, docstring
         )
 
-    # ===-------------------------------------------------------------------===#
-    # def_function
-    # ===-------------------------------------------------------------------===#
-
     fn def_function[
         func_type: AnyTrivialRegType, //,
         func: PyObjectFunction[func_type, False],
@@ -442,7 +455,7 @@ struct PythonModuleBuilder:
         module.
 
         These signatures can have any number of positional PythonObject
-        arguments up to 3, can optionally return a PythonObject, and can raise.
+        arguments up to 6, can optionally return a PythonObject, and can raise.
 
         Example signature types:
         ```mojo
@@ -730,10 +743,6 @@ struct PythonTypeBuilder(Copyable, Movable):
             _py_c_function_wrapper[method], method_name, docstring
         )
 
-    # ===-------------------------------------------------------------------===#
-    # def_method
-    # ===-------------------------------------------------------------------===#
-
     fn def_method[
         method_type: AnyTrivialRegType, //,
         method: PyObjectFunction[method_type, True],
@@ -746,7 +755,7 @@ struct PythonTypeBuilder(Copyable, Movable):
         type.
 
         These signatures can have any number of positional PythonObject
-        arguments up to 3 (including self), can optionally return a
+        arguments up to 6 (including self), can optionally return a
         PythonObject, and can raise.
 
         Example signature types:
