@@ -43,13 +43,23 @@ from typing import Optional, TypeVar
 
 import click
 import numpy as np
-from model.cli.commands._internal._verify_utils import construct_validator
-from model.utils.custom_args import CommaSeparatedList
-from model.utils.exceptions import AccuracyError
-from model.utils.logging import CONSOLE
+from test_common.custom_args import CommaSeparatedList
 from test_common.distance_metrics import kl_divergence_from_logits
 from test_common.evaluate import ModelOutput, TokenInfo, compare_values
 from test_common.numpy_encoder import NumpyDecoder
+from test_common.table import CONSOLE
+from test_common.verify_utils import construct_validator
+
+
+class VerificationError(click.ClickException):
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class AccuracyError(VerificationError):
+    def __init__(self, message):
+        super().__init__(message)
+        self.exit_code = 2
 
 
 class ModelModality(str, Enum):

@@ -30,6 +30,7 @@ modular_py_library(
         ":registry",
         ":test_data",
         ":torch_utils",
+        ":verify_utils",
     ],
 )
 
@@ -213,4 +214,20 @@ modular_py_library(
     ],
     imports = [".."],
     visibility = ["//visibility:public"],
+)
+
+modular_py_library(
+    name = "verify_utils",
+    srcs = [
+        "custom_args.py",
+        "table.py",
+        "verify_utils.py",
+    ],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Support/python:support",
+        requirement("rich"),
+        requirement("scipy"),
+    ],
 )
