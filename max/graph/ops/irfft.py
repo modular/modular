@@ -66,7 +66,6 @@ def irfft(
     axis: int = -1,
     normalization: Normalization | str = Normalization.BACKWARD,
     input_is_complex: bool = False,
-    buffer_size_mb: int = 512,
 ):
     """Compute the inverse real FFT of the input tensor.
 
@@ -83,10 +82,6 @@ def irfft(
         input_is_complex: Whether the input tensor is already interleaved
             complex. The last dimension of the input tensor must be 2, and is
             excluded from the dimension referred to by `axis`.
-        buffer_size_mb: The estimated size of a persistent buffer to use for
-            storage of intermediate results. Needs to be the same across multiple
-            calls to `irfft` within the same graph. Otherwise, multiple buffers
-            will be allocated.
 
     Returns:
         The inverse real FFT of the input tensor. The shape of the output tensor
@@ -151,7 +146,7 @@ def irfft(
                 device=input_tensor.device,
             )
         ],
-        {"n": n, "buffer_size_mb": buffer_size_mb},
+        {"n": n},
     )[0].tensor
 
     if normalization == Normalization.BACKWARD:

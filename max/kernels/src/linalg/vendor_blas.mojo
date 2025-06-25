@@ -137,13 +137,15 @@ struct Backend(Copyable, EqualityComparable, Movable, Writable):
         writer.write("HIPBLASLT")
 
 
-fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
+fn _resolve_backend[
+    backend: Backend, dtype: DType = DType.invalid
+]() -> Backend:
     @parameter
     if backend is not Backend.AUTOMATIC:
         return backend
     elif has_amd_gpu_accelerator():
         return Backend.ROCBLAS
-    elif type.is_float8() or (DEFAULT_GPU > H100 and type.is_half_float()):
+    elif dtype.is_float8():
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -286,7 +288,8 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
 
 
 fn _get_global_handle[
-    backend: Backend = _resolve_backend[Backend.AUTOMATIC]()
+    dtype: DType,
+    backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
     var HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend)
     if global_ptr := _get_global_or_null(HANDLE_NAME).bitcast[
@@ -328,7 +331,7 @@ fn matmul[
 
     return matmul[use_tf32](
         ctx,
-        _get_global_handle(ctx),
+        _get_global_handle[a.type](ctx),
         c,
         a,
         b,

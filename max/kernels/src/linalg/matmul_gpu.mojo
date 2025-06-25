@@ -344,7 +344,7 @@ fn _matmul_sm100[
     except:
         # fallback to multistage/naive gemms if the cublas failed. This is a workaround for now for KERN-1812
         @parameter
-        if K * sizeof[a_type]() >= 8 * 16:
+        if not a_type.is_float8() and K * sizeof[a_type]() >= 8 * 16:
             alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
             alias config = kernels.ampere_256x64_4
             multistage_gemm[

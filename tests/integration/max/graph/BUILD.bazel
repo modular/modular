@@ -20,6 +20,7 @@ modular_py_test(
     size = "large",
     srcs = glob(["*.py"]),
     data = [
+        "//PyTorch:TorchRuntimePlugins",
         "//SDK/integration-test:compile_config_ops",
         "//SDK/integration-test:counter_ops",
         "//SDK/integration-test:kernel_verification_ops",
