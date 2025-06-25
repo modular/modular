@@ -29,6 +29,7 @@ from python._cpython import (
     PyType_Spec,
     destructor,
     newfunc,
+    GILAcquired,
 )
 from python.python_object import PyFunction, PyFunctionRaising
 from python._python_func import PyObjectFunction
@@ -901,24 +902,20 @@ fn _py_c_function_wrapper[
     ) -> PythonObject:
         var cpython = Python().cpython()
 
-        var state = cpython.PyGILState_Ensure()
+        with GILAcquired(cpython):
+            try:
+                return user_func(py_self, args)
+            except e:
+                # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
+                var error_type = cpython.get_error_global("PyExc_Exception")
 
-        try:
-            var result = user_func(py_self, args)
-            return result
-        except e:
-            # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
-            var error_type = cpython.get_error_global("PyExc_Exception")
+                cpython.PyErr_SetString(
+                    error_type,
+                    e.unsafe_cstr_ptr(),
+                )
 
-            cpython.PyErr_SetString(
-                error_type,
-                e.unsafe_cstr_ptr(),
-            )
-
-            # Return a NULL `PyObject*`.
-            return PythonObject(from_owned_ptr=PyObjectPtr())
-        finally:
-            cpython.PyGILState_Release(state)
+                # Return a NULL `PyObject*`.
+                return PythonObject(from_owned_ptr=PyObjectPtr())
 
     # TODO:
     #   Does this lead to multiple levels of indirect function calls for

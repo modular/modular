@@ -28,7 +28,7 @@ from compile.reflection import get_type_name
 # find the StringLiteral declaration.
 from builtin.string_literal import StringLiteral
 
-from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject
+from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject, GILAcquired
 from .python import Python
 from .bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
@@ -496,11 +496,10 @@ struct PythonObject(
         var cpython = Python().cpython()
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.
-        var state = cpython.PyGILState_Ensure()
-        if self.py_object:
-            cpython.Py_DecRef(self.py_object)
-        self.py_object = PyObjectPtr()
-        cpython.PyGILState_Release(state)
+        with GILAcquired(cpython):
+            if self.py_object:
+                cpython.Py_DecRef(self.py_object)
+            self.py_object = PyObjectPtr()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
