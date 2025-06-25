@@ -25,10 +25,9 @@ from python._cpython import (
     PyObject,
     PyObjectPtr,
     PyTypeObject,
+    PyTypeObjectPtr,
     PyType_Slot,
     PyType_Spec,
-    destructor,
-    newfunc,
     GILAcquired,
 )
 from python.python_object import PyFunction, PyFunctionRaising
@@ -42,14 +41,10 @@ from builtin._startup import _ensure_current_or_global_runtime_init
 alias MOJO_PYTHON_TYPE_OBJECTS = _Global[
     "MOJO_PYTHON_TYPE_OBJECTS",
     Dict[StaticString, PythonObject],
-    _init_python_type_objects,
+    Dict[StaticString, PythonObject].__init__,
 ]
 """Mapping of Mojo type identifiers to unique `PyTypeObject*` binding
 that Mojo type to this CPython interpreter instance."""
-
-
-fn _init_python_type_objects() -> Dict[StaticString, PythonObject]:
-    return Dict[StaticString, PythonObject]()
 
 
 fn _register_py_type_object(
@@ -121,17 +116,18 @@ fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # Mojo Object
 # ===-----------------------------------------------------------------------===#
 
-# Must be ABI compatible with `initproc`
+# https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
+
+# typedef int (*initproc)(PyObject*, PyObject*, PyObject*)
 alias Typed_initproc = fn (
     PyObjectPtr,
     PythonObject,
-    # Will be NULL if no keyword arguments were passed.
-    PyObjectPtr,
+    PyObjectPtr,  # NULL if no keyword arguments were passed
 ) -> c_int
 
-# Must be ABI compatible with `newfunc`
+# typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)
 alias Typed_newfunc = fn (
-    UnsafePointer[PyTypeObject],
+    PyTypeObjectPtr,
     PythonObject,
     PyObjectPtr,
 ) -> PyObjectPtr
@@ -172,9 +168,9 @@ struct PyMojoObject[T: AnyType]:
 fn _default_tp_new_wrapper[
     T: Defaultable & Movable
 ](
-    subtype: UnsafePointer[PyTypeObject],
+    subtype: PyTypeObjectPtr,
     args: PythonObject,
-    keyword_args: PyObjectPtr,
+    kwargs: PyObjectPtr,
 ) -> PyObjectPtr:
     """Python-compatible wrapper around a Mojo initializer function.
 
@@ -191,11 +187,11 @@ fn _default_tp_new_wrapper[
 
     Args:
         subtype: Pointer to the Python type object for which to create an instance.
-                This allows for proper subtype handling in Python's type system.
+            This allows for proper subtype handling in Python's type system.
         args: Tuple of positional arguments passed from Python. Must be empty
-              for this default initializer.
-        keyword_args: Pointer to keyword arguments dictionary passed from Python.
-                     Must be NULL for this default initializer.
+            for this default initializer.
+        kwargs: Pointer to keyword arguments dictionary passed from Python.
+            Must be NULL for this default initializer.
 
     Returns:
         A new Python object pointer containing a default-initialized Mojo value
@@ -211,7 +207,7 @@ fn _default_tp_new_wrapper[
     var cpython = Python().cpython()
 
     try:
-        if len(args) or keyword_args:
+        if len(args) or kwargs:
             raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
 
         # Create a new Python object with a default initialized Mojo value.
@@ -220,11 +216,8 @@ fn _default_tp_new_wrapper[
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
-        cpython.PyErr_SetString(
-            error_type,
-            e.unsafe_cstr_ptr(),
-        )
-        return PyObjectPtr()
+        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        return {}
 
 
 fn _tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
@@ -275,9 +268,9 @@ fn _tp_repr_wrapper[
         or null pointer if an error occurs.
     """
     var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-    var self_ptr = UnsafePointer[T](to=self_obj_ptr[].mojo_value)
+    var self_ptr = UnsafePointer(to=self_obj_ptr[].mojo_value)
 
-    var repr_str: String = repr(self_ptr[])
+    var repr_str = repr(self_ptr[])
 
     # NOTE: it is possible that `repr` returns an invalid UTF-8 string, so we
     # let Python decode it (which will return a null pointer and set an error
@@ -355,8 +348,8 @@ struct PythonModuleBuilder:
             module: The module to build.
         """
         self.module = module
-        self.functions = List[PyMethodDef]()
-        self.type_builders = List[PythonTypeBuilder]()
+        self.functions = []
+        self.type_builders = []
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -382,10 +375,10 @@ struct PythonModuleBuilder:
         return self.type_builders[-1]
 
     fn def_py_c_function(
-        mut self: Self,
+        mut self,
         func: PyCFunction,
         func_name: StaticString,
-        docstring: StaticString = StaticString(),
+        docstring: StaticString = "",
     ):
         """Declare a binding for a function with PyCFunction signature in the
         module.
@@ -401,11 +394,7 @@ struct PythonModuleBuilder:
 
     fn def_py_function[
         func: PyFunction
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
+    ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a function with PyFunction signature in the
         module.
 
@@ -424,11 +413,7 @@ struct PythonModuleBuilder:
 
     fn def_py_function[
         func: PyFunctionRaising
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
+    ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a function with PyFunctionRaising signature in
         the module.
 
@@ -452,11 +437,7 @@ struct PythonModuleBuilder:
     fn def_function[
         func_type: AnyTrivialRegType, //,
         func: PyObjectFunction[func_type, False],
-    ](
-        mut self: Self,
-        func_name: StaticString,
-        docstring: StaticString = StaticString(),
-    ):
+    ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a function with PythonObject signature in the
         module.
 
@@ -568,8 +549,8 @@ struct PythonTypeBuilder(Copyable, Movable):
         self.type_name = type_name
         self._type_id = None
         self.basicsize = basicsize
-        self._slots = List[PyType_Slot]()
-        self.methods = List[PyMethodDef]()
+        self._slots = []
+        self.methods = []
 
     @staticmethod
     fn bind[
@@ -1016,7 +997,4 @@ fn _pluralize(
     singular: StaticString,
     plural: StaticString,
 ) -> StaticString:
-    if count == 1:
-        return singular
-    else:
-        return plural
+    return singular if count == 1 else plural
