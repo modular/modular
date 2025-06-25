@@ -139,11 +139,7 @@ struct ArcPointer[T: Movable](
     # correctly.
     fn __getitem__[
         self_life: ImmutableOrigin
-    ](
-        ref [self_life]self,
-    ) -> ref [
-        MutableOrigin.cast_from[self_life].result
-    ] T:
+    ](ref [self_life]self) -> ref [MutableOrigin.cast_from[self_life]] T:
         """Returns a mutable reference to the managed value.
 
         Parameters:

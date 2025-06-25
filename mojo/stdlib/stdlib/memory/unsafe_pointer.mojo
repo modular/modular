@@ -60,7 +60,7 @@ struct UnsafePointer[
     address_space: AddressSpace = AddressSpace.GENERIC,
     alignment: Int = _default_alignment[type](),
     mut: Bool = True,
-    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin].result,
+    origin: Origin[mut] = Origin[mut].cast_from[MutableAnyOrigin],
 ](
     ImplicitlyBoolable,
     Copyable,
@@ -992,7 +992,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn origin_cast[
         mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
     ](self) -> UnsafePointer[
         type,
         address_space=address_space,
