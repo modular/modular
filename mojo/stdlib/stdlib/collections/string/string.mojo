@@ -92,7 +92,7 @@ from collections.string.string_slice import (
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, abort
 from os.atomic import Atomic
-from sys import bitwidthof, is_compile_time, sizeof
+from sys import bitwidthof, sizeof
 from sys.ffi import c_char
 
 from bit import count_leading_zeros
@@ -129,8 +129,10 @@ struct _StringCapacityField:
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
     alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
-    # UNUSED_FLAG is not used, but might be used in the future.
-    alias UNUSED_FLAG = UInt(1) << (UInt.BITWIDTH - 2)
+    # When FLAG_IS_INDIRECT is set, the string is pointing to data owned
+    # elsewhere such as a StringLiteral, StaticString, or UnsafePointer[c_char]
+    # from calling an external function.
+    alias FLAG_IS_INDIRECT = UInt(1) << (UInt.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string data is inline as the first bytes
     # of the string value (the "Small string optimization").
     alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
@@ -138,34 +140,18 @@ struct _StringCapacityField:
     # Initialize with a specified capacity.  Note that the provided value may
     # be rounded up, so clients should check the capacity() after construction.
     @always_inline("nodebug")
-    fn __init__(out self, capacity: UInt):
-        # If the capacity needed fits inline, use the inline form.
-        if capacity <= Self.INLINE_CAPACITY and not is_compile_time():
-            self._storage = Self.FLAG_IS_INLINE
+    fn __init__(out self, capacity: UInt = 0):
+        if capacity:
+            self._storage = (capacity + 7) >> 3
         else:
-            self = Self(out_of_line_capacity=capacity)
-
-    @always_inline("nodebug")
-    fn __init__(out self, *, out_of_line_capacity: UInt):
-        # memory allocators work on this granularity anyway, so we might as well
-        # use it. We store the capacity with the top 3 bits of the storage used
-        # for flags.
-        self._storage = (out_of_line_capacity + 7) >> 3
-
-    @always_inline("nodebug")
-    fn __init__(out self, *, static_const_length: Int):
-        # Short constant strings that can fit inline *with a nul terminator*
-        # added are stored inline.
-        if static_const_length < Self.INLINE_CAPACITY and not is_compile_time():
-            self._storage = Self.FLAG_IS_INLINE
-        else:
-            # We set the capacity to 0 to always force reallocation if we
-            # want the capacity to change.
             self._storage = 0
 
     @always_inline("nodebug")
     fn capacity(self) -> UInt:
-        # In the inline form, we hold the data inline.
+        # If indirect capacity is zero to force realloaction or inline on mutation
+        if self.is_indirect():
+            return 0
+        # If the string is inline, capacity is max inline capacity
         if self.is_inline():
             return Self.INLINE_CAPACITY
         return self._storage << 3
@@ -176,12 +162,29 @@ struct _StringCapacityField:
 
     @always_inline("nodebug")
     fn set_has_nul_terminator(mut self, value: Bool):
-        var unset = self._storage & ~Self.FLAG_HAS_NUL_TERMINATOR
-        self._storage = unset | select(value, Self.FLAG_HAS_NUL_TERMINATOR, 0)
+        if value:
+            self._storage |= Self.FLAG_HAS_NUL_TERMINATOR
+        else:
+            self._storage &= ~Self.FLAG_HAS_NUL_TERMINATOR
+
+    @always_inline("nodebug")
+    fn is_indirect(self) -> Bool:
+        return self._storage & Self.FLAG_IS_INDIRECT != 0
+
+    @always_inline("nodebug")
+    fn set_is_indirect(mut self, value: Bool):
+        if value:
+            self._storage |= Self.FLAG_IS_INDIRECT
+        else:
+            self._storage &= ~Self.FLAG_IS_INDIRECT
 
     @always_inline("nodebug")
     fn is_inline(self) -> Bool:
         return self._storage & Self.FLAG_IS_INLINE != 0
+
+    @always_inline("nodebug")
+    fn set_is_inline(mut self):
+        self._storage |= Self.FLAG_IS_INLINE
 
     @always_inline("nodebug")
     fn get_len(self, len_or_data: Int) -> Int:
@@ -324,8 +327,8 @@ struct String(
             capacity: The capacity of the string to allocate.
         """
         var cap_field = _StringCapacityField(capacity)
-        if cap_field.is_inline():
-            # Tell mojo it is ok for this to be uninitialized.
+        if capacity <= _StringCapacityField.INLINE_CAPACITY:
+            cap_field.set_is_inline()
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(self)
             )
@@ -340,46 +343,35 @@ struct String(
     @always_inline
     @implicit  # does not allocate.
     fn __init__(out self, data: StaticString):
-        """Construct a string from a static constant string without allocating.
+        """Construct a `String` from a `StaticString` without allocating.
 
         Args:
             data: The static constant string to refer to.
         """
-        var length = data.byte_length()
-        var cap_field = _StringCapacityField(static_const_length=length)
-        # NOTE: we can't set set_has_nul_terminator(True) because there is no
-        # guarantee that this wasn't constructed from a
-        # Span[Byte, StaticConstantOrigin] without a nul terminator.
-        if cap_field.is_inline():
-            # Tell mojo it is ok for this to be uninitialized.
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(self)
-            )
-            cap_field.set_len(length, self._len_or_data)
-            self._capacity_or_data = cap_field
-            memcpy(
-                UnsafePointer(to=self).bitcast[Byte](),
-                data.unsafe_ptr(),
-                length,
-            )
-        else:
-            self._ptr_or_data = data.unsafe_ptr()
-            self._len_or_data = length
-            self._capacity_or_data = cap_field
+        self._len_or_data = data._slice._len
+        self._ptr_or_data = data._slice._data
+        # Always use static constant representation initially (capacity=0),
+        # defer inlining decision until mutation to avoid unnecessary memcpy.
+        self._capacity_or_data = _StringCapacityField()
+        self._capacity_or_data.set_is_indirect(True)
 
     @always_inline
     @implicit  # does not allocate.
     fn __init__(out self, data: StringLiteral):
-        """Construct a string from a string literal without allocating.
+        """Construct a `String` from a `StringLiteral` without allocating.
 
         Args:
             data: The static constant string to refer to.
         """
-        self = StaticString(data)
-        # All string literals are nul terminated by the compiler but the inline
-        # String overwrites it at any given point
-        if not self._is_inline():
-            self._capacity_or_data.set_has_nul_terminator(True)
+        self._len_or_data = __mlir_op.`pop.string.size`(data.value)
+        self._ptr_or_data = UnsafePointer(
+            __mlir_op.`pop.string.address`(data.value)
+        ).bitcast[Byte]()
+        # Always use static constant representation initially (capacity=0),
+        # defer inlining decision until mutation to avoid unnecessary memcpy.
+        self._capacity_or_data = _StringCapacityField()
+        self._capacity_or_data.set_has_nul_terminator(True)
+        self._capacity_or_data.set_is_indirect(True)
 
     @always_inline
     fn __init__(out self, *, bytes: Span[Byte, *_]):
@@ -611,17 +603,17 @@ struct String(
         return self._capacity_or_data.is_inline()
 
     @always_inline("nodebug")
-    fn _is_indirect_static_constant(self) -> Bool:
+    fn _is_indirect(self) -> Bool:
         """Checks if the string is a static constant.
 
         Returns:
             True if the string is a static constant, False otherwise.
         """
-        return Bool(self._ptr_or_data) & (self.capacity() == 0)
+        return self._capacity_or_data.is_indirect()
 
     @always_inline("nodebug")
     fn _has_mutable_buffer(self) -> Bool:
-        return ~(self._is_indirect_static_constant() | self._is_inline())
+        return ~(self._is_indirect() | self._is_inline())
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -885,13 +877,15 @@ struct String(
         var other_len = len(other)
         if other_len == 0:
             return
-        # remove the nul terminator if it exists.
-        self._capacity_or_data.set_has_nul_terminator(False)
         var old_len = self.byte_length()
         var new_len = old_len + other_len
-        self.reserve(new_len)
-        memcpy(self.unsafe_ptr_mut() + old_len, other.unsafe_ptr(), other_len)
+        memcpy(
+            self.unsafe_ptr_mut(new_len) + old_len,
+            other.unsafe_ptr(),
+            other_len,
+        )
         self._capacity_or_data.set_len(new_len, self._len_or_data)
+        self._capacity_or_data.set_has_nul_terminator(False)
 
     @always_inline
     fn __iadd__(mut self, other: StringSlice[mut=False]):
@@ -1176,22 +1170,35 @@ struct String(
             return self._ptr_or_data
 
     fn unsafe_ptr_mut(
-        mut self,
+        mut self, owned capacity: Int = 0
     ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
-        """Retrieves a mutable pointer to the underlying memory, copying to a
-        new buffer if this was previously pointing to a static constant.
+        """Retrieves a mutable pointer to the unique underlying memory. Passing
+        a larger capacity will reallocate the string to the new capacity if
+        larger than the existing capacity, allowing you to write more data.
+
+        Args:
+            capacity: The new capacity of the string.
 
         Returns:
             The pointer to the underlying memory.
         """
-        # If out of line, make sure it is uniquely owned and mutable.
-        if not self._is_inline():
-            self._make_unique_mutable()
+        # Decide on strategy for making the string mutable
+        if max(len(self), capacity) <= _StringCapacityField.INLINE_CAPACITY:
+            if self._is_indirect():
+                self._inline_string()
+        else:
+            if (
+                self._is_indirect()
+                or capacity > self.capacity()
+                or not _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
+            ):
+                self._realloc_mutable(capacity)
+
         return self.unsafe_ptr().origin_cast[True, __origin_of(self)]()
 
     fn unsafe_cstr_ptr(
         mut self,
-    ) -> UnsafePointer[c_char, mut=True, origin = __origin_of(self)]:
+    ) -> UnsafePointer[c_char, mut=False, origin = __origin_of(self)]:
         """Retrieves a C-string-compatible pointer to the underlying memory.
 
         The returned pointer is guaranteed to be null, or NUL terminated.
@@ -1199,17 +1206,15 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
-        # Add a nul terminator.
-        # Reallocate the out-of-line static strings to ensure mutability.
-        if not self._capacity_or_data.has_nul_terminator() or (
-            self._is_indirect_static_constant()
-        ):
+        # Add a nul terminator, making the string mutable if not already
+        if not self._capacity_or_data.has_nul_terminator():
+            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
             var len = self.byte_length()
-            self.reserve(len + 1)  # This will reallocate if constant.
-            self.unsafe_ptr_mut()[len] = 0
+            ptr[len] = 0
             self._capacity_or_data.set_has_nul_terminator(True)
+            return self.unsafe_ptr().bitcast[c_char]()
 
-        return self.unsafe_ptr_mut().bitcast[c_char]()
+        return self.unsafe_ptr().bitcast[c_char]()
 
     @always_inline("nodebug")
     fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
@@ -1792,21 +1797,18 @@ struct String(
             return
         self._realloc_mutable(new_capacity)
 
-    # This is called when the string is known to be indirect. This checks to
-    # make sure the indirect representation is uniquely owned and mutable,
-    # copying if necessary.
-    fn _make_unique_mutable(mut self):
-        debug_assert(not self._is_inline())
-
-        # If already mutable and uniquely owned, we're done.
-        if (
-            not self._is_indirect_static_constant()
-            and _StringOutOfLineHeader.get(self._ptr_or_data).is_unique()
-        ):
-            return
-
-        # Otherwise, copy to a new buffer to ensure mutability.
-        self._realloc_mutable(self.byte_length())
+    # This converts an indirect string to inline form to make it mutable on the
+    # stack.
+    @no_inline
+    fn _inline_string(mut self):
+        var length = len(self)
+        var new_string = Self()
+        new_string._capacity_or_data.set_len(length, new_string._len_or_data)
+        var dst = UnsafePointer(to=new_string).bitcast[Byte]()
+        var src = self.unsafe_ptr()
+        for i in range(length):
+            dst[i] = src[i]
+        self = new_string^
 
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string. Make sure our capacity at least
@@ -1817,11 +1819,8 @@ struct String(
         var len = self.byte_length()
         var ptr = self.unsafe_ptr()
         var should_drop_ref = self._has_mutable_buffer()
-
-        # We always use the inline representation for short strings (even when
-        # they are constant) so any need to grow will use an indirect represent.
         var new_capacity = _StringCapacityField(
-            out_of_line_capacity=max(capacity, self.capacity() * 2)
+            max(capacity, self.capacity() * 2)
         )
         var new_ptr = _StringOutOfLineHeader.alloc(new_capacity.capacity())
         memcpy(new_ptr, ptr, len)

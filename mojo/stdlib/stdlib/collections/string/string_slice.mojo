@@ -1086,13 +1086,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The string concatenated `n` times.
         """
-        var result = String()
-        if n <= 0:
-            return result
-        result.reserve(self.byte_length() * n)
+        var string = String()
+        var str_bytes = self.as_bytes()
+        var buffer = _WriteBufferStack(string)
         for _ in range(n):
-            result += self
-        return result
+            buffer.write_bytes(str_bytes)
+        buffer.flush()
+        return string
 
     @always_inline("nodebug")
     fn __merge_with__[
