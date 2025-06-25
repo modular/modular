@@ -81,7 +81,6 @@ fn test_is_xxx() raises:
     fn _is_category[
         test: fn (DType) -> Bool,
         true_dtypes: List[DType],
-        all_dtypes: List[DType] = all_dtypes,
     ]() raises:
         @parameter
         for dt in all_dtypes:
