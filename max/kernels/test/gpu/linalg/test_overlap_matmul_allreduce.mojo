@@ -197,10 +197,17 @@ fn overlap_matmul_allreduce_test[
         matmul_allreduce[
             ngpus=ngpus,
             partition_dim=partition_dim,
-            num_partitions=num_partitions,
             outputs_lambda=outputs_lambda,
             overlap_with_dpl=overlap_with_dpl,
-        ](As, Bs, Cs, out_bufs, rank_sigs, list_of_ctx)
+        ](
+            As,
+            Bs,
+            Cs,
+            out_bufs,
+            rank_sigs,
+            list_of_ctx,
+            static[num_partitions](),
+        )
 
     @parameter
     for i in range(ngpus):

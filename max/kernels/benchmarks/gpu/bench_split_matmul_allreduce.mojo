@@ -221,10 +221,17 @@ fn bench_matmul_all_reduce[
                 type=type,
                 ngpus=ngpus,
                 partition_dim=partition_dim,
-                num_partitions=num_partitions,
                 overlap_with_dpl=overlap_with_dpl,
                 outputs_lambda=outputs_lambda,
-            ](As, Bs, Cs, out_bufs, rank_sigs, list_of_ctx)
+            ](
+                As,
+                Bs,
+                Cs,
+                out_bufs,
+                rank_sigs,
+                list_of_ctx,
+                static[num_partitions](),
+            )
 
         b.iter_custom_multicontext[kernel_launch](list_of_ctx)
 
