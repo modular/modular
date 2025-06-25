@@ -88,6 +88,17 @@ class RMSNorm(Module):
         self.multiply_before_cast = multiply_before_cast
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        # Validate that weight dimension matches input's last dimension if
+        # statically known.
+        input_last_dim = x.shape[-1]
+        weight_dim = self.weight.shape[0]
+
+        if input_last_dim != weight_dim:
+            raise ValueError(
+                f"RMSNorm weight dimension ({weight_dim}) must match the input's "
+                f"last dimension ({input_last_dim})"
+            )
+
         weight: TensorValue = self.weight.cast(x.dtype)
         if x.device:
             weight = weight.to(x.device)
