@@ -16,7 +16,6 @@
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
-    _StringCapacityField,
 )
 from math import isinf, isnan
 
@@ -29,8 +28,6 @@ from testing import (
     assert_raises,
     assert_true,
 )
-
-alias INLINE_CAPACITY = _StringCapacityField.INLINE_CAPACITY
 
 
 @fieldwise_init
@@ -73,11 +70,11 @@ def test_constructors():
 
     # Construction with capacity
     var s4 = String(capacity=1)
-    assert_true(s4.capacity() <= INLINE_CAPACITY)
+    assert_true(s4.capacity() <= String.INLINE_CAPACITY)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_true(s5.capacity() <= INLINE_CAPACITY)
+    assert_true(s5.capacity() <= String.INLINE_CAPACITY)
     assert_equal(s5, "A")
 
 
@@ -1540,25 +1537,25 @@ def test_variadic_ctors():
 def test_sso():
     # String literals are initially stored as indirect regardless of length
     var s = String("hello")
-    assert_equal(s.capacity(), 0)
+    assert_equal(s.capacity(), 5)
     assert_equal(len(s), 5)
     assert_equal(s._is_inline(), False)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), True)
+    assert_equal(s._has_nul_terminator(), True)
     assert_equal(s._is_indirect(), True)
     assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Adding a single char should remove the nul terminator and inline it.
     s += "f"
     assert_equal(len(s), 6)
-    assert_equal(s.capacity(), INLINE_CAPACITY)
+    assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
+    assert_equal(s._has_nul_terminator(), False)
     assert_equal(s._is_indirect(), False)
     assert_equal(s, "hellof")
 
     # Check that unsafe_cstr_ptr adds the nul terminator at the end.
     var ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._capacity_or_data.has_nul_terminator(), True)
+    assert_equal(s._has_nul_terminator(), True)
     assert_equal(ptr[len(s) - 1], ord("f"))
     assert_equal(ptr[len(s)], 0)
 
@@ -1566,43 +1563,43 @@ def test_sso():
     alias long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
     assert_equal(len(s), 55)
-    assert_equal(s.capacity(), 0)
+    assert_equal(s.capacity(), 55)
     assert_equal(s._is_inline(), False)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), True)
+    assert_equal(s._has_nul_terminator(), True)
     assert_equal(s._is_indirect(), True)
     assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Modifying it should remove the nul terminator.
     s += "f"
     assert_equal(len(s), 56)
+    assert_true(s.capacity() >= 56)
     assert_equal(s._is_inline(), False)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
+    assert_equal(s._has_nul_terminator(), False)
     assert_equal(s._is_indirect(), False)
-    assert_equal(s.capacity(), 56)
     assert_equal(s, long + "f")
 
     # Check that unsafe_cstr_ptr adds the nul terminator at the end.
     ptr = s.unsafe_cstr_ptr()
-    assert_equal(s._capacity_or_data.has_nul_terminator(), True)
+    assert_equal(s._has_nul_terminator(), True)
     assert_equal(ptr[len(s) - 1], ord("f"))
     assert_equal(ptr[len(s)], 0)
 
     # Empty strings are stored inline.
     s = String()
-    assert_equal(s.capacity(), INLINE_CAPACITY)
+    assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
+    assert_equal(s._has_nul_terminator(), False)
 
-    s += "f" * INLINE_CAPACITY
-    assert_equal(len(s), INLINE_CAPACITY)
-    assert_equal(s.capacity(), INLINE_CAPACITY)
+    s += "f" * String.INLINE_CAPACITY
+    assert_equal(len(s), String.INLINE_CAPACITY)
+    assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
 
     # One more byte.
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (INLINE_CAPACITY * 2 + 7) & ~7
+    alias expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
     assert_equal(s.capacity(), expected_capacity)
     assert_equal(s._is_inline(), False)
 
