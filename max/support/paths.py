@@ -19,7 +19,7 @@ from typing import Optional
 from max.entrypoints.mojo import subprocess_run_mojo
 
 
-def _eprint(*args, **kwargs):
+def _eprint(*args, **kwargs) -> None:
     print(*args, file=sys.stderr, **kwargs)
 
 
@@ -46,7 +46,7 @@ class MojoCompilationError(Error):
             path, args, err.stdout.decode(), err.stderr.decode()
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         command = shlex.join(self.command)
         return f"Error compiling Mojo at {self.path}. Command: {command}\n\n{self.stderr}"
 

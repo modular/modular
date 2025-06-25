@@ -21,7 +21,7 @@ class GraphOp(GraphOp):  # type: ignore[no-redef]
 
     def __init__(
         self, name: str, input_types: list[Type], output_types: list[Type]
-    ):
+    ) -> None:
         function_type = FunctionType.get(input_types, output_types)
         signature = Type.parse(f"!kgen.generator<{function_type}>")
         params = Attribute.parse("#kgen<param.decls[]>")
@@ -46,7 +46,7 @@ class IfOp(IfOp):  # type: ignore[no-redef]
         out_types: Iterable[Type] | None,
         loc=None,
         ip=None,
-    ):
+    ) -> None:
         if out_types is None:
             out_types = []
         super().__init__(results_=out_types, cond=pred)
@@ -70,7 +70,7 @@ def if_(  # type: ignore[no-redef]
 class WhileOp(WhileOp):  # type: ignore[no-redef]
     """Extends mo.while op with simpler builders."""
 
-    def __init__(self, results_, inputs, *, loc=None, ip=None):
+    def __init__(self, results_, inputs, *, loc=None, ip=None) -> None:
         if results_ is None:
             results_ = []
         super().__init__(results_=results_, inputs=inputs, loc=loc, ip=ip)

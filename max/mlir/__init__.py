@@ -8,7 +8,7 @@ from .._mlir._mlir_libs._mlir import *
 from .._mlir._mlir_libs._mlir.ir import *
 
 
-def site_initialize():
+def site_initialize() -> None:
     from max._core import graph  # type: ignore
 
     from .._mlir._mlir_libs import get_dialect_registry

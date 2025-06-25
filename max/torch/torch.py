@@ -96,7 +96,7 @@ class CustomOpLibrary:
     _session: InferenceSession
     _ops: dict[str, CustomOp]
 
-    def __init__(self, kernel_library: Path | KernelLibrary):
+    def __init__(self, kernel_library: Path | KernelLibrary) -> None:
         """
         Args:
             kernel_library: The path to a ``.mojo`` file or a ``.mojopkg`` with
@@ -120,7 +120,7 @@ class CustomOpLibrary:
         if not (result := compiled.get(attr)):
 
             @torch.compiler.disable
-            def update_cache():
+            def update_cache() -> None:
                 nonlocal result
                 if attr not in self._kernel_library:
                     raise AttributeError(
@@ -153,7 +153,7 @@ class CustomOp:
         library: CustomOpLibrary,
         name: str,
         parameters: Optional[ParametersDict] = None,
-    ):
+    ) -> None:
         self.library = library
         self.name = name
         self.parameters = parameters
@@ -453,7 +453,7 @@ def compile_custom_op(op: CustomOp) -> CustomOpDef:
 
         return model
 
-    def callable(*args: torch.Tensor):
+    def callable(*args: torch.Tensor) -> None:
         # In eager mode, the fake_tensor function will not be called,
         # so we call it here.
         # registered_fake with real inputs will create buffers for the outputs
