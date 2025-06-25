@@ -512,9 +512,6 @@ private:
 
   Shared<llvm::SetVector<CompileOffloadOp>> compileOffloadOps;
 
-  /// Mutex to synchronize debuginfo concretization within elaborator.
-  std::mutex debugInfoMutex;
-
   friend class IREvaluator;
 };
 
