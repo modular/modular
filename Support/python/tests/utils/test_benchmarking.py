@@ -68,7 +68,7 @@ No errors encountered during test.
 """
 
 
-def test_from_lines():
+def test_from_lines() -> None:
     lines = benchmark_log.split("\n")
     res = BenchmarkResult.from_lines(lines)
     assert res.qps == 141.528

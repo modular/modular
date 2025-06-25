@@ -23,7 +23,9 @@ class GitError(Exception):
     pass
 
 
-def fetch_checkout_commit(repo_dir: Path, ref: str, remote: str = "origin"):
+def fetch_checkout_commit(
+    repo_dir: Path, ref: str, remote: str = "origin"
+) -> None:
     """Helper function to quickly fetch and checkout a new ref.
 
     Args:
@@ -51,7 +53,7 @@ def is_full_git_sha(s: str) -> bool:
 
 def shallow_clone(
     clone_dir: Path, url: str, ref: str, remove_git: bool = False
-):
+) -> None:
     """Clone the given repo without any git history.
 
     This makes the cloning faster for repos with large histories.
@@ -166,7 +168,7 @@ def get_uncommitted_changes(
 
 
 # TODO: enforce this as a module dependency
-def check_gh_installed():
+def check_gh_installed() -> None:
     """Check if the gh tool is installed.
 
     Raises:

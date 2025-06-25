@@ -50,7 +50,7 @@ class OutputProcessor:
     indicate specific messages need to be sent.
     """
 
-    def __init__(self, kernel: Kernel):
+    def __init__(self, kernel: Kernel) -> None:
         # The kernel object that we are processing output for.
         self.kernel = kernel
 
@@ -142,7 +142,7 @@ class OutputProcessor:
             send_stream(msgstr)
         # endwhile len(msgstr) > 0
 
-    def _send_display_message(self):
+    def _send_display_message(self) -> None:
         """Send the current pending display message to the client."""
 
         display_message = json.loads(self.pending_display_message)
@@ -165,7 +165,7 @@ class OutputProcessor:
 class MojoKernel(Kernel):
     """A Jupyter kernel for Mojo."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         """Initialize the Mojo kernel.
 
         This loads the MojoJupyter library and starts a kernel repl session.
@@ -214,7 +214,7 @@ class MojoKernel(Kernel):
         if not self.mojo_kernel:
             raise RuntimeError("Unable to initialize Mojo kernel.")
 
-    def _send_internal_error_message(self):
+    def _send_internal_error_message(self) -> None:
         self.output_processor.send_message(
             "stderr",
             (
@@ -225,7 +225,7 @@ class MojoKernel(Kernel):
             ),
         )
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Destroy the Mojo kernel."""
         self.lib_mojo_jupyter.destroyMojoKernel(self.mojo_kernel)
 

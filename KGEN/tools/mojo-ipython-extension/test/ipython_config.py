@@ -9,7 +9,7 @@ import pathlib
 import sys
 
 
-def add_mojo_ipython_extension_to_sys_path():
+def add_mojo_ipython_extension_to_sys_path() -> None:
     modular_dir = os.environ.get("MODULAR_PATH")
     assert modular_dir, "MODULAR_PATH env var must exist"
 

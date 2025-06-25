@@ -17,7 +17,7 @@ import IPython  # type: ignore
 
 
 # https://ipython.readthedocs.io/en/8.27.0/config/extensions/index.html#writing-extensions
-def load_ipython_extension(ipython):
+def load_ipython_extension(ipython) -> None:
     ipython.register_magics(_MojoMagic)
     # https://ipython.readthedocs.io/en/8.27.0/config/callbacks.html
     ipython.events.register("pre_run_cell", _pre_exec_hook)
@@ -35,13 +35,13 @@ global _global_ipython_exec_info
 _global_ipython_exec_info = None
 
 
-def _pre_exec_hook(exec_info):
+def _pre_exec_hook(exec_info) -> None:
     """pre_run_cell IPython event hook to store exec_info for later retrieval of cell_id"""
     global _global_ipython_exec_info
     _global_ipython_exec_info = exec_info
 
 
-def _vlog(msg, prefix=""):
+def _vlog(msg, prefix="") -> None:
     if not _global_verbose_log[-1]:
         return
     if isinstance(msg, dict):
@@ -131,7 +131,7 @@ class _MojoMagic(IPython.core.magic.Magics):
     @IPython.core.magic.cell_magic
     # @IPython.core.magic.no_var_expand
     # desired?: https://ipython.readthedocs.io/en/stable/api/generated/IPython.core.magic.html#IPython.core.magic.no_var_expand
-    def mojo(self, line, cell):
+    def mojo(self, line, cell) -> None:
         opts = _parse_options(line)
 
         # Push logging state, default to current state

@@ -19,7 +19,7 @@ from rich.console import Console
 CONSOLE = Console()
 
 
-def debug_main_fn(source: MojoSource):
+def debug_main_fn(source: MojoSource) -> None:
     """Places a breakpoint at the `main` function, if available, and runs the
     program up to that point. Skips sources that fail to compile."""
 
@@ -49,7 +49,7 @@ def debug_main_fn(source: MojoSource):
 
 @click.command()
 @click.argument("input-dir-or-file", type=click.Path(exists=True))
-def run(input_dir_or_file: Path):
+def run(input_dir_or_file: Path) -> None:
     """Utility that programmatically tests basic debugging flows helping detect
     anomalies within a given input directory or file.
 

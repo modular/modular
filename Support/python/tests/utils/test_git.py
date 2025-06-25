@@ -23,7 +23,7 @@ from modular.utils.subprocess import run_shell_command
 # ===----------------------------------------------------------------------=== #
 
 
-def make_dummy_repo(repo_dir: Path):
+def make_dummy_repo(repo_dir: Path) -> None:
     # Helper to set up a repo for testing.
     run_shell_command(["git", "init", "-q"], cwd=repo_dir)
     run_shell_command(["git", "config", "user.name", "Tester"], cwd=repo_dir)
@@ -37,7 +37,7 @@ def make_dummy_repo(repo_dir: Path):
 # ===----------------------------------------------------------------------=== #
 
 
-def test_is_full_git_sha():
+def test_is_full_git_sha() -> None:
     assert is_full_git_sha("0123456789012345678901234567890123456789")
     assert is_full_git_sha("0b7349102db619105fb282c2340a64c44e4adbe6")
     assert not is_full_git_sha("0b73491")
@@ -49,14 +49,14 @@ def test_is_full_git_sha():
 @pytest.mark.parametrize(
     "ref", ["44679f67d234667eaeb138dbcde468669a5181a8", "main"]
 )
-def test_shallow_clone(tmp_path: Path, ref: str):
+def test_shallow_clone(tmp_path: Path, ref: str) -> None:
     url = "https://github.com/actions/checkout.git"
     shallow_clone(tmp_path, url, ref, remove_git=True)
     assert (tmp_path / "README.md").exists()
     assert not (tmp_path / ".git").exists()
 
 
-def test_branch_exists(tmp_path: Path):
+def test_branch_exists(tmp_path: Path) -> None:
     with pytest.raises(GitError):
         branch_exists("some/branch", repo_dir=tmp_path)
 
@@ -71,7 +71,7 @@ def test_branch_exists(tmp_path: Path):
     assert branch_exists("some/branch", repo_dir=tmp_path)
 
 
-def test_get_current_branch_name(tmp_path: Path):
+def test_get_current_branch_name(tmp_path: Path) -> None:
     with pytest.raises(GitError):
         get_current_branch_name(repo_dir=tmp_path)
 
@@ -87,7 +87,7 @@ def test_get_current_branch_name(tmp_path: Path):
     assert get_current_branch_name(repo_dir=tmp_path) == "main"
 
 
-def test_get_uncommitted_changes(tmp_path: Path):
+def test_get_uncommitted_changes(tmp_path: Path) -> None:
     with pytest.raises(GitError):
         get_current_branch_name(repo_dir=tmp_path)
 
@@ -117,7 +117,7 @@ def test_get_uncommitted_changes(tmp_path: Path):
     assert changes["AM"] == ["some_file.txt"]
 
 
-def test_get_changed_dirs(tmp_path: Path):
+def test_get_changed_dirs(tmp_path: Path) -> None:
     with pytest.raises(GitError):
         get_current_branch_name(repo_dir=tmp_path)
 

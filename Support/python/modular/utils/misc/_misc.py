@@ -63,7 +63,7 @@ def get_ordinal(n: int) -> str:
 
 def create_symlink(
     destination: Path, src: Path, target_is_directory: bool = False
-):
+) -> None:
     """Links the destination to the src.
 
     Links the destination to the src. If the destination already exists, then we
@@ -103,7 +103,7 @@ def create_symlink(
             raise
 
 
-def create_dir_symlink(destination_dir: Path, src_dir: Path):
+def create_dir_symlink(destination_dir: Path, src_dir: Path) -> None:
     """Links the destination to the src directory.
 
     Links the destination directory to the src (true) directory. If the

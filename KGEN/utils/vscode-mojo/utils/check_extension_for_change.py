@@ -101,7 +101,7 @@ def get_publisher_and_extension_name() -> tuple[str, str]:
     return publisher, extension_name
 
 
-def main():
+def main() -> None:
     publisher, extension_name = get_publisher_and_extension_name()
     full_extension_name = f"{publisher}.{extension_name}"
 

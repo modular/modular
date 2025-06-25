@@ -32,7 +32,7 @@ another_dict:
 """
 
 
-def test_YAML_dumps():
+def test_YAML_dumps() -> None:
     ref_list = ["a", "b"]
     test_dict = {
         "a_dict": {"a_value": 123, "ref": ref_list},
@@ -47,7 +47,7 @@ EXPECTED_PATHS_DUMP = """  - some/posix/path
 """
 
 
-def test_represent_as_string():
+def test_represent_as_string() -> None:
     class SomeData(Enum):
         def __str__(self) -> str:
             return self.value

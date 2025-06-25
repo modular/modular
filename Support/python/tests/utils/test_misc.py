@@ -15,7 +15,7 @@ from modular.utils.misc import (
 )
 
 
-def test_get_ordinal():
+def test_get_ordinal() -> None:
     assert get_ordinal(0) == "0th"
     assert get_ordinal(1) == "1st"
     assert get_ordinal(2) == "2nd"
@@ -48,42 +48,42 @@ def test_env_var() -> str:
     return var
 
 
-def test_set_env_var_existing(test_env_var: str):
+def test_set_env_var_existing(test_env_var: str) -> None:
     os.environ[test_env_var] = "somevalue"
     with set_env_var(test_env_var, "othervalue"):
         assert os.environ[test_env_var] == "othervalue"
     assert os.environ[test_env_var] == "somevalue"
 
 
-def test_set_env_var_existing_unset(test_env_var: str):
+def test_set_env_var_existing_unset(test_env_var: str) -> None:
     os.environ[test_env_var] = "somevalue"
     with set_env_var(test_env_var, None):
         assert os.environ.pop(test_env_var, None) is None
     assert os.environ[test_env_var] == "somevalue"
 
 
-def test_set_env_var_new(test_env_var: str):
+def test_set_env_var_new(test_env_var: str) -> None:
     assert os.environ.pop(test_env_var, None) is None
     with set_env_var(test_env_var, "newvalue"):
         assert os.environ[test_env_var] == "newvalue"
     assert os.environ.pop(test_env_var, None) is None
 
 
-def test_set_env_var_new_unset(test_env_var: str):
+def test_set_env_var_new_unset(test_env_var: str) -> None:
     assert os.environ.pop(test_env_var, None) is None
     with set_env_var(test_env_var, None):
         assert os.environ.pop(test_env_var, None) is None
     assert os.environ.pop(test_env_var, None) is None
 
 
-def test_set_env_var_remove_in_context(test_env_var: str):
+def test_set_env_var_remove_in_context(test_env_var: str) -> None:
     os.environ[test_env_var] = "somevalue"
     with set_env_var(test_env_var, "othervalue"):
         os.environ.pop(test_env_var)
     assert os.environ[test_env_var] == "somevalue"
 
 
-def test_set_env_var_exception(test_env_var: str):
+def test_set_env_var_exception(test_env_var: str) -> None:
     os.environ[test_env_var] = "somevalue"
 
     class SomeException(Exception):
@@ -98,7 +98,7 @@ def test_set_env_var_exception(test_env_var: str):
     assert os.environ[test_env_var] == "somevalue"
 
 
-def test_create_dir_symlink(tmp_path: Path):
+def test_create_dir_symlink(tmp_path: Path) -> None:
     src_dir = tmp_path / "src"
     destination_dir = tmp_path / "destination_dir"
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from modular.utils import logging, subprocess
 
 
-def main():
+def main() -> None:
     extension_dir = Path(__file__).parent / "extension"
     modular_dir = Path(__file__).parent.parent.parent.parent
 
