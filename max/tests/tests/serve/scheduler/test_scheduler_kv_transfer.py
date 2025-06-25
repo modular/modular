@@ -127,7 +127,7 @@ def decode_client_zmq_ctx():
 
 
 @pytest.fixture
-def decode_dispatch_endpoint():
+def decode_dispatch_endpoint() -> str:
     return "tcp://127.0.0.1:5555"
 
 
@@ -200,7 +200,7 @@ def prefill_client_zmq_ctx():
 
 
 @pytest.fixture
-def prefill_dispatch_endpoint():
+def prefill_dispatch_endpoint() -> str:
     return "tcp://127.0.0.1:5556"
 
 
@@ -297,7 +297,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     decode_cancel_zmq_path,
     decode_dispatcher_factory,
     prefill_dispatcher_factory,
-):
+) -> None:
     # Create request push socket
     zmq_ctx = zmq.Context()
     request_push_socket = ZmqPushSocket[tuple[str, InputContext]](
@@ -320,10 +320,10 @@ async def test_transfer_between_prefill_and_decode_scheduler(
     decode_queue: Queue[Union[bool, Exception]] = Queue()
     prefill_queue: Queue[Union[bool, Exception]] = Queue()
 
-    def run_decode_scheduler_tests(decode_result_queue):
+    def run_decode_scheduler_tests(decode_result_queue) -> None:
         asyncio.run(_run_decode_scheduler_tests(decode_result_queue))
 
-    async def _run_decode_scheduler_tests(decode_result_queue):
+    async def _run_decode_scheduler_tests(decode_result_queue) -> None:
         try:
             # Create separate ZMQ contexts for each service
             decode_zmq_ctx = zmq.Context()
@@ -457,10 +457,10 @@ async def test_transfer_between_prefill_and_decode_scheduler(
             f"decode worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: exiting"
         )
 
-    def run_prefill_scheduler_tests():
+    def run_prefill_scheduler_tests() -> None:
         asyncio.run(_run_prefill_scheduler_tests())
 
-    async def _run_prefill_scheduler_tests():
+    async def _run_prefill_scheduler_tests() -> None:
         try:
             prefill_zmq_ctx = zmq.Context()
 
@@ -486,7 +486,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
             )
 
             # Check if the new request has been added to the batch
-            async def _verify_prefill_request_received(request_id: str):
+            async def _verify_prefill_request_received(request_id: str) -> None:
                 i = 0
                 received = False
                 while i < 5:
@@ -522,7 +522,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
                         f"{request_id} not received on the prefill scheduler"
                     )
 
-            async def _verify_transfer_engine_registered():
+            async def _verify_transfer_engine_registered() -> None:
                 # Wait a few seconds to ensure everything is processed.
                 transfer_engine_registered = False
                 i = 0
@@ -547,7 +547,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
                     f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: transfer engine registered"
                 )
 
-            async def _verify_transfer_initiated(request_id: str):
+            async def _verify_transfer_initiated(request_id: str) -> None:
                 # Run Prefill and Initiate the Transfer
                 print(
                     f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executing prefill for {request_id} and initiating transfer"
@@ -559,7 +559,7 @@ async def test_transfer_between_prefill_and_decode_scheduler(
                     f"prefill worker {datetime.now().strftime('%H:%M:%S.%f')[:-3]}: executed prefill for {request_id} and transfer in progress"
                 )
 
-            async def _verify_transfer_cleanup(request_id: str):
+            async def _verify_transfer_cleanup(request_id: str) -> None:
                 # Check that the transfer completes successfully and cleansup.
                 i = 0
                 transfer_complete = False

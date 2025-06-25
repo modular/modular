@@ -9,7 +9,7 @@ import numpy as np
 from max._core_mojo import block_hasher
 
 
-def test_block_hasher():
+def test_block_hasher() -> None:
     block_size = 128
     num_tokens = 3000
     tokens = np.arange(num_tokens)

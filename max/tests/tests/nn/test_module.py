@@ -14,7 +14,7 @@ from max.nn import Module
 
 
 class TestLayer(Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.weight = Weight("weight", DType.float32, [10], DeviceRef.CPU())
 
@@ -23,7 +23,7 @@ class TestLayer(Module):
 
 
 class TestModel(Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.layer = TestLayer()
 

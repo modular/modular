@@ -7,13 +7,13 @@
 from max.serve.pipelines.stop_detection import StopDetector
 
 
-def test_stop_none():
+def test_stop_none() -> None:
     sd = StopDetector(None)
 
     assert sd.step("abc") == None
 
 
-def test_stop_list():
+def test_stop_list() -> None:
     sd = StopDetector(["abc", "abcdef"])
 
     assert sd.step("a") == None
@@ -21,7 +21,7 @@ def test_stop_list():
     assert sd.step("c") == "abc"
 
 
-def test_stop_str():
+def test_stop_str() -> None:
     sd = StopDetector("abc")
 
     assert sd.step("all good here") == None
@@ -29,7 +29,7 @@ def test_stop_str():
     assert sd.step("c") == "abc"
 
 
-def test_long_continuation():
+def test_long_continuation() -> None:
     sd = StopDetector("abc")
 
     for x in "long continuation" * 1024:

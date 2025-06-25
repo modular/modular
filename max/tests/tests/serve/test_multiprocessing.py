@@ -11,7 +11,7 @@ import numpy
 from max.pipelines.core import TokenGeneratorRequest
 
 
-def test_reductions():
+def test_reductions() -> None:
     # No extra reductions to register at the moment.
 
     request = TokenGeneratorRequest(

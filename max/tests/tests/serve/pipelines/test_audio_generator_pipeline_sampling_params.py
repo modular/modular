@@ -23,7 +23,7 @@ from max.serve.pipelines.llm import AudioGeneratorPipeline
 class MockAudioGeneratorPipelineWithSamplingParams(AudioGeneratorPipeline):
     """Mock implementation of AudioGeneratorPipeline for testing SamplingParams."""
 
-    def __init__(self, mock_chunks: list[AudioGeneratorOutput]):
+    def __init__(self, mock_chunks: list[AudioGeneratorOutput]) -> None:
         # Skip the parent constructor that requires real dependencies
         self.model_name = "test-model"
         self.logger = Mock()
@@ -146,7 +146,7 @@ def test_pipeline_receives_default_sampling_params() -> None:
     torch.testing.assert_close(result.audio_data, chunk_audio)
 
 
-def test_multiple_requests_different_sampling_params():
+def test_multiple_requests_different_sampling_params() -> None:
     """Test that different requests with different SamplingParams are handled correctly."""
     params_list = [
         SamplingParams(top_k=1, temperature=0.1),

@@ -25,7 +25,7 @@ from max.nn.linear import (
 )
 
 
-def test_linear_shard_basic():
+def test_linear_shard_basic() -> None:
     """Test basic Linear.shard() functionality."""
     # NOTE: calling weight.shape on a sharded weight requires a graph context,
     # because the shape comes from the MLIR type.
@@ -53,7 +53,7 @@ def test_linear_shard_basic():
             assert sharded.device == DeviceRef.GPU(i)
 
 
-def test_linear_shard_with_bias():
+def test_linear_shard_with_bias() -> None:
     """Test Linear.shard() with bias."""
     with Graph(
         "test",
@@ -78,7 +78,7 @@ def test_linear_shard_with_bias():
         assert sharded.device == DeviceRef.GPU(0)
 
 
-def test_linear_shard_no_strategy_error():
+def test_linear_shard_no_strategy_error() -> None:
     """Test that sharding without strategy raises error."""
     linear = Linear(
         in_dim=100, out_dim=50, dtype=DType.float32, device=DeviceRef.GPU(0)
@@ -88,7 +88,7 @@ def test_linear_shard_no_strategy_error():
         linear.shard(shard_idx=0, device=DeviceRef.GPU(0))
 
 
-def test_linear_shard_with_float8_tensor_scale():
+def test_linear_shard_with_float8_tensor_scale() -> None:
     """Test Linear.shard() with float8 tensor-wise scaling."""
     with Graph(
         "test",
@@ -135,7 +135,7 @@ def test_linear_shard_with_float8_tensor_scale():
         assert sharded.weight_scale.device == DeviceRef.CPU()
 
 
-def test_linear_shard_with_float8_rowwise_scale():
+def test_linear_shard_with_float8_rowwise_scale() -> None:
     """Test Linear.shard() with float8 row-wise scaling."""
     with Graph(
         "test",
@@ -175,7 +175,7 @@ def test_linear_shard_with_float8_rowwise_scale():
             )  # 1024/2 = 512
 
 
-def test_linear_sharding_strategy_property():
+def test_linear_sharding_strategy_property() -> None:
     """Test Linear sharding_strategy property getter/setter."""
     linear = Linear(
         in_dim=100, out_dim=50, dtype=DType.float32, device=DeviceRef.GPU(0)
@@ -190,7 +190,7 @@ def test_linear_sharding_strategy_property():
     assert linear.sharding_strategy == strategy
 
 
-def test_linear_sharding_preserves_config():
+def test_linear_sharding_preserves_config() -> None:
     """Test that sharding preserves all Linear configuration."""
     with Graph(
         "test",
@@ -235,7 +235,7 @@ def test_linear_sharding_preserves_config():
         assert sharded.device == DeviceRef.GPU(1)
 
 
-def test_linear_shard_non_divisible_output_dim():
+def test_linear_shard_non_divisible_output_dim() -> None:
     """Test Linear.shard() with output dimension not divisible by num_devices.
 
     This test verifies that Linear layer sharding handles cases where the output

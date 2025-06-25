@@ -52,11 +52,11 @@ def create_agent(
     return agent, ucx_backend
 
 
-def test_agent_registration():
+def test_agent_registration() -> None:
     _ = create_agent()
 
 
-def test_remote_agent_registration():
+def test_remote_agent_registration() -> None:
     agent_1, _ = create_agent("agent_1", 8047)
     agent_2, _ = create_agent("agent_2", 8057)
 
@@ -72,7 +72,7 @@ def test_remote_agent_registration():
 
 
 @pytest.mark.parametrize("device", [CPU(), Accelerator()])
-def test_memory_registration(device: Device):
+def test_memory_registration(device: Device) -> None:
     agent, ucx_backend = create_agent()
 
     buffer = Tensor.from_numpy(np.ones((100, 100))).to(device)
@@ -104,7 +104,7 @@ def test_memory_registration(device: Device):
 
 
 @pytest.mark.parametrize("device", [CPU()])
-def test_memory_transfer(device: Device):
+def test_memory_transfer(device: Device) -> None:
     buffer_size_1 = 1024
     buffer_magic_val_1 = 99
     buffer_size_2 = 2048

@@ -8,7 +8,7 @@
 import max.driver as md
 
 
-def test_version():
+def test_version() -> None:
     assert md.__version__, "expected version to have value"
 
 

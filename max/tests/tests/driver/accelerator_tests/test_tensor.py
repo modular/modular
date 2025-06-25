@@ -11,7 +11,7 @@ from max.driver import CPU, Accelerator, Tensor, accelerator_api
 from max.dtype import DType
 
 
-def test_from_numpy_accelerator():
+def test_from_numpy_accelerator() -> None:
     # A user should be able to create an accelerator tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
     tensor = Tensor.from_numpy(arr).to(Accelerator())
@@ -19,12 +19,12 @@ def test_from_numpy_accelerator():
     assert tensor.dtype == DType.int32
 
 
-def test_is_host_accelerator():
+def test_is_host_accelerator() -> None:
     # Accelerator tensors should be marked as not being on-host.
     assert not Tensor(DType.int32, (1, 1), device=Accelerator()).is_host
 
 
-def test_host_device_copy():
+def test_host_device_copy() -> None:
     # We should be able to freely copy tensors between host and device.
     host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
     device_tensor = host_tensor.copy(Accelerator())
@@ -37,7 +37,7 @@ def test_host_device_copy():
     assert tensor[2].item() == 3
 
 
-def test_device_device_copy():
+def test_device_device_copy() -> None:
     # We should be able to freely copy tensors between device and device.
     acc = Accelerator()
 
@@ -54,7 +54,7 @@ def test_device_device_copy():
     assert tensor[2].item() == 3
 
 
-def test_torch_tensor_conversion():
+def test_torch_tensor_conversion() -> None:
     # Our tensors should be convertible to and from Torch tensors. We have to a
     # bunch of juggling between host and device because we don't have a
     # Accelerator-compatible version of torch available yet.
@@ -68,7 +68,7 @@ def test_torch_tensor_conversion():
     assert torch.all(torch.eq(torch_tensor, torch_tensor_copy))
 
 
-def test_to_device():
+def test_to_device() -> None:
     cpu = CPU()
     acc = Accelerator()
 
@@ -82,7 +82,7 @@ def test_to_device():
     assert cpu != acc_tensor.device
 
 
-def test_zeros():
+def test_zeros() -> None:
     # We should be able to initialize an all-zero tensor.
     tensor = Tensor.zeros((3, 3), DType.int32, device=Accelerator())
     host_tensor = tensor.to(CPU())
@@ -106,7 +106,7 @@ DLPACK_DTYPES = {
 }
 
 
-def test_dlpack_accelerator():
+def test_dlpack_accelerator() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
         tensor = Tensor(dtype, (1, 4))
@@ -122,7 +122,7 @@ def test_dlpack_accelerator():
         assert acc_tensor[0, 0].to(CPU()).item() == 7
 
 
-def test_from_dlpack():
+def test_from_dlpack() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype, torch_dtype in DLPACK_DTYPES.items():
         torch_tensor = torch.tensor([0, 1, 2, 3], dtype=torch_dtype).cuda()
@@ -134,7 +134,7 @@ def test_from_dlpack():
         assert acc_tensor[0].to(CPU()).item() == 7
 
 
-def test_dlpack_device():
+def test_dlpack_device() -> None:
     tensor = Tensor(DType.int32, (3, 3), device=Accelerator())
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
@@ -149,7 +149,7 @@ def test_dlpack_device():
     assert device_tuple[1] == 0  # should be the default device
 
 
-def test_scalar():
+def test_scalar() -> None:
     # We should be able to create scalar values on accelerators.
     acc = Accelerator()
     scalar = Tensor.scalar(5, DType.int32, device=acc)
@@ -159,14 +159,14 @@ def test_scalar():
     assert host_scalar.item() == 5
 
 
-def test_accelerator_to_numpy():
+def test_accelerator_to_numpy() -> None:
     acc = Accelerator()
     tensor = Tensor.zeros((3, 3), DType.int32, device=acc)
 
     assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
 
 
-def test_d2h_inplace_copy_from_tensor_view():
+def test_d2h_inplace_copy_from_tensor_view() -> None:
     enumerated = np.zeros((5, 2, 3), dtype=np.int32)
     for i, j, k in np.ndindex(enumerated.shape):
         enumerated[i, j, k] = 100 * i + 10 * j + k

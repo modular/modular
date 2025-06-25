@@ -132,15 +132,15 @@ def create_paged_manager(
     return kv_manager
 
 
-def request_zmq_endpoint():
+def request_zmq_endpoint() -> str:
     return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
-def response_zmq_endpoint():
+def response_zmq_endpoint() -> str:
     return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
-def cancel_zmq_endpoint():
+def cancel_zmq_endpoint() -> str:
     return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
@@ -202,7 +202,7 @@ def create_paged_scheduler(
 
 
 class FakeTokenGeneratorPipeline(TokenGenerator):
-    def __init__(self, kv_manager: PagedKVCacheManager):
+    def __init__(self, kv_manager: PagedKVCacheManager) -> None:
         self.kv_manager = kv_manager
         self.prev_num_steps: int = 0
 
@@ -251,7 +251,7 @@ class FakeTokenGeneratorPipeline(TokenGenerator):
 
         return responses
 
-    def release(self, context: TextContext):
+    def release(self, context: TextContext) -> None:
         self.kv_manager.release(context.cache_seq_id)
 
 
@@ -350,7 +350,7 @@ def enqueue_request(
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
-):
+) -> None:
     context = create_text_context(
         prompt_len=prompt_len,
         max_seq_len=max_seq_len,
@@ -365,7 +365,7 @@ def enqueue_request_with_prompt(
     socket: ZmqPushSocket[tuple[str, InputContext]],
     tokens: np.ndarray,
     max_seq_len: int,
-):
+) -> None:
     context = TextContext(
         prompt=tokens.tolist(),
         max_length=max_seq_len,
@@ -384,7 +384,7 @@ TG = BatchType.TokenGeneration
 def test_paged_scheduler_tg_request_exceed_max_seq_len(
     num_reqs,
     zmq_ctx,
-):
+) -> None:
     max_seq_len = 2048
     page_size = 128
     num_blocks = max_seq_len / page_size * num_reqs
@@ -435,7 +435,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
     del push_socket
 
 
-def test_paged_scheduler_basic_chunked_prefill(zmq_ctx):
+def test_paged_scheduler_basic_chunked_prefill(zmq_ctx) -> None:
     max_seq_len = 99999  # unbounded length
     target_tokens_per_batch_ce = 1000
     max_forward_steps_tg = 10
@@ -498,7 +498,7 @@ def test_paged_scheduler_basic_chunked_prefill(zmq_ctx):
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -550,7 +550,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -613,7 +613,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_200(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -678,7 +678,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_64(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -742,7 +742,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 
 def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_basic(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 10
     prompt_len = 100
     output_tokens = 100
@@ -818,7 +818,7 @@ def test_paged_scheduler__num_prompts_10_prompt_len_100_output_tokens_100_prefix
 
 def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_prefix_caching(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 10
     prompt_len = 100
     output_tokens = 100
@@ -919,7 +919,7 @@ def test_num_prompts_10_prompt_len_100_output_tokens_100_prefix_len_64_low_mem_p
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flight_batching(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -973,7 +973,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_in_flig
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_paged_scheduler_tg_preemption_basic(zmq_ctx):
+def test_paged_scheduler_tg_preemption_basic(zmq_ctx) -> None:
     num_prompts = 2
     prompt_len = 10
     output_tokens = 100
@@ -1041,7 +1041,7 @@ def test_paged_scheduler_tg_preemption_basic(zmq_ctx):
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_paged_scheduler_oom(zmq_ctx):
+def test_paged_scheduler_oom(zmq_ctx) -> None:
     num_prompts = 2
     # one req is 110 tokens
     prompt_len = 10
@@ -1111,7 +1111,7 @@ def test_paged_scheduler_oom(zmq_ctx):
     assert len(actual) == len(expected) and actual == expected
 
 
-def test_paged_scheduler_dont_oom_during_cow(zmq_ctx):
+def test_paged_scheduler_dont_oom_during_cow(zmq_ctx) -> None:
     # this can hold 512 tokens
     page_size = 128
     num_blocks = 3
@@ -1187,7 +1187,7 @@ def test_paged_scheduler_dont_oom_during_cow(zmq_ctx):
 @pytest.mark.parametrize("enable_kvcache_swapping_to_host", [True, False])
 def test_paged_scheduler_paging_to_host(
     enable_kvcache_swapping_to_host: bool, zmq_ctx
-):
+) -> None:
     num_prompts = 3
     prompt_len = 550
     page_size = 128
@@ -1311,7 +1311,7 @@ def test_paged_scheduler_misc_sch_configs(
     enable_chunked_prefill,
     enable_prefix_caching,
     zmq_ctx,
-):
+) -> None:
     max_seq_len = input_tokens + output_tokens
     page_size = 128
     num_blocks = ceildiv(max_seq_len, page_size) * max(16, num_prompts)

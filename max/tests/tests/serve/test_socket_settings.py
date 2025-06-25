@@ -9,7 +9,7 @@ import pytest
 from max.serve.config import Settings
 
 
-def test_setting_throws_occupied_port():
+def test_setting_throws_occupied_port() -> None:
     # Ensure port occupied
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:

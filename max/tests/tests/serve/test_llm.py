@@ -34,7 +34,7 @@ class MockValueErrorTokenGenerator(TokenGenerator[str]):
     ) -> dict[str, str]:
         raise ValueError()
 
-    def release(self, context: str):
+    def release(self, context: str) -> None:
         pass
 
 
@@ -51,7 +51,7 @@ class MockTokenGenerator(TokenGenerator[str]):
     ) -> dict[str, str]:
         return batch
 
-    def release(self, context: str):
+    def release(self, context: str) -> None:
         pass
 
 
@@ -86,7 +86,7 @@ def app(token_generator):
 
 
 @pytest.fixture
-def reset_sse_starlette_appstatus_event():
+def reset_sse_starlette_appstatus_event() -> None:
     """
     Fixture that resets the appstatus event in the sse_starlette app.
 
@@ -113,7 +113,7 @@ async def test_client(app):
 )
 @pytest.mark.parametrize("request_json", [None, "{{}"])
 @pytest.mark.asyncio
-async def test_llm_json_missing(test_client, request_url, request_json):
+async def test_llm_json_missing(test_client, request_url, request_json) -> None:
     """Test the server's response to malformed JSON."""
     logger.info("Test: Running Client: %s", request_url)
     response = await test_client.post(request_url, json=request_json)
@@ -128,7 +128,7 @@ async def test_llm_json_missing(test_client, request_url, request_json):
     "request_url", ["/v1/chat/completions", "/v1/completions"]
 )
 @pytest.mark.asyncio
-async def test_llm_new_context_value_error(test_client, request_url):
+async def test_llm_new_context_value_error(test_client, request_url) -> None:
     """Test the server's response to a value error when calling new context."""
     request_json = {
         "model": "test",
@@ -149,7 +149,9 @@ async def test_llm_new_context_value_error(test_client, request_url):
     "request_url", ["/v1/chat/completions", "/v1/completions"]
 )
 @pytest.mark.asyncio
-async def test_llm_new_context_value_error_stream(test_client, request_url):
+async def test_llm_new_context_value_error_stream(
+    test_client, request_url
+) -> None:
     """Test the server's response to a value error when calling new context while streaming."""
     MAX_CHUNK_TO_READ_BYTES = 10 * 1024
 

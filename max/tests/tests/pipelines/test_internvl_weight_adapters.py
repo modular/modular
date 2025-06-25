@@ -26,7 +26,7 @@ class MockWeight:
         return WeightData.from_numpy(test_array, self._data_value)
 
 
-def test_weight_filtering_and_mapping():
+def test_weight_filtering_and_mapping() -> None:
     """Test that weights are filtered and mapped correctly."""
     test_weights = {
         "language_model.model.layers.0.input_layernorm.weight": MockWeight(

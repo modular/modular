@@ -14,7 +14,7 @@ from max.nn.layer.layer import Module
 
 # Dummy module for testing load_state_dict
 class SimpleTestModule(Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
         self.fc1_weight = Weight(
@@ -31,7 +31,7 @@ class SimpleTestModule(Module):
         return x
 
 
-def test_load_state_dict_strict_true():
+def test_load_state_dict_strict_true() -> None:
     """Tests load_state_dict with strict=True, expecting an error for extra keys."""
     module = SimpleTestModule()
 
@@ -49,7 +49,7 @@ def test_load_state_dict_strict_true():
         module.load_state_dict(state_dict_with_extra, strict=True)
 
 
-def test_load_state_dict_strict_false():
+def test_load_state_dict_strict_false() -> None:
     """Tests load_state_dict with strict=False, allowing and ignoring extra keys."""
     module = SimpleTestModule()
 
@@ -83,7 +83,7 @@ def test_load_state_dict_strict_false():
     assert len(loaded_dict) == 2
 
 
-def test_load_state_dict_missing_key():
+def test_load_state_dict_missing_key() -> None:
     """Tests load_state_dict with, expecting an error for missing keys."""
     module = SimpleTestModule()
 

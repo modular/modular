@@ -15,7 +15,7 @@ from opentelemetry.metrics._internal.instrument import _ProxyInstrument
 _meter = get_meter_provider().get_meter("testing")
 
 
-def test_correct_metric_names():
+def test_correct_metric_names() -> None:
     for name, inst in metrics.SERVE_METRICS.items():
         if isinstance(inst, _ProxyInstrument):
             assert name == inst._name
@@ -23,12 +23,12 @@ def test_correct_metric_names():
             assert name == inst.name
 
 
-def test_max_measurement():
+def test_max_measurement() -> None:
     m = metrics.MaxMeasurement("maxserve.itl", 1)
     m.commit()
 
 
-def test_serialization():
+def test_serialization() -> None:
     measurements = [
         metrics.MaxMeasurement("maxserve.itl", 1),
         metrics.MaxMeasurement("maxserve.itl", -3.4),
@@ -44,13 +44,13 @@ def test_serialization():
         assert m.time_unix_nano == m2.time_unix_nano
 
 
-def test_reject_unknown_metric():
+def test_reject_unknown_metric() -> None:
     m = metrics.MaxMeasurement("bogus", 1)
     with pytest.raises(metrics.UnknownMetric):
         m.commit()
 
 
-def test_instrument_called():
+def test_instrument_called() -> None:
     common.configure_metrics(Settings())
     itl = metrics.SERVE_METRICS["maxserve.itl"]
     assert isinstance(itl, _ProxyInstrument)

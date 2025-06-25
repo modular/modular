@@ -35,7 +35,7 @@ def app():
 
 
 # In Bazel, we throw PackageNotFoundError since we're not running as a proper package.
-def test_version_endpoint_exists(app):
+def test_version_endpoint_exists(app) -> None:
     with TestClient(app) as client:
         response = client.get("/version")
         assert response.status_code == 200
@@ -43,7 +43,7 @@ def test_version_endpoint_exists(app):
         assert response.json()["version"]
 
 
-def test_prompts():
+def test_prompts() -> None:
     completion_req = CreateCompletionRequest(
         model="whatev",
         prompt="Why is the sky blue?",

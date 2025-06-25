@@ -21,7 +21,7 @@ from .norm_test_utils import (
 )
 
 
-def test_rms_norm_dimension_mismatch():
+def test_rms_norm_dimension_mismatch() -> None:
     """Tests RMSNorm raises ValueError when weight dimension doesn't match input's last dimension."""
     with pytest.raises(
         ValueError, match=r"weight dimension.*must match.*last dimension"
@@ -35,7 +35,7 @@ def test_rms_norm_dimension_mismatch():
         )
 
 
-def test_rms_norm_basic():
+def test_rms_norm_basic() -> None:
     """Tests basic RMSNorm functionality."""
     norm = RMSNorm(dim=64, dtype=DType.float32)
     g = Graph(
@@ -52,7 +52,7 @@ def test_rms_norm_basic():
 
 
 @pytest.mark.parametrize("shape, dim", COMMON_NORM_TEST_SHAPES)
-def test_rms_norm_shapes(shape, dim):
+def test_rms_norm_shapes(shape, dim) -> None:
     """Tests RMSNorm with various input shapes."""
     g = Graph(
         "test",
@@ -64,7 +64,7 @@ def test_rms_norm_shapes(shape, dim):
     assert_single_op(g, "mo.custom", "rms_norm")
 
 
-def test_rms_norm_device_transfer():
+def test_rms_norm_device_transfer() -> None:
     """Tests RMSNorm handles device transfers correctly."""
     device = DeviceRef.GPU(0)
     g = Graph(
@@ -79,7 +79,7 @@ def test_rms_norm_device_transfer():
     assert len(transfer_ops) >= 1
 
 
-def test_distributed_rms_norm():
+def test_distributed_rms_norm() -> None:
     """Tests DistributedRMSNorm with multiple devices."""
     devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
     norm = DistributedRMSNorm(dim=64, dtype=DType.float32, devices=devices)
@@ -95,7 +95,7 @@ def test_distributed_rms_norm():
     assert len(rms_norm_ops) == 2
 
 
-def test_rms_norm_tensor_parallel_scenario():
+def test_rms_norm_tensor_parallel_scenario() -> None:
     """Tests the specific tensor parallel scenario that causes issues."""
     # Simulate InternVL-38B device 1 with 12 heads (1536 dims) trying to use
     # full gamma (3200 dims).

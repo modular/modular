@@ -20,13 +20,13 @@ import mojo_module  # type: ignore
 
 
 class TestMojoPythonInterop(unittest.TestCase):
-    def test_pyinit(self):
+    def test_pyinit(self) -> None:
         self.assertTrue(mojo_module)
 
-    def test_plus_one(self):
+    def test_plus_one(self) -> None:
         self.assertEqual(mojo_module.plus_one(5), 6)
 
-    def test_parallel_wrapper(self):
+    def test_parallel_wrapper(self) -> None:
         arr = np.random.uniform(size=(10000)).astype(np.float32)
         arr = mojo_module.parallel_wrapper(arr)
         assert np.allclose(arr[0], np.max(arr))

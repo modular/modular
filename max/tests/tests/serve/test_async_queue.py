@@ -17,7 +17,7 @@ from max.serve.telemetry.metrics import MaxMeasurement
 
 
 @pytest.mark.asyncio
-async def test_basic_usage():
+async def test_basic_usage() -> None:
     spy = mock.Mock(spec=MaxMeasurement)
     spy2 = mock.Mock(spec=MaxMeasurement)
 
@@ -43,7 +43,7 @@ async def test_basic_usage():
 
 
 @pytest.mark.asyncio
-async def test_fast():
+async def test_fast() -> None:
     """Queuing a metric measurement should be fast"""
     async with AsyncioTelemetryController() as atc:
         client = atc.Client(Settings().metric_level)
@@ -57,7 +57,7 @@ async def test_fast():
 
 
 @pytest.mark.asyncio
-async def test_shutdown():
+async def test_shutdown() -> None:
     spy = mock.Mock(spec=MaxMeasurement)
     N = 10
     async with AsyncioTelemetryController() as atc:

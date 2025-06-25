@@ -133,15 +133,15 @@ def create_paged_manager(
     return kv_manager
 
 
-def request_zmq_endpoint():
+def request_zmq_endpoint() -> str:
     return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
-def response_zmq_endpoint():
+def response_zmq_endpoint() -> str:
     return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
-def cancel_zmq_endpoint():
+def cancel_zmq_endpoint() -> str:
     return f"ipc://{tempfile.gettempdir()}/{uuid4()}"
 
 
@@ -210,7 +210,9 @@ def create_paged_scheduler(
 
 
 class FakeAudioGeneratorPipeline(AudioGenerator):
-    def __init__(self, paged_manager: PagedKVCacheManager, max_num_steps: int):
+    def __init__(
+        self, paged_manager: PagedKVCacheManager, max_num_steps: int
+    ) -> None:
         self.paged_manager = paged_manager
         self.max_num_steps = max_num_steps
         self._prev_num_steps: int | None = None
@@ -267,7 +269,7 @@ class FakeAudioGeneratorPipeline(AudioGenerator):
 
         return responses
 
-    def release(self, _: TTSContext):
+    def release(self, _: TTSContext) -> None:
         pass
 
     @property
@@ -391,7 +393,7 @@ def enqueue_request(
     prompt_len: int,
     max_seq_len: int,
     shared_prefix: np.ndarray | None = None,
-):
+) -> None:
     context = create_text_context(
         prompt_len=prompt_len,
         max_seq_len=max_seq_len,
@@ -406,7 +408,7 @@ def enqueue_request_with_prompt(
     socket: ZmqPushSocket[tuple[str, TTSContext]],
     tokens: np.ndarray,
     max_seq_len: int,
-):
+) -> None:
     context = TextContext(
         prompt=tokens.tolist(),
         max_length=max_seq_len,
@@ -425,7 +427,7 @@ TG = BatchType.TokenGeneration
 def test_paged_scheduler_tg_request_exceed_max_seq_len(
     num_reqs,
     zmq_ctx,
-):
+) -> None:
     max_seq_len = 2048
     page_size = 128
     num_blocks = max_seq_len / page_size * num_reqs
@@ -475,7 +477,7 @@ def test_paged_scheduler_tg_request_exceed_max_seq_len(
 
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
     zmq_ctx,
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -526,7 +528,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16(
 @pytest.mark.parametrize("enable_prioritize_first_decode", [True, False])
 def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_len_384(
     zmq_ctx, enable_prioritize_first_decode
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -609,7 +611,7 @@ def test_paged_scheduler_num_prompts_100_prompt_len_500_output_tokens_16_prefix_
 def test_paged_scheduler_max_queue_size_tg(
     zmq_ctx,
     max_queue_size_tg,
-):
+) -> None:
     num_prompts = 100
     prompt_len = 500
     output_tokens = 16
@@ -714,7 +716,7 @@ def test_paged_scheduler_tg_batching(
     min_batch_size_tg,
     max_batch_size,
     max_queue_size_tg,
-):
+) -> None:
     num_prompts = 128
     prompt_len = 500
     output_tokens = 16

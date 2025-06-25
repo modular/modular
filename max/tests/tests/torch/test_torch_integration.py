@@ -35,12 +35,12 @@ def torch_grayscale(img: torch.Tensor) -> torch.Tensor:
     return result
 
 
-def test_missing_operation(op_library: CustomOpLibrary):
+def test_missing_operation(op_library: CustomOpLibrary) -> None:
     with pytest.raises(AttributeError):
         _ = op_library.some_kernel_that_doesnt_exist[{"const": 10}]
 
 
-def test_unsupported_arg_type_error(op_library: CustomOpLibrary):
+def test_unsupported_arg_type_error(op_library: CustomOpLibrary) -> None:
     # Attempting to access the unsupported_type_op should raise ValueError
     # because it has a String parameter which is not a supported type.
     with pytest.raises(
@@ -51,7 +51,7 @@ def test_unsupported_arg_type_error(op_library: CustomOpLibrary):
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_grayscale(op_library: CustomOpLibrary, backend: str):
+def test_grayscale(op_library: CustomOpLibrary, backend: str) -> None:
     @torch.compile(backend=backend, options={"force_disable_caches": True})
     def grayscale(pic):
         result = pic.new_empty(pic.shape[:-1])
@@ -72,7 +72,7 @@ def test_grayscale(op_library: CustomOpLibrary, backend: str):
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_binary_add(op_library: CustomOpLibrary, backend: str):
+def test_binary_add(op_library: CustomOpLibrary, backend: str) -> None:
     myadd_kernel = op_library.myadd
 
     @torch.compile(
@@ -98,7 +98,9 @@ def test_binary_add(op_library: CustomOpLibrary, backend: str):
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_binary_add_multiple_sizes(op_library: CustomOpLibrary, backend: str):
+def test_binary_add_multiple_sizes(
+    op_library: CustomOpLibrary, backend: str
+) -> None:
     myadd_kernel = op_library.myadd
 
     @torch.compile(
@@ -137,7 +139,7 @@ def test_binary_add_multiple_sizes(op_library: CustomOpLibrary, backend: str):
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_parameters(op_library: CustomOpLibrary, backend: str):
+def test_parameters(op_library: CustomOpLibrary, backend: str) -> None:
     parameter_increment_42 = op_library.parameter_increment[{"increment": 42}]
 
     @torch.compile(
@@ -184,7 +186,7 @@ def test_parameters(op_library: CustomOpLibrary, backend: str):
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
-def test_scalar_add(op_library: CustomOpLibrary, backend: str):
+def test_scalar_add(op_library: CustomOpLibrary, backend: str) -> None:
     scalar_add_kernel = op_library.scalar_add
 
     @torch.compile(
@@ -219,5 +221,5 @@ def test_scalar_add(op_library: CustomOpLibrary, backend: str):
 
 
 # This just gut-checks that we run other tests without an active MLIR context
-def test_GEX_2285(op_library: CustomOpLibrary):
+def test_GEX_2285(op_library: CustomOpLibrary) -> None:
     assert not mlir.Context.current

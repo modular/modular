@@ -8,7 +8,7 @@ from unittest import mock
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 
 
-def test_record():
+def test_record() -> None:
     spy = mock.MagicMock()
     with record_ms(spy):
         spy.assert_not_called()
@@ -19,7 +19,7 @@ def test_record():
     assert isinstance(args[0], float)
 
 
-def test_no_record_exception_handling():
+def test_no_record_exception_handling() -> None:
     spy = mock.MagicMock()
     try:
         with record_ms(spy):
@@ -43,7 +43,7 @@ def test_no_record_exception_handling():
     assert isinstance(args[0], float)
 
 
-def test_stopwatch():
+def test_stopwatch() -> None:
     sw = StopWatch()
     assert sw.start_ns > 0
     dt = sw.elapsed_ns

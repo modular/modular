@@ -27,7 +27,9 @@ def zmq_ctx():
     return zmq.Context(io_threads=2)
 
 
-def test_serialization_and_deserialization_through_queue_with_pickle(zmq_ctx):
+def test_serialization_and_deserialization_through_queue_with_pickle(
+    zmq_ctx,
+) -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[int, TextContext]](
         zmq_ctx, test_address, serialize=pickle.dumps
@@ -47,7 +49,9 @@ def test_serialization_and_deserialization_through_queue_with_pickle(zmq_ctx):
     assert context == received_context
 
 
-def test_serialization_and_deserialization_through_queue_with_msgpack(zmq_ctx):
+def test_serialization_and_deserialization_through_queue_with_msgpack(
+    zmq_ctx,
+) -> None:
     test_address = generate_zmq_ipc_path()
     push_socket = ZmqPushSocket[tuple[str, TextContext]](
         zmq_ctx, test_address, serialize=msgpack_numpy_encoder()

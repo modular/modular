@@ -18,7 +18,7 @@ from max.serve.pipelines.llm import AudioGeneratorPipeline
 class MockAudioGeneratorPipeline(AudioGeneratorPipeline):
     """Mock implementation of AudioGeneratorPipeline for testing."""
 
-    def __init__(self, mock_chunks: list[AudioGeneratorOutput]):
+    def __init__(self, mock_chunks: list[AudioGeneratorOutput]) -> None:
         # Skip the parent constructor that requires real dependencies such as
         # `PipelineTokenizer`.
         self.model_name = "test-model"
@@ -98,7 +98,7 @@ def test_generate_full_audio_multiple_chunks() -> None:
     }
 
 
-def test_generate_full_audio_single_chunk():
+def test_generate_full_audio_single_chunk() -> None:
     """Test generate_full_audio with a single audio chunk."""
     # Create test audio data.
     chunk_audio = torch.tensor([[1.0, 2.0, 3.0]], dtype=torch.float32)
@@ -125,7 +125,7 @@ def test_generate_full_audio_single_chunk():
     assert result.metadata == {"sample_rate": 22050, "duration": 0.5}
 
 
-def test_generate_full_audio_empty_chunks():
+def test_generate_full_audio_empty_chunks() -> None:
     """Test generate_full_audio with no audio chunks."""
     # Create mock pipeline with no chunks.
     pipeline = MockAudioGeneratorPipeline([])
@@ -141,7 +141,7 @@ def test_generate_full_audio_empty_chunks():
     assert result.metadata == {}
 
 
-def test_generate_full_audio_last_chunk_not_done():
+def test_generate_full_audio_last_chunk_not_done() -> None:
     """Test that generate_full_audio asserts when last chunk is not done."""
     # Create test audio data.
     chunk_audio = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
@@ -164,7 +164,7 @@ def test_generate_full_audio_last_chunk_not_done():
         asyncio.run(pipeline.generate_full_audio(request))
 
 
-def test_generate_full_audio_different_tensor_shapes():
+def test_generate_full_audio_different_tensor_shapes() -> None:
     """Test generate_full_audio with chunks of different shapes that can be concatenated."""
     # Create test audio data with different sequence lengths but same batch size
     chunk1_audio = torch.tensor([[1.0, 2.0]], dtype=torch.float32)  # (1, 2)
@@ -212,7 +212,7 @@ def test_generate_full_audio_different_tensor_shapes():
     assert result.metadata == {"chunk": 3, "final": True}
 
 
-def test_generate_full_audio_preserves_chunk_objects():
+def test_generate_full_audio_preserves_chunk_objects() -> None:
     """Test that generate_full_audio properly handles complete AudioGeneratorOutput objects."""
     # Create test audio data.
     chunk1_audio = torch.tensor([[1.0]], dtype=torch.float32)

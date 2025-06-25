@@ -20,7 +20,7 @@ from .norm_test_utils import (
 )
 
 
-def test_layer_norm_dimension_mismatch():
+def test_layer_norm_dimension_mismatch() -> None:
     """Tests LayerNorm raises ValueError for dimension mismatches."""
     with pytest.raises(
         ValueError,
@@ -37,7 +37,7 @@ def test_layer_norm_dimension_mismatch():
         )
 
 
-def test_layer_norm_basic():
+def test_layer_norm_basic() -> None:
     """Tests basic LayerNorm functionality."""
     g = Graph(
         "test",
@@ -52,7 +52,7 @@ def test_layer_norm_basic():
     assert_op_output_shape(layer_norm_op, "[2, 10, 64]")
 
 
-def test_layer_norm_no_bias():
+def test_layer_norm_no_bias() -> None:
     """Tests LayerNorm without bias."""
     norm = LayerNorm(
         dims=64, device=DeviceRef.CPU(), dtype=DType.float32, use_bias=False
@@ -70,7 +70,7 @@ def test_layer_norm_no_bias():
 
 
 @pytest.mark.parametrize("shape, dim", COMMON_NORM_TEST_SHAPES)
-def test_layer_norm_shapes(shape, dim):
+def test_layer_norm_shapes(shape, dim) -> None:
     """Tests LayerNorm with various input shapes."""
     g = Graph(
         "test",

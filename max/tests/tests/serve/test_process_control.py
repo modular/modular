@@ -7,12 +7,13 @@ import contextlib
 import multiprocessing
 import threading
 import time
+from typing import NoReturn
 
 import pytest
 from max.serve import process_control
 
 
-def test_heartbeat():
+def test_heartbeat() -> None:
     ctx = multiprocessing.get_context("spawn")
     pc = process_control.ProcessControl(ctx, "test")
 
@@ -35,7 +36,7 @@ def test_heartbeat():
 #   * start work & beat() periodically
 #   * watch for cancelation
 #   * declare when you've completed
-def run_a_bit(pc: process_control.ProcessControl, pause_s: float):
+def run_a_bit(pc: process_control.ProcessControl, pause_s: float) -> None:
     pc.set_started()
     try:
         for i in range(3):
@@ -49,20 +50,20 @@ def run_a_bit(pc: process_control.ProcessControl, pause_s: float):
 
 # This simulates a process that gets wedged. Ie it starts & is healthy, but
 # stops making progress and does not respect cancelation.
-def run_wedged(pc: process_control.ProcessControl):
+def run_wedged(pc: process_control.ProcessControl) -> None:
     """Start, but don't heart beat & don't stop"""
     pc.set_started()
     pc.beat()
     time.sleep(10)
 
 
-def run_and_crash(pc: process_control.ProcessControl):
+def run_and_crash(pc: process_control.ProcessControl) -> NoReturn:
     pc.set_started()
     pc.beat()
     raise Exception("dead!")
 
 
-def test_read_events():
+def test_read_events() -> None:
     ctx = multiprocessing.get_context("spawn")
     pc = process_control.ProcessControl(ctx, "test")
 
@@ -90,7 +91,7 @@ def run_process(p: multiprocessing.process.BaseProcess):
         p.kill()
 
 
-def test_process_lifecycle_explicit_wait():
+def test_process_lifecycle_explicit_wait() -> None:
     ctx = multiprocessing.get_context("spawn")
     pc = process_control.ProcessControl(ctx, "test")
 
@@ -104,7 +105,7 @@ def test_process_lifecycle_explicit_wait():
 
 
 @pytest.mark.asyncio
-async def test_process_lifecycle():
+async def test_process_lifecycle() -> None:
     ctx = multiprocessing.get_context("spawn")
     pc = process_control.ProcessControl(ctx, "test")
 
@@ -130,7 +131,7 @@ async def test_process_lifecycle():
 
 
 @pytest.mark.asyncio
-async def test_stop_wedged_process():
+async def test_stop_wedged_process() -> None:
     ctx = multiprocessing.get_context("spawn")
     pc = process_control.ProcessControl(ctx, "test", health_fail_s=100e-3)
 
@@ -159,7 +160,7 @@ async def test_stop_wedged_process():
 
 
 @pytest.mark.asyncio
-async def test_shutdown_dead_process():
+async def test_shutdown_dead_process() -> None:
     ctx = multiprocessing.get_context("spawn")
     pc = process_control.ProcessControl(ctx, "test", health_fail_s=100e-3)
 
@@ -183,7 +184,7 @@ async def test_shutdown_dead_process():
 
 
 @pytest.mark.asyncio
-async def test_crashed_process():
+async def test_crashed_process() -> None:
     ctx = multiprocessing.get_context("spawn")
     pc = process_control.ProcessControl(ctx, "test", health_fail_s=100e-3)
 
@@ -212,14 +213,14 @@ async def test_crashed_process():
         assert pc.is_canceled() == False
 
 
-def test_threading_health_check():
+def test_threading_health_check() -> None:
     pc = process_control.ProcessControl(threading, "test")
     pc.beat()
     assert pc.is_healthy()
 
 
 @pytest.mark.asyncio
-async def test_thread_lifecycle():
+async def test_thread_lifecycle() -> None:
     pc = process_control.ProcessControl(threading, "test")
 
     t = threading.Thread(target=run_a_bit, args=(pc, 10e-3))

@@ -116,11 +116,11 @@ def create_mock_request(
     return context
 
 
-def test_should_schedule_ce_empty_queue(scheduler):
+def test_should_schedule_ce_empty_queue(scheduler) -> None:
     assert not scheduler._should_schedule_ce()
 
 
-def test_should_schedule_ce_full_batch(scheduler, zmq_ctx):
+def test_should_schedule_ce_full_batch(scheduler, zmq_ctx) -> None:
     scheduler.active_batch = {
         i: create_mock_request(cache_seq_id=i, seq_len=5, start_idx=0)
         for i in range(scheduler.scheduler_config.max_batch_size_tg)
@@ -138,7 +138,7 @@ def test_should_schedule_ce_full_batch(scheduler, zmq_ctx):
     assert not scheduler._should_schedule_ce()
 
 
-def test_try_create_ce_batch(scheduler, zmq_ctx):
+def test_try_create_ce_batch(scheduler, zmq_ctx) -> None:
     mock_data = MagicMock()
     mock_data.active_length = 10
     # Create a push socket to send data.
@@ -161,7 +161,7 @@ def test_try_create_ce_batch(scheduler, zmq_ctx):
     assert batch["req1"].cache_seq_id not in scheduler.available_cache_indices
 
 
-def test_try_create_chunked_ce_batch(scheduler, zmq_ctx):
+def test_try_create_chunked_ce_batch(scheduler, zmq_ctx) -> None:
     # Configure scheduler for chunked prefill
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.max_forward_steps_ce = 1
@@ -190,7 +190,7 @@ def test_try_create_chunked_ce_batch(scheduler, zmq_ctx):
     assert batch["req1"].active_length == 20
 
 
-def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx):
+def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx) -> None:
     batch_executed = {
         "req1": create_mock_request(cache_seq_id=0),
         "req2": create_mock_request(cache_seq_id=1),
@@ -208,7 +208,7 @@ def test_scheduler_handle_terminated_responses(scheduler, zmq_ctx):
     scheduler.pipeline.release.assert_called_once()
 
 
-def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx):
+def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx) -> None:
     req_1 = create_mock_request(cache_seq_id=0, seq_len=31, start_idx=30)
     req_2 = create_mock_request(
         cache_seq_id=0, seq_len=30, start_idx=20
@@ -229,7 +229,7 @@ def test_scheduler_handle_chunked_requests(scheduler, zmq_ctx):
     assert not scheduler.request_q.empty()
 
 
-def test_handle_cancelled_requests(scheduler, zmq_ctx):
+def test_handle_cancelled_requests(scheduler, zmq_ctx) -> None:
     mock_request = create_mock_request(cache_seq_id=0)
     scheduler.active_batch = {"req1": mock_request}
     scheduler.available_cache_indices = set()
@@ -254,7 +254,7 @@ def test_handle_cancelled_requests(scheduler, zmq_ctx):
     scheduler.pipeline.release.assert_called_once_with(mock_request)
 
 
-def test_schedule_ce(scheduler, zmq_ctx):
+def test_schedule_ce(scheduler, zmq_ctx) -> None:
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
         "req1": mock_request
@@ -279,7 +279,7 @@ def test_schedule_ce(scheduler, zmq_ctx):
     )
 
 
-def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx):
+def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx) -> None:
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.max_forward_steps_ce = 1
@@ -325,7 +325,7 @@ def test_schedule_ce_with_chunked_prefill(scheduler, zmq_ctx):
     assert data.active_length == 10
 
 
-def test_schedule_mixed_ce_tg(scheduler, zmq_ctx):
+def test_schedule_mixed_ce_tg(scheduler, zmq_ctx) -> None:
     # Setup scheduler with chunked prefill enabled
     scheduler.scheduler_config.enable_chunked_prefill = True
     scheduler.scheduler_config.enable_in_flight_batching = True
@@ -376,7 +376,7 @@ def test_schedule_mixed_ce_tg(scheduler, zmq_ctx):
     assert batch["req2"].active_length == 19
 
 
-def test_schedule_tg(scheduler, zmq_ctx):
+def test_schedule_tg(scheduler, zmq_ctx) -> None:
     mock_request = create_mock_request(cache_seq_id=0)
     batch_to_execute: dict[str, Union[TextContext, TextAndVisionContext]] = {
         "req1": mock_request
@@ -399,7 +399,7 @@ def test_schedule_tg(scheduler, zmq_ctx):
     )
 
 
-def test_run_basic_flow(scheduler, zmq_ctx):
+def test_run_basic_flow(scheduler, zmq_ctx) -> None:
     # Setup mock data
     mock_request = create_mock_request(cache_seq_id=0, seq_len=10)
 

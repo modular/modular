@@ -672,7 +672,7 @@ def test_aligned() -> None:
     assert not tensor_uint8[1]._aligned(DType.int32.align)
 
 
-def test_unaligned_tensor_copy():
+def test_unaligned_tensor_copy() -> None:
     """Tests that copying a tensor aligns it to the dtype alignment."""
     expected = np.array([1005, 2510, 1325], np.int32)
 
@@ -712,7 +712,7 @@ def test_unaligned_tensor_copy():
         np.testing.assert_array_equal(tensor32.copy().to_numpy(), expected)
 
 
-def test_inplace_copy_from_raises():
+def test_inplace_copy_from_raises() -> None:
     tensor_3_3 = Tensor(DType.int32, (3, 3))
 
     tensor_3_10_3 = Tensor(DType.int32, (3, 10, 3))
@@ -739,7 +739,7 @@ def test_inplace_copy_from_raises():
         assert "Cannot copy tensors of different dtypes" in str(e.value)
 
 
-def test_inplace_copy_from_tensor_view():
+def test_inplace_copy_from_tensor_view() -> None:
     enumerated = np.zeros((5, 2, 3), dtype=np.int32)
     for i, j, k in np.ndindex(enumerated.shape):
         enumerated[i, j, k] = 100 * i + 10 * j + k
@@ -764,6 +764,6 @@ def test_inplace_copy_from_tensor_view():
     assert np.array_equal(dst.to_numpy(), expected)
 
 
-def test_GEX_2088():
+def test_GEX_2088() -> None:
     t = Tensor.zeros([2], DType.uint32)
     assert t[1].to_numpy().item() == 0

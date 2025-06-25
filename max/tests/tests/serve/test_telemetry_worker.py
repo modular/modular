@@ -19,7 +19,7 @@ from max.serve.telemetry.metrics import MaxMeasurement
 
 
 @pytest.mark.asyncio
-async def test_telemetry_worker():
+async def test_telemetry_worker() -> None:
     settings = Settings()
     async with telemetry_worker.start_process_consumer(settings) as worker:
         client = worker.Client(settings)
@@ -39,7 +39,7 @@ def _slow_handle(x: MaxMeasurement) -> None:
 
 
 @pytest.mark.asyncio
-async def test_shutdown_telemetry_worker():
+async def test_shutdown_telemetry_worker() -> None:
     settings = Settings()
     async with telemetry_worker.start_process_consumer(
         settings, handle_fn=_slow_handle
@@ -71,7 +71,7 @@ def _raise_exception(x: MaxMeasurement) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unreliable_handle():
+async def test_unreliable_handle() -> None:
     settings = Settings()
     async with telemetry_worker.start_process_consumer(
         settings,
@@ -93,7 +93,7 @@ async def test_unreliable_handle():
 
 
 @pytest.mark.asyncio
-async def test_metric_asyncio_client_filtering():
+async def test_metric_asyncio_client_filtering() -> None:
     settings = Settings(MAX_SERVE_METRIC_LEVEL="BASIC")
     assert settings.metric_level == MetricLevel.BASIC
 
@@ -112,7 +112,7 @@ async def test_metric_asyncio_client_filtering():
 
 
 @pytest.mark.asyncio
-async def test_metric_process_client_filtering():
+async def test_metric_process_client_filtering() -> None:
     settings = Settings(MAX_SERVE_METRIC_LEVEL="BASIC")
     assert settings.metric_level == MetricLevel.BASIC
 
@@ -130,7 +130,7 @@ async def test_metric_process_client_filtering():
     assert q.put_nowait.call_count == 1
 
 
-def test_process():
+def test_process() -> None:
     # Normal safe functions work
     ctx = multiprocessing.get_context("spawn")
     pc = ProcessControl(ctx, "test")
@@ -149,7 +149,7 @@ def test_process():
     assert_empty(q)
 
 
-def test_process_unreliable():
+def test_process_unreliable() -> None:
     # Ensure that handle functions that raise exceptions do not stop progress
     ctx = multiprocessing.get_context("spawn")
     pc = ProcessControl(ctx, "test")
@@ -168,7 +168,7 @@ def test_process_unreliable():
     assert_empty(q)
 
 
-def assert_empty(q):
+def assert_empty(q) -> None:
     empty = False
 
     # prove that stuff gets handled since the queue is empty

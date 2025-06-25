@@ -44,7 +44,7 @@ class DynamicScaledMatmul:
         )
 
 
-def test_dynamic_scaled_matmul_rowwise():
+def test_dynamic_scaled_matmul_rowwise() -> None:
     """Tests dynamic_scaled_matmul with valid inputs."""
     device = DeviceRef.CPU()
     with Graph(
@@ -168,7 +168,7 @@ class FusedQKVRaggedMatmulScaledFloat8:
         )
 
 
-def test_fused_qkv_ragged_matmul_scaled_float8_valid():
+def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
     """Tests fused_qkv_ragged_matmul_scaled_float8 with all tensors on same device."""
     device = DeviceRef.CPU()
 
@@ -362,7 +362,7 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         )
 
 
-def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device():
+def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
     """Tests that layer_idx must be on CPU device."""
     device = DeviceRef.GPU(0)
 

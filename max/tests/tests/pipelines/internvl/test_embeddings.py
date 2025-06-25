@@ -43,7 +43,7 @@ def create_test_vision_config(
     )
 
 
-def test_intern_vision_embeddings_init():
+def test_intern_vision_embeddings_init() -> None:
     """Test InternVisionEmbeddings initialization."""
     # For unit testing, we'll create a mock config object
     from dataclasses import dataclass, field
@@ -94,7 +94,9 @@ def test_intern_vision_embeddings_init():
         (224, 32, 49),  # 7x7 patches
     ],
 )
-def test_position_embedding_shape(image_size, patch_size, expected_patches):
+def test_position_embedding_shape(
+    image_size, patch_size, expected_patches
+) -> None:
     """Test position embedding shape calculations."""
     from dataclasses import dataclass, field
 
@@ -127,7 +129,7 @@ def test_position_embedding_shape(image_size, patch_size, expected_patches):
 
 
 @pytest.mark.parametrize("n_devices", [2, 4])
-def test_intern_vision_embeddings_shard(n_devices):
+def test_intern_vision_embeddings_shard(n_devices) -> None:
     """Test InternVisionEmbeddings sharding across multiple GPUs."""
     if n_devices > accelerator_count():
         pytest.skip(f"Not enough GPUs to run test with {n_devices} GPUs.")

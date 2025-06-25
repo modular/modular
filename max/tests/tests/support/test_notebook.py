@@ -20,7 +20,7 @@ def ipython():
     yield ipython
 
 
-def test_mojo_run_print(ipython):
+def test_mojo_run_print(ipython) -> None:
     with capture_output() as captured:
         ipython.run_cell_magic(
             magic_name="mojo",
@@ -33,14 +33,14 @@ def main():
     assert captured.stdout.strip() == "1"
 
 
-def test_compile_error(ipython):
+def test_compile_error(ipython) -> None:
     with pytest.raises(MojoCompilationError):
         ipython.run_cell_magic(
             magic_name="mojo", line="", cell='''var i: Int = "hello"'''
         )
 
 
-def test_mojo_package(ipython):
+def test_mojo_package(ipython) -> None:
     ipython.run_cell_magic(
         magic_name="mojo",
         line="package -o hello.mojopkg",

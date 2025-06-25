@@ -48,7 +48,7 @@ def app(fixture_tokenizer):
 
 
 @pytest.mark.asyncio
-async def test_openai_chat_completion_single(app):
+async def test_openai_chat_completion_single(app) -> None:
     async with AsyncTestClient(app) as client:
         request_content = "test data"
         response_json = await client.post(
@@ -67,11 +67,11 @@ async def test_openai_chat_completion_single(app):
         assert choice.finish_reason == "stop"
 
 
-def test_openai_chat_completion_concurrent(app):
+def test_openai_chat_completion_concurrent(app) -> None:
     request_contents: dict[int, str] = {}
     responses: dict[int, CreateChatCompletionResponse] = {}
 
-    def execute_request(client: SyncTestClient, idx: int):
+    def execute_request(client: SyncTestClient, idx: int) -> None:
         request_content = ",".join(f"_{i}_" for i in range(idx))
         request_contents[idx] = request_content
         response_json = client.post(
@@ -103,12 +103,12 @@ def test_openai_chat_completion_concurrent(app):
         assert received_response == expected_response
 
 
-def test_vllm_response_deserialization():
+def test_vllm_response_deserialization() -> None:
     vllm_response = """{"id":"chat-f33946bf8faf42849b11a4f948fc23f9","object":"chat.completion","created":1730306055,"model":"meta-llama/Meta-Llama-3.1-8B-Instruct","choices":[{"index":0,"message":{"role":"assistant","content":"Arrrr, listen close me hearty! Here be another one:\\n\\nWhy did the parrot go to the doctor?\\n\\nBecause it had a fowl temper! (get it? fowl, like a bird, but also a play on \\"foul\\" temper! ahh, shiver me timbers, I be laughin' me hook off!)","tool_calls":[]},"logprobs":null,"finish_reason":"stop","stop_reason":null}],"usage":{"prompt_tokens":20,"total_tokens":92,"completion_tokens":72},"prompt_logprobs":null}"""
 
     CreateChatCompletionResponse.model_validate_json(vllm_response)
 
 
-def test_max_server_response():
+def test_max_server_response() -> None:
     response = """{"id":"7a0d00d-8f85-4a69-aa07-f51724787e3f","choices":[{"finish_reason":"stop","index":0,"message":{"content":"Arrrr, here be another one:nnWhy did the pirate quit his job?nnBecause he was sick o' all the arrrr-guments with his boss! (get it? arrrr-guments? ahh, never mind, matey, I'll just be walkin' the plank if I don't get a laugh out o' ye!)","refusal":"","tool_calls":null,"role":"assistant","function_call":null},"logprobs":{"content":[],"refusal":[]}}],"created":1730310250,"model":"","service_tier":null,"system_fingerprint":null,"object":"chat.completion","usage":null}"""
     CreateChatCompletionResponse.model_validate_json(response)
