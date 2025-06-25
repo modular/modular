@@ -270,8 +270,8 @@ struct TestTensor[type: DType, rank: Int](Copyable, Movable):
     fn __del__(owned self):
         self.ndbuffer.data.free()
 
-    fn to_managed_tensor_slice(self) -> DynamicTensor[type, rank].Type:
-        return DynamicTensor[type, rank].Type(self.ndbuffer)
+    fn to_managed_tensor_slice(self) -> DynamicTensor[type, rank]:
+        return DynamicTensor[type, rank](self.ndbuffer)
 
 
 struct InitializationType(Copyable, Movable):

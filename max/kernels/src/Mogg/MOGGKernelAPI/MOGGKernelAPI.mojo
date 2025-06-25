@@ -440,8 +440,8 @@ fn reshape_contiguous_buffer[
         static_spec = StaticTensorSpec[dtype, old_rank].create_unknown(),
     ],
     shape: IndexList[new_rank],
-) -> DynamicTensor[dtype, new_rank].Type:
-    return DynamicTensor[dtype, new_rank].Type(buffer._ptr, shape)
+) -> DynamicTensor[dtype, new_rank]:
+    return DynamicTensor[dtype, new_rank](buffer._ptr, shape)
 
 
 # ===----------------------------------------------------------------------===#

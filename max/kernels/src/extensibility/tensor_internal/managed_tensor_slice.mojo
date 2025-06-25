@@ -457,15 +457,10 @@ alias _FusedComputeOutputTensor = ManagedTensorSlice[
     io_spec=_FusedComputeOutput
 ]
 
-
-struct DynamicTensor[
-    dtype: DType,
-    rank: Int,
-]:
-    alias Type = ManagedTensorSlice[
-        io_spec=IOUnknown,
-        static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
-    ]
+alias DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
+    io_spec=IOUnknown,
+    static_spec = StaticTensorSpec[dtype, rank].create_unknown(),
+]
 
 
 @fieldwise_init
@@ -1205,7 +1200,7 @@ struct VariadicTensors[
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""
 
-    var _tensors: StaticTuple[DynamicTensor[dtype, rank].Type, size]
+    var _tensors: StaticTuple[DynamicTensor[dtype, rank], size]
 
     fn __len__(self) -> Int:
         """Returns the number of variadic arguments in the pack.
