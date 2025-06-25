@@ -6,7 +6,7 @@
 
 from python import PythonObject, Python
 from python.bindings import PythonModuleBuilder
-from python.python import CPython
+from python.python import CPython, GILAcquired, GILReleased
 from os import abort
 import math
 from algorithm.functional import parallelize
@@ -43,28 +43,25 @@ fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
     fn calc_max(i: Int) -> None:
         # Each worker needs to hold the GIL to access python objects.
         # It is more efficient to only use Mojo native data structures in worker threads.
-        var state = cpython.PyGILState_Ensure()
-        try:
-            var start_idx = i * array_len_div
-            var end_idx = min((i + 1) * array_len_div, array_len)
+        with GILAcquired(cpython):
+            try:
+                var start_idx = i * array_len_div
+                var end_idx = min((i + 1) * array_len_div, array_len)
 
-            var max_val = array[start_idx]
-            for j in range(start_idx + 1, end_idx):
-                if array[j] > max_val:
-                    max_val = array[j]
+                var max_val = array[start_idx]
+                for j in range(start_idx + 1, end_idx):
+                    if array[j] > max_val:
+                        max_val = array[j]
 
-            array[start_idx] = max_val
-        except e:
-            pass
-        finally:
-            cpython.PyGILState_Release(state)
+                array[start_idx] = max_val
+            except e:
+                pass
 
     @parameter
     if do_parallelize:
         # Save the current thread state to avoid holding the GIL for the parallel loop.
-        var saved = cpython.PyEval_SaveThread()
-        parallelize[calc_max](num_physical_cores())
-        cpython.PyEval_RestoreThread(saved)
+        with GILReleased(cpython):
+            parallelize[calc_max](num_physical_cores())
     else:
         for i in range(0, num_physical_cores()):
             calc_max(i)
