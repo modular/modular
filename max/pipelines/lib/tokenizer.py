@@ -566,11 +566,17 @@ class TextAndVisionTokenizer(
             raise ValueError(msg)
 
         # Load images.
+        # Note: huggingface processors expect the images to be in RGB format.
+        def load_in_rgb(image_data):
+            image = Image.open(io.BytesIO(image_data))
+            # PIL will incur an unnecessary copy if the mode is already RGB.
+            # So simply avoid the conversion in that case.
+            if image.mode != "RGB":
+                image.convert("RGB")
+            return image
+
         images = (
-            [
-                Image.open(io.BytesIO(image_data))
-                for image_data in request.images
-            ]
+            [load_in_rgb(image_data) for image_data in request.images]
             if request.images
             else None
         )
