@@ -278,14 +278,10 @@ class PipelineConfig(MAXConfig):
 
         self.resolve()
 
-    def resolve(self) -> None:
+    def _import_custom_architectures(self) -> None:
         """
-        Validates and resolves the config.
-
-        This method is called after the config is initialized, to ensure that all
-        config fields have been initialized to a valid state.
+        Import custom model modules to add them to the registry.
         """
-        # Before anything else, import custom model modules to add them to the registry.
         for module_spec in self.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
@@ -314,16 +310,59 @@ class PipelineConfig(MAXConfig):
             for arch in module.ARCHITECTURES:
                 PIPELINE_REGISTRY.register(arch, allow_override=True)
 
+    def resolve(self) -> None:
+        """
+        Validates and resolves the config.
+
+        This method is called after the config is initialized, to ensure that all
+        config fields have been initialized to a valid state.
+        """
+        # Before anything else, import custom model modules to add them to the registry.
+        self._import_custom_architectures()
+
         self.model_config.resolve()
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
 
-        # Set sensible defaults. These are platform-specific.
+        self._validate_and_resolve_max_num_steps()
+
+        if (
+            self.sampling_config.enable_structured_output
+            and self.model_config.default_device_spec.device_type == "cpu"
+        ):
+            raise ValueError(
+                "enable_structured_output is not currently supported on CPU."
+            )
+
+        if self.sampling_config.do_penalties and self.draft_model_config:
+            raise ValueError(
+                "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
+            )
+
+        # By this point, we should have a valid model_path.
+
+        # Run Baseline Validation
+        self._validate_and_resolve_remaining_pipeline_config(
+            model_config=self.model_config
+        )
+
+        # Run Additional Checks for Speculative Decoding
+        if self.draft_model_config:
+            self._validate_and_resolve_remaining_pipeline_config(
+                model_config=self.draft_model_config
+            )
+
+            self._validate_pipeline_config_for_speculative_decoding()
+
+    def _validate_and_resolve_max_num_steps(self) -> None:
+        """
+        Validate and resolve the max_num_steps field. These are platform-specific.
+        """
         if self.max_num_steps < 0:
             if (
                 self.sampling_config.enable_structured_output
-                or self.model_config.device_specs[0] == DeviceSpec.cpu()
+                or self.model_config.default_device_spec == DeviceSpec.cpu()
             ):
                 self.max_num_steps = 1
             else:
@@ -336,28 +375,6 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 "max_num_steps > 1 not supported when enable_structured_output = True"
             )
-
-        if self.sampling_config.enable_structured_output:
-            if self.model_config.device_specs[0] == DeviceSpec.cpu():
-                raise ValueError(
-                    "enable_structured_output is not currently supported on CPU."
-                )
-
-        if self.sampling_config.do_penalties:
-            if self.draft_model_config:
-                raise ValueError(
-                    "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
-                )
-        # Run Baseline Validation
-        self._validate_and_resolve_remaining_pipeline_config(self.model_config)
-
-        # Run Additional Checks for Speculative Decoding
-        if self.draft_model_config:
-            self._validate_and_resolve_remaining_pipeline_config(
-                self.draft_model_config
-            )
-
-            self._validate_pipeline_config_for_speculative_decoding()
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """
@@ -446,7 +463,6 @@ class PipelineConfig(MAXConfig):
             raise ValueError(
                 "MAX-optimized architecture not available, failing as engine is provided as 'MAX'"
             )
-
         elif not arch:
             msg = (
                 "MAX-optimized architecture not available for"
@@ -471,10 +487,9 @@ class PipelineConfig(MAXConfig):
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        # The remainder of this function, assumes we have both a valid model_path,
-        # and a SupportedArchitecture. We should then validate the details of the existing architecture
-        # and fallback to HuggingFace if needed.
-
+        # We have now made sure that we have a valid SupportedArchitecture.
+        # We should then validate the details of the existing architecture and
+        # fallback to HuggingFace if needed.
         model_config.validate_and_resolve_quantization_encoding_weight_path(
             default_encoding=arch.default_encoding
         )

@@ -63,12 +63,14 @@ from .tokenizer import (
     TextAndVisionTokenizer,
     TextTokenizer,
 )
+from .weight_path_parser import WeightPathParser
 
 __all__ = [
     "AudioGenerationConfig",
     "download_weight_files",
     "EmbeddingsPipeline",
     "generate_local_model_path",
+    "get_paged_manager",
     "HuggingFaceFile",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
@@ -105,5 +107,5 @@ __all__ = [
     "TextTokenizer",
     "token_sampler",
     "upper_bounded_default",
-    "get_paged_manager",
+    "WeightPathParser",
 ]

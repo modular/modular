@@ -534,6 +534,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weight id, if different than the model_path
+
+        # TODO: These should ideally not call _weights_repo_id directly. I believe
+        # huggingface_weight_repo_id property can be used here?
         weight_model_id = (
             self._pipeline_config.model_config._weights_repo_id
             if self._pipeline_config.model_config._weights_repo_id

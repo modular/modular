@@ -56,6 +56,8 @@ class EmbeddingsPipeline(EmbeddingsGenerator[T]):
             raise ValueError("quantization_encoding must not be None")
 
         # Download weight files if not existent
+        # TODO: These should ideally not call _weights_repo_id directly. I believe
+        # huggingface_weight_repo_id property can be used here?
         weight_model_id = (
             self._pipeline_config.model_config._weights_repo_id
             if self._pipeline_config.model_config._weights_repo_id
