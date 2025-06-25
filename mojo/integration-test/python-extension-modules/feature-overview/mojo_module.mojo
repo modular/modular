@@ -13,13 +13,11 @@
 
 from os import abort
 
-from builtin._pybind import (
+from python import Python, PythonObject
+from python.bindings import (
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
-)
-from python import Python, PythonObject
-from python.bindings import (
     PyMojoObject,
     PythonModuleBuilder,
     lookup_py_type_object,

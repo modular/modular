@@ -16,6 +16,7 @@ from os import abort
 from sys.ffi import c_int, _Global
 from sys.info import sizeof
 from compile.reflection import get_type_name
+from memory import stack_allocation
 
 from python import Python, PythonObject
 from python._cpython import (
@@ -809,14 +810,14 @@ fn _py_c_function_wrapper[
     suitable for being called from Python's C extension mechanism.
 
     Parameters:
-        user_func: The Mojo function to wrap. Must have signature
-                  `fn(PythonObject, PythonObject) -> PythonObject`.
+        user_func: The Mojo function to wrap. Must have the `PyFunction`
+            signature.
 
     Args:
         py_self_ptr: Pointer to the Python object representing 'self' in the
-                    method call. This is borrowed from the caller.
+            method call. This is borrowed from the caller.
         args_ptr: Pointer to a Python tuple containing the positional arguments
-                 passed to the function. This is borrowed from the caller.
+            passed to the function. This is borrowed from the caller.
 
     Returns:
         A new Python object pointer containing the result of the user function,
@@ -869,22 +870,27 @@ fn _py_c_function_wrapper[
 fn _py_c_function_wrapper[
     user_func: PyFunctionRaising
 ](py_self_ptr: PyObjectPtr, py_args_ptr: PyObjectPtr) -> PyObjectPtr:
-    """Create a Python C API compatible wrapper for a Mojo function that can raise exceptions.
+    """Create a Python C API compatible wrapper for a Mojo function that can
+    raise exceptions.
 
-    This function wraps a Mojo function that follows the `PyFunctionRaising` signature
-    (can raise exceptions) and makes it compatible with Python's C API calling convention.
+    This function wraps a Mojo function that follows the `PyFunctionRaising`
+    signature (can raise exceptions) and makes it compatible with Python's C API
+    calling convention.
 
     Parameters:
-        user_func: The Mojo function to wrap. Must follow the `PyFunctionRaising`
-                  signature: `fn(PythonObject, PythonObject) raises -> PythonObject`
+        user_func: The Mojo function to wrap. Must have the `PyFunctionRaising`
+            signature.
 
     Args:
-        py_self_ptr: Pointer to the Python object representing 'self' (borrowed reference).
-        py_args_ptr: Pointer to a Python tuple containing the function arguments (borrowed reference).
+        py_self_ptr: Pointer to the Python object representing 'self' (borrowed
+            reference).
+        py_args_ptr: Pointer to a Python tuple containing the function arguments
+            (borrowed reference).
 
     Returns:
-        A new Python object pointer containing the function result, or NULL if an exception occurred.
-        The caller takes ownership of the returned reference.
+        A new Python object pointer containing the function result, or NULL if
+        an exception occurred. The caller takes ownership of the returned
+        reference.
     """
 
     fn wrapper(
@@ -915,15 +921,21 @@ fn _py_c_function_wrapper[
     return _py_c_function_wrapper[wrapper](py_self_ptr, py_args_ptr)
 
 
+# ===-----------------------------------------------------------------------===#
+# Utilities for building Python bindings
+# ===-----------------------------------------------------------------------===#
+
+
 fn check_arguments_arity(
     arity: Int,
     args: PythonObject,
 ) raises:
     """Validate that the provided arguments match the expected function arity.
 
-    This function checks if the number of arguments in the provided tuple matches
-    the expected arity for a function call. If the counts don't match, it raises
-    a descriptive error message similar to Python's built-in TypeError messages.
+    This function checks if the number of arguments in the provided tuple object
+    matches the expected arity for a function call. If the counts don't match,
+    it raises a descriptive error message similar to Python's built-in TypeError
+    messages.
 
     Args:
         arity: The expected number of arguments for the function.
@@ -931,8 +943,8 @@ fn check_arguments_arity(
 
     Raises:
         Error: If the argument count doesn't match the expected arity. The error
-               message follows Python's convention for TypeError messages, indicating
-               whether too few or too many arguments were provided.
+               message follows Python's convention for TypeError messages,
+               indicating whether too few or too many arguments were provided.
     """
     # TODO: try to extract the current function name from cpython
     return check_arguments_arity(arity, args, "<mojo function>")
@@ -945,9 +957,10 @@ fn check_arguments_arity(
 ) raises:
     """Validate that the provided arguments match the expected function arity.
 
-    This function checks if the number of arguments in the provided tuple matches
-    the expected arity for a function call. If the counts don't match, it raises
-    a descriptive error message similar to Python's built-in TypeError messages.
+    This function checks if the number of arguments in the provided tuple object
+    matches the expected arity for a function call. If the counts don't match,
+    it raises a descriptive error message similar to Python's built-in TypeError
+    messages.
 
     Args:
         arity: The expected number of arguments for the function.
@@ -957,9 +970,9 @@ fn check_arguments_arity(
 
     Raises:
         Error: If the argument count doesn't match the expected arity. The error
-               message follows Python's convention for TypeError messages, indicating
-               whether too few or too many arguments were provided, along with the
-               specific function name.
+               message follows Python's convention for TypeError messages,
+               indicating whether too few or too many arguments were provided,
+               along with the specific function name.
     """
 
     var arg_count = len(args)
@@ -988,6 +1001,99 @@ fn check_arguments_arity(
                     arg_count,
                 )
             )
+
+
+fn check_and_get_arg[
+    T: AnyType
+](
+    func_name: StaticString, py_args: PythonObject, index: Int
+) raises -> UnsafePointer[T]:
+    """Get the argument at the given index and downcast it to a given Mojo type.
+
+    Args:
+        func_name: The name of the function referenced in the error message if
+            the downcast fails.
+        py_args: The Python tuple object containing the arguments.
+        index: The index of the argument.
+
+    Returns:
+        A pointer to the Mojo value contained in the argument.
+
+    Raises:
+        If the argument cannot be downcast to the given type.
+    """
+    return py_args[index].downcast_value_ptr[T](func=func_name)
+
+
+fn _try_convert_arg[
+    T: ConvertibleFromPython
+](
+    func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: T
+) raises:
+    try:
+        result = T(py_args[argidx])
+    except convert_err:
+        raise Error(
+            String.format(
+                (
+                    "TypeError: {}() expected argument at position {} to be"
+                    " instance of (or convertible to) Mojo '{}'; got '{}'."
+                    " (Note: attempted conversion failed due to: {})"
+                ),
+                func_name,
+                argidx,
+                get_type_name[T](),
+                _get_type_name(py_args[argidx]),
+                convert_err,
+            )
+        )
+
+
+# NOTE:
+#   @always_inline is needed so that the stack_allocation() that appears in
+#   the definition below is valid in the _callers_ stack frame, effectively
+#   allowing us to "return" a pointer to stack-allocated data from this
+#   function.
+@always_inline
+fn check_and_get_or_convert_arg[
+    T: ConvertibleFromPython
+](
+    func_name: StaticString, py_args: PythonObject, index: Int
+) raises -> UnsafePointer[T]:
+    """Get the argument at the given index and convert it to a given Mojo type.
+
+    If the argument cannot be directly downcast to the given type, it will be
+    converted to it.
+
+    Args:
+        func_name: The name of the function referenced in the error message if
+            the downcast fails.
+        py_args: The Python tuple object containing the arguments.
+        index: The index of the argument.
+
+    Returns:
+        A pointer to the Mojo value contained in or converted from the argument.
+
+    Raises:
+        If the argument cannot be downcast or converted to the given type.
+    """
+
+    # Stack space to hold a converted value for this argument, if needed.
+    var converted_arg_ptr: UnsafePointer[T] = stack_allocation[1, T]()
+
+    try:
+        return check_and_get_arg[T](func_name, py_args, index)
+    except e:
+        converted_arg_ptr.init_pointee_move(
+            _try_convert_arg[T](
+                func_name,
+                py_args,
+                index,
+            )
+        )
+        # Return a pointer to stack data. Only valid because this function is
+        # @always_inline.
+        return converted_arg_ptr
 
 
 fn _get_type_name(obj: PythonObject) raises -> String:
