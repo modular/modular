@@ -21,7 +21,6 @@ modular_py_test(
         "test_telemetry.py",
     ],
     data = [
-        "//PyTorch:TorchRuntimePlugins",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
         "//SDK/lib/API/python/tests/graph/testdata",
@@ -66,7 +65,6 @@ modular_py_test(
         "test_tokenizer.py",
     ],
     data = [
-        "//PyTorch:TorchRuntimePlugins",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
         "//SDK/lib/API/python/tests/graph/testdata",
@@ -117,7 +115,6 @@ modular_py_test(
     ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//PyTorch:TorchRuntimePlugins",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
     ],
@@ -161,7 +158,6 @@ modular_py_test(
     ],
     data = [
         # TODO(MAXPLAT-86): Find a shared place for these tools
-        "//PyTorch:TorchRuntimePlugins",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
     ],
@@ -194,7 +190,6 @@ modular_py_test(
     srcs = glob(["multi_gpu_tests/**/*.py"]),
     data = [
         "//ModularFramework/tools/max",
-        "//PyTorch:TorchRuntimePlugins",
         "//SDK/integration-test:test_user_op",
         "//SDK/integration-test/API:inputs",
         "//SDK/integration-test/API:pytest_inputs",
