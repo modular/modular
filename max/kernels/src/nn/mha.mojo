@@ -313,7 +313,7 @@ fn flash_attention[
         # H and D are always known for opaque KVCache types, we only check Q.
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
-        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and has_amd_gpu_accelerator())
+        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (ctx.device_info is H100 and mask_t.mask_safe_out_of_bounds)))
         alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
@@ -661,7 +661,6 @@ fn flash_attention_dispatch[
 
                 @parameter
                 if use_sm90_kernel:
-                    # FIXME: pass `exp_sum_qk_max_data`
                     mha_sm90_dispatch[
                         config=config,
                         group=group,
@@ -833,7 +832,7 @@ fn flash_attention[
     # H and D are always known.
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
-    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and has_amd_gpu_accelerator())
+    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (ctx.device_info is H100 and mask_t.mask_safe_out_of_bounds)))
     alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
 
     alias q_half_float = q.type in (DType.float16, DType.bfloat16)
