@@ -7,7 +7,6 @@ modular_py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        requirement("find-libpython"),
         requirement("numpy"),
         requirement("pyyaml"),
         requirement("ruamel-yaml"),

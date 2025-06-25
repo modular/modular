@@ -9,7 +9,6 @@ description = "Modular Python utilities"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "find-libpython>=0.3.0",
     "numpy",
     "ruamel.yaml>=0.17",
     "ruamel-yaml-clib",
