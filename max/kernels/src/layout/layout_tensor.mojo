@@ -333,11 +333,13 @@ struct LayoutTensor[
     This pointer respects the specified address space, alignment, mutability,
     and origin tracking for memory safety and performance optimization."""
 
-    var runtime_layout: RuntimeLayout[
+    alias RuntimeLayoutType = RuntimeLayout[
         layout,
         element_type=layout_int_type,
         linear_idx_type=linear_idx_type,
     ]
+
+    var runtime_layout: Self.RuntimeLayoutType
     """Runtime representation of the tensor's memory layout.
 
     Handles both compile-time and runtime-determined dimensions, enabling
@@ -2914,57 +2916,22 @@ struct LayoutTensor[
             i += 1
         return zipped_divide(layout, tiler)
 
-    # FIXME: Workaround while we wait for parametrized aliases. What we're trying to do is:
-    # alias tile_type[*tile_sizes: Int] = LayoutTensor[
-    #     dtype,
-    #     Self._compute_tile_layout[*tile_sizes]()[0],
-    #     origin,
-    #     address_space=address_space,
-    #     element_layout=element_layout,
-    # ]
-
-    @always_inline
-    @staticmethod
-    fn tile_type[
-        *tile_sizes: Int,
-    ](
-        *tile_coords: Int,
-        out result: LayoutTensor[
-            dtype,
-            Self._compute_tile_layout[*tile_sizes]()[0],
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked = masked or _tile_is_masked[layout, *tile_sizes](),
-        ],
-    ):
-        """Returns a the type of a tile view of the tensor with specified
-        dimensions and coordinates.
-
-        Parameters:
-            tile_sizes: The dimensions of each tile along each axis of the
-                tensor.
-
-        Args:
-            tile_coords: The coordinates of the specific tile to extract.
-
-        Returns:
-            The type of a view into the original tensor representing the
-                specified tile.
-        """
-        while True:
-            pass
+    alias TileType[*tile_sizes: Int] = LayoutTensor[
+        dtype,
+        Self._compute_tile_layout[*tile_sizes]()[0],
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked = masked or _tile_is_masked[layout, *tile_sizes](),
+        alignment=alignment,
+    ]
 
     @always_inline
     fn tile[
         *tile_sizes: Int,
-    ](
-        self,
-        *tile_coords: Int,
-        out result: __type_of(self.tile_type[*tile_sizes]()),
-    ):
+    ](self, *tile_coords: Int, out result: self.TileType[*tile_sizes]):
         """Extract a tile (sub-tensor) from this tensor with specified
         dimensions and position.
 
@@ -3094,7 +3061,7 @@ struct LayoutTensor[
         self,
         *tile_coords: Int,
         out result: Tuple[
-            __type_of(self.tile_type[*tile_sizes]()),
+            self.TileType[*tile_sizes],
             IndexList[
                 len(flatten(self.layout.shape)),
                 element_type = Self.layout_int_type,
@@ -3128,7 +3095,7 @@ struct LayoutTensor[
             "Number of tiles should match the rank",
         ]()
 
-        alias tile_type = self.tile_type[*tile_sizes]()
+        alias tile_type = self.TileType[*tile_sizes]
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
@@ -3136,8 +3103,8 @@ struct LayoutTensor[
             len(flatten(self.layout.shape)), element_type = Self.layout_int_type
         ]()
         var offset: Scalar[Self.linear_idx_type] = 0
-        var runtime_shape = __type_of(tile_type.runtime_layout.shape)()
-        var runtime_stride = __type_of(tile_type.runtime_layout.stride)()
+        var runtime_shape = tile_type.RuntimeLayoutType.ShapeType()
+        var runtime_stride = tile_type.RuntimeLayoutType.StrideType()
 
         @parameter
         if tile_type.layout.all_dims_known():
@@ -3148,7 +3115,7 @@ struct LayoutTensor[
                 offset += tile_coords[i] * stride
                 corner_coords[i] = tile_coords[i] * tile_sizes[i]
 
-            var runtime_layout = __type_of(tile_type.runtime_layout)(
+            var runtime_layout = tile_type.RuntimeLayoutType(
                 runtime_shape, runtime_stride
             )
 
@@ -3163,7 +3130,7 @@ struct LayoutTensor[
                     runtime_layout.shape.value[i] = shape_i
 
             return (
-                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr.offset(offset), runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3177,7 +3144,7 @@ struct LayoutTensor[
                 runtime_stride.value[i] = self.runtime_layout.stride.value[i]
                 offset += self.runtime_layout.stride.value[i] * corner_coord
 
-            var runtime_layout = __type_of(tile_type.runtime_layout)(
+            var runtime_layout = tile_type.RuntimeLayoutType(
                 runtime_shape, runtime_stride
             )
 
@@ -3189,7 +3156,7 @@ struct LayoutTensor[
                 runtime_layout.shape.value[i] = shape_i
 
             return (
-                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr.offset(offset), runtime_layout),
                 corner_coords,
                 offset,
             )

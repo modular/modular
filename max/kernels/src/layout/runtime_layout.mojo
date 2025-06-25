@@ -65,14 +65,16 @@ struct RuntimeLayout[
     actual shape and stride values can be modified during execution.
     """
 
-    var shape: RuntimeTuple[layout.shape, element_type=element_type]
+    alias ShapeType = RuntimeTuple[layout.shape, element_type=element_type]
+    var shape: Self.ShapeType
     """The shape of the layout as a runtime tuple.
 
     Stores the size of each dimension. Uses the specified bitwidth and is
     unsigned. Must match the static layout's shape dimensions.
     """
 
-    var stride: RuntimeTuple[layout.stride, element_type=linear_idx_type]
+    alias StrideType = RuntimeTuple[layout.stride, element_type=linear_idx_type]
+    var stride: Self.StrideType
     """The stride of the layout as a runtime tuple.
 
     Stores the stride (step size) for each dimension. Uses 64-bit unsigned

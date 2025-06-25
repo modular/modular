@@ -90,9 +90,10 @@ struct MMATileBuffers[
     var shared_mem_tile: Self.SharedMemTileType
 
     # Tile view optimized for matrix multiplication acceleration (MMA) operations
-    alias MMATileType = __type_of(
-        Self.SharedMemTileType.tile_type[mma_warp_dim, block_k_dim]()
-    )
+    alias MMATileType = Self.SharedMemTileType.TileType[
+        mma_warp_dim, block_k_dim
+    ]
+
     var mma_tile: Self.MMATileType
 
     # Buffer for loading data from global memory before transferring to shared memory
@@ -183,11 +184,9 @@ struct MMATileBuffers[
         k_group: Int, mma_idx: Int, k: Int, elements_per_thread: Int
     ](
         self,
-        out result: __type_of(
-            self.register_buffer[k_group].tile_type[
-                num_mmas, elements_per_thread
-            ]()
-        ),
+        out result: __type_of(self.register_buffer[k_group]).TileType[
+            num_mmas, elements_per_thread
+        ],
     ):
         """Get a specific K-dimension tile from the register buffer.
 
