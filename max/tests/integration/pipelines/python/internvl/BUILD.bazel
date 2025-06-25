@@ -25,10 +25,7 @@ modular_py_test(
     name = "internvl",
     size = "large",
     srcs = glob(["test_*.py"]) + ["conftest.py"],
-    data = [
-        "//ModularFramework/tools/max",
-    ],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_multi_gpu"],
     tags = [
         "gpu",
         "no-sandbox",
