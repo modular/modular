@@ -361,7 +361,7 @@ class InferenceSession:
         devices: Iterable[Device] | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
-    ):
+    ) -> None:
         """
         Args:
             num_threads: Number of threads to use for the inference session.
@@ -510,7 +510,7 @@ class InferenceSession:
         style: Union[str, PrintStyle] = PrintStyle.COMPACT,
         precision: int = 6,
         output_directory: str = "",
-    ):
+    ) -> None:
         """Sets the debug print options.
 
         See `Value.print`.
@@ -565,7 +565,7 @@ class InferenceSession:
 
     def set_split_k_reduction_precision(
         self, precision: str | SplitKReductionPrecision
-    ):
+    ) -> None:
         """Sets the accumulation precision for split k reductions in large matmuls."""
         if not isinstance(precision, SplitKReductionPrecision):
             try:
@@ -576,7 +576,7 @@ class InferenceSession:
 
         self._set_mojo_define("SPLITK_REDUCTION_SCHEME", precision)
 
-    def set_mojo_log_level(self, level: str | LogLevel):
+    def set_mojo_log_level(self, level: str | LogLevel) -> None:
         """Sets the verbosity of mojo logging in the compiled model."""
         if not isinstance(level, LogLevel):
             try:
@@ -587,7 +587,7 @@ class InferenceSession:
 
         self._set_mojo_define("LOGGING_LEVEL", level)
 
-    def set_mojo_assert_level(self, level: str | AssertLevel):
+    def set_mojo_assert_level(self, level: str | AssertLevel) -> None:
         """Sets which mojo asserts are kept in the compiled model."""
         if not isinstance(level, AssertLevel):
             try:
@@ -598,7 +598,7 @@ class InferenceSession:
 
         self._set_mojo_define("ASSERT", level)
 
-    def gpu_profiling(self, mode: GPUProfilingMode):
+    def gpu_profiling(self, mode: GPUProfilingMode) -> None:
         """Enables end to end gpu profiling configuration."""
         if mode == GPUProfilingMode.OFF:
             return
@@ -610,7 +610,7 @@ class InferenceSession:
 
         set_gpu_profiling_state(mode.value)
 
-    def _use_experimental_kernels(self, mode: str):
+    def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""
         if mode.lower() in ("false", "off", "no", "0"):
             return
@@ -626,7 +626,7 @@ class InferenceSession:
 
         self._set_mojo_define("PDL_LEVEL", int(level))
 
-    def _dump_gpu_asm(self, option: bool | str | Path = True):
+    def _dump_gpu_asm(self, option: bool | str | Path = True) -> None:
         """Enables dumping of gpu asm.
 
         Specifying a True would print the kernel output to screen, specifying a
@@ -636,7 +636,7 @@ class InferenceSession:
         """
         self._set_mojo_define("DUMP_GPU_ASM", str(option))
 
-    def _dump_gpu_llvm(self, option: bool | str | Path = True):
+    def _dump_gpu_llvm(self, option: bool | str | Path = True) -> None:
         """Enables dumping of gpu llvm.
 
         Specifying a True would print the kernel output to screen, specifying a
@@ -646,7 +646,7 @@ class InferenceSession:
         """
         self._set_mojo_define("DUMP_GPU_LLVM", str(option))
 
-    def _set_mojo_define(self, key: str, value: bool | int | str):
+    def _set_mojo_define(self, key: str, value: bool | int | str) -> None:
         """Enables overwriting of any mojo config directly."""
         self._impl.set_mojo_define(key, value)
 

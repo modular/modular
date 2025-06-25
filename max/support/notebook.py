@@ -22,7 +22,7 @@ from .paths import MojoCompilationError
 
 
 @register_cell_magic
-def mojo(line, cell):
+def mojo(line, cell) -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", nargs="?", default="run")
     parser.add_argument("-o", "--output")
