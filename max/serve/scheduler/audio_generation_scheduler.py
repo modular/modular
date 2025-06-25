@@ -248,8 +248,6 @@ class AudioGenerationScheduler(Scheduler):
             path=MAX_SERVE_TTS_BATCH_INFO_FILENAME
         )
 
-        # TODO health check
-
     def _retrieve_pending_requests(self) -> None:
         while not self.request_q.empty():
             try:

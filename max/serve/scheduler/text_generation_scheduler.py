@@ -201,8 +201,6 @@ class TokenGenerationScheduler(Scheduler):
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
 
-        # TODO health check
-
     def _should_schedule_ce(self) -> bool:
         # No CE to schedule if queue is empty
         if self.request_q.empty():
