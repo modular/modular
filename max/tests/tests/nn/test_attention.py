@@ -194,3 +194,176 @@ def test_distributed_attention_with_rope_call_validation(
                 ),
                 input_row_offsets=[dummy_tensor, "not-a-tensor-value"],  # type: ignore
             )
+
+
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+def test_distributed_attention_with_rope_non_divisible_heads(
+    allreduce_mock: mock.Mock,
+) -> None:
+    """Tests DistributedAttentionWithRope with non-divisible number of heads."""
+    rope = RotaryEmbedding(
+        dim=64,
+        n_heads=30,  # Not divisible by 4
+        theta=10000.0,
+        max_seq_len=2048,
+        device=DeviceRef.CPU(),
+    )
+
+    kv_params = KVCacheParams(
+        n_kv_heads=8,
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+        dtype=DType.float32,
+    )
+
+    devices = [DeviceRef("gpu", i) for i in range(4)]
+
+    # Should not raise an error anymore
+    dist_attn = DistributedAttentionWithRope(
+        rope=rope,
+        num_attention_heads=30,
+        num_key_value_heads=8,
+        hidden_size=1920,  # 30 * 64
+        kv_params=kv_params,
+        devices=devices,
+    )
+
+    # Verify that heads are distributed correctly
+    # Expected distribution: 8, 8, 7, 7
+    assert len(dist_attn.list_of_attentions) == 4
+    assert dist_attn.list_of_attentions[0].n_heads == 8
+    assert dist_attn.list_of_attentions[1].n_heads == 8
+    assert dist_attn.list_of_attentions[2].n_heads == 7
+    assert dist_attn.list_of_attentions[3].n_heads == 7
+
+
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+def test_distributed_attention_with_rope_stacked_qkv(
+    allreduce_mock: mock.Mock,
+) -> None:
+    """Tests DistributedAttentionWithRope with stacked QKV configuration."""
+    rope = RotaryEmbedding(
+        dim=64,
+        n_heads=32,
+        theta=10000.0,
+        max_seq_len=2048,
+        device=DeviceRef.CPU(),
+    )
+
+    kv_params = KVCacheParams(
+        n_kv_heads=8,
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+        dtype=DType.float32,
+    )
+
+    devices = [DeviceRef("gpu", i) for i in range(4)]
+
+    # Test with stacked QKV
+    dist_attn = DistributedAttentionWithRope(
+        rope=rope,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        hidden_size=2048,
+        kv_params=kv_params,
+        devices=devices,
+        stacked_qkv=True,
+    )
+
+    # Verify sharding strategies are set correctly
+    assert dist_attn.qkv_proj.sharding_strategy is not None
+    assert dist_attn.o_proj.sharding_strategy is not None
+    assert dist_attn.qkv_proj.sharding_strategy.is_stacked_qkv
+    assert dist_attn.o_proj.sharding_strategy.is_head_aware_colwise
+
+
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
+    allreduce_mock: mock.Mock,
+) -> None:
+    """Tests DistributedAttentionWithRope with stacked QKV and non-divisible heads."""
+    rope = RotaryEmbedding(
+        dim=64,
+        n_heads=30,  # Not divisible by 4
+        theta=10000.0,
+        max_seq_len=2048,
+        device=DeviceRef.CPU(),
+    )
+
+    kv_params = KVCacheParams(
+        n_kv_heads=10,  # Also not divisible by 4
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+        dtype=DType.float32,
+    )
+
+    devices = [DeviceRef("gpu", i) for i in range(4)]
+
+    # Should work with stacked QKV even with non-divisible heads
+    dist_attn = DistributedAttentionWithRope(
+        rope=rope,
+        num_attention_heads=30,
+        num_key_value_heads=10,
+        hidden_size=1920,  # 30 * 64
+        kv_params=kv_params,
+        devices=devices,
+        stacked_qkv=True,
+    )
+
+    # Verify sharding strategies
+    assert dist_attn.qkv_proj.sharding_strategy is not None
+    assert dist_attn.o_proj.sharding_strategy is not None
+    assert dist_attn.qkv_proj.sharding_strategy.is_stacked_qkv
+    assert dist_attn.o_proj.sharding_strategy.is_head_aware_colwise
+
+    # Verify head distribution
+    total_heads = sum(attn.n_heads for attn in dist_attn.list_of_attentions)
+    assert total_heads == 30
+
+
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
+def test_distributed_attention_with_rope_separate_projections(
+    allreduce_mock: mock.Mock,
+) -> None:
+    """Tests DistributedAttentionWithRope with separate Q, K, V projections."""
+    rope = RotaryEmbedding(
+        dim=64,
+        n_heads=30,  # Not divisible by 4
+        theta=10000.0,
+        max_seq_len=2048,
+        device=DeviceRef.CPU(),
+    )
+
+    kv_params = KVCacheParams(
+        n_kv_heads=10,
+        head_dim=64,
+        cache_strategy=KVCacheStrategy.PAGED,
+        page_size=128,
+        dtype=DType.float32,
+    )
+
+    devices = [DeviceRef("gpu", i) for i in range(4)]
+
+    # Test with separate projections (stacked_qkv=False)
+    dist_attn = DistributedAttentionWithRope(
+        rope=rope,
+        num_attention_heads=30,
+        num_key_value_heads=10,
+        hidden_size=1920,
+        kv_params=kv_params,
+        devices=devices,
+        stacked_qkv=False,
+    )
+
+    # Verify sharding strategies for separate projections.
+    assert dist_attn.q_proj.sharding_strategy is not None
+    assert dist_attn.k_proj.sharding_strategy is not None
+    assert dist_attn.v_proj.sharding_strategy is not None
+    assert dist_attn.o_proj.sharding_strategy is not None
+    assert dist_attn.q_proj.sharding_strategy.is_rowwise
+    assert dist_attn.k_proj.sharding_strategy.is_rowwise
+    assert dist_attn.v_proj.sharding_strategy.is_rowwise
+    assert dist_attn.o_proj.sharding_strategy.is_head_aware_colwise
