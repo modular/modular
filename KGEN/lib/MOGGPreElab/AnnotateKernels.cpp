@@ -309,6 +309,32 @@ static LogicalResult annotateTypes(LIT::FnOp func) {
                              builder.getArrayAttr(sourceName));
   }
 
+  { // Annotations for defaulted parameter resolution
+    auto parameterNames =
+        llvm::map_to_vector(func.getInputParams(), [](auto decl) -> Attribute {
+          return decl.getName();
+        });
+
+    LIT::DefaultValueHandler defaultHandler(
+        func.getFullSignature().getParamListAttrs());
+
+    ParameterEvaluator evaluator;
+    for (ParamDeclAttr param : func.getInputParams())
+      evaluator.addInputValue(ParamDeclRefAttr::get(param));
+
+    NamedAttrList defaultValues;
+    for (auto [index, decl] : llvm::enumerate(func.getInputParams())) {
+      if (auto defaultValue = defaultHandler.getDefault(index))
+        defaultValues.append(LIT::demangleParameterName(decl.getName()),
+                             evaluator.getReboundAttribute(defaultValue));
+    }
+
+    func->setDiscardableAttr(kKernelParameterNamesAttrName,
+                             builder.getArrayAttr(parameterNames));
+    func->setDiscardableAttr(kKernelDefaultParameterAttrName,
+                             builder.getDictionaryAttr(defaultValues));
+  }
+
   // This is a hack because it assumes that subsequent LIT->KGEN passes prepend
   // function parameters with struct parameters. When we move on from KGEN, this
   // will no longer be a hack.
