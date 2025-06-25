@@ -103,6 +103,10 @@ fn test_list_literal():
     # CHECK: lit.call {{.*}}List::@"__init__{{.*}}<:!AnyType #FloatDyn1>
     inspect([1.0, 2])
 
+    # MOCO-2085: List comprehensive fails without explicit use of var
+    impl_definition = [i for i in SimpleIntRange()]
+
+
 # CHECK-LABEL: lit.fn @"test_list_comprehension
 fn test_list_comprehension():
     # CHECK-NEXT: %a_collection = lit.var.decl{{.*}}@List<:!AnyType #Int1>
