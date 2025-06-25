@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Inverse real FFT kernel using cuFFT."""
 
-from buffer.buffer import NDBuffer
 from complex import ComplexFloat32
 from gpu._cufft.cufft import (
     cufftCreate,
@@ -29,6 +28,7 @@ from gpu._cufft.types import Status, Type
 from gpu._cufft.utils import check_error
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
+from layout import LayoutTensor, Layout
 
 from sys.ffi import _get_global_or_null, external_call
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
@@ -134,12 +134,21 @@ fn _get_fft_plan[
 
 
 fn irfft[
-    input_rank: Int,
     input_type: DType,
     output_type: DType,
+    alignment: Int,
 ](
-    input: NDBuffer[input_type, input_rank],
-    output: NDBuffer[mut=True, output_type, input_rank],
+    input: LayoutTensor[
+        input_type,
+        alignment=alignment,
+        address_space = AddressSpace.GENERIC, **_,
+    ],
+    output: LayoutTensor[
+        mut=True,
+        output_type,
+        alignment=alignment,
+        address_space = AddressSpace.GENERIC, **_,
+    ],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,
@@ -156,6 +165,9 @@ fn irfft[
         ctx: Device context.
     """
     constrained[
+        input.rank == output.rank, "Input and output must have the same rank"
+    ]()
+    constrained[
         input_type is DType.float32, "Only Float32 is supported for IRFFT"
     ]()
     constrained[
@@ -166,18 +178,18 @@ fn irfft[
     EST_WORKSPACE_SIZE = buffer_size_mb * 1024 * 1024
     ALLOCATED_WORKSPACE_SIZE = (buffer_size_mb + 64) * 1024 * 1024
 
-    axis = input_rank - 1
+    axis = input.rank - 1
     cuda_stream = CUDA(ctx.stream())
 
     # Get input and output dimensions
-    input_shape = input.get_shape()
+    input_shape = input.runtime_layout.shape.value
     # Signal size is set to half the size of the last dimension of the input
     # tensor, because the input tensor is an interleaved complex value.
     input_size = input_shape[axis] // 2
     output_size = n if n > 0 else 2 * (input_size - 1)
 
     # Verify output dimensions
-    output_shape = output.get_shape()
+    output_shape = output.runtime_layout.shape.value
     if output_shape[axis] != output_size:
         raise Error(
             "Output shape mismatch: got "
@@ -188,7 +200,7 @@ fn irfft[
 
     # Calculate batch size.
     var batch_size = 1
-    for i in range(input_rank - 1):
+    for i in range(input.rank - 1):
         batch_size *= input_shape[i]
 
     # skip size estimations if the plan is already cached, as
@@ -197,8 +209,8 @@ fn irfft[
         output_size, batch_size, ALLOCATED_WORKSPACE_SIZE, ctx
     ):
         check_error(cufftSetStream(plan, cuda_stream))
-        var input_ptr = input.data.bitcast[ComplexFloat32]()
-        var output_ptr = output.data.bitcast[Float32]()
+        var input_ptr = input.ptr.bitcast[ComplexFloat32]()
+        var output_ptr = output.ptr.bitcast[Float32]()
         check_error(cufftExecC2R(plan, input_ptr, output_ptr))
 
         return
@@ -223,8 +235,8 @@ fn irfft[
         # stream from the context we are executing within
         check_error(cufftSetStream(plan, cuda_stream))
 
-        var input_ptr = input.data.bitcast[ComplexFloat32]()
-        var output_ptr = output.data.bitcast[Float32]()
+        var input_ptr = input.ptr.bitcast[ComplexFloat32]()
+        var output_ptr = output.ptr.bitcast[Float32]()
         check_error(cufftExecC2R(plan, input_ptr, output_ptr))
 
     else:
@@ -263,8 +275,8 @@ fn irfft[
         # Set up cuda stream.
         check_error(cufftSetStream(plan, cuda_stream))
 
-        var input_ptr = input.data
-        var output_ptr = output.data
+        var input_ptr = input.ptr
+        var output_ptr = output.ptr
 
         while batch_size >= reduced_batch_size:
             # Execute the cuFFT plan for the current batch size

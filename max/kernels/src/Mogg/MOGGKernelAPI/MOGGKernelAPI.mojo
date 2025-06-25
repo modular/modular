@@ -5836,12 +5836,9 @@ struct IRFFT:
     ) raises:
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-
-        irfft[input.rank, input.dtype, output.dtype,](
-            input_buf,
-            output_buf,
+        irfft(
+            input.to_layout_tensor(),
+            output.to_layout_tensor(),
             n,
             buffer_size_mb,
             ctx.get_device_context(),
