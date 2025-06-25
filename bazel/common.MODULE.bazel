@@ -43,6 +43,16 @@ single_version_override(
     ],
 )
 
+# TODO: Remove when > 1.7.1 is released
+archive_override(
+    module_name = "bazel_skylib",
+    integrity = "sha256-s1m/quGDjFCYqogKB5fhzp9rGc2V6NlFaLOBjdwrNGM=",
+    strip_prefix = "bazel-skylib-223e4e945801dfbc0bfa31d0900196f5bb54b0fc",
+    urls = [
+        "https://github.com/bazelbuild/bazel-skylib/archive/223e4e945801dfbc0bfa31d0900196f5bb54b0fc.tar.gz",
+    ],
+)
+
 single_version_override(
     module_name = "rules_python",
     patch_strip = 1,
