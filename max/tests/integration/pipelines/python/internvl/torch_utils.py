@@ -27,12 +27,7 @@ from test_common.torch_utils import (
     run_text_generation_with_custom_image_processing,
 )
 from torchvision.transforms.functional import InterpolationMode
-from transformers import (
-    AutoConfig,
-    PreTrainedModel,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerFast,
-)
+from transformers import PreTrainedModel
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -80,25 +75,22 @@ def preprocess_image_to_tensor(
 
 def run_text_generation(
     model: PreTrainedModel,
-    data_processor: PreTrainedTokenizer | PreTrainedTokenizerFast,
+    processor: InternVLProcessor,
     device: torch.device,
     textgen_requests: Iterable[TextGenerationRequest],
     num_steps: int = 10,
     print_outputs: bool = False,
 ) -> list[dict]:
     """Run text generation for InternVL using InternVLProcessor for text formatting."""
+
+    data_processor = processor.tokenizer
+
     # Set up model tokens.
     IMG_CONTEXT_TOKEN = "<IMG_CONTEXT>"
     img_context_token_id = data_processor.convert_tokens_to_ids(
         IMG_CONTEXT_TOKEN
     )
     model.img_context_token_id = img_context_token_id
-
-    # Create multimodal processor for text formatting.
-    config = AutoConfig.from_pretrained(
-        "OpenGVLab/InternVL3-8B-Instruct", trust_remote_code=True
-    )
-    processor = InternVLProcessor(data_processor, config)
 
     def internvl_request_processor(
         request: TextGenerationRequest,

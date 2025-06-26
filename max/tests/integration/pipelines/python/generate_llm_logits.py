@@ -27,12 +27,11 @@ import huggingface_hub
 import requests
 import torch
 import transformers
-
-# MAX
 from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.nn.kv_cache import KVCacheStrategy
+from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import interfaces
 from max.pipelines.lib import PipelineEngine
 from test_common import (
@@ -87,6 +86,7 @@ class TorchModelAndDataProcessor:
         transformers.PreTrainedTokenizerFast,
         transformers.MllamaProcessor,
         transformers.PixtralProcessor,
+        InternVLProcessor,
     ]
 
 
@@ -259,6 +259,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         config = transformers.AutoConfig.from_pretrained(
             self.hf_repo_id, revision=revision, trust_remote_code=True
         )
+        processor = InternVLProcessor(tokenizer, config)
         model = transformers.AutoModel.from_pretrained(
             self.hf_repo_id,
             revision=revision,
@@ -267,7 +268,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
             torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding],
             trust_remote_code=True,
         )
-        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     def run_torch_text_generation(
         self,
@@ -278,7 +279,7 @@ class InternVLPipelineOracle(MultiModalPipelineOracle):
         """Run text generation using InternVL-specific preprocessing logic."""
         return internvl_torch_utils.run_text_generation(
             model=torch_pipeline_and_tokenizer.model,
-            data_processor=torch_pipeline_and_tokenizer.data_processor,
+            processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
             textgen_requests=self.inputs,
             print_outputs=True,
