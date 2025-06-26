@@ -7,6 +7,8 @@
 #mem_string = #interp.memory_handle<16, "hello world" string>
 #foo = #interp.memory_handle<16, "0x000000000000000008">
 #bar = #interp.memory_handle<16, "0x0000">
+#bar0 = #interp.memory_handle<16, "0x0000">
+#bar1 = #interp.memory_handle<32, "0x00000000">
 #large = #interp.memory_handle<16, "0x000102030405060708090001020304050607080900">
 #variadic = #interp.memory_handle<8, "0xDEAD">
 
@@ -58,6 +60,27 @@ kgen.func @global() -> !kgen.pointer<i8> {
   %0 = kgen.param.materialize: !kgen.pointer<i8> = <#interp.memref<{[(#mem_global, const_global, [], [])], []}, 0, 2>>
   // CHECK: llvm.return %[[RESULT_TYPED]]
   kgen.return %0 : !kgen.pointer<i8>
+}
+
+// CHECK-LABEL: llvm.func internal @one_heap_use_only
+kgen.func @one_heap_use_only() {
+  // COM: only materialize #bar1 here (index 1)
+  // CHECK: %[[ALLOC:.*]] = pop.aligned_alloc %idx32, %idx4
+  // CHECK: %[[PTR_TYPED:.*]] = builtin.unrealized_conversion_cast %[[ALLOC]]
+  // CHECK: %[[PTR:.*]] = llvm.bitcast %[[PTR_TYPED]]
+
+  // CHECK: %[[PTEE:.*]] = llvm.getelementptr inbounds %[[PTR]][0]
+  // CHECK: %[[CONST:.*]] = llvm.mlir.constant
+  // CHECK: llvm.store %[[CONST]], %[[PTEE]]
+
+  // CHECK-NOT: pop.aligned_alloc
+
+  %0 = kgen.param.materialize: !kgen.pointer<pointer<i16>> = <#interp.memref<{[
+    (#bar0, heap, [], []),
+    (#bar1, heap, [], []),
+    (#foo, stack, [], [])
+  ], []}, 1, 0>>
+  kgen.return
 }
 
 // CHECK-LABEL: llvm.func internal @pointer_to_pointer

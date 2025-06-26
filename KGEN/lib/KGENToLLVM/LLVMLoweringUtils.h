@@ -215,7 +215,8 @@ public:
   /// Each materialized blob will have a corresponding SSA value representing
   /// the pointer to the beginning of the blob or an LLVM global for
   /// `const_global` blobs.
-  using MaterializedBlobs = SmallVector<PointerUnion<Operation *, Value>>;
+  using MaterializedBlob = PointerUnion<Operation *, Value>;
+  using MaterializedBlobs = DenseMap<size_t, MaterializedBlob>;
 
   /// Create a converter instance. A single instance is held for an entire
   /// module to ensure globals are deduplicated.
@@ -243,11 +244,11 @@ public:
 
     /// Ensure the blobs within the memory space have been materialized and
     /// then return them.
-    MaterializedBlobs &getOrMaterialize(ImplicitLocOpBuilder &b,
-                                        MemorySpaceAttr space);
+    MaterializedBlob &getOrMaterialize(ImplicitLocOpBuilder &b,
+                                       MemorySpaceAttr space, size_t refIndex);
     /// Get a pointer into the blob at the given offset.
     static Value getBlobPointer(ImplicitLocOpBuilder &b, Type ptrType,
-                                MaterializedBlobs &materialized, int64_t index,
+                                MaterializedBlob &value, int64_t index,
                                 int64_t offset);
 
     /// The interpreter memory converter.

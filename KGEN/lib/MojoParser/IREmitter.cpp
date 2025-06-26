@@ -1256,15 +1256,12 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     Location loc = translateLocation(value.expr->getLoc());
     SRValue regValue = emitPValueToSRValue({pValue, value.expr}, dest.context);
     CValue result;
-    if (valueType.isRegisterPassable(exprLoc, shared))
-      result = SRValue(regValue);
-    else {
-      MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
-      if (!destBuffer)
-        return {};
-      builder->create<RefStoreOp>(loc, regValue, destBuffer);
-      result = MRValue(destBuffer);
-    }
+    MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
+    if (!destBuffer)
+      return {};
+    builder->create<RefStoreOp>(loc, regValue, destBuffer);
+    result = MRValue(destBuffer);
+
     return emitCResult(result, value.expr, dest);
   }
 
