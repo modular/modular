@@ -5,6 +5,7 @@ exports_files([
 
 filegroup(
     name = "test-packages",
+    testonly = True,
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
 )
