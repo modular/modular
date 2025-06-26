@@ -429,9 +429,6 @@ class KVTransferEngine:
     def finalize_transfer(self, xfer_req_id: XferReqData) -> None:
         """Finalize a completed transfer by copying data from staging buffer and cleaning up.
 
-        Once called, the transfer data is no longer tracked in completed_xfers and thus,
-        is_complete(xfer_req_id) will return False for a recently completed transfer.
-
         Args:
             xfer_req_id: The transfer request data containing transfer metadata.
         """
@@ -442,15 +439,13 @@ class KVTransferEngine:
                 )
             self.cpu_staging_buffer.device.synchronize()
 
-        # Release from completed xfers
-        self.completed_xfers[xfer_req_id.src_name].remove(xfer_req_id.xfer_name)
-
     def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
         """Wait for a transfer initiated by remote engine to complete."""
         while not self.is_complete(xfer_req_id):
             self.update_completed_xfers()
 
         self.finalize_transfer(xfer_req_id)
+        self.completed_xfers[xfer_req_id.src_name].remove(xfer_req_id.xfer_name)
 
     def cleanup(self) -> None:
         """Release all resources associated with the transfer engine.
