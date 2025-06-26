@@ -109,7 +109,7 @@ from builtin.simd import (
     UInt128,
     UInt256,
 )
-from builtin.sort import partition, sort
+from builtin.sort import partition, sort, argsort
 from builtin.str import Stringable, StringableRaising
 from builtin.string_literal import StringLiteral
 from builtin.swap import swap
