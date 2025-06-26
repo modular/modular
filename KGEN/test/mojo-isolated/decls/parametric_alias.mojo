@@ -25,6 +25,9 @@ alias myIntAdd[x: Int, y: Int] = x + y
 # CHECK: lit.alias.decl *"myDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = {1}>!Int> = <#kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">)}>>
 alias myDefaultAdd[x: Int, y: Int = 1] = x + y
 
+# CHECK: lit.alias.decl *"myDependentDefaultAdd{{.*}}": !lit.generator<<"x": !Int, "y": !Int = *(0,0)>!Int> = <#kgen.gen<{value = add(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">)}>>
+alias myDependentDefaultAdd[x: Int, y: Int = x] = x + y
+
 # CHECK: lit.alias.decl *"myIntFMA{{.*}}": !lit.generator<<"x": !Int, "y": !Int, "z": !Int>!Int> = <#kgen.gen<{value = add(mul(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">), #lit.struct.extract<:!Int *(0,2), "value">)}>>
 alias myIntFMA[x: Int, y: Int, z: Int] = x * y + z
 
@@ -46,6 +49,10 @@ alias PS_21xy[x: Int, y: Int] = PS[2, 1, x * y]
 ##===----------------------------------------------------------------------===##
 # usages
 ##===----------------------------------------------------------------------===##
+
+
+# CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{value = mul(#lit.struct.extract<:!Int *(0,0), "value">, 2)}>>
+alias myDouble[x: Int] = myDependentDefaultAdd[x]
 
 
 # CHECK-LABEL: lit.fn @"test_type_equality()"
