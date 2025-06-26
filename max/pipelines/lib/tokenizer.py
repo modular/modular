@@ -567,17 +567,11 @@ class TextAndVisionTokenizer(
             raise ValueError(msg)
 
         # Load images.
-        # Note: huggingface processors expect the images to be in RGB format.
-        def load_in_rgb(image_data):
-            image = Image.open(io.BytesIO(image_data))
-            # PIL will incur an unnecessary copy if the mode is already RGB.
-            # So simply avoid the conversion in that case.
-            if image.mode != "RGB":
-                image.convert("RGB")
-            return image
-
         images = (
-            [load_in_rgb(image_data) for image_data in request.images]
+            [
+                _convert_image_mode(Image.open(io.BytesIO(image_data)), "RGB")
+                for image_data in request.images
+            ]
             if request.images
             else None
         )
@@ -668,3 +662,22 @@ class TextAndVisionTokenizer(
         )
         context.assign_to_cache(request.index)
         return context
+
+
+def _rgba_to_rgb(
+    image: Image.Image, background_color=(255, 255, 255)
+) -> Image.Image:
+    """Convert an RGBA image to RGB with filled background color."""
+    assert image.mode == "RGBA"
+    converted = Image.new("RGB", image.size, background_color)
+    converted.paste(image, mask=image.split()[3])  # 3 is the alpha channel
+    return converted
+
+
+def _convert_image_mode(image: Image.Image, to_mode: str):
+    if image.mode == to_mode:
+        return image
+    elif image.mode == "RGBA" and to_mode == "RGB":
+        return _rgba_to_rgb(image)
+    else:
+        return image.convert(to_mode)
