@@ -291,6 +291,16 @@ class PackedInput:
 
     @classmethod
     def from_items(cls, batch_items: Sequence[InputBatchItem]) -> PackedInput:
+        assert len(batch_items) >= 1
+        if batch_items[0].logits is not None:
+            logits_parts = []
+            for item in batch_items:
+                assert item.logits is not None
+                logits_parts.append(item.logits)
+            logits = np.concatenate(logits_parts, axis=0)
+        else:
+            assert all(item.logits is None for item in batch_items)
+            logits = None
         return cls(
             input_row_offsets=np.concatenate(
                 [
@@ -303,16 +313,7 @@ class PackedInput:
                     ),
                 ]
             ),
-            logits=np.concatenate(
-                [
-                    (
-                        item.logits
-                        if item.logits is not None
-                        else np.array([], dtype=np.float32)
-                    )
-                    for item in batch_items
-                ]
-            ),
+            logits=logits,
             next_token_logits=np.stack(
                 [item.next_token_logits for item in batch_items]
             ),
