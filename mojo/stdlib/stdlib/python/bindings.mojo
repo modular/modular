@@ -450,7 +450,7 @@ struct PythonModuleBuilder:
 
     fn def_function[
         func_type: AnyTrivialRegType, //,
-        func: PyObjectFunction[func_type, False],
+        func: PyObjectFunction[func_type, has_self=False],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
         """Declare a binding for a function with PythonObject signature in the
         module.
@@ -746,7 +746,7 @@ struct PythonTypeBuilder(Copyable, Movable):
 
     fn def_method[
         method_type: AnyTrivialRegType, //,
-        method: PyObjectFunction[method_type, True],
+        method: PyObjectFunction[method_type, has_self=True],
     ](
         mut self: Self,
         method_name: StaticString,
