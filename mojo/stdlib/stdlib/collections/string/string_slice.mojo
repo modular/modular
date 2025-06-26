@@ -1982,16 +1982,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 offset += b_len
             return length != 0
 
-    fn splitlines[
-        O: ImmutableOrigin, //
-    ](self: StringSlice[O], keepends: Bool = False) -> List[StringSlice[O]]:
+    fn splitlines(self, keepends: Bool = False) -> List[Self.Immutable]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
         `"\\r\\n"` and `"\\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029"`.
-
-        Parameters:
-            O: The immutable origin.
 
         Args:
             keepends: If True, line breaks are kept in the resulting strings.
@@ -2004,7 +1999,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         alias `\r` = UInt8(ord("\r"))
         alias `\n` = UInt8(ord("\n"))
 
-        var output = List[StringSlice[O]](capacity=128)  # guessing
+        var output = List[Self.Immutable](capacity=128)  # guessing
         var ptr = self.unsafe_ptr()
         var length = self.byte_length()
         var offset = 0
@@ -2034,7 +2029,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
                 eol_start += char_len
 
             var str_len = eol_start - offset + Int(keepends) * eol_length
-            var s = StringSlice[O](ptr=ptr + offset, length=str_len)
+            var s = Self.Immutable(ptr=ptr + offset, length=str_len)
             output.append(s)
             offset = eol_start + eol_length
 
