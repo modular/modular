@@ -103,9 +103,10 @@ fn amd_scheduling_hints[
 
 
 struct MMATileBuffers[
-    layout: Layout,
+    tensor_origin: ImmutableOrigin, //,
+    smem_layout: Layout,
     /,
-    type: DType,
+    tensor_type: __type_of(LayoutTensor),
     thread_layout: Layout,
     swizzle: Swizzle,
     block_rows: Int,
@@ -123,18 +124,18 @@ struct MMATileBuffers[
     - Data movement between memory levels (DRAM→local→shared)
     """
 
-    alias simd_width = simdwidthof[type]()
-    alias alignment = alignof[SIMD[type, Self.simd_width]]()
+    alias simd_width = simdwidthof[tensor_type.dtype]()
+    alias type_alignment = alignof[SIMD[tensor_type.dtype, Self.simd_width]]()
 
     # Tensor types for different memory regions
 
     # Shared memory allocation for matrix data shared across the block
     alias SharedMemTileType = LayoutTensor[
-        type,
-        layout,
+        tensor_type.dtype,
+        smem_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
-        alignment = Self.alignment,
+        alignment = Self.type_alignment,
     ]
     var shared_mem_tile: Self.SharedMemTileType
 
@@ -145,7 +146,7 @@ struct MMATileBuffers[
 
     # Buffer for loading data from global memory before transferring to shared memory
     alias LoadRegTileType = LayoutTensor[
-        type,
+        tensor_type.dtype,
         Layout.row_major(num_mmas * num_k_tiles, Self.simd_width),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
@@ -154,24 +155,34 @@ struct MMATileBuffers[
 
     # Register-level storage for matrix data during computation
     alias MMARegTileType = LayoutTensor[
-        type,
+        tensor_type.dtype,
         Layout.row_major(num_mmas * num_k_tiles, Self.simd_width),
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
     var mma_reg_tile: Self.MMARegTileType.StaticSplitType[num_k_tiles]
 
+    # Global memory iterator for input tensor
+    alias iter_type = tensor_type.TileType[
+        block_rows, stride
+    ].TiledIteratorType[block_rows, BK, axis=1]
+    var gmem_iter: Self.iter_type
+
     var global_offset: UInt
+
+    var tensor: Pointer[tensor_type, tensor_origin]
 
     @always_inline
     fn __init__(
         out self,
+        ref [tensor_origin]tensor: tensor_type,
         warp_idx: Int,
         block_idx: Int,
     ):
         """Initialize memory regions for a matrix based on warp coordinates.
 
         Args:
+            tensor: The tensor to load from global memory.
             warp_idx: The warp index within the computation grid (used for MMA operations).
             block_idx: The block index within the computation grid (used for warp tiling).
         """
@@ -183,7 +194,14 @@ struct MMATileBuffers[
         self.mma_reg_tile = Self.MMARegTileType.stack_allocation().split[
             num_k_tiles
         ]()
+        self.gmem_iter = tensor.tile[block_rows, stride](
+            block_idx, 0
+        ).tiled_iterator[block_rows, BK, axis=1](0, 0)
         self.global_offset = stride * (block_rows * block_idx)
+        # TODO: remove rebind once MOCO-1905 is fixed
+        self.tensor = rebind[Pointer[tensor_type, tensor_origin]](
+            Pointer(to=tensor)
+        )
 
     @always_inline
     fn copy_to_shared(self):
@@ -202,25 +220,19 @@ struct MMATileBuffers[
         )
 
     @always_inline
-    fn load_from_dram(
-        mut self, gmem_iter: LayoutTensor, source_tensor: LayoutTensor
-    ) -> None:
-        """Load data from global memory (DRAM) to thread-local memory.
-
-        Args:
-            gmem_iter: Iterator for accessing global memory.
-            source_tensor: The source tensor in global memory.
-        """
+    fn load_from_dram(mut self) -> None:
+        """Load data from global memory (DRAM) to thread-local memory."""
         copy_dram_to_local[
             src_thread_layout=thread_layout,
             thread_scope = ThreadScope.BLOCK,
         ](
             self.load_reg_tile.vectorize[1, Self.simd_width](),
-            gmem_iter.vectorize[1, Self.simd_width](),
-            source_tensor,
+            self.gmem_iter[].vectorize[1, Self.simd_width](),
+            self.tensor[],
             self.global_offset,
         )
         self.global_offset += BK
+        self.gmem_iter._incr()
 
     @always_inline
     fn get_reg_tile[
@@ -436,7 +448,7 @@ fn gemm_kernel[
 
     var a_tiles = MMATileBuffers[
         get_smem_layout[BM](),
-        type=a_type,
+        tensor_type = __type_of(a),
         thread_layout=thread_layout,
         swizzle=swizzle,
         block_rows=BM,
@@ -445,17 +457,12 @@ fn gemm_kernel[
         num_k_tiles=num_k_tiles,
         stride=stride,
         num_mmas=num_m_mmas,
-    ](warp_m, block_idx.y)
-
-    # Global memory iterator for matrix A
-    var a_gmem_iter = a.tile[BM, stride](block_idx.y, 0).tiled_iterator[
-        BM, BK, axis=1
-    ](0, 0)
+    ](a, warp_m, block_idx.y)
 
     # B (weights matrix) memory
     var b_tiles = MMATileBuffers[
         get_smem_layout[BN](),
-        type=b_type,
+        tensor_type = __type_of(b),
         thread_layout=thread_layout,
         swizzle=swizzle,
         block_rows=BN,
@@ -464,12 +471,7 @@ fn gemm_kernel[
         num_k_tiles=num_k_tiles,
         stride=stride,
         num_mmas=num_n_mmas,
-    ](warp_n, block_idx.x)
-
-    # Global memory iterator for matrix B
-    var b_gmem_iter = b.tile[BN, stride](block_idx.x, 0).tiled_iterator[
-        BN, BK, axis=1
-    ](0, 0)
+    ](b, warp_n, block_idx.x)
 
     # Accumulation registers for result
     alias c_reg_tile_type = LayoutTensor[
@@ -499,10 +501,8 @@ fn gemm_kernel[
     @always_inline
     @parameter
     fn load_tiles_from_dram():
-        a_tiles.load_from_dram(a_gmem_iter[], a)
-        b_tiles.load_from_dram(b_gmem_iter[], b)
-        a_gmem_iter._incr()
-        b_gmem_iter._incr()
+        a_tiles.load_from_dram()
+        b_tiles.load_from_dram()
 
     @always_inline
     @parameter
