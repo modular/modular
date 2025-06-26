@@ -396,6 +396,7 @@ class Weight(TensorValue):
         align: Optional[int] = None,
         sharding_strategy: Optional[ShardingStrategy] = None,
         _placeholder: bool = False,
+        _has_alias: bool = False,
     ) -> None:
         self.name = name
         self._dtype = dtype
@@ -410,6 +411,7 @@ class Weight(TensorValue):
         )
         self.shard_idx = None
         self._placeholder = _placeholder
+        self._has_alias = _has_alias
 
     @property
     def dtype(self) -> DType:

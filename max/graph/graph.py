@@ -853,6 +853,7 @@ class Graph:
             ),
             device=initial_device.to_mlir(),
             is_placeholder=weight._placeholder,
+            has_alias=weight._has_alias,
             _ip=mlir.InsertionPoint.at_block_begin(self._graph_body),
         )[0]
 
