@@ -280,3 +280,89 @@ def test_linear_shard_non_divisible_output_dim() -> None:
         assert total_rows == 151674, (
             f"Total rows across all shards should be 151674, but got {total_rows}"
         )
+
+
+@pytest.mark.parametrize(
+    "strategy_name,strategy_factory",
+    [
+        ("columnwise", lambda: ShardingStrategy.columnwise(num_devices=4)),
+        (
+            "head_aware_columnwise",
+            lambda: ShardingStrategy.head_aware_columnwise(
+                num_devices=4, num_heads=8, head_dim=128
+            ),
+        ),
+    ],
+)
+def test_linear_columnwise_bias_only_on_device_0(
+    strategy_name, strategy_factory
+):
+    """Test that bias is only present on device 0 for columnwise sharding strategies.
+
+    This test verifies the fix for the issue where bias was being replicated
+    across all devices and added multiple times when using columnwise sharding
+    with allreduce.sum. Applies to both regular columnwise and head-aware columnwise.
+    """
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        linear = Linear(
+            in_dim=4096,
+            out_dim=1024,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+            has_bias=True,
+        )
+        linear.sharding_strategy = strategy_factory()
+
+        # Check that only device 0 has bias
+        for i in range(4):
+            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
+
+            if i == 0:
+                assert sharded.bias is not None, (
+                    f"Device 0 should have bias for {strategy_name} sharding"
+                )
+                assert tuple(int(d) for d in sharded.bias.shape) == (1024,)
+            else:
+                assert sharded.bias is None, (
+                    f"Device {i} should not have bias for {strategy_name} sharding"
+                )
+
+
+def test_linear_rowwise_bias_sharding_preserved():
+    """Test that rowwise sharding still shards bias normally.
+
+    This ensures that the fix for columnwise sharding doesn't break
+    the existing rowwise bias sharding behavior.
+    """
+    with Graph(
+        "test",
+        input_types=[
+            TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
+        ],
+    ):
+        linear = Linear(
+            in_dim=4096,
+            out_dim=1024,
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+            has_bias=True,
+        )
+        linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=4)
+
+        # Check that all devices have sharded bias for rowwise
+        for i in range(4):
+            sharded = linear.shard(shard_idx=i, device=DeviceRef.GPU(i))
+
+            assert sharded.bias is not None, (
+                f"Device {i} should have bias for rowwise sharding"
+            )
+            # Bias should be sharded to 256 elements (1024/4)
+            assert tuple(int(d) for d in sharded.bias.shape) == (256,)
+
+            # Weight should be sharded rowwise
+            assert tuple(int(d) for d in sharded.weight.shape) == (256, 4096)
