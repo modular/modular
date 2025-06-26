@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
-from typing import Union
+from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import (
@@ -26,9 +27,12 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.type import Dim, StaticDim
+from max.graph.weight import _compute_shard_range
 from max.nn import (
+    Allreduce,
     ColumnParallelLinear,
     DistributedAttentionWithRope,
     DistributedMLP,
@@ -42,14 +46,28 @@ from max.nn import (
     Shardable,
     VocabParallelEmbedding,
 )
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu
 from max.nn.kv_cache import (
     FetchPagedKVCacheCollection,
     PagedKVCacheCollection,
 )
 
 from .embedding_utils import merge_multimodal_embeddings
-from .layers.attention import InternVLMultiheadAttention
+from .layers.attention import (
+    InternVLMultiheadAttention,
+    compute_heads_per_device,
+)
 from .model_config import InternVLConfig
+
+
+@dataclass
+class DeviceAttentionParams:
+    """Parameters for attention computation on a specific device."""
+
+    device_heads: int
+    head_start: int
+    head_dim: int
 
 
 def distribute_value(
@@ -81,14 +99,12 @@ class InternVLDecoderLayer(Module):
 
     def __init__(
         self,
-        layer_idx: int,
         rope: Llama3RotaryEmbedding,
         config: InternVLConfig,
     ) -> None:
         """Initializes a decoder layer.
 
         Args:
-            layer_idx: The index of this layer in the model.
             rope: The rotary position embedding module.
             config: The InternVL configuration containing model parameters.
         """
@@ -228,8 +244,8 @@ class InternVLLanguageModel(Module):
         # Create decoder layers.
         self.layers = LayerList(
             [
-                InternVLDecoderLayer(layer_idx, self.rope, config)
-                for layer_idx in range(llm_config.num_hidden_layers)
+                InternVLDecoderLayer(self.rope, config)
+                for _ in range(llm_config.num_hidden_layers)
             ]
         )
 
@@ -549,7 +565,7 @@ class InternVisionEmbeddings(Module, Shardable):
         return embeddings
 
 
-class InternVLVisionMLP(Module):
+class InternVLVisionMLP(Module, Shardable):
     """Multi-layer perceptron (MLP) for the InternVL vision model.
 
     A simple 2-layer feed-forward network used within the
@@ -560,7 +576,7 @@ class InternVLVisionMLP(Module):
     - Second linear projection back to hidden size
 
     This follows the standard transformer FFN architecture but uses GELU
-    activation.
+    activation. Supports tensor parallelism through the Shardable interface.
     """
 
     def __init__(
@@ -586,6 +602,56 @@ class InternVLVisionMLP(Module):
             device=device,
             has_bias=has_bias,
         )
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Get the MLP sharding strategy."""
+        return self.fc1.sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Set the sharding strategy for the MLP layers.
+
+        Args:
+            strategy: The sharding strategy to apply.
+        """
+        if strategy.is_replicate:
+            # For replicate strategy, both layers use the same strategy
+            self.fc1.sharding_strategy = strategy
+            self.fc2.sharding_strategy = strategy
+        else:
+            # For tensor parallel: fc1 expands (rowwise), fc2 reduces (columnwise)
+            self.fc1.sharding_strategy = ShardingStrategy.rowwise(
+                strategy.num_devices
+            )
+            self.fc2.sharding_strategy = ShardingStrategy.columnwise(
+                strategy.num_devices
+            )
+
+    def shard(self, shard_idx: int, device: DeviceRef) -> InternVLVisionMLP:
+        """Creates a sharded view of this MLP for a specific device.
+
+        Args:
+            shard_idx: The index of the shard (0 to num_devices-1).
+            device: The device where this shard should reside.
+
+        Returns:
+            A sharded InternVLVisionMLP instance.
+        """
+        # Create new MLP instance with the same configuration
+        sharded = InternVLVisionMLP(
+            hidden_size=int(self.fc1.weight.shape[1]),  # in_dim
+            intermediate_size=int(self.fc1.weight.shape[0]),  # out_dim
+            dtype=self.fc1.weight.dtype,
+            device=device,
+            has_bias=self.fc1.bias is not None,
+        )
+
+        # Shard the linear layers
+        sharded.fc1 = self.fc1.shard(shard_idx, device)
+        sharded.fc2 = self.fc2.shard(shard_idx, device)
+
+        return sharded
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Simple forward: fc1 -> GELU -> fc2"""
@@ -663,20 +729,28 @@ class InternVLMLP1(Module, Shardable):
         Args:
             strategy: The strategy describing the MLP's sharding.
         """
-        if not strategy.is_replicate:
-            raise ValueError(
-                "only replicate is supported for InternVLMLP1, currently"
-            )
+        # For tensor parallel mlp1:
+        # - LayerNorm operates on replicated inputs, so weights are replicated
+        # - fc1 expands (rowwise sharding)
+        # - fc2 reduces (columnwise sharding)
 
         # Set sharding strategy for all weights
-        # LayerNorm weights
-        self.layer_norm.weight.sharding_strategy = strategy
+        # LayerNorm weights should be replicated since inputs are replicated
+        self.layer_norm.weight.sharding_strategy = ShardingStrategy.replicate(
+            strategy.num_devices
+        )
         if self.layer_norm.bias is not None:
-            self.layer_norm.bias.sharding_strategy = strategy
+            self.layer_norm.bias.sharding_strategy = ShardingStrategy.replicate(
+                strategy.num_devices
+            )
 
-        # Linear layer weights
-        self.fc1.sharding_strategy = strategy
-        self.fc2.sharding_strategy = strategy
+        # Linear layer weights use tensor parallel sharding
+        self.fc1.sharding_strategy = ShardingStrategy.rowwise(
+            strategy.num_devices
+        )
+        self.fc2.sharding_strategy = ShardingStrategy.columnwise(
+            strategy.num_devices
+        )
 
     def shard(self, shard_idx: int, device: DeviceRef) -> InternVLMLP1:
         """Creates a sharded view of this MLP for a specific device.
@@ -735,6 +809,8 @@ class InternVisionEncoderLayer(Module):
     - Feed-forward network (MLP) with GELU activation
     - Pre-normalization using either LayerNorm or RMSNorm
     - Residual connections around both attention and MLP blocks
+
+    This layer supports tensor parallelism through the Shardable interface.
     """
 
     def __init__(self, config: InternVLConfig) -> None:
@@ -745,16 +821,14 @@ class InternVisionEncoderLayer(Module):
         """
         super().__init__()
         self.config = config
+        self.devices = config.devices
         self.embed_dim = config.vision_config.hidden_size
         self.intermediary_size = config.vision_config.intermediate_size
         self.norm_type = config.vision_config.norm_type
 
         # Use custom simple MLP instead of SwiGLU MLP
-        default_device = (
-            config.llm_config.devices[0]
-            if config.llm_config.devices
-            else DeviceRef.CPU()
-        )
+        # For sharding, we'll create per-device instances later
+        default_device = self.devices[0] if self.devices else DeviceRef.CPU()
         self.mlp = InternVLVisionMLP(
             hidden_size=self.embed_dim,
             intermediate_size=self.intermediary_size,
@@ -809,20 +883,17 @@ class InternVisionEncoderLayer(Module):
             device=DeviceRef.CPU(),
         )
 
-        # Use InternVL-specific attention with QK normalization
+        # Use InternVL-specific attention with QK normalization.
         vision_config = config.vision_config
-        # TODO: Add proper multi-device support for vision model
-        # For now, use only the first device to avoid distributed attention issues
-        if config.llm_config.devices:
-            # Use only the first device until multi-device vision support is added
-            devices_list = [config.llm_config.devices[0]]
-        else:
-            raise ValueError("Devices must be provided")
-
+        # Create attention on first device: sharding handles distributing it.
+        head_dim = (
+            vision_config.hidden_size // vision_config.num_attention_heads
+        )
         self.attn = InternVLMultiheadAttention(
             num_attention_heads=vision_config.num_attention_heads,
             hidden_size=vision_config.hidden_size,
-            devices=devices_list,
+            head_dim=head_dim,
+            devices=[default_device],
             dtype=config.llm_config.dtype,
             qk_normalization=vision_config.qk_normalization,
             layer_norm_eps=vision_config.layer_norm_eps,
@@ -831,45 +902,364 @@ class InternVisionEncoderLayer(Module):
             stacked_qkv=True,
         )
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        # Store original input for residual connections (PyTorch style)
-        original_hidden_states = x
-
-        # 1. Apply first normalization and attention
-        norm1_out = self.norm1(x)
-
-        attn_out = self.attn(norm1_out)
-
-        # 2. Apply layer scaling BEFORE residual (PyTorch style)
-        ls1_tensor: TensorValue = self.ls1
-        if x.device:
-            ls1_tensor = ls1_tensor.to(x.device)
-        attn_out = attn_out * ls1_tensor
-
-        # 3. First residual connection
-        hidden_states = attn_out + original_hidden_states
-
-        # 4. Apply second normalization
-        layer_output = self.norm2(hidden_states)
-
-        # 5. Apply MLP with reshaping
-        batch_size, seq_len, hidden_dim = layer_output.shape
-        layer_output_reshaped = layer_output.reshape(
-            (batch_size * seq_len, hidden_dim)
+        # Set attention sharding strategy for tensor parallelism
+        # Use stacked_qkv strategy with head information for proper sharding
+        self.attn.sharding_strategy = ShardingStrategy.stacked_qkv(
+            len(self.devices),
+            num_heads=vision_config.num_attention_heads,
+            head_dim=head_dim,
         )
-        mlp_out_2d = self.mlp(layer_output_reshaped)
-        layer_output = mlp_out_2d.reshape((batch_size, seq_len, hidden_dim))
 
-        # 7. Apply second layer scaling BEFORE residual
-        ls2_tensor: TensorValue = self.ls2
-        if layer_output.device:
-            ls2_tensor = ls2_tensor.to(layer_output.device)
-        layer_output = layer_output * ls2_tensor
+        # Create per-device attention instances using the shard method
+        self.attn_per_device = [
+            self.attn.shard(n, device) for n, device in enumerate(self.devices)
+        ]
 
-        # 8. Second residual connection (back to hidden_states after first residual, not original)
-        layer_output = layer_output + hidden_states
+        # Set sharding strategies for weights
+        self.norm1.weight.sharding_strategy = ShardingStrategy.replicate(
+            len(self.devices)
+        )
+        self.norm2.weight.sharding_strategy = ShardingStrategy.replicate(
+            len(self.devices)
+        )
+        if hasattr(self.norm1, "bias") and self.norm1.bias is not None:
+            self.norm1.bias.sharding_strategy = ShardingStrategy.replicate(
+                len(self.devices)
+            )
+        if hasattr(self.norm2, "bias") and self.norm2.bias is not None:
+            self.norm2.bias.sharding_strategy = ShardingStrategy.replicate(
+                len(self.devices)
+            )
 
-        return layer_output
+        # Set MLP sharding strategies for tensor parallelism
+        self.mlp.fc1.sharding_strategy = ShardingStrategy.rowwise(
+            len(self.devices)
+        )
+        self.mlp.fc2.sharding_strategy = ShardingStrategy.columnwise(
+            len(self.devices)
+        )
+
+        # Create per-device norm instances.
+        self.norm1_per_device: list[RMSNorm | LayerNorm] = []
+        self.norm2_per_device: list[RMSNorm | LayerNorm] = []
+        for n, device in enumerate(self.devices):
+            norm1_copy: RMSNorm | LayerNorm
+            norm2_copy: RMSNorm | LayerNorm
+            if self.norm_type == "rms_norm":
+                norm1_copy = RMSNorm(
+                    dim=self.embed_dim,
+                    dtype=config.llm_config.dtype,
+                    eps=layer_norm_eps,
+                    multiply_before_cast=False,
+                )
+                norm2_copy = RMSNorm(
+                    dim=self.embed_dim,
+                    dtype=config.llm_config.dtype,
+                    eps=layer_norm_eps,
+                    multiply_before_cast=False,
+                )
+            else:
+                norm1_copy = LayerNorm(
+                    dims=self.embed_dim,
+                    device=device,
+                    dtype=config.llm_config.dtype,
+                    eps=layer_norm_eps,
+                    use_bias=True,
+                )
+                norm2_copy = LayerNorm(
+                    dims=self.embed_dim,
+                    device=device,
+                    dtype=config.llm_config.dtype,
+                    eps=layer_norm_eps,
+                    use_bias=True,
+                )
+
+            # Shard weights to device.
+            norm1_copy.weight = self.norm1.weight.shard(n, device)
+            norm2_copy.weight = self.norm2.weight.shard(n, device)
+            if (
+                isinstance(norm1_copy, LayerNorm)
+                and isinstance(self.norm1, LayerNorm)
+                and self.norm1.bias is not None
+            ):
+                norm1_copy.bias = self.norm1.bias.shard(n, device)
+            if (
+                isinstance(norm2_copy, LayerNorm)
+                and isinstance(self.norm2, LayerNorm)
+                and self.norm2.bias is not None
+            ):
+                norm2_copy.bias = self.norm2.bias.shard(n, device)
+
+            self.norm1_per_device.append(norm1_copy)
+            self.norm2_per_device.append(norm2_copy)
+
+        # Create per-device MLP instances.
+        self.mlp_per_device = []
+        for n, device in enumerate(self.devices):
+            mlp_copy = InternVLVisionMLP(
+                hidden_size=self.embed_dim,
+                intermediate_size=self.intermediary_size,
+                dtype=config.llm_config.dtype,
+                device=device,
+                has_bias=True,
+            )
+            # Shard the linear layers
+            mlp_copy.fc1 = self.mlp.fc1.shard(n, device)
+            mlp_copy.fc2 = self.mlp.fc2.shard(n, device)
+            self.mlp_per_device.append(mlp_copy)
+
+        # Create allreduce for tensor parallel attention and MLP
+        self.allreduce = Allreduce(num_accelerators=len(self.devices))
+
+    def _device_attention_params(
+        self, *, device_idx: int
+    ) -> DeviceAttentionParams:
+        """Get attention parameters for a specific device.
+
+        Returns:
+            DeviceAttentionParams with device-specific attention parameters
+        """
+        num_heads = self.config.vision_config.num_attention_heads
+        device_heads = compute_heads_per_device(
+            total_heads=num_heads,
+            device_idx=device_idx,
+            num_devices=len(self.devices),
+        )
+        head_start, _ = _compute_shard_range(
+            num_heads, device_idx, len(self.devices)
+        )
+        head_dim = self.embed_dim // num_heads
+        return DeviceAttentionParams(device_heads, head_start, head_dim)
+
+    def _compute_flash_attention(
+        self,
+        q: TensorValue,
+        k: TensorValue,
+        v: TensorValue,
+        device_heads: int,
+        head_dim: int,
+    ) -> TensorValue:
+        """Compute flash attention with proper reshaping.
+
+        Args:
+            q, k, v: Query, key, value tensors
+            device_heads: Number of heads for this device
+            head_dim: Dimension per head
+
+        Returns:
+            Attention output tensor
+        """
+        batch_size, seq_len = q.shape[0], q.shape[1]
+
+        # Reshape for multi-head attention
+        q = q.reshape((batch_size, seq_len, device_heads, head_dim))
+        k = k.reshape((batch_size, seq_len, device_heads, head_dim))
+        v = v.reshape((batch_size, seq_len, device_heads, head_dim))
+
+        # Apply flash attention
+        attn_out = flash_attention_gpu(
+            q,
+            k,
+            v,
+            mask_variant=MHAMaskVariant.NULL_MASK,
+            scale=1.0 / math.sqrt(head_dim),
+        )
+
+        # Reshape back to partial embedding dimension
+        return attn_out.reshape((batch_size, seq_len, device_heads * head_dim))
+
+    def _layer_scaling(
+        self,
+        tensors: Sequence[TensorValue],
+        scale_weight: TensorValue,
+        devices: Sequence[DeviceRef],
+    ) -> list[TensorValue]:
+        """Apply layer scaling to tensors on their respective devices."""
+        scale_tensors = [scale_weight.to(device) for device in devices]
+        return [t * s for t, s in zip(tensors, scale_tensors)]
+
+    def _split_qkv_per_device(
+        self, qkv_outs: Sequence[TensorValue]
+    ) -> tuple[list[TensorValue], list[TensorValue], list[TensorValue]]:
+        """Split QKV tensors into Q, K, V components per device.
+
+        Returns:
+            Tuple of (q_partials, k_partials, v_partials)
+        """
+        q_partials, k_partials, v_partials = [], [], []
+
+        for i, qkv in enumerate(qkv_outs):
+            params = self._device_attention_params(device_idx=i)
+
+            # Calculate sizes for Q, K, V based on device heads
+            split_size = params.device_heads * params.head_dim
+
+            # Split into Q, K, V (partial embeddings)
+            q, k, v = ops.split(
+                qkv, [split_size, split_size, split_size], axis=-1
+            )
+            q_partials.append(q)
+            k_partials.append(k)
+            v_partials.append(v)
+
+        return q_partials, k_partials, v_partials
+
+    def __call__(
+        self, xs: Sequence[TensorValue], signal_buffers: Sequence[BufferValue]
+    ) -> list[TensorValue]:
+        """Process input through the encoder layer.
+
+        Args:
+            xs: The input hidden states, one per device.
+            signal_buffers: Communication buffers for distributed execution.
+
+        Returns:
+            The output hidden states after attention and MLP, one per device.
+        """
+        # Store original inputs for residual connections
+        original_hidden_states = xs
+
+        # 1. Apply first normalization per device (using per-device instances)
+        # x: [1025, 3200]
+        norm1_outs = [norm(x) for x, norm in zip(xs, self.norm1_per_device)]
+
+        # 2. Apply QKV projection per device (rowwise)
+        qkv_outs = []
+        for i, norm_out in enumerate(norm1_outs):
+            attn = self.attn_per_device[i]
+            # Rowwise QKV projection - each device computes partial QKV
+            qkv = norm_out @ attn.wqkv.T
+            if attn.wqkv_bias is not None:
+                qkv += attn.wqkv_bias
+            qkv_outs.append(qkv)
+
+        # Split QKV into components per device
+        q_partials, k_partials, v_partials = self._split_qkv_per_device(
+            qkv_outs
+        )
+
+        # Handle QK normalization case
+        if self.config.vision_config.qk_normalization:
+            # Allgather Q and K only (not V) for QK normalization
+            q_complete = allgather(q_partials, axis=-1)
+            k_complete = allgather(k_partials, axis=-1)
+            # V stays partial - no need to allgather
+
+            # Process attention with QK normalization
+            attn_outs = []
+            batch_size, seq_len, _ = q_complete[0].shape
+            num_heads = self.config.vision_config.num_attention_heads
+            head_dim = self.embed_dim // num_heads
+
+            for i in range(len(self.devices)):
+                params = self._device_attention_params(device_idx=i)
+                device_heads, head_start, head_dim = (
+                    params.device_heads,
+                    params.head_start,
+                    params.head_dim,
+                )
+
+                # Apply QK normalization on complete Q and K.
+                q_normalized = self.attn.q_norm(q_complete[i])
+                k_normalized = self.attn.k_norm(k_complete[i])
+
+                # Reshape and slice to get device-specific heads
+                q_normalized = q_normalized.reshape(
+                    (batch_size, seq_len, num_heads, head_dim)
+                )
+                k_normalized = k_normalized.reshape(
+                    (batch_size, seq_len, num_heads, head_dim)
+                )
+
+                q_device = q_normalized[
+                    :, :, head_start : head_start + device_heads, :
+                ]
+                k_device = k_normalized[
+                    :, :, head_start : head_start + device_heads, :
+                ]
+
+                # Get partial V for this device
+                v_device = v_partials[i]
+
+                # Compute attention (handles reshaping internally)
+                attn_out = self._compute_flash_attention(
+                    q_device.reshape((batch_size, seq_len, -1)),
+                    k_device.reshape((batch_size, seq_len, -1)),
+                    v_device,
+                    device_heads,
+                    head_dim,
+                )
+
+                # Apply output projection (columnwise) on device-specific portion
+                attn_out = self.attn_per_device[i].o_proj(attn_out)
+
+                attn_outs.append(attn_out)
+        else:
+            # No QK normalization - process with partial embeddings directly
+            attn_outs = []
+            for i in range(len(self.devices)):
+                params = self._device_attention_params(device_idx=i)
+
+                # Compute attention with partial Q, K, V
+                attn_out = self._compute_flash_attention(
+                    q_partials[i],
+                    k_partials[i],
+                    v_partials[i],
+                    params.device_heads,
+                    params.head_dim,
+                )
+
+                # Apply output projection (columnwise)
+                attn_out = self.attn_per_device[i].o_proj(attn_out)
+                attn_outs.append(attn_out)
+
+        # Allreduce output projection results
+        attn_outs = self.allreduce(attn_outs, signal_buffers)
+
+        # 3. Apply layer scaling and first residual
+        attn_outs_scaled = self._layer_scaling(
+            attn_outs, self.ls1, [x.device for x in xs]
+        )
+
+        # First residual connection
+        hidden_states = [
+            out + orig
+            for out, orig in zip(attn_outs_scaled, original_hidden_states)
+        ]
+
+        # 4. Apply second normalization per device
+        norm2_outs = [
+            norm(hidden)
+            for norm, hidden in zip(self.norm2_per_device, hidden_states)
+        ]
+
+        # 5. Apply MLP with reshaping using per-device MLPs
+        mlp_outs = []
+        for mlp, norm_out in zip(self.mlp_per_device, norm2_outs):
+            batch_size, seq_len, hidden_dim = norm_out.shape
+            # Reshape to 2D for MLP
+            mlp_out_2d = mlp(
+                norm_out.reshape((batch_size * seq_len, hidden_dim))
+            )
+            # Reshape back to 3D
+            mlp_outs.append(
+                mlp_out_2d.reshape((batch_size, seq_len, hidden_dim))
+            )
+
+        # Apply allreduce for tensor parallel MLP
+        mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+
+        # 6. Apply second layer scaling and residual
+        mlp_outs_scaled = self._layer_scaling(
+            mlp_outs, self.ls2, [x.device for x in mlp_outs]
+        )
+
+        # Second residual connection
+        outputs = [
+            out + hidden for out, hidden in zip(mlp_outs_scaled, hidden_states)
+        ]
+
+        return outputs
 
 
 class InternVLVisionModel(Module):
@@ -896,8 +1286,6 @@ class InternVLVisionModel(Module):
         self.config = config
         self.devices = config.devices
 
-        # TODO: Add support for multiple devices
-        # Use the first device for single-device components
         default_device = (
             config.llm_config.devices[0]
             if config.llm_config.devices
@@ -908,7 +1296,6 @@ class InternVLVisionModel(Module):
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
         )
-
         self.embeddings_list = [
             self.embeddings.shard(n, dev)
             for n, dev in enumerate(config.devices)
@@ -926,20 +1313,20 @@ class InternVLVisionModel(Module):
         if self.ps_version != "v2":
             raise ValueError("InternVLVisionModel only supports ps_version v2")
 
-        # Use LayerList for proper weight scoping, similar to other MAX models
-        encoder_layers = [
-            InternVisionEncoderLayer(config)
-            for _ in range(config.vision_config.num_hidden_layers)
-        ]
-
-        self.encoder_layers = LayerList(encoder_layers)
+        # Create encoder layers
+        self.encoder_layers = LayerList(
+            [
+                InternVisionEncoderLayer(config)
+                for _ in range(config.vision_config.num_hidden_layers)
+            ]
+        )
 
         # Add final layer normalization to match PyTorch reference implementation
         # In PyTorch: self.layernorm = nn.Identity() if config.use_mean_pooling else nn.LayerNorm(...)
         vision_config = config.vision_config
 
         # Only create layernorm if use_mean_pooling is False
-        self.layernorm: Union[RMSNorm, LayerNorm, None]
+        self.layernorm: RMSNorm | LayerNorm | None
         if not getattr(vision_config, "use_mean_pooling", False):
             if vision_config.norm_type == "rms_norm":
                 self.layernorm = RMSNorm(
@@ -955,13 +1342,55 @@ class InternVLVisionModel(Module):
                     dtype=config.llm_config.dtype,
                     eps=vision_config.layer_norm_eps,
                 )
+
+            # Set replicate sharding strategy for layernorm
+            self.layernorm.weight.sharding_strategy = (
+                ShardingStrategy.replicate(len(self.devices))
+            )
+            if (
+                hasattr(self.layernorm, "bias")
+                and self.layernorm.bias is not None
+            ):
+                self.layernorm.bias.sharding_strategy = (
+                    ShardingStrategy.replicate(len(self.devices))
+                )
+
+            # Create per-device layernorm instances
+            self.layernorm_per_device: list[RMSNorm | LayerNorm] = []
+            for n, device in enumerate(self.devices):
+                ln_copy: RMSNorm | LayerNorm
+                if vision_config.norm_type == "rms_norm":
+                    ln_copy = RMSNorm(
+                        dim=vision_config.hidden_size,
+                        dtype=config.llm_config.dtype,
+                        eps=vision_config.layer_norm_eps,
+                        multiply_before_cast=False,
+                    )
+                else:
+                    ln_copy = LayerNorm(
+                        dims=vision_config.hidden_size,
+                        device=device,
+                        dtype=config.llm_config.dtype,
+                        eps=vision_config.layer_norm_eps,
+                    )
+                ln_copy.weight = self.layernorm.weight.shard(n, device)
+                if (
+                    isinstance(ln_copy, LayerNorm)
+                    and isinstance(self.layernorm, LayerNorm)
+                    and self.layernorm.bias is not None
+                ):
+                    ln_copy.bias = self.layernorm.bias.shard(n, device)
+                self.layernorm_per_device.append(ln_copy)
         else:
             # Use identity (no-op) when mean pooling is used
             self.layernorm = None
+            self.layernorm_per_device = []
 
         # Initialize the multimodal projector (mlp1).
         self.mlp1 = InternVLMLP1(config)
-        self.mlp1.sharding_strategy = ShardingStrategy.replicate(
+        # Set tensor parallel sharding strategy for mlp1
+        # This will properly shard fc1/fc2 while keeping layer_norm replicated
+        self.mlp1.sharding_strategy = ShardingStrategy.rowwise(
             len(config.devices)
         )
 
@@ -969,6 +1398,9 @@ class InternVLVisionModel(Module):
         self.mlp1_list = [
             self.mlp1.shard(n, dev) for n, dev in enumerate(config.devices)
         ]
+
+        # Create allreduce for tensor parallel MLP1.
+        self.allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def pixel_shuffle(self, x: TensorValue, h: int, w: int) -> TensorValue:
         """Pixel shuffle operation for downsampling vision features.
@@ -1005,12 +1437,15 @@ class InternVLVisionModel(Module):
         return x
 
     def __call__(
-        self, pixel_values: Sequence[TensorValue]
+        self,
+        pixel_values: Sequence[TensorValue],
+        signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
         """Process pixel values to image embeddings.
 
         Args:
             pixel_values: Input pixel values tensor, one per device.
+            signal_buffers: Communication buffers for distributed execution.
 
         Returns:
             Image embeddings tensor, one per device, flattened for language model.
@@ -1021,24 +1456,22 @@ class InternVLVisionModel(Module):
             for embed, pixels in zip(self.embeddings_list, pixel_values)
         ]
 
-        # TODO(MODELS-632): Pass through encoder layers when multi-device
-        # support is added.
-        # For now, process only on the first device.
-        hidden_states = vit_embeds[0]
-
-        # Pass through all encoder layers using LayerList.
+        # Pass through encoder layers on all devices
+        hidden_states_list = vit_embeds
         for encoder_layer in self.encoder_layers:
-            hidden_states = encoder_layer(hidden_states)
-
-        if hidden_states is None:
-            raise ValueError("Hidden states are None")
+            # Process the list of tensors through the encoder layer
+            hidden_states_list = encoder_layer(
+                hidden_states_list, signal_buffers
+            )
 
         # Apply layernorm if it exists (when use_mean_pooling is False)
         if self.layernorm is not None:
-            hidden_states = self.layernorm(hidden_states)
-
-        # Create list with processed embeddings (currently single device)
-        vit_embeds_processed = [hidden_states]
+            vit_embeds_processed = [
+                self.layernorm_per_device[i](hidden_states_list[i])
+                for i in range(len(hidden_states_list))
+            ]
+        else:
+            vit_embeds_processed = hidden_states_list
 
         # Remove CLS token (first token) from each device's embeddings.
         # Shape: [batch, num_positions, embed_dim] -> [batch, num_positions-1, embed_dim]
@@ -1078,10 +1511,11 @@ class InternVLVisionModel(Module):
             for embeds in shuffled_embeds
         ]
 
-        # Apply mlp1 projection (includes layer norm, fc1, gelu, fc2)
+        # Apply mlp1 projection (includes layer norm, fc1, gelu, fc2).
         mlp_out = [
             mlp(embeds) for mlp, embeds in zip(self.mlp1_list, seq_embeds)
         ]
+        mlp_out = self.allreduce(mlp_out, signal_buffers)
 
         # Flatten for language model
         # Shape: [batch, seq_len, hidden_dim] -> [batch * seq_len, hidden_dim]
@@ -1096,7 +1530,5 @@ class InternVLVisionModel(Module):
             for embeds in mlp_out
         ]
 
-        # TODO(MODELS_632): Finish tensor parallel InternVLVisionModel.
-        # In the meantime, broadcast here since the language model supports TP.
-        assert len(flattened) == 1
-        return distribute_value(flattened[0], self.devices)
+        # Return the flattened embeddings for all devices
+        return flattened

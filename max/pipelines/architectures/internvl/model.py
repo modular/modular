@@ -22,7 +22,13 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import DLPackCompatible, InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Type,
+)
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -316,8 +322,16 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             device=DeviceRef.GPU(),
         )
 
+        # Create signal types for distributed communication
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        )
+
         # Initialize graph with input types
-        with Graph("internvl_vision", input_types=[pixel_values_type]) as graph:
+        with Graph(
+            "internvl_vision",
+            input_types=[pixel_values_type, *signals.input_types()],
+        ) as graph:
             # Build vision model architecture.
             vision_model = InternVLVisionModel(config)
             vision_model.load_state_dict(
@@ -328,7 +342,10 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
 
             # Unpack inputs.
-            (pixel_values,) = graph.inputs
+            pixel_values, *signal_args = graph.inputs
+
+            # Extract signal buffers (one per device)
+            signal_buffers = [v.buffer for v in signal_args]
 
             # Execute vision model: pixel_values -> image_embeddings.
             image_embeddings = vision_model(
@@ -336,7 +353,8 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                     # Transfer pixel values to each device.
                     pixel_values.tensor.to(DeviceRef.from_device(dev))
                     for dev in self.devices
-                ]
+                ],
+                signal_buffers,
             )
 
             # Set graph outputs.
@@ -584,7 +602,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             # Execute vision model: pixel_values -> image_embeddings.
             vision_outputs = self.vision_model.execute(
-                model_inputs.pixel_values
+                model_inputs.pixel_values, *model_inputs.signal_buffers
             )
             assert len(vision_outputs) == len(self.devices)
 
