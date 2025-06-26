@@ -13,6 +13,7 @@
 #include "Transport.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
+#include "motr/motr.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringMap.h"
@@ -42,8 +43,19 @@ public:
       void invoke(const Param &param, Callback<Result> reply) {
         KGEN::CompilerTimeTraceScope traceScope("handleRequest",
                                                 [&]() { return method.str(); });
-        (thisPtr->*handler)(param, LSPResponder<Result>(lspTelemetryCtx, method,
-                                                        std::move(reply)));
+        MOTR_Trace(request);
+        MOTR_TagStrViews("method", method);
+
+        size_t parentId =
+#if MOTR_ENABLED
+            motr::getParentID();
+#else
+            0;
+#endif
+
+        (thisPtr->*handler)(param,
+                            LSPResponder<Result>(lspTelemetryCtx, method,
+                                                 std::move(reply), parentId));
       }
       LSPTelemetryContext &lspTelemetryCtx;
       StringRef method;
