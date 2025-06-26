@@ -3296,7 +3296,7 @@ struct LayoutTensor[
                 idx=tile_coords[axis],
             )
 
-    alias StaticSplitElementType[
+    alias SplitElementType[
         count: Int,
         axis: Int = 0,
     ] = LayoutTensor[
@@ -3314,7 +3314,7 @@ struct LayoutTensor[
         count: Int,
         axis: Int = 0,
     ] = StaticTuple[
-        Self.StaticSplitElementType[count, axis],
+        Self.SplitElementType[count, axis],
         count,
     ]
 

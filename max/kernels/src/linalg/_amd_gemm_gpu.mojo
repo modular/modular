@@ -159,9 +159,7 @@ struct MMATileBuffers[
         MutableAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ]
-    var mma_reg_tile: __type_of(
-        Self.MMARegTileType.stack_allocation().split[num_k_tiles]()
-    )
+    var mma_reg_tile: Self.MMARegTileType.StaticSplitType[num_k_tiles]
 
     var global_offset: UInt
 
@@ -227,12 +225,9 @@ struct MMATileBuffers[
     @always_inline
     fn get_reg_tile[
         k_tile_idx: Int, mma_idx: Int, k_group: Int, elements_per_thread: Int
-    ](
-        self,
-        out result: __type_of(self.mma_reg_tile[k_tile_idx]).TileType[
-            num_mmas, elements_per_thread
-        ],
-    ):
+    ](self) -> Self.MMARegTileType.SplitElementType[num_k_tiles].TileType[
+        num_mmas, elements_per_thread
+    ]:
         """Get a specific K-dimension tile from the register buffer.
 
         Parameters:
@@ -524,16 +519,13 @@ fn gemm_kernel[
     ](0, 0)
 
     # Accumulation registers for result
-    var c_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, 4),
-            MutableAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
+    alias c_reg_tile_type = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, 4),
+        MutableAnyOrigin,
+        address_space = AddressSpace.LOCAL,
+    ]
+    var c_reg_tile = c_reg_tile_type.stack_allocation().fill(0)
 
     # AMD TensorCore operator for matrix multiplication
     alias mma = AMD_MMA[
@@ -668,9 +660,9 @@ fn gemm_kernel[
         var thread_offset = c_gmem_fragment.distance(c.ptr)
 
         @parameter
-        for i in range(__type_of(c_gmem_fragment).layout.size()):
+        for i in range(c_gmem_fragment.layout.size()):
             alias src_idx = c_reg_fragment.layout(i)
-            alias dst_static_idx: UInt = __type_of(c_gmem_fragment).layout(i)
+            alias dst_static_idx: UInt = c_gmem_fragment.layout(i)
             var dst_idx = 0
 
             @parameter
