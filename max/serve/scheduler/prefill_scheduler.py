@@ -27,6 +27,7 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext, TokenGenerator
 from max.pipelines.lib.pipeline import get_paged_manager
+from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
@@ -99,6 +100,7 @@ class PrefillScheduler(Scheduler):
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
+    @traced
     def handle_transfer_engine_request(
         self, message: KVTransferEngineMetadata, reply_context: ReplyContext
     ) -> None:
@@ -119,6 +121,7 @@ class PrefillScheduler(Scheduler):
         self.prefill_requests.put(message)
         self.request_id_to_reply_context[message.id] = reply_context
 
+    @traced
     def send_prefill_complete_response(
         self,
         request_id: str,
@@ -171,6 +174,7 @@ class PrefillScheduler(Scheduler):
         prefill_request.context.reset()
         self.preempted_prefill.put(prefill_request)
 
+    @traced
     def cleanup_active_transfers(self) -> None:
         """Cleans up completed transfers from the active transfers dictionary.
 
@@ -191,6 +195,7 @@ class PrefillScheduler(Scheduler):
         for id in to_be_deleted:
             del self.active_transfers[id]
 
+    @traced
     def update_batch(self) -> None:
         """Updates the active batch by pulling requests from the prefill queue.
 
@@ -245,6 +250,7 @@ class PrefillScheduler(Scheduler):
             self.active_batch[prefill_request.id] = prefill_request.context
             self.pending_transfers[prefill_request.id] = prefill_request
 
+    @traced
     def schedule(self) -> None:
         """Executes the current batch of requests and sends completed requests to decode.
 
@@ -290,8 +296,9 @@ class PrefillScheduler(Scheduler):
                 req_id, input_context, xfer_data
             )
 
+    @traced
     def run_iteration(self) -> None:
-        """Main scheduling method that processes prefill requests.
+        """Main scheduling loop that processes prefill requests.
 
         Receives requests, creates batches, and schedules them for processing
         while handling errors and cancelled requests.
