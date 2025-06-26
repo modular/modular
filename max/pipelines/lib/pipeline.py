@@ -573,6 +573,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 self._pipeline_config.lora_config.max_num_loras,
                 self._pipeline_config.lora_config.lora_paths,
             )
+            self._pipeline_config._lora_manager = self._lora_manager
 
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
@@ -581,7 +582,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
-            weights=load_weights(weight_paths),
+            weights=weights,
             adapter=self._weight_adapters.get(
                 weights_format(weight_paths), None
             ),

@@ -43,6 +43,11 @@ from .linear import (
     Linear,
     LinearV1,
 )
+from .lora import (
+    AttentionWithRopeAndLoRA,
+    LinearLoRA,
+    SupportsLoRA,
+)
 from .norm import (
     DistributedRMSNorm,
     GroupNorm,
@@ -110,6 +115,7 @@ __all__ = [
     "LinearV1",
     "Linear",
     "LinearScalingParams",
+    "LinearLoRA",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
     "LongRoPEScalingParams",
@@ -124,6 +130,7 @@ __all__ = [
     "Sequential",
     "Signals",
     "Shardable",
+    "SupportsLoRA",
     "Transformer",
     "TransformerBlock",
     "VocabParallelEmbedding",

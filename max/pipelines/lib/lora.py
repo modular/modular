@@ -22,8 +22,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
-from max.driver import Tensor
-from max.graph.weights import Weights, WeightsFormat, load_weights
+import numpy as np
+from max.driver import Device, Tensor
+from max.dtype import DType
+from max.graph.type import BufferType, DeviceRef
+from max.graph.value import BufferValue, TensorValue
+from max.graph.weights import WeightData, Weights, WeightsFormat, load_weights
+from max.nn.layer import Module, recursive_named_layers
+from max.nn.lora import SupportsLoRA
 
 from .hf_utils import HuggingFaceRepo
 
@@ -94,8 +100,9 @@ class LoRAModel:
 
         self._adapter_config = self._load_weights()
 
-        self.rank = self._adapter_config["r"]
-        self.target_modules = self._adapter_config["target_modules"]
+        self.rank: int = self._adapter_config["r"]
+        self.target_modules: list[str] = self._adapter_config["target_modules"]
+        self.scale: float = self.adapter_config["lora_alpha"] / self.rank
 
     @property
     def lora_A(self) -> dict[str, Tensor]:
@@ -379,3 +386,112 @@ class LoRAManager:
                 )
 
             self._active_loras[lora] = model
+
+    def _get_lora_leaf_layers(self, model: Module) -> dict[str, Module]:
+        """
+        Uses recursive_named_layers(model) to return only the leaf module names
+        that are instances of SupportsLoRA — skipping containers.
+
+        Args:
+            model: The model to scan.
+
+        Returns:
+            List of dot-names for leaf LoRA modules.
+        """
+        lora_layers: list[tuple[str, Module]] = [
+            (name, layer)
+            for name, layer in recursive_named_layers(model)
+            if isinstance(layer, SupportsLoRA)
+        ]
+
+        # Make a set of all parent module names (e.g. 'layers.0.self_attn')
+        parent_names = set()
+        for name, _ in lora_layers:
+            parts = name.split(".")
+            for i in range(1, len(parts)):
+                parent_names.add(".".join(parts[:i]))
+
+        # Only keep layers that are not parents of other LoRA layers
+        leaf_lora_layers = {
+            name: layer
+            for name, layer in lora_layers
+            if name not in parent_names
+        }
+
+        return leaf_lora_layers
+
+    def zero_init_weights(
+        self, model: Module, state_dict: dict[str, WeightData], device: Device
+    ) -> None:
+        """
+        Recursively collect all leaf modules in the model that are instances of SupportsLoRA.
+        Zero-init's their weights adding them to the `state_dict` and init underlying LoRA buffers.
+
+        Must be called to initialize the base model properly.
+
+        Args:
+            model: The top-level Module.
+            state_dict: Model state_dict to be loaded into model.
+            device: The device the base model resides in.
+        """
+        self._lora_layers = self._get_lora_leaf_layers(model)
+        self._lora_keys = []
+        for key, layer in self._lora_layers.items():
+            for weight_key, weight in layer.layer_weights.items():
+                if not is_lora_kind(weight_key):
+                    continue
+
+                state_key = f"{key}.{weight_key}"
+                state_dict[state_key] = WeightData(
+                    np.zeros(weight.shape.static_dims),
+                    state_key,
+                    weight.dtype,
+                    weight.shape,
+                )
+                self._lora_keys.append(state_key)
+
+                buffer = Tensor(
+                    shape=weight.shape.static_dims,
+                    dtype=weight.dtype,
+                    device=device,
+                )
+                if LoRAType.A.value in key:
+                    self._A_buffers[key] = buffer
+                elif LoRAType.B.value in key:
+                    self._B_buffers[key] = buffer
+                elif LoRAType.BIAS.value in key:
+                    self._bias_buffers[key] = buffer
+
+    def input_symbols(self, device_ref: DeviceRef) -> list[BufferType]:
+        """
+        Returns the input symbols needed for the graph inputs
+
+        Args:
+            device_ref: Symbolic device to be used for the symbols.
+        """
+        lora_ids_type = BufferType(
+            DType.uint32, shape=["lora_ids"], device=device_ref
+        )
+        lora_ranks_type = BufferType(
+            DType.uint32, shape=["lora_ranks"], device=device_ref
+        )
+
+        return [lora_ids_type, lora_ranks_type]
+
+    def set_graph_info(
+        self,
+        lora_ids: BufferValue,
+        lora_ranks: BufferValue,
+        input_row_offsets: TensorValue,
+    ):
+        """
+        Sets the lora batch info required for the forward-pass.
+
+        Args:
+            lora_ids: IDs of the LoRAs used in the batch.
+            lora_ranks: Ranks of the LoRAs used in the batch.
+            input_row_offsets: Offsets used for ragged inputs.
+        """
+        for key, layer in self._lora_layers.items():
+            if isinstance(layer, SupportsLoRA):
+                layer.set_lora_batch_info(lora_ids, lora_ranks)
