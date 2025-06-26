@@ -9,6 +9,7 @@ load(
 
 modular_py_library(
     name = "torch_reference",
+    testonly = True,
     srcs = [
         "torch_reference/configuration_deepseek.py",
         "torch_reference/modeling_deepseek.py",

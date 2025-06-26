@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "lit_tests", "requirement")
 
 filegroup(
     name = "pytest_inputs",
+    testonly = True,
     srcs = [
         "Inputs/dynamic-model.mlir",
         "Inputs/named-inputs.mlir",
@@ -14,6 +15,7 @@ filegroup(
 
 filegroup(
     name = "inputs",
+    testonly = True,
     srcs = glob(["**/*.mlir"]),
     visibility = [":__subpackages__"],
 )

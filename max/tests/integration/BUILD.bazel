@@ -2,12 +2,14 @@ load("//bazel:api.bzl", "mojo_library")
 
 filegroup(
     name = "inputs",
+    testonly = True,
     srcs = glob(["Inputs/**"]),
     visibility = [":__subpackages__"],
 )
 
 mojo_library(
     name = "test_user_op",
+    testonly = True,
     srcs = glob(["Inputs/test_user_op/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
@@ -19,6 +21,7 @@ mojo_library(
 
 mojo_library(
     name = "counter_ops",
+    testonly = True,
     srcs = glob(["Inputs/counter_ops/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
@@ -31,6 +34,7 @@ mojo_library(
 
 mojo_library(
     name = "compile_config_ops",
+    testonly = True,
     srcs = glob(["Inputs/compile_config_ops/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [
@@ -44,6 +48,7 @@ mojo_library(
 
 mojo_library(
     name = "kernel_verification_ops",
+    testonly = True,
     srcs = glob(["Inputs/kernel_verification_ops/*.mojo"]),
     visibility = [":__subpackages__"],
     deps = [

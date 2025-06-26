@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 modular_py_library(
     name = "shared_conv_impl",
+    testonly = True,
     srcs = ["shared_conv_impl.py"],
     deps = [
         "//SDK/lib/API/python/max/engine",
