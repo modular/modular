@@ -24,6 +24,7 @@ from hashlib._hasher import _HashableWithHasher, _Hasher
 from hashlib.hash import _hash_simd
 from math import CeilDivable, Ceilable, Floorable, Truncable
 from sys import bitwidthof
+from sys.info import is_32bit
 
 from builtin.device_passable import DevicePassable
 from builtin.math import Absable, Powable
@@ -1227,10 +1228,8 @@ struct Int(
 
         var n = abs(self)
 
-        alias is_32bit_system = bitwidthof[DType.index]() == 32
-
         @parameter
-        if is_32bit_system:
+        if is_32bit():
             return _calc_initial_buffer_size_int32(n)
 
         # The value only has low-bits.

@@ -93,6 +93,7 @@ from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, abort
 from os.atomic import Atomic
 from sys import bitwidthof, sizeof
+from sys.info import is_32bit
 from sys.ffi import c_char
 
 from bit import count_leading_zeros
@@ -2293,10 +2294,9 @@ fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
     if dtype.is_integral():
         var n = abs(n0)
         var sign = 0 if n0 > 0 else 1
-        alias is_32bit_system = Int.BITWIDTH == 32
 
         @parameter
-        if is_32bit_system or bitwidthof[dtype]() <= 32:
+        if is_32bit() or bitwidthof[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
