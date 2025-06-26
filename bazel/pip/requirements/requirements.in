@@ -11,7 +11,6 @@ docutils
 einops
 einx
 fastapi>=0.115.3 # >=0.115.3 is required for resolving CVE-2024-47874
-faster_whisper
 fire  # For mistral-evals.
 filelock
 gguf
@@ -34,7 +33,6 @@ mypy==1.13.0
 notebook
 numpy
 nvitop
-onnxruntime==1.19.2  # Needed by faster_whisper, newer versions don't support python 3.9
 opentelemetry-api
 opentelemetry-exporter-otlp-proto-http
 opentelemetry-exporter-prometheus

@@ -63,9 +63,7 @@ attrs==24.2.0 ; sys_platform == 'linux'
 audioread==3.0.1 ; sys_platform == 'linux'
     # via librosa
 av==14.2.0 ; sys_platform == 'linux'
-    # via
-    #   faster-whisper
-    #   qwen-vl-utils
+    # via qwen-vl-utils
 babel==2.15.0 ; sys_platform == 'linux'
     # via
     #   jupyterlab-server
@@ -117,8 +115,6 @@ colorama==0.4.6 ; sys_platform == 'linux'
     # via
     #   sacrebleu
     #   tqdm-multiprocess
-coloredlogs==15.0.1 ; sys_platform == 'linux'
-    # via onnxruntime
 comm==0.2.2 ; sys_platform == 'linux'
     # via ipykernel
 configargparse==1.7.1 ; sys_platform == 'linux'
@@ -127,8 +123,6 @@ contextlib2==21.6.0 ; sys_platform == 'linux'
     # via schema
 contourpy==1.3.0 ; sys_platform == 'linux'
     # via matplotlib
-ctranslate2==4.6.0 ; sys_platform == 'linux'
-    # via faster-whisper
 cycler==0.12.1 ; sys_platform == 'linux'
     # via matplotlib
 dataproperty==1.0.1 ; sys_platform == 'linux'
@@ -191,8 +185,6 @@ executing==2.1.0 ; sys_platform == 'linux'
     # via stack-data
 fastapi==0.115.3 ; sys_platform == 'linux'
     # via -r bazel/pip/requirements/requirements.in
-faster-whisper==1.1.1 ; sys_platform == 'linux'
-    # via -r bazel/pip/requirements/requirements.in
 fastjsonschema==2.20.0 ; sys_platform == 'linux'
     # via nbformat
 filelock==3.16.1 ; sys_platform == 'linux'
@@ -214,8 +206,6 @@ flask-basicauth==0.2.0 ; sys_platform == 'linux'
     # via locust
 flask-cors==5.0.0 ; sys_platform == 'linux'
     # via locust
-flatbuffers==25.2.10 ; sys_platform == 'linux'
-    # via onnxruntime
 fonttools==4.53.0 ; sys_platform == 'linux'
     # via matplotlib
 fqdn==1.5.1 ; sys_platform == 'linux'
@@ -299,15 +289,12 @@ huggingface-hub==0.30.1 ; sys_platform == 'linux'
     #   accelerate
     #   datasets
     #   evaluate
-    #   faster-whisper
     #   optimum
     #   peft
     #   sentence-transformers
     #   timm
     #   tokenizers
     #   transformers
-humanfriendly==10.0 ; sys_platform == 'linux'
-    # via coloredlogs
 hypothesis==6.108.4 ; sys_platform == 'linux'
     # via -r bazel/pip/requirements/requirements.in
 identify==2.6.3 ; sys_platform == 'linux'
@@ -534,7 +521,6 @@ numpy==2.0.2 ; sys_platform == 'linux'
     #   -r bazel/pip/requirements/requirements.in
     #   accelerate
     #   contourpy
-    #   ctranslate2
     #   datasets
     #   einx
     #   evaluate
@@ -544,7 +530,6 @@ numpy==2.0.2 ; sys_platform == 'linux'
     #   mteb
     #   numba
     #   numexpr
-    #   onnxruntime
     #   optimum
     #   pandas
     #   peft
@@ -602,10 +587,6 @@ nvitop==1.4.0 ; sys_platform == 'linux'
     # via -r bazel/pip/requirements/requirements.in
 nvtx==0.2.11 ; sys_platform == 'linux'
     # via -r bazel/pip/requirements/nvidia-gpu-requirements.in
-onnxruntime==1.19.2 ; sys_platform == 'linux'
-    # via
-    #   -r bazel/pip/requirements/requirements.in
-    #   faster-whisper
 openai==1.52.2 ; sys_platform == 'linux'
     # via -r bazel/pip/requirements/requirements.in
 opentelemetry-api==1.28.2 ; sys_platform == 'linux'
@@ -651,7 +632,6 @@ packaging==24.1 ; sys_platform == 'linux'
     #   lightning-utilities
     #   matplotlib
     #   nbconvert
-    #   onnxruntime
     #   optimum
     #   peft
     #   plotly
@@ -726,7 +706,6 @@ protobuf==5.29.1 ; sys_platform == 'linux'
     #   grpcio-reflection
     #   grpcio-status
     #   grpcio-tools
-    #   onnxruntime
     #   opentelemetry-proto
     #   proto-plus
 psutil==6.0.0 ; sys_platform == 'linux'
@@ -832,7 +811,6 @@ pyyaml==6.0.1 ; sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/requirements.in
     #   accelerate
-    #   ctranslate2
     #   datasets
     #   gguf
     #   huggingface-hub
@@ -953,7 +931,6 @@ sentinel==1.0.0 ; sys_platform == 'linux'
 setuptools==70.1.0 ; sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/requirements.in
-    #   ctranslate2
     #   grpcio-tools
     #   jupyterlab
     #   lightning-utilities
@@ -1021,7 +998,6 @@ sympy==1.13.3 ; sys_platform == 'linux'
     # via
     #   einx
     #   lm-eval
-    #   onnxruntime
     #   torch
 tabledata==1.3.3 ; sys_platform == 'linux'
     # via pytablewriter
@@ -1060,7 +1036,6 @@ tokenicer==0.0.4 ; sys_platform == 'linux'
 tokenizers==0.21.0 ; sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/requirements.in
-    #   faster-whisper
     #   transformers
 tomli==2.0.1 ; sys_platform == 'linux'
     # via
@@ -1104,7 +1079,6 @@ tqdm==4.66.5 ; sys_platform == 'linux'
     #   -r bazel/pip/requirements/requirements.in
     #   datasets
     #   evaluate
-    #   faster-whisper
     #   gguf
     #   huggingface-hub
     #   lm-eval
