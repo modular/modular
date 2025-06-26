@@ -116,6 +116,9 @@ public:
   /// Returns true if the signature has has pack arguments.
   bool hasPackVarArgs();
 
+  /// Returns the index of the pack variadic arg, or std::nullopt if none.
+  std::optional<size_t> findPackVarArgIndex();
+
   /// Returns true if the signature has keyword variadic arguments.
   bool hasKwVarArgs();
 

@@ -37,3 +37,5 @@ fn main():
     bind_binop_and_print[myIntMul]()
     # CHECK: 37
     bind_binop_and_print[myIntFMA[z=2]]()
+    # CHECK: 17
+    bind_binop_and_print[myIntFMA[y=2]]()
