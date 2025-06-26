@@ -1894,8 +1894,9 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     for (ParamDeclAttr param : paramSignature.paramDeclAttrs)
       inputParamTypes.push_back(remapper.replace(param.getType()));
 
-    return GeneratorType::get(inputParamTypes, remapper.replace(type.mlirType),
-                              paramSignature.getParamListAttr());
+    return GeneratorType::get(
+        inputParamTypes, remapper.replace(type.mlirType),
+        remapper.replace(paramSignature.getParamListAttr()));
   };
 
   ASTDecl &parentDecl = *decl.getParentDecl();
