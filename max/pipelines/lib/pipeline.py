@@ -737,7 +737,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
         tracer.next("build_token_frequency_csr_loop")
         for i, context in enumerate(batch):
             unique_tokens, counts = np.unique(
-                context.generated_tokens, return_counts=True
+                context.tokens if include_prompt else context.generated_tokens,
+                return_counts=True,
             )
             # Pad the tokens and counts to reserve space for new tokens
             unique_tokens = np.pad(
