@@ -47,7 +47,10 @@ fn random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
 
 fn quantize_a_Q8[
     group_size: Int
-](a: UnsafePointer[Float32, **_], a_quant: UnsafePointer[Int8, **_]) -> Float32:
+](
+    a: UnsafePointer[Float32, mut=False, **_],
+    a_quant: UnsafePointer[Int8, mut=True, **_],
+) -> Float32:
     var fp_data = a.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -64,9 +67,9 @@ fn dot_product_QK_K[
     group_size: Int,
     b_zero_point: Int32 = 0,
 ](
-    a_quant_data: UnsafePointer[Int8, **_],
-    b_quant_data: UnsafePointer[UInt8, **_],
-    b_scales: UnsafePointer[Scalar[b_scales_type], **_],
+    a_quant_data: UnsafePointer[Int8, mut=False, **_],
+    b_quant_data: UnsafePointer[UInt8, mut=False, **_],
+    b_scales: UnsafePointer[Scalar[b_scales_type], mut=False, **_],
 ) -> Int32:
     var sum: Int32 = 0
     for i in range(_block_QK_K.quantized_k):
@@ -98,16 +101,16 @@ trait QuantizedGemm:
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
+        c: NDBuffer[mut=True, DType.float32, 2],
     ):
         ...
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
         m: Int,
         n: Int,
         k: Int,
@@ -156,16 +159,16 @@ struct qgemm_Q4_0(QuantizedGemm):
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
+        c: NDBuffer[mut=True, DType.float32, 2],
     ):
         matmul_qint4[_block_Q4_0.group_size](a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
         m: Int,
         n: Int,
         k: Int,
@@ -251,16 +254,16 @@ struct qgemm_Q4_K(QuantizedGemm):
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
+        c: NDBuffer[mut=True, DType.float32, 2],
     ):
         matmul_Q4_K(a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
         m: Int,
         n: Int,
         k: Int,
@@ -383,16 +386,16 @@ struct qgemm_Q6_K(QuantizedGemm):
 
     @staticmethod
     fn kernel(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
-        c: NDBuffer[DType.float32, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
+        c: NDBuffer[mut=True, DType.float32, 2],
     ):
         matmul_Q6_K(a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: NDBuffer[DType.float32, 2],
-        b: NDBuffer[DType.uint8, 2],
+        a: NDBuffer[mut=False, DType.float32, 2],
+        b: NDBuffer[mut=False, DType.uint8, 2],
         m: Int,
         n: Int,
         k: Int,
