@@ -53,9 +53,10 @@ guide](https://docs.modular.com/max/get-started).
 
 The MAX container is our Kubernetes-compatible Docker container for convenient
 deployment, using the same inference server you get from the `max serve`
-command shown above.
+command shown above. We have separate containers for NVIDIA and AMD GPU
+environments, and a unified container that works with both.
 
-You can try it now with this command:
+For example, you can start a container for an NVIDIA GPU with this command:
 
 ```sh
 docker run --gpus=1 \
@@ -72,18 +73,22 @@ repository](https://hub.docker.com/u/modular).
 ## About the repo
 
 We're constantly open-sourcing more of the Modular Platform and you can find
-all of it in here.
+all of it in here. As of May, 2025, this repo includes over 450,000 lines of
+code from over 6000 contributors, providing developers with production-grade
+reference implementations and tools to extend the Modular Platform with new
+algorithms, operations, and hardware targets. It is quite likely **the world's
+largest repository of open source CPU and GPU kernels**!
 
 Highlights include:
 
 - Mojo standard library: [/mojo/stdlib](mojo/stdlib)
 - MAX GPU and CPU kernels: [/max/kernels](max/kernels) (Mojo kernels)
-- MAX inference serving layer: [/max/serve](max/serve) (OpenAI-compatible endpoint)
+- MAX inference server: [/max/serve](max/serve) (OpenAI-compatible endpoint)
 - MAX model pipelines: [/max/pipelines](max/pipelines) (Python-based graphs)
 - Code example: [/examples](examples)
 - Tutorials: [/tutorials](tutorials)
 
-This repo has two primary branches:
+This repo has two major branches:
 
 - The [`main`](https://github.com/modular/modular/tree/main) branch, which is
 in sync with the nightly build and subject to new bugs. Use this branch for
@@ -99,15 +104,14 @@ build](https://docs.modular.com/max/packages).
 
 Thanks for your interest in contributing to this repository!
 
-We accept contributions to the [Mojo standard library](./mojo) and
-[MAX AI kernels](./max/kernels).
-We currently aren't accepting contributions for other parts of the
-repository.
+We accept contributions to the [Mojo standard library](./mojo), [MAX AI
+kernels](./max/kernels), code examples, and Mojo docs, but currently not to any
+other parts of the repository.
 
-Please see the [Contribution Guide](mojo/CONTRIBUTING.md) for instructions.
+Please see the [Contribution Guide](./CONTRIBUTING.md) for instructions.
 
-We also welcome your bug reports.  If you have a bug, please file an issue
-[here](https://github.com/modular/modular/issues/new/choose).
+We also welcome your bug reports.  If you have a bug, please [file an issue
+here](https://github.com/modular/modular/issues/new/choose).
 
 ## Contact us
 

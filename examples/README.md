@@ -1,7 +1,8 @@
-# MAX examples
+# Code examples
 
-These examples demonstrate the power and flexibility of
-[MAX](https://docs.modular.com/max/). They include:
+These examples demonstrate the power and flexibility of the Modular Platform,
+including a wide range of Mojo code examples. See the following subdirectory
+READMEs for usage instructions.
 
 ## [Mojo code examples](mojo/)
 
@@ -190,3 +191,19 @@ test = "pytest test_addition.py"
 
 This is ideal because it uses an actual test program to confirm that the result
 from the example code is actually what we expect.
+
+## Contributing
+
+We're happy to accept any of the following types of changes to the code examples:
+
+- Bug fixes
+- Performance improvements
+- Code readability improvements
+- Conformity to style improvements
+
+Any other code refactoring or new code examples will be handled on a
+case-by-case basis and we prefer that you first **create an issue**
+so we can collaborate and agree on a plan.
+
+For more information about how to contribute, see the [Contributor
+Guide](../CONTRIBUTING.md)

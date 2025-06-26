@@ -46,7 +46,7 @@ git clone -b stable https://github.com/modular/modular.git
 
 cd max/benchmark
 
-magic shell
+pixi shell
 ```
 
 Then run the benchmark script while specifying your active
