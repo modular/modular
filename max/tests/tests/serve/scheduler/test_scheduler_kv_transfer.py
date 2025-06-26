@@ -76,14 +76,6 @@ def mock_pipeline():
 
 
 @pytest.fixture
-def mock_process_control():
-    pc = Mock()
-    pc.is_canceled = Mock(return_value=False)
-    pc.beat = Mock()
-    return pc
-
-
-@pytest.fixture
 def decode_paged_manager():
     params = KVCacheParams(
         dtype=DType.float16,
@@ -158,7 +150,6 @@ def decode_dispatcher_factory(
 @pytest.fixture
 def decode_scheduler(
     mock_pipeline,
-    mock_process_control,
     decode_paged_manager,
     decode_client_zmq_ctx,
     decode_request_zmq_path,
@@ -180,7 +171,6 @@ def decode_scheduler(
         )
 
         return DecodeScheduler(
-            process_control=mock_process_control,
             pipeline=mock_pipeline,
             scheduler_config=config,
             paged_manager=decode_paged_manager,
@@ -257,7 +247,6 @@ def prefill_paged_manager():
 @pytest.fixture
 def prefill_scheduler(
     mock_pipeline,
-    mock_process_control,
     prefill_paged_manager,
     prefill_client_zmq_ctx,
     prefill_dispatcher_factory,
@@ -277,7 +266,6 @@ def prefill_scheduler(
         )
 
         return PrefillScheduler(
-            process_control=mock_process_control,
             pipeline=mock_pipeline,
             scheduler_config=config,
             paged_manager=prefill_paged_manager,

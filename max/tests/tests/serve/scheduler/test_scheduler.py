@@ -61,14 +61,6 @@ def mock_pipeline():
 
 
 @pytest.fixture
-def mock_process_control():
-    pc = Mock()
-    pc.is_canceled = Mock(return_value=False)
-    pc.beat = Mock()
-    return pc
-
-
-@pytest.fixture
 def scheduler_config():
     return TokenGenerationSchedulerConfig(
         max_batch_size_tg=4,
@@ -83,12 +75,10 @@ def scheduler_config():
 @pytest.fixture(scope="function")
 def scheduler(
     mock_pipeline,
-    mock_process_control,
     scheduler_config,
     zmq_ctx,
 ):
     return TokenGenerationScheduler(
-        process_control=mock_process_control,
         scheduler_config=scheduler_config,
         pipeline=mock_pipeline,
         request_zmq_endpoint=generate_zmq_ipc_path(),
@@ -397,31 +387,3 @@ def test_schedule_tg(scheduler, zmq_ctx) -> None:
         batch_to_execute,
         num_steps=scheduler.scheduler_config.max_forward_steps_tg,
     )
-
-
-def test_run_basic_flow(scheduler, zmq_ctx) -> None:
-    # Setup mock data
-    mock_request = create_mock_request(cache_seq_id=0, seq_len=10)
-
-    # Create independent request push socket to test.
-    request_push_socket = ZmqPushSocket[
-        tuple[str, Union[TextContext, TextAndVisionContext]]
-    ](
-        zmq_ctx,
-        scheduler.request_q.zmq_endpoint,
-        serialize=msgpack_numpy_encoder(),
-    )
-    response_pull_socket = ZmqPullSocket[
-        list[dict[str, TextGenerationResponse]]
-    ](zmq_ctx, scheduler.response_q.zmq_endpoint)
-
-    request_push_socket.put_nowait(("req1", mock_request))
-    time.sleep(1)
-
-    # Mock is_canceled to return True after first iteration
-    scheduler.pc.is_canceled.side_effect = [False, True]
-
-    scheduler.run()
-
-    scheduler.pc.beat.assert_called()
-    scheduler.pipeline.next_token.assert_called()

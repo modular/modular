@@ -10,7 +10,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 from queue import Queue
-from unittest.mock import Mock
 from uuid import uuid4
 
 import numpy as np
@@ -29,7 +28,6 @@ from max.pipelines.core import (
     TokenGenerator,
     msgpack_numpy_encoder,
 )
-from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
@@ -37,13 +35,6 @@ from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationSchedulerConfig,
 )
 from max.support.math import ceildiv
-
-
-def create_process_control() -> ProcessControl:
-    pc = Mock()
-    pc.is_canceled = Mock(return_value=False)
-    pc.beat = Mock()
-    return pc
 
 
 def create_queues() -> dict[str, Queue]:
@@ -189,7 +180,6 @@ def create_paged_scheduler(
     )
     token_pipeline = FakeTokenGeneratorPipeline(paged_manager)
     scheduler = TokenGenerationScheduler(
-        process_control=create_process_control(),
         scheduler_config=scheduler_config,
         pipeline=token_pipeline,
         paged_manager=paged_manager,
