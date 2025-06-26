@@ -493,7 +493,10 @@ class PagedKVCacheManager(KVCacheManager):
 
     def _get_num_req_slots(self, seq_id: int) -> int:
         """Get the number of KV slots available for a request."""
-        return len(self.block_manager.req_to_blocks[seq_id]) * self.page_size
+        return (
+            len(self.block_manager.current_blocks_per_request[seq_id])
+            * self.page_size
+        )
 
     @traced
     def _does_req_need_more_blocks(self, ctx: T, num_steps: int) -> bool:

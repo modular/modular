@@ -130,7 +130,9 @@ class BlockManager(Generic[T]):
         # Mapping from request ID to blocks to track the blocks allocated
         # for each request, so that we can free the blocks when the request
         # is finished.
-        self.req_to_blocks: dict[int, list[KVCacheBlock]] = defaultdict(list)
+        self.current_blocks_per_request: dict[int, list[KVCacheBlock]] = (
+            defaultdict(list)
+        )
 
         # Mapping from request ID to kv block hashes.
         # This is to avoid recomputing the block hashes for each call of
@@ -210,7 +212,7 @@ class BlockManager(Generic[T]):
             return
 
         seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
+        req_blocks = self.current_blocks_per_request[seq_id]
 
         # Update cache hit rate metrics.
         orig_prompt_len = ctx.active_length
@@ -446,7 +448,7 @@ class BlockManager(Generic[T]):
         """
 
         seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
+        req_blocks = self.current_blocks_per_request[seq_id]
         req_hashes = self.req_to_hashes[seq_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
 
@@ -481,7 +483,7 @@ class BlockManager(Generic[T]):
     def release(self, seq_id: int) -> None:
         """Release the blocks for the request."""
 
-        blocks = self.req_to_blocks[seq_id]
+        blocks = self.current_blocks_per_request[seq_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
             # Free blocks in reverse order so that the tail blocks are
@@ -491,30 +493,51 @@ class BlockManager(Generic[T]):
         for block in ordered_blocks:
             self.device_block_pool.free_block(block)
 
-        self.req_to_blocks[seq_id] = []
+        self.current_blocks_per_request[seq_id] = []
         self.req_to_hashes[seq_id] = []
 
     @traced
     def allocate_new_blocks(self, ctx: T, num_steps: int = 1) -> None:
+        """Allocate new blocks for a request to accommodate additional tokens.
+
+        Calculates the number of additional blocks needed based on the current sequence
+        length and number of steps, then allocates them from the device block pool.
+        Validates that there are sufficient free blocks available and that the current
+        blocks can accommodate the completed tokens.
+
+        Args:
+            ctx: The request context containing sequence information and token indices.
+            num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+
+        Raises:
+            RuntimeError: If there are insufficient free blocks to satisfy the allocation.
+            AssertionError: If the current blocks cannot accommodate the completed tokens.
+        """
         # Determine number of new blocks to allocate.
-        seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
-        seq_len = ctx.current_length + num_steps - 1
-        num_required_blocks = ceildiv(seq_len, self.block_size)
-        num_new_blocks = num_required_blocks - len(req_blocks)
-        num_new_blocks = max(num_new_blocks, 0)
+        current_blocks = self.current_blocks_per_request[ctx.cache_seq_id]
+        num_current_blocks = len(current_blocks)
+        current_seq_len = ctx.current_length + num_steps - 1
+        num_required_blocks = ceildiv(current_seq_len, self.block_size)
+        num_new_blocks = num_required_blocks - num_current_blocks
+        num_new_blocks = 0 if 0 > num_new_blocks else num_new_blocks
 
-        # Check that there are enough blocks to store the existing cached tokens.
-        assert ctx.start_idx <= len(req_blocks) * self.block_size
+        # Check that the number of completed tokens is less than or equal to the number of tokens we can
+        # currently store in the reserved blocks.
+        num_completed_tokens = ctx.current_length - ctx.active_length
+        assert num_completed_tokens <= (num_current_blocks * self.block_size), (
+            f"the current blocks reserved, have space for {num_current_blocks * self.block_size} tokens, but {num_completed_tokens} are already completed. This should never happen."
+        )
 
-        # Allocate new blocks.
+        # Check that we have enough free blocks to allocate the new blocks.
         if num_new_blocks > len(self.device_block_pool.free_block_queue):
             raise RuntimeError(
-                f"Cannot get {num_new_blocks} free blocks from the free block queue"
+                f"Cannot get {num_new_blocks} free blocks from the free block queue (only {len(self.device_block_pool.free_block_queue)} available)"
             )
+
+        # Allocate new blocks.
         for _ in range(num_new_blocks):
             new_block = self.allocate_device_block()
-            req_blocks.append(new_block)
+            current_blocks.append(new_block)
 
     @traced
     def eagerly_offload_recently_committed_blocks(self) -> None:
@@ -569,7 +592,7 @@ class BlockManager(Generic[T]):
     def release_uncommitted_blocks(self, ctx: T) -> None:
         """Release the uncommitted blocks for the request."""
         seq_id = ctx.cache_seq_id
-        req_blocks = self.req_to_blocks[seq_id]
+        req_blocks = self.current_blocks_per_request[seq_id]
         num_committed_blocks = ctx.committed_idx // self.block_size
         assert len(req_blocks) >= num_committed_blocks
         num_uncommitted_blocks = len(req_blocks) - num_committed_blocks
@@ -581,7 +604,7 @@ class BlockManager(Generic[T]):
     @traced
     def get_req_blocks(self, seq_id: int) -> list[int]:
         """Get the block ids for a request."""
-        return [block.bid for block in self.req_to_blocks[seq_id]]
+        return [block.bid for block in self.current_blocks_per_request[seq_id]]
 
     @traced
     def assert_runtime_invariants(self, ctx: T) -> None:
@@ -593,7 +616,7 @@ class BlockManager(Generic[T]):
 
         # Get the active block ids
         active_block_ids = []
-        for blocks in self.req_to_blocks.values():
+        for blocks in self.current_blocks_per_request.values():
             for block in blocks:
                 active_block_ids.append(block.bid)
                 # Check that all active blocks have a ref_cnt > 0
@@ -605,7 +628,7 @@ class BlockManager(Generic[T]):
         # Get the request hashes and blocks
         seq_id = ctx.cache_seq_id
         req_hashes = self.req_to_hashes[seq_id]
-        req_blocks = self.req_to_blocks[seq_id]
+        req_blocks = self.current_blocks_per_request[seq_id]
 
         # Check that the number of committed blocks for request is correct
         num_committed_blocks = ctx.committed_idx // self.block_size
