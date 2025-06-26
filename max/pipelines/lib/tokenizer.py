@@ -362,6 +362,7 @@ class TextTokenizer(
         )
 
         context = TextContext(
+            request_id=request.id,
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             eos_sequences=eos_sequences,
@@ -654,6 +655,7 @@ class TextAndVisionTokenizer(
             eos_token_ids = self._default_eos_token_ids
 
         context = TextAndVisionContext(
+            request_id=request.id,
             prompt=prompt,
             eos_token_ids=eos_token_ids,
             pixel_values=pixel_values,
