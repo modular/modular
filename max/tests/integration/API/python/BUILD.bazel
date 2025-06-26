@@ -13,6 +13,8 @@ modular_py_test(
         "test_explicit_device.py",
         "test_graph_telemetry.py",
         "test_huggingface_utilities_pure.py",
+        "test_is_inf.py",
+        "test_is_nan.py",
         "test_load_weights.py",
         "test_lora.py",
         "test_memory_estimation.py",
