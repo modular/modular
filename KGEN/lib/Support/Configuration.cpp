@@ -25,16 +25,21 @@ ErrorOr<std::filesystem::path> MojoConfig::getConfigFilePath() const {
   return Error("Configuration file path unavailable from settings");
 }
 
-static StringRef getValueFrom(Config &config, StringLiteral key) {
-  return config.getValue(key);
-}
-static StringRef getValueFrom(Config *settings, StringLiteral key) {
-  return settings->getValue(key);
+static Config &getConfigFrom(Config &config) { return config; }
+
+static Config &getConfigFrom(Config *config) { return *config; }
+
+Config &MojoConfig::getConfig() {
+  return std::visit([](auto &src) -> Config & { return getConfigFrom(src); },
+                    configSource);
 }
 
 StringRef MojoConfig::getValue(StringLiteral key) {
-  return std::visit([key](auto &source) { return getValueFrom(source, key); },
-                    configSource);
+  return getConfig().getValue(key);
+}
+
+StringRef MojoConfig::getPath(StringLiteral key, StringRef relativePath) {
+  return getConfig().getPath(key, relativePath);
 }
 
 //===----------------------------------------------------------------------===//
@@ -63,58 +68,70 @@ void MojoConfig::getParserImportPaths(SmallVectorImpl<StringRef> &paths) {
 //===----------------------------------------------------------------------===//
 // LLDB Configurations
 
+#ifdef __APPLE__
+#define EXT ".dylib"
+#else
+#define EXT ".so"
+#endif
+
 StringRef MojoConfig::getLLDBPluginPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".lldb_plugin_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".lldb_plugin_path"),
+                 "lib/libMojoLLDB" EXT);
 }
 
 StringRef MojoConfig::getLLDBPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".lldb_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".lldb_path"), "bin/mojo-lldb");
 }
 
 //===----------------------------------------------------------------------===//
 // JIT Configurations
 
 StringRef MojoConfig::getCompilerRTPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".compilerrt_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".compilerrt_path"),
+                 "lib/libKGENCompilerRTShared" EXT);
 }
 
 StringRef MojoConfig::getOrcRTPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".orcrt_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".orcrt_path"), "lib/liborc_rt.a");
 }
 
 StringRef MojoConfig::getMGPRTPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".mgprt_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".mgprt_path"), "lib/libMGPRT" EXT);
 }
 
 StringRef MojoConfig::getATenRTPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".atenrt_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".atenrt_path"), "lib/libATenRT" EXT);
 }
 
 //===----------------------------------------------------------------------===//
 // Driver Configurations
 
 StringRef MojoConfig::getDriverPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".driver_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".driver_path"), "bin/mojo");
 }
 
 StringRef MojoConfig::getJupyterPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".jupyter_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".jupyter_path"),
+                 "lib/libMojoJupyter" EXT);
 }
 
 StringRef MojoConfig::getLSPServerPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".lsp_server_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".lsp_server_path"),
+                 "bin/mojo-lsp-server");
 }
 
 StringRef MojoConfig::getMBlackPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".mblack_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".mblack_path"), "bin/mblack");
 }
 
 StringRef MojoConfig::getREPLEntryPoint() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".repl_entry_point"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".repl_entry_point"),
+                 "lib/mojo-repl-entry-point");
 }
 
 StringRef MojoConfig::getTestExecutorPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".test_executor_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".test_executor_path"),
+                 "lib/mojo-test-executor");
 }
 
 StringRef MojoConfig::getLinkerDriver() {
@@ -122,17 +139,43 @@ StringRef MojoConfig::getLinkerDriver() {
 }
 
 StringRef MojoConfig::getLLDPath() {
-  return getValue(STRINGIFY_MOJO_CONFIG(".lld_path"));
+  return getPath(STRINGIFY_MOJO_CONFIG(".lld_path"), "bin/lld");
 }
 
-void MojoConfig::getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
-  StringRef systemLibsArg = getValue(STRINGIFY_MOJO_CONFIG(".system_libs"));
-  systemLibsArg.split(libs, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+void MojoConfig::appendSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
+  if (auto maybeSystemLibsArg =
+          getConfig().maybeGetValue(STRINGIFY_MOJO_CONFIG(".system_libs"))) {
+    maybeSystemLibsArg.value().split(libs, ',', /*MaxSplit=*/-1,
+                                     /*KeepEmpty=*/false);
+  } else {
+#ifdef __linux__
+    libs.push_back("-lrt");
+    libs.push_back("-ldl");
+    libs.push_back("-lpthread");
+#endif
+    libs.push_back("-lm");
+  }
 }
 
-void MojoConfig::getSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args) {
+void MojoConfig::appendSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args) {
   StringRef sharedLibsArg = getValue(STRINGIFY_MOJO_CONFIG(".shared_libs"));
-  sharedLibsArg.split(args, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  if (!sharedLibsArg.empty()) {
+    sharedLibsArg.split(args, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+  } else {
+    // Mini-hack: We make up some imaginary config sections so that the config
+    // will intern some strings for us. Otherwise, we'd have to intern the whole
+    // string and then parse it back out.
+    args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_artmb"),
+                           "lib/libAsyncRTMojoBindings" EXT));
+    args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_artrg"),
+                           "lib/libAsyncRTRuntimeGlobals" EXT));
+    args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_msg"),
+                           "lib/libMSupportGlobals" EXT));
+    args.push_back("-Xlinker");
+    args.push_back("-rpath");
+    args.push_back("-Xlinker");
+    args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_lib"), "lib"));
+  }
 }
 
 StringRef MojoConfig::getMojoConfigSection() {

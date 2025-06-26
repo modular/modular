@@ -250,7 +250,7 @@ static int linkOutput(OutputType outputType, const State &state,
   }();
 
   // Add other shared libs
-  config.getSharedLibraryLinkArgs(linkerArgs);
+  config.appendSharedLibraryLinkArgs(linkerArgs);
 
 #ifdef _WIN32
   std::string outputArg = ("/out:" + outputName).str();
@@ -313,7 +313,7 @@ static int linkOutput(OutputType outputType, const State &state,
 #endif // !defined(_WIN32) && !SANITIZER_BUILD
 
   // Add any necessary system libraries.
-  config.getSystemLibraryLinkArgs(linkerArgs);
+  config.appendSystemLibraryLinkArgs(linkerArgs);
 
   // Print linker arguments for debugging
   /*

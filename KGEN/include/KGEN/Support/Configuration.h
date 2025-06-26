@@ -105,13 +105,13 @@ public:
   /// Returns the path to lld that should be used for linking shared libraries.
   StringRef getLLDPath();
 
-  /// Return the system libraries to link with Mojo when building a standalone
+  /// Appends the system libraries to link with Mojo when building a standalone
   /// binary.
-  void getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
+  void appendSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
 
-  /// Return the shared library arguments to link with Mojo when building a
+  /// Appends the shared library arguments to link with Mojo when building a
   /// standalone binary.
-  void getSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args);
+  void appendSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args);
 
   /// Return the section used for this mojo build.
   StringRef getMojoConfigSection();
@@ -120,7 +120,9 @@ private:
   MojoConfig(Config config) : configSource(std::move(config)) {}
   MojoConfig(Config *settings) : configSource(settings) {}
 
+  Config &getConfig();
   StringRef getValue(StringLiteral key);
+  StringRef getPath(StringLiteral key, StringRef relativePath);
 
   // This is a little silly, but currently it's used to represent owned vs
   // shared config.
