@@ -4670,36 +4670,24 @@ struct LayoutTensor[
         constrained[not masked, "Masked tensor does not support reshape."]()
         return Self.ReshapeType[dst_layout](self.ptr)
 
-    # FIXME: @billy this one fails to compile
-    # alias CompositionType[
-    #     rhs_layout: Layout,
-    #     dst_layout: Layout = composition(layout, rhs_layout),
-    # ] = LayoutTensor[
-    #     dtype,
-    #     dst_layout,
-    #     origin,
-    #     address_space=address_space,
-    #     element_layout=element_layout,
-    #     layout_int_type=layout_int_type,
-    #     linear_idx_type=linear_idx_type,
-    # ]
+    alias CompositionType[
+        rhs_layout: Layout,
+        dst_layout: Layout = composition(layout, rhs_layout),
+    ] = LayoutTensor[
+        dtype,
+        dst_layout,
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
 
     @always_inline
     fn composition[
         rhs_layout: Layout,
         dst_layout: Layout = composition(layout, rhs_layout),
-    ](
-        self,
-        out result: LayoutTensor[
-            dtype,
-            dst_layout,
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    ](self, out result: self.CompositionType[rhs_layout, dst_layout]):
         """Create a view of the tensor with a composed layout.
 
         This method creates a view of the tensor with a new layout that is the
@@ -4742,7 +4730,7 @@ struct LayoutTensor[
         - Understanding the mathematical properties of layout composition is
             important for correctly using this function.
         """
-        return __type_of(result)(self.ptr)
+        return self.CompositionType[rhs_layout, dst_layout](self.ptr)
 
     @always_inline
     fn distance(
