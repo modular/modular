@@ -1,0 +1,61 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+modular_py_library(
+    name = "modular_graph_test",
+    srcs = ["modular_graph_test.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/graph",
+        requirement("hypothesis"),
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "graph",
+    size = "large",
+    srcs = glob(["*.py"]),
+    data = [
+        "//SDK/integration-test:compile_config_ops",
+        "//SDK/integration-test:counter_ops",
+        "//SDK/integration-test:kernel_verification_ops",
+        "//SDK/integration-test:test_user_op",
+        "//SDK/integration-test/API:inputs",
+        "//SDK/integration-test/API:pytest_inputs",
+        "//SDK/lib/API/python/tests/graph/testdata",
+    ],
+    env = {
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //SDK/integration-test:counter_ops)",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //SDK/integration-test:kernel_verification_ops)",
+        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //SDK/integration-test:compile_config_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //SDK/integration-test:test_user_op)",
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "SDK/lib/API/python/tests/graph/testdata",
+    },
+    # TODO(MAXPLAT-103): Inherit transitive mojo deps
+    mojo_deps = [
+        "//SDK/integration-test:compile_config_ops",
+        "//SDK/integration-test:test_user_op",
+        "//SDK/lib/API/mojo/max/tensor",
+        "@mojo//:register",
+        "@mojo//:stdlib",
+    ],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        ":modular_graph_test",
+        "//SDK/lib/API/python/max",
+        # TODO(MAXPLAT-85): mypy doesn't inherit requirements
+        requirement("torch"),
+        requirement("transformers"),
+        requirement("hypothesis"),
+        requirement("gguf"),
+        requirement("torchvision"),
+        requirement("pytest-asyncio"),
+    ],
+)

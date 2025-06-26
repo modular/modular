@@ -47,4 +47,8 @@ jobs:
 
       - name: Build and Test
         run: |
-          ./bazelw test --config=ci --build_tag_filters=-skip-external-ci-${{ matrix.os }} --test_tag_filters=-skip-external-ci-${{ matrix.os }} -- //... -//max/serve/...
+          ./bazelw test --config=ci --build_tag_filters=-skip-external-ci-${{ matrix.os }} --test_tag_filters=-skip-external-ci-${{ matrix.os }} -- //... \
+            -//max/serve/... \
+            -//max/graph/... \
+            -//tests/integration/max/graph/... \
+            -//tests/max/graph/...
