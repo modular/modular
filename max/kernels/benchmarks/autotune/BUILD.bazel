@@ -8,6 +8,7 @@ load(
 
 modular_py_library(
     name = "autotune",
+    testonly = True,
     srcs = [
         "kbench.py",
         "kplot.py",

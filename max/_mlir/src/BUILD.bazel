@@ -4,6 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "_mlir_srcs",
+    testonly = True,
     srcs = glob(["**/*.mojo"]),
 )
 

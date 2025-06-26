@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 modular_py_library(
     name = "modular_graph_test",
+    testonly = True,
     srcs = ["modular_graph_test.py"],
     imports = ["."],
     visibility = ["//visibility:public"],
