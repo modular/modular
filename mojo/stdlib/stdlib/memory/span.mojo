@@ -98,9 +98,19 @@ struct Span[
     """
 
     # Aliases
-    alias Mutable = Span[T, MutableOrigin.cast_from[origin].result]
+    alias Mutable = Span[
+        T,
+        MutableOrigin.cast_from[origin].result,
+        address_space=address_space,
+        alignment=alignment,
+    ]
     """The mutable version of the `Span`."""
-    alias Immutable = Span[T, ImmutableOrigin.cast_from[origin].result]
+    alias Immutable = Span[
+        T,
+        ImmutableOrigin.cast_from[origin].result,
+        address_space=address_space,
+        alignment=alignment,
+    ]
     """The immutable version of the `Span`."""
     # Fields
     var _data: UnsafePointer[
@@ -126,8 +136,13 @@ struct Span[
     @implicit
     @always_inline("nodebug")
     fn __init__(
-        other: Span[T, _],
-        out self: Span[T, ImmutableOrigin.cast_from[other.origin].result],
+        other: Span,
+        out self: Span[
+            other.T,
+            ImmutableOrigin.cast_from[other.origin].result,
+            address_space = other.address_space,
+            alignment = other.alignment,
+        ],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 

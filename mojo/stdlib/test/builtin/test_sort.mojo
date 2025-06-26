@@ -642,6 +642,12 @@ def test_stable_sort_stress():
         test[_lt, _lt_check](length)
 
 
+def test_argsort():
+    values = List[Byte](9, 8, 7, 6, 5, 4, 3, 2, 1)
+    expected = List[Scalar[DType.index]](8, 7, 6, 5, 4, 3, 2, 1, 0)
+    assert_equal(argsort(Span(values)), expected)
+
+
 def main():
     test_sort_small_3()
     test_sort_small_5()
@@ -672,3 +678,5 @@ def main():
     test_sort_strings()
     test_sort_comparamble_elements_list()
     test_sort_empty_comparable_elements_list()
+
+    test_argsort()
