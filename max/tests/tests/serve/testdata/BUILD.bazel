@@ -1,5 +1,6 @@
 filegroup(
     name = "testdata",
+    testonly = True,
     srcs = glob(
         [
             "*.json",

@@ -2,14 +2,14 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//visibility:public"])
 
-extra_deps = [
-    "@mojo//:tensor_internal",
-    "@mojo//:compiler_internal",
-    "@mojo//:stdlib",
-]
-
 mojo_library(
     name = "custom_ops",
+    testonly = True,
     srcs = glob(["**/*.mojo"]),
-    deps = extra_deps + ["@mojo//:MOGGPrimitives"],
+    deps = [
+        "@mojo//:MOGGPrimitives",
+        "@mojo//:compiler_internal",
+        "@mojo//:stdlib",
+        "@mojo//:tensor_internal",
+    ],
 )
