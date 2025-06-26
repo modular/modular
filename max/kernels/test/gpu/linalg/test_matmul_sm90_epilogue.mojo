@@ -184,9 +184,6 @@ def test_warp_specialize_gemm_with_multicasting[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
-        M,
-        N,
-        K,
         ctx,
     )
 

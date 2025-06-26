@@ -545,9 +545,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -584,9 +581,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -615,9 +609,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -646,9 +637,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -677,9 +665,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -708,9 +693,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -739,9 +721,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -772,9 +751,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -803,9 +779,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -834,9 +807,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -865,9 +835,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -896,9 +863,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -927,9 +891,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -958,9 +919,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -991,9 +949,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1022,9 +977,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1053,9 +1005,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1084,9 +1033,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1115,9 +1061,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1146,9 +1089,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1179,9 +1119,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1208,9 +1145,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1239,9 +1173,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1277,9 +1208,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1307,9 +1235,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1339,9 +1264,6 @@ fn _matmul_gpu[
                     rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                     rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    m,
-                    n,
-                    k,
                     ctx,
                 )
                 return
@@ -1376,9 +1298,6 @@ fn _matmul_gpu[
                         rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                         rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        m,
-                        n,
-                        k,
                         ctx,
                     )
                     return
@@ -1407,9 +1326,6 @@ fn _matmul_gpu[
                         rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                         rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        m,
-                        n,
-                        k,
                         ctx,
                     )
                     return
@@ -1438,9 +1354,6 @@ fn _matmul_gpu[
                         rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                         rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        m,
-                        n,
-                        k,
                         ctx,
                     )
                     return
@@ -1830,9 +1743,6 @@ fn _matmul_gpu[
                         rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                         rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                         rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        m,
-                        n,
-                        k,
                         ctx,
                     )
                     return
@@ -1922,9 +1832,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -1955,9 +1862,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -1987,9 +1891,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2026,9 +1927,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2058,9 +1956,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2097,9 +1992,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2129,9 +2021,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2168,9 +2057,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2200,9 +2086,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2238,9 +2121,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
 
@@ -2279,9 +2159,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
@@ -2310,9 +2187,6 @@ fn _matmul_gpu[
                             rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
                             rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
                             rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                            m,
-                            n,
-                            k,
                             ctx,
                         )
                         return
