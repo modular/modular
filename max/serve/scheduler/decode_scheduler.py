@@ -283,6 +283,27 @@ class DecodeScheduler(Scheduler):
         Adds new requests to the batch while cache indices are available. For each request, attempts to prefetch
         required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
         """
+
+        # Walk the active batch, and prefetch for all existing items.
+        candidate_request_ids = list(self.active_batch.keys())
+        for candidate_request_id in candidate_request_ids:
+            # If we have already removed the candidate_request, move on
+            if candidate_request_id not in self.active_batch:
+                break
+
+            # If the request_id is in the active batch, try and prefetch.
+            request_context = self.active_batch[candidate_request_id]
+
+            # TODO: Shrink num_steps appropriately.
+            num_steps = self.scheduler_config.max_forward_steps_tg
+            # If prefetch fails, pre-empt the request and continue evaluating
+            # the batch
+            if not self.paged_manager.prefetch(request_context, num_steps):
+                raise RuntimeError("""
+                    Prefetching memory failed for new decode request.
+                    This is likely due to memory contention concerns among the batch.
+                    Please decrease the batch size and try again.""")
+
         while True:
             try:
                 # Retrieve new item from the decode queue.
