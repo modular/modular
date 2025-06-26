@@ -21,6 +21,7 @@
 #include "llvm/ADT/IntervalMap.h"
 #include "llvm/ADT/MapVector.h"
 
+#include "motr/motr.h"
 /// Define ordering operators for SMLoc for use in IntervalMap.
 namespace llvm {
 inline bool operator<(const SMLoc &lhs, const SMLoc &rhs) {
@@ -329,9 +330,30 @@ private:
   template <typename FnT>
   void startTaskAfterParsing(FnT &&fn) {
     AsyncValueRef<Chain> done = newTaskChain();
+
+#if MOTR_ENABLED
+    motr::EmitSpanPushMessage push{};
+    // Ugly: Push the new span to the stack just so we can use MOTR_TagStr,
+    // because it's non-trivial to reimplement.
+    push.pushOnThreadLocalStack(false);
+    MOTR_TagStr(motr::Constants::TraceName::cstr, "waitForParse");
+    motr::popParentID();
+    uint64_t id = push.msg.id;
+#else
+    uint64_t id = 0;
+#endif
+
     isDocumentParsed.andThenAsync([doc = RCRef<MojoDocument>::copy(this),
                                    fn = std::forward<FnT>(fn),
-                                   done = std::move(done)]() mutable {
+                                   done = std::move(done), id]() mutable {
+
+#if MOTR_ENABLED
+      motr::EmitSpanPopMessage pop{id};
+#else
+      // Suppress unused-lambda-capture warnings for id.
+      (void)id;
+#endif
+
       fn(*doc);
       std::move(done).emplace();
     });

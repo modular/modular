@@ -12,6 +12,7 @@
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
+#include "motr/motr.h"
 
 namespace M::Mojo::LSP {
 /// Class used to dispatch a response to the client and perform telemetry at the
@@ -21,11 +22,15 @@ template <typename Result>
 class LSPResponder {
 public:
   LSPResponder(LSPTelemetryContext &lspTelemetryCtx, StringRef request,
-               mlir::lsp::Callback<Result> replyCallback)
+               mlir::lsp::Callback<Result> replyCallback, uint64_t parentSpanID)
       : lspTelemetryCtx(lspTelemetryCtx), request(request),
         start(std::chrono::steady_clock::now()),
-        replyCallback(std::move(replyCallback)) {}
-  LSPResponder(LSPResponder &&) = default;
+        replyCallback(std::move(replyCallback)), spanID(parentSpanID) {}
+
+  LSPResponder(LSPResponder &&old)
+      : lspTelemetryCtx(old.lspTelemetryCtx), request(std::move(old.request)),
+        start(std::move(old.start)),
+        replyCallback(std::move(old.replyCallback)), spanID(old.spanID) {};
 
   /// Used to reply to the client with the input data is invalid, e.g. the
   /// input location is not valid.
@@ -63,6 +68,8 @@ public:
         std::chrono::duration_cast<std::chrono::microseconds>(end - start));
   }
 
+  uint64_t getSpanID() { return spanID; }
+
 private:
   LSPResponder(const LSPResponder &) = delete;
   LSPResponder &operator=(const LSPResponder &) = delete;
@@ -71,6 +78,7 @@ private:
   std::string request;
   std::chrono::steady_clock::time_point start;
   mlir::lsp::Callback<Result> replyCallback;
+  uint64_t spanID;
 };
 } // namespace M::Mojo::LSP
 
