@@ -53,6 +53,12 @@ what we publish.
   `OpaquePointer` (the equivalent of a `void*` in C) is moved into the `memory`
   module, and is also implicitly included.
 
+- `Span` now implements a generic `.count()` method which can be passed a
+  function that returns a boolean SIMD vector. The function counts how many
+  times it returns `True` evaluating it in a vectorized manner. This works for
+  any `Span[Scalar[D]]` e.g. `Span[Byte]`. PR
+  [#3792](https://github.com/modularml/mojo/pull/3792) by [@martinvuyk](https://github.com/martinvuyk).
+
 ### Tooling changes
 
 - Added progress reporting support to the Mojo language server. This will emit progress

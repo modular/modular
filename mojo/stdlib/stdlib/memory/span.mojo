@@ -550,3 +550,47 @@ struct Span[
             ptr=self._data.origin_cast[result.mut, result.origin](),
             length=self._len,
         )
+
+    # FIXME(#2535): parametrize capturing once function effects can be parametrized
+    fn count[
+        dtype: DType, //,
+        func: fn[w: Int] (SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
+    ](self: Span[Scalar[dtype]]) -> UInt:
+        """Count the amount of times the function returns `True`.
+
+        Parameters:
+            dtype: The DType.
+            func: The function to evaluate.
+
+        Returns:
+            The amount of times the function returns `True`.
+        """
+
+        alias widths = (256, 128, 64, 32, 16, 8)
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var amnt = UInt(0)
+        var processed = 0
+
+        @parameter
+        for i in range(len(widths)):
+            alias w = widths[i]
+
+            @parameter
+            if simdwidthof[dtype]() >= w:
+                for _ in range((length - processed) // w):
+                    var vec = (ptr + processed).load[width=w]()
+
+                    @parameter
+                    if w >= 256:
+                        amnt += UInt(
+                            func(vec).cast[DType.uint16]().reduce_add()
+                        )
+                    else:
+                        amnt += UInt(func(vec).cast[DType.uint8]().reduce_add())
+                    processed += w
+
+        for i in range(length - processed):
+            amnt += UInt(func(ptr[processed + i]).cast[DType.uint8]())
+
+        return amnt
