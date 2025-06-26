@@ -60,7 +60,17 @@ public:
   ErrorOrSuccess parseFrom(StringRef buffer, llvm::SourceMgr *mgr = nullptr);
 
   /// Get a value with a possible override from the environment.
+  /// Returns an empty string if not found.
   StringRef getValue(StringRef key);
+
+  /// Get a value with a possible override from the environment.
+  /// Returns nothing if not found.
+  std::optional<StringRef> maybeGetValue(StringRef key);
+
+  /// Get a path with a possible override from the environment.
+  /// If not found, returns getValue("package_root") / relativePath, using the
+  /// same config section as `key`.
+  StringRef getPath(StringRef key, StringRef relativePath);
 
   /// Get a value, and if that's missing return the default value.
   StringRef getValueOr(StringRef key, StringRef defaultValue);

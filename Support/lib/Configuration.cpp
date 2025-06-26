@@ -167,6 +167,13 @@ ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
 }
 
 StringRef Config::getValue(StringRef key) {
+  if (auto maybeValue = maybeGetValue(key))
+    return maybeValue.value();
+  else
+    return "";
+}
+
+std::optional<StringRef> Config::maybeGetValue(StringRef key) {
   std::string upper = key.upper();
   std::replace_if(
       upper.begin(), upper.end(),
@@ -181,15 +188,30 @@ StringRef Config::getValue(StringRef key) {
       kv[key.lower()] = *envOr;
   }
 
-  return kv[key.lower()];
+  if (auto iter = kv.find(key.lower()); iter != kv.end())
+    return iter->second;
+  else
+    return std::nullopt;
 }
 
-StringRef Config::getValueOr(llvm::StringRef key,
-                             llvm::StringRef defaultValue) {
+StringRef Config::getValueOr(StringRef key, StringRef defaultValue) {
   StringRef stringValue = getValue(key);
   if (stringValue.empty())
     return defaultValue;
   return stringValue;
+}
+
+StringRef Config::getPath(StringRef key, StringRef relativePath) {
+  const std::string keyStr{key.lower()};
+  StringRef stringValue = getValue(keyStr);
+  if (!stringValue.empty())
+    return stringValue;
+
+  const auto [section, _] = key.split('.');
+  StringRef packageRoot = getValue((section + "package_root").str());
+  std::string &value = kv[keyStr];
+  value = (packageRoot + "/" + relativePath).str();
+  return value;
 }
 
 bool Config::getValueAsBool(StringRef key, bool defaultValue) {
