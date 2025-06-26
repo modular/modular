@@ -2315,7 +2315,7 @@ fn _to_string_list[
 
 
 @always_inline
-fn _to_string_list[O: Origin](items: List[StringSlice[O]]) -> List[String]:
+fn to_string_list[O: Origin, //](items: List[StringSlice[O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
     Parameters:
@@ -2340,7 +2340,7 @@ fn _to_string_list[O: Origin](items: List[StringSlice[O]]) -> List[String]:
 
 
 @always_inline
-fn _to_string_list[O: Origin](items: List[Span[Byte, O]]) -> List[String]:
+fn to_string_list[O: Origin, //](items: List[Span[Byte, O]]) -> List[String]:
     """Create a list of Strings **copying** the existing data.
 
     Parameters:
