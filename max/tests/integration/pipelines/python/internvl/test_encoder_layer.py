@@ -11,6 +11,7 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from max.nn import Signals
 from max.pipelines.architectures.internvl.internvl import (
     InternVisionEncoderLayer,
 )
@@ -270,15 +271,33 @@ def generate_max_outputs(
         dtype, [batch_size, seq_len, hidden_size], device=device_ref
     )
 
-    with Graph("InternVisionEncoderLayer", input_types=(input_type,)) as graph:
+    # Create signal types for distributed communication.
+    signals = Signals(devices=[device_ref])
+
+    with Graph(
+        "InternVisionEncoderLayer",
+        input_types=(input_type, *signals.input_types()),
+    ) as graph:
         x = graph.inputs[0]
-        output = encoder_layer(x.tensor)
-        graph.output(output)
+        signal_args = graph.inputs[1:]
+
+        # Extract signal buffers (one per device).
+        signal_buffers = [v.buffer for v in signal_args]
+
+        # InternVisionEncoderLayer expects list inputs and signal buffers.
+        outputs = encoder_layer([x.tensor], signal_buffers)
+        # Return the first (and only) output for single device.
+        graph.output(outputs[0])
 
     compiled = session.load(graph, weights_registry=encoder_layer.state_dict())
 
     # Execute the model and get the first result
-    result = compiled.execute(Tensor.from_dlpack(input_tensor).to(device))
+    # Create signal buffer tensors for execution.
+    signal_buffer_tensors = signals.buffers()
+
+    result = compiled.execute(
+        Tensor.from_dlpack(input_tensor).to(device), *signal_buffer_tensors
+    )
     # Convert result back to torch tensor
     max_tensor = result[0]
     return from_dlpack(max_tensor)

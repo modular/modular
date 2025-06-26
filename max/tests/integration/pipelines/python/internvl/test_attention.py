@@ -148,9 +148,11 @@ def generate_max_outputs(
         state_dict[weight_name] = value.cpu()
 
     # Create the attention layer with individual parameters
+    head_dim = hidden_size // num_attention_heads
     attention = InternVLMultiheadAttention(
         num_attention_heads=num_attention_heads,
         hidden_size=hidden_size,
+        head_dim=head_dim,
         devices=[device_ref],
         dtype=dtype,
         qk_normalization=qk_normalization,

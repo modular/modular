@@ -11,6 +11,7 @@ from max.driver import Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from max.nn import Signals
 from max.pipelines.architectures.internvl.internvl import (
     InternVLVisionModel,
 )
@@ -390,16 +391,30 @@ def generate_max_outputs(
         dtype, shape=pixel_values_patched.shape, device=device_ref
     )
 
-    with Graph("InternVLVisionModel", input_types=(input_type,)) as graph:
+    # Create signal types for distributed communication.
+    signals = Signals(devices=[device_ref])
+
+    with Graph(
+        "InternVLVisionModel", input_types=(input_type, *signals.input_types())
+    ) as graph:
         pixel_values_input = graph.inputs[0]
-        output = vision_model([pixel_values_input.tensor])
+        signal_args = graph.inputs[1:]
+
+        # Extract signal buffers (one per device).
+        signal_buffers = [v.buffer for v in signal_args]
+
+        output = vision_model([pixel_values_input.tensor], signal_buffers)
         graph.output(*output)
 
     compiled = session.load(graph, weights_registry=vision_model.state_dict())
 
     # Execute the model and get the first result
+    # Create signal buffer tensors for execution.
+    signal_buffer_tensors = signals.buffers()
+
     result = compiled.execute(
-        Tensor.from_dlpack(pixel_values_patched).to(device)
+        Tensor.from_dlpack(pixel_values_patched).to(device),
+        *signal_buffer_tensors,
     )[0]
     assert isinstance(result, Tensor)
     # Convert result back to torch tensor
