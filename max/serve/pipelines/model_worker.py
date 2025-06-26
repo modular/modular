@@ -130,7 +130,6 @@ class ModelWorker:
 
             # Retrieve Scheduler.
             scheduler = load_scheduler(
-                pc,
                 pipeline,
                 zmq_ctx,
                 settings,
@@ -149,7 +148,15 @@ class ModelWorker:
             pc.set_started()
             logger.debug("Started model worker!")
 
-            scheduler.run()
+            while not pc.is_canceled():
+                pc.beat()
+                try:
+                    # This method must terminate in a reasonable amount of time
+                    # so that the ProcessMonitor heartbeat is periodically run.
+                    scheduler.run_iteration()
+                except Exception as e:
+                    logger.exception("An error occurred during scheduling")
+                    raise e
 
             # Close the process.
             pc.set_completed()

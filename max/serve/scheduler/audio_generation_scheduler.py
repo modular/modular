@@ -33,7 +33,6 @@ from max.pipelines.core import (
     msgpack_numpy_decoder,
 )
 from max.profiler import Trace, traced
-from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -201,7 +200,6 @@ class AudioGenerationSchedulerOutput:
 class AudioGenerationScheduler(Scheduler):
     def __init__(
         self,
-        process_control: ProcessControl,
         scheduler_config: AudioGenerationSchedulerConfig,
         pipeline: AudioGenerator,
         *,
@@ -213,9 +211,6 @@ class AudioGenerationScheduler(Scheduler):
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
-
-        # Multiprocessing resources.
-        self.pc = process_control
 
         self.request_q = ZmqPullSocket[tuple[str, TTSContext]](
             zmq_ctx=zmq_ctx,
@@ -243,6 +238,8 @@ class AudioGenerationScheduler(Scheduler):
             logger.warning(
                 "Chunked prefill is not supported with TTS Scheduler"
             )
+
+        self.batch_generator = self._create_batch_generator()
 
         self.batch_info_logger = SchedulerLogger(
             path=MAX_SERVE_TTS_BATCH_INFO_FILENAME
@@ -429,49 +426,33 @@ class AudioGenerationScheduler(Scheduler):
             ):
                 yield self._create_tg_batch()
 
-    def run(self) -> None:
-        """The Scheduler loop that creates batches and schedules them on GPU"""
-        batch_generator = self._create_batch_generator()
+    def run_iteration(self) -> None:
+        # Construct the batch to execute
+        t0 = time.monotonic()
+        self._retrieve_pending_requests()
+        batch = next(self.batch_generator)
+        t1 = time.monotonic()
+        batch_creation_time_s = t1 - t0
 
-        i = 0
-        while i % 10 or not self.pc.is_canceled():
-            self.pc.beat()
-            i += 1
+        # If the batch is empty, skip
+        if batch.batch_size == 0:
+            return
 
-            try:
-                # Construct the batch to execute
-                t0 = time.monotonic()
-                self._retrieve_pending_requests()
-                batch = next(batch_generator)
-                t1 = time.monotonic()
-                batch_creation_time_s = t1 - t0
+        # Schedule the batch
+        t0 = time.monotonic()
+        self._schedule(batch)
+        t1 = time.monotonic()
+        batch_execution_time_s = t1 - t0
 
-                # If the batch is empty, skip
-                if batch.batch_size == 0:
-                    continue
+        # Log batch metrics
+        num_steps = self.pipeline.prev_num_steps
+        assert num_steps is not None and num_steps > 0
+        self.batch_info_logger.log(
+            batch,
+            len(self.pending_reqs),
+            batch_creation_time_s,
+            batch_execution_time_s,
+            num_steps,
+        )
 
-                # Schedule the batch
-                t0 = time.monotonic()
-                self._schedule(batch)
-                t1 = time.monotonic()
-                batch_execution_time_s = t1 - t0
-
-                # Log batch metrics
-                num_steps = self.pipeline.prev_num_steps
-                assert num_steps is not None and num_steps > 0
-                self.batch_info_logger.log(
-                    batch,
-                    len(self.pending_reqs),
-                    batch_creation_time_s,
-                    batch_execution_time_s,
-                    num_steps,
-                )
-
-                # occasionally handle cancelled requests
-                if i % 20 == 0:
-                    self._handle_cancelled_requests()
-
-            except Exception as e:
-                logger.exception("An error occurred during scheduling")
-                # TODO try to recover
-                raise e
+        self._handle_cancelled_requests()

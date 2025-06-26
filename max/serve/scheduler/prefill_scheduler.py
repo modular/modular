@@ -30,7 +30,6 @@ from max.pipelines.lib.pipeline import get_paged_manager
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_base import MessageType, ReplyContext
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
-from max.serve.process_control import ProcessControl
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
 from .base import Scheduler
@@ -56,15 +55,13 @@ class PrefillSchedulerConfig:
 class PrefillScheduler(Scheduler):
     def __init__(
         self,
-        process_control: ProcessControl,
         pipeline: TokenGenerator,
         scheduler_config: PrefillSchedulerConfig,
         paged_manager: PagedKVCacheManager,
         *,
         zmq_ctx: zmq.Context,
         dispatcher_client: DispatcherClient,
-    ) -> None:
-        self.pc = process_control
+    ):
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
         self.paged_manager = paged_manager
@@ -293,41 +290,23 @@ class PrefillScheduler(Scheduler):
                 req_id, input_context, xfer_data
             )
 
-    def run(self) -> None:
-        """Main scheduling loop that processes prefill requests.
+    def run_iteration(self) -> None:
+        """Main scheduling method that processes prefill requests.
 
-        Continuously receives requests, creates batches, and schedules them for processing
-        while handling errors and cancelled requests. The loop continues until the process
-        is cancelled.
+        Receives requests, creates batches, and schedules them for processing
+        while handling errors and cancelled requests.
         """
-        i = 0
-        while not self.pc.is_canceled():
-            # Indicate that the process is still alive.
-            self.pc.beat()
-            i += 1
+        # Cleanup active transfers.
+        self.cleanup_active_transfers()
 
-            # Try and receive any request from the prefill node.
-            try:
-                # Cleanup active transfers.
-                self.cleanup_active_transfers()
+        # Create a new batch
+        self.update_batch()
 
-                # Create a new batch
-                self.update_batch()
+        # Break out of loop if batch is empty.
+        if not self.active_batch:
+            return
 
-                # Break out of loop if batch is empty.
-                if not self.active_batch:
-                    continue
-
-                self.schedule()
-
-                # Occasionally handle cancelled requests.
-                if i % 20 == 0:
-                    # TODO: E2EOPT-225 Handle Cancelled Requests
-                    pass
-
-            except Exception as e:
-                logger.exception("An error occurred during scheduling.")
-                raise e
+        self.schedule()
 
     def needs_dispatcher_client(self) -> bool:
         """Whether the scheduler needs a dispatcher client."""
@@ -338,7 +317,6 @@ def load_prefill_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    pc: ProcessControl,
     max_batch_size_ce: int,
     target_tokens_per_batch_ce: Optional[int],
     enable_chunked_prefill: bool,
@@ -368,7 +346,6 @@ def load_prefill_scheduler(
         )
 
     return PrefillScheduler(
-        process_control=pc,
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         paged_manager=paged_manager,

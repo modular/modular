@@ -31,7 +31,6 @@ from max.pipelines.core import (
 from max.pipelines.lib.pipeline import get_paged_manager
 from max.profiler import Trace, traced
 from max.serve.config import Settings
-from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -152,7 +151,6 @@ class SchedulerOutput(
 class TokenGenerationScheduler(Scheduler):
     def __init__(
         self,
-        process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
         *,
@@ -164,9 +162,6 @@ class TokenGenerationScheduler(Scheduler):
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
-
-        # Multiprocessing resources.
-        self.pc = process_control
 
         self.request_q = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
@@ -643,45 +638,35 @@ class TokenGenerationScheduler(Scheduler):
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
-    def run(self) -> None:
-        """The Scheduler loop that creates batches and schedules them on GPU"""
-        i = 0
-        while i % 10 or not self.pc.is_canceled():
-            self.pc.beat()
-            i += 1
-            try:
-                # Construct the batch to execute
-                t0 = time.monotonic()
-                batch_to_execute = self._create_batch_to_execute()
-                t1 = time.monotonic()
-                batch_creation_time_s = t1 - t0
+    def run_iteration(self) -> None:
+        """The Scheduler routine that creates batches and schedules them on GPU"""
 
-                # If the batch is empty, skip
-                batch_size = batch_to_execute.batch_size
-                if batch_size == 0:
-                    continue
+        # Construct the batch to execute
+        t0 = time.monotonic()
+        batch_to_execute = self._create_batch_to_execute()
+        t1 = time.monotonic()
+        batch_creation_time_s = t1 - t0
 
-                # Schedule the batch
-                t0 = time.monotonic()
-                self._schedule(batch_to_execute)
-                t1 = time.monotonic()
-                batch_execution_time_s = t1 - t0
+        # If the batch is empty, skip
+        batch_size = batch_to_execute.batch_size
+        if batch_size == 0:
+            return
 
-                # Log batch metrics
-                self._log_metrics(
-                    batch_to_execute,
-                    batch_creation_time_s,
-                    batch_execution_time_s,
-                )
+        # Schedule the batch
+        t0 = time.monotonic()
+        self._schedule(batch_to_execute)
+        t1 = time.monotonic()
+        batch_execution_time_s = t1 - t0
 
-                # occasionally handle cancelled requests
-                if i % 20 == 0:
-                    self._handle_cancelled_requests()
+        # Log batch metrics
+        self._log_metrics(
+            batch_to_execute,
+            batch_creation_time_s,
+            batch_execution_time_s,
+        )
 
-            except Exception as e:
-                logger.exception("An error occurred during scheduling ")
-                # TODO try to recover
-                raise e
+        # handle cancelled requests
+        self._handle_cancelled_requests()
 
     @traced
     def _handle_terminated_responses(
@@ -819,7 +804,6 @@ def load_text_generation_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    pc: ProcessControl,
     max_batch_size_tg: int,
     max_forward_steps_tg: int,
     target_tokens_per_batch_tg: Optional[int],
@@ -846,7 +830,6 @@ def load_text_generation_scheduler(
 
     # Return Scheduler
     return TokenGenerationScheduler(
-        process_control=pc,
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         paged_manager=paged_manager,
