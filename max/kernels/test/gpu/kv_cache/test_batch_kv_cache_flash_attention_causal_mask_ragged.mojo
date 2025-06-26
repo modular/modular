@@ -37,7 +37,7 @@ alias llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: List[Int],
     max_seq_len_cache: Int,
@@ -47,7 +47,7 @@ def execute_ragged_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
 
     var batch_size = len(valid_lengths)
     debug_assert(
@@ -92,11 +92,11 @@ def execute_ragged_flash_attention[
     cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     random(q_ragged_host.tensor)
     q_padded_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_length, num_q_heads, kv_params.head_size
@@ -121,7 +121,7 @@ def execute_ragged_flash_attention[
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_length, num_q_heads, kv_params.head_size
@@ -130,12 +130,12 @@ def execute_ragged_flash_attention[
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
     test_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     test_output_device = test_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
-    kv_block_host = HostNDBuffer[type, 6](
+    kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -226,7 +226,7 @@ def execute_ragged_flash_attention[
                         assert_almost_equal(
                             ref_val,
                             test_val,
-                            rtol=1e-2 if type is DType.bfloat16 else 1e-4,
+                            rtol=1e-2 if dtype is DType.bfloat16 else 1e-4,
                         )
                     except e:
                         print(
@@ -261,13 +261,13 @@ def execute_ragged_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = (DType.float32, DType.bfloat16)
+    alias dtypes = (DType.float32, DType.bfloat16)
 
     for bs in [1, 16]:
 
         @parameter
-        for type_idx in range(len(types)):
-            alias type = types[type_idx]
+        for dtype_idx in range(len(dtypes)):
+            alias dtype = dtypes[dtype_idx]
 
             ce_cache_sizes = List[Int]()
             ce_seq_lens = List[Int]()
@@ -278,14 +278,14 @@ def execute_flash_attention_suite(ctx: DeviceContext):
                 tg_cache_sizes.append(Int(random_ui64(512, 1024)))
                 ce_seq_lens.append(Int(random_ui64(512, 1024)))
                 ce_cache_sizes.append(0)
-            print("CE", bs, type)
+            print("CE", bs, dtype)
             execute_ragged_flash_attention[
-                llama_num_q_heads, type, kv_params_llama3
+                llama_num_q_heads, dtype, kv_params_llama3
             ](ce_seq_lens, 1024, ce_cache_sizes, 2, 1, ctx)
 
-            print("TG", bs, type)
+            print("TG", bs, dtype)
             execute_ragged_flash_attention[
-                llama_num_q_heads, type, kv_params_llama3
+                llama_num_q_heads, dtype, kv_params_llama3
             ](tg_seq_lens, 1024, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases

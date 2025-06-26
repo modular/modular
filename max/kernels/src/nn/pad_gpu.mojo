@@ -23,18 +23,18 @@ from utils.index import IndexList, StaticTuple
 
 
 fn _fill_gpu_kernel[
-    type: DType
-](dst: UnsafePointer[Scalar[type]], value: Scalar[type], count: Int):
+    dtype: DType
+](dst: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], count: Int):
     var tid = thread_idx.x + block_idx.x * block_dim.x
     if tid < count:
         dst[tid] = value
 
 
 fn _copy_gpu_kernel[
-    type: DType
+    dtype: DType
 ](
-    dst: UnsafePointer[Scalar[type]],
-    src: UnsafePointer[Scalar[type]],
+    dst: UnsafePointer[Scalar[dtype]],
+    src: UnsafePointer[Scalar[dtype]],
     count: Int,
 ):
     var tid = thread_idx.x + block_idx.x * block_dim.x
@@ -67,15 +67,15 @@ fn _fill_strides_indexlist[
 
 
 fn _fill_gpu[
-    type: DType
+    dtype: DType
 ](
-    ptr: UnsafePointer[Scalar[type]],
-    value: Scalar[type],
+    ptr: UnsafePointer[Scalar[dtype]],
+    value: Scalar[dtype],
     count: Int,
     ctx: DeviceContext,
 ) raises:
     alias block_dim = 256
-    ctx.enqueue_function[_fill_gpu_kernel[type]](
+    ctx.enqueue_function[_fill_gpu_kernel[dtype]](
         ptr,
         value,
         count,
@@ -85,15 +85,15 @@ fn _fill_gpu[
 
 
 fn _memcpy_gpu[
-    type: DType
+    dtype: DType
 ](
-    dst: UnsafePointer[Scalar[type]],
-    src: UnsafePointer[Scalar[type]],
+    dst: UnsafePointer[Scalar[dtype]],
+    src: UnsafePointer[Scalar[dtype]],
     count: Int,
     ctx: DeviceContext,
 ) raises:
     alias block_dim = 256
-    ctx.enqueue_function[_copy_gpu_kernel[type]](
+    ctx.enqueue_function[_copy_gpu_kernel[dtype]](
         dst,
         src,
         count,
@@ -103,7 +103,7 @@ fn _memcpy_gpu[
 
 
 @register_passable("trivial")
-struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
+struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
     Copyable & Movable
 ):
     var pre_pad: Int
@@ -183,9 +183,9 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
     @always_inline
     fn base(
         mut self,
-        output: UnsafePointer[Scalar[type]],
-        input: UnsafePointer[Scalar[type]],
-        constant: Scalar[type],
+        output: UnsafePointer[Scalar[dtype]],
+        input: UnsafePointer[Scalar[dtype]],
+        constant: Scalar[dtype],
         axis_dim: Int,
         ctx: DeviceContext,
     ) raises:
@@ -205,16 +205,16 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
 
 @always_inline
 fn _pad_constant_axis[
-    rank: Int, type: DType, paddings_type: DType, axis: Int
+    rank: Int, dtype: DType, paddings_type: DType, axis: Int
 ](
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
-    constant: Scalar[type],
+    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype]],
+    constant: Scalar[dtype],
     output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
     owned axis_params: StaticTuple[
-        _AxisParams[rank, type, paddings_type], rank
+        _AxisParams[rank, dtype, paddings_type], rank
     ],
     ctx: DeviceContext,
 ) raises:
@@ -234,7 +234,7 @@ fn _pad_constant_axis[
                 axis_params[axis].input_offset,
                 axis_params[axis].next_pad_with_constant,
             )
-            _pad_constant_axis[rank, type, paddings_type, axis + 1](
+            _pad_constant_axis[rank, dtype, paddings_type, axis + 1](
                 output,
                 input,
                 constant,
@@ -249,12 +249,12 @@ fn _pad_constant_axis[
 
 
 fn _pad_constant_impl[
-    rank: Int, type: DType, paddings_type: DType
+    rank: Int, dtype: DType, paddings_type: DType
 ](
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype]],
     paddings: UnsafePointer[Scalar[paddings_type]],
-    constant: Scalar[type],
+    constant: Scalar[dtype],
     output_shape: IndexList[rank],
     output_strides: UnsafePointer[Scalar[DType.index]],
     input_strides: UnsafePointer[Scalar[DType.index]],
@@ -277,12 +277,12 @@ fn _pad_constant_impl[
 
     # allocate 'rank' axis-data vector, only use the ones in range[axis,rank)
     var axis_params = StaticTuple[
-        _AxisParams[rank, type, paddings_type], rank
+        _AxisParams[rank, dtype, paddings_type], rank
     ]()
 
     @parameter
     for r in range(rank):
-        axis_params[r] = _AxisParams[rank, type, paddings_type](
+        axis_params[r] = _AxisParams[rank, dtype, paddings_type](
             r, paddings, output_shape
         )
 
@@ -291,7 +291,7 @@ fn _pad_constant_impl[
     # already addressed in the constructor of _AxisParams.
 
     # axis_params[0].init_offsets(output_offset, input_offset, pad_with_constant)
-    _pad_constant_axis[rank, type, paddings_type, 0](
+    _pad_constant_axis[rank, dtype, paddings_type, 0](
         output,
         input,
         constant,
@@ -304,15 +304,15 @@ fn _pad_constant_impl[
 
 
 fn pad_constant[
-    rank: Int, type: DType, padding_type: DType
+    rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
     output_shape: IndexList[rank],
-    input: UnsafePointer[Scalar[type]],
+    input: UnsafePointer[Scalar[dtype]],
     input_shape: IndexList[rank],
     paddings: UnsafePointer[Scalar[padding_type]],
     # TODO: implement (before, after) variant
-    constant: Scalar[type],
+    constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     """
@@ -340,20 +340,20 @@ fn pad_constant[
           else constant
         ```
     """
-    var constant_cast = rebind[Scalar[type]](constant[0])
+    var constant_cast = rebind[Scalar[dtype]](constant[0])
 
     @__copy_capture(constant_cast)
     @parameter
     fn pad_constant_wrapper(
-        output: UnsafePointer[Scalar[type]],
-        input: UnsafePointer[Scalar[type]],
+        output: UnsafePointer[Scalar[dtype]],
+        input: UnsafePointer[Scalar[dtype]],
         paddings: UnsafePointer[Scalar[padding_type]],
         output_shape: IndexList[rank],
         output_strides: UnsafePointer[Scalar[DType.index]],
         input_strides: UnsafePointer[Scalar[DType.index]],
         ctx: DeviceContext,
     ) raises:
-        return _pad_constant_impl[rank, type](
+        return _pad_constant_impl[rank, dtype](
             output,
             input,
             paddings,

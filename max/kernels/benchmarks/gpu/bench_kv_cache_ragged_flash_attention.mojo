@@ -34,7 +34,7 @@ from utils import IndexList
 
 
 fn _get_run_name[
-    type: DType,
+    dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
@@ -47,7 +47,7 @@ fn _get_run_name[
 ) -> String:
     # fmt: off
     return String(
-        "fused_qkv_ragged_flash_attention(", type, ") : "
+        "fused_qkv_ragged_flash_attention(", dtype, ") : "
 
         # head_info
         "num_q_heads=", num_q_heads, ", ",

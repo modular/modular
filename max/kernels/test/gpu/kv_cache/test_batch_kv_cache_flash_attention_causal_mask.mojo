@@ -40,7 +40,7 @@ alias llama_num_q_heads = 32
 
 
 def execute_flash_attention[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     batch_size: Int,
     valid_length: NDBuffer[DType.uint32, 1],
@@ -51,7 +51,7 @@ def execute_flash_attention[
     ctx: DeviceContext,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
 
     debug_assert(
         batch_size < num_blocks,
@@ -73,7 +73,7 @@ def execute_flash_attention[
 
     # initialize q tensor
     q_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -89,7 +89,7 @@ def execute_flash_attention[
     ctx.enqueue_copy(valid_lengths_device.buffer, valid_length.data)
 
     q_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -102,7 +102,7 @@ def execute_flash_attention[
     # TODO this should ideally create a triangular matrix
     # but the output should be consistent regardless.
     mask_host = HostNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+        dtype, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](IndexList[4](batch_size, num_q_heads, max_prompt_len, max_context_len))
 
     # Initialize causal mask.
@@ -113,21 +113,21 @@ def execute_flash_attention[
                     mask_host.tensor.store(
                         Index(b, h, q_idx, k_idx),
                         0 if q_idx + cache_valid_length[b]
-                        >= k_idx else min_or_neg_inf[type](),
+                        >= k_idx else min_or_neg_inf[dtype](),
                     )
 
     mask_device = mask_host.copy_to_device(ctx)
 
     # initialize reference output
     ref_output_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
     )
     ref_output_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -137,14 +137,14 @@ def execute_flash_attention[
 
     # initialize test output
     test_output_host = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
         ),
     )
     test_output_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_len, num_q_heads, kv_params.head_size
@@ -159,7 +159,7 @@ def execute_flash_attention[
     var cache_lengths_device_nd = NDBuffer[DType.uint32, 1](
         cache_lengths_dev._unsafe_ptr(), Index(batch_size)
     )
-    kv_block_host = HostNDBuffer[type, 6](
+    kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -267,8 +267,8 @@ def execute_flash_attention[
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    # alias types = (DType.float32, DType.bfloat16)
-    alias types = (DType.bfloat16,)
+    # alias dtypes = (DType.float32, DType.bfloat16)
+    alias dtypes = (DType.bfloat16,)
     var bs = 2
     var valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
     var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(1))
@@ -279,14 +279,14 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     )
 
     @parameter
-    for type_idx in range(len(types)):
-        alias type = types[type_idx]
+    for dtype_idx in range(len(dtypes)):
+        alias dtype = dtypes[dtype_idx]
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
         valid_length[1] = 64
         cache_valid_length[0] = 0
         cache_valid_length[1] = 0
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        execute_flash_attention[replit_num_q_heads, dtype, kv_params_replit](
             bs, valid_length, 1024, 4, 3, cache_valid_length, ctx
         )
 
@@ -295,7 +295,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         valid_length[1] = 65
         cache_valid_length[0] = 0
         cache_valid_length[1] = 0
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        execute_flash_attention[replit_num_q_heads, dtype, kv_params_replit](
             bs, valid_length, 1024, 4, 0, cache_valid_length, ctx
         )
 
@@ -305,7 +305,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         cache_valid_length[0] = 200
         cache_valid_length[1] = 256
 
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        execute_flash_attention[replit_num_q_heads, dtype, kv_params_replit](
             bs, valid_length, 1024, 4, 1, cache_valid_length, ctx
         )
 
@@ -315,7 +315,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         cache_valid_length[0] = 200
         cache_valid_length[1] = 255
 
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        execute_flash_attention[replit_num_q_heads, dtype, kv_params_replit](
             bs, valid_length, 1024, 4, 2, cache_valid_length, ctx
         )
 

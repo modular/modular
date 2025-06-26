@@ -69,8 +69,8 @@ from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
 
 alias elementwise_epilogue_type = fn[
-    input_index: Int, type: DType, rank: Int, width: Int, *, alignment: Int
-] (IndexList[rank], SIMD[type, size=width]) capturing -> None
+    input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int
+] (IndexList[rank], SIMD[dtype, size=width]) capturing -> None
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -137,17 +137,17 @@ struct Signal:
 
 
 fn _naive_reduce_kernel[
-    type: DType
+    dtype: DType
 ](
-    dst_buf: UnsafePointer[Scalar[type]],
-    src_buf: UnsafePointer[Scalar[type]],
+    dst_buf: UnsafePointer[Scalar[dtype]],
+    src_buf: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
 ):
     """
     A simple reduction kernel that adds source buffer values to destination buffer.
 
     Parameters:
-        type: DType - The data type of the values being reduced.
+        dtype: DType - The data type of the values being reduced.
 
     Args:
         dst_buf: Destination buffer to accumulate results.
@@ -223,7 +223,7 @@ fn can_enable_p2p(ctxs: List[DeviceContext]) raises -> Bool:
 
 
 fn _naive_reduce_kernel_with_lambda[
-    type: DType,
+    dtype: DType,
     rank: Int,
     *,
     my_rank: Int,
@@ -231,14 +231,14 @@ fn _naive_reduce_kernel_with_lambda[
     alignment: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    dst_buf: NDBuffer[type, rank, MutableAnyOrigin],
-    src_buf: UnsafePointer[Scalar[type]],
+    dst_buf: NDBuffer[dtype, rank, MutableAnyOrigin],
+    src_buf: UnsafePointer[Scalar[dtype]],
     num_elements: Int,
 ):
     """Naive reduction kernel with elementwise lambda support."""
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
+    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
 
     for idx in range(tid, num_elements // simd_width, stride):
         var elem_idx = idx * simd_width
@@ -252,14 +252,16 @@ fn _naive_reduce_kernel_with_lambda[
 
 @always_inline
 fn _allreduce_naive[
-    type: DType,
+    dtype: DType,
     rank: Int,
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    list_of_in_bufs: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    list_of_in_bufs: InlineArray[
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+    ],
     list_of_out_bufs: InlineArray[
-        NDBuffer[type, rank, MutableAnyOrigin], ngpus
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
     ],
     max_num_blocks: Int,
     ctxs: List[DeviceContext],
@@ -304,7 +306,7 @@ fn _allreduce_naive[
     +---------------------------------+
 
     Parameters:
-        type: The data type of tensor elements.
+        dtype: The data type of tensor elements.
         rank: Number of dimensions in input tensors.
         ngpus: Number of GPUs participating in allreduce.
         outputs_lambda: An elementwise output lambda function.
@@ -318,10 +320,10 @@ fn _allreduce_naive[
     This implementation copies all data to each GPU and performs local reduction.
     Used as fallback when P2P access is not available.
     """
-    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
+    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
 
-    var device_buffers = List[DeviceBuffer[type]](capacity=ngpus)
+    var device_buffers = List[DeviceBuffer[dtype]](capacity=ngpus)
     # Assemble input buffer structures from all devices
     for i in range(ngpus):
         device_buffers.append(
@@ -336,14 +338,14 @@ fn _allreduce_naive[
         var curr_ctx = ctxs[device_idx]
 
         # Create temporary accumulation buffer.
-        var accum_buffer = curr_ctx.enqueue_create_buffer[type](num_elements)
+        var accum_buffer = curr_ctx.enqueue_create_buffer[dtype](num_elements)
         curr_ctx.enqueue_memset(accum_buffer, 0)  # Initialize to zero
 
         # Create temporary buffers for remote data.
-        var tmp_buffers = List[DeviceBuffer[type]]()
+        var tmp_buffers = List[DeviceBuffer[dtype]]()
         for i in range(ngpus):
             if i != device_idx:
-                var tmp = curr_ctx.enqueue_create_buffer[type](num_elements)
+                var tmp = curr_ctx.enqueue_create_buffer[dtype](num_elements)
                 curr_ctx.enqueue_copy(tmp, device_buffers[i])
                 tmp_buffers.append(tmp)
 
@@ -352,7 +354,7 @@ fn _allreduce_naive[
         var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
 
         # First reduce local buffer.
-        curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
+        curr_ctx.enqueue_function[_naive_reduce_kernel[dtype]](
             accum_buffer,
             device_buffers[device_idx],
             num_elements,
@@ -362,7 +364,7 @@ fn _allreduce_naive[
 
         # Reduce remote buffers.
         for tmp in tmp_buffers:
-            curr_ctx.enqueue_function[_naive_reduce_kernel[type]](
+            curr_ctx.enqueue_function[_naive_reduce_kernel[dtype]](
                 accum_buffer,
                 tmp,
                 num_elements,
@@ -373,11 +375,11 @@ fn _allreduce_naive[
         # Apply output lambda to final accumulated buffer.
         curr_ctx.enqueue_function[
             _naive_reduce_kernel_with_lambda[
-                type,
+                dtype,
                 rank,
                 my_rank=device_idx,
                 width=simd_width,
-                alignment = alignof[SIMD[type, simd_width]](),
+                alignment = alignof[SIMD[dtype, simd_width]](),
                 outputs_lambda=outputs_lambda,
             ]
         ](
@@ -490,7 +492,7 @@ fn _multi_gpu_barrier[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
 )
 fn _allreduce_2stage_kernel[
-    type: DType,
+    dtype: DType,
     rank: Int,
     ngpus: Int,
     my_rank: Int,
@@ -499,8 +501,8 @@ fn _allreduce_2stage_kernel[
     outputs_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    result: NDBuffer[type, rank, MutableAnyOrigin],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[type]], ngpus],
+    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
     rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
@@ -511,7 +513,7 @@ fn _allreduce_2stage_kernel[
     bandwidth optimal.
 
     Parameters:
-        type: Data type of tensor elements.
+        dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
             Note that `rank` is overloaded here to mean both device id and
             number of dimensions.
@@ -531,9 +533,9 @@ fn _allreduce_2stage_kernel[
         num_elements: Number of elements to reduce.
         max_num_blocks: Maximum number of thread blocks to launch.
     """
-    alias accum_type = get_accum_type[type]()
-    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
-    alias alignment = alignof[SIMD[type, simd_width]]()
+    alias accum_type = get_accum_type[dtype]()
+    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias alignment = alignof[SIMD[dtype, simd_width]]()
 
     # --- Thread Indexing and Vector Setup ---
     var global_tid = global_idx.x
@@ -565,12 +567,12 @@ fn _allreduce_2stage_kernel[
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = stack_allocation[
         ngpus,
-        UnsafePointer[Scalar[type]],
+        UnsafePointer[Scalar[dtype]],
         address_space = _GPUAddressSpace.LOCAL,
     ]()
     var tmps = stack_allocation[
         ngpus,
-        UnsafePointer[Scalar[type]],
+        UnsafePointer[Scalar[dtype]],
         address_space = _GPUAddressSpace.LOCAL,
     ]()
 
@@ -583,7 +585,7 @@ fn _allreduce_2stage_kernel[
         ptrs[i] = src_ptrs[target]
 
         # Skip Signal header.
-        tmps[i] = (rank_sigs[target] + 1).bitcast[Scalar[type]]()
+        tmps[i] = (rank_sigs[target] + 1).bitcast[Scalar[dtype]]()
 
     # Current rank's output buffer.
     var tmp_out = tmps[0]
@@ -621,7 +623,7 @@ fn _allreduce_2stage_kernel[
         # Convert back to the element index before storing.
         var elem_start = start * simd_width
         tmp_out.store[alignment=alignment](
-            elem_idx - elem_start, accum.cast[type]()
+            elem_idx - elem_start, accum.cast[dtype]()
         )
 
     # Second barrier with memory ordering guarantees.
@@ -661,7 +663,7 @@ fn _allreduce_2stage_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
 )
 fn _allreduce_1stage_kernel[
-    type: DType,
+    dtype: DType,
     rank: Int,
     ngpus: Int,
     my_rank: Int,
@@ -669,8 +671,8 @@ fn _allreduce_1stage_kernel[
     BLOCK_SIZE: Int,
     outputs_lambda: elementwise_epilogue_type,
 ](
-    result: NDBuffer[type, rank, MutableAnyOrigin],
-    src_ptrs: StaticTuple[UnsafePointer[Scalar[type]], ngpus],
+    result: NDBuffer[dtype, rank, MutableAnyOrigin],
+    src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype]], ngpus],
     rank_sigs: StaticTuple[UnsafePointer[Signal], MAX_GPUS],
     num_elements: Int,
     max_num_blocks: Int,
@@ -679,7 +681,7 @@ fn _allreduce_1stage_kernel[
     Kernel implementing allreduce using peer-to-peer access between GPUs.
 
     Parameters:
-        type: Data type of tensor elements.
+        dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
         my_rank: Current GPU rank
@@ -696,9 +698,9 @@ fn _allreduce_1stage_kernel[
     Uses P2P access to directly read from other GPU buffers and perform reduction.
     Synchronizes using _multi_gpu_barrier before and after reduction.
     """
-    alias accum_type = get_accum_type[type]()
-    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
-    alias alignment = alignof[SIMD[type, simd_width]]()
+    alias accum_type = get_accum_type[dtype]()
+    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
+    alias alignment = alignof[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * BLOCK_SIZE
@@ -708,7 +710,7 @@ fn _allreduce_1stage_kernel[
     # Round-robin access pattern to balance NVLink traffic across GPUs.
     var ptrs = stack_allocation[
         ngpus,
-        UnsafePointer[Scalar[type]],
+        UnsafePointer[Scalar[dtype]],
         address_space = _GPUAddressSpace.LOCAL,
     ]()
 
@@ -747,7 +749,7 @@ fn _allreduce_1stage_kernel[
             input_index=my_rank, width=simd_width, alignment=alignment
         ](
             result.get_nd_index(elem_idx),
-            accum.cast[type](),
+            accum.cast[dtype](),
         )
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
@@ -755,15 +757,17 @@ fn _allreduce_1stage_kernel[
 
 @always_inline
 fn _allreduce_p2p[
-    type: DType,
+    dtype: DType,
     rank: Int,
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    list_of_in_bufs: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    list_of_in_bufs: InlineArray[
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+    ],
     list_of_out_bufs: InlineArray[
-        NDBuffer[type, rank, MutableAnyOrigin], ngpus
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     max_num_blocks: Int,
@@ -773,7 +777,7 @@ fn _allreduce_p2p[
     Performs allreduce using peer-to-peer access between GPUs.
 
     Parameters:
-        type: Data type of tensor elements.
+        dtype: Data dtype of tensor elements.
         rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
         outputs_lambda: An output elementwise lambda.
@@ -788,7 +792,7 @@ fn _allreduce_p2p[
 
     Launches P2P reduction kernel on each GPU to perform direct reduction.
     """
-    alias simd_width = simdwidthof[type, target = get_gpu_target()]()
+    alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
     var num_elements = list_of_in_bufs[0].num_elements()
     if num_elements % simd_width != 0:
         raise Error(
@@ -798,7 +802,7 @@ fn _allreduce_p2p[
 
     # Pass a stack-allocated array of pointers to the device kernel, which
     # doesn't need dynamic tensor spec info from NDBuffer.
-    var list_of_in_ptrs = StaticTuple[UnsafePointer[Scalar[type]], ngpus]()
+    var list_of_in_ptrs = StaticTuple[UnsafePointer[Scalar[dtype]], ngpus]()
 
     @parameter
     for i in range(ngpus):
@@ -836,7 +840,7 @@ fn _allreduce_p2p[
             # Use the 1-stage allreduce when transfer is latency bound.
             curr_ctx.enqueue_function[
                 _allreduce_1stage_kernel[
-                    type,
+                    dtype,
                     rank,
                     ngpus,
                     my_rank=i,
@@ -863,7 +867,7 @@ fn _allreduce_p2p[
             # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
             curr_ctx.enqueue_function[
                 _allreduce_2stage_kernel[
-                    type,
+                    dtype,
                     rank,
                     ngpus,
                     my_rank=i,
@@ -893,14 +897,14 @@ fn _dispatch_max_num_blocks[ngpus: Int](num_bytes: Int) -> Int:
 
 @parameter
 fn allreduce[
-    type: DType,
+    dtype: DType,
     rank: Int,
     ngpus: Int,
     outputs_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
-    output_buffers: InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
+    output_buffers: InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus],
     rank_sigs: InlineArray[UnsafePointer[Signal], MAX_GPUS],
     ctxs: List[DeviceContext],
     _max_num_blocks: Optional[Int] = None,
@@ -916,7 +920,7 @@ fn allreduce[
     and distributes the result back to all GPUs.
 
     Parameters:
-        type: The data type of the tensor elements (e.g. DType.float32).
+        dtype: The data type of the tensor elements (e.g. DType.float32).
         rank: The number of dimensions in the input/output tensors.
         ngpus: The number of GPUs participating in the allreduce.
         outputs_lambda: An output elementwise lambda.

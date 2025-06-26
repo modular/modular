@@ -24,14 +24,14 @@ from utils import IndexList
 from utils.index import Index
 
 
-fn run_elementwise[type: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
     var in_host = NDBuffer[
-        type, 2, MutableAnyOrigin, DimList(2, 8)
+        dtype, 2, MutableAnyOrigin, DimList(2, 8)
     ].stack_allocation()
     var out_host = NDBuffer[
-        type, 2, MutableAnyOrigin, DimList(2, 8)
+        dtype, 2, MutableAnyOrigin, DimList(2, 8)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -39,13 +39,13 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
         for j in range(8):
             in_host[Index(i, j)] = i + j
 
-    var in_device = ctx.enqueue_create_buffer[type](flattened_length)
-    var out_device = ctx.enqueue_create_buffer[type](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
     in_device.enqueue_copy_from(in_host.data)
 
-    var in_buffer = NDBuffer[type, 2](in_device._unsafe_ptr(), Index(2, 8))
-    var out_buffer = NDBuffer[type, 2](out_device._unsafe_ptr(), Index(2, 8))
+    var in_buffer = NDBuffer[dtype, 2](in_device._unsafe_ptr(), Index(2, 8))
+    var out_buffer = NDBuffer[dtype, 2](out_device._unsafe_ptr(), Index(2, 8))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
@@ -66,7 +66,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[type]](
+    var expected_vals = List[Scalar[dtype]](
         42.0,
         43.0,
         44.0,
@@ -95,13 +95,13 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+fn run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
-        type, 2, MutableAnyOrigin, DimList(3, 3)
+        dtype, 2, MutableAnyOrigin, DimList(3, 3)
     ].stack_allocation()
     var out_host = NDBuffer[
-        type, 2, MutableAnyOrigin, DimList(3, 3)
+        dtype, 2, MutableAnyOrigin, DimList(3, 3)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -109,13 +109,13 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
         for j in range(3):
             in_host[Index(i, j)] = i + j
 
-    var in_device = ctx.enqueue_create_buffer[type](flattened_length)
-    var out_device = ctx.enqueue_create_buffer[type](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
     in_device.enqueue_copy_from(in_host.data)
 
-    var in_buffer = NDBuffer[type, 2](in_device._unsafe_ptr(), Index(3, 3))
-    var out_buffer = NDBuffer[type, 2](out_device._unsafe_ptr(), Index(3, 3))
+    var in_buffer = NDBuffer[dtype, 2](in_device._unsafe_ptr(), Index(3, 3))
+    var out_buffer = NDBuffer[dtype, 2](out_device._unsafe_ptr(), Index(3, 3))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
@@ -135,7 +135,7 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
     out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[type]](
+    var expected_vals = List[Scalar[dtype]](
         42.0, 43.0, 44.0, 43.0, 44.0, 45.0, 44.0, 45.0, 46.0
     )
     for i in range(3):
@@ -149,13 +149,13 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
     var in_host = NDBuffer[
-        type, 3, MutableAnyOrigin, DimList(2, 4, 5)
+        dtype, 3, MutableAnyOrigin, DimList(2, 4, 5)
     ].stack_allocation()
     var out_host = NDBuffer[
-        type, 3, MutableAnyOrigin, DimList(4, 2, 5)
+        dtype, 3, MutableAnyOrigin, DimList(4, 2, 5)
     ].stack_allocation()
 
     var flattened_length = in_host.num_elements()
@@ -164,15 +164,17 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
             for k in range(5):
                 in_host[Index(i, j, k)] = i * 4 * 5 + j * 5 + k
 
-    var in_device = ctx.enqueue_create_buffer[type](flattened_length)
-    var out_device = ctx.enqueue_create_buffer[type](flattened_length)
+    var in_device = ctx.enqueue_create_buffer[dtype](flattened_length)
+    var out_device = ctx.enqueue_create_buffer[dtype](flattened_length)
 
     in_device.enqueue_copy_from(in_host.data)
 
-    var in_buffer_transposed = NDBuffer[type, 3](
+    var in_buffer_transposed = NDBuffer[dtype, 3](
         in_device._unsafe_ptr(), Index(4, 2, 5), Index(5, 20, 1)
     )
-    var out_buffer = NDBuffer[type, 3](out_device._unsafe_ptr(), Index(4, 2, 5))
+    var out_buffer = NDBuffer[dtype, 3](
+        out_device._unsafe_ptr(), Index(4, 2, 5)
+    )
 
     @always_inline
     @__copy_capture(in_buffer_transposed, out_buffer)
@@ -194,7 +196,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
     out_device.enqueue_copy_to(out_host.data)
     ctx.synchronize()
 
-    var expected_vals = List[Scalar[type]](
+    var expected_vals = List[Scalar[dtype]](
         0.0,
         1.0,
         2.0,

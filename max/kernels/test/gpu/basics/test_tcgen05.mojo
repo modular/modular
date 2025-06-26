@@ -88,7 +88,7 @@ fn ld_test_fn():
         datapaths=32,
         bits=32,
         repeat=64,
-        type = DType.float32,
+        dtype = DType.float32,
         pack=False,
         width=64,
     ](tmem_addr)

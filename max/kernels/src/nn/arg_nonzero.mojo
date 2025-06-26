@@ -26,18 +26,18 @@ from utils.index import IndexList
 
 @always_inline
 fn arg_nonzero[
-    type: DType,
+    dtype: DType,
     output_type: DType,
 ](
-    input_buffer: LayoutTensor[type, **_],
+    input_buffer: LayoutTensor[dtype, **_],
     output_buffer: LayoutTensor[mut=True, output_type, **_],
 ):
     """Gather the indices of all non-zero elements in input buffer storing
     the indices in the output_buffer.
 
     Parameters:
-        type: The element type.
-        output_type: The integer type to store the indices in.
+        dtype: The element dtype.
+        output_type: The integer dtype to store the indices in.
 
     Args:
         input_buffer: The tensor to count the non-zeros in.
@@ -83,14 +83,14 @@ fn arg_nonzero[
 # Where has the shape 2D shape [NumNonZeros, InputRank]
 @always_inline
 fn arg_nonzero_shape[
-    type: DType,
+    dtype: DType,
     single_thread_blocking_override: Bool,
-](input_buffer: LayoutTensor[type, **_]) -> IndexList[2]:
+](input_buffer: LayoutTensor[dtype, **_]) -> IndexList[2]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.
 
     Parameters:
-        type: The element type.
+        dtype: The element dtype.
         single_thread_blocking_override: This op can block.
 
     Args:

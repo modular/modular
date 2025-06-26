@@ -137,7 +137,7 @@ fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
 
 
 fn run_matmul[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
@@ -148,53 +148,53 @@ fn run_matmul[
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
-    print("== run_matmul kernel => ", String(type), M, N, K)
+    print("== run_matmul kernel => ", dtype, M, N, K)
 
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
 
     for i in range(M * K):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        a_host[i] = val.cast[type]()
+        a_host[i] = val.cast[dtype]()
         a_host_n[i] = a_host[i]
 
     for i in range(K * N):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        b_host[i] = val.cast[type]()
+        b_host[i] = val.cast[dtype]()
         b_host_n[i] = b_host[i]
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
         b_device._unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -211,7 +211,9 @@ fn run_matmul[
     @always_inline
     @parameter
     fn run_func_naive() raises:
-        ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
+        ctx.enqueue_function[
+            matmul_kernel_naive[dtype, dtype, dtype, BLOCK_DIM]
+        ](
             c_device_n,
             a_device_n,
             b_device_n,
@@ -253,11 +255,11 @@ fn run_matmul[
 
 
 fn run_matmul_split_k[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
-    config: MatmulConfig[type, type, type, False],
+    config: MatmulConfig[dtype, dtype, dtype, False],
 ](
     ctx: DeviceContext,
     rtol: Float64 = 1e-05,
@@ -267,58 +269,58 @@ fn run_matmul_split_k[
 ) raises:
     print(
         "== run_matmul kernel split_k serial reduction => ",
-        String(type),
+        String(dtype),
         M,
         N,
         K,
     )
 
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
 
     for i in range(M * K):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        a_host[i] = val.cast[type]()
+        a_host[i] = val.cast[dtype]()
 
     for i in range(K * N):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        b_host[i] = val.cast[type]()
+        b_host[i] = val.cast[dtype]()
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(K, N)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](K * N)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
         b_device._unsafe_ptr(), Index(K, N)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[dtype](K * N)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var best_config = select_config[type, type, type, False](M, N, K, ctx)
+    var best_config = select_config[dtype, dtype, dtype, False](M, N, K, ctx)
 
     multistage_gemm[
         transpose_b=False,
@@ -326,9 +328,9 @@ fn run_matmul_split_k[
         elementwise_lambda_fn=None,
         serial_reduction=False,
     ](
-        rebind[NDBuffer[type, 2, c_buf.origin, c_shape]](c_buf),
-        rebind[NDBuffer[type, 2, a_buf.origin, a_shape]](a_buf),
-        rebind[NDBuffer[type, 2, b_buf.origin, b_shape]](b_buf),
+        rebind[NDBuffer[dtype, 2, c_buf.origin, c_shape]](c_buf),
+        rebind[NDBuffer[dtype, 2, a_buf.origin, a_shape]](a_buf),
+        rebind[NDBuffer[dtype, 2, b_buf.origin, b_shape]](b_buf),
         best_config,
         ctx,
     )
@@ -342,7 +344,7 @@ fn run_matmul_split_k[
 
     alias BLOCK_DIM = 16
 
-    ctx.enqueue_function[matmul_kernel_naive[type, type, type, BLOCK_DIM]](
+    ctx.enqueue_function[matmul_kernel_naive[dtype, dtype, dtype, BLOCK_DIM]](
         c_device_n,
         a_device_n,
         b_device_n,
@@ -379,7 +381,7 @@ fn run_matmul_split_k[
 
 
 fn run_matmul_transpose[
-    type: DType,
+    dtype: DType,
     M: Int,
     N: Int,
     K: Int,
@@ -390,54 +392,54 @@ fn run_matmul_transpose[
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
-    print("== run_matmul kernel transpose => ", String(type), M, N, K)
+    print("== run_matmul kernel transpose => ", String(dtype), M, N, K)
 
     alias transpose_b = True
-    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
-    var a_host_n = UnsafePointer[Scalar[type]].alloc(M * K)
-    var b_host_n = UnsafePointer[Scalar[type]].alloc(K * N)
-    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    var a_host_n = UnsafePointer[Scalar[dtype]].alloc(M * K)
+    var b_host_n = UnsafePointer[Scalar[dtype]].alloc(K * N)
+    var c_host_n = UnsafePointer[Scalar[dtype]].alloc(M * N)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
 
     for i in range(M * K):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        a_host[i] = val.cast[type]()
+        a_host[i] = val.cast[dtype]()
         a_host_n[i] = a_host[i]
 
     for i in range(K * N):
         var val = random_float64(rand_min, rand_max).cast[DType.float32]()
-        b_host[i] = val.cast[type]()
+        b_host[i] = val.cast[dtype]()
         b_host_n[i] = b_host[i]
 
     for i in range(M * N):
         var val = Float32(0)
-        c_host[i] = val.cast[type]()
+        c_host[i] = val.cast[dtype]()
         c_host_n[i] = c_host[i]
 
     alias a_shape = DimList(M, K)
     alias b_shape = DimList(N, K)
     alias c_shape = DimList(M, N)
 
-    var a_device = ctx.enqueue_create_buffer[type](M * K)
-    var b_device = ctx.enqueue_create_buffer[type](N * K)
-    var c_device = ctx.enqueue_create_buffer[type](M * N)
-    var a_buf = NDBuffer[type, 2, _, a_shape](
+    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device = ctx.enqueue_create_buffer[dtype](N * K)
+    var c_device = ctx.enqueue_create_buffer[dtype](M * N)
+    var a_buf = NDBuffer[dtype, 2, _, a_shape](
         a_device._unsafe_ptr(), Index(M, K)
     )
-    var b_buf = NDBuffer[type, 2, _, b_shape](
+    var b_buf = NDBuffer[dtype, 2, _, b_shape](
         b_device._unsafe_ptr(), Index(N, K)
     )
-    var c_buf = NDBuffer[type, 2, _, c_shape](
+    var c_buf = NDBuffer[dtype, 2, _, c_shape](
         c_device._unsafe_ptr(), Index(M, N)
     )
 
-    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
-    var b_device_n = ctx.enqueue_create_buffer[type](N * K)
-    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+    var a_device_n = ctx.enqueue_create_buffer[dtype](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[dtype](N * K)
+    var c_device_n = ctx.enqueue_create_buffer[dtype](M * N)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
@@ -457,7 +459,7 @@ fn run_matmul_transpose[
     @parameter
     fn run_func_naive() raises:
         ctx.enqueue_function[
-            matmul_kernel_naive[type, type, type, BLOCK_DIM, transpose_b]
+            matmul_kernel_naive[dtype, dtype, dtype, BLOCK_DIM, transpose_b]
         ](
             c_device_n,
             a_device_n,

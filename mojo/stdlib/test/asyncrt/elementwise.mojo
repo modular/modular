@@ -24,19 +24,19 @@ from utils import IndexList
 from utils.index import Index
 
 
-fn run_elementwise[type: DType](ctx: DeviceContext) raises:
+fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     print("-")
-    print("run_elementwise[", type, "]:")
+    print("run_elementwise[", dtype, "]:")
 
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
     alias rank = 2
     alias dim_x = 2
     alias dim_y = 8
     alias length = dim_x * dim_y
 
-    var in0 = ctx.enqueue_create_buffer[type](length)
-    var out = ctx.enqueue_create_buffer[type](length)
+    var in0 = ctx.enqueue_create_buffer[dtype](length)
+    var out = ctx.enqueue_create_buffer[dtype](length)
 
     # Initialize the input and outputs with known values.
     with in0.map_to_host() as in_host, out.map_to_host() as out_host:
@@ -44,8 +44,8 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
             in_host[i] = i
             out_host[i] = length + i
 
-    var in_buffer = NDBuffer[type, 2](in0._unsafe_ptr(), Index(dim_x, dim_y))
-    var out_buffer = NDBuffer[type, 2](out._unsafe_ptr(), Index(dim_x, dim_y))
+    var in_buffer = NDBuffer[dtype, 2](in0._unsafe_ptr(), Index(dim_x, dim_y))
+    var out_buffer = NDBuffer[dtype, 2](out._unsafe_ptr(), Index(dim_x, dim_y))
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)

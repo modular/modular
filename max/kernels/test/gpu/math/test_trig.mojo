@@ -18,19 +18,19 @@ from testing import assert_almost_equal
 
 
 fn run_func[
-    type: DType, kernel_fn: fn (SIMD[type, 1]) capturing -> SIMD[type, 1]
+    dtype: DType, kernel_fn: fn (SIMD[dtype, 1]) capturing -> SIMD[dtype, 1]
 ](
     out_prefix: String,
-    val: Scalar[type],
-    ref_: Scalar[type],
+    val: Scalar[dtype],
+    ref_: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:
     print("test trigonometric functions on gpu")
 
-    var out = ctx.enqueue_create_buffer[type](1)
+    var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
-    fn kernel(out_dev: UnsafePointer[Scalar[type]], lhs: SIMD[type, 1]):
+    fn kernel(out_dev: UnsafePointer[Scalar[dtype]], lhs: SIMD[dtype, 1]):
         var result = kernel_fn(lhs)
         out_dev[0] = result
 
@@ -39,8 +39,8 @@ fn run_func[
         assert_almost_equal(
             out_host[0],
             ref_,
-            msg=String("while testing ", out_prefix, " for the dtype ", type),
-            atol=1e-2 if type.is_half_float() else 1e-8,
+            msg=String("while testing ", out_prefix, " for the dtype ", dtype),
+            atol=1e-2 if dtype.is_half_float() else 1e-8,
         )
 
 

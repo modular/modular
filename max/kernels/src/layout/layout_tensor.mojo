@@ -129,7 +129,7 @@ fn _project_on_axis[
     return p_t
 
 
-alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
+alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
 fn _get_len[*values: Int]() -> Int:
@@ -798,14 +798,14 @@ struct LayoutTensor[
 
     @always_inline
     fn bitcast[
-        new_type: DType,
+        new_dtype: DType,
         /,
         address_space: AddressSpace = Self.address_space,
         element_layout: Layout = Self.element_layout,
     ](
         self,
         out result: LayoutTensor[
-            new_type,
+            new_dtype,
             layout,
             origin,
             address_space=address_space,
@@ -818,7 +818,7 @@ struct LayoutTensor[
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
-            new_type: The new data type it is casting to.
+            new_dtype: The new data type it is casting to.
             address_space: The address space of the returned `LayoutTensor`.
             element_layout: The element layout of the returned `LayoutTensor`.
 
@@ -827,7 +827,7 @@ struct LayoutTensor[
             specified data type, address space, and element layout.
         """
         return __type_of(result)(
-            self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
+            self.ptr.bitcast[Scalar[new_dtype]]().address_space_cast[
                 address_space
             ](),
             self.runtime_layout,
@@ -6109,14 +6109,14 @@ fn copy_dram_to_sram[
 
 @always_inline("nodebug")
 fn cp_async_k_major[
-    type: DType,
+    dtype: DType,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
     ],
     src: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
     ],
 ):
     """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
@@ -6140,7 +6140,7 @@ fn cp_async_k_major[
         - Source and destination tensors must be 2D.
 
     Parameters:
-        type: The data type of the tensor elements.
+        dtype: The data type of the tensor elements.
         eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
 
     Args:
@@ -6181,7 +6181,7 @@ fn cp_async_k_major[
     alias src_shape1 = src_layout.shape[1].value()
 
     alias desc_layout = _tma_desc_tile_layout[
-        type,
+        dtype,
         2,
         Index(src_shape0, src_shape1),
         is_k_major=True,
@@ -6196,7 +6196,7 @@ fn cp_async_k_major[
     ]()
 
     alias num_tiles = src_shape1 // desc_shape1
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
     # single warp group
     alias thread_layout = Layout.row_major(
         128 * simd_size // desc_shape1, desc_shape1 // simd_size
@@ -6206,7 +6206,7 @@ fn cp_async_k_major[
     for tile_id in range(num_tiles):
         src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
         dst_tile = LayoutTensor[
-            type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
+            dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)
 
         copy_dram_to_sram_async[
@@ -6219,14 +6219,14 @@ fn cp_async_k_major[
 
 @always_inline("nodebug")
 fn cp_async_mn_major[
-    type: DType,
+    dtype: DType,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
     ],
     src: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
     ],
 ):
     """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
@@ -6250,7 +6250,7 @@ fn cp_async_mn_major[
         - Source and destination tensors must be 2D.
 
     Parameters:
-        type: The data type of the tensor elements.
+        dtype: The data type of the tensor elements.
         eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
 
     Args:
@@ -6289,7 +6289,7 @@ fn cp_async_mn_major[
     alias src_shape1 = src_layout.shape[1].value()
 
     alias desc_layout = _tma_desc_tile_layout[
-        type,
+        dtype,
         2,
         Index(src_shape0, src_shape1),
         is_k_major=False,
@@ -6304,7 +6304,7 @@ fn cp_async_mn_major[
     alias num_warps = 4  # single warp group
     alias num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
 
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
     alias thread_layout_per_warp = Layout.row_major(
         gpu_memory.WARP_SIZE * simd_size // desc_shape1,
         desc_shape1 // simd_size,
@@ -6318,7 +6318,7 @@ fn cp_async_mn_major[
         tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
         src_tile = src.tile[desc_shape0, desc_shape1](tile_coord0, tile_coord1)
         dst_tile = LayoutTensor[
-            type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
+            dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)
 
         copy_dram_to_sram_async[
@@ -6666,9 +6666,9 @@ fn copy_dram_to_sram_async[
     ](dst, src)
 
 
-alias binary_op_type = fn[type: DType, width: Int] (
-    lhs: SIMD[type, width], rhs: SIMD[type, width]
-) -> SIMD[type, width]
+alias binary_op_type = fn[dtype: DType, width: Int] (
+    lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
+) -> SIMD[dtype, width]
 """
 Type alias for binary operations on SIMD vectors.
 
@@ -6676,7 +6676,7 @@ This type represents a function that takes two SIMD vectors of the same type and
 width and returns a SIMD vector of the same type and width.
 
 Args:
-    type: The data type of the SIMD vector elements.
+    dtype: The data type of the SIMD vector elements.
     width: The width of the SIMD vector.
     lhs: Left-hand side SIMD vector operand.
     rhs: Right-hand side SIMD vector operand.
@@ -7720,13 +7720,13 @@ fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
 @register_passable("trivial")
 struct LayoutTensorIter[
     mut: Bool, //,
-    type: DType,
+    dtype: DType,
     layout: Layout,
     origin: Origin[mut],
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = alignof[type]() if is_nvidia_gpu() else 1,
+    alignment: Int = alignof[dtype]() if is_nvidia_gpu() else 1,
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
     layout_int_type: DType = _get_index_type(address_space),
@@ -7742,7 +7742,7 @@ struct LayoutTensorIter[
 
     Parameters:
         mut: Whether the iterator allows mutation of the underlying data.
-        type: The data type of the tensor elements.
+        dtype: The data type of the tensor elements.
         layout: The memory layout pattern to follow during iteration.
         origin: Origin tracking for memory safety.
         address_space: The memory address space (`GLOBAL`, `SHARED`, etc.).
@@ -7766,7 +7766,7 @@ struct LayoutTensorIter[
     """The unsigned integer type used for indexing into memory."""
 
     var ptr: UnsafePointer[
-        Scalar[type],
+        Scalar[dtype],
         address_space=address_space,
         alignment=alignment,
         mut=mut,
@@ -7821,7 +7821,7 @@ struct LayoutTensorIter[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[type],
+            Scalar[dtype],
             address_space=address_space,
             alignment=alignment,
             mut=mut,
@@ -7868,7 +7868,7 @@ struct LayoutTensorIter[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[type],
+            Scalar[dtype],
             address_space=address_space,
             alignment=alignment,
             mut=mut,
@@ -7876,7 +7876,9 @@ struct LayoutTensorIter[
         ],
         bound: Self.linear_uint_type,
         runtime_layout: RuntimeLayout[layout, **_],
-        stride: Self.linear_uint_type = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
+        stride: Self.linear_uint_type = (
+            layout.size() if layout.all_dims_known() else UNKNOWN_VALUE
+        ),
         offset: Self.linear_uint_type = 0,
         dimension_bound: Self.layout_uint_type = 0,
         idx: Self.linear_uint_type = 0,
@@ -7943,7 +7945,7 @@ struct LayoutTensorIter[
     fn get(
         self,
         out result: LayoutTensor[
-            type,
+            dtype,
             layout,
             origin,
             address_space=address_space,
@@ -7974,7 +7976,7 @@ struct LayoutTensorIter[
     fn __getitem__(
         self,
     ) -> LayoutTensor[
-        type,
+        dtype,
         layout,
         origin,
         address_space=address_space,
@@ -8179,7 +8181,7 @@ struct LayoutTensorIter[
     ](
         self,
         out result: LayoutTensorIter[
-            type,
+            dtype,
             dst_layout,
             origin,
             address_space=address_space,

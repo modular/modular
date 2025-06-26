@@ -55,7 +55,7 @@ fn _human_memory(size: Int) -> String:
 
 
 fn allreduce_test[
-    type: DType, rank: Int, ngpus: Int
+    dtype: DType, rank: Int, ngpus: Int
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     alias num_warmups = 5
     alias num_iters = 100
@@ -64,9 +64,9 @@ fn allreduce_test[
     constrained[rank == 1, "this test code currently assumes rank 1"]()
 
     # Create device buffers for all GPUs
-    var in_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var out_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[type]]](capacity=ngpus)
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -75,22 +75,24 @@ fn allreduce_test[
     )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
-    var temp_buffer_num_bytes = ngpus * sizeof[type]() * length
+    var temp_buffer_num_bytes = ngpus * sizeof[dtype]() * length
 
     # Initialize buffers for each GPU
     @parameter
     for i in range(ngpus):
         # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
-        out_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
+        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        out_bufs_list.append(
+            list_of_ctx[i].enqueue_create_buffer[dtype](length)
+        )
 
         # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[type]].alloc(length)
+        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
         host_buffers.append(host_buffer)
 
         # Initialize host buffer with values (i + 1).0
-        var host_nd_buf = NDBuffer[type, rank](host_buffer, DimList(length))
-        host_nd_buf.fill(Scalar[type](i + 1))
+        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
+        host_nd_buf.fill(Scalar[dtype](i + 1))
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -105,19 +107,19 @@ fn allreduce_test[
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        NDBuffer[dtype, rank, MutableAnyOrigin]()
     )
-    var out_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        NDBuffer[dtype, rank, MutableAnyOrigin]()
     )
 
     @parameter
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[type, rank](
+        in_bufs[i] = NDBuffer[dtype, rank](
             in_bufs_list[i].unsafe_ptr(), DimList(length)
         )
-        out_bufs[i] = NDBuffer[type, rank](
+        out_bufs[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
@@ -127,12 +129,12 @@ fn allreduce_test[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[type, rank, MutableAnyOrigin], ngpus
-    ](NDBuffer[type, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
 
     @parameter
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[type, rank](
+        out_bufs_capture[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
@@ -141,14 +143,14 @@ fn allreduce_test[
     @__copy_capture(out_bufs_capture)
     fn outputs_lambda[
         input_index: Int,
-        _type: DType,
+        _dtype: DType,
         _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
         out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val)
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
     # Warm up.
@@ -183,7 +185,7 @@ fn allreduce_test[
     print("Time taken (ms):", (end_t - start_t) / (1_000_000 * num_iters))
 
     # Copy results back and verify
-    var expected_sum = Scalar[type](0)
+    var expected_sum = Scalar[dtype](0)
 
     @parameter
     for i in range(ngpus):
@@ -208,14 +210,14 @@ fn allreduce_test[
     _ = signal_buffers^
 
 
-fn _get_test_str[type: DType](ngpus: Int, length: Int) -> String:
+fn _get_test_str[dtype: DType](ngpus: Int, length: Int) -> String:
     return String(
         "====allreduce-",
-        type,
+        dtype,
         "-",
         ngpus,
         "-",
-        _human_memory(sizeof[type]() * length),
+        _human_memory(sizeof[dtype]() * length),
     )
 
 
@@ -257,4 +259,4 @@ def main():
                 alias length = test_lengths[length_idx]
 
                 print(_get_test_str[dtype](num_gpus, length))
-                allreduce_test[type=dtype, rank=1, ngpus=num_gpus](ctx, length)
+                allreduce_test[dtype=dtype, rank=1, ngpus=num_gpus](ctx, length)

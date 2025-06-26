@@ -18,12 +18,12 @@ from testing import assert_almost_equal
 
 
 fn run_func[
-    type: DType
-](val: Scalar[type], ref_: Scalar[type], ctx: DeviceContext) raises:
-    var out = ctx.enqueue_create_buffer[type](1)
+    dtype: DType
+](val: Scalar[dtype], ref_: Scalar[dtype], ctx: DeviceContext) raises:
+    var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
-    fn kernel(out_dev: UnsafePointer[Scalar[type]], lhs: SIMD[type, 1]):
+    fn kernel(out_dev: UnsafePointer[Scalar[dtype]], lhs: SIMD[dtype, 1]):
         var result = recip(lhs)
         out_dev[0] = result
 
@@ -32,7 +32,7 @@ fn run_func[
         assert_almost_equal(
             out_host[0],
             ref_,
-            msg=String("while testing recip for the dtype ", type),
+            msg=String("while testing recip for the dtype ", dtype),
             atol=1e-8,
         )
 

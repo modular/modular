@@ -48,9 +48,9 @@ fn kl_div(x: SIMD, y: __type_of(x)) -> __type_of(x):
 
 
 fn kl_div[
-    type: DType, //
+    dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
     x: __type_of(output),
     y: __type_of(output),
     len: Int,
@@ -65,19 +65,19 @@ fn kl_div[
             ),
         )
 
-    elementwise[kl_div_elementwise, simdwidthof[type]()](len)
+    elementwise[kl_div_elementwise, simdwidthof[dtype]()](len)
 
 
 fn kl_div[
-    type: DType, //, out_type: DType = DType.float64
+    dtype: DType, //, out_type: DType = DType.float64
 ](
-    x: UnsafePointer[Scalar[type]],
+    x: UnsafePointer[Scalar[dtype]],
     y: __type_of(x),
     len: Int,
 ) -> Scalar[
     out_type
 ]:
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
@@ -106,9 +106,9 @@ fn kl_div[
 
 
 fn correlation[
-    type: DType, //, out_type: DType = type
+    dtype: DType, //, out_type: DType = dtype
 ](
-    u: UnsafePointer[Scalar[type]],
+    u: UnsafePointer[Scalar[dtype]],
     v: __type_of(u),
     len: Int,
     *,
@@ -146,7 +146,7 @@ fn correlation[
     var uu = Scalar[out_type]()
     var vv = Scalar[out_type]()
 
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dtype]()
     var uv_simd = SIMD[out_type, simd_width]()
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
@@ -194,9 +194,9 @@ fn correlation[
 
 
 fn uncentered_unweighted_correlation[
-    type: DType, //, out_type: DType = type
+    dtype: DType, //, out_type: DType = dtype
 ](
-    u: UnsafePointer[Scalar[type]],
+    u: UnsafePointer[Scalar[dtype]],
     v: __type_of(u),
     len: Int,
 ) -> Scalar[
@@ -230,8 +230,8 @@ fn uncentered_unweighted_correlation[
 
 
 fn cosine[
-    type: DType, //,
-](u: UnsafePointer[Scalar[type]], v: __type_of(u), len: Int,) -> Float64:
+    dtype: DType, //,
+](u: UnsafePointer[Scalar[dtype]], v: __type_of(u), len: Int,) -> Float64:
     """Compute the Cosine distance between 1-D arrays.
 
     The Cosine distance between `u` and `v`, is defined as
@@ -282,24 +282,24 @@ fn relative_difference[
 
 
 fn _sqrt[
-    type: DType, //
-](output: UnsafePointer[Scalar[type]], x: __type_of(output), len: Int) raises:
+    dtype: DType, //
+](output: UnsafePointer[Scalar[dtype]], x: __type_of(output), len: Int) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         output.store(
             idx[0],
-            rebind[SIMD[type, simd_width]](
+            rebind[SIMD[dtype, simd_width]](
                 sqrt(x.load[width=simd_width](idx[0]))
             ),
         )
 
-    elementwise[apply_fn, simdwidthof[type]()](len)
+    elementwise[apply_fn, simdwidthof[dtype]()](len)
 
 
 fn _mul[
-    type: DType, //
+    dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
     x: __type_of(output),
     y: __type_of(output),
     len: Int,
@@ -308,54 +308,54 @@ fn _mul[
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         output.store(
             idx[0],
-            rebind[SIMD[type, simd_width]](
+            rebind[SIMD[dtype, simd_width]](
                 x.load[width=simd_width](idx[0])
                 * y.load[width=simd_width](idx[0])
             ),
         )
 
-    elementwise[apply_fn, simdwidthof[type]()](len)
+    elementwise[apply_fn, simdwidthof[dtype]()](len)
 
 
 fn _div[
-    type: DType, //
+    dtype: DType, //
 ](
-    output: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
     x: __type_of(output),
-    c: Scalar[type],
+    c: Scalar[dtype],
     len: Int,
 ) raises:
     @parameter
     fn apply_fn[simd_width: Int, rank: Int](idx: IndexList[rank]):
         output.store(
             idx[0],
-            rebind[SIMD[type, simd_width]](x.load[width=simd_width](idx[0]))
+            rebind[SIMD[dtype, simd_width]](x.load[width=simd_width](idx[0]))
             / c,
         )
 
-    elementwise[apply_fn, simdwidthof[type]()](len)
+    elementwise[apply_fn, simdwidthof[dtype]()](len)
 
 
 fn _sum[
-    type: DType, //
-](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
-    return sum(NDBuffer[type, 1, address_space = src.address_space](src, len))
+    dtype: DType, //
+](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
+    return sum(NDBuffer[dtype, 1, address_space = src.address_space](src, len))
 
 
 fn _mean[
-    type: DType, //
-](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
-    return mean(NDBuffer[type, 1, address_space = src.address_space](src, len))
+    dtype: DType, //
+](src: UnsafePointer[Scalar[dtype]], len: Int) raises -> Scalar[dtype]:
+    return mean(NDBuffer[dtype, 1, address_space = src.address_space](src, len))
 
 
 fn _dot[
-    type: DType, //, out_type: DType = type
-](x: UnsafePointer[Scalar[type]], y: __type_of(x), len: Int) -> Scalar[
+    dtype: DType, //, out_type: DType = dtype
+](x: UnsafePointer[Scalar[dtype]], y: __type_of(x), len: Int) -> Scalar[
     out_type
 ]:
     # loads are the expensive part, so we use the (probably) smaller
     # input type for determining simd width.
-    alias simd_width = simdwidthof[type]()
+    alias simd_width = simdwidthof[dtype]()
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 

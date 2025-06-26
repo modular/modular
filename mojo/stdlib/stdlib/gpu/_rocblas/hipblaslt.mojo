@@ -434,18 +434,18 @@ fn _check_hipblas_error(status: Status) raises:
 
 
 @always_inline
-fn _convert_to_hip_datatype[type: DType]() -> hipDataType_t:
+fn _convert_to_hip_datatype[dtype: DType]() -> hipDataType_t:
     @parameter
-    if type is DType.float32:
+    if dtype is DType.float32:
         return hipDataType_t.R_32F
-    elif type is DType.float16:
+    elif dtype is DType.float16:
         return hipDataType_t.R_16F
     else:
         constrained[
-            type is DType.bfloat16,
+            dtype is DType.bfloat16,
             (
                 "Only support FP32, FP16, BF16. Please extend"
-                " it if more types are needed."
+                " it if more dtypes are needed."
             ),
         ]()
         return hipDataType_t.R_16BF

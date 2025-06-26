@@ -17,14 +17,14 @@ from gpu.globals import WARP_SIZE
 from math import ceildiv
 from testing import assert_equal
 
-alias type = DType.uint64
+alias dtype = DType.uint64
 
 
 fn warp_sum_kernel[
-    type: DType,
+    dtype: DType,
 ](
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype]],
     size: Int,
 ):
     var tid = global_idx.x
@@ -38,21 +38,21 @@ def test_warp_sum(ctx: DeviceContext):
     alias BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[type]].alloc(size)
-    var out_host = UnsafePointer[Scalar[type]].alloc(size)
+    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
 
     for i in range(size):
         in_host[i] = i
         out_host[i] = 0
 
     # Create device buffers and copy input data
-    var in_device = ctx.enqueue_create_buffer[type](size)
-    var out_device = ctx.enqueue_create_buffer[type](size)
+    var in_device = ctx.enqueue_create_buffer[dtype](size)
+    var out_device = ctx.enqueue_create_buffer[dtype](size)
     ctx.enqueue_copy(in_device, in_host)
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[warp_sum_kernel[type=type]](
+    ctx.enqueue_function[warp_sum_kernel[dtype=dtype]](
         out_device.unsafe_ptr(),
         in_device.unsafe_ptr(),
         size,
@@ -65,7 +65,7 @@ def test_warp_sum(ctx: DeviceContext):
     ctx.synchronize()
 
     for i in range(size):
-        var expected: Scalar[type] = size * (size - 1) // 2
+        var expected: Scalar[dtype] = size * (size - 1) // 2
 
         assert_equal(
             out_host[i],
@@ -81,11 +81,11 @@ def test_warp_sum(ctx: DeviceContext):
 
 
 fn block_sum_kernel[
-    type: DType,
+    dtype: DType,
     block_size: Int,
 ](
-    output: UnsafePointer[Scalar[type]],
-    input: UnsafePointer[Scalar[type]],
+    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype]],
     size: Int,
 ):
     var tid = global_idx.x
@@ -101,21 +101,21 @@ def test_block_sum(ctx: DeviceContext):
     alias size = BLOCK_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[type]].alloc(size)
-    var out_host = UnsafePointer[Scalar[type]].alloc(size)
+    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
 
     for i in range(size):
         in_host[i] = i
         out_host[i] = 0
 
     # Create device buffers and copy input data
-    var in_device = ctx.enqueue_create_buffer[type](size)
-    var out_device = ctx.enqueue_create_buffer[type](size)
+    var in_device = ctx.enqueue_create_buffer[dtype](size)
+    var out_device = ctx.enqueue_create_buffer[dtype](size)
     ctx.enqueue_copy(in_device, in_host)
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[block_sum_kernel[type=type, block_size=BLOCK_SIZE]](
+    ctx.enqueue_function[block_sum_kernel[dtype=dtype, block_size=BLOCK_SIZE]](
         out_device.unsafe_ptr(),
         in_device.unsafe_ptr(),
         size,
@@ -128,7 +128,7 @@ def test_block_sum(ctx: DeviceContext):
     ctx.synchronize()
 
     for i in range(size):
-        var expected: Scalar[type] = size * (size - 1) // 2
+        var expected: Scalar[dtype] = size * (size - 1) // 2
 
         assert_equal(
             out_host[i],

@@ -291,7 +291,7 @@ fn blackwell_matmul_tma_umma_kernel[
         datapaths=16,
         bits=256,
         repeat = BN // 8,
-        type=accum_type,
+        dtype=accum_type,
         pack=False,
         width=c_frag_size,
     ](tmem_addr)

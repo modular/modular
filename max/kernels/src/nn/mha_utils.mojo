@@ -394,7 +394,7 @@ fn _copy_frag_to_smem_nvidia[
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
-        p_smem_iter.type,
+        p_smem_iter.dtype,
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
@@ -438,7 +438,9 @@ fn _copy_frag_to_smem_nvidia[
                 var tile_BMxBK = p_smem_iter.next_unsafe(
                     Int((offset_BMxBN % BN) // BK)
                 )[]
-                alias align = alignof[SIMD[p_smem_iter.type, frag_simd_width]]()
+                alias align = alignof[
+                    SIMD[p_smem_iter.dtype, frag_simd_width]
+                ]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
 
 
@@ -479,7 +481,7 @@ fn _copy_frag_to_smem_amd[
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
     var p_smem_tile = LayoutTensor[
-        p_smem_iter.type,
+        p_smem_iter.dtype,
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)

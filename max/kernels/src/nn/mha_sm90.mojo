@@ -102,7 +102,7 @@ fn mha_sm90_dispatch[
     v_t: MHAOperand,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
-    type: DType,
+    dtype: DType,
     output_type: DType,
     max_prompt_len_t: OptionallyStaticInt,
     partition_t: MHAPartitionScheme, //,
@@ -113,7 +113,7 @@ fn mha_sm90_dispatch[
     _is_cache_length_accurate: Bool,
 ](
     output: UnsafePointer[Scalar[output_type]],
-    q: UnsafePointer[Scalar[type]],
+    q: UnsafePointer[Scalar[dtype]],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
@@ -827,7 +827,7 @@ fn _produce[
     ],
     kv: kv_t,
     smem_tile: LayoutTensor[
-        kv_t.type,
+        kv_t.dtype,
         smem_layout,
         MutableAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -878,7 +878,7 @@ fn _produce[
     @always_inline("nodebug")
     fn copy_gmem_to_smem[masked: Bool]():
         gmem_block = LayoutTensor[
-            kv_t.type,
+            kv_t.dtype,
             kv_gmem_layout,
             MutableAnyOrigin,
             layout_int_type = DType.int32,
@@ -1137,8 +1137,8 @@ fn _mha_sm90[
       TODO: use more optimized kernels for them
 
     """
-    alias k_type = k_t.type
-    alias v_type = v_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
     alias decoding: Bool = _is_decoding[max_seq_len_t]()
 
@@ -1430,7 +1430,7 @@ fn _mha_sm90[
     fn k_tile(
         idx: UInt32,
         out k_smem: LayoutTensor[
-            k_t.type,
+            k_t.dtype,
             k_smem_layout,
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,
@@ -1446,7 +1446,7 @@ fn _mha_sm90[
     fn v_tile(
         idx: UInt32,
         out v_smem: LayoutTensor[
-            v_t.type,
+            v_t.dtype,
             v_smem_layout,
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,

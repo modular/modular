@@ -19,7 +19,7 @@ from layout.layout import DimList
 trait MHAOperand:
     """This serves as the trait to support arguments to our MHA kernel."""
 
-    alias type: DType
+    alias dtype: DType
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
@@ -31,7 +31,7 @@ trait MHAOperand:
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.type]]:
+    ) -> UnsafePointer[Scalar[Self.dtype]]:
         ...
 
     @always_inline
@@ -53,7 +53,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     KVCacheT type, but we need to solve some cyclic dependencies first.
     """
 
-    alias type = cache_t.type
+    alias dtype = cache_t.dtype
     var cache: cache_t
 
     fn __init__(out self, cache: cache_t):
@@ -68,7 +68,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.type]]:
+    ) -> UnsafePointer[Scalar[Self.dtype]]:
         return self.cache.block_paged_ptr[tile_size](
             Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
         )
@@ -84,16 +84,16 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
 
 @register_passable("trivial")
 struct NDBufferMHAOperand[
-    type_: DType, rank: Int, shape: DimList, stride: DimList
+    dtype_: DType, rank: Int, shape: DimList, stride: DimList
 ](MHAOperand):
     """An implementation for NDBuffer arguments to MHA kernels."""
 
-    alias type = type_
-    var buffer: NDBuffer[Self.type, rank, MutableAnyOrigin, shape, stride]
+    alias dtype = dtype_
+    var buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride]
 
     fn __init__(
         out self,
-        buffer: NDBuffer[Self.type, rank, MutableAnyOrigin, shape, stride],
+        buffer: NDBuffer[Self.dtype, rank, MutableAnyOrigin, shape, stride],
     ):
         self.buffer = buffer
 
@@ -106,7 +106,7 @@ struct NDBufferMHAOperand[
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.type]]:
+    ) -> UnsafePointer[Scalar[Self.dtype]]:
         var ret_ptr = self.buffer._offset(
             (
                 Int(batch_idx),
@@ -115,7 +115,7 @@ struct NDBufferMHAOperand[
                 Int(head_dim_idx),
             )
         )
-        return rebind[UnsafePointer[Scalar[Self.type]]](ret_ptr)
+        return rebind[UnsafePointer[Scalar[Self.dtype]]](ret_ptr)
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -129,18 +129,18 @@ struct NDBufferMHAOperand[
 
 
 @register_passable("trivial")
-struct RaggedMHAOperand[type_: DType, shape: DimList, stride: DimList](
+struct RaggedMHAOperand[dtype_: DType, shape: DimList, stride: DimList](
     MHAOperand
 ):
     """An implementation for ragged NDBuffer arguments to MHA kernels."""
 
-    alias type = type_
-    var buffer: NDBuffer[Self.type, 3, MutableAnyOrigin, shape, stride]
+    alias dtype = dtype_
+    var buffer: NDBuffer[Self.dtype, 3, MutableAnyOrigin, shape, stride]
     var cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_]
 
     fn __init__(
         out self,
-        buffer: NDBuffer[Self.type, 3, MutableAnyOrigin, shape, stride],
+        buffer: NDBuffer[Self.dtype, 3, MutableAnyOrigin, shape, stride],
         cache_row_offsets: NDBuffer[DType.uint32, 1, MutableAnyOrigin, *_],
     ):
         self.buffer = buffer
@@ -155,7 +155,7 @@ struct RaggedMHAOperand[type_: DType, shape: DimList, stride: DimList](
         start_tok_idx: UInt32,
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
-    ) -> UnsafePointer[Scalar[Self.type]]:
+    ) -> UnsafePointer[Scalar[Self.dtype]]:
         global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
@@ -166,7 +166,7 @@ struct RaggedMHAOperand[type_: DType, shape: DimList, stride: DimList](
                 Int(head_dim_idx),
             )
         )
-        return rebind[UnsafePointer[Scalar[Self.type]]](ret_ptr)
+        return rebind[UnsafePointer[Scalar[Self.dtype]]](ret_ptr)
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:

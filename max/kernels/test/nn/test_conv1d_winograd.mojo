@@ -20,11 +20,11 @@ from utils.index import Index
 
 
 fn winograd_1d_convolution_3[
-    type: DType, //, filter_len: Int
+    dtype: DType, //, filter_len: Int
 ](
-    input: UnsafePointer[Scalar[type]],
-    filter: UnsafePointer[Scalar[type]],
-    output: UnsafePointer[Scalar[type]],
+    input: UnsafePointer[Scalar[dtype]],
+    filter: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype]],
     input_len: Int,
 ):
     # TODO: Current implementation requires input_len >= 4
@@ -54,7 +54,7 @@ fn winograd_1d_convolution_3[
 
 
 # CHECK-LABEL: test_conv1d_winograd
-fn test[type: DType](C: Int):  # Input Len
+fn test[dtype: DType](C: Int):  # Input Len
     print("== test_conv1d_winograd")
 
     # TODO: make assert dynamic
@@ -62,13 +62,13 @@ fn test[type: DType](C: Int):  # Input Len
     alias S: Int = 3  # Filter len
 
     var O: Int = C - S + 1  # Output len (method="same")
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(C)
-    var filter_ptr = UnsafePointer[Scalar[type]].alloc(S)
-    var output_ptr = UnsafePointer[Scalar[type]].alloc(O)
-    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(O)
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(C)
+    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(S)
+    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(O)
+    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(O)
 
-    rand[type](input_ptr, C)
-    rand[type](filter_ptr, S)
+    rand[dtype](input_ptr, C)
+    rand[dtype](filter_ptr, S)
 
     var output_shape = Index(1, 1, 1, O, 1)
     var input_shape = Index(1, 1, 1, C, 1)
@@ -81,9 +81,9 @@ fn test[type: DType](C: Int):  # Input Len
     alias num_groups = 1
 
     Naive2dConvolution[
-        type,
-        type,
-        type,
+        dtype,
+        dtype,
+        dtype,
     ].run(
         output_ref_ptr,
         input_ptr,
@@ -127,12 +127,12 @@ fn test[type: DType](C: Int):  # Input Len
 
 
 def main():
-    alias type = DType.float32
+    alias dtype = DType.float32
 
     # Make sure to test both even and odd
-    test[type](7)
-    test[type](128)
-    test[type](129)
-    test[type](256)
-    test[type](16000)
-    test[type](3199)
+    test[dtype](7)
+    test[dtype](128)
+    test[dtype](129)
+    test[dtype](256)
+    test[dtype](16000)
+    test[dtype](3199)

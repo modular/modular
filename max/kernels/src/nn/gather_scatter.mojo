@@ -41,8 +41,8 @@ fn _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
 
 @always_inline
 fn _unsafe_normalize_neg_index[
-    type: DType, width: Int, out_type: DType = DType.index
-](idx: SIMD[type, width], dim_size: Int) -> SIMD[out_type, width]:
+    dtype: DType, width: Int, out_type: DType = DType.index
+](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return (idx < 0).select(
         idx.cast[out_type]() + dim_size, idx.cast[out_type]()
     )
@@ -63,16 +63,16 @@ fn normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
 
 @always_inline
 fn normalize_neg_index[
-    type: DType, width: Int, out_type: DType = DType.index
-](idx: SIMD[type, width], dim_size: Int) raises -> SIMD[out_type, width]:
+    dtype: DType, width: Int, out_type: DType = DType.index
+](idx: SIMD[dtype, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
 
     Returns val + dim if val < 0 else val
     """
     constrained[
-        type.is_integral(),
-        "normalize_neg_index expects index to be an integral type",
+        dtype.is_integral(),
+        "normalize_neg_index expects index to be an integral dtype",
     ]()
 
     if all(-SIMD[out_type, width](dim_size) <= idx.cast[out_type]()) and all(
@@ -112,13 +112,13 @@ struct Axis(Indexer, Intable):
 
 @always_inline
 fn gather_reduce[
-    type: DType,
+    dtype: DType,
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) -> SIMD[type, width],
+    reduce_fn: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) -> SIMD[dtype, width],
     output_rank: Int,
     output_shape: DimList,
     input_rank: Int,
@@ -126,15 +126,15 @@ fn gather_reduce[
     indices_rank: Int,
     indices_shape: DimList,
 ](
-    output: NDBuffer[mut=True, type, output_rank, _, output_shape],
-    input: NDBuffer[type, input_rank, _, input_shape],
+    output: NDBuffer[mut=True, dtype, output_rank, _, output_shape],
+    input: NDBuffer[dtype, input_rank, _, input_shape],
     indices: NDBuffer[
         DType.int32,
         indices_rank,
         _,
         indices_shape,
     ],
-    reduce_init: Scalar[type],
+    reduce_init: Scalar[dtype],
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
     reduces the output across axis 1 to produce output[i, k].
@@ -163,7 +163,7 @@ fn gather_reduce[
             indices.dim[0]()
             * indices.dim[1]()
             * input.dim[1]()
-            * sizeof[type](),
+            * sizeof[dtype](),
             MIN_TASK_COPY_SIZE,
         ),
         num_threads,
@@ -177,8 +177,8 @@ fn gather_reduce[
     if output_rank == 3:
         output_2d_dims[1] = output.dim[2]()
 
-    var output_bind = NDBuffer[type, 2](output.data, output_2d_dims)
-    var input_bind = rebind[NDBuffer[type, 2, input.origin]](input)
+    var output_bind = NDBuffer[dtype, 2](output.data, output_2d_dims)
+    var input_bind = rebind[NDBuffer[dtype, 2, input.origin]](input)
     var indices_bind = rebind[
         NDBuffer[DType.int32, indices_rank, indices.origin, indices_shape]
     ](indices)
@@ -230,9 +230,9 @@ fn gather_reduce[
                 fn reduce_j_tile[
                     unroll_factor: Int
                 ](
-                    accums: StaticTuple[SIMD[type, simd_width], unroll_factor],
+                    accums: StaticTuple[SIMD[dtype, simd_width], unroll_factor],
                     j: Int,
-                ) -> StaticTuple[SIMD[type, simd_width], unroll_factor]:
+                ) -> StaticTuple[SIMD[dtype, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = _unsafe_normalize_neg_index(
                         indices.load[width=unroll_factor](i, j),
@@ -244,19 +244,19 @@ fn gather_reduce[
                         var gather_chunk = input.load[width=simd_width](
                             Int(idxs[unroll_idx]), k
                         )
-                        out[unroll_idx] = reduce_fn[type, simd_width](
+                        out[unroll_idx] = reduce_fn[dtype, simd_width](
                             accums[unroll_idx], gather_chunk
                         )
                     return out
 
                 var j_residual_start = align_down(indices.dim[1](), j_tile_size)
-                var accums = StaticTuple[SIMD[type, simd_width], j_tile_size](
+                var accums = StaticTuple[SIMD[dtype, simd_width], j_tile_size](
                     reduce_init
                 )
                 for j in range(0, j_residual_start, j_tile_size):
                     accums = reduce_j_tile[j_tile_size](accums, j)
 
-                var accum = SIMD[type, simd_width](reduce_init)
+                var accum = SIMD[dtype, simd_width](reduce_init)
 
                 # TODO: use tree reduction here by generalizing simd reduce method
                 @parameter
@@ -265,7 +265,7 @@ fn gather_reduce[
 
                 for j in range(j_residual_start, indices.dim[1](), 1):
                     accum = reduce_j_tile[1](
-                        StaticTuple[SIMD[type, simd_width], 1](accum), j
+                        StaticTuple[SIMD[dtype, simd_width], 1](accum), j
                     )[0]
 
                 var out_idx = IndexList[2](i, k)
@@ -281,14 +281,14 @@ fn gather_reduce[
 
 # TODO: Delete / for testing purposes (test_gather.mojo)
 fn gather[
-    type: DType,
+    dtype: DType,
     indices_type: DType, //,
     *,
     axis: Int,
     target: StaticString = "cpu",
 ](
-    output: NDBuffer[mut=True, type, *_],
-    input: NDBuffer[type, *_],
+    output: NDBuffer[mut=True, dtype, *_],
+    input: NDBuffer[dtype, *_],
     indices: NDBuffer[indices_type, *_],
     *,
     context: DeviceContext,
@@ -340,7 +340,7 @@ fn gather[
     @always_inline
     fn input_fn[
         width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return input.load[width=width](rebind[IndexList[input.rank]](coords))
 
     @parameter
@@ -356,14 +356,14 @@ fn gather[
     @always_inline
     fn output_fn[
         width: Int, _rank: Int
-    ](coords: IndexList[_rank], val: SIMD[type, width]):
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         output.store[width=width](
             rebind[IndexList[output.rank]](coords),
-            rebind[SIMD[type, width]](val),
+            rebind[SIMD[dtype, width]](val),
         )
 
     gather[
-        type=type,
+        dtype=dtype,
         indices_type=indices_type,
         input_fn=input_fn,
         indices_fn=indices_fn,
@@ -380,14 +380,14 @@ fn gather[
 
 
 fn gather[
-    type: DType,
+    dtype: DType,
     indices_type: DType, //,
     *,
     axis: Int,
     target: StaticString = "cpu",
 ](
-    output: NDBuffer[mut=True, type, *_],
-    input: NDBuffer[type, *_],
+    output: NDBuffer[mut=True, dtype, *_],
+    input: NDBuffer[dtype, *_],
     indices: NDBuffer[indices_type, *_],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
@@ -439,7 +439,7 @@ fn gather[
     @always_inline
     fn input_fn[
         width: Int, _rank: Int
-    ](coords: IndexList[_rank]) -> SIMD[type, width]:
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return input.load[width=width](rebind[IndexList[input.rank]](coords))
 
     @parameter
@@ -455,14 +455,14 @@ fn gather[
     @always_inline
     fn output_fn[
         width: Int, _rank: Int
-    ](coords: IndexList[_rank], val: SIMD[type, width]):
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         output.store[width=width](
             rebind[IndexList[output.rank]](coords),
-            rebind[SIMD[type, width]](val),
+            rebind[SIMD[dtype, width]](val),
         )
 
     gather[
-        type=type,
+        dtype=dtype,
         indices_type=indices_type,
         input_fn=input_fn,
         indices_fn=indices_fn,
@@ -511,16 +511,16 @@ fn gather_guards(
 @always_inline
 fn gather_elementwise_fn_wrapper[
     *,
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
-        type, width
+        dtype, width
     ],
     indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
     output_fn: fn[width: Int, rank: Int] (
-        IndexList[rank], SIMD[type, width]
+        IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     simd_width: Int,
     prefetch_fn: OptionalReg[
@@ -594,16 +594,16 @@ fn gather_elementwise_fn_wrapper[
 @always_inline
 fn gather[
     *,
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
-        type, width
+        dtype, width
     ],
     indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
     output_fn: fn[width: Int, rank: Int] (
-        IndexList[rank], SIMD[type, width]
+        IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
         fn[
@@ -639,7 +639,7 @@ fn gather[
             simd_width: Int, rank: Int
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
-                type=type,
+                dtype=dtype,
                 indices_type=indices_type,
                 input_fn=input_fn,
                 indices_fn=indices_fn,
@@ -668,7 +668,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simdwidthof[type](),
+                simd_width = simdwidthof[dtype](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
@@ -680,16 +680,16 @@ fn gather[
 @always_inline
 fn gather[
     *,
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
-        type, width
+        dtype, width
     ],
     indices_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
     output_fn: fn[width: Int, rank: Int] (
-        IndexList[rank], SIMD[type, width]
+        IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
         fn[
@@ -729,7 +729,7 @@ fn gather[
             simd_width: Int, rank: Int
         ](idx: IndexList[rank]):
             gather_elementwise_fn_wrapper[
-                type=type,
+                dtype=dtype,
                 indices_type=indices_type,
                 input_fn=input_fn,
                 indices_fn=indices_fn,
@@ -755,7 +755,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simdwidthof[type, target=compile_target](),
+                simd_width = simdwidthof[dtype, target=compile_target](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
@@ -778,8 +778,10 @@ fn scatter_nd_generator[
     /,
     reduce_fn: OptionalReg[
         fn[
-            type: DType, width: Int
-        ] (SIMD[type, width], SIMD[type, width]) capturing -> SIMD[type, width]
+            dtype: DType, width: Int
+        ] (SIMD[dtype, width], SIMD[dtype, width]) capturing -> SIMD[
+            dtype, width
+        ]
     ] = None,
     *,
     _trace_description: StaticString = "scatter_nd",
@@ -1157,9 +1159,9 @@ fn gather_shape[
 
 @always_inline
 fn scatter_elements[
-    reduce_fn: fn[type: DType, width: Int] (
-        SIMD[type, width], SIMD[type, width]
-    ) capturing -> SIMD[type, width],
+    reduce_fn: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width], SIMD[dtype, width]
+    ) capturing -> SIMD[dtype, width],
     rank: Int,
     input_type: DType,
     indices_type: DType,
@@ -1412,7 +1414,7 @@ fn gather_nd_shape[
 
 
 fn gather_nd[
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
@@ -1421,9 +1423,9 @@ fn gather_nd[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: NDBuffer[type, data_rank],
+    data: NDBuffer[dtype, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[mut=True, type, output_rank],
+    output: NDBuffer[mut=True, dtype, output_rank],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -1431,7 +1433,7 @@ fn gather_nd[
     Based on reference implementation: https://github.com/onnx/onnx/blob/main/onnx/backend/test/case/node/gathernd.py.
 
     Parameters:
-        type: Type of data tensor.
+        dtype: Type of data tensor.
         indices_type: Type of indices tensor.
         data_rank: Rank of data tensor (data_rank >= 1).
         indices_rank: Rank of indices tensor (indices_rank >= 1).
@@ -1468,7 +1470,7 @@ fn gather_nd[
 
 
 fn _gather_nd_impl[
-    type: DType,
+    dtype: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
@@ -1477,9 +1479,9 @@ fn _gather_nd_impl[
     target: StaticString = "cpu",
     single_thread_blocking_override: Bool = False,
 ](
-    data: NDBuffer[type, data_rank],
+    data: NDBuffer[dtype, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
-    output: NDBuffer[mut=True, type, output_rank],
+    output: NDBuffer[mut=True, dtype, output_rank],
     ctx: Optional[DeviceContext] = None,
 ) raises:
     constrained[
@@ -1547,7 +1549,7 @@ fn _gather_nd_impl[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
 
     # Only use SIMD if:
     #   - the input data is contiguous
@@ -1643,7 +1645,7 @@ fn scatter_set_constant[
     """
     constrained[
         index_type.is_integral(),
-        "index_type must be an integer type",
+        "index_type must be an integer dtype",
     ]()
     constrained[
         data.layout.rank() == 2,

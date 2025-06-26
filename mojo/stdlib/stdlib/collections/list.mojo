@@ -621,12 +621,12 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         other._len = 0
 
     fn extend[
-        D: DType, //
-    ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _]):
+        dtype: DType, //
+    ](mut self: List[Scalar[dtype], *_, **_], value: SIMD[dtype, _]):
         """Extends this list with the elements of a vector.
 
         Parameters:
-            D: The DType.
+            dtype: The DType.
 
         Args:
             value: The value to append.
@@ -639,12 +639,17 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self._len += value.size
 
     fn extend[
-        D: DType, //
-    ](mut self: List[Scalar[D], *_, **_], value: SIMD[D, _], *, count: Int):
+        dtype: DType, //
+    ](
+        mut self: List[Scalar[dtype], *_, **_],
+        value: SIMD[dtype, _],
+        *,
+        count: Int,
+    ):
         """Extends this list with `count` number of elements from a vector.
 
         Parameters:
-            D: The DType.
+            dtype: The DType.
 
         Args:
             value: The value to append.
@@ -656,17 +661,17 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         debug_assert(count <= value.size, "count must be <= value.size")
         self.reserve(self._len + count)
-        var v_ptr = UnsafePointer(to=value).bitcast[Scalar[D]]()
+        var v_ptr = UnsafePointer(to=value).bitcast[Scalar[dtype]]()
         memcpy(self._unsafe_next_uninit_ptr(), v_ptr, count)
         self._len += count
 
     fn extend[
-        D: DType, //
-    ](mut self: List[Scalar[D], *_, **_], value: Span[Scalar[D]]):
+        dtype: DType, //
+    ](mut self: List[Scalar[dtype], *_, **_], value: Span[Scalar[dtype]]):
         """Extends this list with the elements of a `Span`.
 
         Parameters:
-            D: The DType.
+            dtype: The DType.
 
         Args:
             value: The value to append.

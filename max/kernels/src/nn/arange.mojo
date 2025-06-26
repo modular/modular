@@ -24,24 +24,24 @@ from utils.index import IndexList
 
 @always_inline
 fn arange[
-    type: DType, simd_width: Int
+    dtype: DType, simd_width: Int
 ](
-    start: Scalar[type],
-    stop: Scalar[type],
-    step: Scalar[type],
+    start: Scalar[dtype],
+    stop: Scalar[dtype],
+    step: Scalar[dtype],
     index: IndexList[1],
-) -> SIMD[type, simd_width]:
-    return start + (iota[type, simd_width](index[0]) * step)
+) -> SIMD[dtype, simd_width]:
+    return start + (iota[dtype, simd_width](index[0]) * step)
 
 
 @always_inline
 fn arange_shape[
-    type: DType,
+    dtype: DType,
     single_thread_blocking_override: Bool,
 ](
-    start: Scalar[type],
-    stop: Scalar[type],
-    step: Scalar[type],
+    start: Scalar[dtype],
+    stop: Scalar[dtype],
+    step: Scalar[dtype],
 ) raises -> IndexList[1]:
     if step == 0:
         raise Error("[range] step must be non-zero")

@@ -76,10 +76,10 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
         @always_inline
         @parameter
         fn reduce_fn[
-            _type: DType, width: Int
+            _dtype: DType, width: Int
         ](
-            input_val: SIMD[_type, width], update_val: SIMD[_type, width]
-        ) -> SIMD[_type, width]:
+            input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]
+        ) -> SIMD[_dtype, width]:
             return input_val + update_val
 
         try:

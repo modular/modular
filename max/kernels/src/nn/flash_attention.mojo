@@ -83,15 +83,12 @@ struct _MatmulConfig:
             )
 
 
-struct _Matmul[
-    type: DType,
-    simd_width: Int,
-]:
+struct _Matmul[dtype: DType, simd_width: Int]:
     alias _matmul_config = _MatmulConfig._get_config()
 
     alias _input_fn_type = fn[simd_width: Int] (
         x: Int, y: Int
-    ) capturing -> SIMD[type, simd_width]
+    ) capturing -> SIMD[dtype, simd_width]
 
     @staticmethod
     @always_inline
@@ -99,11 +96,11 @@ struct _Matmul[
         tile_m: Int, tile_n: Int
     ](
         K: Int,
-        a_ptr: UnsafePointer[Scalar[type]],
+        a_ptr: UnsafePointer[Scalar[dtype]],
         a_stride: Int,
-        b_ptr: UnsafePointer[Scalar[type]],
+        b_ptr: UnsafePointer[Scalar[dtype]],
         b_stride: Int,
-        mut c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
+        mut c_tile: _Accumulator[dtype, tile_m, tile_n, simd_width],
     ):
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
@@ -111,7 +108,7 @@ struct _Matmul[
         @parameter
         @always_inline
         fn loop_body[lane_count: Int](k: Int):
-            var a_tile = InlineArray[SIMD[type, lane_count], tile_m](0)
+            var a_tile = InlineArray[SIMD[dtype, lane_count], tile_m](0)
 
             @parameter
             for m in range(tile_m):
@@ -140,11 +137,11 @@ struct _Matmul[
         tile_m: Int, tile_n: Int
     ](
         K: Int,
-        a_ptr: UnsafePointer[Scalar[type]],
+        a_ptr: UnsafePointer[Scalar[dtype]],
         a_stride: Int,
-        b_ptr: UnsafePointer[Scalar[type]],
+        b_ptr: UnsafePointer[Scalar[dtype]],
         b_stride: Int,
-        mut c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
+        mut c_tile: _Accumulator[dtype, tile_m, tile_n, simd_width],
     ):
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
@@ -152,7 +149,7 @@ struct _Matmul[
         @parameter
         @always_inline
         fn loop_body[unroll_factor: Int](k: Int):
-            var b_tile = InlineArray[SIMD[type, simd_width], tile_n](0)
+            var b_tile = InlineArray[SIMD[dtype, simd_width], tile_n](0)
 
             @parameter
             for k in range(unroll_factor):
@@ -180,10 +177,10 @@ struct _Matmul[
         M: Int,
         N: Int,
         K: Int,
-        a_ptr: UnsafePointer[Scalar[type]],
+        a_ptr: UnsafePointer[Scalar[dtype]],
         a_stride: Int,
-        b_ptr: UnsafePointer[Scalar[type]],
-        c_ptr: UnsafePointer[Scalar[type]],
+        b_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         accumulate: Bool = False,
     ):
@@ -197,7 +194,7 @@ struct _Matmul[
 
             @parameter
             fn process_cols[tile_n: Int](n_unscaled: Int):
-                var c_tile = _Accumulator[type, tile_m, tile_n, simd_width]()
+                var c_tile = _Accumulator[dtype, tile_m, tile_n, simd_width]()
 
                 if accumulate:
                     c_tile.load(cn_ptr, c_stride)
@@ -232,7 +229,7 @@ struct _Matmul[
     @staticmethod
     fn _pack_buffer_transposed[
         input_b_fn: Self._input_fn_type, static_k: Dim
-    ](packed_ptr: UnsafePointer[Scalar[type]], N: Int, dynamic_k: Int):
+    ](packed_ptr: UnsafePointer[Scalar[dtype]], N: Int, dynamic_k: Int):
         var K = Int(static_k) if static_k else dynamic_k
 
         var aligned_n = align_up(N, simd_width)
@@ -244,7 +241,10 @@ struct _Matmul[
         alias tile_sizes = VariadicList[Int](transpose_width, 1)
 
         var transpose_buffer = NDBuffer[
-            type, 2, MutableAnyOrigin, DimList(transpose_width, transpose_width)
+            dtype,
+            2,
+            MutableAnyOrigin,
+            DimList(transpose_width, transpose_width),
         ].stack_allocation()
 
         @parameter
@@ -294,7 +294,7 @@ struct _Matmul[
     @staticmethod
     fn _pack_buffer[
         input_b_fn: Self._input_fn_type
-    ](packed_ptr: UnsafePointer[Scalar[type]], N: Int, K: Int):
+    ](packed_ptr: UnsafePointer[Scalar[dtype]], N: Int, K: Int):
         var output_ptr = packed_ptr
         var aligned_n = align_up(N, simd_width)
 
@@ -320,8 +320,8 @@ struct _Matmul[
     ](
         N: Int,
         dynamic_k: Int,
-        a_ptr: UnsafePointer[Scalar[type]],
-        c_ptr: UnsafePointer[Scalar[type]],
+        a_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
     ):
         var K = Int(static_k) if static_k else dynamic_k
 
@@ -337,7 +337,7 @@ struct _Matmul[
             ](
                 start: Int,
                 end: Int,
-                mut accum: InlineArray[SIMD[type, _simd_width], tile_n],
+                mut accum: InlineArray[SIMD[dtype, _simd_width], tile_n],
             ):
                 for k in range(start, end, _simd_width):
                     var a_data = a_ptr.load[width=_simd_width](k)
@@ -352,10 +352,10 @@ struct _Matmul[
             fn do_reduce_accum[
                 target_width: Int, _simd_width: Int
             ](
-                accum: InlineArray[SIMD[type, _simd_width], tile_n]
-            ) -> InlineArray[SIMD[type, target_width], tile_n]:
+                accum: InlineArray[SIMD[dtype, _simd_width], tile_n]
+            ) -> InlineArray[SIMD[dtype, target_width], tile_n]:
                 var accum_reduce = InlineArray[
-                    SIMD[type, target_width], tile_n
+                    SIMD[dtype, target_width], tile_n
                 ](0)
 
                 @parameter
@@ -368,7 +368,7 @@ struct _Matmul[
 
             var unroll_loop_end = align_down(K, unroll_simd_width)
             var unroll_accum = InlineArray[
-                SIMD[type, unroll_simd_width], tile_n
+                SIMD[dtype, unroll_simd_width], tile_n
             ](0)
             do_reduce(0, unroll_loop_end, unroll_accum)
 
@@ -394,8 +394,8 @@ struct _Matmul[
     ](
         N: Int,
         K: Int,
-        a_ptr: UnsafePointer[Scalar[type]],
-        c_ptr: UnsafePointer[Scalar[type]],
+        a_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         accumulate: Bool = False,
     ):
         var cn_ptr = c_ptr
@@ -403,7 +403,7 @@ struct _Matmul[
         @parameter
         @always_inline
         fn process_cols[_simd_width: Int](n: Int):
-            var accum = SIMD[type, _simd_width]()
+            var accum = SIMD[dtype, _simd_width]()
 
             for k in range(K):
                 var b_data = input_b_fn[_simd_width](n, k)
@@ -428,10 +428,10 @@ struct _Matmul[
         M: Int,
         N: Int,
         K: Int,
-        a_ptr: UnsafePointer[Scalar[type]],
+        a_ptr: UnsafePointer[Scalar[dtype]],
         a_stride: Int,
-        packed_ptr: UnsafePointer[Scalar[type]],
-        c_ptr: UnsafePointer[Scalar[type]],
+        packed_ptr: UnsafePointer[Scalar[dtype]],
+        c_ptr: UnsafePointer[Scalar[dtype]],
         c_stride: Int,
         accumulate: Bool = False,
     ):
@@ -458,7 +458,7 @@ struct _Matmul[
             Self._pack_buffer[input_b_fn](packed_ptr, N, K)
 
         @parameter
-        if use_apple_accelerate_lib[type, type, type]():
+        if use_apple_accelerate_lib[dtype, dtype, dtype]():
             return _cblas_f32(
                 M,
                 N,
@@ -487,7 +487,7 @@ struct _Matmul[
 
 
 struct _FlashAttentionConfig[
-    type: DType,
+    dtype: DType,
     rank: Int,
     simd_width: Int,
     output_static_shape: DimList,
@@ -523,49 +523,49 @@ struct _FlashAttentionConfig[
 
 
 struct _FlashAttention[
-    type: DType,
+    dtype: DType,
     rank: Int, //,
     input_q_ptr_fn: fn (IndexList[rank]) capturing -> UnsafePointer[
-        Scalar[type]
+        Scalar[dtype]
     ],
     input_k_fn: fn[simd_width: Int, rank: Int] (
         idx: IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
         idx: IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     mask_fn: fn[simd_width: Int, mask_rank: Int] (
         idx: IndexList[mask_rank],
-        score_vec: SIMD[type, simd_width],
+        score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
     output_ptr_fn: fn (IndexList[rank]) capturing -> UnsafePointer[
-        Scalar[type]
+        Scalar[dtype]
     ],
     q_length_fn: fn (batch: Int) capturing -> Int,
     kv_length_fn: fn (batch: Int) capturing -> Int,
     kv_cache_length_fn: fn (batch: Int) capturing -> Int,
     padded_output_shape: DimList,
     *,
-    simd_width: Int = simdwidthof[type](),
+    simd_width: Int = simdwidthof[dtype](),
 ]:
-    alias _matmul = _Matmul[type, simd_width]
+    alias _matmul = _Matmul[dtype, simd_width]
     alias _config = _FlashAttentionConfig[
-        type, rank, simd_width, padded_output_shape
+        dtype, rank, simd_width, padded_output_shape
     ]()
     alias _depth_static_dim = padded_output_shape.at[rank - 1]()
 
     @staticmethod
     fn _online_softmax[
         mask_fn: fn[simd_width: Int] (
-            m: Int, n: Int, score_vec: SIMD[type, simd_width]
-        ) capturing -> SIMD[type, simd_width],
+            m: Int, n: Int, score_vec: SIMD[dtype, simd_width]
+        ) capturing -> SIMD[dtype, simd_width],
     ](
-        qk_block_ptr: UnsafePointer[Scalar[type]],
-        o_block_ptr: UnsafePointer[Scalar[type]],
-        max_vals: UnsafePointer[Scalar[type]],
-        sum_vals: UnsafePointer[Scalar[type]],
+        qk_block_ptr: UnsafePointer[Scalar[dtype]],
+        o_block_ptr: UnsafePointer[Scalar[dtype]],
+        max_vals: UnsafePointer[Scalar[dtype]],
+        sum_vals: UnsafePointer[Scalar[dtype]],
         count_m: Int,
         count_n: Int,
         kv_seq_cnt: Int,
@@ -575,15 +575,15 @@ struct _FlashAttention[
         var o_row_ptr = o_block_ptr
 
         for m in range(count_m):
-            var qk_row = NDBuffer[type, 1](qk_row_ptr, kv_seq_cnt)
+            var qk_row = NDBuffer[dtype, 1](qk_row_ptr, kv_seq_cnt)
 
             @parameter
             @always_inline
             fn pass1_input_gen_fn[
-                _type: DType, _simd_width: Int
-            ](idx: Int) -> SIMD[_type, _simd_width]:
+                _dtype: DType, _simd_width: Int
+            ](idx: Int) -> SIMD[_dtype, _simd_width]:
                 var val = qk_row_ptr.load[width=_simd_width](idx)
-                return mask_fn(m, idx, val * scale.cast[type]()).cast[_type]()
+                return mask_fn(m, idx, val * scale.cast[dtype]()).cast[_dtype]()
 
             # Update the row with the scale and mask. Find the maximum value
             # of the row to bias the exponential function below for numeric
@@ -591,8 +591,8 @@ struct _FlashAttention[
             var max_val = map_reduce[
                 simd_width,
                 Dim(),
-                type,
-                type,
+                dtype,
+                dtype,
                 __origin_of(),
                 pass1_input_gen_fn,
                 __origin_of(),
@@ -603,18 +603,18 @@ struct _FlashAttention[
             @parameter
             @always_inline
             fn pass2_input_gen_fn[
-                _type: DType, _simd_width: Int
-            ](idx: Int) -> SIMD[_type, _simd_width]:
+                _dtype: DType, _simd_width: Int
+            ](idx: Int) -> SIMD[_dtype, _simd_width]:
                 var val = qk_row_ptr.load[width=_simd_width](idx)
-                return rebind[SIMD[_type, _simd_width]](exp(val - max_val))
+                return rebind[SIMD[_dtype, _simd_width]](exp(val - max_val))
 
             # Update the row with the exponential of each value and accumulate
             # the result.
             var accum_val = map_reduce[
                 simd_width,
                 Dim(),
-                type,
-                type,
+                dtype,
+                dtype,
                 __origin_of(),
                 pass2_input_gen_fn,
                 __origin_of(),
@@ -677,24 +677,24 @@ struct _FlashAttention[
         fn task_func(task_id: Int):
             var qk_block_ptr = stack_allocation[
                 Self._config.block_m * Self._config.qk_block_n,
-                type,
-                alignment = alignof[SIMD[type, simd_width]](),
+                dtype,
+                alignment = alignof[SIMD[dtype, simd_width]](),
             ]()
             var o_block_ptr = stack_allocation[
                 Self._config.block_m * Self._config.o_block_n,
-                type,
-                alignment = alignof[SIMD[type, simd_width]](),
+                dtype,
+                alignment = alignof[SIMD[dtype, simd_width]](),
             ]()
             var max_vals = NDBuffer[
-                type, 1, MutableAnyOrigin, Dim(Self._config.block_m)
+                dtype, 1, MutableAnyOrigin, Dim(Self._config.block_m)
             ]().stack_allocation()
             var sum_vals = NDBuffer[
-                type, 1, MutableAnyOrigin, Dim(Self._config.block_m)
+                dtype, 1, MutableAnyOrigin, Dim(Self._config.block_m)
             ]().stack_allocation()
 
             var packed_ptr = UnsafePointer[
-                Scalar[type],
-                alignment = alignof[SIMD[type, simd_width]](),
+                Scalar[dtype],
+                alignment = alignof[SIMD[dtype, simd_width]](),
             ]()
             if max_seq_len != 1:
                 packed_ptr = packed_ptr.alloc(packed_size)
@@ -756,7 +756,7 @@ struct _FlashAttention[
                 var o_ptr = output_ptr_fn(get_nd_index(m, n))
                 var q_ptr = input_q_ptr_fn(get_nd_index(m, 0))
 
-                max_vals.fill(Scalar[type].MIN)
+                max_vals.fill(Scalar[dtype].MIN)
                 sum_vals.fill(0)
 
                 for kv_seq_idx in range(0, kv_seq_len, Self._config.qk_block_n):
@@ -768,7 +768,7 @@ struct _FlashAttention[
                     @always_inline
                     fn input_k_2d_fn[
                         _simd_width: Int
-                    ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
+                    ](_n: Int, _k: Int) -> SIMD[dtype, _simd_width]:
                         return input_k_fn[_simd_width, rank](
                             get_nd_index[is_kv=True](_n + kv_seq_idx, _k)
                         )
@@ -793,8 +793,8 @@ struct _FlashAttention[
                     fn mask_2d_fn[
                         _simd_width: Int
                     ](
-                        _m: Int, _n: Int, score_vec: SIMD[type, _simd_width]
-                    ) -> SIMD[type, _simd_width]:
+                        _m: Int, _n: Int, score_vec: SIMD[dtype, _simd_width]
+                    ) -> SIMD[dtype, _simd_width]:
                         return mask_fn[_simd_width, mask_rank](
                             get_mask_nd_index(_m + m, _n + kv_seq_idx),
                             score_vec,
@@ -816,7 +816,7 @@ struct _FlashAttention[
                     @always_inline
                     fn input_v_2d_fn[
                         _simd_width: Int
-                    ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
+                    ](_n: Int, _k: Int) -> SIMD[dtype, _simd_width]:
                         return input_v_fn[_simd_width, rank](
                             get_nd_index[is_kv=True](_k + kv_seq_idx, n + _n)
                         )
@@ -860,24 +860,24 @@ struct _FlashAttention[
 
 @always_inline
 fn _flash_attention[
-    type: DType,
+    dtype: DType,
     rank: Int,
     mask_rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
         IndexList[mask_rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: NDBuffer[type, rank, *_],
+    q: NDBuffer[dtype, rank, *_],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[mut=True, type, rank, *_],
+    output: NDBuffer[mut=True, dtype, rank, *_],
     scale: Float32,
 ):
     var num_batches = output.dim[0]()
@@ -889,12 +889,12 @@ fn _flash_attention[
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(idx: IndexList[rank]) -> UnsafePointer[Scalar[type]]:
+    fn input_q_ptr_fn(idx: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
         return q._offset(idx)
 
     @always_inline
     @parameter
-    fn output_ptr_fn(idx: IndexList[rank]) -> UnsafePointer[Scalar[type]]:
+    fn output_ptr_fn(idx: IndexList[rank]) -> UnsafePointer[Scalar[dtype]]:
         return output._offset(idx)
 
     @always_inline
@@ -903,9 +903,9 @@ fn _flash_attention[
         simd_width: Int, rank: Int
     ](
         idx: IndexList[rank],
-        score_vec: SIMD[type, simd_width],
+        score_vec: SIMD[dtype, simd_width],
         kv_cache_len: Int,
-    ) -> SIMD[type, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return score_vec + input_mask_fn[simd_width, rank](idx)
 
     @always_inline
@@ -938,24 +938,24 @@ fn _flash_attention[
 
 
 fn flash_attention[
-    type: DType,
+    dtype: DType,
     rank: Int,
     mask_rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
         IndexList[mask_rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: NDBuffer[type, rank, *_],
+    q: NDBuffer[dtype, rank, *_],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[mut=True, type, rank, *_],
+    output: NDBuffer[mut=True, dtype, rank, *_],
     scale: Float32,
 ):
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
@@ -969,33 +969,33 @@ fn flash_attention[
 
 
 fn flash_attention_split_kv[
-    type: DType,
+    dtype: DType,
     rank: Int,
     mask_rank: Int, //,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_k_cache_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_v_cache_fn: fn[simd_width: Int, rank: Int] (
         IndexList[rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
         IndexList[mask_rank]
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: NDBuffer[type, rank, *_],
+    q: NDBuffer[dtype, rank, *_],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: IndexList[rank + 1],
     v_cache_shape: IndexList[rank + 1],
     mask_shape: IndexList[mask_rank],
-    output: NDBuffer[mut=True, type, rank, *_],
+    output: NDBuffer[mut=True, dtype, rank, *_],
     scale: Float32,
 ):
     """Variant of flash attention that takes the previous KV cache
@@ -1047,13 +1047,13 @@ fn flash_attention_split_kv[
         fn load_from_split_cache[
             curr_fn: fn[simd_width: Int, rank: Int] (
                 IndexList[rank]
-            ) capturing -> SIMD[type, simd_width],
+            ) capturing -> SIMD[dtype, simd_width],
             cache_fn: fn[simd_width: Int, rank: Int] (
                 IndexList[rank]
-            ) capturing -> SIMD[type, simd_width],
+            ) capturing -> SIMD[dtype, simd_width],
             rank: Int,
             simd_width: Int,
-        ](idx: IndexList[rank]) -> SIMD[type, simd_width]:
+        ](idx: IndexList[rank]) -> SIMD[dtype, simd_width]:
             # Load directly from either `curr_fn` or `cache_fn` depending on the
             # sequence index.
             # Boundary condition handling is done by the caller since
@@ -1074,7 +1074,7 @@ fn flash_attention_split_kv[
         fn input_k_cache_fn_wrapper[
             simd_width: Int,
             rank: Int,
-        ](idx: IndexList[rank]) -> SIMD[type, simd_width]:
+        ](idx: IndexList[rank]) -> SIMD[dtype, simd_width]:
             return load_from_split_cache[
                 input_k_fn, input_k_cache_fn, rank, simd_width
             ](idx)
@@ -1084,7 +1084,7 @@ fn flash_attention_split_kv[
         fn input_v_cache_fn_wrapper[
             simd_width: Int,
             rank: Int,
-        ](idx: IndexList[rank]) -> SIMD[type, simd_width]:
+        ](idx: IndexList[rank]) -> SIMD[dtype, simd_width]:
             return load_from_split_cache[
                 input_v_fn, input_v_cache_fn, rank, simd_width
             ](idx)
@@ -1109,20 +1109,20 @@ fn flash_attention_split_kv[
 
 @always_inline
 fn _flash_attention_kv_cache[
-    type: DType,
+    dtype: DType,
     cache_t: KVCacheT, //,
     mask_fn: fn[simd_width: Int, mask_rank: Int] (
         idx: IndexList[mask_rank],
-        score_vec: SIMD[type, simd_width],
+        score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
 ](
-    q: NDBuffer[type, 4, *_],
+    q: NDBuffer[dtype, 4, *_],
     k: cache_t,
     v: cache_t,
     scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
 ):
     alias kv_params = cache_t.kv_params
 
@@ -1134,12 +1134,12 @@ fn _flash_attention_kv_cache[
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
+    fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
         return q._offset(idx)
 
     @always_inline
     @parameter
-    fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
+    fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
         return output._offset(idx)
 
     @always_inline
@@ -1162,17 +1162,17 @@ fn _flash_attention_kv_cache[
 
 @always_inline
 fn _flash_attention_kv_cache[
-    type: DType,
+    dtype: DType,
     cache_t: KVCacheT, //,
-    input_q_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[type]],
-    output_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[type]],
+    input_q_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
+    output_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[dtype]],
     q_length_fn: fn (batch: Int) capturing -> Int,
     kv_length_fn: fn (batch: Int) capturing -> Int,
     mask_fn: fn[simd_width: Int, mask_rank: Int] (
         idx: IndexList[mask_rank],
-        score_vec: SIMD[type, simd_width],
+        score_vec: SIMD[dtype, simd_width],
         kv_cache_length: Int,
-    ) capturing -> SIMD[type, simd_width],
+    ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
     output_shape: DimList,
 ](
@@ -1185,32 +1185,32 @@ fn _flash_attention_kv_cache[
 ):
     alias num_kv_heads = cache_t.kv_params.num_heads
     alias depth_dim = cache_t.kv_params.head_size
-    alias cache_type = cache_t.type
+    alias cache_type = cache_t.dtype
 
     constrained[
-        cache_type == type,
-        "Expected cache type ("
-        + String(cache_type)
-        + ") to match input type ("
-        + String(type)
-        + ")",
+        cache_type == dtype,
+        "Expected cache dtype (",
+        String(cache_type),
+        ") to match input dtype (",
+        String(dtype),
+        ")",
     ]()
 
     @parameter
     fn input_k_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         # Unwrap BSHD->BHSD indices.
-        return rebind[SIMD[type, width]](
+        return rebind[SIMD[dtype, width]](
             k.load[width=width](idx[0], idx[2], idx[1], idx[3])
         )
 
     @parameter
     fn input_v_fn[
         width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
+    ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         # Unwrap BSHD->BHSD indices.
-        return rebind[SIMD[type, width]](
+        return rebind[SIMD[dtype, width]](
             v.load[width=width](idx[0], idx[2], idx[1], idx[3])
         )
 
@@ -1234,14 +1234,14 @@ fn _flash_attention_kv_cache[
 
 
 fn flash_attention_kv_cache[
-    type: DType, cache_t: KVCacheT, //
+    dtype: DType, cache_t: KVCacheT, //
 ](
-    q: NDBuffer[type, 4, *_],
+    q: NDBuffer[dtype, 4, *_],
     k: cache_t,
     v: cache_t,
-    mask: NDBuffer[type, *_],
+    mask: NDBuffer[dtype, *_],
     scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
 ):
     @always_inline
     @parameter
@@ -1249,25 +1249,25 @@ fn flash_attention_kv_cache[
         simd_width: Int, rank: Int
     ](
         idx: IndexList[rank],
-        score_vec: SIMD[type, simd_width],
+        score_vec: SIMD[dtype, simd_width],
         kv_cache_len: Int,
-    ) -> SIMD[type, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         return score_vec + mask.load[width=simd_width](idx)
 
     _flash_attention_kv_cache[mask_fn, mask.rank](q, k, v, scale, output)
 
 
 fn flash_attention_kv_cache[
-    type: DType,
+    dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask, //,
 ](
-    q: NDBuffer[type, 4, *_],
+    q: NDBuffer[dtype, 4, *_],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[mut=True, type, 4, *_],
+    output: NDBuffer[mut=True, dtype, 4, *_],
 ):
     @always_inline
     @parameter
@@ -1276,9 +1276,9 @@ fn flash_attention_kv_cache[
         rank: Int,
     ](
         idx: IndexList[rank],
-        score_vec: SIMD[type, simd_width],
+        score_vec: SIMD[dtype, simd_width],
         kv_cache_len: Int,
-    ) -> SIMD[type, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         # Shift the mask index from local->global space.
         return mask.mask(
             Index(idx[0], idx[1], idx[2] + kv_cache_len, idx[3]), score_vec
@@ -1288,18 +1288,18 @@ fn flash_attention_kv_cache[
 
 
 fn flash_attention_kv_cache[
-    type: DType,
+    dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask, //,
 ](
-    q: NDBuffer[type, 3, *_],
+    q: NDBuffer[dtype, 3, *_],
     q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: NDBuffer[mut=True, type, 3, *_],
+    output: NDBuffer[mut=True, dtype, 3, *_],
 ):
     """Entrypoint for ragged tensors."""
 
@@ -1310,9 +1310,9 @@ fn flash_attention_kv_cache[
         rank: Int,
     ](
         idx: IndexList[rank],
-        score_vec: SIMD[type, simd_width],
+        score_vec: SIMD[dtype, simd_width],
         kv_cache_len: Int,
-    ) -> SIMD[type, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         # Shift the mask index from local->global space.
         return mask.mask(
             Index(idx[0], idx[1], idx[2] + kv_cache_len, idx[3]), score_vec
@@ -1332,7 +1332,7 @@ fn flash_attention_kv_cache[
 
     @always_inline
     @parameter
-    fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
+    fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
@@ -1341,7 +1341,7 @@ fn flash_attention_kv_cache[
 
     @always_inline
     @parameter
-    fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
+    fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[dtype]]:
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx

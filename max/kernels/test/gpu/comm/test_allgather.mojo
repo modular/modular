@@ -20,7 +20,7 @@ from testing import assert_equal
 
 
 def all_gather_test[
-    type: DType, rank: Int, ngpus: Int
+    dtype: DType, rank: Int, ngpus: Int
 ](list_of_ctx: List[DeviceContext], lengths: List[Int]) -> None:
     """Test allgather with new variadic output semantics.
 
@@ -28,25 +28,25 @@ def all_gather_test[
     not a single concatenated buffer.
     """
     # Create device buffers for all GPUs.
-    var in_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var out_bufs_list = List[List[DeviceBuffer[type]]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[type]]](capacity=ngpus)
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
 
     # Initialize input buffers.
     for i in range(ngpus):
         var length = lengths[i]
 
         # Create device buffer.
-        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[type](length))
+        in_bufs_list.append(list_of_ctx[i].create_buffer_sync[dtype](length))
 
         # Create host buffer with test data.
-        var host_buffer = UnsafePointer[Scalar[type]].alloc(length)
+        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
         host_buffers.append(host_buffer)
 
         # Initialize with unique values per device.
-        var host_nd_buf = NDBuffer[type, rank](host_buffer, DimList(length))
+        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
         for j in range(length):
-            host_nd_buf[j] = Scalar[type](
+            host_nd_buf[j] = Scalar[dtype](
                 i * 1000 + j
             )  # Device i has values i*1000 + index
 
@@ -55,33 +55,33 @@ def all_gather_test[
 
     # Create output buffers - each device needs ngpus output buffers.
     for device_idx in range(ngpus):
-        var device_outputs = List[DeviceBuffer[type]](capacity=ngpus)
+        var device_outputs = List[DeviceBuffer[dtype]](capacity=ngpus)
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
             device_outputs.append(
-                list_of_ctx[device_idx].create_buffer_sync[type](length)
+                list_of_ctx[device_idx].create_buffer_sync[dtype](length)
             )
         out_bufs_list.append(device_outputs)
 
     # Create input NDBuffers.
-    var in_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        NDBuffer[dtype, rank, MutableAnyOrigin]()
     )
 
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[type, rank](
+        in_bufs[i] = NDBuffer[dtype, rank](
             in_bufs_list[i]._unsafe_ptr(), DimList(lengths[i])
         )
 
     # Create flat output buffer array (ngpus * ngpus).
     var out_bufs = InlineArray[
-        NDBuffer[type, rank, MutableAnyOrigin], ngpus * ngpus
-    ](NDBuffer[type, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
+    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
 
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var output_idx = device_idx * ngpus + input_idx
-            out_bufs[output_idx] = NDBuffer[type, rank](
+            out_bufs[output_idx] = NDBuffer[dtype, rank](
                 out_bufs_list[device_idx][input_idx]._unsafe_ptr(),
                 DimList(lengths[input_idx]),
             )
@@ -96,7 +96,7 @@ def all_gather_test[
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
-            var host_output = UnsafePointer[Scalar[type]].alloc(length)
+            var host_output = UnsafePointer[Scalar[dtype]].alloc(length)
 
             # Copy output back to host.
             list_of_ctx[device_idx].enqueue_copy(
@@ -106,7 +106,7 @@ def all_gather_test[
 
             # Verify this matches the original input from device input_idx.
             for j in range(length):
-                var expected = Scalar[type](input_idx * 1000 + j)
+                var expected = Scalar[dtype](input_idx * 1000 + j)
                 try:
                     assert_equal(host_output[j], expected)
                 except e:

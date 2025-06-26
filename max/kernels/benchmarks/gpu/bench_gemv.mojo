@@ -24,7 +24,7 @@ from utils import IndexList
 
 fn _get_run_name[
     transpose: Bool,
-    type: DType,
+    dtype: DType,
     shape_c: DimList,
     shape_a: DimList,
     shape_b: DimList,
@@ -34,16 +34,17 @@ fn _get_run_name[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var str = name
-    str += "("
-    str += type.__str__()
-    str += ") : "
-    str += shape_c_dim[0].__str__()
-    str += ","
-    str += shape_c_dim[1].__str__()
-    str += ","
-    str += shape_a_dim[1].__str__()
-    return str
+    return String(
+        name,
+        "(",
+        dtype.__str__(),
+        ") : ",
+        shape_c_dim[0].__str__(),
+        ",",
+        shape_c_dim[1].__str__(),
+        ",",
+        shape_a_dim[1].__str__(),
+    )
 
 
 fn bench_matmul[

@@ -107,27 +107,29 @@ fn _find_largest_bn_for_sm90_matmul[dtype: DType, N: Int]() -> Int:
 
 
 @always_inline
-fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
+fn __nvvm_ldg_f4[
+    dtype: DType
+](x: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, 4]:
     # Load a register variable from global state space via non-coherent cache.
 
-    alias alignment = Int32(alignof[SIMD[type, 4]]())
+    alias alignment = Int32(alignof[SIMD[dtype, 4]]())
 
     @parameter
-    if type is DType.float32:
-        return bitcast[type, 4](
+    if dtype is DType.float32:
+        return bitcast[dtype, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
             ](x.bitcast[Float32](), alignment)
         )
-    elif type is DType.bfloat16:
-        return bitcast[type, 4](
+    elif dtype is DType.bfloat16:
+        return bitcast[dtype, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4bf16.p0v4bf16",
                 SIMD[DType.bfloat16, 4],
             ](x.bitcast[BFloat16](), alignment)
         )
-    elif type is DType.float16:
-        return bitcast[type, 4](
+    elif dtype is DType.float16:
+        return bitcast[dtype, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
                 SIMD[DType.float16, 4],
@@ -435,8 +437,8 @@ fn _matmul_gpu[
     @parameter
     @always_inline
     fn compute_lambda_wrapper[
-        _type: DType, _width: Int, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[_type, _width]):
+        _dtype: DType, _width: Int, *, alignment: Int = 1
+    ](coords: IndexList[2], val: SIMD[_dtype, _width]):
         @parameter
         if elementwise_compute_lambda_fn:
             alias compute_lambda = elementwise_compute_lambda_fn.value()
@@ -2522,7 +2524,7 @@ fn _matmul_gpu[
             )
             return
     else:
-        # For unsupported types like FP8, directly use the naive implementation
+        # For unsupported dtypes like FP8, directly use the naive implementation
         alias BLOCK_DIM = 16
         ctx.enqueue_function[
             matmul_kernel_naive[

@@ -43,14 +43,14 @@ def test_ldexp_vector():
 
 
 fn ldexp_libm[
-    type: DType, simd_width: Int
-](arg: SIMD[type, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
-    type, simd_width
+    dtype: DType, simd_width: Int
+](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
+    dtype, simd_width
 ]:
-    var res = SIMD[type, simd_width]()
+    var res = SIMD[dtype, simd_width]()
 
     for i in range(simd_width):
-        res[i] = external_call["ldexpf", Scalar[type]](arg, e)
+        res[i] = external_call["ldexpf", Scalar[dtype]](arg, e)
     return res
 
 

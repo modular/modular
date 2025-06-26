@@ -18,10 +18,10 @@ from nn.topk import topk_gpu
 
 
 fn argmaxmin_gpu[
-    type: DType, output_type: DType, rank: Int, largest: Bool
+    dtype: DType, output_type: DType, rank: Int, largest: Bool
 ](
     ctx: DeviceContext,
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     output: NDBuffer[mut=True, output_type, rank],
 ) raises:
     """
@@ -29,24 +29,24 @@ fn argmaxmin_gpu[
     dimension.
 
     Parameters:
-        type: DType - The data type of the input tensor.
-        output_type: DType - The data type of the output tensor.
+        dtype: DType - The data dtype of the input tensor.
+        output_type: DType - The data dtype of the output tensor.
         rank: Int - The rank of the input tensor.
         largest: Bool - Whether to perform argmax or argmin.
     Args:
         ctx: DeviceContext - The device context.
-        input: NDBuffer[type, rank] - The input tensor allocated on the device.
-        output: NDBuffer[type, rank] - The output tensor allocated on the device.
+        input: NDBuffer[dtype, rank] - The input tensor allocated on the device.
+        output: NDBuffer[dtype, rank] - The output tensor allocated on the device.
     """
     constrained[rank > 0, "Input rank must be positive"]()
     alias K = 1
 
     var out_vals_shape = input.get_shape()
     out_vals_shape[rank - 1] = K
-    var out_vals_buf = ctx.enqueue_create_buffer[type](
+    var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
-    var out_vals = NDBuffer[type, rank](
+    var out_vals = NDBuffer[dtype, rank](
         out_vals_buf._unsafe_ptr(), out_vals_shape
     )
 
@@ -62,20 +62,20 @@ fn argmaxmin_gpu[
 
 
 fn argmax_gpu[
-    type: DType, output_type: DType, rank: Int
+    dtype: DType, output_type: DType, rank: Int
 ](
     ctx: DeviceContext,
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     output: NDBuffer[mut=True, output_type, rank],
 ) raises:
     argmaxmin_gpu[largest=True](ctx, input, output)
 
 
 fn argmin_gpu[
-    type: DType, output_type: DType, rank: Int
+    dtype: DType, output_type: DType, rank: Int
 ](
     ctx: DeviceContext,
-    input: NDBuffer[type, rank],
+    input: NDBuffer[dtype, rank],
     output: NDBuffer[mut=True, output_type, rank],
 ) raises:
     argmaxmin_gpu[largest=False](ctx, input, output)

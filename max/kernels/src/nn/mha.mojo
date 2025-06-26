@@ -270,11 +270,11 @@ fn flash_attention[
         not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
     ]()
     constrained[
-        q.type == cache_t.type == output.type,
+        q.dtype == cache_t.dtype == output.type,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -444,7 +444,7 @@ fn flash_attention_dispatch[
                     scale,
                     kv_input_row_offsets,
                     batch_size,
-                    NoPartition[get_accum_type[q.type]()](),
+                    NoPartition[get_accum_type[q.dtype]()](),
                     ctx,
                 )
 
@@ -497,32 +497,32 @@ fn flash_attention_dispatch[
             alias BM = 16
             alias BN = depth
             alias BK = 32 if has_amd_gpu_accelerator() else (
-                16 if q.type is DType.float32 else 32
+                16 if q.dtype is DType.float32 else 32
             )
             alias WM = BM
             alias WN = 32
             # num warps in M and N, multiplied by warp size.
             alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-            alias accum_type = get_accum_type[q.type]()
+            alias accum_type = get_accum_type[q.dtype]()
             alias num_pipeline_stages = 4
             # smem for q
-            var shared_mem_bytes = BM * depth * sizeof[q.type]()
+            var shared_mem_bytes = BM * depth * sizeof[q.dtype]()
 
             # separate KV smem if we have enough smem
             @parameter
             if not is_shared_kv:
-                shared_mem_bytes += 2 * BN * depth * sizeof[k_t.type]()
+                shared_mem_bytes += 2 * BN * depth * sizeof[k_t.dtype]()
             else:
                 shared_mem_bytes += (
-                    num_pipeline_stages * BN * BK * sizeof[k_t.type]()
+                    num_pipeline_stages * BN * BK * sizeof[k_t.dtype]()
                 )
 
             alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
             # smem for p and warp_scratch
             shared_mem_bytes += (
-                BM * BN * sizeof[k_t.type]()
+                BM * BN * sizeof[k_t.dtype]()
                 + 2 * num_warps * BM * sizeof[accum_type]()
             )
             alias num_blocks_y = num_heads // group
@@ -541,10 +541,10 @@ fn flash_attention_dispatch[
                 and config.algorithm == FlashAttentionAlgorithm(3)
             )
             alias kernel = mha_decoding[
-                q.type,
+                q.dtype,
                 k_t,
                 v_t,
-                output.type,
+                output.dtype,
                 mask_t,
                 score_mod_t,
                 BM=BM,
@@ -628,10 +628,10 @@ fn flash_attention_dispatch[
                 # allocate memory for intermediate results
                 # q # [B, S, H, D]
                 var output_intermediate_data = ctx.enqueue_create_buffer[
-                    output.type
+                    output.dtype
                 ](num_heads * depth * batch_size * num_partitions_value)
 
-                var output_intermediate = NDBuffer[output.type, 4](
+                var output_intermediate = NDBuffer[output.dtype, 4](
                     output_intermediate_data._unsafe_ptr(),
                     Index(
                         num_partitions_value,
@@ -715,7 +715,7 @@ fn flash_attention_dispatch[
                     )
 
                 alias kernel_reduce = mha_splitk_reduce[
-                    output.type,
+                    output.dtype,
                     depth=depth,
                     num_heads=num_heads,
                     num_threads=WARP_SIZE,
@@ -835,7 +835,7 @@ fn flash_attention[
     alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (ctx.device_info is H100 and mask_t.mask_safe_out_of_bounds)))
     alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
 
-    alias q_half_float = q.type in (DType.float16, DType.bfloat16)
+    alias q_half_float = q.dtype in (DType.float16, DType.bfloat16)
     alias kv_num_heads = k.shape.get[2]()
     # fmt: on
 
@@ -1091,8 +1091,8 @@ fn mha_single_batch[
       TODO: use more optimized kernels for them
 
     """
-    alias k_type = k_t.type
-    alias v_type = v_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -1780,8 +1780,8 @@ fn mha_single_batch_pipelined[
       TODO: use more optimized kernels for them
 
     """
-    alias k_type = k_t.type
-    alias v_type = v_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -2990,8 +2990,8 @@ fn mha_decoding_single_batch[
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
-    alias k_type = k_t.type
-    alias v_type = v_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -3640,8 +3640,8 @@ fn mha_decoding_single_batch_pipelined[
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
-    alias k_type = k_t.type
-    alias v_type = v_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
     constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -4276,8 +4276,8 @@ fn mha_gpu_naive[
     group: Int,
     ctx: DeviceContext,
 ) raises:
-    alias q_type = q.type
-    alias k_type = k_t.type
+    alias q_type = q.dtype
+    alias k_type = k_t.dtype
     alias v_type = k_type
 
     var num_keys = max_cache_size
@@ -4392,7 +4392,7 @@ fn _bmm0_bs[
     # In the prompt length dim.
     var y = global_idx.y
 
-    alias k_type = k_t.type
+    alias k_type = k_t.dtype
 
     var batch_head = block_idx.z
     var batch, head = divmod(batch_head, UInt(num_heads))
@@ -4509,7 +4509,7 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
-    alias v_type = v_t.type
+    alias v_type = v_t.dtype
 
     # In the depth dim.
     var x = global_idx.x

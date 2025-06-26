@@ -38,7 +38,7 @@ def compute_group_stats[
 
 
 fn run_group_norm_gpu[
-    type: DType, rank: Int
+    dtype: DType, rank: Int
 ](
     ctx: DeviceContext,
     shape: IndexList[rank],
@@ -55,27 +55,27 @@ fn run_group_norm_gpu[
     var rows = N * num_groups
     var cols = group_size
 
-    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[type]].alloc(C)
-    var beta_h = UnsafePointer[Scalar[type]].alloc(C)
+    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(C)
+    var beta_h = UnsafePointer[Scalar[dtype]].alloc(C)
 
     for i in range(rows * cols):
-        data_h[i] = Scalar[type](i % 256)  # bounded range to avoid overflow
+        data_h[i] = Scalar[dtype](i % 256)  # bounded range to avoid overflow
 
     for i in range(C):
-        gamma_h[i] = ((i + C) / C).cast[type]()
-        beta_h[i] = (i / C).cast[type]()
+        gamma_h[i] = ((i + C) / C).cast[dtype]()
+        beta_h[i] = (i / C).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[type](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[type](C)
-    var beta_d = ctx.enqueue_create_buffer[type](C)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](C)
+    var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
-    var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[type, 1](beta_d.unsafe_ptr(), param_shape)
-    var epsilon = Scalar[type](1e-5)
+    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
+    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
+    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    var epsilon = Scalar[dtype](1e-5)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -86,29 +86,29 @@ fn run_group_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
         return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[type, width]:
+    fn gamma_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[dtype, width]:
         return gamma.load[width=width](rebind[IndexList[1]](idx))
 
     @__copy_capture(beta)
     @always_inline
     @parameter
-    fn beta_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[type, width]:
+    fn beta_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[dtype, width]:
         return beta.load[width=width](rebind[IndexList[1]](idx))
 
-    group_norm[type, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
+    group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
         shape, epsilon, num_groups, data_buf, ctx=ctx
     )
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
+        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
         var stats = compute_group_stats(vec, cols, epsilon)
         var mean_ref = stats[0]
         var norm_factor = stats[1]

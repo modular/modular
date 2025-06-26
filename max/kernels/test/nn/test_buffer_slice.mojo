@@ -21,8 +21,8 @@ from utils.index import Index, IndexList
 
 
 fn print_elements[
-    type: DType, in_rank: Int
-](tensor: NDBuffer[type, in_rank]) raises:
+    dtype: DType, in_rank: Int
+](tensor: NDBuffer[dtype, in_rank]) raises:
     print("New shape:", tensor.get_shape())
     print("New strides:", tensor.get_strides())
 

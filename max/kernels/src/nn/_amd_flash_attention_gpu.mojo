@@ -215,7 +215,7 @@ fn mma[
 ):
     alias BK = config.block_k()
     # a can be either bfloat16 or float32 but b is always the same type as mma_input_type
-    alias mma_input_type = b_iter.type
+    alias mma_input_type = b_iter.dtype
     alias simd_width = simdwidthof[mma_input_type]()
     alias accum_type = get_accum_type[mma_input_type]()
     alias WM = config.warp_m()

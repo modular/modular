@@ -85,8 +85,8 @@ def matmul_qint4_pack_b[
 
 
 fn _quantize_a_block[
-    group_size: Int, aq_type: DType, type: DType
-](a_ptr: UnsafePointer[Scalar[type]]) -> (SIMD[aq_type, group_size], Float32):
+    group_size: Int, aq_type: DType, dtype: DType
+](a_ptr: UnsafePointer[Scalar[dtype]]) -> (SIMD[aq_type, group_size], Float32):
     alias a_zero_point = 128 if aq_type.is_unsigned() else 0
 
     var fp_data = a_ptr.load[width=group_size]()
@@ -104,12 +104,12 @@ fn _quantize_a_block[
 
 fn _quantize_a_buffer[
     group_size: Int,
-    type: DType,
+    dtype: DType,
     aq_type: DType,
     *,
     aq_interleave: Int = group_size,
 ](
-    a: NDBuffer[type, 2],
+    a: NDBuffer[dtype, 2],
     a_quant: NDBuffer[aq_type, 2],
     a_scale: NDBuffer[DType.float32, 2],
 ):
@@ -384,9 +384,9 @@ trait _MatmulQInt4Kernel:
 
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -431,9 +431,9 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -575,9 +575,9 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -744,9 +744,9 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
     @always_inline
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):
@@ -860,9 +860,9 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
 
     @staticmethod
     fn quantize_a_buffer[
-        group_size: Int, type: DType, aq_type: DType
+        group_size: Int, dtype: DType, aq_type: DType
     ](
-        a: NDBuffer[type, 2],
+        a: NDBuffer[dtype, 2],
         a_quant: NDBuffer[aq_type, 2],
         a_scale: NDBuffer[DType.float32, 2],
     ):

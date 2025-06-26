@@ -60,15 +60,15 @@ fn _human_memory(size: Int) -> String:
 
 # TODO: convert 'ngpus' to runtime variable
 fn bench_reduce[
-    type: DType, rank: Int, ngpus: Int, max_num_blocks: Int
+    dtype: DType, rank: Int, ngpus: Int, max_num_blocks: Int
 ](mut m: Bench, list_of_ctx: List[DeviceContext], num_bytes: Int) raises:
     constrained[ngpus in (1, 2, 4, 8), "ngpus must be 1, 2, 4, or 8"]()
     constrained[rank == 1, "this test code currently assumes rank 1"]()
 
     # Create device buffers for all GPUs
-    var in_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var out_bufs_list = List[DeviceBuffer[type]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[type]]](capacity=ngpus)
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -78,22 +78,24 @@ fn bench_reduce[
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
-    var length = num_bytes // sizeof[type]()
+    var length = num_bytes // sizeof[dtype]()
 
     # Initialize buffers for each GPU
     @parameter
     for i in range(ngpus):
         # Create and store device buffers
-        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
-        out_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[type](length))
+        in_bufs_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        out_bufs_list.append(
+            list_of_ctx[i].enqueue_create_buffer[dtype](length)
+        )
 
         # Create and initialize host buffers
-        var host_buffer = UnsafePointer[Scalar[type]].alloc(length)
+        var host_buffer = UnsafePointer[Scalar[dtype]].alloc(length)
         host_buffers.append(host_buffer)
 
         # Initialize host buffer with values (i + 1).0
-        var host_nd_buf = NDBuffer[type, rank](host_buffer, DimList(length))
-        host_nd_buf.fill(Scalar[type](i + 1))
+        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
+        host_nd_buf.fill(Scalar[dtype](i + 1))
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -108,18 +110,18 @@ fn bench_reduce[
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        NDBuffer[dtype, rank, MutableAnyOrigin]()
     )
-    var out_bufs = InlineArray[NDBuffer[type, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[type, rank, MutableAnyOrigin]()
+    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
+        NDBuffer[dtype, rank, MutableAnyOrigin]()
     )
 
     for i in range(ngpus):
-        in_bufs[i] = NDBuffer[type, rank](
+        in_bufs[i] = NDBuffer[dtype, rank](
             in_bufs_list[i].unsafe_ptr(), DimList(length)
         )
-        out_bufs[i] = NDBuffer[type, rank](
+        out_bufs[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
         # Ensure setup has propagated.
@@ -127,12 +129,12 @@ fn bench_reduce[
 
     # Copy-capture in registers since the lambda will be used on GPU.
     var out_bufs_capture = StaticTuple[
-        NDBuffer[type, rank, MutableAnyOrigin], ngpus
-    ](NDBuffer[type, rank, MutableAnyOrigin]())
+        NDBuffer[dtype, rank, MutableAnyOrigin], ngpus
+    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
 
     @parameter
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[type, rank](
+        out_bufs_capture[i] = NDBuffer[dtype, rank](
             out_bufs_list[i].unsafe_ptr(), DimList(length)
         )
 
@@ -141,14 +143,14 @@ fn bench_reduce[
     @__copy_capture(out_bufs_capture)
     fn outputs_lambda[
         input_index: Int,
-        _type: DType,
+        _dtype: DType,
         _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
         out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords), rebind[SIMD[type, _width]](val)
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
     @parameter
@@ -169,7 +171,7 @@ fn bench_reduce[
 
         b.iter_custom_multicontext[call_fn](list_of_ctx)
 
-    var name = String(_get_test_str[type](ngpus, num_bytes))
+    var name = String(_get_test_str[dtype](ngpus, num_bytes))
     m.bench_function[bench_iter](
         BenchId(name),
         # add data movement to measures
@@ -177,7 +179,7 @@ fn bench_reduce[
     )
 
     # Copy results back and verify
-    var expected_sum = Scalar[type](0)
+    var expected_sum = Scalar[dtype](0)
 
     @parameter
     for i in range(ngpus):
@@ -202,8 +204,10 @@ fn bench_reduce[
     _ = signal_buffers^
 
 
-fn _get_test_str[type: DType](ngpus: Int, num_bytes: Int) -> String:
-    return String("allreduce-", type, "-", ngpus, "-", _human_memory(num_bytes))
+fn _get_test_str[dtype: DType](ngpus: Int, num_bytes: Int) -> String:
+    return String(
+        "allreduce-", dtype, "-", ngpus, "-", _human_memory(num_bytes)
+    )
 
 
 def main():
@@ -234,7 +238,7 @@ def main():
     var m = Bench()
 
     bench_reduce[
-        type=dtype, rank=rank, ngpus=num_gpus, max_num_blocks=max_num_blocks
+        dtype=dtype, rank=rank, ngpus=num_gpus, max_num_blocks=max_num_blocks
     ](m, ctx, num_bytes)
 
     m.dump_report()

@@ -17,8 +17,8 @@ from gpu.host import DeviceContext
 
 
 fn expect_eq[
-    type: DType, size: Int, *Ts: Writable
-](val: SIMD[type, size], expected: SIMD[type, size], *messages: *Ts) raises:
+    dtype: DType, size: Int, *Ts: Writable
+](val: SIMD[dtype, size], expected: SIMD[dtype, size], *messages: *Ts) raises:
     if val != expected:
         var message = String(messages)
         raise Error("expect_eq failed: ", message)

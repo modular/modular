@@ -22,38 +22,38 @@ from nn.topk import _top_k_cpu, _top_k_sampling
 from utils import IndexList
 
 
-struct TestTensor[rank: Int, type: DType](Movable):
-    var storage: List[Scalar[type]]
+struct TestTensor[rank: Int, dtype: DType](Movable):
+    var storage: List[Scalar[dtype]]
     var shape: IndexList[rank]
 
     @implicit
     fn __init__(out self, shape: IndexList[rank]):
-        self.storage = List[Scalar[type]](
+        self.storage = List[Scalar[dtype]](
             length=shape.flattened_length(), fill=0
         )
         self.shape = shape
 
     fn to_ndbuffer(
         self,
-    ) -> NDBuffer[type, rank, MutableAnyOrigin]:
-        return NDBuffer[type, rank](
-            rebind[UnsafePointer[Scalar[type]]](self.storage.data), self.shape
+    ) -> NDBuffer[dtype, rank, MutableAnyOrigin]:
+        return NDBuffer[dtype, rank](
+            rebind[UnsafePointer[Scalar[dtype]]](self.storage.data), self.shape
         )
 
 
 fn test_case_sampling[
     rank: Int,
-    type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        NDBuffer[mut=True, type, rank]
+    dtype: DType,
+    fill_fn: fn[rank: Int, dtype: DType] (
+        NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
 ](
-    K: Int, axis: Int, input_shape: DimList, temperature: Scalar[type] = 1
+    K: Int, axis: Int, input_shape: DimList, temperature: Scalar[dtype] = 1
 ) raises:
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(
+    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(input_shape.product())
     )
-    var input = NDBuffer[type, rank](input_ptr, input_shape)
+    var input = NDBuffer[dtype, rank](input_ptr, input_shape)
 
     var output_shape: DimList
     var output_idxs_shape: DimList
@@ -71,18 +71,18 @@ fn test_case_sampling[
             input_shape.get[0](), input_shape.get[1](), 1
         )
 
-    var output_vals_ptr = UnsafePointer[Scalar[type]].alloc(
+    var output_vals_ptr = UnsafePointer[Scalar[dtype]].alloc(
         Int(output_shape.product())
     )
     var output_idxs_ptr = UnsafePointer[Int64].alloc(
         Int(output_idxs_shape.product())
     )
-    var out_vals = NDBuffer[type, rank](output_vals_ptr, output_shape)
+    var out_vals = NDBuffer[dtype, rank](output_vals_ptr, output_shape)
     var out_idxs = NDBuffer[DType.int64, rank](
         output_idxs_ptr, output_idxs_shape
     )
 
-    fill_fn[rank, type](input)
+    fill_fn[rank, dtype](input)
 
     var max_k = K
 
@@ -134,21 +134,21 @@ fn test_case_sampling[
 
 fn test_case[
     rank: Int,
-    type: DType,
-    fill_fn: fn[rank: Int, type: DType] (
-        NDBuffer[mut=True, type, rank]
+    dtype: DType,
+    fill_fn: fn[rank: Int, dtype: DType] (
+        NDBuffer[mut=True, dtype, rank]
     ) capturing [_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
-    var input = TestTensor[rank, type](input_shape)
+    var input = TestTensor[rank, dtype](input_shape)
 
     var output_shape = input_shape
     output_shape[axis] = K
-    var out_vals = TestTensor[rank, type](output_shape)
+    var out_vals = TestTensor[rank, dtype](output_shape)
     var out_idxs = TestTensor[rank, DType.int64](output_shape)
 
     var input_buf = input.to_ndbuffer()
-    fill_fn[rank, type](input_buf)
+    fill_fn[rank, dtype](input_buf)
 
     _top_k_cpu[largest=largest](
         input.to_ndbuffer(),
@@ -176,11 +176,11 @@ fn main() raises:
     seed(1)
 
     @parameter
-    fn fill_iota[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+    fn fill_iota[rank: Int, dtype: DType](buf: NDBuffer[mut=True, dtype, rank]):
         iota(buf.data, buf.get_shape().flattened_length())
 
     @parameter
-    fn fill_rand[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+    fn fill_rand[rank: Int, dtype: DType](buf: NDBuffer[mut=True, dtype, rank]):
         rand(buf.data, buf.get_shape().flattened_length())
 
     fn test_1d_sorted():
@@ -249,8 +249,8 @@ fn main() raises:
 
     @parameter
     fn fill_identical[
-        rank: Int, type: DType
-    ](buf: NDBuffer[mut=True, type, rank]):
+        rank: Int, dtype: DType
+    ](buf: NDBuffer[mut=True, dtype, rank]):
         buf.fill(1)
 
     fn test_identical():
@@ -281,7 +281,9 @@ fn main() raises:
     test_max_k()
 
     @parameter
-    fn fill_custom[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+    fn fill_custom[
+        rank: Int, dtype: DType
+    ](buf: NDBuffer[mut=True, dtype, rank]):
         var flat_buf = buf.flatten()
         for i in range(len(flat_buf)):
             flat_buf[i] = len(flat_buf) - i - 1
@@ -336,7 +338,7 @@ fn main() raises:
     test_3d_sorted_sampling()
 
     @parameter
-    fn ones[rank: Int, type: DType](buf: NDBuffer[mut=True, type, rank]):
+    fn ones[rank: Int, dtype: DType](buf: NDBuffer[mut=True, dtype, rank]):
         for i in range(buf.get_shape().flattened_length()):
             buf.data[i] = 1
 

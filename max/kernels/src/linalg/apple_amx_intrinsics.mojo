@@ -241,8 +241,8 @@ fn genlut(gpr: Int):
 
 @always_inline
 fn _encode_load_store[
-    row_count: Int, type: DType
-](src: UnsafePointer[Scalar[type]], start_index: Int) -> Int:
+    row_count: Int, dtype: DType
+](src: UnsafePointer[Scalar[dtype]], start_index: Int) -> Int:
     """
     Utility to do the bit encoding for load and store ops.
     """
@@ -256,49 +256,49 @@ fn _encode_load_store[
 
 @always_inline
 fn store_x[
-    row_count: Int, type: DType
-](src: UnsafePointer[Scalar[type]], start_index: Int):
-    ldx(_encode_load_store[row_count, type](src, start_index))
+    row_count: Int, dtype: DType
+](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+    ldx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn store_y[
-    row_count: Int, type: DType
-](src: UnsafePointer[Scalar[type]], start_index: Int):
-    ldy(_encode_load_store[row_count, type](src, start_index))
+    row_count: Int, dtype: DType
+](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+    ldy(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn store_z[
-    row_count: Int, type: DType
-](src: UnsafePointer[Scalar[type]], start_index: Int):
-    ldz(_encode_load_store[row_count, type](src, start_index))
+    row_count: Int, dtype: DType
+](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+    ldz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn read_x[
-    row_count: Int, type: DType
-](src: UnsafePointer[Scalar[type]], start_index: Int):
-    stx(_encode_load_store[row_count, type](src, start_index))
+    row_count: Int, dtype: DType
+](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+    stx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn read_y[
-    row_count: Int, type: DType
-](src: UnsafePointer[Scalar[type]], start_index: Int):
-    sty(_encode_load_store[row_count, type](src, start_index))
+    row_count: Int, dtype: DType
+](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+    sty(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn load_z[
-    row_count: Int, type: DType
-](src: UnsafePointer[Scalar[type]], start_index: Int):
-    stz(_encode_load_store[row_count, type](src, start_index))
+    row_count: Int, dtype: DType
+](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+    stz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
 fn transpose_z_to_x_or_y[
-    destination: StaticString, type: DType
+    destination: StaticString, dtype: DType
 ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
     # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
     # the amx instruction `extry`. This instruction takes a (sub) column of
@@ -330,7 +330,7 @@ fn transpose_z_to_x_or_y[
     # The destination must be either "X" or "Y".
     constrained[destination == "X" or destination == "Y"]()
     # The type must be Float32.
-    constrained[type is DType.float32]()
+    constrained[dtype is DType.float32]()
 
     # make the y offset field
     #  shift left by 6 to make this an offset in rows,
@@ -351,7 +351,7 @@ fn transpose_z_to_x_or_y[
 
 @always_inline
 fn fma[
-    mode: StaticString, type: DType
+    mode: StaticString, dtype: DType
 ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
     # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
     #  fma operations are supported in this instruction, referred to here as
@@ -372,7 +372,7 @@ fn fma[
     # The mode must be either "TILE" or "ROW".
     constrained[mode == "TILE" or mode == "ROW"]()
     # The type must be Float32.
-    constrained[type is DType.float32]()
+    constrained[dtype is DType.float32]()
 
     alias is_row_mode = mode == "ROW"
 

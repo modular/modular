@@ -25,26 +25,26 @@ from utils import Index, IndexList
 
 
 def run_elementwise[
-    type: DType,
-    kernel_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
-        type, width
+    dtype: DType,
+    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
     ],
 ](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
-    var in_device = ctx.enqueue_create_buffer[type](length)
-    var out_device = ctx.enqueue_create_buffer[type](length)
+    var in_device = ctx.enqueue_create_buffer[dtype](length)
+    var out_device = ctx.enqueue_create_buffer[dtype](length)
 
-    var in_host: HostBuffer[type]
+    var in_host: HostBuffer[dtype]
     with in_device.map_to_host() as in_host2:
         for i in range(length):
-            in_host2[i] = 0.001 * abs(Scalar[type](i) - length // 2)
+            in_host2[i] = 0.001 * abs(Scalar[dtype](i) - length // 2)
         in_host = in_host2^
 
-    var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
@@ -61,11 +61,11 @@ def run_elementwise[
     with out_device.map_to_host() as out_host:
         for i in range(length):
             var msg = String(
-                "values did not match at position ", i, " for dtype=", type
+                "values did not match at position ", i, " for dtype=", dtype
             )
 
             @parameter
-            if type is DType.float32:
+            if dtype is DType.float32:
                 assert_almost_equal(
                     out_host[i],
                     isqrt(in_host[i]),

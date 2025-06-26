@@ -126,12 +126,12 @@ trait MHAMask:
     """
 
     fn mask[
-        type: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         """Return mask vector at given coordinates.
 
         Arguments:
@@ -171,15 +171,15 @@ struct CausalMask(Copyable, MHAMask, Movable):
 
     @always_inline
     fn mask[
-        type: DType,
+        dtype: DType,
         width: Int, //,
         *,
         element_type: DType = DType.uint32,
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         alias index_type = coord.element_type
 
         # coord[2] and coord[3] are the token index in query and key respectively.
@@ -253,12 +253,12 @@ struct NullMask(Copyable, MHAMask, Movable):
 
     @always_inline
     fn mask[
-        type: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         return score_vec
 
     @always_inline
@@ -307,15 +307,15 @@ struct ChunkedMask[local_window_size: Int](Copyable, MHAMask, Movable):
 
     @always_inline
     fn mask[
-        type: DType,
+        dtype: DType,
         width: Int, //,
         *,
         element_type: DType = DType.uint32,
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         constrained[
             width <= local_window_size,
             "SIMD width of chunked mask must be <= local window size",
@@ -354,7 +354,7 @@ struct ChunkedMask[local_window_size: Int](Copyable, MHAMask, Movable):
             return mask_val.select(MASK_VALUE, retval)
 
         # fully masked
-        return SIMD[type, width](MASK_VALUE)
+        return SIMD[dtype, width](MASK_VALUE)
 
     @always_inline
     fn status[
@@ -418,15 +418,15 @@ struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
 
     @always_inline
     fn mask[
-        type: DType,
+        dtype: DType,
         width: Int, //,
         *,
         element_type: DType = DType.uint32,
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         alias index_type = coord.element_type
 
         constrained[
@@ -450,7 +450,7 @@ struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
         return (
             SIMD[index_type, width](q_idx) - iota[index_type, width](k_idx)
             < window_size
-        ).select(masked_score_vec, SIMD[type, width](MASK_VALUE))
+        ).select(masked_score_vec, SIMD[dtype, width](MASK_VALUE))
 
     @always_inline
     fn status[
@@ -520,7 +520,7 @@ struct SlidingWindowCausalMask[window_size: Int](Copyable, MHAMask, Movable):
 
 
 @register_passable("trivial")
-struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
+struct MaterializedMask[dtype_: DType, rank_: Int, shape_: DimList](
     Copyable, MHAMask, Movable
 ):
     """Mask that's backed by a materialized tensor."""
@@ -529,7 +529,7 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
     alias mask_out_of_bound: Bool = True
     alias mask_safe_out_of_bounds: Bool = False
 
-    alias MaskType = NDBuffer[type_, rank_, MutableAnyOrigin, shape_]
+    alias MaskType = NDBuffer[dtype_, rank_, MutableAnyOrigin, shape_]
     var mask_tensor: Self.MaskType
     var start_pos: OptionalReg[NDBuffer[DType.uint32, 1, MutableAnyOrigin]]
     var is_multiple_of_2: Bool
@@ -558,15 +558,15 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
 
     @always_inline
     fn mask[
-        type: DType,
+        dtype: DType,
         width: Int, //,
         *,
         element_type: DType = DType.uint32,
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         alias IndexListType = IndexList[rank_, element_type=element_type]
         var adjusted_coord: IndexListType
 
@@ -582,7 +582,7 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
                 coord[0], coord[1], coord[2] - start_pos, coord[3]
             )
 
-        var retval = SIMD[type, width](MASK_VALUE)
+        var retval = SIMD[dtype, width](MASK_VALUE)
         if adjusted_coord[rank_ - 2] < self.mask_tensor.dim[rank_ - 2]():
             if (
                 adjusted_coord[rank_ - 1] + width
@@ -591,7 +591,7 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
             ):
                 retval = self.mask_tensor.load[width=width](
                     adjusted_coord
-                ).cast[type]()
+                ).cast[dtype]()
             elif adjusted_coord[rank_ - 1] < self.mask_tensor.dim[rank_ - 1]():
                 for i in range(
                     min(width, self.mask_tensor.dim[rank_ - 1]() - coord[3])
@@ -599,7 +599,7 @@ struct MaterializedMask[type_: DType, rank_: Int, shape_: DimList](
                     adjusted_coord[rank_ - 1] = coord[3] + i
                     retval[i] = self.mask_tensor.load[width=1](
                         adjusted_coord
-                    ).cast[type]()
+                    ).cast[dtype]()
 
         return score_vec + retval
 
@@ -634,14 +634,14 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     @always_inline
     fn mask[
-        type: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         @parameter
-        if type is DType.bool or type.is_integral():
+        if dtype is DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) & self.rhs.mask(
                 coord, score_vec
             )
@@ -684,14 +684,14 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     @always_inline
     fn mask[
-        type: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
-        score_vec: SIMD[type, width],
-    ) -> SIMD[type, width]:
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
         @parameter
-        if type is DType.bool or type.is_integral():
+        if dtype is DType.bool or dtype.is_integral():
             return self.lhs.mask(coord, score_vec) | self.rhs.mask(
                 coord, score_vec
             )

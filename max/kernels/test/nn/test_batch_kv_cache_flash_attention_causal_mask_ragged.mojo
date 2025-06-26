@@ -33,7 +33,7 @@ alias llama_num_q_heads = 32
 
 
 def execute_ragged_flash_attention[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths_list: List[Int],
     max_seq_len_cache: Int,
@@ -42,7 +42,7 @@ def execute_ragged_flash_attention[
     layer_idx: Int,
 ):
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
 
     var batch_size = len(valid_lengths_list)
     debug_assert(
@@ -79,11 +79,11 @@ def execute_ragged_flash_attention[
     input_row_offsets.tensor[batch_size] = total_length
 
     q_ragged = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
     random(q_ragged.tensor)
     q_padded = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_length, num_q_heads, kv_params.head_size
@@ -105,7 +105,7 @@ def execute_ragged_flash_attention[
 
     # initialize reference output
     ref_output = HostNDBuffer[
-        type, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
+        dtype, 4, DimList(Dim(), Dim(), num_q_heads, kv_params.head_size)
     ](
         IndexList[4](
             batch_size, max_prompt_length, num_q_heads, kv_params.head_size
@@ -113,11 +113,11 @@ def execute_ragged_flash_attention[
     )
 
     test_output = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](total_length, num_q_heads, kv_params.head_size))
 
     # initialize our KVCache
-    kv_block = HostNDBuffer[type, 6](
+    kv_block = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -214,7 +214,7 @@ def execute_ragged_flash_attention[
     _ = cache_lengths^
 
 
-alias type = DType.float32
+alias dtype = DType.float32
 
 
 def execute_flash_attention_suite():
@@ -228,14 +228,14 @@ def execute_flash_attention_suite():
             tg_cache_sizes.append(Int(random_ui64(1, 100)))
             ce_seq_lens.append(Int(random_ui64(1, 100)))
             ce_cache_sizes.append(0)
-        print("CE", bs, type)
+        print("CE", bs, dtype)
         execute_ragged_flash_attention[
-            llama_num_q_heads, type, kv_params_llama3
+            llama_num_q_heads, dtype, kv_params_llama3
         ](ce_seq_lens, 110, ce_cache_sizes, 2, 1)
 
-        print("TG", bs, type)
+        print("TG", bs, dtype)
         execute_ragged_flash_attention[
-            llama_num_q_heads, type, kv_params_llama3
+            llama_num_q_heads, dtype, kv_params_llama3
         ](tg_seq_lens, 110, tg_cache_sizes, 2, 0)
 
     # Edge-case specific tests
@@ -243,7 +243,7 @@ def execute_flash_attention_suite():
     var c0_seq_lens = List[Int](25, 1)
     var c0_cache_sizes = List[Int](0, 25)
 
-    execute_ragged_flash_attention[llama_num_q_heads, type, kv_params_llama3](
+    execute_ragged_flash_attention[llama_num_q_heads, dtype, kv_params_llama3](
         c0_seq_lens, 110, c0_cache_sizes, 2, 0
     )
 

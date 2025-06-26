@@ -24,30 +24,30 @@ from utils.index import Index
 
 
 def reference_attention_bshd[
-    type: DType, rank: Int
+    dtype: DType, rank: Int
 ](
-    q_nd: NDBuffer[type, rank],
-    k_nd: NDBuffer[type, rank],
-    v_nd: NDBuffer[type, rank],
-    mask_nd: NDBuffer[type, rank],
-    output_nd: NDBuffer[mut=True, type, rank],
+    q_nd: NDBuffer[dtype, rank],
+    k_nd: NDBuffer[dtype, rank],
+    v_nd: NDBuffer[dtype, rank],
+    mask_nd: NDBuffer[dtype, rank],
+    output_nd: NDBuffer[mut=True, dtype, rank],
     scale: Float32,
 ):
-    fn reshape_4d(buf: NDBuffer[type, rank]) -> NDBuffer[type, 4, buf.origin]:
+    fn reshape_4d(buf: NDBuffer[dtype, rank]) -> NDBuffer[dtype, 4, buf.origin]:
         var shape = buf.get_shape()
         var num_heads = shape[rank - 2] if rank == 4 else 1
         var shape_4d = Index(shape[0], shape[1], num_heads, shape[rank - 1])
-        return NDBuffer[type, 4](buf.data, shape_4d)
+        return NDBuffer[dtype, 4](buf.data, shape_4d)
 
     fn reshape_mask_4d(
-        buf: NDBuffer[type, rank]
-    ) -> NDBuffer[type, 4, buf.origin]:
+        buf: NDBuffer[dtype, rank]
+    ) -> NDBuffer[dtype, 4, buf.origin]:
         var shape = buf.get_shape()
         var num_heads = shape[1] if rank == 4 else 1
         var shape_4d = Index(
             shape[0], num_heads, shape[rank - 2], shape[rank - 1]
         )
-        return NDBuffer[type, 4](buf.data, shape_4d)
+        return NDBuffer[dtype, 4](buf.data, shape_4d)
 
     var q_4d = reshape_4d(q_nd)
     var k_4d = reshape_4d(k_nd)
@@ -81,8 +81,8 @@ def reference_attention_bshd[
 
     assert_equal(q_4d.get_shape(), output_4d.get_shape())
 
-    var score_ptr = UnsafePointer[Scalar[type]].alloc(seq_len * kv_seq_len)
-    var score_2d = NDBuffer[type, 2](score_ptr, Index(seq_len, kv_seq_len))
+    var score_ptr = UnsafePointer[Scalar[dtype]].alloc(seq_len * kv_seq_len)
+    var score_2d = NDBuffer[dtype, 2](score_ptr, Index(seq_len, kv_seq_len))
 
     for b in range(batch_count):
         for h in range(num_heads):
@@ -91,7 +91,7 @@ def reference_attention_bshd[
             # Compute: `score = Q @ K`
             for m in range(seq_len):
                 for n in range(kv_seq_len):
-                    var accum = Scalar[type](0)
+                    var accum = Scalar[dtype](0)
                     for k in range(depth_dim):
                         accum = q_4d[Index(b, m, h, k)].fma(
                             k_4d[Index(b, n, kv_h, k)], accum
@@ -102,17 +102,17 @@ def reference_attention_bshd[
             for m in range(seq_len):
                 for n in range(kv_seq_len):
                     score_2d[Index(m, n)] = (
-                        score_2d[Index(m, n)] * scale.cast[type]()
+                        score_2d[Index(m, n)] * scale.cast[dtype]()
                         + mask_4d[Index(b, h, m, n)]
                     )
 
             # Compute: `score = softmax(score)`
             for m in range(seq_len):
-                var max_val = Scalar[type].MIN
+                var max_val = Scalar[dtype].MIN
                 for n in range(kv_seq_len):
                     max_val = max(max_val, score_2d[Index(m, n)])
 
-                var sum_val = Scalar[type](0)
+                var sum_val = Scalar[dtype](0)
                 for n in range(kv_seq_len):
                     var exp_val = exp(score_2d[Index(m, n)] - max_val)
                     score_2d[Index(m, n)] = exp_val
@@ -124,7 +124,7 @@ def reference_attention_bshd[
             # Compute: `output = score @ V`
             for m in range(seq_len):
                 for n in range(depth_dim):
-                    var accum = Scalar[type](0)
+                    var accum = Scalar[dtype](0)
                     for k in range(kv_seq_len):
                         accum = score_2d[Index(m, k)].fma(
                             v_4d[Index(b, k, kv_h, n)], accum
@@ -220,10 +220,10 @@ struct TestCaseConfig[batch_rank: Int](Copyable, Movable):
 
 
 def verify_output[
-    type: DType, batch_rank: Int, rank: Int
+    dtype: DType, batch_rank: Int, rank: Int
 ](
-    output: NDBuffer[type, rank],
-    ref_output: NDBuffer[type, rank],
+    output: NDBuffer[dtype, rank],
+    ref_output: NDBuffer[dtype, rank],
     cfg: TestCaseConfig[batch_rank],
 ) -> None:
     """Compares `output` and `ref_output` elementwise, printing up to 5 mismatches.
@@ -256,20 +256,20 @@ def verify_output[
 
 
 def build_ndbuffer[
-    type: DType,
+    dtype: DType,
     rank: Int,
     *,
     static_shape: DimList = DimList.create_unknown[rank](),
 ](shape: IndexList[rank]) -> NDBuffer[
-    type, rank, MutableAnyOrigin, static_shape
+    dtype, rank, MutableAnyOrigin, static_shape
 ]:
-    var ptr = UnsafePointer[Scalar[type]].alloc(shape.flattened_length())
+    var ptr = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
     rand(ptr, shape.flattened_length())
-    return NDBuffer[type, rank, _, static_shape](ptr, shape)
+    return NDBuffer[dtype, rank, _, static_shape](ptr, shape)
 
 
 def test_case[
-    type: DType,
+    dtype: DType,
     batch_rank: Int,
     *,
     output_static_shape: DimList = DimList.create_unknown[batch_rank + 2](),
@@ -281,18 +281,20 @@ def test_case[
     var kv_shape = cfg.build_shape_bshd[is_kv=True](
         cfg.kv_seq_len, cfg.depth_dim
     )
-    var q = build_ndbuffer[type](q_shape)
-    var k = build_ndbuffer[type](kv_shape)
-    var v = build_ndbuffer[type](kv_shape)
+    var q = build_ndbuffer[dtype](q_shape)
+    var k = build_ndbuffer[dtype](kv_shape)
+    var v = build_ndbuffer[dtype](kv_shape)
 
     # Allocate the attention mask.
-    var mask = build_ndbuffer[type](
+    var mask = build_ndbuffer[dtype](
         cfg.build_shape(cfg.seq_len, cfg.kv_seq_len)
     )
 
     # Allocate output and reference output buffers.
-    var output = build_ndbuffer[type, static_shape=output_static_shape](q_shape)
-    var ref_output = build_ndbuffer[type](q_shape)
+    var output = build_ndbuffer[dtype, static_shape=output_static_shape](
+        q_shape
+    )
+    var ref_output = build_ndbuffer[dtype](q_shape)
 
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
 
@@ -300,21 +302,21 @@ def test_case[
     @always_inline
     fn input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
 
     @parameter
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
 
     @parameter
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
 
     flash_attention[input_k_fn, input_v_fn, mask_fn](
@@ -331,8 +333,8 @@ def test_case[
     ref_output.data.free()
 
 
-def test_flash_attention[type: DType]():
-    test_case[type](
+def test_flash_attention[dtype: DType]():
+    test_case[dtype](
         TestCaseConfig(
             batch_dims=Index(1, 8),
             seq_len=1,
@@ -342,7 +344,7 @@ def test_flash_attention[type: DType]():
             scale=0.125,
         )
     )
-    test_case[type](
+    test_case[dtype](
         TestCaseConfig(
             batch_dims=Index(4, 12),
             seq_len=1,
@@ -352,7 +354,7 @@ def test_flash_attention[type: DType]():
             scale=0.125,
         )
     )
-    test_case[type](
+    test_case[dtype](
         TestCaseConfig(
             batch_dims=Index(2, 3),
             seq_len=128,
@@ -362,7 +364,7 @@ def test_flash_attention[type: DType]():
             scale=0.25,
         )
     )
-    test_case[type](
+    test_case[dtype](
         TestCaseConfig(
             batch_dims=Index(8),
             seq_len=64,
@@ -372,7 +374,7 @@ def test_flash_attention[type: DType]():
             scale=0.25,
         )
     )
-    test_case[type, output_static_shape = DimList(Dim(), Dim(), 128)](
+    test_case[dtype, output_static_shape = DimList(Dim(), Dim(), 128)](
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=55,
@@ -382,7 +384,7 @@ def test_flash_attention[type: DType]():
             scale=0.2,
         )
     )
-    test_case[type, output_static_shape = DimList(Dim(), Dim(), 160)](
+    test_case[dtype, output_static_shape = DimList(Dim(), Dim(), 160)](
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=100,
@@ -392,7 +394,7 @@ def test_flash_attention[type: DType]():
             scale=0.1,
         )
     )
-    test_case[type, output_static_shape = DimList(Dim(), Dim(), 300)](
+    test_case[dtype, output_static_shape = DimList(Dim(), Dim(), 300)](
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=100,
@@ -405,7 +407,7 @@ def test_flash_attention[type: DType]():
 
 
 def test_case_split_kv[
-    type: DType,
+    dtype: DType,
     batch_rank: Int,
     output_static_shape: DimList = DimList.create_unknown[batch_rank + 2](),
 ](cfg: TestCaseConfig[batch_rank]):
@@ -419,18 +421,20 @@ def test_case_split_kv[
     var kv_shape = cfg.build_shape_bshd[is_kv=True](
         cfg.kv_seq_len, cfg.depth_dim
     )
-    var q = build_ndbuffer[type](q_shape)
-    var k = build_ndbuffer[type](kv_shape)
-    var v = build_ndbuffer[type](kv_shape)
+    var q = build_ndbuffer[dtype](q_shape)
+    var k = build_ndbuffer[dtype](kv_shape)
+    var v = build_ndbuffer[dtype](kv_shape)
 
     # Allocate the attention mask.
-    var mask = build_ndbuffer[type](
+    var mask = build_ndbuffer[dtype](
         cfg.build_shape(cfg.seq_len, cfg.kv_seq_len)
     )
 
     # Allocate output and reference output buffers.
-    var output = build_ndbuffer[type, static_shape=output_static_shape](q_shape)
-    var ref_output = build_ndbuffer[type](q_shape)
+    var output = build_ndbuffer[dtype, static_shape=output_static_shape](
+        q_shape
+    )
+    var ref_output = build_ndbuffer[dtype](q_shape)
 
     # Compute reference outputs for comparison.
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
@@ -440,7 +444,7 @@ def test_case_split_kv[
     @always_inline
     fn input_k_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](
             IndexList[k.rank](
                 idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3]
@@ -451,7 +455,7 @@ def test_case_split_kv[
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](
             IndexList[v.rank](
                 idx[0], idx[1] + cfg.prev_seq_len(), idx[2], idx[3]
@@ -462,7 +466,7 @@ def test_case_split_kv[
     @always_inline
     fn input_k_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](
             IndexList[k.rank](idx[1], idx[3], idx[2], idx[4])
         )
@@ -471,7 +475,7 @@ def test_case_split_kv[
     @always_inline
     fn input_v_cache_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](
             IndexList[v.rank](idx[1], idx[3], idx[2], idx[4])
         )
@@ -480,7 +484,7 @@ def test_case_split_kv[
     @always_inline
     fn mask_fn[
         simd_width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, simd_width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[mask.rank]](idx))
 
     var kv_present_shape = cfg.build_shape_bshd[is_kv=True](
@@ -491,7 +495,7 @@ def test_case_split_kv[
     ](cfg.prev_seq_len(), cfg.depth_dim)
 
     flash_attention_split_kv[
-        type=type,
+        dtype=dtype,
         rank = batch_rank + 2,
         input_k_fn,
         input_v_fn,
@@ -519,9 +523,9 @@ def test_case_split_kv[
     ref_output.data.free()
 
 
-def test_flash_attention_split_kv[type: DType]():
+def test_flash_attention_split_kv[dtype: DType]():
     for kv_seq_len in range(1, 128):
-        test_case_split_kv[type](
+        test_case_split_kv[dtype](
             TestCaseConfig(
                 batch_dims=Index(1, 1),
                 seq_len=1,
@@ -531,7 +535,7 @@ def test_flash_attention_split_kv[type: DType]():
                 scale=0.125,
             )
         )
-    test_case_split_kv[type](
+    test_case_split_kv[dtype](
         TestCaseConfig(
             batch_dims=Index(1, 8),
             seq_len=1,
@@ -541,7 +545,7 @@ def test_flash_attention_split_kv[type: DType]():
             scale=0.125,
         )
     )
-    test_case_split_kv[type](
+    test_case_split_kv[dtype](
         TestCaseConfig(
             batch_dims=Index(1, 8),
             seq_len=1,
@@ -551,7 +555,7 @@ def test_flash_attention_split_kv[type: DType]():
             scale=0.125,
         )
     )
-    test_case_split_kv[type](
+    test_case_split_kv[dtype](
         TestCaseConfig(
             batch_dims=Index(5, 24),
             seq_len=23,
@@ -561,7 +565,7 @@ def test_flash_attention_split_kv[type: DType]():
             scale=0.125,
         )
     )
-    test_case_split_kv[type](
+    test_case_split_kv[dtype](
         TestCaseConfig(
             batch_dims=Index(2, 3),
             seq_len=128,

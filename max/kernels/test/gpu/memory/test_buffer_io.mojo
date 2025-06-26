@@ -31,21 +31,21 @@ alias size = 257
 alias size_clip = size - 3
 
 
-fn kernel[type: DType, width: Int](a: UnsafePointer[Scalar[type]]):
+fn kernel[dtype: DType, width: Int](a: UnsafePointer[Scalar[dtype]]):
     var t0 = block_idx.x * block_dim.x + thread_idx.x
     var size2 = size // width
     var bc = make_buffer_resource(a, size_clip)
     for i in range(t0, size2, block_dim.x * grid_dim.x):
-        var v = buffer_load[type, width](bc, width * i)
-        buffer_store[type, width](bc, width * i, 2 * v)
+        var v = buffer_load[dtype, width](bc, width * i)
+        buffer_store[dtype, width](bc, width * i, 2 * v)
     for i in range(width * size2, size, block_dim.x * grid_dim.x):
-        var v = buffer_load[type, 1](bc, i)
-        buffer_store[type, 1](bc, i, 2 * v)
+        var v = buffer_load[dtype, 1](bc, i)
+        buffer_store[dtype, 1](bc, i, 2 * v)
 
 
-fn kernel_lds[type: DType, nowait: Bool](a: UnsafePointer[Scalar[type]]):
+fn kernel_lds[dtype: DType, nowait: Bool](a: UnsafePointer[Scalar[dtype]]):
     var a_shared = stack_allocation[
-        size, type, address_space = AddressSpace.SHARED
+        size, dtype, address_space = AddressSpace.SHARED
     ]()
 
     var idx = thread_idx.x
@@ -59,26 +59,26 @@ fn kernel_lds[type: DType, nowait: Bool](a: UnsafePointer[Scalar[type]]):
     @parameter
     if nowait:
         for i in range(t0, size, block_dim.x * grid_dim.x):
-            _buffer_load_store_lds_nowait[type](bc, i, a_shared, i)
+            _buffer_load_store_lds_nowait[dtype](bc, i, a_shared, i)
         _waitcnt()
         for i in range(t0, size, block_dim.x * grid_dim.x):
             a[i] = 2 * a_shared[i]
     else:
         for i in range(t0, size, block_dim.x * grid_dim.x):
-            buffer_load_store_lds[type](bc, i, a_shared, i)
+            buffer_load_store_lds[dtype](bc, i, a_shared, i)
             a[i] = 2 * a_shared[i]
 
 
-def test_buffer[type: DType, width: Int](ctx: DeviceContext):
-    a_host_buf = UnsafePointer[Scalar[type]].alloc(size)
-    a_device_buf = ctx.enqueue_create_buffer[type](size)
+def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
+    a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
+    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = i + 1
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    ctx.enqueue_function[kernel[type, width], dump_asm=False](
+    ctx.enqueue_function[kernel[dtype, width], dump_asm=False](
         a_device_buf,
         grid_dim=(1, 1),
         block_dim=(64),
@@ -93,16 +93,16 @@ def test_buffer[type: DType, width: Int](ctx: DeviceContext):
 
 
 def test_buffer_lds[nowait: Bool](ctx: DeviceContext):
-    alias type = DType.float32
-    a_host_buf = UnsafePointer[Scalar[type]].alloc(size)
-    a_device_buf = ctx.enqueue_create_buffer[type](size)
+    alias dtype = DType.float32
+    a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
+    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = i + 1
 
     ctx.enqueue_copy(a_device_buf, a_host_buf)
 
-    ctx.enqueue_function[kernel_lds[type, nowait], dump_asm=False](
+    ctx.enqueue_function[kernel_lds[dtype, nowait], dump_asm=False](
         a_device_buf,
         grid_dim=ceildiv(size, 256),
         block_dim=256,

@@ -32,17 +32,17 @@ from utils import IndexList
 
 
 def _init_device_ndbuffer_from_goldens[
-    type: DType, //, shape: DimList
-](goldens: List[Scalar[type]], ctx: DeviceContext) -> DeviceNDBuffer[
-    type, len(shape), shape=shape
+    dtype: DType, //, shape: DimList
+](goldens: List[Scalar[dtype]], ctx: DeviceContext) -> DeviceNDBuffer[
+    dtype, len(shape), shape=shape
 ]:
     """Initializes a device buffer with a set of golden values."""
-    host_tensor = HostNDBuffer[type, len(shape), shape=shape]()
+    host_tensor = HostNDBuffer[dtype, len(shape), shape=shape]()
     memcpy(dest=host_tensor.tensor.data, src=goldens.data, count=len(goldens))
 
     # Copy tensor to device.
     device_tensor = DeviceNDBuffer[
-        host_tensor.type, host_tensor.rank, shape = host_tensor.shape
+        host_tensor.dtype, host_tensor.rank, shape = host_tensor.shape
     ](ctx=ctx)
     ctx.enqueue_copy(device_tensor.buffer, host_tensor.tensor.data)
     ctx.synchronize()
@@ -54,26 +54,26 @@ def _init_device_ndbuffer_from_goldens[
 
 
 def _fused_qk_rope[
-    type: DType, q_shape: DimList, freqs_shape: DimList, //
+    dtype: DType, q_shape: DimList, freqs_shape: DimList, //
 ](
-    q_proj: DeviceNDBuffer[type, shape=q_shape],
+    q_proj: DeviceNDBuffer[dtype, shape=q_shape],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: DeviceNDBuffer[type, shape=freqs_shape],
+    freqs_cis: DeviceNDBuffer[dtype, shape=freqs_shape],
     layer_idx: UInt32,
-    output: DeviceNDBuffer[type, shape=q_shape],
+    output: DeviceNDBuffer[dtype, shape=q_shape],
     context: DeviceContext,
 ) -> None:
     """Wrapper that takes DeviceNDBuffer, to ensure lifetimes of data."""
     fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
-        q_proj=rebind[NDBuffer[type, 4, MutableAnyOrigin, shape=q_shape]](
+        q_proj=rebind[NDBuffer[dtype, 4, MutableAnyOrigin, shape=q_shape]](
             q_proj.tensor
         ),
         kv_collection=kv_collection,
         freqs_cis=rebind[
-            NDBuffer[type, 2, MutableAnyOrigin, shape=freqs_shape]
+            NDBuffer[dtype, 2, MutableAnyOrigin, shape=freqs_shape]
         ](freqs_cis.tensor),
         layer_idx=layer_idx,
-        output=rebind[NDBuffer[type, 4, MutableAnyOrigin, shape=q_shape]](
+        output=rebind[NDBuffer[dtype, 4, MutableAnyOrigin, shape=q_shape]](
             output.tensor
         ),
         context=context,
@@ -83,9 +83,9 @@ def _fused_qk_rope[
     context.synchronize()
 
 
-def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
+def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    constrained[type is DType.float32, "goldens only for float32, currently"]()
+    constrained[dtype is DType.float32, "goldens only for float32, currently"]()
 
     # Set up test hyperparameters.
     alias batch_size = 2
@@ -95,7 +95,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     alias max_seq_len = 16
     alias num_layers = 1
 
-    fn _max[type: DType, items: List[Scalar[type]]]() -> Scalar[type]:
+    fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         constrained[len(items) > 0, "empty list in _max"]()
         max_item = items[0]
         for i in range(1, len(items)):
@@ -121,12 +121,12 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     )
 
     # Construct backing buffer and the KV cache itself.
-    kv_cache_block_host = HostNDBuffer[type, shape=block_shape](
+    kv_cache_block_host = HostNDBuffer[dtype, shape=block_shape](
         block_shape.into_index_list[6]()
     )
 
     # Initialize KV cache block buffer with golden values.
-    k_cache_input_buffer = k_cache_input[type]()
+    k_cache_input_buffer = k_cache_input[dtype]()
     for batch_idx in range(batch_size):
         memcpy(
             dest=kv_cache_block_host.tensor._offset(
@@ -157,7 +157,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     ](ctx=ctx)
     ctx.enqueue_copy(lookup_table_dev.buffer, lookup_table.data)
 
-    kv_collection = ContinuousBatchingKVCacheCollection[type, kv_params](
+    kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block_dev.tensor,
         cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
             cache_lengths.tensor
@@ -172,30 +172,30 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     # Create and initialize query buffer.
     q_dev = _init_device_ndbuffer_from_goldens[
         shape = DimList(batch_size, seq_len, num_heads, head_dim)
-    ](q_input[type](), ctx)
+    ](q_input[dtype](), ctx)
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_dev = _init_device_ndbuffer_from_goldens[
         shape = DimList(max_seq_len, head_dim)
-    ](freqs_cis_table_input[type](), ctx)
+    ](freqs_cis_table_input[dtype](), ctx)
 
     # Create and initialize golden outputs.
-    expected_q_out_buffer = q_out_golden[type]()
+    expected_q_out_buffer = q_out_golden[dtype]()
     debug_assert(
         len(expected_q_out_buffer) == q_dev.tensor.num_elements(),
         "invalid expected q out init",
     )
-    expected_q_out = NDBuffer[type, rank = q_dev.rank, shape = q_dev.shape](
+    expected_q_out = NDBuffer[dtype, rank = q_dev.rank, shape = q_dev.shape](
         expected_q_out_buffer.data
     )
-    expected_k_out_buffer = k_out_golden[type]()
+    expected_k_out_buffer = k_out_golden[dtype]()
     debug_assert(
         len(expected_k_out_buffer) == batch_size * seq_len * dim,
         "invalid expected k out init",
     )
 
     # Create output buffer.
-    q_out_dev = DeviceNDBuffer[q_dev.type, q_dev.rank, shape = q_dev.shape](
+    q_out_dev = DeviceNDBuffer[q_dev.dtype, q_dev.rank, shape = q_dev.shape](
         ctx=ctx
     )
 
@@ -212,7 +212,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     kv_cache_block_out_host = kv_cache_block_dev.copy_from_device(ctx)
 
     # Compare output and expected query tensors.
-    q_out_host = HostNDBuffer[q_dev.type, q_dev.rank, shape = q_dev.shape]()
+    q_out_host = HostNDBuffer[q_dev.dtype, q_dev.rank, shape = q_dev.shape]()
     ctx.enqueue_copy(q_out_host.tensor.data, q_out_dev.buffer)
     ctx.synchronize()
 

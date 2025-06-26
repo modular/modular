@@ -22,11 +22,11 @@ from utils import IndexList, StaticTuple
 
 @always_inline
 fn _to_StaticTuple[
-    type: DType, size: Int
-](data: SIMD[type, size]) -> StaticTuple[Scalar[type], size]:
+    dtype: DType, size: Int
+](data: SIMD[dtype, size]) -> StaticTuple[Scalar[dtype], size]:
     """Convert SIMD to StaticTuple."""
 
-    var res = StaticTuple[Scalar[type], size]()
+    var res = StaticTuple[Scalar[dtype], size]()
 
     @parameter
     for i in range(size):
@@ -36,10 +36,10 @@ fn _to_StaticTuple[
 
 @always_inline
 fn _to_SIMD[
-    type: DType, size: Int
-](data: StaticTuple[Scalar[type], size]) -> SIMD[type, size]:
+    dtype: DType, size: Int
+](data: StaticTuple[Scalar[dtype], size]) -> SIMD[dtype, size]:
     """Convert StaticTuple to SIMD."""
-    var res = SIMD[type, size]()
+    var res = SIMD[dtype, size]()
 
     @parameter
     for i in range(size):

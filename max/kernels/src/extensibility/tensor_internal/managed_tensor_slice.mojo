@@ -342,28 +342,28 @@ fn _mixed_precision_output_fusion_hook_impl[
     mut: Bool, //,
     # DType and rank after casting/view fusion.
     rank: Int,
-    dst_type: DType,
+    dst_dtype: DType,
     # DType and shape before casting/view fusion.
     src_rank: Int,
     src_shape: DimList,
-    src_type: DType,
+    src_dtype: DType,
     io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[dst_type, rank],
+    static_spec: StaticTensorSpec[dst_dtype, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> StaticTensorSpec[src_type, src_rank]:
+) -> StaticTensorSpec[src_dtype, src_rank]:
     @always_inline
     @parameter
     fn _output_lambda[
         _w: Int, _elem_align: Int = 1
-    ](i: IndexList[src_rank], v: SIMD[src_type, _w]):
+    ](i: IndexList[src_rank], v: SIMD[src_dtype, _w]):
         # .... compiler-generated-code insert here!
         simd_store_into_managed_tensor_slice[
             simd_width=_w,
             element_alignment=_elem_align,
-        ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_type, _w]](v))
+        ](tensor, rebind[IndexList[rank]](i), rebind[SIMD[dst_dtype, _w]](v))
 
-    alias mixed_in_spec = StaticTensorSpec[src_type, src_rank](
+    alias mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
         shape=src_shape,
         strides=static_spec.strides,
         alignment=static_spec.alignment,
@@ -375,7 +375,7 @@ fn _mixed_precision_output_fusion_hook_impl[
     )
 
     return _extract_tensor_spec[
-        rebuild_static_tensor_specs_with_output_lambda[src_type, src_rank](
+        rebuild_static_tensor_specs_with_output_lambda[src_dtype, src_rank](
             mixed_in_spec,
             _output_lambda,
         )
@@ -388,15 +388,15 @@ fn _mixed_precision_output_fusion_hook_impl[
 @no_inline
 fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
     func_type: AnyTrivialRegType, //,
-    src_type: DType,
-    dst_type: DType,
+    src_dtype: DType,
+    dst_dtype: DType,
     rank: Int,
 ](
-    spec: StaticTensorSpec[src_type, rank],
+    spec: StaticTensorSpec[src_dtype, rank],
     in_lambda: func_type,
-    out result: StaticTensorSpec[dst_type, rank],
+    out result: StaticTensorSpec[dst_dtype, rank],
 ):
-    return StaticTensorSpec[dst_type, rank](
+    return StaticTensorSpec[dst_dtype, rank](
         shape=spec.shape,
         strides=spec.strides,
         alignment=spec.alignment,
@@ -413,28 +413,28 @@ fn rebuild_mix_precision_static_tensor_specs_with_input_lambda[
 @no_inline
 fn _mixed_precision_input_fusion_hook_impl[
     mut: Bool, //,
-    dst_type: DType,  # The DType after casting.
-    src_type: DType,  # The DType before casting.
+    dst_dtype: DType,  # The DType after casting.
+    src_dtype: DType,  # The DType before casting.
     rank: Int,
     io_spec: IOSpec[mut],
-    static_spec: StaticTensorSpec[src_type, rank],
+    static_spec: StaticTensorSpec[src_dtype, rank],
 ](
     tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
-) -> StaticTensorSpec[dst_type, rank]:
+) -> StaticTensorSpec[dst_dtype, rank]:
     @always_inline
     @parameter
-    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[dst_type, _w]:
+    fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[dst_dtype, _w]:
         # We use these methods to help with fusion passes which manipulates
         # calls. It is helpful to have a registered function.
-        var v = rebind[SIMD[src_type, _w]](
+        var v = rebind[SIMD[src_dtype, _w]](
             simd_load_from_managed_tensor_slice[simd_width=_w](tensor, i)
         )
-        # .... compiler-generated-code here to bridge between src and dst_type
-        return rebind[SIMD[dst_type, _w]](v)
+        # .... compiler-generated-code here to bridge between src and dst_dtype
+        return rebind[SIMD[dst_dtype, _w]](v)
 
     return _extract_tensor_spec[
         rebuild_mix_precision_static_tensor_specs_with_input_lambda[
-            src_type, dst_type, rank
+            src_dtype, dst_dtype, rank
         ](
             static_spec,
             _input_lambda,
@@ -804,7 +804,7 @@ struct ManagedTensorSlice[
         return product
 
     @always_inline
-    fn unsafe_ptr[__type: DType = dtype](self) -> UnsafePointer[Scalar[__type]]:
+    fn unsafe_ptr[_dtype: DType = dtype](self) -> UnsafePointer[Scalar[_dtype]]:
         """Get the pointer stored in this tensor slice.
 
         Since this method obtains the pointer stored in this tensor slice, it
@@ -812,12 +812,12 @@ struct ManagedTensorSlice[
         behavior. It should be used with caution.
 
         Parameters:
-            __type: The type of the `UnsafePointer` in this tensor slice.
+            _dtype: The type of the `UnsafePointer` in this tensor slice.
 
         Returns:
             The `UnsafePointer` which contains the data for this tensor slice.
         """
-        return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
+        return rebind[UnsafePointer[Scalar[_dtype]]](self._ptr)
 
     @always_inline
     fn load[

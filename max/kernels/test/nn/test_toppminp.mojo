@@ -27,23 +27,23 @@ alias DEBUG_BENCH = False
 alias PRINT_OUTPUT = False
 
 
-struct TestCase[_type: DType, _out_idx_type: DType, _is_top_p: Bool](
+struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
     Copyable, Movable
 ):
     alias is_top_p = _is_top_p
-    alias type = _type
+    alias dtype = _dtype
     alias out_idx_type = _out_idx_type
     var batch_size: Int
     var vocab_size: Int
-    var temperature: Scalar[_type]
-    var p_threshold: Scalar[_type]
+    var temperature: Scalar[_dtype]
+    var p_threshold: Scalar[_dtype]
 
     fn __init__(
         out self,
         batch_size: Int,
         vocab_size: Int,
-        temperature: Scalar[_type] = Scalar[_type](1.0),
-        p_threshold: Scalar[_type] = Scalar[_type](0.9),
+        temperature: Scalar[_dtype] = Scalar[_dtype](1.0),
+        p_threshold: Scalar[_dtype] = Scalar[_dtype](0.9),
     ):
         self.batch_size = batch_size
         self.vocab_size = vocab_size
@@ -78,13 +78,13 @@ fn fill_random[dtype: DType](mut buffer: LayoutTensor[mut=True, dtype, **_]):
 
 
 @parameter
-fn fill_iota[type: DType](mut buf: LayoutTensor[mut=True, type, **_]):
+fn fill_iota[dtype: DType](mut buf: LayoutTensor[mut=True, dtype, **_]):
     iota(buf.ptr, buf.size())
 
 
 fn test_is_sorted_descending[
-    type: DType
-](mut buf: LayoutTensor[type, **_], vocab_size: Int) -> Bool:
+    dtype: DType
+](mut buf: LayoutTensor[dtype, **_], vocab_size: Int) -> Bool:
     constrained[buf.rank == 2, "rank must be 2"]()
     var batch_size = buf.size() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
@@ -135,8 +135,8 @@ fn print_test_case(test_case: TestCase):
     print(
         "==== Running",
         "Top-P" if test_case.is_top_p else "Min-P",
-        ", type=",
-        test_case.type,
+        ", dtype=",
+        test_case.dtype,
         ", out_idx_type=",
         test_case.out_idx_type,
         "sampling with batch_size=",
@@ -151,27 +151,27 @@ fn print_test_case(test_case: TestCase):
 
 
 fn test_case_sampling[
-    fill_fn: fn[type: DType] (
-        mut LayoutTensor[mut=True, type, **_]
+    fill_fn: fn[dtype: DType] (
+        mut LayoutTensor[mut=True, dtype, **_]
     ) capturing -> None,
 ](test_case: TestCase) raises:
     print_test_case(test_case)
     alias rank = 2
-    alias type = test_case.type
+    alias dtype = test_case.dtype
     alias out_idx_type = test_case.out_idx_type
     alias is_top_p = test_case.is_top_p
     var batch_size = test_case.batch_size
     var vocab_size = test_case.vocab_size
-    var temperature = rebind[Scalar[type]](test_case.temperature)
-    var p_threshold = rebind[Scalar[type]](test_case.p_threshold)
+    var temperature = rebind[Scalar[dtype]](test_case.temperature)
+    var p_threshold = rebind[Scalar[dtype]](test_case.p_threshold)
 
     var m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = UnsafePointer[Scalar[type]].alloc(
+    var in_logits_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
-    var in_logits = LayoutTensor[type, Layout.row_major[rank]()](
+    var in_logits = LayoutTensor[dtype, Layout.row_major[rank]()](
         in_logits_ptr,
         RuntimeLayout[Layout.row_major[rank]()].row_major(
             IndexList[rank](batch_size, vocab_size)
@@ -186,8 +186,8 @@ fn test_case_sampling[
             IndexList[1](batch_size)
         ),
     )
-    var p_thresholds_ptr = UnsafePointer[Scalar[type]].alloc(batch_size)
-    var p_thresholds = LayoutTensor[type, Layout.row_major[1]()](
+    var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
+    var p_thresholds = LayoutTensor[dtype, Layout.row_major[1]()](
         p_thresholds_ptr,
         RuntimeLayout[Layout.row_major[1]()].row_major(
             IndexList[1](batch_size)
@@ -261,19 +261,19 @@ fn test_case_sampling[
 
 
 fn test_toppminp[
-    type: DType,
+    dtype: DType,
     out_idx_type: DType,
-    fill_fn: fn[type: DType] (
-        mut LayoutTensor[mut=True, type, **_]
+    fill_fn: fn[dtype: DType] (
+        mut LayoutTensor[mut=True, dtype, **_]
     ) capturing -> None,
 ]() raises:
-    alias test_case1 = TestCase[type, out_idx_type, _is_top_p=True](
+    alias test_case1 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=1, vocab_size=1024, temperature=1.0, p_threshold=0.9
     )
-    alias test_case2 = TestCase[type, out_idx_type, _is_top_p=True](
+    alias test_case2 = TestCase[dtype, out_idx_type, _is_top_p=True](
         batch_size=16, vocab_size=32000, temperature=10.0, p_threshold=0.95
     )
-    alias test_case3 = TestCase[type, out_idx_type, _is_top_p=False](
+    alias test_case3 = TestCase[dtype, out_idx_type, _is_top_p=False](
         batch_size=64,
         vocab_size=128256,
         temperature=0.7,
@@ -286,19 +286,19 @@ fn test_toppminp[
 
 
 fn test_all_out_idx_types[
-    type: DType,
-    fill_fn: fn[type: DType] (
-        mut LayoutTensor[mut=True, type, **_]
+    dtype: DType,
+    fill_fn: fn[dtype: DType] (
+        mut LayoutTensor[mut=True, dtype, **_]
     ) capturing -> None,
 ]() raises:
-    test_toppminp[type, DType.int32, fill_fn]()
-    test_toppminp[type, DType.int64, fill_fn]()
-    test_toppminp[type, DType.uint64, fill_fn]()
+    test_toppminp[dtype, DType.int32, fill_fn]()
+    test_toppminp[dtype, DType.int64, fill_fn]()
+    test_toppminp[dtype, DType.uint64, fill_fn]()
 
 
 fn test_all_types[
-    fill_fn: fn[type: DType] (
-        mut LayoutTensor[mut=True, type, **_]
+    fill_fn: fn[dtype: DType] (
+        mut LayoutTensor[mut=True, dtype, **_]
     ) capturing -> None,
 ]() raises:
     print("\n=== Testing Float32 ===")

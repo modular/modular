@@ -46,7 +46,7 @@ struct PackMatrixRows[
     original_shape: DimList,
     # packed matrix shape list
     packed_shape: DimList,
-    type: DType,
+    dtype: DType,
     simd_size: Int,
     row_inner_size: Int,
     packed_origin: MutableOrigin,
@@ -58,9 +58,9 @@ struct PackMatrixRows[
     """
 
     # packed matrix
-    var packed_matrix: NDBuffer[type, 3, packed_origin, packed_shape]
+    var packed_matrix: NDBuffer[dtype, 3, packed_origin, packed_shape]
     # original matrix:
-    var original_matrix: NDBuffer[type, 2, original_origin, original_shape]
+    var original_matrix: NDBuffer[dtype, 2, original_origin, original_shape]
     # offsets in original matrix
     var global_offset: IndexList[2]
     # number of Row and Col to pack.
@@ -75,8 +75,8 @@ struct PackMatrixRows[
     #  run the packing and store to the given buffer.
     @staticmethod
     fn run(
-        packed_matrix: NDBuffer[type, 3, packed_origin, packed_shape],
-        original_matrix: NDBuffer[type, 2, original_origin, original_shape],
+        packed_matrix: NDBuffer[dtype, 3, packed_origin, packed_shape],
+        original_matrix: NDBuffer[dtype, 2, original_origin, original_shape],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
         valid_data_dim: IndexList[2],
@@ -130,7 +130,7 @@ struct PackMatrixRows[
         self,
         transpose_buffer: NDBuffer[
             mut=True,
-            type,
+            dtype,
             2,
             _,
             DimList(simd_size, simd_size),
@@ -170,7 +170,7 @@ struct PackMatrixRows[
                     start_idx_global[0] + inner_row_idx,
                     start_idx_global[1],
                 )
-                var row_data: SIMD[type, simd_size]
+                var row_data: SIMD[dtype, simd_size]
 
                 @parameter
                 if skip_col_bound:
@@ -196,11 +196,11 @@ struct PackMatrixRows[
             else:
                 # Row out of defined bound, fill the transpose buffer with zero
                 transpose_buffer.store[width=simd_size](
-                    Index(inner_row_idx, 0), SIMD[type, simd_size](0)
+                    Index(inner_row_idx, 0), SIMD[dtype, simd_size](0)
                 )
 
         # Transpose the buffered data
-        transpose_inplace[simd_size, simd_size, type](transpose_buffer)
+        transpose_inplace[simd_size, simd_size, dtype](transpose_buffer)
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
@@ -231,11 +231,11 @@ struct PackMatrixRows[
         """
 
         var transpose_buffer = NDBuffer[
-            type,
+            dtype,
             2,
             MutableAnyOrigin,
             DimList(simd_size, simd_size),
-        ].stack_allocation[alignment = alignof[SIMD[type, simd_size]]()]()
+        ].stack_allocation[alignment = alignof[SIMD[dtype, simd_size]]()]()
 
         var valid_tile_simd_dim = Index(
             min(
@@ -287,7 +287,7 @@ struct PackMatrixCols[
     original_shape: DimList,
     # packed matrix shape list
     packed_shape: DimList,
-    type: DType,
+    dtype: DType,
     simd_size: Int,
     column_inner_size: Int,
     use_vnni: Bool,
@@ -301,9 +301,9 @@ struct PackMatrixCols[
     """
 
     # packed matrix
-    var packed_matrix: NDBuffer[type, 3, packed_origin, packed_shape]
+    var packed_matrix: NDBuffer[dtype, 3, packed_origin, packed_shape]
     # original matrix:
-    var original_matrix: NDBuffer[type, 2, original_origin, original_shape]
+    var original_matrix: NDBuffer[dtype, 2, original_origin, original_shape]
     # offsets in original matrix:
     var global_offset: IndexList[2]
     # number of Row and Col to pack.
@@ -315,8 +315,8 @@ struct PackMatrixCols[
     # Interface function:
     @staticmethod
     fn run(
-        packed_matrix: NDBuffer[type, 3, MutableAnyOrigin, packed_shape],
-        original_matrix: NDBuffer[type, 2, MutableAnyOrigin, original_shape],
+        packed_matrix: NDBuffer[dtype, 3, MutableAnyOrigin, packed_shape],
+        original_matrix: NDBuffer[dtype, 2, MutableAnyOrigin, original_shape],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
         valid_data_dim: IndexList[2],
@@ -371,7 +371,7 @@ struct PackMatrixCols[
         @parameter
         fn pack_vector(row_idx: Int, col_idx: Int):
             var global_idx = self.global_offset + Index(row_idx, col_idx)
-            var data = SIMD[type, simd_size](0)
+            var data = SIMD[dtype, simd_size](0)
             if skip_col_bound or (
                 col_idx + simd_size <= self.valid_data_dim[1]
             ):
@@ -570,7 +570,7 @@ fn _pack_matmul_b_shape_func_impl[
         output[0] = b_input.dim(0)
         output[1] = b_input.dim(1)
 
-    # If we are on MacOS with Float32 data types, we use apple_matmul
+    # If we are on MacOS with Float32 data dtypes, we use apple_matmul
     # (which is a binding for cblas_sgemm that doesn't support packing) and a
     # special gemv for M=1 (apple_gemv).
     # So override packing, BUT pack functions will do transpose (facilitates
@@ -770,7 +770,7 @@ fn _pack_b_ndbuffer_impl[
         var n = b_input.dim(0) if transposed else b_input.dim(1)
         var k = b_input.dim(1) if transposed else b_input.dim(0)
 
-        # If we are on MacOS with Float32 data types, we use apple_matmul
+        # If we are on MacOS with Float32 data dtypes, we use apple_matmul
         # (which is a binding for cblas_sgemm that doesn't support packing) and a
         # special gemv for M=1 (apple_gemv).
         # So override packing, BUT do transpose (facilitates apple_gemv).

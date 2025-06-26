@@ -549,10 +549,10 @@ fn test_simd_f32_to_e5m2():
 
 
 fn test_simd_float8[
-    type: DType,
+    dtype: DType,
     size: Int,
     target: DType,
-](x: SIMD[type, size]):
+](x: SIMD[dtype, size]):
     var x_casted = x.cast[target]()
 
     alias M = 32

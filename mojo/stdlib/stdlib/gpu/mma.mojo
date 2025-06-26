@@ -579,15 +579,15 @@ fn mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 @always_inline
 fn ld_matrix[
-    type: DType, //, simd_width: Int, *, transpose: Bool = False
-](ptr: UnsafePointer[Scalar[type], **_],) -> SIMD[type, simd_width]:
+    dtype: DType, //, simd_width: Int, *, transpose: Bool = False
+](ptr: UnsafePointer[Scalar[dtype], **_],) -> SIMD[dtype, simd_width]:
     """Loads a matrix from shared memory into registers in a format suitable for tensor core operations.
 
     This function performs a warp-synchronized load from shared memory to registers, formatting the data
     to be directly usable by tensor core Matrix Multiply-Accumulate (MMA) instructions.
 
     Parameters:
-        type: The data type of the matrix elements (e.g. float16, float32).
+        dtype: The data type of the matrix elements (e.g. float16, float32).
         simd_width: The width of the SIMD vector to load.
         transpose: Whether to transpose the matrix during load (only supported for half precision).
 
@@ -621,13 +621,13 @@ fn ld_matrix[
     """
 
     constrained[
-        (transpose and type.is_half_float()) or (not transpose),
+        (transpose and dtype.is_half_float()) or (not transpose),
         "Transposed ld_matrix is only for half precision.",
     ]()
 
     # The register width is fixed at 4 Bytes (32 bits)
     alias register_btypes = 4
-    alias register_width = register_btypes // sizeof[type]()
+    alias register_width = register_btypes // sizeof[dtype]()
     alias num_registers = simd_width // register_width
 
     # Full intrinsic is base + suffix
@@ -640,7 +640,7 @@ fn ld_matrix[
             return ".trans" + sfx
         return sfx
 
-    var d: SIMD[type, simd_width]
+    var d: SIMD[dtype, simd_width]
 
     # Here .x1 means every thread would use a single register, x2 is 2 while x4 is 4 registers
     # An mma of shape m16n8k8 of type TF32 means for Matrix A every thread would have 4 registers hence .x4
@@ -649,17 +649,17 @@ fn ld_matrix[
     if num_registers == 1:
         alias ins = base + ".x1" + get_suffix()
         var r = llvm_intrinsic[ins, UInt32](ptr)
-        var r0 = bitcast[type, register_width](r[0])
+        var r0 = bitcast[dtype, register_width](r[0])
 
-        d = rebind[SIMD[type, simd_width]](r0)
+        d = rebind[SIMD[dtype, simd_width]](r0)
 
     elif num_registers == 2:
         alias ins = base + ".x2" + get_suffix()
         var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
-        var r0 = bitcast[type, register_width](r[0])
-        var r1 = bitcast[type, register_width](r[1])
+        var r0 = bitcast[dtype, register_width](r[0])
+        var r1 = bitcast[dtype, register_width](r[1])
 
-        d = rebind[SIMD[type, simd_width]](r0.join(r1))
+        d = rebind[SIMD[dtype, simd_width]](r0.join(r1))
 
     else:
         constrained[
@@ -672,16 +672,16 @@ fn ld_matrix[
         ](ptr)
 
         # Unpack result to 4 vectors (one per register), then concat them to return.
-        var r0 = bitcast[type, register_width](r[0])
-        var r1 = bitcast[type, register_width](r[1])
-        var r2 = bitcast[type, register_width](r[2])
-        var r3 = bitcast[type, register_width](r[3])
-        d = rebind[SIMD[type, simd_width]](r0.join(r1).join(r2.join(r3)))
+        var r0 = bitcast[dtype, register_width](r[0])
+        var r1 = bitcast[dtype, register_width](r[1])
+        var r2 = bitcast[dtype, register_width](r[2])
+        var r3 = bitcast[dtype, register_width](r[3])
+        d = rebind[SIMD[dtype, simd_width]](r0.join(r1).join(r2.join(r3)))
 
         # The following creates additional copies uint32 <-> 2xbf16 in matmul.
         # @parameter
         # for i in range(num_registers):
-        #     var vec_per_register = bitcast[type, register_width](
+        #     var vec_per_register = bitcast[dtype, register_width](
         #         rebind[UInt32](r[i])
         #     )
 

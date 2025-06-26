@@ -34,6 +34,15 @@ fn test_case[
     updates: TestTensor[dtype, 3],
     output: TestTensor[dtype, 3],
 ) raises:
+    @always_inline
+    @parameter
+    fn use_update[
+        _dtype: DType, width: Int
+    ](input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]) -> SIMD[
+        _dtype, width
+    ]:
+        return update_val
+
     test_case[dtype, use_update](data, indices, updates, output)
 
 

@@ -42,9 +42,9 @@ alias NumWarpPerWarpGroup = 4
 
 def test_warp_specialize_gemm_with_multicasting[
     wgmma_n: Int,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
+    a_dtype: DType,
+    b_dtype: DType,
+    c_dtype: DType,
     cluster_shape: IndexList[3],
     num_consumer: Int = 1,
     num_pipeline_stages: Int = 4,
@@ -74,21 +74,21 @@ def test_warp_specialize_gemm_with_multicasting[
     )
     var dynamic_c_shape = DimList(m.value, n.value)
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
+    var a_host = HostNDBuffer[a_dtype, 2, static_a_shape](dynamic_a_shape)
+    var b_host = HostNDBuffer[b_dtype, 2, static_b_shape](dynamic_b_shape)
+    var c_host = HostNDBuffer[c_dtype, 2, static_c_shape](dynamic_c_shape)
+    var c_host_ref = HostNDBuffer[c_dtype, 2, static_c_shape](dynamic_c_shape)
 
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
+    var a_device = DeviceNDBuffer[a_dtype, 2, static_a_shape](
         dynamic_a_shape, ctx=ctx
     )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
+    var b_device = DeviceNDBuffer[b_dtype, 2, static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
+    var c_device = DeviceNDBuffer[c_dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
+    var c_device_ref = DeviceNDBuffer[c_dtype, 2, static_c_shape](
         dynamic_c_shape, ctx=ctx
     )
 
@@ -106,8 +106,8 @@ def test_warp_specialize_gemm_with_multicasting[
     ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
     ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
 
-    alias block_tile_shape = Index(128, wgmma_n, 128 // sizeof[a_type]())
-    alias wgmma_shape = Index(64, wgmma_n, 32 // sizeof[a_type]())
+    alias block_tile_shape = Index(128, wgmma_n, 128 // sizeof[a_dtype]())
+    alias wgmma_shape = Index(64, wgmma_n, 32 // sizeof[a_dtype]())
 
     alias BM = block_tile_shape[0]
     alias BN = block_tile_shape[1]
@@ -150,17 +150,17 @@ def test_warp_specialize_gemm_with_multicasting[
     @always_inline
     @__copy_capture(c_tensor)
     fn epilogue_fn[
-        _type: DType,
+        _dtype: DType,
         width: Int,
         *,
-        alignment: Int = alignof[SIMD[_type, width]](),
-    ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> None:
+        alignment: Int = alignof[SIMD[_dtype, width]](),
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         c_tensor.store[alignment=alignment](
-            idx, rebind[SIMD[c_type, width]](val)
+            idx, rebind[SIMD[c_dtype, width]](val)
         )
 
     alias matmul_config = MatmulConfig[
-        a_type, b_type, c_type, transpose_b, mma_shape=wgmma_shape
+        a_dtype, b_dtype, c_dtype, transpose_b, mma_shape=wgmma_shape
     ](
         block_tile_shape=block_tile_shape,
         cluster_shape=cluster_shape,
@@ -384,12 +384,12 @@ def main():
         @parameter
         @always_inline
         fn test_lambda_fn_square[
-            _type: DType,
+            _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_type, width]](),
-        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
-            _type, width
+            alignment: Int = alignof[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            _dtype, width
         ]:
             return val * val
 
@@ -408,17 +408,17 @@ def main():
         @parameter
         @always_inline
         fn test_lambda_add_coords[
-            _type: DType,
+            _dtype: DType,
             width: Int,
             *,
-            alignment: Int = alignof[SIMD[_type, width]](),
-        ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> SIMD[
-            _type, width
+            alignment: Int = alignof[SIMD[_dtype, width]](),
+        ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+            _dtype, width
         ]:
             # Cast indices between 0-1 to avoid accuracy issues
             var i = Float32(idx[0]) / 277.0
             var j = Float32(idx[1] - idx[1] % 8) / 2560.0
-            return val + i.cast[_type]() + 2 * j.cast[_type]()
+            return val + i.cast[_dtype]() + 2 * j.cast[_dtype]()
 
         test_warp_specialize_gemm_with_multicasting[
             256,

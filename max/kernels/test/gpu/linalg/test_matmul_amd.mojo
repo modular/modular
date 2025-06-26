@@ -25,30 +25,30 @@ from linalg.matmul_gpu import _matmul_gpu
 
 from utils import IndexList
 
-alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[type, width]
-) capturing -> SIMD[type, width]
+alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
+    IndexList[2], IndexList[2], SIMD[dtype, width]
+) capturing -> SIMD[dtype, width]
 
 
 @parameter
 @always_inline
 fn epilogue_test_fn[
-    type: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
     dim_space: IndexList[2],
-    val: SIMD[type, width],
+    val: SIMD[dtype, width],
 ) -> SIMD[
-    type, width
+    dtype, width
 ]:
-    var bias = SIMD[type, width](0)
+    var bias = SIMD[dtype, width](0)
 
     @parameter
     for i in range(width):
         bias[i] = (
             0.5
             + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                type
+                dtype
             ]()
         )
 

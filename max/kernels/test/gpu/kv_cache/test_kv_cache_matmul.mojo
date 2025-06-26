@@ -35,7 +35,7 @@ alias llama_num_q_heads = 32
 
 
 def execute_fused_qkv_matmul[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     batch_size: Int,
     prompt_len: Int,
@@ -49,7 +49,7 @@ def execute_fused_qkv_matmul[
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias num_blocks = 32
-    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[dtype, kv_params]
 
     debug_assert(
         batch_size < num_blocks,
@@ -61,30 +61,30 @@ def execute_fused_qkv_matmul[
     )
     # initialize hidden state
     hidden_state_host = HostNDBuffer[
-        type, 3, DimList(Dim(), Dim(), hidden_size)
+        dtype, 3, DimList(Dim(), Dim(), hidden_size)
     ](IndexList[3](batch_size, prompt_len, hidden_size))
 
     random(hidden_state_host.tensor)
 
     hidden_state_device = DeviceNDBuffer[
-        type, 3, DimList(Dim(), Dim(), hidden_size)
+        dtype, 3, DimList(Dim(), Dim(), hidden_size)
     ](IndexList[3](batch_size, prompt_len, hidden_size), ctx=ctx)
     ctx.enqueue_copy(hidden_state_device.buffer, hidden_state_host.tensor.data)
-    hidden_state_device_2d = NDBuffer[type, 2, _, DimList(Dim(), hidden_size)](
+    hidden_state_device_2d = NDBuffer[dtype, 2, _, DimList(Dim(), hidden_size)](
         hidden_state_device.buffer.unsafe_ptr(),
         IndexList[2](batch_size * prompt_len, hidden_size),
     )
 
     # initialize the weights
     weight_host = HostNDBuffer[
-        type,
+        dtype,
         2,
         DimList(fused_hidden_size, hidden_size),
     ](IndexList[2](fused_hidden_size, hidden_size))
     random(weight_host.tensor)
 
     weight_device = DeviceNDBuffer[
-        type,
+        dtype,
         2,
         DimList(fused_hidden_size, hidden_size),
     ](
@@ -94,14 +94,14 @@ def execute_fused_qkv_matmul[
     ctx.enqueue_copy(weight_device.buffer, weight_host.tensor.data)
 
     # initialize reference output
-    ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size)](
+    ref_output_host = HostNDBuffer[dtype, 2, DimList(Dim(), fused_hidden_size)](
         IndexList[2](
             batch_size * prompt_len,
             fused_hidden_size,
         ),
     )
     ref_output_device = DeviceNDBuffer[
-        type,
+        dtype,
         2,
         DimList(Dim(), fused_hidden_size),
     ](
@@ -112,14 +112,14 @@ def execute_fused_qkv_matmul[
         ctx=ctx,
     )
     test_output_host = HostNDBuffer[
-        type,
+        dtype,
         3,
         DimList(Dim(), Dim(), hidden_size),
     ](
         IndexList[3](batch_size, prompt_len, hidden_size),
     )
     test_output_device = DeviceNDBuffer[
-        type,
+        dtype,
         3,
         DimList(Dim(), Dim(), hidden_size),
     ](
@@ -140,7 +140,7 @@ def execute_fused_qkv_matmul[
     )
     ctx.enqueue_copy(cache_lengths_dev.buffer, cache_lengths_host.tensor.data)
 
-    kv_block_host = HostNDBuffer[type, 6](
+    kv_block_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -150,7 +150,7 @@ def execute_fused_qkv_matmul[
             kv_params.head_size,
         ),
     )
-    kv_block_device = DeviceNDBuffer[type, 6](
+    kv_block_device = DeviceNDBuffer[dtype, 6](
         IndexList[6](
             num_blocks,
             2,
@@ -287,11 +287,11 @@ def execute_fused_qkv_matmul[
 
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
-    alias types = (DType.float32, DType.bfloat16)
+    alias dtypes = (DType.float32, DType.bfloat16)
 
     @parameter
-    for type_idx in range(2):
-        alias type = types[type_idx]
+    for dtype_idx in range(2):
+        alias dtype = dtypes[dtype_idx]
         for bs in [1, 16]:
             ce_cache_sizes = List[Int]()
             tg_cache_sizes = List[Int]()
@@ -300,22 +300,22 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
                 ce_cache_sizes.append(0)
 
             # llama3 context encoding
-            execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 128, 1024, ce_cache_sizes, 4, 1, ctx
-            )
+            execute_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3
+            ](bs, 128, 1024, ce_cache_sizes, 4, 1, ctx)
 
-            execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 512, 1024, ce_cache_sizes, 4, 0, ctx
-            )
+            execute_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3
+            ](bs, 512, 1024, ce_cache_sizes, 4, 0, ctx)
 
             # llama3 token gen
-            execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 1, 1024, tg_cache_sizes, 4, 3, ctx
-            )
+            execute_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3
+            ](bs, 1, 1024, tg_cache_sizes, 4, 3, ctx)
 
-            execute_fused_qkv_matmul[llama_num_q_heads, type, kv_params_llama3](
-                bs, 1, 1024, tg_cache_sizes, 4, 0, ctx
-            )
+            execute_fused_qkv_matmul[
+                llama_num_q_heads, dtype, kv_params_llama3
+            ](bs, 1, 1024, tg_cache_sizes, 4, 0, ctx)
 
 
 def main():

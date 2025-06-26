@@ -1748,25 +1748,25 @@ fn _stencil_impl_cpu[
     stencil_rank: Int,
     stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
-    type: DType,
+    dtype: DType,
     map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
     ),
     map_strides: fn (dim: Int) capturing [_] -> Int,
-    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank, **_]) capturing [
-        _
-    ] -> SIMD[type, simd_width],
+    load_fn: fn[simd_width: Int, dtype: DType] (
+        IndexList[rank, **_]
+    ) capturing [_] -> SIMD[dtype, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
-        type, simd_width
+        dtype, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
         IndexList[rank, **_],
-        SIMD[type, simd_width],
-        SIMD[type, simd_width],
-    ) capturing [_] -> SIMD[type, simd_width],
+        SIMD[dtype, simd_width],
+        SIMD[dtype, simd_width],
+    ) capturing [_] -> SIMD[dtype, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank, **_], SIMD[type, simd_width]
+        IndexList[rank, **_], SIMD[dtype, simd_width]
     ) capturing [_] -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],
@@ -1781,13 +1781,13 @@ fn _stencil_impl_cpu[
 
 
     Parameters:
-        shape_element_type: The element type of the shape.
-        input_shape_element_type: The element type of the input shape.
+        shape_element_type: The element dtype of the shape.
+        input_shape_element_type: The element dtype of the input shape.
         rank: Input and output domain rank.
         stencil_rank: Rank of stencil subdomain slice.
         stencil_axis: Stencil subdomain axes.
         simd_width: The SIMD vector width to use.
-        type: The input and output data type.
+        dtype: The input and output data dtype.
         map_fn: A function that a point in the output domain to the input co-domain.
         map_strides: A function that returns the stride for the dim.
         load_fn: A function that loads a vector of simd_width from input.
@@ -1897,7 +1897,7 @@ fn _stencil_impl_cpu[
                             rank, element_type=shape_element_type
                         ](indices[0], i, j, indices[3])
 
-                        var val = load_fn[simd_width, type](point_idx)
+                        var val = load_fn[simd_width, dtype](point_idx)
                         result = compute_fn[simd_width](point_idx, result, val)
 
                 compute_finalize_fn[simd_width](indices, result)
@@ -1916,25 +1916,25 @@ fn _stencil_impl_gpu[
     stencil_rank: Int,
     stencil_axis: IndexList[stencil_rank, **_],
     simd_width: Int,
-    type: DType,
+    dtype: DType,
     map_fn: fn (IndexList[stencil_rank, **_]) capturing [_] -> (
         IndexList[stencil_rank, **_],
         IndexList[stencil_rank, **_],
     ),
     map_strides: fn (dim: Int) capturing [_] -> Int,
-    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank, **_]) capturing [
-        _
-    ] -> SIMD[type, simd_width],
+    load_fn: fn[simd_width: Int, dtype: DType] (
+        IndexList[rank, **_]
+    ) capturing [_] -> SIMD[dtype, simd_width],
     compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
-        type, simd_width
+        dtype, simd_width
     ],
     compute_fn: fn[simd_width: Int] (
         IndexList[rank, **_],
-        SIMD[type, simd_width],
-        SIMD[type, simd_width],
-    ) capturing [_] -> SIMD[type, simd_width],
+        SIMD[dtype, simd_width],
+        SIMD[dtype, simd_width],
+    ) capturing [_] -> SIMD[dtype, simd_width],
     compute_finalize_fn: fn[simd_width: Int] (
-        IndexList[rank, **_], SIMD[type, simd_width]
+        IndexList[rank, **_], SIMD[dtype, simd_width]
     ) capturing [_] -> None,
 ](
     ctx: DeviceContext,
@@ -1944,13 +1944,13 @@ fn _stencil_impl_gpu[
     """(Naive implementation) Computes stencil operation in parallel on GPU.
 
     Parameters:
-        shape_element_type: The element type of the shape.
-        input_shape_element_type: The element type of the input shape.
+        shape_element_type: The element dtype of the shape.
+        input_shape_element_type: The element dtype of the input shape.
         rank: Input and output domain rank.
         stencil_rank: Rank of stencil subdomain slice.
         stencil_axis: Stencil subdomain axes.
         simd_width: The SIMD vector width to use.
-        type: The input and output data type.
+        dtype: The input and output data dtype.
         map_fn: A function that a point in the output domain to the input co-domain.
         map_strides: A function that returns the stride for the dim.
         load_fn: A function that loads a vector of simd_width from input.
@@ -2032,7 +2032,7 @@ fn _stencil_impl_gpu[
                 var point_idx = IndexList[
                     rank, element_type=shape_element_type
                 ](indices[0], i, j, indices[3])
-                var val = load_fn[simd_width, type](point_idx)
+                var val = load_fn[simd_width, dtype](point_idx)
                 result = compute_fn[simd_width](point_idx, result, val)
 
         compute_finalize_fn[simd_width](indices, result)

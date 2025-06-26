@@ -31,12 +31,12 @@ from layout.layout_tensor import LayoutTensor
 from utils.index import Index, IndexList
 
 alias elementwise_epilogue_type = fn[
-    type: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[type, width]) capturing -> None
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], SIMD[dtype, width]) capturing -> None
 
 alias elementwise_compute_lambda_type = fn[
-    type: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
+    dtype: DType, width: Int, *, alignment: Int = 1
+] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
 struct KernelConfig:
@@ -182,9 +182,9 @@ fn calculate_tile_n_k[
     given the cache size and desired data layout.
 
     Parameters:
-        a_type: The type of the A tensor.
-        b_type: The type of the B tensor.
-        c_type: The type of the C tensor.
+        a_type: The dtype of the A tensor.
+        b_type: The dtype of the B tensor.
+        c_type: The dtype of the C tensor.
         kernel_cols: The umber of columns of the micro kernel.
 
     Returns:
@@ -511,7 +511,7 @@ fn get_partitioned_matmul_mojo_shape[
     return Index(num_row_tasks, num_col_tasks)
 
 
-fn get_pack_data_size[type: DType]() -> Int:
+fn get_pack_data_size[dtype: DType]() -> Int:
     """Utility to compute the number of elements to pack in each tile.
     Returns:
         The number of elements to pack.
@@ -523,22 +523,22 @@ fn get_pack_data_size[type: DType]() -> Int:
         # Only use the large cache size for release build as debug build may
         # contain additional data could cause stack overflow.
         # Restrict it to 4K.
-        return 4 * KB // sizeof[type]()
+        return 4 * KB // sizeof[dtype]()
 
     @parameter
     if os_is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
-        return 64 * KB // sizeof[type]()
+        return 64 * KB // sizeof[dtype]()
 
     @parameter
     if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
         # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
         # return half the cache size as 4 byte elements
-        return 512 * KB // sizeof[type]()
+        return 512 * KB // sizeof[dtype]()
 
-    return 256 * KB // sizeof[type]()
+    return 256 * KB // sizeof[dtype]()
 
 
 @always_inline

@@ -17,10 +17,10 @@ from layout import LayoutTensor
 
 
 fn random_normal[
-    type: DType,
+    dtype: DType,
     mean: Float64,
     variance: Float64,
-](output: LayoutTensor[mut=True, type, *_, **_]):
+](output: LayoutTensor[mut=True, dtype, *_, **_]):
     """
     Fill `output` with values generated from Normal(mean, variance) distribution.
 

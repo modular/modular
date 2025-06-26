@@ -4016,7 +4016,7 @@ struct Gather:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             gather[
-                type = output.dtype,
+                dtype = output.dtype,
                 indices_type = indices.dtype,
                 input_fn=input_fn,
                 indices_fn=indices_fn,
@@ -4428,8 +4428,8 @@ struct Matmul:
         @parameter
         @always_inline
         fn epilgue_fn[
-            _type: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_type, _width]):
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
                 coords,
                 rebind[SIMD[c.dtype, _width]](val),
@@ -4438,11 +4438,11 @@ struct Matmul:
         @parameter
         @always_inline
         fn output_compute_fn[
-            _type: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_type, _width]) -> SIMD[
-            _type, _width
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
         ]:
-            return rebind[SIMD[_type, _width]](
+            return rebind[SIMD[_dtype, _width]](
                 c._fused_compute_output_lambda(
                     coords, rebind[SIMD[c.dtype, _width]](val)
                 )
@@ -5106,8 +5106,8 @@ struct Concat:
         @always_inline
         @parameter
         fn epilogue_wrapper[
-            _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_type, width]):
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](indices),
                 rebind[SIMD[output.dtype, width]](value),
@@ -5409,8 +5409,8 @@ struct Conv:
         @parameter
         @always_inline
         fn output_fn[
-            _type: DType, _rank: Int, _width: Int
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
@@ -5646,8 +5646,8 @@ struct ConvTranspose:
         @parameter
         @always_inline
         fn output_fn[
-            _type: DType, _rank: Int, _width: Int
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, _width]](val),
@@ -8896,12 +8896,12 @@ struct DistributedAllReduceSum:
         @parameter
         fn outputs_lambda[
             input_index: Int,
-            _type: DType,
+            _dtype: DType,
             _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
             constrained[
                 input_index < num_devices, "tensor index out of bounds"
             ]()

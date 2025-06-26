@@ -17,16 +17,16 @@ from gpu.host import DeviceContext
 
 
 fn run_func[
-    type: DType,
-    kernel_fn: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[
-        type, width
+    dtype: DType,
+    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+        dtype, width
     ],
-](ctx: DeviceContext, val: Scalar[type] = 0) raises:
+](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
     @parameter
-    fn kernel(output: UnsafePointer[Scalar[type]], input: Scalar[type]):
+    fn kernel(output: UnsafePointer[Scalar[dtype]], input: Scalar[dtype]):
         output[0] = kernel_fn(input)
 
-    var out = ctx.enqueue_create_buffer[type](1)
+    var out = ctx.enqueue_create_buffer[dtype](1)
     ctx.enqueue_function_experimental[kernel](out, val, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
@@ -90,15 +90,15 @@ def main():
 
         @parameter
         fn test[
-            *kernel_fns: fn[type: DType, width: Int] (
-                SIMD[type, width]
-            ) -> SIMD[type, width]
+            *kernel_fns: fn[dtype: DType, width: Int] (
+                SIMD[dtype, width]
+            ) -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
             @parameter
             fn variadic_len[
-                *kernel_fns: fn[type: DType, width: Int] (
-                    SIMD[type, width]
-                ) -> SIMD[type, width]
+                *kernel_fns: fn[dtype: DType, width: Int] (
+                    SIMD[dtype, width]
+                ) -> SIMD[dtype, width]
             ]() -> Int:
                 return __mlir_op.`pop.variadic.size`(kernel_fns)
 

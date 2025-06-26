@@ -1973,8 +1973,10 @@ def test_from_bytes_as_bytes():
 
 
 def test_reversed():
-    fn test[D: DType]() raises:
-        assert_equal(SIMD[D, 4](1, 2, 3, 4).reversed(), SIMD[D, 4](4, 3, 2, 1))
+    fn test[dtype: DType]() raises:
+        assert_equal(
+            SIMD[dtype, 4](1, 2, 3, 4).reversed(), SIMD[dtype, 4](4, 3, 2, 1)
+        )
 
     test[DType.uint8]()
     test[DType.uint16]()

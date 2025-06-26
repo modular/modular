@@ -28,17 +28,17 @@ from utils import IndexList
 
 
 def _init_device_ndbuffer_from_goldens[
-    type: DType, //, shape: DimList
-](goldens: List[Scalar[type]], ctx: DeviceContext) -> DeviceNDBuffer[
-    type, len(shape), shape=shape
+    dtype: DType, //, shape: DimList
+](goldens: List[Scalar[dtype]], ctx: DeviceContext) -> DeviceNDBuffer[
+    dtype, len(shape), shape=shape
 ]:
     """Initializes a device buffer with a set of golden values."""
-    host_tensor = HostNDBuffer[type, len(shape), shape=shape]()
+    host_tensor = HostNDBuffer[dtype, len(shape), shape=shape]()
     memcpy(dest=host_tensor.tensor.data, src=goldens.data, count=len(goldens))
 
     # Copy tensor to device.
     device_tensor = DeviceNDBuffer[
-        host_tensor.type,
+        host_tensor.dtype,
         host_tensor.rank,
         shape = host_tensor.shape,
     ](ctx=ctx)
@@ -56,7 +56,7 @@ def execute_fused_qk_rope_ragged(
 ):
     alias num_q_heads = 32
     alias kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
-    alias type = DType.float32
+    alias dtype = DType.float32
     alias num_paged_blocks = 32
     alias page_size = 128
     var num_layers = 1
@@ -135,13 +135,13 @@ def execute_fused_qk_rope_ragged(
         ctx
     )
     true_ce_q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
     random(true_ce_q_ragged_host.tensor)
     true_ce_q_ragged_device = true_ce_q_ragged_host.copy_to_device(ctx)
 
     mixed_ce_q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
     for bs_idx in range(batch_size):
         true_ce_prompt_len = true_ce_prompt_lens[bs_idx]
@@ -169,20 +169,20 @@ def execute_fused_qk_rope_ragged(
 
     freqs_cis_table_dev = _init_device_ndbuffer_from_goldens[
         shape = DimList(max_seq_len, kv_params.head_size)
-    ](freqs_cis_table_input[type](), ctx)
+    ](freqs_cis_table_input[dtype](), ctx)
 
     # initialize reference output
     mixed_ce_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](mixed_ce_total_length, num_q_heads, kv_params.head_size))
     mixed_ce_output_device = mixed_ce_output_host.copy_to_device(ctx)
     true_ce_output_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
     ](IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size))
     true_ce_output_device = true_ce_output_host.copy_to_device(ctx)
 
     # initialize our KVCache
-    true_ce_kv_block_paged_host = HostNDBuffer[type, 6](
+    true_ce_kv_block_paged_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
             2,
@@ -192,7 +192,7 @@ def execute_fused_qk_rope_ragged(
             kv_params.head_size,
         )
     )
-    mixed_ce_kv_block_paged_host = HostNDBuffer[type, 6](
+    mixed_ce_kv_block_paged_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
             2,
@@ -232,7 +232,7 @@ def execute_fused_qk_rope_ragged(
     paged_lut_device = paged_lut_host.copy_to_device(ctx)
 
     var true_ce_k_cache_collection = PagedKVCacheCollection[
-        type, kv_params, page_size
+        dtype, kv_params, page_size
     ](
         true_ce_kv_block_paged_device.tensor,
         true_ce_cache_lengths_device.tensor,
@@ -242,7 +242,7 @@ def execute_fused_qk_rope_ragged(
     )
 
     var mixed_ce_k_cache_collection = PagedKVCacheCollection[
-        type, kv_params, page_size
+        dtype, kv_params, page_size
     ](
         mixed_ce_kv_block_paged_device.tensor,
         mixed_ce_cache_lengths_device.tensor,
@@ -255,7 +255,7 @@ def execute_fused_qk_rope_ragged(
     print("true")
     var freqs_cis = rebind[
         NDBuffer[
-            type,
+            dtype,
             2,
             MutableAnyOrigin,
             shape = freqs_cis_table_dev.shape,
@@ -303,7 +303,7 @@ def execute_fused_qk_rope_ragged(
     ctx.synchronize()
 
     var true_ce_k_cache_collection_host = PagedKVCacheCollection[
-        type, kv_params, page_size
+        dtype, kv_params, page_size
     ](
         true_ce_kv_block_paged_host.tensor,
         true_ce_cache_lengths_host.tensor,
@@ -316,7 +316,7 @@ def execute_fused_qk_rope_ragged(
     )
 
     var mixed_ce_k_cache_collection_host = PagedKVCacheCollection[
-        type, kv_params, page_size
+        dtype, kv_params, page_size
     ](
         mixed_ce_kv_block_paged_host.tensor,
         mixed_ce_cache_lengths_host.tensor,
@@ -404,7 +404,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     alias q_head_size = 192
     alias kv_params = KVCacheStaticParams(num_heads=1, head_size=576)
     alias kv_params_64 = KVCacheStaticParams(num_heads=1, head_size=64)
-    alias type = DType.bfloat16
+    alias dtype = DType.bfloat16
     alias num_paged_blocks = 2
     alias page_size = 128
     alias rope_dim = 64
@@ -417,7 +417,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
 
     # create a random query tensor and KV cache with above params
     var q_ragged_host = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, q_head_size)
+        dtype, 3, DimList(Dim(), num_q_heads, q_head_size)
     ](IndexList[3](seq_len, num_q_heads, q_head_size))
     random(q_ragged_host.tensor)
     var q_ragged_device = q_ragged_host.copy_to_device(ctx)
@@ -426,7 +426,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     # then copy the last 64 elements of each head from q_ragged_device
     # to the new tensor
     var q_ragged_host_64 = HostNDBuffer[
-        type, 3, DimList(Dim(), num_q_heads, rope_dim)
+        dtype, 3, DimList(Dim(), num_q_heads, rope_dim)
     ](IndexList[3](seq_len, num_q_heads, rope_dim))
     for seq_idx in range(seq_len):
         for head_idx in range(num_q_heads):
@@ -442,7 +442,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     var q_ragged_device_64 = q_ragged_host_64.copy_to_device(ctx)
 
     # create a random KV cache with above params
-    var kv_block_paged_host = HostNDBuffer[type, 6](
+    var kv_block_paged_host = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
             2,
@@ -458,7 +458,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     # create a KV cache that only has 64 elements in each head,
     # then copy the last 64 elements of each head from kv_block_paged_device
     # to the new tensor
-    var kv_block_paged_host_64 = HostNDBuffer[type, 6](
+    var kv_block_paged_host_64 = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
             2,
@@ -499,20 +499,20 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     var kv_block_paged_device_64 = kv_block_paged_host_64.copy_to_device(ctx)
 
     # create a random freqs_cis tensor with above params
-    var freqs_cis_host = HostNDBuffer[type, 2, DimList(max_seq_len, rope_dim)](
+    var freqs_cis_host = HostNDBuffer[dtype, 2, DimList(max_seq_len, rope_dim)](
         IndexList[2](max_seq_len, rope_dim)
     )
     random(freqs_cis_host.tensor)
     var freqs_cis_device = freqs_cis_host.copy_to_device(ctx)
 
     # create a output tensor with above params
-    var output_host = HostNDBuffer[type, 3](
+    var output_host = HostNDBuffer[dtype, 3](
         IndexList[3](seq_len, num_q_heads, q_head_size)
     )
     var output_device = output_host.copy_to_device(ctx)
 
     # create a output tensor for reference
-    var output_host_ref = HostNDBuffer[type, 3](
+    var output_host_ref = HostNDBuffer[dtype, 3](
         IndexList[3](seq_len, num_q_heads, rope_dim)
     )
     var output_device_ref = output_host_ref.copy_to_device(ctx)
@@ -545,7 +545,9 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     var max_cache_length = Int(0)
 
     # initialize our k_cache_collection
-    var k_cache_collection = PagedKVCacheCollection[type, kv_params, page_size](
+    var k_cache_collection = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ](
         kv_block_paged_device.tensor,
         cache_lengths_device.tensor,
         paged_lut_device.tensor,
@@ -555,7 +557,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
 
     # initialize our k_cache_collection_64
     var k_cache_collection_64 = PagedKVCacheCollection[
-        type, kv_params_64, page_size
+        dtype, kv_params_64, page_size
     ](
         kv_block_paged_device_64.tensor,
         cache_lengths_device.tensor,
@@ -567,7 +569,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     # execute the kernel
     var freqs_cis = rebind[
         NDBuffer[
-            type,
+            dtype,
             2,
             __type_of(freqs_cis_device.tensor).origin,
             shape = DimList(max_seq_len, rope_dim),
@@ -622,7 +624,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                 )
 
     # copy the kv_block_paged_device back to a new host buffer
-    var kv_block_paged_host_copy = HostNDBuffer[type, 6](
+    var kv_block_paged_host_copy = HostNDBuffer[dtype, 6](
         IndexList[6](
             num_paged_blocks,
             2,

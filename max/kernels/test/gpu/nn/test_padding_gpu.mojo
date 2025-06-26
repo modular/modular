@@ -24,7 +24,7 @@ from utils.index import IndexList
 
 @no_inline
 fn test_pad_constant_gpu[
-    type: DType, rank: Int
+    dtype: DType, rank: Int
 ](
     input_shape: IndexList[rank],
     paddings: LayoutTensor[DType.index, Layout(2 * rank)],
@@ -35,10 +35,10 @@ fn test_pad_constant_gpu[
     alias layout = Layout.row_major[rank]()
 
     # Create an input matrix
-    var input_data = UnsafePointer[Scalar[type]].alloc(
+    var input_data = UnsafePointer[Scalar[dtype]].alloc(
         input_shape.flattened_length()
     )
-    var input = LayoutTensor[type, layout](
+    var input = LayoutTensor[dtype, layout](
         input_data,
         RuntimeLayout[layout].row_major(input_shape),
     )
@@ -46,10 +46,10 @@ fn test_pad_constant_gpu[
     var output_shape = get_padding_output_shape(input_shape, paddings)
 
     # Create an output matrix and fill it with zeros.
-    var output_data = UnsafePointer[Scalar[type]].alloc(
+    var output_data = UnsafePointer[Scalar[dtype]].alloc(
         output_shape.flattened_length()
     )
-    var output = LayoutTensor[type, layout](
+    var output = LayoutTensor[dtype, layout](
         output_data, RuntimeLayout[layout].row_major(output_shape)
     ).fill(0)
 
@@ -61,10 +61,10 @@ fn test_pad_constant_gpu[
         print(input)
 
     # create device buffers
-    var in_device = ctx.enqueue_create_buffer[type](
+    var in_device = ctx.enqueue_create_buffer[dtype](
         input_shape.flattened_length()
     )
-    var out_device = ctx.enqueue_create_buffer[type](
+    var out_device = ctx.enqueue_create_buffer[dtype](
         output_shape.flattened_length()
     )
 
@@ -73,7 +73,7 @@ fn test_pad_constant_gpu[
     ctx.enqueue_copy(out_device, output.ptr)
 
     # pad with constant = 5
-    var constant = Scalar[type](5)
+    var constant = Scalar[dtype](5)
 
     pad_constant(
         out_device._unsafe_ptr(),
@@ -92,10 +92,10 @@ fn test_pad_constant_gpu[
         print(output)
 
     # verification
-    var output_data_cpu = UnsafePointer[Scalar[type]].alloc(
+    var output_data_cpu = UnsafePointer[Scalar[dtype]].alloc(
         output_shape.flattened_length()
     )
-    var output_cpu = LayoutTensor[type, layout](
+    var output_cpu = LayoutTensor[dtype, layout](
         output_data_cpu,
         RuntimeLayout[layout].row_major(output_shape),
     ).fill(0)
@@ -118,7 +118,7 @@ fn test_pad_constant_gpu[
 
 
 def main():
-    alias type = DType.float32
+    alias dtype = DType.float32
     with DeviceContext() as ctx:
         var input_shape_1d = IndexList[1](32)
         # Create a padding array of the (before,after) form
@@ -127,7 +127,7 @@ def main():
         ].stack_allocation()
         paddings_1d[0] = 2  # axis-0 pre-pad
         paddings_1d[1] = 1  # axis-0 post-pad
-        test_pad_constant_gpu[type, 1](input_shape_1d, paddings_1d, ctx)
+        test_pad_constant_gpu[dtype, 1](input_shape_1d, paddings_1d, ctx)
         # CHECK: PASS: rank=1
 
         var input_shape_2d = IndexList[2](32, 32)
@@ -139,7 +139,7 @@ def main():
         paddings_2d[1] = 1  # axis-0 post-pad
         paddings_2d[2] = 3  # axis-1 pre-pad
         paddings_2d[3] = 3  # axis-1 post-pad
-        test_pad_constant_gpu[type](input_shape_2d, paddings_2d, ctx)
+        test_pad_constant_gpu[dtype](input_shape_2d, paddings_2d, ctx)
         # CHECK: PASS: rank=2
 
         var input_shape_3d = IndexList[3](32, 32, 32)
@@ -153,5 +153,5 @@ def main():
         paddings_3d[3] = 3  # axis-1 post-pad
         paddings_3d[4] = 5  # axis-2 pre-pad
         paddings_3d[5] = 7  # axis-2 post-pad
-        test_pad_constant_gpu[type](input_shape_3d, paddings_3d, ctx)
+        test_pad_constant_gpu[dtype](input_shape_3d, paddings_3d, ctx)
         # CHECK: PASS: rank=3

@@ -29,13 +29,13 @@ def execute_gather_nd_test[
 ):
     # create device-side buffers and copy data to them
     var data_device = DeviceNDBuffer[
-        data_host.type, data_host.rank, data_host.shape
+        data_host.dtype, data_host.rank, data_host.shape
     ](
         data_host.tensor.get_shape(),
         ctx=ctx,
     )
     var indices_device = DeviceNDBuffer[
-        indices_host.type, indices_host.rank, indices_host.shape
+        indices_host.dtype, indices_host.rank, indices_host.shape
     ](
         indices_host.tensor.get_shape(),
         ctx=ctx,
@@ -47,7 +47,7 @@ def execute_gather_nd_test[
         indices_host.rank,
         output_rank,
         data_type,
-        indices_host.type,
+        indices_host.dtype,
         batch_dims,
     ](
         data_host.tensor.make_dims_unknown(),
@@ -55,7 +55,7 @@ def execute_gather_nd_test[
     )
 
     var actual_output_device = DeviceNDBuffer[
-        data_host.type,
+        data_host.dtype,
         output_shape.size,
     ](
         output_shape,
