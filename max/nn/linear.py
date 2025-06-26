@@ -334,7 +334,12 @@ class Linear(Module, Shardable):
             )
 
         if self.bias:
-            # Only shard the bias when the weight sharding is rowwise.
+            # Only truly shard the bias across devices when the weight sharding
+            # is rowwise.
+            # Otherwise, when the weight sharding is columnwise, set the bias to
+            # replicate so that it is complete on device 0.
+            # Linear.shard handles setting bias to None on devices >= 1 to
+            # prevent bias duplication, which would be incorrect.
             self.bias.sharding_strategy = (
                 strategy
                 if strategy.is_rowwise
@@ -380,7 +385,16 @@ class Linear(Module, Shardable):
 
         # Handle bias sharding
         if self.bias is not None:
-            sharded.bias = self.bias.shard(shard_idx, device)
+            # For columnwise sharding with allreduce.sum, only add bias on device 0
+            # to avoid adding it multiple times.
+            is_colwise = (
+                self.weight.sharding_strategy.is_colwise
+                or self.weight.sharding_strategy.is_head_aware_colwise
+            )
+            if is_colwise and (shard_idx > 0):
+                sharded.bias = None
+            else:
+                sharded.bias = self.bias.shard(shard_idx, device)
 
         # Handle float8 scales.
         if self.float8_config:
