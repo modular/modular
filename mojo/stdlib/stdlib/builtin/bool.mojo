@@ -25,7 +25,7 @@ from python import (
     ConvertibleFromPython,
 )
 
-from utils._select import _select_register_value
+from utils._select import _select_register_value as select
 from utils._visualizers import lldb_formatter_wrapping_type
 
 # ===----------------------------------------------------------------------=== #
@@ -287,7 +287,7 @@ struct Bool(
         Returns:
             1 if the Bool is True, 0 otherwise.
         """
-        return Int(1) if self else Int(0)
+        return select[Int](self, 1, 0)
 
     @always_inline("builtin")
     fn __as_int__(self) -> Int:
@@ -315,7 +315,7 @@ struct Bool(
         Returns:
             1.0 if True else 0.0 otherwise.
         """
-        return _select_register_value(self, Float64(1.0), Float64(0.0))
+        return select[Float64](self, 1, 0)
 
     @always_inline("builtin")
     fn __eq__(self, rhs: Bool) -> Bool:
@@ -330,7 +330,7 @@ struct Bool(
         Returns:
             True if the two values match and False otherwise.
         """
-        return not self != rhs
+        return ~(self != rhs)
 
     @always_inline("builtin")
     fn __ne__(self, rhs: Bool) -> Bool:
@@ -359,7 +359,7 @@ struct Bool(
             True if self is False and rhs is True.
         """
 
-        return not self and rhs
+        return ~self & rhs
 
     @always_inline("builtin")
     fn __le__(self, rhs: Self) -> Bool:
@@ -372,7 +372,7 @@ struct Bool(
             True if self is False and rhs is True or False.
         """
 
-        return not self or rhs
+        return ~self | rhs
 
     @always_inline("builtin")
     fn __gt__(self, rhs: Self) -> Bool:
@@ -385,7 +385,7 @@ struct Bool(
             True if self is True and rhs is False.
         """
 
-        return self and not rhs
+        return rhs < self
 
     @always_inline("builtin")
     fn __ge__(self, rhs: Self) -> Bool:
@@ -398,7 +398,7 @@ struct Bool(
             True if self is True and rhs is True or False.
         """
 
-        return self or not rhs
+        return rhs <= self
 
     # ===-------------------------------------------------------------------===#
     # Bitwise operations
@@ -528,7 +528,7 @@ struct Bool(
         Returns:
             0 for False and -1 for True.
         """
-        return Int(-1) if self else Int(0)
+        return select[Int](self, -1, 0)
 
     fn __hash__[H: _Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
