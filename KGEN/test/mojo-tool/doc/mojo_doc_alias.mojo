@@ -29,3 +29,15 @@ fn Indexing[T: Indexer](x: T):
 # Do not truncate functions not literally "Index".
 # CHECK: "value": "Indexing[
 alias x5 = Indexing[Int](8)
+
+
+struct S[a: Int, b: Int]:
+    pass
+
+
+# CHECK: "name": "S1"
+# CHECK: "parameters": [
+# CHECK:   "name": "z",
+# CHECK:   "type": "Int"
+# CHECK: "value": "S[1, z]"
+alias S1[z: Int] = S[1, z]

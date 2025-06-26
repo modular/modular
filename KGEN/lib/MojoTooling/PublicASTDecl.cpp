@@ -477,6 +477,62 @@ static void dumpMarkdownTextSection(llvm::raw_ostream &os,
   }
 }
 
+/// Print the signatures for a list of arguments or parameters.
+template <typename T>
+static void printArgOrParameterSignature(
+    MojoParserContext &ctx, ArrayRef<T> args,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
+    llvm::raw_string_ostream &os, bool suppressSlashAfterSelf = false) {
+  PassingKindPrinter passingKindPrinter(
+      os, args.size(), [&](size_t idx) { return args[idx].getPassingKind(); },
+      suppressSlashAfterSelf, /*slash=*/'/', /*plus=*/"//");
+  size_t idx = 0;
+  auto printArg = [&](const T &arg) {
+    passingKindPrinter.printOptionalStarSlash(idx);
+
+    unsigned argStart = os.str().size();
+    os << arg.getDeclarationSnippet(ctx);
+    if (offsets)
+      offsets->push_back({argStart, os.str().size()});
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    passingKindPrinter.printOptionalTrailingSlash(idx++);
+  };
+  os << (std::is_same_v<T, PublicArgumentDecl> ? "(" : "[");
+  interleaveComma(args, os, printArg);
+  os << (std::is_same_v<T, PublicArgumentDecl> ? ")" : "]");
+}
+
+/// Populate a list of PublicParameterDecls from a list of parameter types and
+/// metadata.
+static ParameterEvaluator
+populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
+                             PogListAttr paramListAttr,
+                             SmallVectorImpl<PublicParameterDecl> &parameters) {
+  // Update param / arg types with decl refs instead of index refs.
+  ParameterEvaluator evaluator;
+  // Grab the types of the parameters to the struct.
+  DefaultValueHandler defaultParamHandler(paramListAttr);
+  for (auto [idx, paramType] : llvm::enumerate(paramTypes)) {
+    std::optional<std::string> defaultValue;
+    if (auto defaultAttr = defaultParamHandler.getDefault(idx)) {
+      TypedAttr reboundDefaultAttr =
+          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
+      defaultValue = generatePValueString(shared, reboundDefaultAttr);
+    }
+    VariadicKind variadicKind = paramListAttr.getVariadicKind(idx);
+    StringRef paramName = demangleParameterName(paramListAttr.getName(idx));
+    Type reboundType = evaluator.getReboundType(paramType);
+    parameters.push_back(PublicParameterDecl(
+        paramName, generateTypeString(shared, reboundType, variadicKind),
+        paramListAttr.getPassingKind(idx), variadicKind,
+        std::move(defaultValue)));
+    evaluator.addInputValue(
+        KGEN::ParamDeclRefAttr::get(paramName, reboundType));
+  }
+  return evaluator;
+}
+
 //===----------------------------------------------------------------------===//
 // PublicDecl
 //===----------------------------------------------------------------------===//
@@ -672,14 +728,24 @@ llvm::json::Object PublicArgumentDecl::toJSON(MojoParserContext &ctx) const {
 // PublicAliasDecl
 //===----------------------------------------------------------------------===//
 
-std::string
-PublicAliasDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
+std::string PublicAliasDecl::getDeclarationSnippet(
+    MojoParserContext &ctx,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "alias " << getName();
-  if (!value.empty())
+  if (!value.empty()) {
+    if (!parameters.empty())
+      printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
+                                   os);
     os << " = " << value;
+  }
   return snippet;
+}
+
+std::string
+PublicAliasDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
+  return getDeclarationSnippet(ctx, /*parameterOffsets=*/nullptr);
 }
 
 std::string PublicAliasDecl::getMarkdownDocString() const {
@@ -690,10 +756,13 @@ std::string PublicAliasDecl::getMarkdownDocString() const {
 }
 
 llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{
-      {"deprecated", deprecated},  {"description", description},
-      {"kind", getKindAsString()}, {"name", getName().str()},
-      {"summary", summary},        {"value", value}};
+  return llvm::json::Object{{"deprecated", deprecated},
+                            {"description", description},
+                            {"kind", getKindAsString()},
+                            {"name", getName().str()},
+                            {"summary", summary},
+                            {"parameters", toJSONArray(ctx, parameters)},
+                            {"value", value}};
 }
 
 /// Return if the given alias decl is global, i.e. nested within a module,
@@ -710,8 +779,21 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
   auto &shared = *declRef.getShared();
-  if (auto maybeValue = aliasOp.getValue())
+  if (auto maybeValue = aliasOp.getValue()) {
+    // If the value is a GeneratorAttr, we need to split it into a parameter
+    // list and a body value for the alias representation.
+    if (auto generator = dyn_cast<GeneratorAttr>(*maybeValue)) {
+      if (auto generatorType =
+              dyn_cast<LITGeneratorType>(generator.getType())) {
+        ParameterEvaluator evaluator = populatePublicParameterDecls(
+            shared, generatorType.getInputParamTypes(),
+            generatorType.getParamListAttrs(), parameters);
+        maybeValue = evaluator.getReboundAttribute(generator.getBody());
+      }
+    }
+
     value = generatePValueString(shared, maybeValue.value());
+  }
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
@@ -814,32 +896,6 @@ std::string PublicFunctionDecl::getMarkdownDocString() const {
   dumpMarkdownDocumentationDescription(os, description);
 
   return markdown;
-}
-
-/// Print the signatures for a list of arguments or parameters.
-template <typename T>
-static void printArgOrParameterSignature(
-    MojoParserContext &ctx, ArrayRef<T> args,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
-    llvm::raw_string_ostream &os, bool suppressSlashAfterSelf = false) {
-  PassingKindPrinter passingKindPrinter(
-      os, args.size(), [&](size_t idx) { return args[idx].getPassingKind(); },
-      suppressSlashAfterSelf, /*slash=*/'/', /*plus=*/"//");
-  size_t idx = 0;
-  auto printArg = [&](const T &arg) {
-    passingKindPrinter.printOptionalStarSlash(idx);
-
-    unsigned argStart = os.str().size();
-    os << arg.getDeclarationSnippet(ctx);
-    if (offsets)
-      offsets->push_back({argStart, os.str().size()});
-
-    // Check if we are at the end; if so, we might still have to print a '/'.
-    passingKindPrinter.printOptionalTrailingSlash(idx++);
-  };
-  os << (std::is_same_v<T, PublicArgumentDecl> ? "(" : "[");
-  interleaveComma(args, os, printArg);
-  os << (std::is_same_v<T, PublicArgumentDecl> ? ")" : "]");
 }
 
 std::string PublicFunctionDecl::getSignature(
@@ -1373,30 +1429,8 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
   convention = structOp.getConvention();
 
   auto &shared = *declRef.getShared();
-
-  // Update param / arg types with decl refs instead of index refs.
-  ParameterEvaluator evaluator;
-  // Grab the types of the parameters to the struct.
-  PogListAttr paramListAttr = signature.getParamListAttrs();
-  DefaultValueHandler defaultParamHandler(paramListAttr);
-  for (auto [idx, param] : llvm::enumerate(structOp.getInputParams())) {
-    std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultParamHandler.getDefault(idx)) {
-      TypedAttr reboundDefaultAttr =
-          cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
-      defaultValue = generatePValueString(shared, reboundDefaultAttr);
-    }
-    VariadicKind variadicKind =
-        signature.getParamListAttrs().getVariadicKind(idx);
-    StringRef paramName = demangleIfNeeded(param).getName().getValue();
-    Type reboundType = evaluator.getReboundType(param.getType());
-    parameters.push_back(PublicParameterDecl(
-        paramName, generateTypeString(shared, param.getType(), variadicKind),
-        paramListAttr.getPassingKind(idx), variadicKind,
-        std::move(defaultValue)));
-    evaluator.addInputValue(
-        KGEN::ParamDeclRefAttr::get(paramName, reboundType));
-  }
+  populatePublicParameterDecls(shared, signature.getInputParamTypes(),
+                               signature.getParamListAttrs(), parameters);
 
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();

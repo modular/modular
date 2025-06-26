@@ -458,7 +458,17 @@ class PublicAliasDecl : public PublicDecl {
 public:
   std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
+  /// Get the declaration snippet for the alias. The positions of parameters
+  /// within the printed snippet may be extracted via `parameterOffsets`, which
+  /// may be null if parameter offsets are not desired.
+  std::string getDeclarationSnippet(
+      MojoParserContext &ctx,
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const;
+
   std::string getMarkdownDocString() const override;
+
+  /// Return the parameters of this alias.
+  ArrayRef<PublicParameterDecl> getParameters() const { return parameters; }
 
   StringRef getValue() const { return value; }
 
@@ -472,6 +482,7 @@ public:
   ///    "name": string,
   ///    "description": string,
   ///    "summary": string,
+  ///    "parameters": PublicParameterDecl[],
   ///    "value": string
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
@@ -494,6 +505,7 @@ private:
 
   PublicAliasDecl(MojoASTDeclRef declRef);
 
+  SmallVector<PublicParameterDecl> parameters;
   std::string value;
   bool isGlobalAlias;
 
