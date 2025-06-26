@@ -547,7 +547,7 @@ var out_buffer = ctx.enqueue_create_buffer[dtype](blocks)
 # Zero the values on the device as they'll be used to accumulate results
 _ = out_buffer.enqueue_fill(0)
 
-alias out_layout = Layout.row_major(elements_in)
+alias out_layout = Layout.row_major(blocks)
 alias OutTensor = LayoutTensor[dtype, out_layout, MutableAnyOrigin]
 
 var out_tensor = OutTensor(out_buffer)
