@@ -1184,6 +1184,16 @@ ArgConvention FnType::getPackVarArgConvention(size_t index) {
 
 bool FnType::hasPackVarArgs() { return getMetadata().hasPackVarArgs(); }
 
+std::optional<size_t> FnType::findPackVarArgIndex() {
+  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult();
+  if (numUserArgs == 0)
+    return std::nullopt;
+  size_t lastUserArgIndex = numUserArgs - 1;
+  if (isPack(lastUserArgIndex))
+    return std::make_optional(lastUserArgIndex);
+  return std::nullopt;
+}
+
 bool FnType::hasKwVarArgs() { return getMetadata().hasKwVarArgs(); }
 
 unsigned FnType::getErrorSlotOffset() {
@@ -1339,13 +1349,7 @@ bool FnTypeGeneratorType::hasPackVarArgs() {
 }
 
 std::optional<size_t> FnTypeGeneratorType::findPackVarArgIndex() {
-  size_t numUserArgs = getNumArguments() - hasMemoryOnlyResult();
-  if (numUserArgs == 0)
-    return std::nullopt;
-  size_t lastUserArgIndex = numUserArgs - 1;
-  if (isPack(lastUserArgIndex))
-    return std::make_optional(lastUserArgIndex);
-  return std::nullopt;
+  return getBody().findPackVarArgIndex();
 }
 
 bool FnTypeGeneratorType::hasKwVarArgs() { return getBody().hasKwVarArgs(); }

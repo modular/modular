@@ -90,8 +90,8 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
 }
 
 // TODO: Return more than a boolean, so we can have better error messages.
-bool canConvertFunctionTypes(SharedState &shared, FnTypeGeneratorType actual,
-                             FnTypeGeneratorType expected) {
+static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
+                                    FnType expected) {
   // We should have already checked that the function types are not
   // trivially-convertible between each other.
 
@@ -99,14 +99,6 @@ bool canConvertFunctionTypes(SharedState &shared, FnTypeGeneratorType actual,
   // performed.
   // TODO: Enable non-raising to raising conversions.
   if (actual.getFnEffects() != expected.getFnEffects())
-    return false;
-
-  // Functions with different parameterization cannot be converted between each
-  // other. If the types are equal but the passing conventions are different,
-  // then the conversion is allowed.
-  // TODO: Consider default parameter values and enable parameter inference to
-  // reconcile differences.
-  if (actual.getInputParamTypes() != expected.getInputParamTypes())
     return false;
 
   // If the functions differ in return type conventions, check if the nominal
@@ -232,7 +224,28 @@ bool canConvertFunctionTypes(SharedState &shared, FnTypeGeneratorType actual,
   return true;
 }
 
-static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
+static bool canConvertGeneratorTypes(SharedState &shared, GeneratorType actual,
+                                     GeneratorType expected) {
+  // Generators with different parameterization cannot be converted between each
+  // other. If the types are equal but the passing conventions are different,
+  // then the conversion is allowed.
+  // TODO: Consider default parameter values and enable parameter inference to
+  // reconcile differences.
+  if (actual.getInputParamTypes() != expected.getInputParamTypes())
+    return false;
+
+  // If the body is a function, we apply custom conversion rules.
+  if (auto actualFnType = dyn_cast<FnType>(actual.getBody())) {
+    if (auto expectedFnType = dyn_cast<FnType>(expected.getBody())) {
+      return canConvertFunctionTypes(shared, actualFnType, expectedFnType);
+    }
+  }
+
+  // Otherwise, the bodies must be identical.
+  return actual.getBody() == expected.getBody();
+}
+
+static FnType getReducedFnType(FnType sig) {
   MLIRContext *ctx = sig.getContext();
 
   auto origPogListAttr = sig.getArgListAttrs();
@@ -260,10 +273,19 @@ static FnTypeGeneratorType getReducedFunctionType(FnTypeGeneratorType sig) {
       // Don't keep the capture origins, thunks don't care about those. Only the
       // parameter-value passed in at the callsite cares about those.
       {}, sig.getIsNestedOriginExclusivityCheckingDisabled());
-  return FuncTypeGeneratorType::get(
-      sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
-      sig.getFnEffects(), metadata,
-      PogListAttr::get(ctx, sig.getInputParamTypes().size()));
+  return FuncType::get(sig.getValues(), sig.getArgConventions(),
+                       sig.getFnEffects(), metadata);
+}
+
+static GeneratorType getReducedGeneratorType(GeneratorType gen) {
+  // If the body is a function, we can further reduce it.
+  Type bodyType = gen.getBody();
+  if (auto fnType = dyn_cast<FnType>(bodyType))
+    bodyType = getReducedFnType(fnType);
+
+  return GeneratorType::get(
+      gen.getInputParamTypes(), bodyType,
+      PogListAttr::get(gen.getContext(), gen.getInputParamTypes().size()));
 }
 
 static std::string generateThunkName(Type expected, Type actual) {
@@ -529,9 +551,10 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
   return thunk;
 }
 
-static CValue convertFunctionValue(CValue value, const ExprNode *expr,
-                                   FnTypeGeneratorType expected,
-                                   IREmitter &emitter, ValueDest &dest) {
+static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
+                                            FnTypeGeneratorType expected,
+                                            IREmitter &emitter,
+                                            ValueDest &dest) {
   PValue callee = value.getIfPValue();
   if (!callee) {
     emitter.emitError(
@@ -548,8 +571,10 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   // Canonicalize the function types. This strips away unnecessary metadata that
   // does not affect the conversion semantics. In other words, a function type
   // and its reduced type can be trivially converted with a rebind.
-  FnTypeGeneratorType reducedActual = getReducedFunctionType(actual);
-  FnTypeGeneratorType reducedExpected = getReducedFunctionType(expected);
+  FnTypeGeneratorType reducedActual =
+      cast<FnTypeGeneratorType>(getReducedGeneratorType(actual));
+  FnTypeGeneratorType reducedExpected =
+      cast<FnTypeGeneratorType>(getReducedGeneratorType(expected));
 
   // We need to specially handle when `actual` mentions any parameters in its
   // scope, like how `= read_ship[Z]` mentions the `Z` parameter here:
@@ -693,6 +718,31 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
   // Finally, cast the result back to the expected type.
   return emitter.emitCResult(
       ParamOperatorAttr::get(POC::Rebind, {symbol}, expected), expr, dest);
+}
+
+static CValue convertGeneratorValue(CValue value, const ExprNode *expr,
+                                    GeneratorType expected, IREmitter &emitter,
+                                    ValueDest &dest) {
+  // If this is a function generator value, defer to function conversion.
+  if (auto expectedFnType = dyn_cast<FnTypeGeneratorType>(expected)) {
+    return convertFunctionGeneratorValue(value, expr, expectedFnType, emitter,
+                                         dest);
+  }
+
+  // We do not have dynamic generators at all.
+  PValue genAttr = value.getIfPValue();
+  if (!genAttr) {
+    emitter.emitError(expr->getLoc(),
+                      "TODO: dynamic generator conversions not supported yet")
+        << expr->getRange();
+    dest.resetForError(emitter);
+    return {};
+  }
+
+  // Otherwise, since this is not a function, and its still convertible, that
+  // means only the input param metadata can differ. Emit a simple rebind.
+  return emitter.emitCResult(
+      ParamOperatorAttr::get(POC::Rebind, {genAttr}, expected), expr, dest);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1315,12 +1365,13 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
             fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
   }
 
-  // Check for non-trivial function type conversions.
-  if (auto requiredFunction = dyn_cast<FnTypeGeneratorType>(requiredType)) {
+  // Support implicit conversions of generator types (incl. non-trivial function
+  // generator conversions).
+  if (auto requiredGenerator = dyn_cast<GeneratorType>(requiredType)) {
     bool result = false;
-    if (auto rvFunctionType = dyn_cast<FnTypeGeneratorType>(rvType))
+    if (auto rvGeneratorType = dyn_cast<GeneratorType>(rvType))
       result =
-          canConvertFunctionTypes(shared, rvFunctionType, requiredFunction);
+          canConvertGeneratorTypes(shared, rvGeneratorType, requiredGenerator);
     return cacheAndReturnVal(result);
   }
 
@@ -1419,11 +1470,13 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     }
   }
 
-  // Support implicit conversions of function types.
-  if (auto requiredFunction = dyn_cast<FnTypeGeneratorType>(requiredType)) {
-    if (auto rvFunctionType = dyn_cast<FnTypeGeneratorType>(rvType))
-      if (canConvertFunctionTypes(shared, rvFunctionType, requiredFunction))
-        return convertFunctionValue(value, expr, requiredFunction, *this, dest);
+  // Support implicit conversions of generator types (incl. function
+  // generators).
+  if (auto requiredGenerator = dyn_cast<GeneratorType>(requiredType)) {
+    if (auto rvGeneratorType = dyn_cast<GeneratorType>(rvType))
+      if (canConvertGeneratorTypes(shared, rvGeneratorType, requiredGenerator))
+        return convertGeneratorValue(value, expr, requiredGenerator, *this,
+                                     dest);
   }
 
   // We disable implicit conversions to prevent converting T -> S -> U in

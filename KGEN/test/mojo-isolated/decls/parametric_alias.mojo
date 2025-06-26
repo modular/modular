@@ -55,6 +55,24 @@ alias PS_21xy[x: Int, y: Int] = PS[2, 1, x * y]
 alias myDouble[x: Int] = myDependentDefaultAdd[x]
 
 
+# CHECK-LABEL: fn @"expect_two_ints
+# CHECK-SAME: <binop: !lit.generator<<"x": !Int, "y": !Int>!Int>>
+fn expect_two_ints[binop: __type_of(myIntAdd)]():
+    pass
+
+
+# CHECK-LABEL: fn @"implicit_conversions()"
+fn implicit_conversions():
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<
+    expect_two_ints[myIntAdd]()
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(
+    expect_two_ints[myDefaultAdd]()
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> bind_params(
+    expect_two_ints[myIntFMA[z=2]]()
+    # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> rebind(:!lit.generator<<"y": !Int, "z": !Int>!Int> bind_params(
+    expect_two_ints[myIntFMA[x=2]]()
+
+
 # CHECK-LABEL: lit.fn @"test_type_equality()"
 fn test_type_equality():
     # CHECK-NEXT: %[[PS_345:.*]] = lit.var.decl "ps_345" {{.*}}@PS<:!Int {3}, :!Int {4}, :!Int {5}>
