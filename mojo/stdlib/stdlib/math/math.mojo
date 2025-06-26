@@ -32,7 +32,7 @@ from sys import (
 )
 from sys._assembly import inlined_assembly
 from sys.ffi import _external_call_const
-from sys.info import _is_sm_9x_or_newer
+from sys.info import _is_sm_9x_or_newer, is_32bit
 
 from algorithm import vectorize
 from bit import count_leading_zeros, count_trailing_zeros
@@ -2511,7 +2511,9 @@ fn factorial(n: Int) -> Int:
         121645100408832000,
         2432902008176640000,
     )
-    debug_assert(0 <= n <= 20, "input value causes an overflow")
+    debug_assert(
+        0 <= n <= (12 if is_32bit() else 20), "input value causes an overflow"
+    )
     return table[n]
 
 
