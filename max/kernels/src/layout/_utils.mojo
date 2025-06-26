@@ -20,9 +20,9 @@ from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from gpu.intrinsics import _buffer_resource, make_buffer_resource
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
-
+from layout.tensor_core import TensorCore
 from utils import IndexList
-
+from gpu.mma import mma
 from .int_tuple import _get_index_type, _get_layout_type, product
 
 
@@ -297,3 +297,115 @@ fn hash(tensor: LayoutTensor) -> Int:
             var val_int = addr_int[0]
             hash_value = ((hash_value << 5) + hash_value) + Int(val_int)
     return hash_value
+
+
+@fieldwise_init
+struct TensorCoreKGroup[
+    out_type: DType,
+    in_type: DType,
+    shape: IndexList[3],
+    k_group_size: Int,
+    transpose_b: Bool = False,
+]:
+    """TensorCoreKGroup provides a wrapper around TensorCore to support multiple MMAs along the K dimension.
+
+    Enables larger K dimension operations by decomposing them into multiple smaller MMA operations.
+    Currently only being used for AMD GPUs to enable 16×16×32 operations using two 16×16×16 MMAs.
+
+    Parameters:
+        out_type: The data type for output/accumulation operations.
+        in_type: The data type for input matrix elements.
+        shape: The shape parameters for individual MMA operations [M, N, K].
+        k_group_size: Number of MMA operations along the K dimension.
+        transpose_b: Whether to transpose the b matrix. Defaults to False.
+    """
+
+    alias mma_op = TensorCore[out_type, in_type, shape, transpose_b]()
+
+    @staticmethod
+    @always_inline
+    fn _mma_inner[
+        c_linear_map: Layout
+    ](a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor,):
+        alias num_m_mmas = a_frag.shape[0]()
+        alias num_n_mmas = b_frag.shape[0]()
+
+        constrained[
+            c_frag.shape[0]() == num_m_mmas * num_n_mmas,
+            "Fragments size mismatch. Expected c_frag shape[0] to be num_m_mmas"
+            " * num_n_mmas = "
+            + String(num_m_mmas * num_n_mmas)
+            + ", got "
+            + String(c_frag.shape[0]()),
+        ]()
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                alias c_idx = c_linear_map(IntTuple(m_mma, n_mma))
+                mma(
+                    c_frag[c_idx, 0],
+                    a_frag[m_mma, 0],
+                    b_frag[n_mma, 0],
+                    c_frag[c_idx, 0],
+                )
+
+    @staticmethod
+    @always_inline
+    fn mma[
+        swap_a_b: Bool = False
+    ](
+        a_reg_tile: LayoutTensor,
+        b_reg_tile: LayoutTensor,
+        c_reg_tile: LayoutTensor,
+    ):
+        """Perform multiple matrix multiply-accumulate operations along the K dimension.
+
+        Executes k_group_size MMA operations, processing slices of the K dimension
+        and accumulating results in c_reg_tile.
+
+        Parameters:
+            swap_a_b: Whether to swap a and b operands. Defaults to False.
+
+        Args:
+            a_reg_tile: Input matrix a fragments [num_m_mmas, k_group_size * a_frag_size].
+            b_reg_tile: Input matrix b fragments [num_n_mmas, k_group_size * b_frag_size].
+            c_reg_tile: Accumulation matrix c fragments, modified in-place.
+        """
+        alias num_m_mmas = a_reg_tile.shape[0]()
+        alias num_n_mmas = b_reg_tile.shape[0]()
+
+        alias a_frag_size = Self.mma_op.a_reg_type.size
+        alias b_frag_size = Self.mma_op.b_reg_type.size
+        alias c_frag_size = Self.mma_op.c_reg_type.size
+
+        constrained[k_group_size > 0, "k_group_size must be greater than 0"]()
+
+        constrained[
+            c_reg_tile.shape[1]() == c_frag_size,
+            "c_reg_tile.shape[1]() must be equal to c_frag_size",
+        ]()
+        constrained[
+            a_reg_tile.shape[1]() == k_group_size * a_frag_size,
+            "a_reg_tile.shape[1]() must be equal to k_group_size * a_frag_size",
+        ]()
+        constrained[
+            b_reg_tile.shape[1]() == k_group_size * b_frag_size,
+            "b_reg_tile.shape[1]() must be equal to k_group_size * b_frag_size",
+        ]()
+
+        alias c_linear_map = Layout.row_major(
+            num_n_mmas, num_m_mmas
+        ) if swap_a_b else Layout.col_major(num_m_mmas, num_n_mmas)
+
+        @parameter
+        for k in range(k_group_size):
+            var a_reg_k = a_reg_tile.tile[num_m_mmas, a_frag_size](0, k)
+            var b_reg_k = b_reg_tile.tile[num_n_mmas, b_frag_size](0, k)
+            Self._mma_inner[c_linear_map](
+                b_reg_k.vectorize[1, b_frag_size](),
+                a_reg_k.vectorize[1, a_frag_size](),
+                c_reg_tile.vectorize[1, c_frag_size](),
+            )

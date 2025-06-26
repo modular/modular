@@ -43,7 +43,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 from layout.swizzle import Swizzle
-from layout.tensor_core import TensorCore
+from layout._utils import TensorCoreKGroup
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -224,25 +224,17 @@ struct MMATileBuffers[
 
     @always_inline
     fn get_reg_tile[
-        k_tile_idx: Int, mma_idx: Int, k_group: Int, elements_per_thread: Int
-    ](self) -> Self.MMARegTileType.SplitElementType[num_k_tiles].TileType[
-        num_mmas, elements_per_thread
-    ]:
+        k_tile_idx: Int
+    ](self) -> Self.MMARegTileType.SplitElementType[num_k_tiles]:
         """Get a specific K-dimension tile from the register buffer.
 
         Parameters:
             k_tile_idx: The K-dimension tile index.
-            mma_idx: The MMA tile index in K dimension.
-            k_group: The sub-tile index within the MMA tile.
-            elements_per_thread: The number of elements per thread.
 
         Returns:
             A tile view for the specified location in the register buffer.
         """
-
-        return self.mma_reg_tile[k_tile_idx].tile[
-            num_mmas, elements_per_thread
-        ](mma_idx, k_group)
+        return self.mma_reg_tile[k_tile_idx]
 
 
 struct AMD_MMA[
@@ -257,10 +249,11 @@ struct AMD_MMA[
     simd_width: Int,
     swizzle: Swizzle,
 ]:
-    alias mma_op = TensorCore[
+    alias tensor_core_mma = TensorCoreKGroup[
         out_type,
         in_type,
         shape,
+        k_group_size,
         transpose_b,
     ]()
 
@@ -269,7 +262,7 @@ struct AMD_MMA[
     fn load_tiles[
         k_tile_idx: Int
     ](a_tiles: MMATileBuffers, b_tiles: MMATileBuffers):
-        Self.mma_op.load_a[swizzle=swizzle](
+        Self.tensor_core_mma.mma_op.load_a[swizzle=swizzle](
             a_tiles.shared_mem_warp_tile,
             a_tiles.mma_reg_tile[k_tile_idx]
             .tile[num_m_mmas, simd_width](k_tile_idx, 0)
@@ -277,7 +270,7 @@ struct AMD_MMA[
             k_tile_idx,
         )
 
-        Self.mma_op.load_b[swizzle=swizzle](
+        Self.tensor_core_mma.mma_op.load_b[swizzle=swizzle](
             b_tiles.shared_mem_warp_tile,
             b_tiles.mma_reg_tile[k_tile_idx]
             .tile[num_n_mmas, simd_width](k_tile_idx, 0)
@@ -288,61 +281,21 @@ struct AMD_MMA[
     @always_inline
     @staticmethod
     fn mma[
-        k_tile_idx: Int
+        k_tile_idx: Int,
+        swap_a_b: Bool,
     ](
         a_tiles: MMATileBuffers,
         b_tiles: MMATileBuffers,
         c_reg_tile: LayoutTensor,
     ):
-        @parameter
-        for k_group in range(k_group_size):
-            alias elements_per_thread = simd_width // k_group_size
+        var a_reg_tile = a_tiles.get_reg_tile[k_tile_idx]()
+        var b_reg_tile = b_tiles.get_reg_tile[k_tile_idx]()
 
-            var a_reg_tile = a_tiles.get_reg_tile[
-                k_tile_idx, 0, k_group, elements_per_thread
-            ]()
-            var b_reg_tile = b_tiles.get_reg_tile[
-                k_tile_idx, 0, k_group, elements_per_thread
-            ]()
-
-            Self.mma_alt(
-                a_reg_tile.vectorize[1, elements_per_thread](),
-                b_reg_tile.vectorize[1, elements_per_thread](),
-                c_reg_tile.vectorize[1, 4](),
-            )
-
-    @staticmethod
-    @always_inline
-    fn mma_alt(
-        a_frag: LayoutTensor, b_frag: LayoutTensor, c_frag: LayoutTensor
-    ):
-        # TODO: Hack for hackathon, merge this with
-        # TODO: Assume that fragments are all vectorized layout tensor with
-        # dims num_vectors x 1. Consider using TensorCore to allocate fragments
-        # so the caller don't explicitly maintain the shape.
-        alias num_m_mmas = a_frag.shape[0]()
-        alias num_n_mmas = b_frag.shape[0]()
-
-        constrained[
-            c_frag.shape[0]() == num_m_mmas * num_n_mmas,
-            "Fragments size mismatch. Expected c_frag shape[0] to be num_m_mmas"
-            " * num_n_mmas = "
-            + String(num_m_mmas * num_n_mmas)
-            + ", got "
-            + String(c_frag.shape[0]()),
-        ]()
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for n_mma in range(num_n_mmas):
-                mma_simd(
-                    c_frag[m_mma * num_n_mmas + n_mma, 0],
-                    a_frag[m_mma, 0],
-                    b_frag[n_mma, 0],
-                    c_frag[m_mma * num_n_mmas + n_mma, 0],
-                )
+        Self.tensor_core_mma.mma[swap_a_b=swap_a_b](
+            a_reg_tile,
+            b_reg_tile,
+            c_reg_tile,
+        )
 
 
 @__llvm_metadata(
@@ -583,7 +536,7 @@ fn gemm_kernel[
         for k_tile_idx in range(1, num_k_tiles):
             mma.load_tiles[k_tile_idx](a_tiles, b_tiles)
 
-        mma.mma[0](b_tiles, a_tiles, c_reg_tile)
+        mma.mma[0, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
         barrier()
 
@@ -592,7 +545,7 @@ fn gemm_kernel[
 
         @parameter
         for k_tile_idx in range(1, num_k_tiles):
-            mma.mma[k_tile_idx](b_tiles, a_tiles, c_reg_tile)
+            mma.mma[k_tile_idx, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
         barrier()
 
@@ -622,7 +575,7 @@ fn gemm_kernel[
 
     @parameter
     for k_tile_idx in range(0, num_k_tiles):
-        mma.mma[k_tile_idx](b_tiles, a_tiles, c_reg_tile)
+        mma.mma[k_tile_idx, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
     amd_schedule_barrier()
 
@@ -634,7 +587,7 @@ fn gemm_kernel[
 
     @parameter
     for k_tile_idx in range(0, num_k_tiles):
-        mma.mma[k_tile_idx](b_tiles, a_tiles, c_reg_tile)
+        mma.mma[k_tile_idx, swap_a_b=True](a_tiles, b_tiles, c_reg_tile)
 
     amd_schedule_barrier()
 
