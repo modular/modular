@@ -366,3 +366,85 @@ def test_linear_rowwise_bias_sharding_preserved():
 
             # Weight should be sharded rowwise
             assert tuple(int(d) for d in sharded.weight.shape) == (256, 4096)
+
+
+def test_weight_scale_sharding_with_head_aware_columnwise():
+    """Tests that weight_scale is replicated with head_aware_columnwise
+    strategy.
+    """
+    with Graph("test", input_types=[]) as graph:
+        num_heads = 30  # Not divisible by 4
+        head_dim = 64
+        hidden_size = num_heads * head_dim  # 1920
+        num_devices = 4
+
+        # Create a Linear layer with float8 config that has rowwise
+        # weight_scale.
+        float8_config = Float8Config(
+            weight_scale=Float8WeightScaleSpec(
+                granularity=Float8ScaleGranularity.ROWWISE,
+                dtype=DType.float32,
+            ),
+            input_scale=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.TENSOR,
+                origin=Float8ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+            ),
+            mlp_in_float8=set(),
+            attn_qkv_in_float8=set(),
+        )
+
+        linear = Linear(
+            in_dim=hidden_size,
+            out_dim=hidden_size,
+            dtype=DType.float32,
+            device=DeviceRef.CPU(),
+            float8_config=float8_config,
+        )
+
+        # Set head_aware_columnwise sharding strategy.
+        strategy = ShardingStrategy.head_aware_columnwise(
+            num_devices=num_devices, num_heads=num_heads, head_dim=head_dim
+        )
+        linear.sharding_strategy = strategy
+
+        # Verify that weight_scale has replicate strategy when using
+        # head_aware_columnwise with rowwise weight_scale (this is required
+        # for dynamic_scaled_matmul to work).
+        assert linear.weight_scale is not None
+        assert linear.weight_scale.sharding_strategy is not None
+        assert linear.weight_scale.sharding_strategy.is_replicate, (
+            "weight_scale should be replicated for head_aware_columnwise sharding "
+            "with rowwise weight_scale to avoid shape mismatch in dynamic_scaled_matmul"
+        )
+
+        # Also test regular columnwise for comparison.
+        float8_config2 = Float8Config(
+            weight_scale=Float8WeightScaleSpec(
+                granularity=Float8ScaleGranularity.ROWWISE,
+                dtype=DType.float32,
+            ),
+            input_scale=Float8InputScaleSpec(
+                granularity=Float8ScaleGranularity.TENSOR,
+                origin=Float8ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+            ),
+            mlp_in_float8=set(),
+            attn_qkv_in_float8=set(),
+        )
+
+        linear2 = Linear(
+            in_dim=hidden_size,
+            out_dim=hidden_size,
+            dtype=DType.float32,
+            device=DeviceRef.CPU(),
+            float8_config=float8_config2,
+        )
+
+        strategy2 = ShardingStrategy.columnwise(num_devices=num_devices)
+        linear2.sharding_strategy = strategy2
+
+        # Regular columnwise should also replicate weight_scale.
+        assert linear2.weight_scale is not None
+        assert linear2.weight_scale.sharding_strategy is not None
+        assert linear2.weight_scale.sharding_strategy.is_replicate
