@@ -795,7 +795,7 @@ struct StructWithDefault[a: Int = 1]:
 # CHECK:      "default": "T",
 # CHECK:      "name": "S"
 # CHECK:      "type": "AnyType"
-# CHECK: "signature": "struct StructWithFnParam[__origins__: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
+# CHECK: "signature": "struct StructWithFnParam[: origin.set, //, T: AnyType, param_fn: fn(T, T) capturing -> Bool, S: AnyType = T]",
 
 
 struct StructWithFnParam[
