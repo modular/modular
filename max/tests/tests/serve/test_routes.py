@@ -43,6 +43,12 @@ def test_version_endpoint_exists(app) -> None:
         assert response.json()["version"]
 
 
+def test_health_endpoint_exists(app):
+    with TestClient(app) as client:
+        response = client.get("/health")
+        assert response.status_code == 200
+
+
 def test_prompts() -> None:
     completion_req = CreateCompletionRequest(
         model="whatev",
