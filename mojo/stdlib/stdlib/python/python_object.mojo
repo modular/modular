@@ -1221,7 +1221,7 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__ne__` method, or if it fails.
         """
-        return self.__getattr__("__ne__")(rhs).__bool__()
+        return self.__getattr__("__ne__")(rhs)
 
     fn __pos__(self) raises -> PythonObject:
         """Positive.
