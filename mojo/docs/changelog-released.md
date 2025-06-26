@@ -57,17 +57,8 @@ See how to [install the nightly release](/max/packages#nightly-release).
   See [Language enhancements](#25-4-language-enhancements) and
   [Standard library changes](#25-4-standard-library-changes) for more details.
 
-- The MAX Kernel library is now fully open sourced!
-  Additional packages and directories that are open source now include:
-  - [`kv_cache`](/mojo/kernels/kv_cache/)
-  - [`nvml`](/mojo/kernels/nvml/)
-  - [`quantization`](/mojo/kernels/quantization/)
-  - [`benchmarks`](https://github.com/modular/modular/tree/main/max/kernels/benchmarks)
-    directory
-  - [`Mogg`](https://github.com/modular/modular/tree/main/max/kernels/src/Mogg)
-    directory, which contains registration of kernels with the Graph Compiler
-
-  For more information, see the
+- The entire MAX Kernel library is now fully open sourced! For more information,
+  see the
   [MAX AI kernels library reference](/mojo/lib#max-ai-kernels-library) and the
   [MAX AI kernels source](https://github.com/modular/modular/tree/main/max/kernels).
 
