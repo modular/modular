@@ -510,17 +510,17 @@ Value VariantHelper::materializeLLVMUnion(mlir::LLVM::LLVMArrayType type,
 
 Value InterpreterMemoryConverter::MaterializationScope::convertMemRef(
     ImplicitLocOpBuilder &b, MemRefAttr ref) {
-  MaterializedBlobs &materialized =
-      getOrMaterialize(b, ref.getModel().getMemory());
+  MaterializedBlob &materialized =
+      getOrMaterialize(b, ref.getModel().getMemory(), ref.getIndex());
+
   Value ptr = getBlobPointer(b, imc.tc.convertType(ref.getType()), materialized,
                              ref.getIndex(), ref.getOffset());
   return b.create<LLVM::BitcastOp>(imc.tc.convertType(ref.getType()), ptr);
 }
 
 Value InterpreterMemoryConverter::MaterializationScope::getBlobPointer(
-    ImplicitLocOpBuilder &b, Type ptrType, MaterializedBlobs &materialized,
+    ImplicitLocOpBuilder &b, Type ptrType, MaterializedBlob &value,
     int64_t index, int64_t offset) {
-  PointerUnion<Operation *, Value> value = materialized[index];
   Value ptr = dyn_cast<Value>(value);
   if (!ptr) {
     ptr = b.create<LLVM::BitcastOp>(
@@ -599,21 +599,30 @@ static void materializeVectorStores(int64_t idx, int64_t size, Value ptr,
                           align);
 }
 
-InterpreterMemoryConverter::MaterializedBlobs &
+InterpreterMemoryConverter::MaterializedBlob &
 InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
-    ImplicitLocOpBuilder &b, MemorySpaceAttr space) {
-  if (auto it = blobs.find(space); it != blobs.end())
-    return it->second;
+    ImplicitLocOpBuilder &b, MemorySpaceAttr space, size_t refIndex) {
+
+  auto iter = blobs.find(space);
+  if (iter != blobs.end()) {
+    // We've already materialized the stack, const_global and persist blobs in
+    // this space.
+    auto refIter = iter->second.find(refIndex);
+    if (refIter != iter->second.end())
+      return refIter->second;
+  }
 
   MaterializedBlobs materialized;
   auto ptrType = LLVM::LLVMPointerType::get(b.getContext());
 
-  // First emit the allocations and the memcpy's.
-  for (MemoryBlobAttr blob : space) {
+  auto materializeBlob = [&](const MemoryBlobAttr &blob, size_t idx) {
+    if (materialized.contains(idx))
+      return;
     if (isGlobalBlob(blob)) {
-      materialized.emplace_back(imc.getOrCreateGlobal(b.getLoc(), blob));
-      continue;
+      materialized.insert({idx, imc.getOrCreateGlobal(b.getLoc(), blob)});
+      return;
     }
+
     // Create the relevant allocation.
     Value popAlloc;
     MemoryHandleAttr hdl = blob.getHandle();
@@ -624,26 +633,61 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
       popAlloc = b.create<POP::StackAllocationOp>(
           PointerType::get(b.getI8Type()), hdl.getSize(),
           b.getIndexAttr(hdl.getAlign()));
+
+      Value ptr = b.create<mlir::UnrealizedConversionCastOp>(ptrType, popAlloc)
+                      .getResult(0);
+      materialized.insert(
+          {idx, Value(b.create<LLVM::BitcastOp>(ptrType, ptr))});
+
     } else {
       popAlloc = b.create<POP::AlignedAllocOp>(
           PointerType::get(b.getI8Type()),
           b.create<mlir::index::ConstantOp>(hdl.getAlign()),
           b.create<mlir::index::ConstantOp>(hdl.getSize()));
+
+      Value ptr = b.create<mlir::UnrealizedConversionCastOp>(ptrType, popAlloc)
+                      .getResult(0);
+      materialized.insert(
+          {idx, Value(b.create<LLVM::BitcastOp>(ptrType, ptr))});
     }
-    Value ptr = b.create<mlir::UnrealizedConversionCastOp>(ptrType, popAlloc)
-                    .getResult(0);
-    materialized.emplace_back(Value(b.create<LLVM::BitcastOp>(ptrType, ptr)));
-  }
+  };
+
+  std::function<void(const MemoryBlobAttr &)> materializePtrRegionBlobs =
+      [&](const MemoryBlobAttr &blob) {
+        auto ptrIt = blob.getPointerRegions().begin();
+        auto ptrEnd = blob.getPointerRegions().end();
+        for (; ptrIt != ptrEnd; ++ptrIt) {
+          if (materialized.contains(ptrIt->blobIndex))
+            continue;
+
+          const MemoryBlobAttr &ptrBlob = space[ptrIt->blobIndex];
+          materializeBlob(ptrBlob, ptrIt->blobIndex);
+          materializePtrRegionBlobs(ptrBlob);
+        }
+      };
+
+  // Get the current blob for the memref.
+  const MemoryBlobAttr &blob = space[refIndex];
+  // Materialize the blob
+  materializeBlob(blob, refIndex);
+  // Materialize pointer region blobs and recurse to
+  // materialize each blob's pointer region.
+  materializePtrRegionBlobs(blob);
 
   // Perform memcpy of non-global blobs while remapping pointer regions.
   int64_t pointerSize = imc.tc.getTarget().getDataLayout().getPointerSize();
   int64_t simdWidth = imc.tc.getTarget().getSimdBitWidth() / 8;
-  for (auto [blob, value] : llvm::zip(space, materialized)) {
+
+  for (auto [idx, blob] : llvm::enumerate(space)) {
     // Globals don't have pointer regions.
     if (isGlobalBlob(blob))
       continue;
 
-    auto ptr = cast<Value>(value);
+    auto iter = materialized.find(idx);
+    if (iter == materialized.end())
+      continue;
+
+    auto ptr = cast<Value>(iter->second);
     MemoryHandleAttr hdl = blob.getHandle();
     ArrayRef<char> data = hdl.getMemory().data;
     auto materializeStoreImpl = [&, align = hdl.getAlign()](int64_t idx,
@@ -725,7 +769,7 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
                                   LLVM::GEPNoWrapFlags::inbounds);
         auto [_, index, offset] = *ptrIt++;
         b.create<LLVM::StoreOp>(
-            getBlobPointer(b, ptrType, materialized, index, offset), gep,
+            getBlobPointer(b, ptrType, materialized[index], index, offset), gep,
             hdl.getAlign());
         i += pointerSize;
         continue;
@@ -736,7 +780,14 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
     commitCompressedStores();
   }
 
-  return blobs.try_emplace(space, std::move(materialized)).first->second;
+  // Put materialized blob into a hashmap.
+  if (iter == blobs.end()) {
+    iter = blobs.try_emplace(space, std::move(materialized)).first;
+  } else {
+    for (auto &[idx, blob] : materialized)
+      iter->second.insert({idx, std::move(blob)});
+  }
+  return iter->second[refIndex];
 }
 
 //===----------------------------------------------------------------------===//
