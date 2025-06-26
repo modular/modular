@@ -64,7 +64,8 @@ alias PyCFunction = fn (PyObjectPtr, PyObjectPtr) -> PyObjectPtr
 
 # Flag passed to newmethodobject
 # ref: https://github.com/python/cpython/blob/main/Include/methodobject.h
-alias METH_VARARGS = 0x1
+alias METH_VARARGS = 0x01
+alias METH_STATIC = 0x20
 
 
 # GIL
@@ -320,12 +321,18 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
         self = other
 
     @staticmethod
-    fn function(
+    fn function[
+        static_method: Bool = False
+    ](
         func: PyCFunction,
         func_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> Self:
         """Create a PyMethodDef for a function.
+
+        Parameters:
+            static_method: Whether the function is a static method. Default is
+                False.
 
         Arguments:
             func: The function to wrap.
@@ -338,10 +345,11 @@ struct PyMethodDef(Copyable, Defaultable, Movable):
 
         # FIXME: PyMethodDef is capturing the pointer without an origin.
 
+        alias flags = METH_VARARGS | (METH_STATIC if static_method else 0)
         return PyMethodDef(
             func_name.unsafe_ptr().bitcast[c_char](),
             func,
-            METH_VARARGS,
+            flags,
             docstring.unsafe_ptr().bitcast[c_char](),
         )
 

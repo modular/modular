@@ -671,7 +671,9 @@ struct PythonTypeBuilder(Copyable, Movable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn def_py_c_method(
+    fn def_py_c_method[
+        static_method: Bool = False
+    ](
         mut self,
         method: PyCFunction,
         method_name: StaticString,
@@ -679,6 +681,12 @@ struct PythonTypeBuilder(Copyable, Movable):
     ) -> ref [self] Self:
         """Declare a binding for a method with PyObjectPtr signature for the
         type.
+
+        Parameters:
+            static_method: Whether the method is exposed as a staticmethod.
+                Default is False. Note that CPython will pass a nullpointer for
+                the first argument for static methods (i.e. instead of passing
+                the self object). See [METH_STATIC](https://docs.python.org/3/c-api/structures.html#c.METH_STATIC).
 
         Args:
             method: The method to declare a binding for.
@@ -690,12 +698,12 @@ struct PythonTypeBuilder(Copyable, Movable):
             The builder with the method binding declared.
         """
         self.methods.append(
-            PyMethodDef.function(method, method_name, docstring)
+            PyMethodDef.function[static_method](method, method_name, docstring)
         )
         return self
 
     fn def_py_method[
-        method: PyFunction
+        method: PyFunction, static_method: Bool = False
     ](
         mut self: Self,
         method_name: StaticString,
@@ -705,6 +713,10 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         Parameters:
             method: The method to declare a binding for.
+            static_method: Whether the method is exposed as a staticmethod.
+                Default is False. Note that CPython will pass a nullpointer for
+                the first argument for static methods (i.e. instead of passing
+                the self object). See [METH_STATIC](https://docs.python.org/3/c-api/structures.html#c.METH_STATIC).
 
         Args:
             method_name: The name with which the method will be exposed on the
@@ -715,21 +727,18 @@ struct PythonTypeBuilder(Copyable, Movable):
             The builder with the method binding declared.
         """
 
-        return self.def_py_c_method(
+        return self.def_py_c_method[static_method](
             _py_c_function_wrapper[method], method_name, docstring
         )
 
     fn def_py_method[
-        method: PyFunctionRaising
+        method: PyFunctionRaising, static_method: Bool = False
     ](
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
         """Declare a binding for a method with PyObject signature for the type.
-
-        Parameters:
-            method: The method to declare a binding for.
 
         Args:
             method_name: The name with which the method will be exposed on the
@@ -740,7 +749,7 @@ struct PythonTypeBuilder(Copyable, Movable):
             The builder with the method binding declared.
         """
 
-        return self.def_py_c_method(
+        return self.def_py_c_method[static_method](
             _py_c_function_wrapper[method], method_name, docstring
         )
 
@@ -788,6 +797,54 @@ struct PythonTypeBuilder(Copyable, Movable):
             return method._call_method(py_self, py_args)
 
         return self.def_py_method[wrapper](method_name, docstring)
+
+    fn def_staticmethod[
+        method_type: AnyTrivialRegType, //,
+        method: PyObjectFunction[method_type, has_self=False],
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref [self] Self:
+        """Declare a binding for a staticmethod with PythonObject signature for
+        the type.
+
+        These signatures can have any number of positional PythonObject
+        arguments up to 6, can optionally return a PythonObject, and can raise.
+
+        Example signature types:
+        ```mojo
+        alias F1 = fn (mut PythonObject) raises -> PythonObject
+        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
+        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        ```
+
+        Parameters:
+            method_type: The type of the method to declare a binding for.
+            method: The method to declare a binding for. Users can pass their
+                function directly, and it will be implicitly converted to a
+                PyObjectFunction if and only if its signature is supported.
+
+        Args:
+            method_name: The name with which the method will be exposed on the
+                type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+
+        @always_inline
+        fn wrapper(
+            mut py_self: PythonObject, mut py_args: PythonObject
+        ) raises -> PythonObject:
+            # CPython will always pass a null pointer for the self argument for
+            # static methods.
+            return method._call_func(py_args)
+
+        return self.def_py_method[wrapper, static_method=True](
+            method_name, docstring
+        )
 
 
 # ===-----------------------------------------------------------------------===#

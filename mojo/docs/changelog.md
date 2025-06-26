@@ -53,6 +53,11 @@ what we publish.
   `OpaquePointer` (the equivalent of a `void*` in C) is moved into the `memory`
   module, and is also implicitly included.
 
+- Python interop changes:
+
+  - The `PythonTypeBuilder` utility now allows registering bindings for Python
+    static methods, i.e. methods that don't require an instance of the class.
+
 ### Tooling changes
 
 - Added progress reporting support to the Mojo language server. This will emit progress
