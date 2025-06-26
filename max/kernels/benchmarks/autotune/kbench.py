@@ -15,10 +15,12 @@ from __future__ import annotations
 import copy
 import csv
 import functools
+import logging
 import os
 import pickle
 import shutil
 import string
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -27,6 +29,7 @@ from enum import Enum, auto
 from itertools import product
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
+from subprocess import list2cmdline
 from time import time
 from typing import Any
 
@@ -34,9 +37,6 @@ import click
 import numpy as np
 import pandas as pd
 import rich
-from modular.utils import logging, yaml
-from modular.utils.subprocess import list2cmdline, run_shell_command
-from modular.utils.yaml import YAML
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -46,6 +46,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
+from utils import YAML, pretty_exception_handler
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
@@ -85,7 +86,9 @@ def configure_logging(
     logging.getLogger().setLevel(log_level)
 
     if verbose and pretty_output:
-        traceback.install(suppress=[click, yaml, rich])
+        traceback.install(suppress=[click, rich])
+    elif pretty_output:
+        sys.excepthook = pretty_exception_handler
 
     return CONSOLE
 
@@ -114,6 +117,7 @@ def flatten(value: int | object | Iterable) -> list[Any]:
     ]
 
 
+# TODO: remove and replace directly with subprocess.run
 def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
     """Execute a shell command with error handling."""
     try:
@@ -121,10 +125,11 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
             print(list2cmdline(cmd))
             return ProcessOutput(None, None)
 
-        output = run_shell_command(cmd, check=False, capture_output=True)
+        output = subprocess.run(cmd, check=False, capture_output=True)
         return ProcessOutput(
             output.stdout.decode("utf-8"), output.stderr.decode("utf-8")
         )
+
     except Exception as exc:
         raise SystemExit(f"Unable to run command {list2cmdline(cmd)}") from exc
 
@@ -158,9 +163,9 @@ class ProcessOutput:
 
     def log(self) -> None:
         if self.stdout:
-            logging.debug("output" + self.stdout + LINE)
+            logging.debug("output " + self.stdout + LINE)
         if self.stderr:
-            logging.debug("error" + self.stderr + LINE)
+            logging.debug("error " + self.stderr + LINE)
 
 
 class KBENCH_MODE(Enum):
@@ -181,7 +186,7 @@ class KbenchCache:
         """Remove cache file if it exists."""
         if self.path.exists():
             logging.debug(f"Removing kbench-cache: {self.path}")
-            run_shell_command(["rm", str(self.path)])
+            subprocess.run(["rm", str(self.path)])
 
     def load(self) -> None:
         """Load cache from file."""
@@ -1144,14 +1149,14 @@ def reset_gpu() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
-    run_shell_command([nvidia_smi, "-r"])
+    subprocess.check_call([nvidia_smi, "-r"])
 
 
 def check_gpu_clock() -> None:
     nvidia_smi = get_nvidia_smi()
     if not nvidia_smi:
         return
-    output = run_shell_command(
+    output = subprocess.check_output(
         [
             nvidia_smi,
             "--query-gpu",
@@ -1159,15 +1164,13 @@ def check_gpu_clock() -> None:
             "--format",
             "csv",
         ],
-        check=False,
-        capture_output=True,
     )
 
     # We check for persistence here as a proxy to check if setup-gpu-benchmarking
     # has been run. This is not exact, but should cover most cases. Checking for
     # the clock frequency is more complicated since the frequencies changes per
     # GPU.
-    if "Disabled" in output.stdout.decode("utf-8"):
+    if "Disabled" in output.decode("utf-8"):
         raise Exception(
             "the clock frequency for the GPU is not locked, please use"
             " `setup-gpu-benchmarking` to ensure that the frequencies and power"
@@ -1452,7 +1455,7 @@ def main() -> None:
     try:
         cli()
     except Exception:
-        CONSOLE.print_exception(suppress=[click, yaml, rich])
+        CONSOLE.print_exception(suppress=[click, rich])
 
 
 if __name__ == "__main__":

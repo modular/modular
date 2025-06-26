@@ -12,6 +12,7 @@ modular_py_library(
         "kbench.py",
         "kplot.py",
         "kprofile.py",
+        "utils.py",
     ],
     imports = ["autotune"],
     tags = ["manual"],
@@ -26,6 +27,7 @@ modular_py_library(
         requirement("plotly"),
         requirement("kaleido"),
         requirement("pyyaml"),
+        requirement("ruamel-yaml"),
     ],
 )
 
@@ -43,6 +45,8 @@ pkg_files(
         "kbench.py",
         "kplot.py",
         "kprofile.py",
+        "requirements.txt",
+        "utils.py",
     ],
     prefix = "kernel-benchmark/autotune",
     visibility = ["//visibility:public"],

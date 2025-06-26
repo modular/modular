@@ -1,0 +1,8 @@
+numpy
+click
+pandas
+rich
+plotly
+kaleido
+pyyaml
+ruamel-yaml
