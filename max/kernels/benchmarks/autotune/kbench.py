@@ -138,7 +138,7 @@ def _run_cmdline(cmd: list[str], dryrun: bool = False) -> ProcessOutput:
 class ParamSpace:
     name: str
     value: Any
-    value_set: set[Any] = field(default_factory=set)
+    value_set: list[Any] = field(default_factory=list)
     length: int = 0
 
     def __post_init__(self) -> None:
@@ -150,7 +150,8 @@ class ParamSpace:
             self.value = [eval(x) for x in self.value]
         except:
             pass
-        self.value_set = set(sorted(set(flatten(self.value))))
+        # Note: as of python3.7+ the built-in dict is guaranteed to maintain insertion order.
+        self.value_set = list(dict.fromkeys(flatten(self.value)))
         self.value = None
         self.length = len(self.value_set)
 
@@ -475,7 +476,8 @@ class Spec:
                 found = False
                 for ps in cfg:
                     if ps.name == k:
-                        ps.value_set.update(v)
+                        ps.value_set.append(v)
+                        ps.value_set = list(dict.fromkeys(ps.value_set))
                         found = True
                         break
                 if not found:
