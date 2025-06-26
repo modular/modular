@@ -790,6 +790,26 @@ PIPELINES = {
             kl_div_threshold=5.8e-1,
         ),
     ),
+    "OpenGVLab/InternVL3-14B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=_make_pipeline_runner(
+            pipeline="internvl3-14b-instruct",
+            encoding="bfloat16",
+            cos_dist_threshold=4.4e-03,
+            kl_div_threshold=4.0e-02,
+        ),
+    ),
+    "OpenGVLab/InternVL3-38B-Instruct-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["h100-multi"],
+        run=_make_pipeline_runner(
+            pipeline="internvl3-38b-instruct",
+            encoding="bfloat16",
+            cos_dist_threshold=1.9e-03,
+            kl_div_threshold=5.1e-03,
+        ),
+    ),
     "mistral-community/pixtral-12b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
         tags=["big"],

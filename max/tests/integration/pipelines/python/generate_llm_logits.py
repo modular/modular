@@ -739,6 +739,15 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "internvl3-8b-instruct": InternVLPipelineOracle(
         "OpenGVLab/InternVL3-8B-Instruct"
     ),
+    "internvl3-14b-instruct": InternVLPipelineOracle(
+        "OpenGVLab/InternVL3-14B-Instruct"
+    ),
+    "internvl3-38b-instruct": InternVLPipelineOracle(
+        "OpenGVLab/InternVL3-38B-Instruct"
+    ),
+    "internvl3-78b-instruct": InternVLPipelineOracle(
+        "OpenGVLab/InternVL3-78B-Instruct"
+    ),
     "llama3-vision": LlamaVisionPipelineOracle(),
     "pixtral": PixtralPipelineOracle(),
     "qwen": GenericOracle(
