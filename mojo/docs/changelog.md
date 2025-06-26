@@ -69,3 +69,5 @@ what we publish.
 
 - [#4820](https://github.com/modular/modular/issues/4820) - `math.exp2` picks
   the wrong implementation for `float64`.
+- [#4121](https://github.com/modular/modular/issues/4121) - better error message
+  for `.value()` on empty `Optional`.
