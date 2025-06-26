@@ -36,7 +36,7 @@ _DEPS_FROM_WHEEL = [
 
 def _is_internal_reference(dep):
     """Check if a dependency is an internal reference."""
-    return dep.startswith(("//GenericML", "//KGEN/", "//Kernels/", "//Support/"))
+    return dep.startswith(("//GenericML", "//KGEN/", "//Kernels/", "//SDK/integration-test/pipelines/python", "//SDK/lib/API/python/max/mlir"))
 
 def _has_internal_reference(deps):
     return any([_is_internal_reference(dep) for dep in deps])
@@ -66,6 +66,9 @@ def modular_py_library(
         deps = [],
         visibility = ["//visibility:public"],
         **kwargs):
+    if _has_internal_reference(deps):
+        return
+
     py_library(
         data = _remove_internal_data(data),
         deps = _rewrite_deps(deps),
