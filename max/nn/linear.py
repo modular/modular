@@ -324,7 +324,7 @@ class Linear(Module, Shardable):
             # shape (1,), replicate it across devices when weight sharding is
             # colwise.
             should_replicate = self.float8_config.weight_scale.is_tensor or (
-                strategy.is_colwise
+                (strategy.is_colwise or strategy.is_head_aware_colwise)
                 and self.float8_config.weight_scale.is_rowwise
             )
             self.weight_scale.sharding_strategy = (
