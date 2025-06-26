@@ -39,6 +39,11 @@ what we publish.
 
 ### Standard library changes
 
+- The `Hashable` trait has been updated to use a new data flow strategy.
+  - Users are now required to implement the method
+    `fn __hash__[H: Hasher](self, mut hasher: H):`
+    (see `Hashable` docstring for further details).
+
 - Added support for a wider range of consumer-grade AMD hardware, including:
   - AMD Radeon RX 7xxx GPUs
   - AMD Radeon RX 9xxx GPUs

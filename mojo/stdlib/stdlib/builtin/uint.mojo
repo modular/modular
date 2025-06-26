@@ -15,8 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from hashlib._hasher import _HashableWithHasher, _Hasher
-from hashlib.hash import _hash_simd
+from hashlib.hasher import Hasher
 from math import CeilDivable
 from sys import bitwidthof
 
@@ -43,7 +42,6 @@ struct UInt(
     Representable,
     Stringable,
     Writable,
-    _HashableWithHasher,
 ):
     """This type represents an unsigned integer.
 
@@ -827,18 +825,7 @@ struct UInt(
         """
         return String("UInt(", self, ")")
 
-    fn __hash__(self) -> UInt:
-        """Hash the UInt using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        # TODO(MOCO-636): switch to DType.index
-        return _hash_simd(Scalar[DType.uint64](self))
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this uint value.
 
         Parameters:

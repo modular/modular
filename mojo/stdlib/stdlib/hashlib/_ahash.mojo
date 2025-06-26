@@ -14,7 +14,7 @@
 from bit import byte_swap, rotate_bits_left
 from memory import bitcast
 
-from ._hasher import _HashableWithHasher, _Hasher
+from .hasher import Hasher
 
 alias U256 = SIMD[DType.uint64, 4]
 alias U128 = SIMD[DType.uint64, 2]
@@ -80,9 +80,9 @@ fn _read_small(data: UnsafePointer[UInt8, mut=False, **_], length: Int) -> U128:
             return U128(0, 0)
 
 
-struct AHasher[key: U256](Defaultable, _Hasher):
+struct AHasher[key: U256](Defaultable, Hasher):
     """Adopted AHash algorithm which produces fast and high quality hash value by
-    implementing `_Hasher` trait.
+    implementing `Hasher` trait.
 
     References:
 
@@ -207,7 +207,7 @@ struct AHasher[key: U256](Defaultable, _Hasher):
                     var u64_2 = (v >> ((r + 1) * 64)).cast[DType.uint64]()
                     self._large_update(U128(u64_1, u64_2))
 
-    fn update[T: _HashableWithHasher](mut self, value: T):
+    fn update[T: Hashable](mut self, value: T):
         """Update the buffer value with new hashable value.
 
         Args:

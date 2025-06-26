@@ -18,7 +18,7 @@ from sys import bitwidthof, simdwidthof, sizeof
 
 from builtin.dtype import _uint_type_of_width
 from memory import UnsafePointer, bitcast, memcpy, memset_zero
-from ._hasher import _Hasher, _HashableWithHasher
+from .hasher import Hasher
 
 
 fn _djbx33a_init[dtype: DType, size: Int]() -> SIMD[dtype, size]:
@@ -186,7 +186,7 @@ fn hash(
     return _hash_simd(hash_data)
 
 
-struct DJBX33A(_Hasher):
+struct DJBX33A(Hasher):
     """A Hasher which uses SIMD-modified DJBX33A hash algorithm,
     which was the default hash function in Mojo standard library from the beginning.
     """
@@ -208,7 +208,7 @@ struct DJBX33A(_Hasher):
     fn _update_with_simd(mut self, value: SIMD[_, _]):
         self._value = _HASH_UPDATE(self._value, _hash_simd(value))
 
-    fn update[T: _HashableWithHasher](mut self, value: T):
+    fn update[T: Hashable](mut self, value: T):
         value.__hash__(self)
 
     fn finish(owned self) -> UInt64:

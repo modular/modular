@@ -14,7 +14,7 @@
 """
 
 import os
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from os import PathLike, listdir, stat_result
 from sys import external_call, os_is_windows
 from sys.ffi import c_char
@@ -71,7 +71,6 @@ struct Path(
     PathLike,
     Stringable,
     Writable,
-    _HashableWithHasher,
 ):
     """The Path object."""
 
@@ -234,16 +233,7 @@ struct Path(
         """
         return not self == other
 
-    fn __hash__(self) -> UInt:
-        """Hash the underlying path string using builtin hash.
-
-        Returns:
-            An integer value containing the hash of the path string.
-        """
-
-        return hash(self.path)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the path string value.
 
         Parameters:

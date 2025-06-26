@@ -46,8 +46,7 @@ from collections.string.string import (
     _calc_format_buffer_size,
     _calc_initial_buffer_size,
 )
-from hashlib._hasher import _HashableWithHasher, _Hasher
-from hashlib.hash import _hash_simd
+from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic
 from os import abort
@@ -274,7 +273,6 @@ struct SIMD[dtype: DType, size: Int](
     Stringable,
     Truncable,
     Writable,
-    _HashableWithHasher,
 ):
     """Represents a small vector that is backed by a hardware vector element.
 
@@ -1700,17 +1698,7 @@ struct SIMD[dtype: DType, size: Int](
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
 
-    fn __hash__(self) -> UInt:
-        """Hash the value using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return _hash_simd(self)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this SIMD value.
 
         Parameters:

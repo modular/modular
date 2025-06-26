@@ -13,13 +13,14 @@
 # RUN: %mojo %s
 
 
-from hashlib._hasher import _hash_with_hasher, _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
+from hashlib._ahash import AHasher
 from pathlib import Path
 
 from testing import assert_equal
 
 
-struct DummyHasher(_Hasher):
+struct DummyHasher(Hasher):
     var _dummy_value: UInt64
 
     fn __init__(out self):
@@ -38,7 +39,7 @@ struct DummyHasher(_Hasher):
     fn _update_with_simd(mut self, value: SIMD[_, _]):
         self._dummy_value += value.cast[DType.uint64]().reduce_add()
 
-    fn update[T: _HashableWithHasher](mut self, value: T):
+    fn update[T: Hashable](mut self, value: T):
         value.__hash__(self)
 
     fn finish(owned self) -> UInt64:
@@ -46,10 +47,10 @@ struct DummyHasher(_Hasher):
 
 
 @fieldwise_init
-struct SomeHashableStruct(Copyable, Movable, _HashableWithHasher):
+struct SomeHashableStruct(Copyable, Hashable, Movable):
     var _value: Int64
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher._update_with_simd(self._value)
 
 
@@ -62,15 +63,15 @@ def test_hasher():
 
 def test_hash_with_hasher():
     var hashable = SomeHashableStruct(10)
-    assert_equal(_hash_with_hasher[HasherType=DummyHasher](hashable), 10)
+    assert_equal(hash[HasherType=DummyHasher](hashable), 10)
 
 
 @fieldwise_init
-struct ComplexHashableStruct(_HashableWithHasher):
+struct ComplexHashableStruct(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
 
@@ -88,16 +89,16 @@ def test_complex_hash_with_hasher():
     var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
-    assert_equal(_hash_with_hasher[HasherType=DummyHasher](hashable), 52)
+    assert_equal(hash[HasherType=DummyHasher](hashable), 52)
 
 
 @fieldwise_init
-struct ComplexHashableStructWithList(_HashableWithHasher):
+struct ComplexHashableStructWithList(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
     var _value3: List[UInt8]
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
         # This is okay because self is passed as read-only so the pointer will
@@ -110,13 +111,13 @@ struct ComplexHashableStructWithList(_HashableWithHasher):
 
 
 @fieldwise_init
-struct ComplexHashableStructWithListAndWideSIMD(_HashableWithHasher):
+struct ComplexHashableStructWithListAndWideSIMD(Hashable):
     var _value1: SomeHashableStruct
     var _value2: SomeHashableStruct
     var _value3: List[UInt8]
     var _value4: SIMD[DType.uint32, 4]
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         hasher.update(self._value1)
         hasher.update(self._value2)
         # This is okay because self is passed as read-only so the pointer will
@@ -136,6 +137,11 @@ def test_update_with_bytes():
     )
     hasher.update(hashable)
     assert_equal(hasher^.finish(), 58)
+
+
+alias _hash_with_hasher = hash[
+    HasherType = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
+]
 
 
 def test_with_ahasher():

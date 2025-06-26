@@ -82,7 +82,7 @@ fn _mojo_block_hasher[
     var result_py_list = cpython.PyList_New(num_hashes)
 
     # Initial hash seed value
-    alias initial_hash = String("None").__hash__()
+    alias initial_hash = hash(String("None"))
 
     # Performing hashing
     var prev_hash = initial_hash
@@ -96,7 +96,7 @@ fn _mojo_block_hasher[
         var curr_hash = hash(pair_to_hash)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.
-        var curr_hash_obj = cpython.PyLong_FromSsize_t(curr_hash)
+        var curr_hash_obj = cpython.PyLong_FromSsize_t(Int(curr_hash))
         _ = cpython.PyList_SetItem(result_py_list, block_idx, curr_hash_obj)
 
         prev_hash = curr_hash

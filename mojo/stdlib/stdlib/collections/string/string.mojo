@@ -89,7 +89,7 @@ from collections.string.string_slice import (
     _to_string_list,
     _utf8_byte_type,
 )
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from os import PathLike, abort
 from os.atomic import Atomic
 from sys import bitwidthof, sizeof
@@ -127,7 +127,6 @@ struct String(
     Writable,
     Writer,
     _CurlyEntryFormattable,
-    _HashableWithHasher,
 ):
     """Represents a mutable string.
 
@@ -1452,17 +1451,7 @@ struct String(
         """
         return self.as_string_slice().lstrip()
 
-    fn __hash__(self) -> UInt:
-        """Hash the underlying buffer using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return hash(self.as_string_slice())
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -1471,7 +1460,7 @@ struct String(
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_bytes(self.unsafe_ptr(), self.byte_length())
+        hasher.update(self.as_string_slice())
 
     fn lower(self) -> String:
         """Returns a copy of the string with all cased characters
