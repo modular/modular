@@ -336,6 +336,15 @@ fn _matmul_sm100[
     var k = shape.K
 
     try:
+        # On B200 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
+        @parameter
+        if a_type is DType.bfloat16:
+            if n == 1 or m == 1:
+                return gemv_gpu[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, ctx)
+
         return matmul_vendor[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
@@ -343,6 +352,7 @@ fn _matmul_sm100[
             config=config,
             _trace_description=_trace_description,
         ](c, a, b, ctx)
+
     except:
         # fallback to multistage/naive gemms if the cublas failed. This is a workaround for now for KERN-1812
         @parameter
