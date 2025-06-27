@@ -1,0 +1,95 @@
+#!/bin/bash
+
+set -euo pipefail
+
+bazelrc_lines=("# Generated from tools/bazel, do not edit.")
+bazelrc_lines+=("build --build_metadata=USER=${GITHUB_ACTOR:-${USER:-unknown}}")
+
+xcode_build_number=""
+# TODO: Enable on CI as well once all runners have full Xcode installs
+if [[ $OSTYPE == darwin* && -z "${GITHUB_REPOSITORY:-}" ]]; then
+  if (( EUID == 0 )); then
+    echo "error: bazel should not be run as with sudo." >&2
+    exit 1
+  fi
+
+  xcode_path=$(xcode-select -p)
+  if [[ "$xcode_path" == /Library/* ]]; then
+    echo "error: a fully Xcode install must be selected globally, run 'sudo xcode-select -s /path/to/Xcode.app" >&2
+    exit 1
+  elif [[ "$xcode_path" != /Applications/* ]]; then
+    echo "error: Xcode must be installed in /Applications/, not '$xcode_path'" >&2
+    exit 1
+  fi
+
+  bazelrc_lines+=("startup --host_jvm_args=-Xdock:name=$xcode_path")
+  xcode_build_number=$(/usr/bin/xcodebuild -version 2>/dev/null | tail -1 | cut -d " " -f3)
+  bazelrc_lines+=("build --xcode_version=$xcode_build_number")
+fi
+
+if [[ -z "${GITHUB_REPOSITORY:-}" && $OSTYPE != darwin* && -d /dev/shm && ! -e /.dockerenv && -z "${KUBERNETES_SERVICE_HOST:-}" ]]; then
+  bazelrc_lines+=("common --sandbox_base=/dev/shm")
+fi
+
+script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly bazelrc_root="$script_root/../build"
+readonly logs_dir="$bazelrc_root/logs"
+mkdir -p "$logs_dir"
+
+printf "%s\n" "${bazelrc_lines[@]}" > "$bazelrc_root/wrapper.bazelrc"
+
+if [[ -f "$logs_dir/execution.log" ]]; then
+  mv -f "$logs_dir/execution.log" "$logs_dir/execution-previous.log"
+fi
+
+# Pass a select group of environment variables to the `bazel` binary and to `bazel run`:
+passthrough_env=(
+  # Force a limited PATH to avoid local env pollution
+  "PATH=/usr/bin:/bin:/usr/sbin"
+  # Make sure user installed python modules don't make it in to the build
+  "PYTHONNOUSERSITE=affirmative"
+  # Required for emojis to work in filenames
+  "LANG=en_US.UTF-8"
+  # This invalidates the crosstool if the Xcode version changes but the path to
+  # it does not (when it is updated in place). Related:
+  # https://github.com/bazelbuild/bazel/issues/8902
+  "XCODE_VERSION=$xcode_build_number"
+)
+
+allowed_vars=(
+  # Basic settings that shouldn't affect caching
+  "COLUMNS"
+  "HOME"
+  "TERM"
+  "USER"
+
+  # Buildbuddy reporting
+  "GITHUB_ACTOR"
+  "GITHUB_HEAD_REF"
+  "GITHUB_REF"
+  "GITHUB_REF_NAME"
+  "GITHUB_REPOSITORY"
+  "GITHUB_RUN_ID"
+  "GITHUB_SHA"
+  "HOST"
+
+    # Env vars used in some scripts that shouldn't generally invalidate things
+  "BAZEL"
+  "BAZELISK_SKIP_WRAPPER"
+  "HF_TOKEN"
+  "HOSTNAME"
+)
+
+for var in "${allowed_vars[@]}"; do
+  if [[ -n "${!var:-}" ]]; then
+    passthrough_env+=("${var}=${!var}")
+  fi
+done
+
+exit_code=0
+env -i \
+  "${passthrough_env[@]}" \
+  "$BAZEL_REAL" \
+  "$@" || exit_code=$?
+
+exit $exit_code

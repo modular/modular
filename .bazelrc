@@ -37,12 +37,17 @@ build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 # Use the target platform for tests to correctly resolve GPU settings
 build --use_target_platform_for_tests
 
+# Load config generated from tools/bazel
+try-import %workspace%/build/wrapper.bazelrc
+
 # Buildbuddy cache optimization recommendations
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
+build --remote_cache_async
+build --experimental_remote_cache_ttl=14d
+build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
-build --remote_cache_compression
 build --slim_profile=false
 
 build --remote_download_outputs=toplevel
