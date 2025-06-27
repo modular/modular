@@ -11,6 +11,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "lldb/Utility/Broadcaster.h"
+#include "llvm/Support/FormatVariadic.h"
 
 namespace M::KGEN::Mojo {
 class MojoDiagnostic;
