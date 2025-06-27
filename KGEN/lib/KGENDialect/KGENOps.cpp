@@ -1446,6 +1446,16 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
                                            Type valueType,
                                            StringRef valueKind) {
   ArrayRef<Type> elementTypes = container.getElementTypes();
+  if (llvm::any_of(elementTypes,
+                   [](Type type) { return isa<VariadicSplatType>(type); })) {
+    if (elementTypes.size() != 1) {
+      // TODO: Support multiple types within `!kgen.struct`.
+      return op->emitOpError("only single `!kgen.variadic_splat` type allowed");
+    }
+    // `!kgen.variadic_splat` type is not yet concretized, therefore we cannot
+    // verify correctness of this operation
+    return success();
+  }
   size_t index = indexAttr.getInt();
   if (index >= elementTypes.size())
     return op->emitOpError("element index ")
@@ -1475,10 +1485,21 @@ inferStructElementType(function_ref<LogicalResult(const Twine &)> emitError,
   IntegerAttr indexAttr = adaptor.getIndexAttr();
   if (!indexAttr)
     return emitError("expected an integer index attribute");
+
+  ArrayRef<Type> elementTypes = structType.getElementTypes();
+  if (llvm::any_of(elementTypes,
+                   [](Type type) { return isa<VariadicSplatType>(type); })) {
+    if (elementTypes.size() != 1) {
+      // TODO: Support multiple types within `!kgen.struct`.
+      return emitError("only single `!kgen.variadic_splat` type allowed");
+    }
+    auto variadicSplat = cast<VariadicSplatType>(elementTypes[0]);
+    return variadicSplat.getElementType();
+  }
   size_t index = indexAttr.getInt();
   if (index >= structType.getNumElements())
     return emitError("struct element index out of bounds");
-  return structType.getElementTypes()[index];
+  return elementTypes[index];
 }
 
 LogicalResult StructExtractOp::inferReturnTypes(
