@@ -39,7 +39,7 @@ from gpu.sync import (
     schedule_group_barrier,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from layout._utils import get_amd_buffer_descriptor, idx2crd
+from layout._utils import get_amd_buffer_descriptor, idx2crd, TensorCoreKGroup
 from layout.element import Element
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -116,8 +116,6 @@ fn copy_local_to_dram2[
                 src.runtime_element_layout,
             )
 
-            alias dst_element_type = Element[dst.dtype, dst.linear_idx_type]
-
             alias element_stride = dst_fragments.element_layout.stride[
                 1
             ].value()
@@ -143,44 +141,6 @@ fn copy_local_to_dram2[
 
 
 @always_inline
-fn tensor_core_mma[
-    k_group_size: Int = 1,
-](a_reg_tile: LayoutTensor, b_reg_tile: LayoutTensor, c_frag: LayoutTensor):
-    alias num_m_mmas = a_reg_tile.shape[0]()
-    alias num_n_mmas = b_reg_tile.shape[0]()
-    constrained[
-        c_frag.shape[0]() == num_m_mmas * num_n_mmas,
-        "Fragments size mismatch. Expected c_frag shape[0] to be num_m_mmas"
-        " * num_n_mmas = "
-        + String(num_m_mmas * num_n_mmas)
-        + ", got "
-        + String(c_frag.shape[0]()),
-    ]()
-
-    @parameter
-    for n_mma in range(num_n_mmas):
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-            alias mma_id = m_mma * num_n_mmas + n_mma
-
-            @parameter
-            for k in range(k_group_size):
-                var a_reg_k = a_reg_tile.tile[num_m_mmas, 4](0, k).vectorize[
-                    1, 4
-                ]()
-                var b_reg_k = b_reg_tile.tile[num_n_mmas, 4](0, k).vectorize[
-                    1, 4
-                ]()
-                mma_simd(
-                    c_frag[mma_id, 0],
-                    a_reg_k[m_mma, 0],
-                    b_reg_k[n_mma, 0],
-                    c_frag[mma_id, 0],
-                )
-
-
-@always_inline
 fn fast_cast[dtype: DType](x: SIMD, out res: SIMD[dtype, x.size]):
     # this is a workaround compiler, we should probably do this in the compiler via a flag
     alias truncate = False
@@ -202,7 +162,7 @@ fn mma[
     config: MHAConfig,
     prefetch_function: fn[Int] () capturing -> None,
     swizzle: OptionalReg[Swizzle] = None,
-    swap_operands: Bool = False,
+    swap_a_b: Bool = False,
     num_iters: Int = 1,
     token_gen: Bool = False,
 ](
@@ -238,10 +198,11 @@ fn mma[
         b_smem_iter.layout.stride[0].value() // simd_width,
     ) if token_gen else Layout.row_major(num_threads // 4, 4)
 
-    alias mma_op = TensorCore[
+    alias tensor_core_mma = TensorCoreKGroup[
         accum_type,
         mma_input_type,
         (MMA_M, MMA_N, MMA_K),
+        k_group_size=k_group_size,
         transpose_b=transpose_b,
     ]()
 
@@ -325,7 +286,7 @@ fn mma[
                 var a_warp_tile = a_smem_iter.next_unsafe(i)[].tile[WM, BK](
                     warp_row, 0
                 )
-                mma_op.load_a[swizzle=swizzle](
+                tensor_core_mma.mma_op.load_a[swizzle=swizzle](
                     a_warp_tile,
                     a_reg_tile.vectorize[1, a_frag_size * k_group_size](),
                     k_mma,
@@ -338,21 +299,13 @@ fn mma[
                     ]()
                 )
 
-            mma_op.load_b[swizzle=swizzle](
+            tensor_core_mma.mma_op.load_b[swizzle=swizzle](
                 b_warp_tile,
                 b_reg_tile.vectorize[1, b_frag_size * k_group_size](),
                 k_mma,
             )
 
-            @parameter
-            if swap_operands:
-                tensor_core_mma[k_group_size](
-                    b_reg_tile, a_reg_tile, c.vectorize[1, c_frag_size]()
-                )
-            else:
-                tensor_core_mma[k_group_size](
-                    a_reg_tile, b_reg_tile, c.vectorize[1, c_frag_size]()
-                )
+            tensor_core_mma.mma[swap_a_b=swap_a_b](a_reg_tile, b_reg_tile, c)
 
         barrier()
 
@@ -765,16 +718,16 @@ fn mha_single_batch[
     constrained[BN == depth, "BN must be equal to depth"]()
     alias simd_width = simdwidthof[q_type]()
 
-    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
-    alias MMA_M = 32  # mma_shape[0]
-    alias MMA_N = 32  # mma_shape[1]
-    alias MMA_K = 8  # mma_shape[2]
+    alias MMA_M = 32
+    alias MMA_N = 32
+    alias MMA_K = 8
     alias fragment_layout = Layout.row_major(1, 16)
     alias fragment_layout_nested = Layout(
         IntTuple(1, IntTuple(4, 4)), IntTuple(1, IntTuple(1, 8))
     )
     alias warp_layout = Layout.col_major(32, 2)
-    alias swap_mma_operands = True
+    alias swap_a_b = True
+    alias k_group_size = 2
 
     alias output_frag_size = fragment_layout.size()
     alias accum_type = get_accum_type[q_type]()
@@ -990,11 +943,11 @@ fn mha_single_batch[
             MMA_N=MMA_N,
             MMA_K=MMA_K,
             transpose_b=True,
-            k_group_size=2,
+            k_group_size=k_group_size,
             config=config,
             prefetch_function=load_v_gmem_tile,
             swizzle=swizzle,
-            swap_operands=swap_mma_operands,
+            swap_a_b=swap_a_b,
             num_iters = Int(depth // BK),
             token_gen=token_gen,
         ](
@@ -1186,6 +1139,7 @@ fn mha_single_batch[
 
                 @parameter
                 for depth_idx in range(depth // BK):
+                    # TODO: document and parameterize this magic
                     var v_smem_fragment = (
                         v_smem_iter_tensor.tile[depth + padding, 8](
                             0, col_idx + k_mma_idx * 2
@@ -1232,14 +1186,21 @@ fn mha_single_batch[
                     p_reg_tile[i, 12 + j]
                 )
 
+            alias tensor_core_mma = TensorCoreKGroup[
+                accum_type,
+                q_type,
+                (MMA_M, MMA_N, MMA_K),
+                k_group_size=k_group_size,
+            ]()
+
             @parameter
             for k_mma_idx in range(num_k_mmas_v):
-                tensor_core_mma[k_group_size=2](
+                tensor_core_mma.mma[swap_a_b=swap_a_b](
+                    p_mma_tile_interleaved.tile[1, simd_width](0, k_mma_idx),
                     v_reg_tile_mma.tile[depth // MMA_M, simd_width](
                         k_mma_idx, 0
                     ),
-                    p_mma_tile_interleaved.tile[1, simd_width](0, k_mma_idx),
-                    out_reg_tile.vectorize[1, output_frag_size](),
+                    out_reg_tile,
                 )
 
     for i in range(UInt32(0), UInt32(num_keys), UInt32(BN)):
@@ -1314,7 +1275,8 @@ fn mha_decoding_single_batch[
     alias warp_layout = Layout.col_major(
         16, 4
     ) if use_transposed_layout else Layout.row_major(4, 16)
-    alias swap_mma_operands = use_transposed_layout
+    alias swap_a_b = use_transposed_layout
+    alias k_group_size = 2
 
     alias output_frag_size = fragment_layout.size()
     alias accum_type = get_accum_type[q_type]()
@@ -1484,11 +1446,11 @@ fn mha_decoding_single_batch[
             MMA_N=MMA_N,
             MMA_K=MMA_K,
             transpose_b=True,
-            k_group_size=2,
+            k_group_size=k_group_size,
             config=config,
             prefetch_function=prefetch_function,
             swizzle=swizzle,
-            swap_operands=swap_mma_operands,
+            swap_a_b=swap_a_b,
             num_iters = Int(depth // BK),
             token_gen=token_gen,
         ](
@@ -1602,11 +1564,11 @@ fn mha_decoding_single_batch[
             MMA_N=MMA_N,
             MMA_K=MMA_K,
             transpose_b=False,
-            k_group_size=2,
+            k_group_size=k_group_size,
             config=config,
             prefetch_function=prefetch_function,
             swizzle=None,
-            swap_operands=swap_mma_operands,
+            swap_a_b=swap_a_b,
             num_iters = Int(BN // BK),
             token_gen=token_gen,
         ](
