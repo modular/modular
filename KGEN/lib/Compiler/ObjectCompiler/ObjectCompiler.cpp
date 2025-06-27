@@ -1832,7 +1832,6 @@ ObjectCompiler::emitGPUKernels(
   if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
         return lowerAllFuncsToLLVM(ctx, *module);
       })) {
-    module->erase();
     return Error(
         Twine("failed to lower module to LLVM IR for archive compilation, ") +
         err.getError());
