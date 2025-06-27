@@ -132,6 +132,12 @@ class DecodeScheduler(Scheduler):
             total_num_pages=self.paged_manager.total_num_pages,
         )
 
+        # Ensure that prefix caching is enabled.
+        if not self.paged_manager.enable_prefix_caching:
+            raise ValueError(
+                "Prefix Caching must be enabled on the Paged Manager for Decode Scheduling."
+            )
+
     def pull_from_request_socket(
         self,
     ) -> tuple[str, Union[TextContext, TextAndVisionContext]]:
