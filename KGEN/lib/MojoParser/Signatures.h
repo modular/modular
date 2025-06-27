@@ -158,6 +158,7 @@ public:
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
   SmallVector<VariadicKind> variadicKinds;
+  SmallVector<SMLoc> locations;
 
   /// Default values for positional and positionalOrKeyword params.
   SmallVector<TypedAttr> defaultPosParams;
