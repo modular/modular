@@ -76,7 +76,7 @@ class MAXModelConfig(MAXModelConfigBase):
     quantization_encoding: Optional[SupportedEncoding] = None
     """Weight encoding type."""
 
-    allow_dtype_casting: bool = True
+    allow_dtype_casting: bool = False
     """Whether to allow automatic dtype casting when quantization encoding is set, if needed."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
