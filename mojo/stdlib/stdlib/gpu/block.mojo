@@ -298,7 +298,21 @@ fn broadcast[
         A SIMD value where all threads contain a copy of the input value from
         the source thread.
     """
-    # Allocate shared memory for broadcasting
+    constrained[
+        block_size >= WARP_SIZE,
+        "Block size must be greater than or equal to warp size",
+    ]()
+    constrained[
+        block_size % WARP_SIZE == 0,
+        "Block size must be a multiple of warp size",
+    ]()
+
+    @parameter
+    if block_size == WARP_SIZE:
+        # Single warp - use warp shuffle for better performance
+        return warp_broadcast(val)
+
+    # Multi-warp block - use shared memory
     var shared_mem = stack_allocation[
         width, dtype, address_space = AddressSpace.SHARED
     ]()
@@ -376,14 +390,15 @@ fn prefix_sum[
     # Step 3: Have the first warp perform a scan on the warp results
     var lid = lane_id()
     if wid == 0:
-        previous_warps_prefix = warp_prefix_sum[exclusive=False](warp_mem[lid])
+        var previous_warps_prefix = warp_prefix_sum[exclusive=False](
+            warp_mem[lid]
+        )
         if lid < n_warps:
             warp_mem[lid] = previous_warps_prefix
     barrier()
 
     # Step 4: Add the prefix from previous warps
     if wid > 0:
-        var warp_prefix = warp_mem[wid - 1]
-        thread_result += warp_prefix
+        thread_result += warp_mem[wid - 1]
 
     return thread_result
