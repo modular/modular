@@ -215,27 +215,6 @@ Mojo provides all the language functionality necessary for anyone to extend
 hardware support. As such, we expect hardware vendors and community members
 will contribute additional hardware support in the future.
 
-### How does Mojo provide a 35,000x speed-up over Python?
-
-Modern CPUs are surprisingly complex and diverse, but Mojo enables
-systems-level optimizations and flexibility that unlock the features of any
-device in a way that Python cannot. So the hardware matters for this sort of
-benchmark, and for the Mandelbrot benchmarks we show in our [launch
-keynote](https://www.youtube.com/watch?v=-3Kf2ZZU-dg&t=1543s), we ran them on
-an [AWS r7iz.metal-16xl](https://aws.amazon.com/ec2/instance-types/r7iz/)
-machine.
-
-For lots more information, check out our 3-part blog post series about
-[how Mojo gets a 35,000x speedup over
-Python](https://www.modular.com/blog/how-mojo-gets-a-35-000x-speedup-over-python-part-1).
-
-By the way, all the CPU and GPU graph operations that power Modular's
-[MAX Platform](https://www.modular.com/max) are written in Mojo.
-We also compared our matrix multiplication implementation to other
-state-of-the-art implementations that are usually written in assembly.
-To see the results, see [our blog post about unified matrix
-multiplication](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
-
 ## Performance
 
 ### Are there any AI related performance benchmarks for Mojo?
