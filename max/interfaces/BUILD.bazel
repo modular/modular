@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+modular_py_library(
+    name = "interfaces",
+    srcs = glob(["**/*.py"]),
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("msgspec"),
+    ],
+)
