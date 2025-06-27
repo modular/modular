@@ -3,6 +3,8 @@ load(":custom_op_example.bzl", "custom_op_example_py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
+# NOTE: The custom_op_example_py_binary macro automatically creates a test
+
 filegroup(
     name = "kernel_sources",
     srcs = glob(["kernels/*.mojo"]),

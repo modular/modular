@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
 
 modular_py_binary(
     name = "addition",
@@ -8,4 +8,9 @@ modular_py_binary(
         "//SDK/lib/API/python/max",
         requirement("numpy"),
     ],
+)
+
+modular_run_binary_test(
+    name = "addition_test",
+    binary = "addition",
 )
