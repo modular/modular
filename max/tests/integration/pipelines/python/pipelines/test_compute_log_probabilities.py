@@ -240,13 +240,15 @@ class InputBatchItem:
             # for our purposes.  That said, if someone felt like figuring out a
             # more representative distribution for logit outputs and could
             # replace this, the test could have more fidelity.
-            logits = rng.normal(size=(seq_len, vocab_size))
+            logits = rng.normal(size=(seq_len, vocab_size)).astype(np.float32)
             if fake_quantize:
                 logits = np.round(logits, decimals=1)
             next_token_logits = logits[-1, :]
         else:
             logits = None
-            next_token_logits = rng.normal(size=(vocab_size,))
+            next_token_logits = rng.normal(size=(vocab_size,)).astype(
+                np.float32
+            )
             if fake_quantize:
                 next_token_logits = np.round(next_token_logits, decimals=1)
         return cls(
