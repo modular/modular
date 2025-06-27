@@ -953,7 +953,7 @@ struct UnsafePointer[
 
 
 @register_passable("trivial")
-struct _StridedRangeIterator(IteratorTrait):
+struct _StridedRangeIterator(Iterator):
     var start: Int
     var end: Int
     var step: Int
@@ -983,7 +983,7 @@ struct _StridedRangeIterator(IteratorTrait):
 # ===-----------------------------------------------------------------------===#
 
 
-trait IteratorTrait(Movable):
+trait Iterator(Movable):
     alias Element: AnyType
 
     fn __has_next__(self) -> Bool:
@@ -994,7 +994,7 @@ trait IteratorTrait(Movable):
 
 
 # This type is tightly bound to the internals of "@parameter for" emission.
-struct _ParamForWrapper[IteratorT: IteratorTrait & Copyable]:
+struct _ParamForWrapper[IteratorT: Iterator & Copyable]:
     var next_it: IteratorT
     var value: IteratorT.Element
 
@@ -1004,7 +1004,7 @@ struct _ParamForWrapper[IteratorT: IteratorTrait & Copyable]:
 
 
 fn parameter_for_generator[
-    IteratorT: IteratorTrait & Copyable
+    IteratorT: Iterator & Copyable
 ](it: IteratorT) -> _ParamForWrapper[IteratorT]:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ returns true.

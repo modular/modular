@@ -412,7 +412,7 @@ struct WrapperNestedInt:
 
 @fieldwise_init
 @register_passable("trivial")
-struct TrivialRange(Copyable, IteratorTrait):
+struct TrivialRange(Copyable, Iterator):
     alias Element = Int
 
     fn __iter__(self) -> Self:
