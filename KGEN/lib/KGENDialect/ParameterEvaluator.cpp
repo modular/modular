@@ -11,11 +11,60 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "Support/ErrorOr.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 
 using namespace M;
 using namespace M::KGEN;
+
+static Type tryReplaceVariadicSplat(Type type) {
+  if (!isa<mlir::LLVM::LLVMStructType, StructType>(type)) {
+    return nullptr;
+  }
+
+  auto processVariadicSplatType = [&](ArrayRef<Type> types) {
+    SmallVector<Type> newTypes;
+    bool changed = false;
+    for (Type type : types) {
+      auto splatType = dyn_cast<VariadicSplatType>(type);
+      if (!splatType) {
+        newTypes.push_back(type);
+        continue;
+      }
+      std::optional<uint64_t> count = splatType.getResolvedCount();
+      if (!count) {
+        newTypes.push_back(type);
+        continue;
+      }
+      changed = true;
+      for (unsigned i = 0, e = *count; i < e; ++i)
+        newTypes.push_back(splatType.getElementType());
+    }
+    return changed ? newTypes : SmallVector<Type>();
+  };
+
+  MLIRContext *context = type.getContext();
+
+  // Handle `!kgen.struct`.
+  if (auto structType = dyn_cast<StructType>(type)) {
+    SmallVector<Type> newTypes =
+        processVariadicSplatType(structType.getElementTypes());
+    if (newTypes.empty())
+      return type;
+    return StructType::get(context, newTypes);
+  }
+
+  // Handle `!llvm.struct`.
+  if (auto llvmStructType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
+    SmallVector<Type> newTypes =
+        processVariadicSplatType(llvmStructType.getBody());
+    if (newTypes.empty())
+      return type;
+    return mlir::LLVM::LLVMStructType::getLiteral(context, newTypes);
+  }
+  llvm_unreachable("unhandled type");
+}
 
 //===----------------------------------------------------------------------===//
 // Helper methods for inspecting possibly-parameterized attributes and types.
@@ -251,6 +300,8 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
     return nullptr;
   if (changed)
     result = type.replaceImmediateSubElements(newAttrs, newTypes);
+  if (auto newType = tryReplaceVariadicSplat(result))
+    result = newType;
   return result;
 }
 

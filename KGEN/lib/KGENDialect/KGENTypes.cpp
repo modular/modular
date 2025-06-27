@@ -1489,6 +1489,26 @@ std::optional<int64_t> DeferredType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicSplatType
+//===----------------------------------------------------------------------===//
+
+std::optional<uint64_t> VariadicSplatType::getResolvedCount() const {
+  if (auto intAttr = dyn_cast<IntegerAttr>(getCount()))
+    return intAttr.getInt();
+  return {};
+}
+
+LogicalResult
+VariadicSplatType::verify(function_ref<InFlightDiagnostic()> emitError,
+                          Type elementType, TypedAttr count) {
+  if (auto intAttr = dyn_cast<IntegerAttr>(count);
+      intAttr && intAttr.getInt() <= 0)
+    return emitError() << "expected count > 0, but got " << intAttr.getInt();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 
