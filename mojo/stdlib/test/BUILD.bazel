@@ -78,7 +78,11 @@ _MOJO_COMPILE_OPTS = {
         "-D",
         "ASSERT=warn",
     ],
-    "collections/test_list_getitem_invalid_index.mojo": [
+    "collections/test_list_getitem_invalid_index_int.mojo": [
+        "-D",
+        "BUILD_TYPE=debug",
+    ],
+    "collections/test_list_getitem_invalid_index_uint.mojo": [
         "-D",
         "BUILD_TYPE=debug",
     ],
@@ -143,7 +147,8 @@ _EXPECT_CRASH = [
     "builtin/test_debug_assert_default_error.mojo",
     "builtin/test_range_uint_reverse_range_bad.mojo",
     "builtin/test_debug_assert_mode_all_error.mojo",
-    "collections/test_list_getitem_invalid_index.mojo",
+    "collections/test_list_getitem_invalid_index_int.mojo",
+    "collections/test_list_getitem_invalid_index_uint.mojo",
     "logger/test_logger_critical.mojo",
     "os/test_trap.mojo",
 ]
@@ -182,7 +187,8 @@ _FILECHECK_TESTS = [
     "builtin/test_rebind.mojo",
     "builtin/test_sort_issue_1018.mojo",
     "collections/test_index_normalization.mojo",
-    "collections/test_list_getitem_invalid_index.mojo",
+    "collections/test_list_getitem_invalid_index_int.mojo",
+    "collections/test_list_getitem_invalid_index_uint.mojo",
     "logger/test_logger.mojo",
     "logger/test_logger_alias.mojo",
     "logger/test_logger_critical.mojo",

@@ -14,12 +14,16 @@
 # RUN: not --crash %bare-mojo -D BUILD_TYPE=debug %s 2>&1 | FileCheck %s
 
 
-# CHECK-LABEL: test_fail_list_index
-fn main():
-    print("== test_fail_list_index")
+# CHECK-LABEL: test_fail_list_index_uint
+fn test_fail_list_index_uint():
+    print("== test_fail_list_index_uint")
     # CHECK: index: 4 is out of bounds for `List` of length: 3
     nums = [1, 2, 3]
-    print(nums[4])
+    print(nums[UInt(4)])
 
     # CHECK-NOT: is never reached
     print("is never reached")
+
+
+fn main():
+    test_fail_list_index_uint()

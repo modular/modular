@@ -939,6 +939,14 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
         @parameter
         if _type_is_eq[I, UInt]():
+            var idx = UInt(idx)
+            debug_assert(
+                idx < self._len,
+                "index: ",
+                idx,
+                " is out of bounds for `List` of length: ",
+                self._len,
+            )
             return (self.data + idx)[]
         else:
             var normalized_idx = Int(idx)
