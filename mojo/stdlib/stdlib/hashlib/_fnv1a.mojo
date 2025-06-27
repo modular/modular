@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a _Hasher type."""
+"""Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a Hasher type."""
 
-from ._hasher import _Hasher, _HashableWithHasher
+from .hasher import Hasher
 
 
-struct Fnv1a(Defaultable, _Hasher):
+struct Fnv1a(Defaultable, Hasher):
     """Fnv1a is a very simple algorithm with good quality, but sub optimal runtime for long inputs.
     It can be used for comp time hash value generation.
 
@@ -71,7 +71,7 @@ struct Fnv1a(Defaultable, _Hasher):
                 self._value ^= (v >> (r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 
-    fn update[T: _HashableWithHasher](mut self, value: T):
+    fn update[T: Hashable](mut self, value: T):
         """Update the buffer value with new hashable value.
 
         Parameters:

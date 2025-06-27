@@ -116,6 +116,7 @@ class EchoPipelineTokenizer(
 
         # Create TextContext manually
         context = TextContext(
+            request_id=request.id,
             prompt=prompt,
             max_length=max_length,
             tokens=encoded_prompt,

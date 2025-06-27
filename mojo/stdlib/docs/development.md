@@ -2,24 +2,48 @@
 
 This document covers the essentials of developing for the standard library.
 
-## Prerequisites
-
 If this is your first time contributing, first read everything in
-[CONTRIBUTING.md](../../CONTRIBUTING.md#fork-and-clone-the-repo). Logistically,
-you need to do the following:
+[CONTRIBUTING.md](../../CONTRIBUTING.md).
 
-1. [Fork and clone the repo](../../CONTRIBUTING.md#fork-and-clone-the-repo)
-2. [Branch off main](../../CONTRIBUTING.md#branching-off-main)
-3. [Install the nightly Mojo compiler](../../CONTRIBUTING.md#getting-the-nightly-mojo-compiler)
+## Set up your environment
 
-And if you're using VS Code:
+To get started, you need to do the following:
 
-- [Install the nightly VS Code
+1. [Fork the repo and create a branch](../../CONTRIBUTING.md#how-to-create-a-pull-request).
+2. If you're using VS Code, [Install the nightly Mojo VS Code
   extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo-nightly)
 
-### Dev Container
+    NOTE: You can only have one Mojo extension enabled at a time, remember to
+    switch when using the stable release!
 
-There is an externally maintained
+3. Install the nightly Mojo compiler:
+
+    We recommend using [`pixi`](https://pixi.sh/latest/), which you can install
+    with this command:
+
+    ```bash
+    curl -fsSL https://pixi.sh/install.sh | sh
+    ```
+
+    Then create a new project environment like this and it will install the
+latest nightly version of `mojo` (the CLI compiler) by default:
+
+    ```bash
+    pixi init my-project \
+      -c https://conda.modular.com/max-nightly/ -c conda-forge \
+      && cd my-project
+    ```
+
+    ```bash
+    pixi add modular
+    ```
+
+Now you're ready to start developing.
+
+### Dev container
+
+Or, instead of setting up with `pixi` as shown above, you can use an
+externally maintained
 [Mojo Dev Container](https://github.com/benz0li/mojo-dev-container) with all
 prerequisites installed.
 
@@ -95,7 +119,7 @@ If you wish to run the unit tests that are in a specific test file, you can do
 so with
 
 ```bash
-./stdlib/scripts/run-tests.sh ./stdlib/test/utils/test_span.mojo 
+./stdlib/scripts/run-tests.sh ./stdlib/test/utils/test_span.mojo
 ```
 
 You can do the same for a directory with

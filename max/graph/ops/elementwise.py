@@ -5,11 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Elementwise ops."""
 
+from typing import Callable
+
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
+from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
 
 # ===----------------------------------------------------------------------=== #
@@ -557,6 +560,23 @@ def _elementwise_unary(op):
     return elementwise_op
 
 
+def _elementwise_unary_predicate(
+    op,
+) -> Callable[[TensorValueLike], TensorValue]:
+    def elementwise_op(x: TensorValueLike) -> TensorValue:
+        x = dtype_promotion._restrict_to_strong_dtypes(x)
+        return Graph.current._add_op(
+            op,
+            TensorType(
+                dtype=DType.bool, shape=x.shape, device=x.device
+            ).to_mlir(),
+            x,
+        )[0].tensor
+
+    elementwise_op.__name__ = op.__name__
+    return elementwise_op
+
+
 abs = _elementwise_unary(rmo.mo_abs)
 """
 Computes the elementwise absolute value of a symbolic tensor.
@@ -1097,7 +1117,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-is_nan = _elementwise_unary(rmo.mo_is_nan)
+is_nan = _elementwise_unary_predicate(rmo.mo_is_nan)
 """
 Computes the elementwise is_nan of a symbolic tensor.
 
@@ -1118,7 +1138,8 @@ Raises:
     Error: If the symbol doesn't represent a tensor value.
 """
 
-is_inf = _elementwise_unary(rmo.mo_is_inf)
+
+is_inf = _elementwise_unary_predicate(rmo.mo_is_inf)
 """
 Computes the elementwise :obj:`is_inf()` of a symbolic tensor.
 

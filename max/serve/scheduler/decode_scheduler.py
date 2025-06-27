@@ -112,7 +112,8 @@ class DecodeScheduler(Scheduler):
         self.preempted_request: queue.Queue[
             tuple[str, Union[TextContext, TextAndVisionContext]]
         ] = queue.Queue()
-        self.prefill_complete: queue.Queue[PrefillResponse] = queue.Queue()
+        self.prefill_responses: dict[str, PrefillResponse] = {}
+        self.completed_transfers: set[str] = set()
 
         # Initialize Scheduler state.
         self.active_batch: OrderedDict[
@@ -158,15 +159,7 @@ class DecodeScheduler(Scheduler):
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
-        self.prefill_complete.put(message)
-
-    def get_decode_request(self) -> PrefillResponse:
-        """Gets a request from the prefill complete queue.
-
-        Returns:
-            PrefillResponse: A prefill response.
-        """
-        return self.prefill_complete.get_nowait()
+        self.prefill_responses[message.transfer_metadata.xfer_name] = message
 
     def push_to_response_socket(
         self, responses: list[dict[str, TextResponse]] = [{}]
@@ -226,6 +219,9 @@ class DecodeScheduler(Scheduler):
                 request_id, request_context = self.pull_from_request_socket()
                 logger.info("request received from api worker.")
 
+                # Try and Prefetch Memory Eagerly
+                #
+
                 # If we pop off a request successfully.
                 # Grab new cache index, claim the slot with the paged manager
                 # and add it to the reserved_cache_indices.
@@ -283,38 +279,85 @@ class DecodeScheduler(Scheduler):
         Adds new requests to the batch while cache indices are available. For each request, attempts to prefetch
         required memory. If prefetch fails, handles preemption by returning newer requests to the decode queue.
         """
-        while True:
-            try:
-                # Retrieve new item from the decode queue.
-                # We can assume that everything in the decode queue, already has cache space.
-                prefill_response = self.get_decode_request()
 
-                # Check that the transfer is complete, this will wait.
-                logger.info("waiting for transfer to complete.")
-                self.transfer_engine.recv_xfer_sync(
-                    prefill_response.transfer_metadata
-                )
-
-                # Assume that we've already claimed this memory in our cache.
-                # However, this seq id, may have been updated by the prefill worker.
-                # So assign it to the correct seq_id in the Decode Paged Cache.
-                prefill_response.context.unassign_from_cache()
-                prefill_response.context.assign_to_cache(
-                    self.reserved_cache_indices[prefill_response.id]
-                )
-
-                # Add to active batch.
-                self.active_batch[prefill_response.id] = (
-                    prefill_response.context
-                )
-
-            except queue.Empty:
-                # Break this loop when the decode queue is empty.
+        # Walk the active batch, and prefetch for all existing items.
+        candidate_request_ids = list(self.active_batch.keys())
+        for candidate_request_id in candidate_request_ids:
+            # If we have already removed the candidate_request, move on
+            if candidate_request_id not in self.active_batch:
                 break
 
-            except Exception as e:
-                logger.error(e)
-                raise e
+            # If the request_id is in the active batch, try and prefetch.
+            request_context = self.active_batch[candidate_request_id]
+
+            # TODO: Shrink num_steps appropriately.
+            num_steps = self.scheduler_config.max_forward_steps_tg
+            # If prefetch fails, pre-empt the request and continue evaluating
+            # the batch
+            if not self.paged_manager.prefetch(request_context, num_steps):
+                raise RuntimeError("""
+                    Prefetching memory failed for new decode request.
+                    This is likely due to memory contention concerns among the batch.
+                    Please decrease the batch size and try again.""")
+
+        # Walk all outstanding prefill responses
+        # Notifications provides a list of completed XferReqData.xfer_name
+        # keyed on remote named (XferReqData.src_name)
+        notifications = self.transfer_engine.agent.get_notifs()
+        new_completed = {
+            completed_transfer_name.decode()
+            for remote in notifications
+            for completed_transfer_name in notifications[remote]
+        }
+        self.completed_transfers.update(new_completed)
+
+        # Process ready transfers: intersection of completed transfers
+        # and prefill responses received.
+        for completed_transfer_name in (
+            self.completed_transfers & self.prefill_responses.keys()
+        ):
+            # Retrieve Prefill Response
+            prefill_response = self.prefill_responses.pop(
+                completed_transfer_name
+            )
+
+            prefill_response.context.unassign_from_cache()
+            prefill_response.context.assign_to_cache(
+                self.reserved_cache_indices[prefill_response.id]
+            )
+
+            # Calculate num_steps
+            num_available_steps = (
+                prefill_response.context.compute_num_available_steps(
+                    prefill_response.context.max_length
+                )
+            )
+            num_steps = (
+                self.scheduler_config.max_forward_steps_tg
+                if self.scheduler_config.max_forward_steps_tg
+                < num_available_steps
+                else num_available_steps
+            )
+
+            # Prefetch data early, only add to batch if we can prefetch successfully.
+            if not self.paged_manager.prefetch(
+                prefill_response.context, num_steps
+            ):
+                self.prefill_responses[completed_transfer_name] = (
+                    prefill_response
+                )
+                continue
+
+            # Finalize Transfer
+            self.transfer_engine.finalize_transfer(
+                prefill_response.transfer_metadata
+            )
+
+            # Add to active batch.
+            self.active_batch[prefill_response.id] = prefill_response.context
+
+            # Remove from completed transfers.
+            self.completed_transfers.remove(completed_transfer_name)
 
     @traced
     def calculate_batch_num_steps(self) -> int:

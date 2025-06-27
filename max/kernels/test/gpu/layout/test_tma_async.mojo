@@ -723,6 +723,19 @@ def test_tma_load_and_store_two_buffers_row_major[
     var a_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
     var b_dst = ManagedLayoutTensor[DType.float32, dst_layout](ctx)
 
+    # Initialize destinations to known values.
+    alias a_dst_value = 1.5
+    alias b_dst_value = 1.25
+
+    var a_dst_host = a_dst.tensor()
+    var b_dst_host = b_dst.tensor()
+    # Ensure that the buffers have been fully created before accessing their data.
+    ctx.synchronize()
+    for m in range(dst_M):
+        for n in range(dst_N):
+            a_dst_host[m, n] = a_dst_value
+            b_dst_host[m, n] = b_dst_value
+
     arange(a_src.tensor(), 1)
     arange(b_src.tensor(), 1)
     var a_tma_src_tensor = create_tma_tile[
@@ -777,8 +790,12 @@ def test_tma_load_and_store_two_buffers_row_major[
                 )
 
             else:
-                assert_equal(a_dst_host[m, n].cast[DType.float32](), 0.0)
-                assert_equal(b_dst_host[m, n].cast[DType.float32](), 0.0)
+                assert_equal(
+                    a_dst_host[m, n].cast[DType.float32](), a_dst_value
+                )
+                assert_equal(
+                    b_dst_host[m, n].cast[DType.float32](), b_dst_value
+                )
 
     ctx.synchronize()
     _ = a_src^

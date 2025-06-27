@@ -1,0 +1,15 @@
+[project]
+authors = ["Modular <hello@modular.com>"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+description = "An example of a custom model architecture served by MAX"
+name = "Custom MAX Model Serving"
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+generate = "python -m max.entrypoints.pipelines generate --custom-architectures qwen2 --model-path=Qwen/Qwen2.5-0.5B-Instruct --max-length 10000 --prompt 'Why is the sky blue?'"
+serve = "python -m max.entrypoints.pipelines serve --custom-architectures qwen2 --model-path=Qwen/Qwen2.5-0.5B-Instruct"
+
+[dependencies]
+python = ">=3.9,<3.14"
+modular = "*"
