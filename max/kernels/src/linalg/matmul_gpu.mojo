@@ -505,49 +505,48 @@ fn _matmul_gpu[
 
         @parameter
         if env_get_bool["AUTOTUNING_MODE", False]():
-            if env_get_bool["H100_SPECIFIC", False]():
-                alias NUM_PIPELINE_STAGES = env_get_int[
-                    "TUNE_NUM_PIPELINE_STAGES", 4
-                ]()
-                alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-                alias WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
-                alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-                alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
-                alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
-                alias BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
+            alias NUM_PIPELINE_STAGES = env_get_int[
+                "TUNE_NUM_PIPELINE_STAGES", 4
+            ]()
+            alias NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
+            alias WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
+            alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
+            alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+            alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
+            alias BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
 
-                alias SCHEDULE_TYPE = MatmulSchedule(
-                    env_get_int["TUNE_SCHEDULE_TYPE", 1]()
-                )
+            alias SCHEDULE_TYPE = MatmulSchedule(
+                env_get_int["TUNE_SCHEDULE_TYPE", 1]()
+            )
 
-                alias H100_FP8_TUNING_CONFIG = MatmulConfig[
-                    a_type,
-                    b_type,
-                    c_type,
-                    transpose_b,
-                    mma_shape = Index(64, WGMMA_N, 32),
-                ](
-                    block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, 128),
-                    cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
-                    num_pipeline_stages=NUM_PIPELINE_STAGES,
-                    num_consumer=NUM_CONSUMER,
-                    partitioned_multicast=False,
-                    pdl_level=pdl_level,
-                )
-                warp_specialize_gemm_with_multicasting[
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                    config=H100_FP8_TUNING_CONFIG,
-                    grid_shape = Index(128, 1),
-                    schedule = MatmulSchedule.DS_SCHEDULER,
-                ](
-                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                    ctx,
-                )
-                return
+            alias H100_FP8_TUNING_CONFIG = MatmulConfig[
+                a_type,
+                b_type,
+                c_type,
+                transpose_b,
+                mma_shape = Index(64, WGMMA_N, 32),
+            ](
+                block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, 128),
+                cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
+                num_pipeline_stages=NUM_PIPELINE_STAGES,
+                num_consumer=NUM_CONSUMER,
+                partitioned_multicast=False,
+                pdl_level=pdl_level,
+            )
+            warp_specialize_gemm_with_multicasting[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                config=H100_FP8_TUNING_CONFIG,
+                grid_shape = Index(128, 1),
+                schedule = MatmulSchedule.DS_SCHEDULER,
+            ](
+                rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                ctx,
+            )
+            return
 
         alias static_M = c_shape.get[0]()
         alias static_N = c_shape.get[1]()
@@ -1710,56 +1709,41 @@ fn _matmul_gpu[
 
             @parameter
             if env_get_bool["AUTOTUNING_MODE", False]():
-                if env_get_bool["H100_SPECIFIC", False]():
-                    # CLUSTER_DIM_X = 2^m for m in range[0-3]
-                    alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
+                # CLUSTER_DIM_X = 2^m for m in range[0-3]
+                alias CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
 
-                    # GRID_DIM_X = 2^n for n in range[0-7]
-                    alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
-                    alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
+                # GRID_DIM_X = 2^n for n in range[0-7]
+                alias GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+                alias GRID_DIM_Y = H100.sm_count // GRID_DIM_X
 
-                    alias H100_TUNING_CONFIG = MatmulConfig[
-                        a_type,
-                        b_type,
-                        c_type,
-                        transpose_b,
-                        mma_shape = Index(64, 256, 16),
-                    ](
-                        block_tile_shape=Index(128, 256, 64),
-                        cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
-                        num_pipeline_stages=4,
-                        num_consumer=2,
-                        partitioned_multicast=False,
-                        pdl_level=pdl_level,
-                    )
-                    warp_specialize_gemm_with_multicasting[
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                        config=H100_TUNING_CONFIG,
-                        grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
-                        schedule = MatmulSchedule.TILE2D,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        ctx,
-                    )
-                    return
-
-                else:
-                    multistage_gemm[
-                        transpose_b=transpose_b,
-                        config = kernels.tuning_config,
-                        elementwise_lambda_fn=elementwise_lambda_wrapper,
-                    ](
-                        rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
-                        rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
-                        rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
-                        kernels.tuning_config,
-                        ctx,
-                    )
-                    return
+                alias H100_TUNING_CONFIG = MatmulConfig[
+                    a_type,
+                    b_type,
+                    c_type,
+                    transpose_b,
+                    mma_shape = Index(64, 256, 16),
+                ](
+                    block_tile_shape=Index(128, 256, 64),
+                    cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
+                    num_pipeline_stages=4,
+                    num_consumer=2,
+                    partitioned_multicast=False,
+                    pdl_level=pdl_level,
+                )
+                warp_specialize_gemm_with_multicasting[
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+                    config=H100_TUNING_CONFIG,
+                    grid_shape = Index(GRID_DIM_X, GRID_DIM_Y),
+                    schedule = MatmulSchedule.TILE2D,
+                ](
+                    rebind[NDBuffer[c_type, 2, c.origin, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a.origin, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b.origin, b_shape]](b),
+                    ctx,
+                )
+                return
 
             # Allow caller to overwrite dispatch heuristic with their own config.
             @parameter
