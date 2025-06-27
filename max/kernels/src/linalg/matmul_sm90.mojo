@@ -1050,7 +1050,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
-    alias num_k_iters = K // BK
+    alias num_k_iters = ceildiv(K, BK)
 
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
@@ -1359,7 +1359,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
 
     var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
     var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
-    alias num_k_iters = K // BK
+    alias num_k_iters = ceildiv(K, BK)
 
     var rank_m = block_id_in_cluster.y
     var rank_n = block_id_in_cluster.x
@@ -1564,7 +1564,7 @@ fn hopper_matmul_tma_wgmma_kernel[
     alias accum_type = get_accum_type[a_type]()
     alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
 
-    alias num_k_iters = K // BK
+    alias num_k_iters = ceildiv(K, BK)
 
     var a_smem_tile = LayoutTensor[
         a_type,

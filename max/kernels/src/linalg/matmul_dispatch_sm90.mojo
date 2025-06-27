@@ -129,6 +129,9 @@ fn matmul_dispatch_sm90[
     alias N = c.shape.get[1]()
     alias N_multiple_of_8 = N % 8 == 0
 
+    alias K = a.shape.get[1]()
+    alias K_multiple_of_16B = K * sizeof[a_type]() % 16 == 0
+
     # General constraints for H100 matmul
     # fmt: off
     @parameter
@@ -136,7 +139,8 @@ fn matmul_dispatch_sm90[
         input_type_supported and \
         transpose_b and \
         has_static_NK and \
-        N_multiple_of_8
+        N_multiple_of_8 and \
+        K_multiple_of_16B
     ):
         return DISPATCH_MISS
     # fmt: on
@@ -183,10 +187,6 @@ fn matmul_dispatch_sm90_fp8[
 ) raises -> Int:
     alias static_N = c.shape.get[1]()
     alias static_K = a.shape.get[1]()
-
-    @parameter
-    if static_K % 128 != 0:
-        return DISPATCH_MISS
 
     var m = c.dim[0]()
 
@@ -1132,9 +1132,6 @@ fn matmul_dispatch_sm90_bf16_fp32[
     alias size_factor = 2 if a_type is DType.float32 else 1
     alias mma_k = 16 // size_factor
     alias BK = 64 // size_factor
-
-    if static_K % BK != 0:
-        return DISPATCH_MISS
 
     var m = c.dim[0]()
 

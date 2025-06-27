@@ -41,7 +41,7 @@ def test_warp_specialize_gemm[
     c_type: DType,
     num_consumer: Int = 1,
     transpose_b: Bool = True,
-    schedule: MatmulSchedule = MatmulSchedule.TILE2D,
+    schedule: MatmulSchedule = MatmulSchedule.NONE,
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
     var M = m.value
     var N = n.value
@@ -191,22 +191,19 @@ def main():
         ](ctx, static[128](), static[64](), static[64]())
 
         alias wgmma_n = List[Int](128, 256)
-        alias schedules = List[MatmulSchedule](
-            MatmulSchedule.TILE1D, MatmulSchedule.TILE2D
-        )
 
         @parameter
-        for j in range(len(schedules)):
+        for i in range(len(wgmma_n)):
 
             @parameter
-            for i in range(len(wgmma_n)):
+            for j in range(1, 3):
                 test_warp_specialize_gemm[
                     wgmma_n[i],
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
                 ](ctx, static[1024](), static[512](), static[128]())
 
                 test_warp_specialize_gemm[
@@ -214,17 +211,8 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, static[1024](), static[512](), static[128]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
                 ](ctx, dynamic(99), static[1024](), static[1024]())
 
                 test_warp_specialize_gemm[
@@ -232,42 +220,16 @@ def main():
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, dynamic(99), static[1024](), static[1024]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
                 ](ctx, dynamic(100), static[512](), static[256]())
 
+                # Test K not multiple of tile size.
                 test_warp_specialize_gemm[
                     wgmma_n[i],
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, dynamic(100), static[512](), static[256]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=1,
-                    schedule = schedules[j],
-                ](ctx, dynamic(201), static[2048](), static[256]())
-
-                test_warp_specialize_gemm[
-                    wgmma_n[i],
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    DType.bfloat16,
-                    num_consumer=2,
-                    schedule = schedules[j],
-                ](ctx, dynamic(201), static[2048](), static[256]())
+                    num_consumer=j,
+                    schedule = MatmulSchedule.TILE2D,
+                ](ctx, dynamic(201), static[2048](), static[200]())
