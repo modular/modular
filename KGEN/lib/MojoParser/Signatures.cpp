@@ -196,6 +196,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
       paramList.names.push_back(StringAttr::get(type.getContext()));
       paramList.passingKinds.push_back(PassingKind::Implicit);
       paramList.paramDeclAttrs.push_back(paramDecl);
+      paramList.locations.push_back(origExpr ? origExpr->getLoc() : SMLoc());
       paramList.variadicKinds.push_back(VariadicKind::None);
       return ParamDeclRefAttr::get(paramDecl);
     };
@@ -709,6 +710,7 @@ static ASTType addImplicitTypeParams(ASTType type,
   SmallVector<StringAttr> names;
   SmallVector<PassingKind> passingKinds;
   SmallVector<VariadicKind> variadicKinds;
+  SmallVector<SMLoc> locations;
 
   // Functor to insert the pending vectors into paramList, either at the front
   // or back.
@@ -723,6 +725,7 @@ static ASTType addImplicitTypeParams(ASTType type,
     insertFn(paramList.names, names);
     insertFn(paramList.passingKinds, passingKinds);
     insertFn(paramList.variadicKinds, variadicKinds);
+    insertFn(paramList.locations, locations);
   });
 
   // The parameter decl references that will be used to fully bind the type,
@@ -739,6 +742,7 @@ static ASTType addImplicitTypeParams(ASTType type,
     passingKinds.push_back(append ? PassingKind::Implicit
                                   : PassingKind::Inferred);
     paramDeclAttrs.push_back(funcDecl);
+    locations.push_back(SMLoc());
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
 
     // FIXME: Autoparam of variadics looks broken?
@@ -835,6 +839,7 @@ TypeCheckedParamList::TypeCheckedParamList(
     auto newDecl = ParamDeclAttr::get(
         declScope.mangleUserDefinedParamName(arg.name), type);
     paramDeclAttrs.push_back(newDecl);
+    locations.push_back(arg.loc);
 
     // The unmangled names are also collected to aid keyword parameter binding.
     passingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
