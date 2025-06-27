@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from os import abort
 from sys import bitwidthof, os_is_windows, sizeof
 from sys.intrinsics import _type_is_eq
@@ -39,7 +39,6 @@ struct DType(
     Representable,
     Stringable,
     Writable,
-    _HashableWithHasher,
 ):
     """Represents DType and provides methods for working with it."""
 
@@ -448,15 +447,7 @@ struct DType(
             self._as_ui8(), rhs._as_ui8()
         )
 
-    fn __hash__(self) -> UInt:
-        """Return a 64-bit hash for this `DType` value.
-
-        Returns:
-            A 64-bit integer hash of this `DType` value.
-        """
-        return hash(UInt8(self._as_ui8()))
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.
 
         Parameters:

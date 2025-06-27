@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._hasher import _Hasher
+from hashlib.hasher import Hasher
 from math import ceildiv
 from sys import (
     env_get_bool,
@@ -242,7 +242,7 @@ struct MatmulConfig[
     fn __repr__(self) -> String:
         return String.write(self)
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:

@@ -14,7 +14,7 @@
 
 from bit import pop_count
 from hashlib._djbx33a import DJBX33A
-from hashlib._hasher import _Hasher, _HashableWithHasher, _hash_with_hasher
+from hashlib.hasher import Hasher
 from testing import assert_equal, assert_not_equal, assert_true
 from memory import memset_zero, UnsafePointer
 from test_utils import (
@@ -34,26 +34,26 @@ from test_utils import (
 
 def test_hash_byte_array():
     assert_equal(
-        _hash_with_hasher[HasherType=DJBX33A](String("a")),
-        _hash_with_hasher[HasherType=DJBX33A](String("a")),
+        hash[HasherType=DJBX33A](String("a")),
+        hash[HasherType=DJBX33A](String("a")),
     )
     assert_equal(
-        _hash_with_hasher[HasherType=DJBX33A](String("b")),
-        _hash_with_hasher[HasherType=DJBX33A](String("b")),
-    )
-
-    assert_equal(
-        _hash_with_hasher[HasherType=DJBX33A](String("c")),
-        _hash_with_hasher[HasherType=DJBX33A](String("c")),
+        hash[HasherType=DJBX33A](String("b")),
+        hash[HasherType=DJBX33A](String("b")),
     )
 
     assert_equal(
-        _hash_with_hasher[HasherType=DJBX33A](String("d")),
-        _hash_with_hasher[HasherType=DJBX33A](String("d")),
+        hash[HasherType=DJBX33A](String("c")),
+        hash[HasherType=DJBX33A](String("c")),
+    )
+
+    assert_equal(
+        hash[HasherType=DJBX33A](String("d")),
+        hash[HasherType=DJBX33A](String("d")),
     )
     assert_equal(
-        _hash_with_hasher[HasherType=DJBX33A](String("d")),
-        _hash_with_hasher[HasherType=DJBX33A](String("d")),
+        hash[HasherType=DJBX33A](String("d")),
+        hash[HasherType=DJBX33A](String("d")),
     )
 
 
@@ -62,17 +62,13 @@ def test_avalanche():
     # produce significatly different hash values
     var buffer = InlineArray[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(
-        _hash_with_hasher[HasherType=DJBX33A](buffer.unsafe_ptr(), 256)
-    )
+    hashes.append(hash[HasherType=DJBX33A](buffer.unsafe_ptr(), 256))
 
     for i in range(256):
         memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         buffer[i >> 3] = v
-        hashes.append(
-            _hash_with_hasher[HasherType=DJBX33A](buffer.unsafe_ptr(), 256)
-        )
+        hashes.append(hash[HasherType=DJBX33A](buffer.unsafe_ptr(), 256))
 
     assert_dif_hashes(hashes, -1)
 
@@ -84,9 +80,7 @@ def test_trailing_zeros():
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(
-            _hash_with_hasher[HasherType=DJBX33A](buffer.unsafe_ptr(), i)
-        )
+        hashes.append(hash[HasherType=DJBX33A](buffer.unsafe_ptr(), i))
 
     assert_dif_hashes(hashes, -1)
 
@@ -186,7 +180,7 @@ def test_hash_simd_values():
 
 
 def test_hash_at_compile_time():
-    alias h = _hash_with_hasher[HasherType=DJBX33A](String("hello"))
+    alias h = hash[HasherType=DJBX33A](String("hello"))
     # can not do equality compare as the hash function is unstable on different platforms
     assert_true(h != 0)
 

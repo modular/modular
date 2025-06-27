@@ -22,6 +22,12 @@
     to just 576 values per token by storing compressed latent
     representations instead of full K and V tensors.
 
+- [PyTorch Layers to MAX Mapping Guide](pytorch-to-max-mapping-guide)
+
+    This guide provides mappings between common PyTorch layers used in
+    HuggingFace `transformers` and their equivalent MAX graph operations and
+    layer abstractions.
+
 - [Token sampling](token-sampling)
 
     This design document provides a comprehensive overview of token

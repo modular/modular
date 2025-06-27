@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from collections import List, Set
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 
 from python import (
     Python,
@@ -110,6 +110,7 @@ struct Bool(
     Defaultable,
     ExplicitlyCopyable,
     Floatable,
+    Hashable,
     ImplicitlyBoolable,
     ImplicitlyIntable,
     Indexer,
@@ -118,7 +119,6 @@ struct Bool(
     Representable,
     Stringable,
     Writable,
-    _HashableWithHasher,
 ):
     """The primitive Bool scalar value used in Mojo."""
 
@@ -530,7 +530,7 @@ struct Bool(
         """
         return select[Int](self, -1, 0)
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
