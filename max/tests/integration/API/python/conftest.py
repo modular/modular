@@ -59,6 +59,28 @@ LLAMA_3_1_LORA_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
     LLAMA_3_1_LORA_HF_REPO_ID
 )
 
+TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+TINY_LLAMA_1_1B_CHAT_V1_0_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID
+)
+
+TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID = (
+    "neubla/tiny-random-LlamaForCausalLM"
+)
+TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID
+)
+
+QWEN_32B_PREVIEW_HF_REPO_ID = "Qwen/QwQ-32B-Preview"
+QWEN_32B_PREVIEW_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    QWEN_32B_PREVIEW_HF_REPO_ID
+)
+
+MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID = "mistralai/Mistral-Nemo-Instruct-2407"
+MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION = hf_repo_lock.revision_for_hf_repo(
+    MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID
+)
+
 
 logger = logging.getLogger("max.pipelines")
 
@@ -190,7 +212,7 @@ def llama_3_1_8b_instruct_local_path():
             LLAMA_3_1_HF_REPO_ID, LLAMA_3_1_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {LLAMA_3_1_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -208,7 +230,7 @@ def smollm_135m_local_path():
             SMOLLM_HF_REPO_ID, SMOLLM_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {SMOLLM_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -226,7 +248,7 @@ def smollm2_135m_local_path():
             SMOLLM2_HF_REPO_ID, SMOLLM2_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {SMOLLM2_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -244,7 +266,7 @@ def exaone_2_4b_local_path():
             EXAONE_2_4B_HF_REPO_ID, EXAONE_2_4B_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {EXAONE_2_4B_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -263,7 +285,7 @@ def deepseek_r1_distill_llama_8b_local_path():
             DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REVISION,
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -281,7 +303,7 @@ def modular_ai_llama_3_1_local_path():
             MODULAR_AI_LLAMA_3_1_HF_REPO_ID, MODULAR_AI_LLAMA_3_1_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {MODULAR_AI_LLAMA_3_1_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -299,7 +321,7 @@ def tiny_random_llama_local_path():
             TINY_RANDOM_LLAMA_HF_REPO_ID, TINY_RANDOM_LLAMA_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {TINY_RANDOM_LLAMA_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -317,7 +339,7 @@ def gemma_3_1b_it_local_path():
             GEMMA_3_1B_IT_HF_REPO_ID, GEMMA_3_1B_IT_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {GEMMA_3_1B_IT_HF_REPO_ID} as config to PipelineConfig"
         )
@@ -335,9 +357,84 @@ def llama_3_1_8b_lora_local_path():
             LLAMA_3_1_LORA_HF_REPO_ID, LLAMA_3_1_LORA_HF_REVISION
         )
     except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {str(e)}")
+        logger.warning(f"Failed to generate local model path: {e}")
         logger.warning(
             f"Falling back to repo_id: {LLAMA_3_1_LORA_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = LLAMA_3_1_LORA_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def tiny_llama_1_1b_chat_v1_0_local_path():
+    assert isinstance(TINY_LLAMA_1_1B_CHAT_V1_0_HF_REVISION, str), (
+        "TINY_LLAMA_1_1B_CHAT_V1_0_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(
+            TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID,
+            TINY_LLAMA_1_1B_CHAT_V1_0_HF_REVISION,
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {e}")
+        logger.warning(
+            f"Falling back to repo_id: {TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def tiny_random_llama_for_causal_lm_local_path():
+    assert isinstance(TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REVISION, str), (
+        "TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(
+            TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID,
+            TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REVISION,
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {e}")
+        logger.warning(
+            f"Falling back to repo_id: {TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def qwen_32b_preview_local_path():
+    assert isinstance(QWEN_32B_PREVIEW_HF_REVISION, str), (
+        "QWEN_32B_PREVIEW_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(
+            QWEN_32B_PREVIEW_HF_REPO_ID, QWEN_32B_PREVIEW_HF_REVISION
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {e}")
+        logger.warning(
+            f"Falling back to repo_id: {QWEN_32B_PREVIEW_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = QWEN_32B_PREVIEW_HF_REPO_ID
+    return model_path
+
+
+@pytest.fixture
+def mistral_nemo_instruct_2407_local_path():
+    assert isinstance(MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION, str), (
+        "MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION must be a string and present in hf-repo-lock.tsv"
+    )
+    try:
+        model_path = generate_local_model_path(
+            MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID,
+            MISTRAL_NEMO_INSTRUCT_2407_HF_REVISION,
+        )
+    except FileNotFoundError as e:
+        logger.warning(f"Failed to generate local model path: {e}")
+        logger.warning(
+            f"Falling back to repo_id: {MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID} as config to PipelineConfig"
+        )
+        model_path = MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID
     return model_path

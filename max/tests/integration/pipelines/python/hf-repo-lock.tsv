@@ -12,6 +12,7 @@ OpenGVLab/InternVL3-1B-Instruct	932ac63da048e4b73ebf819beaab175146ff4ca9
 OpenGVLab/InternVL3-38B-Instruct	81c9a040f587e63dc46f128efac04e3f86952847
 OpenGVLab/InternVL3-78B-Instruct	bea2d170ebb2045be843fa4967bd026cca81b263
 OpenGVLab/InternVL3-8B-Instruct	6f7ca0c728c9be6e83def940ebc046a60ebeb9c0
+Qwen/QwQ-32B-Preview	91906fe41a48b6a89ce2970abfd1269eefee170e
 Qwen/Qwen2.5-7B-Instruct	a09a35458c702b33eeacc393d103063234e8bc28
 Qwen/Qwen2.5-VL-3B-Instruct	66285546d2b821cf421d4f5eb2576359d3770cd3
 Qwen/Qwen3-30B-A3B	f0abbbee7f4db139f64a2c3be5dc133fd7328acb
@@ -19,6 +20,7 @@ Qwen/Qwen3-32B	d47b0d4ae4b48fde975756bf360a63a9cca8d470
 Qwen/Qwen3-8B	895c8d171bc03c30e113cd7a28c02494b5e068b7
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8	12fd6884d2585dd4d020373e7f39f74507b31866
 RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic	b0b04ce47ca8f21386149cf613f64dd611808c05
+TinyLlama/TinyLlama-1.1B-Chat-v1.0	fe8a4ea1ffedaf415f4da2f062534de366a451e6
 allenai/OLMo-1B-hf	aee7752d9c08ee4775e9b0091426d8410e8f6a89
 allenai/OLMo-2-0325-32B-Instruct	b96024342a77a69aa0dda815c3454a671f477463
 allenai/OLMo-2-0425-1B	a1847dff35000b4271fa70afc5db10fd29fedbdf
@@ -53,6 +55,7 @@ modularai/Llama-3.1-8B-Instruct-GGUF	966694508430d1177f6d585de779250e7a34bc3a
 modularai/Llama-3.2-1B-Instruct-Extended-Vocab	3fbafaf0d01d34f5fc9967e217bcbda45a5ebe95
 modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
 modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
+neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
 replit/replit-code-v1_5-3b	b85a5dd28ef6053ad095bf5113dd740a86a67597
 sentence-transformers/all-mpnet-base-v2	9a3225965996d404b775526de6dbfe85d3368642
