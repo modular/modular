@@ -150,7 +150,7 @@ public:
                        ASTDecl &declScope);
 
   /// Get an PogListAttr for this parameter list.
-  PogListAttr getParamListAttr();
+  PogListAttr getParamListAttr() const;
 
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.

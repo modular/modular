@@ -19,6 +19,8 @@
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 
 namespace M::KGEN::LIT {
+class TypeCheckedFnSignature;
+class TypeCheckedParamList;
 
 /// Top level types are the types of the Closure Wrapper function pointer
 /// fields.
@@ -28,6 +30,16 @@ struct TopLevelTypes {
   Type delFuncFieldType;
 };
 
+struct FnOpAttributes {
+  /// Signature with index references to reference parameters
+  FnTypeGeneratorType signature;
+
+  /// the number of compiler generated arguments.
+  unsigned numberOfImplicitClosureArgs;
+
+  /// FunctionType with named references to parameters
+  FunctionType functionType;
+};
 class ClosureEmitter : public StructEmitter {
 public:
   ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared);
@@ -59,6 +71,13 @@ public:
   Value emitClosureOp(ASTDecl &nestedFnDecl, ArrayRef<Capture> captures,
                       StructDeclOp wrapper, TraitDeclOp trait,
                       Location location);
+  /// Given a type checked signature, create a new signature such that for every
+  /// closure typed parameter an implicit argument is added to the signature and
+  /// function. Note that closure parameters are renamed and the original name
+  /// is mapped to the new argument. This is because we can extract a type from
+  /// a value but we cannot extract a value from a type.
+  FnOpAttributes computeFunctionSignature(ASTDecl &decl, StringAttr baseName,
+                                          TypeCheckedFnSignature &tcSignature);
 
 private:
   MLIRContext *ctx;
@@ -110,6 +129,28 @@ private:
   /// check-lifetimes pass.
   StructDeclOp createStructWrapper(StringRef baseName, ASTDecl &traitDecl,
                                    SMLoc location);
+
+  // Collect metadata used to augment function and type signatures.
+  struct ClosureSignatureInfo {
+    /// Param metadata
+    SmallVector<ParamDeclAttr> implicitOriginDecls;
+
+    /// arg metadata
+    SmallVector<PogMetadataAttr> argPogs;
+    SmallVector<Type> argTypes;
+    SmallVector<ArgConvention> argConventions;
+    SmallVector<SMLoc> locations;
+
+    // move-only
+    ClosureSignatureInfo() = default;
+    ClosureSignatureInfo(const ClosureSignatureInfo &) = delete;
+    ClosureSignatureInfo &operator=(const ClosureSignatureInfo &) = delete;
+    ClosureSignatureInfo(ClosureSignatureInfo &&) = default;
+    ClosureSignatureInfo &operator=(ClosureSignatureInfo &&) = default;
+  };
+
+  ClosureSignatureInfo remapClosureParameters(ASTDecl &decl,
+                                              TypeCheckedParamList &paramList);
 };
 
 } // namespace M::KGEN::LIT

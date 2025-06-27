@@ -203,3 +203,66 @@ fn make_closure(x: Int) -> Int:
         pass
 
     return x
+
+
+# // -----
+
+# COM: Check that the argument is augmented at the definition site.
+
+# CHECK-DAG: [[TRAIT:!Int.*]] = !lit.trait<@{{.*}}::@"fn(y: Int) -> Int">
+
+
+# CHECK: lit.fn @"take_closure{{.*}}"<closure1: [[TRAIT]]>[imm *"closure1`"](%closure1: !lit.ref<:!Int closure1, imm *"closure1`"> read_mem, |, %x: !Int1) -> !kgen.none
+# CHECK-NEXT: %0 = lit.call[!lit.generator<[1](!lit.ref<:!Int closure1, mut *[0,0]> read_mem, |, "y": !Int1) -> !Int1>: get_vtable_entry(:!Int closure1, "__call__")][imm *"closure1`"](%closure1, %x)
+# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+# CHECK-NEXT: lit.return %none : !kgen.none
+# CHECK-NEXT: lit.end_fn
+fn take_closure[closure1: fn (y: Int) unified -> Int](x: Int):
+    _ = closure1(x)
+
+
+# // -----
+
+# COM: Ensure the transformed parameters are propagated into the underlying closure trait.
+
+
+# CHECK: lit.trait.decl @"fn[fn(y: Int) -> Int](closure2: $0, /, y: Int) -> Int"
+# CHECK-NEXT: lit.fn @"__call__{{.*}}"<closure2: !Int1>
+# CHECK-SAME: [mut *"self`", imm *"[[L0:.*]]`"]
+# CHECK-SAME: (%0[*""]: !lit.ref<:!Int *"_Self`", mut *"self`"> read_mem
+# CHECK-SAME:, %closure2: !lit.ref<:!Int1 closure2, imm *"[[L0]]`"> read_mem, |, %y: !Int2) -> !Int2
+fn take_closure[closure1: fn (y: Int) unified -> Int](x: Int):
+    fn nested[closure2: fn (y: Int) unified -> Int](y: Int) unified -> Int:
+        return x
+
+
+# // -----
+
+# COM: ensure many closure parameters are handled.
+
+# CHECK: lit.fn @"take_closures{{.*}})"
+# CHECK-SAME: <closure1: !Int2, T: !Int1, closure2: !Int, U: !Int1>
+# CHECK-SAME: [imm *"[[L0:.*]]`", imm *"[[L1:.*]]`"]
+# CHECK-SAME: (%closure1: !lit.ref<:!Int2 closure1, imm *"[[L0]]`"> read_mem
+# CHECK-SAME:, %closure2: !lit.ref<:!Int closure2, imm *"[[L1]]`"> read_mem, |, %x: !Int1) -> !kgen.none
+
+
+fn take_closures[
+    closure1: fn (y: Int) unified -> Int,
+    T: Int,
+    closure2: fn (y: Int, z: Int) unified -> Int,
+    U: Int,
+](x: Int):
+    pass
+
+
+# // -----
+
+# COM: Unified Closure Parameters compose
+
+
+# CHECK: lit.fn @"nested[{{.*}})"
+# CHECK-SAME: <x: !Int, +>[imm *"x`"]
+# CHECK-SAME: (%x: !lit.ref<:!Int x, imm *"x`"> read_mem, |) -> !kgen.none
+fn nested[x: fn[y: fn (z: Int) unified -> Int] (u: Int) unified -> Int, //]():
+    pass

@@ -247,6 +247,12 @@ public:
       TraitDeclOp traitOp, ASTDecl &traitDecl,
       DenseSet<std::pair<StringAttr, StringAttr>> &existingFns);
 
+  /// Remove the Decl registered under the oldName and re-register it under a
+  /// new name.
+  LogicalResult replaceNameAssociatedWithParameter(StringAttr oldName,
+                                                   StringAttr newName,
+                                                   ASTDecl &scope);
+
 private:
   /// The resolveSignature methods are invoked on an operation to parse and type
   /// check the signature for the operation.  On parse failure, these should
