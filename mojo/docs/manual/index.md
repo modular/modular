@@ -71,7 +71,8 @@ feedback](https://www.modular.com/community).
 
 - **Layouts and LayoutTensor**
 
-  - [Introduction to Layouts](/mojo/manual/layout/layouts)
+  - [Introduction to layouts](/mojo/manual/layout/layouts)
+  - [Using LayoutTensor](/mojo/manual/layout/tensors)
 
 - **Python**
 
