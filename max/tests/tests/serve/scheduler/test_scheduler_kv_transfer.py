@@ -82,7 +82,7 @@ def decode_paged_manager():
         n_kv_heads=8,
         head_dim=128,
         cache_strategy=KVCacheStrategy.PAGED,
-        enable_prefix_caching=False,
+        enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=False,
         page_size=128,
     )
@@ -225,7 +225,7 @@ def prefill_paged_manager():
         n_kv_heads=8,
         head_dim=128,
         cache_strategy=KVCacheStrategy.PAGED,
-        enable_prefix_caching=False,
+        enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=False,
         page_size=128,
     )
