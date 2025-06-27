@@ -319,7 +319,7 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
       b.create<TraitDeclOp>(location, StringAttr::get(ctx, originalName));
   ASTDecl &traitDecl = shared.declResolver->addFullyResolvedDecl(
       &*closureTrait, name, nestedFunctionOrTypeLocation, &moduleDecl);
-
+  closureTrait.setDefinesClosure(true);
   // Populate the trait with parent and self methods.
   SmallVector<SymbolRefAttr> parents;
   for (StringRef parent : parentNames) {
