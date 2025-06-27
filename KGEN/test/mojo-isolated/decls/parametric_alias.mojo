@@ -10,6 +10,8 @@
 # declarations
 ##===----------------------------------------------------------------------===##
 
+# CHECK: ![[INT_META:.*]] = !lit.meta<!Int>
+
 # CHECK: lit.alias.decl *"noParam{{.*}}": !Int = <{78}>
 alias noParam: Int = 78
 
@@ -45,6 +47,18 @@ alias PS_21x[x: Int] = PS[2, 1, x]
 
 # CHECK: lit.alias.decl *"PS_21xy{{.*}}": !lit.generator<<"x": !Int, "y": !Int>meta<!lit.struct<#PS <:!Int {2}, :!Int {1}, :!Int {value = mul(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">)}>>>> = <#kgen.gen<@parametric_alias::@PS<:!Int {2}, :!Int {1}, :!Int {value = mul(#lit.struct.extract<:!Int *(0,0), "value">, #lit.struct.extract<:!Int *(0,1), "value">)}>>>
 alias PS_21xy[x: Int, y: Int] = PS[2, 1, x * y]
+
+# CHECK: lit.trait.decl @MyTrait
+trait MyTrait:
+    # CHECK-NEXT: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a": !Int>!AnyType>
+    alias ParamType[a: Int]: AnyType
+
+# CHECK: lit.struct.decl @MyStruct
+struct MyStruct[a: Int, b: Int](MyTrait):
+    # CHECK-NEXT: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a1": !Int>![[INT_META]]> = <#kgen.gen<!Int>>
+    alias ParamType[a1: Int] = Int
+    # CHECK: kgen.conformance @"{{.*}}::MyTrait"
+    # CHECK-NEXT: kgen.witness "ParamType" : !lit.generator<<"a": !Int>!AnyType> = rebind(:!lit.generator<<"a1": !Int>![[INT_META]]> #kgen.gen<!Int>)
 
 ##===----------------------------------------------------------------------===##
 # usages
