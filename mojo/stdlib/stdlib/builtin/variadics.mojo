@@ -23,9 +23,7 @@ from memory import Pointer
 
 
 @fieldwise_init
-struct _VariadicListIter[type: AnyTrivialRegType](
-    Copyable, IteratorTrait, Movable
-):
+struct _VariadicListIter[type: AnyTrivialRegType](Copyable, Iterator, Movable):
     """Const Iterator for VariadicList.
 
     Parameters:

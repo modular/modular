@@ -186,8 +186,8 @@ trait Defaultable:
         ...
 
 
-trait IteratorTrait(Movable):
-    """The `IteratorTrait` trait describes a type that can be used as an
+trait Iterator(Movable):
+    """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
 

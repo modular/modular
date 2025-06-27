@@ -31,7 +31,7 @@ struct __MLIRType[T: AnyTrivialRegType](Copyable, ExplicitlyCopyable, Movable):
 
 
 # This type is tightly bound to the internals of "@parameter for" emission.
-struct _ParamForWrapper[Iter: IteratorTrait & Copyable]:
+struct _ParamForWrapper[Iter: Iterator & Copyable]:
     var next_it: Iter
     var value: Iter.Element
 
@@ -41,7 +41,7 @@ struct _ParamForWrapper[Iter: IteratorTrait & Copyable]:
 
 
 fn parameter_for_generator[
-    Iter: IteratorTrait & Copyable
+    Iter: Iterator & Copyable
 ](it: Iter) -> _ParamForWrapper[Iter]:
     # NOTE: This function is called by the compiler's elaborator only when
     # __has_next__ returns true.

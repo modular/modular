@@ -63,6 +63,20 @@ what we publish.
   - The `PythonTypeBuilder` utility now allows registering bindings for Python
     static methods, i.e. methods that don't require an instance of the class.
 
+- Added `Iterator` trait for modeling types that produce a sequence of values.
+
+  A type can implement `Iterator` by providing `__next__()` and `__has_next__()`
+  methods. This naming and behavior is based on
+  the Python
+  [`Iterator`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)
+  typing annotation, diverging slightly due to constraints present in Mojo today.
+
+  Any type that implements `Iterator` can be used within `for` and
+  `@parameter for` looping syntax.
+
+  `Iterator` does not currently have a variant for supporting iteration over
+  borrowed `ref` values.
+
 ### Tooling changes
 
 - Added progress reporting support to the Mojo language server. This will emit progress

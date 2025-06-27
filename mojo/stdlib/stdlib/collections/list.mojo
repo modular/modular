@@ -36,7 +36,7 @@ struct _ListIter[
     hint_trivial_type: Bool,
     list_origin: Origin[list_mutability],
     forward: Bool = True,
-](Copyable, IteratorTrait, Movable):
+](Copyable, Iterator, Movable):
     """Iterator for List.
 
     Parameters:

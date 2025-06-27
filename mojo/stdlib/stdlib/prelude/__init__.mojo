@@ -129,7 +129,7 @@ from builtin.value import (
     Copyable,
     Defaultable,
     ExplicitlyCopyable,
-    IteratorTrait,
+    Iterator,
     Movable,
 )
 from builtin.variadics import VariadicList, VariadicListMem, VariadicPack

@@ -111,7 +111,7 @@ struct _DictKeyIter[
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-](Copyable, IteratorTrait, Movable):
+](Copyable, Iterator, Movable):
     """Iterator over immutable Dict key references.
 
     Parameters:
@@ -154,7 +154,7 @@ struct _DictValueIter[
     V: Copyable & Movable,
     dict_origin: Origin[dict_mutability],
     forward: Bool = True,
-](Copyable, IteratorTrait, Movable):
+](Copyable, Iterator, Movable):
     """Iterator over Dict value references. These are mutable if the dict
     is mutable.
 
