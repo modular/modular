@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from max.pipelines.core import LogProbabilities
+from max.interfaces import LogProbabilities
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
     log_softmax,
