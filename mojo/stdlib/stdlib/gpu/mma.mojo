@@ -149,15 +149,10 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[c.dtype, c.size]
             ](a, b, c, zero, zero, zero)
             d = rebind[__type_of(d)](r)
-    elif (
-        d.dtype is DType.float32
-        and d.size == 16
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 16
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
+        a.size, b.size, c.size, d.size
     ):
         var r = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.32x32x8f16", SIMD[c.dtype, c.size]
@@ -167,15 +162,10 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.bfloat16
-        and a.size == 4
-        and b.dtype is DType.bfloat16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
+        a.size, b.size, c.size, d.size
     ):
 
         @parameter
@@ -204,15 +194,10 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 zero,
             )
             d = rebind[__type_of(d)](r)
-    elif (
-        d.dtype is DType.float32
-        and d.size == 16
-        and a.dtype is DType.bfloat16
-        and a.size == 4
-        and b.dtype is DType.bfloat16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 16
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
+        a.size, b.size, c.size, d.size
     ):
         var r = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[c.dtype, c.size]
@@ -229,16 +214,9 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = FP32 * FP32 + FP32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float32
-        and a.size == 1
-        and b.dtype is DType.float32
-        and b.size == 1
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
+    elif _has_type[DType.float32](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(1, 1, 4, 4)](a.size, b.size, c.size, d.size):
         var r = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[c.dtype, c.size]
         ](a, b, c, zero, zero, zero)
@@ -253,16 +231,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
     @parameter
-    if (
-        d.dtype is DType.float16
-        and d.size == 4
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 2
-        and c.dtype is DType.float16
-        and c.size == 4
-    ):
+    if _has_type[DType.float16](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(4, 2, 4, 4)](a.size, b.size, c.size, d.size):
         var sa = a.split()
         var sc = c.split()
 
@@ -272,16 +243,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ](sa[0], sa[1], b, sc[0], sc[1])
 
         d = rebind[__type_of(d)](r[0].join(r[1]))
-    elif (
-        d.dtype is DType.float16
-        and d.size == 2
-        and a.dtype is DType.float16
-        and a.size == 1
-        and b.dtype is DType.float16
-        and b.size == 1
-        and c.dtype is DType.float16
-        and c.size == 2
-    ):
+    elif _has_type[DType.float16](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(1, 1, 2, 2)](a.size, b.size, c.size, d.size):
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m8n8k4.row.col.f16.f16",
             _RegisterPackType[Float16, Float16],
@@ -291,15 +255,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 2
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 2, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var sa = a.split()
         var c0 = bitcast[DType.float32, 4](c)
@@ -318,15 +277,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
 
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
-    elif (
-        d.dtype is DType.float32
-        and d.size == 2
-        and a.dtype is DType.float16
-        and a.size == 1
-        and b.dtype is DType.float16
-        and b.size == 1
-        and c.dtype is DType.float32
-        and c.size == 2
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(1, 1, 2, 2)](
+        a.size, b.size, c.size, d.size
     ):
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m8n8k4.row.col.f32.f32",
@@ -337,15 +291,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.bfloat16
-        and a.size == 4
-        and b.dtype is DType.bfloat16
-        and b.size == 2
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 2, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var sa = a.split()
         var c0 = bitcast[DType.float32, 4](c)
@@ -364,15 +313,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.bfloat16
-        and a.size == 8
-        and b.dtype is DType.bfloat16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 4, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var sa = a.split()
         var sa1 = sa[0].split()
@@ -400,16 +344,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = tf32 * tf32 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float32
-        and a.size == 2
-        and b.dtype is DType.float32
-        and b.size == 1
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
+    elif _has_type[DType.float32](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(2, 1, 4, 4)](a.size, b.size, c.size, d.size):
         var a0 = bitcast[DType.uint32, 2](a)
         var b0 = bitcast[DType.uint32, 1](b)
         var c0 = bitcast[DType.float32, 4](c)
@@ -428,16 +365,9 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float32
-        and a.size == 4
-        and b.dtype is DType.float32
-        and b.size == 2
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
+    elif _has_type[DType.float32](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ) and _has_shape[(4, 2, 4, 4)](a.size, b.size, c.size, d.size):
         var a0 = bitcast[DType.uint32, 4](a)
         var b0 = bitcast[DType.uint32, 2](b)
         var c0 = bitcast[DType.float32, 4](c)
@@ -462,15 +392,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F32 = FP8 * FP8 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float8_e4m3fn
-        and a.size == 16
-        and b.dtype is DType.float8_e4m3fn
-        and b.size == 8
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float8_e4m3fn, DType.float8_e4m3fn, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(16, 8, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var a0 = bitcast[DType.uint32, 4](a)
         var b0 = bitcast[DType.uint32, 2](b)
@@ -495,15 +420,10 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c[3],
         )
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float8_e5m2
-        and a.size == 16
-        and b.dtype is DType.float8_e5m2
-        and b.size == 8
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float8_e5m2, DType.float8_e5m2, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(16, 8, 4, 4)](
+        a.size, b.size, c.size, d.size
     ):
         var a0 = bitcast[DType.uint32, 4](a)
         var b0 = bitcast[DType.uint32, 2](b)
