@@ -39,7 +39,7 @@ from layout.layout import Layout
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_dram,
@@ -1882,7 +1882,9 @@ fn _mha_sm90[
 
             # ensure all threads have finished reading `q_smem`
             named_barrier[num_consumer_threads]()
-            copy[thread_layout=mma_thread_layout, swizzle=swizzle](
+            copy_local_to_shared[
+                thread_layout=mma_thread_layout, swizzle=swizzle
+            ](
                 accum_smem_warp_tile.vectorize[1, 2](),
                 output_reg_tile.vectorize[1, 2]().transpose(),
             )

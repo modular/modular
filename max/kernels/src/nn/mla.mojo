@@ -53,7 +53,7 @@ from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
     ThreadScope,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram_async,
     copy_local_to_dram,
@@ -1074,7 +1074,9 @@ fn mla_decoding_single_batch[
             Int(warp_y), Int(warp_x)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -2468,7 +2470,9 @@ fn mla_prefill_single_batch[
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, depth](
             Int(warp_y), Int(warp_x)
         )
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )

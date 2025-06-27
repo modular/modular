@@ -7385,7 +7385,7 @@ fn copy_dram_to_local[
 
 
 @always_inline("nodebug")
-fn copy[
+fn copy_local_to_shared[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
     thread_scope: ThreadScope = ThreadScope.BLOCK,

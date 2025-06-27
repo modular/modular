@@ -40,7 +40,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_dram,
@@ -652,7 +652,10 @@ fn multistage_dual_gemm_kernel[
             .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             c0_reg_tile.vectorize[1, 2]().transpose(),
         )

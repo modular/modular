@@ -30,7 +30,7 @@ from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
     binary_op_type,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
@@ -709,7 +709,7 @@ fn copy_local_to_sram_kernel[
         .fill(0)
     )
 
-    copy[
+    copy_local_to_shared[
         thread_layout = Layout.row_major(
             WM // simd_size_row // MMA_M, WN // simd_size_col // MMA_N
         )

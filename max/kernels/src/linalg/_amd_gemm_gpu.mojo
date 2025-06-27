@@ -37,7 +37,7 @@ from layout.layout_tensor import (
     UNKNOWN_VALUE,
     ThreadScope,
     _tile_is_masked,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_local_to_dram,
@@ -209,7 +209,7 @@ struct MMATileBuffers[
 
         Uses structured thread cooperation to efficiently transfer data.
         """
-        copy[
+        copy_local_to_shared[
             thread_layout=thread_layout,
             swizzle=swizzle,
             thread_scope = ThreadScope.BLOCK,

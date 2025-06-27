@@ -44,7 +44,7 @@ from layout.element import Element
 from layout.layout_tensor import (
     LayoutTensorIter,
     ThreadScope,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_local_to_dram,
@@ -250,7 +250,9 @@ fn mma[
 
         var b_smem_tile = b_smem_iter.next_unsafe(0)[]
 
-        copy[thread_layout=thread_layout_b, swizzle=swizzle, row_major=True](
+        copy_local_to_shared[
+            thread_layout=thread_layout_b, swizzle=swizzle, row_major=True
+        ](
             b_smem_tile.vectorize[1, simd_width](),
             b_load_tile[i % 2].vectorize[1, simd_width](),
         )
@@ -1660,7 +1662,7 @@ fn copy_fragment_to_smem[
                     (n_mma + i * num_n_mmas_per_bk) * num_m_mmas + m_mma,
                     0,
                 )
-                copy[thread_layout=warp_layout](
+                copy_local_to_shared[thread_layout=warp_layout](
                     p_smem_mma_tile.vectorize[
                         fragment_layout.shape[0].value(),
                         fragment_layout.shape[1].value(),
