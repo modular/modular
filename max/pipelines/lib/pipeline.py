@@ -362,6 +362,7 @@ class PipelineModel(ABC, Generic[T]):
 
     def compute_log_probabilities(
         self,
+        session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
         next_tokens: Tensor,
@@ -371,6 +372,7 @@ class PipelineModel(ABC, Generic[T]):
         """Optional method that can be overridden to compute log probabilities.
 
         Args:
+            session: Inference session to compute log probabilities within.
             model_inputs: Inputs to the model returned by
                 `prepare_*_token_inputs()`.
             model_outputs: Outputs returned by `execute()`.
@@ -1019,6 +1021,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     tracer.next("compute_log_probabilities")
                     batch_log_probabilities.append(
                         self._pipeline_model.compute_log_probabilities(
+                            self.session,
                             curr_step_inputs,
                             model_outputs,
                             new_tokens,

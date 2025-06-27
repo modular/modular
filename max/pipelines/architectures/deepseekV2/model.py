@@ -408,6 +408,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
 
     def compute_log_probabilities(
         self,
+        session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
         next_tokens: Tensor,
