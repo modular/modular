@@ -71,3 +71,20 @@ kgen.generator export @test(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1>
 
   kgen.return
 }
+
+// CHECK-LABEL: @concretize_variadic_splaut(
+// CHECK-SAME: %arg0: !kgen.struct<(f32, f32, f32)>,
+// CHECK-SAME: %arg1: !llvm.struct<(f32, f32, f32, f32, f32)>)
+// CHECK-SAME: -> (!kgen.struct<(f32, f32, f32)>, !llvm.struct<(f32, f32, f32, f32, f32)>) {
+kgen.generator export @concretize_variadic_splaut(
+    %kgen_struct: !kgen.struct<(!kgen.variadic_splat<f32, 3>)>,
+    %llvm_struct: !llvm.struct<(!kgen.variadic_splat<f32, 5>)>) ->
+    (!kgen.struct<(!kgen.variadic_splat<f32, 3>)>,
+     !llvm.struct<(!kgen.variadic_splat<f32, 5>)>)
+{
+  // CHECK-NEXT: kgen.return %arg0, %arg1 :
+  // CHECK-SAME: !kgen.struct<(f32, f32, f32)>, !llvm.struct<(f32, f32, f32, f32, f32)>
+  kgen.return %kgen_struct, %llvm_struct :
+   !kgen.struct<(!kgen.variadic_splat<f32, 3>)>,
+   !llvm.struct<(!kgen.variadic_splat<f32, 5>)>
+}

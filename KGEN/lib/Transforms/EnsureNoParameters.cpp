@@ -27,12 +27,23 @@ static LogicalResult legalizeOp(Operation *op) {
   bool isFailure = false;
 
   // FuncTypeGeneratorType must not be parameterized anymore.
-  legalizer.addWalk([&](FuncTypeGeneratorType sig) {
-    if (!sig.getInputParamTypes().empty()) {
+  legalizer.addWalk([&](Type type) {
+    // At this point `!kgen.variadic_splat` should have been concretized.
+    if (isa<VariadicSplatType>(type)) {
       mlir::emitError(op->getLoc(),
-                      "parameterized functions cannot be used at runtime");
-      isFailure = true;
-      return WalkResult::skip();
+                      "`!kgen.variadic_splat` was not concretized. "
+                      "Concretization is only allowed within `!kgen.struct` or "
+                      "`!llvm.struct`");
+      return WalkResult::interrupt();
+    }
+
+    if (auto sig = dyn_cast<FuncTypeGeneratorType>(type)) {
+      if (!sig.getInputParamTypes().empty()) {
+        mlir::emitError(op->getLoc(),
+                        "parameterized functions cannot be used at runtime");
+        isFailure = true;
+        return WalkResult::skip();
+      }
     }
     return WalkResult::advance();
   });

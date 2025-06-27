@@ -856,6 +856,7 @@ modular_cc_library(
         "//Support:DebugInfoDialect",
         "//Support:IPInt",
         "//Support:MDialect",
+        "@llvm-project//mlir:LLVMDialect",
         "@llvm-project//mlir:Transforms",
     ],
 )

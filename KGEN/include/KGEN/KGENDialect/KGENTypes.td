@@ -817,4 +817,40 @@ def KGEN_DeferredType : KGENType<"Deferred", "deferred",
   let assemblyFormat = "";
 }
 
+//===----------------------------------------------------------------------===//
+// VariadicSplatType
+//===----------------------------------------------------------------------===//
+
+def KGEN_VariadicSplatType : KGENType<"VariadicSplat", "variadic_splat"> {
+  let summary = "Spalt the element type specified number of times";
+  let description = [{
+    The `!kgen.variadic_splat` type represents deferred type that splats
+    element type specified number of times. The type cannot be used standalone
+    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
+
+    ```mlir
+    !kgen.struct<(!kgen.variadic_splat<index, 3>)>
+    !llvm.struct<(!kgen.variadic_splat<index, 5>)>
+    ```
+
+    will be concretized to
+
+    ```mlir
+    !kgen.struct<(index, index, index)>
+    !llvm.struct<(index, index, index, index, index)>
+    ```
+  }];
+
+  let parameters = (ins "Type":$elementType, "TypedAttr":$count);
+  let assemblyFormat = [{
+    `<` $elementType `,` $count `>`
+  }];
+  let extraClassDeclaration = [{
+    /// Return the count of the elementType or nullptr if count is not resolved
+    std::optional<uint64_t> getResolvedCount() const;
+  }];
+
+  let genVerifyDecl = 1;
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

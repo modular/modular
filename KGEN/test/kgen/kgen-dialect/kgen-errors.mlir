@@ -748,3 +748,18 @@ kgen.generator @closure_types(%arg0 : index) {
   } : (index), !kgen.struct<(index, index)>
   kgen.return
 }
+
+// -----
+
+// expected-error @+3 {{expected count > 0, but got -3}}
+// expected-error @+3 {{expected count > 0, but got 0}}
+kgen.generator export @concretize_variadic_splaut(
+    %kgen_struct: !kgen.struct<(!kgen.variadic_splat<f32, -3>)>,
+    %llvm_struct: !llvm.struct<(!kgen.variadic_splat<f32, 0>)>) ->
+    (!kgen.struct<(!kgen.variadic_splat<f32, -3>)>,
+     !llvm.struct<(!kgen.variadic_splat<f32, 0>)>)
+{
+  kgen.return %kgen_struct, %llvm_struct :
+   !kgen.struct<(!kgen.variadic_splat<f32, -3>)>,
+   !llvm.struct<(!kgen.variadic_splat<f32, 0>)>
+}
