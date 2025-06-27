@@ -224,7 +224,8 @@ static bool canConvertFunctionTypes(SharedState &shared, FnType actual,
   return true;
 }
 
-static bool canConvertGeneratorTypes(SharedState &shared, GeneratorType actual,
+static bool canConvertGeneratorTypes(ASTDecl &declScope, SMLoc loc,
+                                     CValue value, GeneratorType actual,
                                      GeneratorType expected) {
   // Generators with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
@@ -234,15 +235,27 @@ static bool canConvertGeneratorTypes(SharedState &shared, GeneratorType actual,
   if (actual.getInputParamTypes() != expected.getInputParamTypes())
     return false;
 
+  // If the bodies are identical, then the conversion is allowed.
+  if (actual.getBody() == expected.getBody())
+    return true;
+
   // If the body is a function, we apply custom conversion rules.
   if (auto actualFnType = dyn_cast<FnType>(actual.getBody())) {
     if (auto expectedFnType = dyn_cast<FnType>(expected.getBody())) {
-      return canConvertFunctionTypes(shared, actualFnType, expectedFnType);
+      return canConvertFunctionTypes(declScope.getShared(), actualFnType,
+                                     expectedFnType);
     }
   }
 
-  // Otherwise, the bodies must be identical.
-  return actual.getBody() == expected.getBody();
+  // Otherwise, the bodies must be convertible. This is possible if we can get
+  // the body, meaning the value must be a GeneratorAttr.
+  auto genAttr = dyn_cast_if_present<GeneratorAttr>(value.getIfPValue().get());
+  if (!genAttr)
+    return false;
+
+  SyntheticNode node(loc);
+  return IREmitter::canImplicitlyConvertToType(
+      {genAttr.getBody(), node}, ASTType(expected.getBody()), declScope);
 }
 
 static FnType getReducedFnType(FnType sig) {
@@ -1371,7 +1384,8 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     bool result = false;
     if (auto rvGeneratorType = dyn_cast<GeneratorType>(rvType))
       result =
-          canConvertGeneratorTypes(shared, rvGeneratorType, requiredGenerator);
+          canConvertGeneratorTypes(declScope, value.expr->getLoc(), value.ir,
+                                   rvGeneratorType, requiredGenerator);
     return cacheAndReturnVal(result);
   }
 
@@ -1474,7 +1488,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   // generators).
   if (auto requiredGenerator = dyn_cast<GeneratorType>(requiredType)) {
     if (auto rvGeneratorType = dyn_cast<GeneratorType>(rvType))
-      if (canConvertGeneratorTypes(shared, rvGeneratorType, requiredGenerator))
+      if (canConvertGeneratorTypes(declScope, expr->getLoc(), value,
+                                   rvGeneratorType, requiredGenerator))
         return convertGeneratorValue(value, expr, requiredGenerator, *this,
                                      dest);
   }
