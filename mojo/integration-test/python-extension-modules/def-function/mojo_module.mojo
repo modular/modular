@@ -19,43 +19,37 @@ from python.bindings import PythonModuleBuilder
 
 @export
 fn PyInit_mojo_module() -> PythonObject:
-    var b: PythonModuleBuilder
     try:
-        b = PythonModuleBuilder("mojo_module")
-    except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        var b = PythonModuleBuilder("mojo_module")
 
-    # def_function with return, raising
-    b.def_function[takes_zero_raises_returns]("takes_zero_raises_returns")
-    b.def_function[takes_one_raises_returns]("takes_one_raises_returns")
-    b.def_function[takes_two_raises_returns]("takes_two_raises_returns")
-    b.def_function[takes_three_raises_returns]("takes_three_raises_returns")
+        # def_function with return, raising
+        b.def_function[takes_zero_raises_returns]("takes_zero_raises_returns")
+        b.def_function[takes_one_raises_returns]("takes_one_raises_returns")
+        b.def_function[takes_two_raises_returns]("takes_two_raises_returns")
+        b.def_function[takes_three_raises_returns]("takes_three_raises_returns")
 
-    # def_function with return, not raising
-    b.def_function[takes_zero_returns]("takes_zero_returns")
-    b.def_function[takes_one_returns]("takes_one_returns")
-    b.def_function[takes_two_returns]("takes_two_returns")
-    b.def_function[takes_three_returns]("takes_three_returns")
+        # def_function with return, not raising
+        b.def_function[takes_zero_returns]("takes_zero_returns")
+        b.def_function[takes_one_returns]("takes_one_returns")
+        b.def_function[takes_two_returns]("takes_two_returns")
+        b.def_function[takes_three_returns]("takes_three_returns")
 
-    # def_function with no return, raising
-    b.def_function[takes_zero_raises]("takes_zero_raises")
-    b.def_function[takes_one_raises]("takes_one_raises")
-    b.def_function[takes_two_raises]("takes_two_raises")
-    b.def_function[takes_three_raises]("takes_three_raises")
+        # def_function with no return, raising
+        b.def_function[takes_zero_raises]("takes_zero_raises")
+        b.def_function[takes_one_raises]("takes_one_raises")
+        b.def_function[takes_two_raises]("takes_two_raises")
+        b.def_function[takes_three_raises]("takes_three_raises")
 
-    # def_function with no return, not raising
-    b.def_function[takes_zero]("takes_zero")
-    b.def_function[takes_one]("takes_one")
-    b.def_function[takes_two]("takes_two")
-    b.def_function[takes_three]("takes_three")
+        # def_function with no return, not raising
+        b.def_function[takes_zero]("takes_zero")
+        b.def_function[takes_one]("takes_one")
+        b.def_function[takes_two]("takes_two")
+        b.def_function[takes_three]("takes_three")
 
-    try:
         return b.finalize()
     except e:
         return abort[PythonObject](
-            String("failed to finalize Python module: ", e)
+            String("failed to create Python module: ", e)
         )
 
 

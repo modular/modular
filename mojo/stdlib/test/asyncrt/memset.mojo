@@ -16,14 +16,14 @@ from gpu.host import DeviceContext
 
 
 fn _run_memset[
-    type: DType
-](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
+    dtype: DType
+](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")
     print("_run_memset(", length, ", ", val, ")")
 
-    var in_host = ctx.enqueue_create_host_buffer[type](length)
-    var out_host = ctx.enqueue_create_host_buffer[type](length)
-    var on_dev = ctx.enqueue_create_buffer[type](length)
+    var in_host = ctx.enqueue_create_host_buffer[dtype](length)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    var on_dev = ctx.enqueue_create_buffer[dtype](length)
 
     # Initialize the input and outputs with known values.
     for i in range(length):
@@ -47,12 +47,12 @@ fn _run_memset[
 
 
 fn _run_memset_cascade[
-    type: DType
-](ctx: DeviceContext, length: Int, val: Scalar[type]) raises:
+    dtype: DType
+](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")
     print("_run_memset_cascade(", length, ", ", val, ")")
 
-    var buf = ctx.enqueue_create_buffer[type](length).enqueue_fill(val)
+    var buf = ctx.enqueue_create_buffer[dtype](length).enqueue_fill(val)
 
     with buf.map_to_host() as buf:
         for i in range(length):

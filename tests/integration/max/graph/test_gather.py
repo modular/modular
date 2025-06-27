@@ -12,7 +12,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.ops import gather
 
 
-def test_gather(session):
+def test_gather(session) -> None:
     input_shape = [3, 2]
     index_shape = [5, 1]
     axis = 0

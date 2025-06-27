@@ -24,11 +24,7 @@ from sys.ffi import c_ssize_t
 from sys.intrinsics import _unsafe_aliasing_address_to_pointer
 from compile.reflection import get_type_name
 
-# NOTE: This apparently redundant import is needed so PythonBindingsGen.cpp can
-# find the StringLiteral declaration.
-from builtin.string_literal import StringLiteral
-
-from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject
+from ._cpython import CPython, PyObjectPtr, PyObject, PyTypeObject, GILAcquired
 from .python import Python
 from .bindings import _get_type_name, lookup_py_type_object, PyMojoObject
 
@@ -158,12 +154,6 @@ struct _PyIter(Defaultable, Sized):
             return 0
         else:
             return 1
-
-
-alias PyFunction = fn (mut PythonObject, mut PythonObject) -> PythonObject
-alias PyFunctionRaising = fn (
-    mut PythonObject, mut PythonObject
-) raises -> PythonObject
 
 
 @register_passable
@@ -496,11 +486,10 @@ struct PythonObject(
         var cpython = Python().cpython()
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.
-        var state = cpython.PyGILState_Ensure()
-        if self.py_object:
-            cpython.Py_DecRef(self.py_object)
-        self.py_object = PyObjectPtr()
-        cpython.PyGILState_Release(state)
+        with GILAcquired(cpython):
+            if self.py_object:
+                cpython.Py_DecRef(self.py_object)
+            self.py_object = PyObjectPtr()
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -1232,7 +1221,7 @@ struct PythonObject(
         Raises:
             If the object doesn't implement the `__ne__` method, or if it fails.
         """
-        return self.__getattr__("__ne__")(rhs).__bool__()
+        return self.__getattr__("__ne__")(rhs)
 
     fn __pos__(self) raises -> PythonObject:
         """Positive.

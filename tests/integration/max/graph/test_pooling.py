@@ -20,7 +20,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
         ((1, 6, 15, 1), (3, 2), (3, 2), True),
     ],
 )
-def test_max_pool(session, input_shape, kernel_size, stride, ceil_mode):
+def test_max_pool(session, input_shape, kernel_size, stride, ceil_mode) -> None:
     device_ref = DeviceRef.from_device(session.devices[0])
     torch_device = "cpu"
 
@@ -80,7 +80,7 @@ def test_avg_pool(
     padding,
     ceil_mode,
     count_boundary,
-):
+) -> None:
     device_ref = DeviceRef.from_device(session.devices[0])
     torch_device = "cpu"
 

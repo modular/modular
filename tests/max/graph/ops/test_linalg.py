@@ -41,7 +41,7 @@ def assert_matmul_properties(
     graph: Graph,
     expected_output_shape: ShapeLike,
     dtype: Optional[DType] = None,
-):
+) -> None:
     """Asserts that the graph contains a matmul, has the expected shape and
     dtype.
     """

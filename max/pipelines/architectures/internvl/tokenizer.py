@@ -260,7 +260,7 @@ class InternVLProcessor:
 
     def __init__(
         self, tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast, config
-    ):
+    ) -> None:
         self.tokenizer = tokenizer
         self.config = config
 

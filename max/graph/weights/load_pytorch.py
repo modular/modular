@@ -38,7 +38,7 @@ class TensorInfo:
 
 
 class WeightUnpickler(pickle.Unpickler):
-    def __init__(self, pkl_file, zip_file):
+    def __init__(self, pkl_file, zip_file) -> None:
         super().__init__(pkl_file)
         self.zip_file = zip_file
 
@@ -84,7 +84,7 @@ class PytorchWeights:
         tensor_infos: Optional[dict[str, Any]] = None,
         prefix: str = "",
         allocated=None,
-    ):
+    ) -> None:
         if torch is None:
             raise ImportError(
                 "Unable to import torch. Please make sure that PyTorch is"

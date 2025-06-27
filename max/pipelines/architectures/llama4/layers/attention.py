@@ -81,7 +81,7 @@ class _Llama4TextAttention(Module):
         use_qk_norm: bool = False,
         qk_norm_eps: float = 1e-6,
         local_window_size: int = 8192,
-    ):
+    ) -> None:
         """Initializes the attention layer.
 
         Args:
@@ -308,7 +308,7 @@ class _Llama4TextAttention(Module):
 class _DistributedLlama4TextAttention(_Llama4TextAttention):
     """Distributed implementation of the Llama4 text attention layer."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         if not self.devices or len(self.devices) < 2:
             raise ValueError(

@@ -28,7 +28,7 @@ def _rotate_seed(seed: TensorValue):
     return seed + 1
 
 
-def assert_scalar(value: TensorValueLike):
+def assert_scalar(value: TensorValueLike) -> None:
     if isinstance(value, (np.ndarray, TensorValue)) and value.shape:
         raise ValueError("Expected a scalar value")
 

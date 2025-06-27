@@ -19,12 +19,12 @@ from utils.numerics import get_accum_type
 
 @always_inline
 fn cumsum[
-    type: DType,
+    dtype: DType,
     exclusive: Bool,
     reverse: Bool,
 ](
-    output: LayoutTensor[mut=True, type, **_],
-    input: LayoutTensor[type, **_],
+    output: LayoutTensor[mut=True, dtype, **_],
+    input: LayoutTensor[dtype, **_],
     axis: Int,
 ):
     """
@@ -35,7 +35,7 @@ fn cumsum[
     normal or reverse (direction along a given axis).
 
     Parameters:
-        type: Type of the input and output tensors.
+        dtype: Type of the input and output tensors.
         exclusive: If set to True, return exclusive sum (top element not included).
         reverse: If set to True, perform cumsum operation in reverse direction.
 
@@ -48,8 +48,8 @@ fn cumsum[
         input.rank == output.rank, "input and output should have the same rank."
     ]()
 
-    alias accum_type = DType.float64 if type is DType.float32 else get_accum_type[
-        type
+    alias accum_type = DType.float64 if dtype is DType.float32 else get_accum_type[
+        dtype
     ]()
     debug_assert(
         -input.rank <= axis < input.rank,
@@ -119,7 +119,7 @@ fn cumsum[
 
                 @parameter
                 if exclusive:
-                    output_data[index] = accumulator.cast[type]()
+                    output_data[index] = accumulator.cast[dtype]()
                     accumulator = (
                         accumulator + input_data[index][0].cast[accum_type]()
                     )
@@ -127,4 +127,4 @@ fn cumsum[
                     accumulator = (
                         accumulator + input_data[index][0].cast[accum_type]()
                     )
-                    output_data[index] = accumulator.cast[type]()
+                    output_data[index] = accumulator.cast[dtype]()

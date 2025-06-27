@@ -119,7 +119,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     alias kernel = _concat_inner_most_single_dim[
         rank=rank,
-        type=dtype,
+        dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
         epilogue_fn = OptionalReg[elementwise_epilogue_type](

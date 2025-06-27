@@ -59,7 +59,7 @@ logger = logging.getLogger("max.pipelines")
 class SpeculativeDecodingMetrics:
     """Metrics tracker for speculative decoding performance."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize metrics counters."""
         self.bonus_tokens_used = 0
         self.draft_tokens_accepted = 0
@@ -73,7 +73,7 @@ class SpeculativeDecodingMetrics:
         draft_tokens_accepted: int,
         bonus_tokens_used: int,
         acceptance_lengths: list[int],
-    ):
+    ) -> None:
         """Update metrics with results from a batch.
 
         Args:
@@ -458,30 +458,12 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         model_outputs: ModelOutputs,
         prev_tokens: Tensor,
         prev_logits: Tensor,
+        top_k: Tensor,
+        max_k: Tensor,
+        temperature: Tensor,
+        top_p: Tensor,
+        seed: Tensor,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        top_k_np = np.array(
-            [context.sampling_params.top_k for context in batch], dtype=np.int64
-        )
-        top_k = Tensor.from_numpy(top_k_np).to(self.draft_devices[0])
-        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
-        max_k = Tensor.from_numpy(max_k_np)
-        temperature_np = np.array(
-            [context.sampling_params.temperature for context in batch],
-            dtype=np.float32,
-        )
-        temperature = Tensor.from_numpy(temperature_np).to(
-            self.draft_devices[0]
-        )
-        top_p_np = np.array(
-            [context.sampling_params.top_p for context in batch],
-            dtype=np.float32,
-        )
-        top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
-        seed_np = np.array(
-            [context.sampling_params.seed for context in batch], dtype=np.uint64
-        )
-        seed = Tensor.from_numpy(seed_np).to(self.draft_devices[0])
-
         graph_inputs = [
             model_outputs.logits,
             prev_tokens,
@@ -510,6 +492,30 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             return_n_logits=1,
             is_draft=True,
         )
+
+        # Create sampling parameters once for the entire batch
+        top_k_np = np.array(
+            [context.sampling_params.top_k for context in batch], dtype=np.int64
+        )
+        top_k = Tensor.from_numpy(top_k_np).to(self.draft_devices[0])
+        max_k_np = np.array(np.max(top_k_np), dtype=np.int64)
+        max_k = Tensor.from_numpy(max_k_np)
+        temperature_np = np.array(
+            [context.sampling_params.temperature for context in batch],
+            dtype=np.float32,
+        )
+        temperature = Tensor.from_numpy(temperature_np).to(
+            self.draft_devices[0]
+        )
+        top_p_np = np.array(
+            [context.sampling_params.top_p for context in batch],
+            dtype=np.float32,
+        )
+        top_p = Tensor.from_numpy(top_p_np).to(self.draft_devices[0])
+        seed_np = np.array(
+            [context.sampling_params.seed for context in batch], dtype=np.uint64
+        )
+        seed = Tensor.from_numpy(seed_np).to(self.draft_devices[0])
 
         # Generate tensor for generated tokens.
         generated_tokens = Tensor.zeros(
@@ -541,7 +547,15 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             # Sample next_token
             new_tokens, new_generated_tokens, new_generated_logits = (
                 self.sample_draft_logits(
-                    batch, model_outputs, generated_tokens, generated_logits
+                    batch,
+                    model_outputs,
+                    generated_tokens,
+                    generated_logits,
+                    top_k,
+                    max_k,
+                    temperature,
+                    top_p,
+                    seed,
                 )
             )
             generated_tokens = new_generated_tokens
@@ -693,7 +707,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         """
         return self._metrics
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Log metrics when the pipeline is destroyed."""
         if (
             hasattr(self, "_metrics")

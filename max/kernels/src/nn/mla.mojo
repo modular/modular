@@ -148,7 +148,7 @@ fn flare_mla_decoding[
         not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
     ]()
     constrained[
-        q.type == cache_t.type == output.type,
+        q.dtype == cache_t.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
 
@@ -346,25 +346,26 @@ fn flare_mla_decoding_dispatch[
     # num warps in M and N, multiplied by warp size.
     alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-    alias accum_type = get_accum_type[q.type]()
+    alias accum_type = get_accum_type[q.dtype]()
     alias num_pipeline_stages = 6
     # smem for q
-    var shared_mem_bytes = BM * depth * sizeof[q.type]()
+    var shared_mem_bytes = BM * depth * sizeof[q.dtype]()
 
-    shared_mem_bytes += BN * depth * sizeof[k_t.type]()
+    shared_mem_bytes += BN * depth * sizeof[k_t.dtype]()
 
     alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
     # smem for p and warp_scratch
     shared_mem_bytes += (
-        BM * BN * sizeof[k_t.type]() + 2 * num_warps * BM * sizeof[accum_type]()
+        BM * BN * sizeof[k_t.dtype]()
+        + 2 * num_warps * BM * sizeof[accum_type]()
     )
     alias num_blocks_y = num_heads // BM
 
     alias kernel = mla_decoding[
-        q.type,
+        q.dtype,
         k_t,
-        output.type,
+        output.dtype,
         mask_t,
         score_mod_t,
         BM=BM,
@@ -564,7 +565,7 @@ fn mla_decoding_single_batch[
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
-    alias k_type = k_t.type
+    alias k_type = k_t.dtype
     constrained[q_type == k_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -1166,11 +1167,11 @@ fn flare_mla_prefill[
     """
     constrained[rank == 3, "only support ragged inputs"]()
     constrained[
-        q.type == cache_t.type == output.type,
+        q.dtype == cache_t.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -1274,11 +1275,11 @@ fn flare_mla_prefill[
 ) raises:
     constrained[rank == 3, "only support ragged inputs"]()
     constrained[
-        q.type == k.type == v.type == k_rope.type == output.type,
+        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
-        q.type is DType.float32 or q.type.is_half_float(),
+        q.dtype is DType.float32 or q.dtype.is_half_float(),
         "Only support single and half precision.",
     ]()
 
@@ -1307,7 +1308,7 @@ fn flare_mla_prefill[
         var v_operand = RaggedMHAOperand(v, cache_row_offsets)
         var k_rope_operand = NDBufferMHAOperand(k_rope)
 
-        alias output_type = output.type
+        alias output_type = output.dtype
         alias kv_num_heads = k_rope.shape.get[2]()
         alias cache_depth = k_rope.shape.get[3]()
         alias q_depth = q_shape.get[rank - 1]()  # hard code for now
@@ -1634,9 +1635,9 @@ fn mla_prefill_single_batch[
     batch_idx: Int,
 ):
     """MLA for encoding where seqlen > 1."""
-    alias k_type = k_t.type
-    alias v_type = v_t.type
-    alias k_rope_type = k_rope_t.type
+    alias k_type = k_t.dtype
+    alias v_type = v_t.dtype
+    alias k_rope_type = k_rope_t.dtype
     constrained[
         q_type == k_type and k_type == v_type and k_type == k_rope_type
     ]()

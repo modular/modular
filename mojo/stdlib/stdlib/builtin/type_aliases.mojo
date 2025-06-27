@@ -56,7 +56,13 @@ struct Origin[mut: Bool]:
         `>`,
     ]
 
-    alias cast_from = _lit_mut_cast[result_mutable=mut]
+    alias cast_from[o: Origin] = __mlir_attr[
+        `#lit.origin.mutcast<`,
+        o._mlir_origin,
+        `> : !lit.origin<`,
+        mut.value,
+        `>`,
+    ]
     """Cast an existing Origin to be of the specified mutability.
 
     This is a low-level way to coerce Origin mutability. This should be used
@@ -75,12 +81,12 @@ struct Origin[mut: Bool]:
     struct Container[mut: Bool, //, origin: Origin[mut]]:
         var data: Int
 
-        fn imm_borrow(self) -> Container[ImmutableOrigin.cast_from[origin].result]:
-            # ...
+        fn imm_borrow(self) -> Container[ImmutableOrigin.cast_from[origin]]:
+            pass
     ```
     """
 
-    alias empty = Self.cast_from[__origin_of()].result
+    alias empty = Self.cast_from[__origin_of()]
     """An empty `__origin_of()` of the given mutability. The empty origin
     is guaranteed not to alias any existing origins."""
 
@@ -104,17 +110,3 @@ struct Origin[mut: Bool]:
             mlir_origin: The raw MLIR origin value.
         """
         self._mlir_origin = mlir_origin
-
-
-struct _lit_mut_cast[
-    mut: Bool, //,
-    result_mutable: Bool,
-    operand: Origin[mut],
-]:
-    alias result = __mlir_attr[
-        `#lit.origin.mutcast<`,
-        operand._mlir_origin,
-        `> : !lit.origin<`,
-        result_mutable.value,
-        `>`,
-    ]

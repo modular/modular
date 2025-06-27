@@ -19,7 +19,7 @@ input_types = st.shared(tensor_types())
 )
 def test_cumsum(
     input_type: TensorType, axis: int, exclusive: bool, reverse: bool
-):
+) -> None:
     with Graph("cumsum", input_types=[input_type]) as graph:
         out = ops.cumsum(
             graph.inputs[0], axis=axis, exclusive=exclusive, reverse=reverse
@@ -30,7 +30,7 @@ def test_cumsum(
 @given(input_type=input_types, axis=..., exclusive=..., reverse=...)
 def test_cumsum__invalid_axis(
     input_type: TensorType, axis: int, exclusive: bool, reverse: bool
-):
+) -> None:
     assume(not -input_type.rank <= axis < input_type.rank)
     with Graph("cumsum", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):

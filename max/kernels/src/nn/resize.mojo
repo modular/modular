@@ -133,15 +133,15 @@ fn resize_nearest_neighbor[
     coordinate_transformation_mode: CoordinateTransformationMode,
     round_mode: RoundMode,
     rank: Int,
-    type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[mut=True, type, rank]) raises:
+    dtype: DType,
+](input: NDBuffer[dtype, rank], output: NDBuffer[mut=True, dtype, rank]) raises:
     var scales = StaticTuple[Float32, rank]()
     for i in range(rank):
         scales[i] = (output.dim(i) / input.dim(i)).cast[DType.float32]()
 
     @parameter
     @always_inline
-    fn round[type: DType](val: Scalar[type]) -> Scalar[type]:
+    fn round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
         @parameter
         if round_mode == RoundMode.HalfDown:
             return ceil(val - 0.5)
@@ -207,15 +207,15 @@ fn interpolate_point_1d[
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
     rank: Int,
-    type: DType,
+    dtype: DType,
     interpolation_mode: InterpolationMode,
 ](
     interpolator: Interpolator[interpolation_mode],
     dim: Int,
     out_coords: IndexList[rank],
     scale: Float32,
-    input: NDBuffer[type, rank],
-    output: NDBuffer[mut=True, type, rank],
+    input: NDBuffer[dtype, rank],
+    output: NDBuffer[mut=True, dtype, rank],
 ):
     var center = (
         coord_transform[coordinate_transformation_mode](
@@ -228,13 +228,13 @@ fn interpolate_point_1d[
     var xmin = max(0, Int(center - support + 0.5))
     var xmax = min(input.dim(dim), Int(center + support + 0.5))
     var in_coords = out_coords
-    var sum = Scalar[type](0)
-    var acc = Scalar[type](0)
+    var sum = Scalar[dtype](0)
+    var acc = Scalar[dtype](0)
     var ss = 1 / filter_scale
     for k in range(xmax - xmin):
         in_coords[dim] = k + xmin
         var dist_from_center = ((k + xmin + Float32(0.5)) - center) * ss
-        var filter_coeff = interpolator.filter(dist_from_center).cast[type]()
+        var filter_coeff = interpolator.filter(dist_from_center).cast[dtype]()
         acc += input[in_coords] * filter_coeff
         sum += filter_coeff
 
@@ -247,8 +247,8 @@ fn resize_linear[
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
     rank: Int,
-    type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[mut=True, type, rank]):
+    dtype: DType,
+](input: NDBuffer[dtype, rank], output: NDBuffer[mut=True, dtype, rank]):
     """Resizes input to output shape using linear interpolation.
 
     Does not use anti-aliasing filter for downsampling (coming soon).
@@ -258,7 +258,7 @@ fn resize_linear[
         antialias: Whether or not to use an antialiasing linear/cubic filter, which when downsampling, uses
             more points to avoid aliasing artifacts. Effectively stretches the filter by a factor of 1 / scale.
         rank: Rank of the input and output.
-        type: Type of input and output.
+        dtype: Type of input and output.
 
     Args:
         input: The input to be resized.
@@ -276,8 +276,8 @@ fn _resize[
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
     rank: Int,
-    type: DType,
-](input: NDBuffer[type, rank], output: NDBuffer[mut=True, type, rank]):
+    dtype: DType,
+](input: NDBuffer[dtype, rank], output: NDBuffer[mut=True, dtype, rank]):
     if input.get_shape() == output.get_shape():
         return memcpy(output.data, input.data, input.size())
     var scales = StaticTuple[Float32, rank]()
@@ -292,16 +292,16 @@ fn _resize[
     var interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.data
-    var out_ptr = UnsafePointer[Scalar[type]]()
+    var out_ptr = UnsafePointer[Scalar[dtype]]()
     var using_tmp1 = False
-    var tmp_buffer1 = UnsafePointer[Scalar[type]]()
-    var tmp_buffer2 = UnsafePointer[Scalar[type]]()
+    var tmp_buffer1 = UnsafePointer[Scalar[dtype]]()
+    var tmp_buffer2 = UnsafePointer[Scalar[dtype]]()
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
         out_ptr = output.data
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
-        tmp_buffer1 = UnsafePointer[Scalar[type]].alloc(
+        tmp_buffer1 = UnsafePointer[Scalar[dtype]].alloc(
             tmp_dims.flattened_length()
         )
         out_ptr = tmp_buffer1
@@ -310,7 +310,7 @@ fn _resize[
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
-        tmp_buffer2 = UnsafePointer[Scalar[type]].alloc(
+        tmp_buffer2 = UnsafePointer[Scalar[dtype]].alloc(
             tmp_dims.flattened_length()
         )
     var in_shape = input.get_shape()
@@ -323,8 +323,8 @@ fn _resize[
         var resize_dim = resize_dims[dim_idx]
         out_shape[resize_dim] = output.dim(resize_dim)
 
-        var in_buf = NDBuffer[type, rank](in_ptr, in_shape)
-        var out_buf = NDBuffer[type, rank](out_ptr, out_shape)
+        var in_buf = NDBuffer[dtype, rank](in_ptr, in_shape)
+        var out_buf = NDBuffer[dtype, rank](out_ptr, out_shape)
 
         var num_rows = out_buf.num_elements() // out_shape[resize_dim]
         for row_idx in range(num_rows):

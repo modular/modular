@@ -92,7 +92,7 @@ fn _print_svg_impl[
             "Layout 0 should have the largest second dimension",
         )
 
-    var colors = List[StaticString]("#FFFFFF", "#93C572", "#ECFFDC")
+    var colors = List[StaticString]("#FFFFFF", "#4A90E2", "#E8F0FF")
 
     var cell_size = 80
     var margin = 40
@@ -108,35 +108,33 @@ fn _print_svg_impl[
         height,
         '" xmlns="http://www.w3.org/2000/svg">\n',
     )
-
-    # Print layout legends
+    # Add white background
     writer.write(
-        '<text x="',
-        margin,
-        '" y="',
-        margin + 20,
-        '" fill="',
-        colors[0],
-        '" opacity="0.4">Layout: ',
-        tensor_base.layout,
-        " ",
-        tensor_base.element_layout,
-        "</text>\n",
+        '<rect width="100%" height="100%" fill="white"/>\n',
     )
-    if len(tensors) > 0:
-        writer.write(
-            '<text x="',
-            margin,
-            '" y="',
-            margin + 40,
-            '" fill="',
-            colors[1],
-            '" opacity="0.4">Layout: ',
-            tensors[0].layout,
-            " ",
-            tensors[0].element_layout,
-            "</text>\n",
-        )
+    # Define enhanced shadow filters
+    writer.write(
+        "<defs>\n",
+        (
+            '  <filter id="cellShadow" x="-20%" y="-20%" width="140%"'
+            ' height="140%">\n'
+        ),
+        (
+            '    <feDropShadow dx="2" dy="2" stdDeviation="3"'
+            ' flood-color="#000000" flood-opacity="0.15"/>\n'
+        ),
+        "  </filter>\n",
+        (
+            '  <filter id="highlightShadow" x="-20%" y="-20%" width="140%"'
+            ' height="140%">\n'
+        ),
+        (
+            '    <feDropShadow dx="3" dy="3" stdDeviation="4" opacity="0.6"'
+            ' flood-color="#2A5FC7" flood-opacity="0.3"/>\n'
+        ),
+        "  </filter>\n",
+        "</defs>\n",
+    )
 
     var map = Dict[Int, IntTuple]()
     var start_y = margin + 60  # Additional space for legends
@@ -169,13 +167,23 @@ fn _print_svg_impl[
                 writer.write(color_map.value()(idx, 0))
             else:
                 writer.write(colors[0])
-            writer.write('" opacity="0.2" stroke="black"/>\n')
             writer.write(
-                '<text font-size="small" x="',
+                '" opacity="0.6" stroke="#E1E8ED" stroke-width="1"'
+                ' filter="url(#cellShadow)"/>\n'
+            )
+            writer.write(
+                (
+                    '<text font-family="-apple-system, BlinkMacSystemFont,'
+                    ' Segoe UI, Roboto, Arial, sans-serif" font-size="16"'
+                    ' font-weight="600" x="'
+                ),
                 x + cell_size / 2,
                 '" y="',
-                y + cell_size / 2 + 20,
-                '" dominant-baseline="middle" text-anchor="middle">',
+                y + cell_size / 2 + 5,
+                (
+                    '" dominant-baseline="middle" text-anchor="middle"'
+                    ' fill="#2C3E50">'
+                ),
                 idx,
             )
 
@@ -220,12 +228,18 @@ fn _print_svg_impl[
             cell_size,
             '" fill="',
             color,
-            '" opacity="0.2" stroke="black"/>\n'
-            + '<text font-size="large" x="',
+            '" opacity="0.6" stroke="#2A5FC7" stroke-width="2"'
+            ' filter="url(#highlightShadow)"/>\n'
+            + '<text font-family="-apple-system, BlinkMacSystemFont, Segoe UI,'
+            ' Roboto, Arial, sans-serif" font-size="16"'
+            ' font-weight="700" x="',
             x + cell_size / 2,
             '" y="',
-            y + cell_size / 2,
-            '" dominant-baseline="middle" text-anchor="middle">T',
+            y + 15,
+            (
+                '" dominant-baseline="middle" text-anchor="middle" fill="white"'
+                ' text-shadow="0 1px 2px rgba(0,0,0,0.7)">T'
+            ),
             t,
             " V",
             element_idx,
@@ -259,9 +273,7 @@ fn _print_svg_impl[
                             var y = start_y + orig_pos[0].value() * cell_size
                             var color = color_map.value()(
                                 t, element_idx
-                            ) if color_map else String(
-                                colors[orig_pos[0].value() % 2 + 1]
-                            )
+                            ) if color_map else String(colors[1])
                             draw_element(x, y, color, t, element_idx, writer)
                             element_idx += 1
         else:
@@ -279,13 +291,11 @@ fn _print_svg_impl[
                     var y = start_y + orig_pos[0].value() * cell_size
                     var color = color_map.value()(
                         t, element_idx
-                    ) if color_map else String(
-                        colors[orig_pos[0].value() % 2 + 1]
-                    )
+                    ) if color_map else String(colors[1])
                     draw_element(x, y, color, t, element_idx, writer)
                     element_idx += 1
 
-    # Draw row labels
+    # Draw row labels with improved typography
     for i in range(tensor_base.layout[0].size()):
         var y = start_y + i * cell_size + cell_size / 2
         writer.write(
@@ -295,13 +305,15 @@ fn _print_svg_impl[
             y,
             (
                 '" dominant-baseline="middle" text-anchor="middle"'
-                ' font-family="monospace" font-size="larger">'
+                ' font-family="-apple-system, BlinkMacSystemFont, Segoe UI,'
+                ' Roboto, Arial, sans-serif" font-size="20" font-weight="600"'
+                ' fill="#34495E">'
             ),
             i,
             "</text>\n",
         )
 
-    # Draw column labels
+    # Draw column labels with improved typography
     for j in range(tensor_base.layout[1].size()):
         var x = margin + text_margin + j * cell_size + cell_size / 2
         writer.write(
@@ -311,7 +323,9 @@ fn _print_svg_impl[
             start_y - text_margin / 2,
             (
                 '" dominant-baseline="middle" text-anchor="middle"'
-                ' font-family="monospace" font-size="larger">'
+                ' font-family="-apple-system, BlinkMacSystemFont, Segoe UI,'
+                ' Roboto, Arial, sans-serif" font-size="20" font-weight="600"'
+                ' fill="#34495E">'
             ),
             j,
             "</text>\n",

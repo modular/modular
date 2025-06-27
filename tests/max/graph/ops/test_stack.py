@@ -20,7 +20,7 @@ from max.graph import DeviceRef, Graph, StaticDim, TensorType, ops
     stack_size=st.integers(min_value=1, max_value=20),
     axis=new_axes(st.shared(tensor_types(), key="type")),
 )
-def test_stack(type: TensorType, stack_size: int, axis: int):
+def test_stack(type: TensorType, stack_size: int, axis: int) -> None:
     with Graph("stack", input_types=[type] * stack_size) as graph:
         out = ops.stack(graph.inputs, axis)
         target_shape = list(type.shape)
@@ -31,7 +31,7 @@ def test_stack(type: TensorType, stack_size: int, axis: int):
         graph.output(out)
 
 
-def test_stack_error_with_empty_list():
+def test_stack_error_with_empty_list() -> None:
     with Graph("stack", input_types=[]) as graph:
         with pytest.raises(
             ValueError, match="Expected at least one value to stack"
@@ -39,7 +39,7 @@ def test_stack_error_with_empty_list():
             ops.stack(graph.inputs)
 
 
-def test_stack_error_with_different_ranks():
+def test_stack_error_with_different_ranks() -> None:
     with Graph(
         "stack",
         input_types=[
@@ -57,7 +57,7 @@ def test_stack_error_with_different_ranks():
             ops.stack(graph.inputs)
 
 
-def test_stack_error_with_different_dtypes():
+def test_stack_error_with_different_dtypes() -> None:
     with Graph(
         "stack",
         input_types=[
@@ -73,7 +73,7 @@ def test_stack_error_with_different_dtypes():
             ops.stack(graph.inputs)
 
 
-def test_stack_error_with_different_devices():
+def test_stack_error_with_different_devices() -> None:
     with Graph(
         "stack",
         input_types=[
@@ -105,7 +105,7 @@ shared_static_dim = st.shared(static_dims())
 )
 def test_stack_error_with_many_different_shapes(
     graph_builder, input_types: list[TensorType]
-):
+) -> None:
     # Using a list comprehension to check if there are different ranks
     assume(len(set(len(t.shape) for t in input_types)) > 1)
     with graph_builder(input_types=input_types) as graph:
@@ -121,7 +121,7 @@ def test_stack_error_with_many_different_shapes(
 )
 def test_stack_error_with_many_different_dtypes(
     graph_builder, x_type: TensorType, y_type: TensorType
-):
+) -> None:
     assume(x_type.dtype != y_type.dtype)
     with graph_builder(input_types=[x_type, y_type]) as graph:
         with pytest.raises(
@@ -149,7 +149,7 @@ def invalid_axes(rank: int):
 )
 def test_stack_error_with_axis_out_of_bounds(
     graph_builder, base_type: TensorType, invalid_axis: int
-):
+) -> None:
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="Axis out of range"):
             ops.stack([graph.inputs[0]], axis=invalid_axis)

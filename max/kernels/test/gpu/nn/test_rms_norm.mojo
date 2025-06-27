@@ -22,42 +22,42 @@ from utils.index import Index, IndexList
 
 
 fn compute_rms[
-    type: DType
-](data: NDBuffer[type, 1], size: Int, eps: Scalar[type]) -> Scalar[type]:
-    var sum_of_squares = Scalar[type]()
+    dtype: DType
+](data: NDBuffer[dtype, 1], size: Int, eps: Scalar[dtype]) -> Scalar[dtype]:
+    var sum_of_squares = Scalar[dtype]()
     for i in range(size):
         sum_of_squares += data[i] * data[i]
-    return sqrt((sum_of_squares / len(data)) + eps).cast[type]()
+    return sqrt((sum_of_squares / len(data)) + eps).cast[dtype]()
 
 
 fn run_rms_norm_gpu[
-    type: DType, rank: Int
+    dtype: DType, rank: Int
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
 
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[type]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[type]].alloc(cols)
+    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
+    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(cols)
 
     for i in range(rows * cols):
-        var val = Scalar[type](i)
+        var val = Scalar[dtype](i)
         data_h[i] = val
 
     for i in range(cols):
-        gamma_h[i] = ((i + cols) / cols).cast[type]()
+        gamma_h[i] = ((i + cols) / cols).cast[dtype]()
 
-    var data_d = ctx.enqueue_create_buffer[type](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[type](cols)
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
 
     var param_shape = Index(cols)
 
-    var data_buf = NDBuffer[type, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[type, 1](gamma_d.unsafe_ptr(), param_shape)
-    var epsilon = Scalar[type](0.001)
-    var weight_offset = Scalar[type](0.0)
+    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
+    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
+    var epsilon = Scalar[dtype](0.001)
+    var weight_offset = Scalar[dtype](0.0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
@@ -67,7 +67,7 @@ fn run_rms_norm_gpu[
     @parameter
     fn input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[type, width]:
+    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
         return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @always_inline
@@ -75,7 +75,7 @@ fn run_rms_norm_gpu[
     @parameter
     fn identity_output_fn[
         width: Int
-    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+    ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         data_buf.store(idx, val)
 
     rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
@@ -85,7 +85,7 @@ fn run_rms_norm_gpu[
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[type, 1](data_h + r * cols, cols)
+        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c

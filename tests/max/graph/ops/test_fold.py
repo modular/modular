@@ -37,7 +37,7 @@ def test_fold(
     stride: tuple[int, int],
     dilation: tuple[int, int],
     padding: tuple[int, int],
-):
+) -> None:
     """Padding by nothing does not change the type."""
     # Create valid input shape from input values.
     L = 1
@@ -91,7 +91,7 @@ def test_fold_invalid_inputs(
     stride: tuple[int, int],
     dilation: tuple[int, int],
     padding: tuple[int, int],
-):
+) -> None:
     """Padding by nothing does not change the type."""
     # Create valid input shape from input values.
     L = 1

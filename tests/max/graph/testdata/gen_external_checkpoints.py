@@ -26,7 +26,7 @@ def test_data():
     }
 
 
-def write_gguf(filename):
+def write_gguf(filename) -> None:
     gguf_writer = GGUFWriter(str(filename), "example")
 
     data = {
@@ -60,7 +60,7 @@ def write_gguf(filename):
     gguf_writer.close()
 
 
-def write_pytorch(filename):
+def write_pytorch(filename) -> None:
     data = {
         "a": torch.arange(10, dtype=torch.int32).reshape(5, 2),
         "b": torch.full((1, 2, 3), 3.5, dtype=torch.float64),
@@ -72,7 +72,7 @@ def write_pytorch(filename):
     torch.save(data, filename)
 
 
-def write_safetensors(filename_prefix):
+def write_safetensors(filename_prefix) -> None:
     for i in range(1, 3):
         data = {
             f"{i}.a": torch.arange(10, dtype=torch.int32).reshape(5, 2),
@@ -93,7 +93,7 @@ def write_safetensors(filename_prefix):
 
 @click.command()
 @click.argument("output_directory", type=Path)
-def main(output_directory):
+def main(output_directory) -> None:
     write_pytorch(output_directory / "example_data.pt")
     write_gguf(output_directory / "example_data.gguf")
     write_safetensors(output_directory / "example_data")

@@ -29,13 +29,13 @@ from max.graph.type import FilterLayout, Type
 
 
 @given(dim=...)
-def test_static_dim(dim: int):
+def test_static_dim(dim: int) -> None:
     assume(-(2**63) <= dim < 2**63)
     assert StaticDim(dim).dim == dim
 
 
 @given(i=...)
-def test_static_dim__equals_dim_value(i: int):
+def test_static_dim__equals_dim_value(i: int) -> None:
     assume(-(2**63) <= i < 2**63)
     dim = StaticDim(i)
     assert isinstance(dim, Dim)
@@ -44,7 +44,7 @@ def test_static_dim__equals_dim_value(i: int):
 
 
 @given(i=...)
-def test_static_dim__compares_to_dim_value(i: int):
+def test_static_dim__compares_to_dim_value(i: int) -> None:
     assume(-(2**63) <= i < 2**63)
     dim = StaticDim(i)
     assert isinstance(dim, Dim)
@@ -52,25 +52,25 @@ def test_static_dim__compares_to_dim_value(i: int):
 
 
 @given(dim=st.integers(min_value=2**63))
-def test_static_dim_too_big(dim: int):
+def test_static_dim_too_big(dim: int) -> None:
     with pytest.raises(ValueError):
         StaticDim(dim)
 
 
 @given(numerator=static_dims())
-def test_static_dim__division_by_zero(numerator: StaticDim):
+def test_static_dim__division_by_zero(numerator: StaticDim) -> None:
     with pytest.raises(ZeroDivisionError):
         _ = numerator // 0
 
 
-def test_algebraic_dim_simplify_and_comparison(mlir_context):
+def test_algebraic_dim_simplify_and_comparison(mlir_context) -> None:
     assert 4 * Dim("x") + 4 == (Dim("x") + 1) * 4
     assert 4 * Dim("x") // 5 != Dim(4) // 5 * "x"
     assert 0 == Dim(4) // 5 * "x"
     assert -Dim("x") - 4 == -(Dim("x") + 4)
 
 
-def test_dims_print_reasonably(mlir_context):
+def test_dims_print_reasonably(mlir_context) -> None:
     assert str(Dim(23)) == "23"
     assert str(Dim("test")) == "test"
     assert str((Dim("x") + "y" - 4) // 5) == "(x + y + -4) // 5"
@@ -89,7 +89,7 @@ def test_dims_print_reasonably(mlir_context):
         alphabet=st.characters(min_codepoint=ord("a"), max_codepoint=ord("z"))
     )
 )
-def test_symbolic_dim(name: str):
+def test_symbolic_dim(name: str) -> None:
     assume(name != "")
     dim = SymbolicDim(name)
     assert isinstance(dim, Dim)
@@ -99,7 +99,7 @@ def test_symbolic_dim(name: str):
 
 # TODO(MSDK-695): less restrictive dim names
 @given(name=st.text())
-def test_symbolic_dim_invalid(name: str):
+def test_symbolic_dim_invalid(name: str) -> None:
     assume(not re.match(r"^[a-zA-Z_]\w*$", name))
     with pytest.raises(ValueError):
         SymbolicDim(name)
@@ -115,7 +115,7 @@ def test_symbolic_dim_to_int_error() -> None:
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(tensor_type=...)
-def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType):
+def test_tensor_type_to_mlir(mlir_context, tensor_type: TensorType) -> None:
     assert tensor_type == TensorType.from_mlir(tensor_type.to_mlir())
 
 
@@ -151,7 +151,7 @@ def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
     assert tensor_type.to_mlir().device_ref == device_type.to_mlir()
 
 
-def test_tensor_type_layout(mlir_context):
+def test_tensor_type_layout(mlir_context) -> None:
     t = TensorType(DType.float32, ["r", "s", "f", "c"], DeviceRef.CPU())
     t_copy = Type.from_mlir(t.to_mlir())
     t._layout = FilterLayout.RSCF
@@ -174,7 +174,7 @@ def test_opaque_type(mlir_context) -> None:
 
 
 @given(opaque_type=...)
-def test_opaque_type_to_mlir(mlir_context, opaque_type: _OpaqueType):
+def test_opaque_type_to_mlir(mlir_context, opaque_type: _OpaqueType) -> None:
     assert opaque_type == _OpaqueType.from_mlir(opaque_type.to_mlir())
 
 
@@ -220,7 +220,7 @@ def test_type_checking(mlir_context) -> None:
 
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(buffer_type=...)
-def test_buffer_mlir_roundtrip(mlir_context, buffer_type: BufferType):
+def test_buffer_mlir_roundtrip(mlir_context, buffer_type: BufferType) -> None:
     assert buffer_type == BufferType.from_mlir(buffer_type.to_mlir())
 
 
@@ -243,11 +243,11 @@ def test_buffer_type(mlir_context) -> None:
     )
 
 
-def test_chain_type(mlir_context):
+def test_chain_type(mlir_context) -> None:
     assert _ChainType() == _ChainType.from_mlir(_ChainType().to_mlir())
 
 
-def test_invalid_dimension(mlir_context):
+def test_invalid_dimension(mlir_context) -> None:
     with pytest.raises(TypeError):
         _ = TensorType(
             DType.bfloat16, [-7095393036038990704], device=DeviceRef.CPU()
@@ -262,7 +262,7 @@ def test_GEX_1918(mlir_context) -> None:
         _ = Dim(2**63 - 1) + 1
 
 
-def test_MAXPLAT_148(mlir_context):
+def test_MAXPLAT_148(mlir_context) -> None:
     with pytest.raises(TypeError):
         graph = Graph(
             "MAXPLAT-148",

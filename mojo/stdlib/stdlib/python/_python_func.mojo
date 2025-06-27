@@ -17,7 +17,7 @@ from python import PythonObject as PO  # for brevity of signatures below
 from python.bindings import check_arguments_arity
 
 
-struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
+struct PyObjectFunction[func_type: AnyTrivialRegType, has_self: Bool]:
     """Wrapper to hide the binding logic for functions taking a variadic number
     of PythonObject arguments.
 
@@ -73,22 +73,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1er, is_method], f: Self._1er):
+    fn __init__(out self: PyObjectFunction[Self._1er, has_self], f: Self._1er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1r, is_method], f: Self._1r):
+    fn __init__(out self: PyObjectFunction[Self._1r, has_self], f: Self._1r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1e, is_method], f: Self._1e):
+    fn __init__(out self: PyObjectFunction[Self._1e, has_self], f: Self._1e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._1, is_method], f: Self._1):
+    fn __init__(out self: PyObjectFunction[Self._1, has_self], f: Self._1):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -102,22 +102,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2er, is_method], f: Self._2er):
+    fn __init__(out self: PyObjectFunction[Self._2er, has_self], f: Self._2er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2r, is_method], f: Self._2r):
+    fn __init__(out self: PyObjectFunction[Self._2r, has_self], f: Self._2r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2e, is_method], f: Self._2e):
+    fn __init__(out self: PyObjectFunction[Self._2e, has_self], f: Self._2e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._2, is_method], f: Self._2):
+    fn __init__(out self: PyObjectFunction[Self._2, has_self], f: Self._2):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -131,22 +131,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3er, is_method], f: Self._3er):
+    fn __init__(out self: PyObjectFunction[Self._3er, has_self], f: Self._3er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3r, is_method], f: Self._3r):
+    fn __init__(out self: PyObjectFunction[Self._3r, has_self], f: Self._3r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3e, is_method], f: Self._3e):
+    fn __init__(out self: PyObjectFunction[Self._3e, has_self], f: Self._3e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._3, is_method], f: Self._3):
+    fn __init__(out self: PyObjectFunction[Self._3, has_self], f: Self._3):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -160,22 +160,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4er, is_method], f: Self._4er):
+    fn __init__(out self: PyObjectFunction[Self._4er, has_self], f: Self._4er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4r, is_method], f: Self._4r):
+    fn __init__(out self: PyObjectFunction[Self._4r, has_self], f: Self._4r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4e, is_method], f: Self._4e):
+    fn __init__(out self: PyObjectFunction[Self._4e, has_self], f: Self._4e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._4, is_method], f: Self._4):
+    fn __init__(out self: PyObjectFunction[Self._4, has_self], f: Self._4):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -189,22 +189,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5er, is_method], f: Self._5er):
+    fn __init__(out self: PyObjectFunction[Self._5er, has_self], f: Self._5er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5r, is_method], f: Self._5r):
+    fn __init__(out self: PyObjectFunction[Self._5r, has_self], f: Self._5r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5e, is_method], f: Self._5e):
+    fn __init__(out self: PyObjectFunction[Self._5e, has_self], f: Self._5e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._5, is_method], f: Self._5):
+    fn __init__(out self: PyObjectFunction[Self._5, has_self], f: Self._5):
         self._func = f
 
     # ===-------------------------------------------------------------------===#
@@ -218,22 +218,22 @@ struct PyObjectFunction[func_type: AnyTrivialRegType, is_method: Bool]:
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6er, is_method], f: Self._6er):
+    fn __init__(out self: PyObjectFunction[Self._6er, has_self], f: Self._6er):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6r, is_method], f: Self._6r):
+    fn __init__(out self: PyObjectFunction[Self._6r, has_self], f: Self._6r):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6e, is_method], f: Self._6e):
+    fn __init__(out self: PyObjectFunction[Self._6e, has_self], f: Self._6e):
         self._func = f
 
     @doc_private
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._6, is_method], f: Self._6):
+    fn __init__(out self: PyObjectFunction[Self._6, has_self], f: Self._6):
         self._func = f
 
     # ===-------------------------------------------------------------------===#

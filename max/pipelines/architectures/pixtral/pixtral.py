@@ -71,7 +71,7 @@ class PixtralInputs(ModelInputs):
         pixel_values: Tensor | None = None,
         attention_mask: Tensor | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
-    ):
+    ) -> None:
         self.input_ids = input_ids
         self.input_row_offsets = input_row_offsets
         self._pixel_values = pixel_values

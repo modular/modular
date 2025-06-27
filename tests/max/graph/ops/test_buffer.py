@@ -31,7 +31,7 @@ buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)
 
 
 @given(buffer_type=...)
-def test_mlir_type_checking(buffer_type: BufferType):
+def test_mlir_type_checking(buffer_type: BufferType) -> None:
     with Graph(
         "buffer",
         input_types=[
@@ -47,7 +47,9 @@ def test_mlir_type_checking(buffer_type: BufferType):
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
-def test_value_constructor(tensor_type: TensorType, buffer_type: BufferType):
+def test_value_constructor(
+    tensor_type: TensorType, buffer_type: BufferType
+) -> None:
     with Graph(
         "buffer_store",
         input_types=[
@@ -99,7 +101,7 @@ def test_value_constructor(tensor_type: TensorType, buffer_type: BufferType):
 
 # buffer and tensor inputs share dtype and shape
 @given(buffer_type=...)
-def test_load(buffer_type: BufferType):
+def test_load(buffer_type: BufferType) -> None:
     with Graph(
         "buffer_load",
         input_types=[
@@ -131,7 +133,7 @@ def test_load(buffer_type: BufferType):
 
 # buffer and tensor inputs share dtype and shape
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
-def test_store(tensor_type: TensorType, buffer_type: BufferType):
+def test_store(tensor_type: TensorType, buffer_type: BufferType) -> None:
     with Graph(
         "buffer_store",
         input_types=[
@@ -158,7 +160,7 @@ def test_store(tensor_type: TensorType, buffer_type: BufferType):
 
 
 @given(buffer_type=...)
-def test_load_store(buffer_type: BufferType):
+def test_load_store(buffer_type: BufferType) -> None:
     with Graph(
         "buffer_load_store",
         input_types=[
@@ -193,7 +195,7 @@ def test_load_store(buffer_type: BufferType):
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
 def test_load_store_ellipsis_slice(
     tensor_type: TensorType, buffer_type: BufferType
-):
+) -> None:
     assume(tensor_type.rank > 1 and buffer_type.rank > 1)
 
     with Graph(
@@ -223,7 +225,9 @@ def test_load_store_ellipsis_slice(
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
-def test_load_store_slice(tensor_type: TensorType, buffer_type: BufferType):
+def test_load_store_slice(
+    tensor_type: TensorType, buffer_type: BufferType
+) -> None:
     assume(tensor_type.rank > 1 and buffer_type.rank > 1)
 
     with Graph(
@@ -253,7 +257,9 @@ def test_load_store_slice(tensor_type: TensorType, buffer_type: BufferType):
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
-def test_no_implicit_load(tensor_type: TensorType, buffer_type: BufferType):
+def test_no_implicit_load(
+    tensor_type: TensorType, buffer_type: BufferType
+) -> None:
     assume(tensor_type.rank > 1 and buffer_type.rank > 1)
 
     with Graph(
@@ -279,7 +285,7 @@ def test_no_implicit_load(tensor_type: TensorType, buffer_type: BufferType):
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
 def test_prints_with_buffer_ops(
     tensor_type: TensorType, buffer_type: BufferType
-):
+) -> None:
     with Graph(
         "debug_prints_and_mutable_ops",
         input_types=[buffer_type, tensor_type],

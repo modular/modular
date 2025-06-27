@@ -23,7 +23,7 @@ fix following the steps here:
 """
 
 
-def install_if_missing(name: str):
+def install_if_missing(name: str) -> None:
     if find_spec(name):
         return
 

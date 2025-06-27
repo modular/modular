@@ -67,7 +67,7 @@ class ContinuousHFStaticCache(StaticCache):
     def set_active_slots(self, seq_ids: list[int]) -> None:
         self.active_slots = seq_ids
 
-    def set_cache_position(self, cache_position: torch.Tensor):
+    def set_cache_position(self, cache_position: torch.Tensor) -> None:
         self.cache_position = cache_position
 
     def update(

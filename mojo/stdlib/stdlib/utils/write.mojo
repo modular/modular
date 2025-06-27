@@ -301,16 +301,9 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     ```
     .
     """
-
     alias size = decimal.dtype.sizeof()
-    var data: SIMD[DType.uint8, size]
-
-    @parameter
-    if size == 1:
-        data = bitcast[DType.uint8, size](decimal)
-    else:
-        data = bitcast[DType.uint8, size](byte_swap(decimal))
-    var nibbles = (data >> 4).interleave(data & 0xF)
+    var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
+    var nibbles = (bytes >> 4).interleave(bytes & 0xF)
     ptr.store(_hex_table._dynamic_shuffle(nibbles))
 
 

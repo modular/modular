@@ -101,7 +101,7 @@ _NUM_CONCURRENT_PARSING_TASKS = int(
 _request_parsing_semaphore = asyncio.Semaphore(_NUM_CONCURRENT_PARSING_TASKS)
 
 
-def record_request_start():
+def record_request_start() -> None:
     METRICS.reqs_running(1)
 
 
@@ -119,7 +119,7 @@ class OpenAIResponseGenerator(ABC):
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAIResponseGenerator"
         )
@@ -387,7 +387,7 @@ class OpenAIEmbeddingsResponseGenerator:
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-    ):
+    ) -> None:
         self.pipeline = pipeline
 
     async def encode(
@@ -435,7 +435,7 @@ class OpenAISpeechResponseGenerator:
     def __init__(
         self,
         pipeline: AudioGeneratorPipeline,
-    ):
+    ) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAISpeechResponseGenerator"
         )

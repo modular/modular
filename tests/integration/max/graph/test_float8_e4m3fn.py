@@ -17,7 +17,7 @@ from test_common.graph_utils import is_h100_h200
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
-def test_f8_upcast(session, cast_dtype):
+def test_f8_upcast(session, cast_dtype) -> None:
     with Graph(
         "f8",
         input_types=[
@@ -51,7 +51,7 @@ def test_f8_upcast(session, cast_dtype):
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
-def test_f8_downcast(session, cast_dtype):
+def test_f8_downcast(session, cast_dtype) -> None:
     with Graph(
         "f8",
         input_types=[
@@ -83,7 +83,7 @@ def test_f8_downcast(session, cast_dtype):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_matmul(session):
+def test_f8_matmul(session) -> None:
     with Graph(
         "f8",
         input_types=[
@@ -133,7 +133,7 @@ def test_f8_matmul(session):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_constant(session):
+def test_f8_constant(session) -> None:
     y_data = np.array([5.0, 6.0])
     with Graph(
         "f8",
@@ -180,7 +180,7 @@ def test_f8_constant(session):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_weight_cpu(session):
+def test_f8_weight_cpu(session) -> None:
     y_data = np.array([5.0, 6.0])
     with Graph(
         "f8",
@@ -233,7 +233,7 @@ def test_f8_weight_cpu(session):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_weight_gpu(session):
+def test_f8_weight_gpu(session) -> None:
     y_data = np.array([5.0, 6.0])
     with Graph(
         "f8",

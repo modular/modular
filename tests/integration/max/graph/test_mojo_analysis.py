@@ -21,7 +21,7 @@ def kernel_verification_ops_path() -> Path:
     return Path(os.environ["MODULAR_KERNEL_VERIFICATION_OPS_PATH"])
 
 
-def test_kernel_library(counter_mojopkg, kernel_verification_ops_path):
+def test_kernel_library(counter_mojopkg, kernel_verification_ops_path) -> None:
     with Graph("test_kernel_library") as graph:
         kernels = graph._kernel_library
         kernels.add_path(counter_mojopkg)

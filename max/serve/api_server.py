@@ -21,14 +21,10 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Union
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from max.nn.kv_cache import KVTransferEngineMetadata
-from max.pipelines.core import (
-    PipelinesFactory,
-    PipelineTask,
-    PipelineTokenizer,
-)
+from max.pipelines.core import PipelinesFactory, PipelineTask, PipelineTokenizer
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.kvcache_agent.dispatcher_factory import DispatcherFactory
 from max.serve.kvcache_agent.dispatcher_transport import TransportMessage
@@ -180,6 +176,11 @@ def version():
         return JSONResponse({"version": "unknown"})
 
 
+async def health() -> Response:
+    """Health check, tools like lm-eval use this to check for readiness."""
+    return Response(status_code=200)
+
+
 def make_metrics_app():
     from prometheus_client import disable_created_metrics, make_asgi_app
 
@@ -216,6 +217,7 @@ def fastapi_app(
         app.mount("/metrics", make_metrics_app())
 
     app.add_api_route("/version", version)
+    app.add_api_route("/health", health)
 
     for api_type in settings.api_types:
         app.include_router(ROUTES[api_type].router)

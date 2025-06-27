@@ -72,11 +72,11 @@ from utils.index import IndexList
 
 
 fn test_my_naive_matmul[
-    shape: DimList, type: DType
+    shape: DimList, dtype: DType
 ](
-    c: NDBuffer[mut=True, type, 2, _, shape],
-    a: NDBuffer[type, 2, _, shape],
-    b: NDBuffer[type, 2, _, shape],
+    c: NDBuffer[mut=True, dtype, 2, _, shape],
+    a: NDBuffer[dtype, 2, _, shape],
+    b: NDBuffer[dtype, 2, _, shape],
 ):
     """Computes matrix multiplication with a naive algorithm.
 
@@ -87,7 +87,7 @@ fn test_my_naive_matmul[
     """
     for m in range(c.dim[0]()):
         for n in range(c.dim[1]()):
-            var c_val: Scalar[type] = 0
+            var c_val: Scalar[dtype] = 0
             for k in range(a.dim[1]()):
                 c_val += a[m, k] * b[k, n]
             c[IndexList[2](m, n)] = c_val

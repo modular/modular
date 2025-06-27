@@ -17,7 +17,9 @@ from max.graph import DeviceRef, Graph, ops
 @pytest.mark.parametrize("window_length", [0, 1, 2, 5, 10, 100])
 @pytest.mark.parametrize("periodic", [True, False])
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
-def test_hann_window(session, window_length: int, periodic: bool, dtype: DType):
+def test_hann_window(
+    session, window_length: int, periodic: bool, dtype: DType
+) -> None:
     """Test hann_window against PyTorch's implementation."""
     if dtype == DType.bfloat16 and platform.machine() in ["arm64", "aarch64"]:
         pytest.skip("BF16 is not supported on ARM CPU architecture")

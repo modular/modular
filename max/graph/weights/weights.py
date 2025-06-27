@@ -149,7 +149,7 @@ class WeightData:
             data = self.data.view(dtype.to_numpy())
         return dataclasses.replace(self, dtype=dtype, shape=Shape(data.shape))
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"WeightData({self.dtype}, {self.shape})"
 
 

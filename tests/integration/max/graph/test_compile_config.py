@@ -23,7 +23,7 @@ def compile_config_ops_path() -> Path:
 
 def test_compile_config_split_k_reduction_scheme(
     session: InferenceSession, compile_config_ops_path: Path
-):
+) -> None:
     tensor_type = TensorType(
         dtype=DType.int32, shape=[1], device=DeviceRef.CPU()
     )
@@ -56,7 +56,7 @@ def test_compile_config_split_k_reduction_scheme(
 
 def test_compile_config_use_logger(
     capfd, session: InferenceSession, compile_config_ops_path: Path
-):
+) -> None:
     tensor_type = TensorType(
         dtype=DType.int32, shape=[1], device=DeviceRef.CPU()
     )
@@ -93,7 +93,7 @@ def test_compile_config_use_logger(
 )
 def test_compile_config_dump_asm(
     session: InferenceSession, compile_config_ops_path: Path
-):
+) -> None:
     rows = 5
     columns = 10
     dtype = DType.float32

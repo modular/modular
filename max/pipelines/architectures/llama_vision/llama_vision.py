@@ -465,7 +465,7 @@ class LlamaVisionInputs(ModelInputs):
         aspect_ratio_ids: Tensor | None = None,
         aspect_ratio_mask: Tensor | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
-    ):
+    ) -> None:
         self.input_id_values = input_id_values
         self.input_row_offsets = input_row_offsets
         self.input_id_max_seq_len = input_id_max_seq_len

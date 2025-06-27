@@ -54,7 +54,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         self,
         pipeline_config: PipelineConfig,
         torch_device_type: str,
-    ):
+    ) -> None:
         self._pipeline_config = pipeline_config
         self._torch_device = torch.device(torch_device_type)
         self._huggingface_config = AutoConfig.from_pretrained(

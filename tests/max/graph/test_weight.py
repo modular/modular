@@ -133,3 +133,20 @@ def test_weight_is_placeholder() -> None:
             r"mo.constant.external.*isPlaceholder = true.*!mo.tensor<\[\], f32",
             gen_mlir,
         )
+
+
+def test_weight_has_alias() -> None:
+    with Graph("graph_with_weights", input_types=()) as graph:
+        w = Weight(
+            "w",
+            dtype=DType.float32,
+            shape=[],
+            device=DeviceRef.CPU(),
+            _has_alias=True,
+        )
+        graph.output(w)
+        gen_mlir = str(graph._mlir_op)
+        assert re.search(
+            r"mo.constant.external.*hasAlias = true.*!mo.tensor<\[\], f32",
+            gen_mlir,
+        )

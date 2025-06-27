@@ -19,12 +19,14 @@ is called (not implemented yet).
 
 Example:
 ```mojo
-    var bs = BitSet[128]()      # 128-bit set, all clear
-    bs.set(42)                  # Mark value 42 as present.
-    if bs.test(42):             # Check membership.
-        print("hit")            # Prints "hit".
-    bs.clear(42)                # Remove 42.
-    print(bs.count())           # Prints 0.
+from collections import BitSet
+
+var bs = BitSet[128]()  # 128-bit set, all clear
+bs.set(42)              # Mark value 42 as present.
+if bs.test(42):         # Check membership.
+    print("hit")        # Prints "hit".
+bs.clear(42)            # Remove 42.
+print(len(bs))          # Prints 0.
 ```
 """
 # ---------------------------------------------------------------------------
