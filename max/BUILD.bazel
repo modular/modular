@@ -136,6 +136,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/mlir",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
