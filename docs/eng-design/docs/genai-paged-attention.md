@@ -238,19 +238,19 @@ for keeping records of which KVCache pages contain projections for which
     Link](https://github.com/modular/modular/blob/e6523da9579e3daa048870145680bb37b3bb2c0d/max/nn/kv_cache/paged_cache/paged_cache.py#L166).
 
 Our new `PagedKVCacheManager` also implements other optimizations that
-PagedAttention unlocks, which includes prefix sharing and eviction. We’ll
+PagedAttention unlocks, which includes prefix caching and eviction. We’ll
 discuss those features in more depth in the next section.
 
-## What is Prefix Sharing?
+## What is Prefix Caching?
 
-Prefix sharing (a.k.a prefix caching) enables more efficient usage of the
+Prefix Caching enables more efficient usage of the
 PagedAttention KVCache by allowing reuse and sharing of KV projections between
 different sequences when these sequences share a common prefix.
 
-![Paged attentin without prefix
-sharing](img/genai-paged-attention/img04-without-prefix-sharing.png)
+![Paged attention without prefix
+caching](img/genai-paged-attention/img04-without-prefix-sharing.png)
 ///caption
-Paged attention without prefix sharing
+Paged attention without prefix caching
 ///
 
 In the above diagram, we show the layout of a PagedAttention KVCache without
@@ -261,9 +261,9 @@ projections for the tokens “I like to eat”. However, it is a waste to have t
 pages containing the same data.
 
 ![Paged attention with prefix
-sharing](img/genai-paged-attention/img05-with-prefix-sharing.png)
+caching](img/genai-paged-attention/img05-with-prefix-sharing.png)
 ///caption
-Paged attention with prefix sharing
+Paged attention with prefix caching
 ///
 
 Through prefix caching, we can eliminate this extra page. When `seq 2`
@@ -296,7 +296,7 @@ vLLM. SGLang is the first paper to propose automatic prefix caching and rivals
 vLLM in performance.
 
 In this chart, the cache hit rate is the percentage of prompt tokens that reuse
-pages from the KVCache through prefix sharing. “It shows that a higher cache
+pages from the KVCache through prefix caching. “It shows that a higher cache
 hit rate leads to a larger batch size, higher throughput, and lower latency.”
 We see that when the cache hit is 100% (i.e: all prompts are identical),
 enabling prefix caching increases throughput 3x from ~400 to ~1200 tokens/s.
@@ -387,16 +387,9 @@ kernel](https://github.com/vllm-project/vllm/issues/2614#issuecomment-2116330884
 This simplifies the programming for their prefix cache. We still need to look
 into confirming this.
 
-As a consequence of having a page size that is greater than 1, our prefix trie
-has to be aware of page alignment when sharing pages among requests. What we
-described in the earlier section allowed a page to be referenced by multiple
-sequences if the page was full and all tokens matched. In such a case, none of
-the sequences would write to the shared page. This is like having multiple
-readers to a shared object.
-
 ![Copy on write](img/genai-paged-attention/img09-copy-on-write.png)
 
-When sharing partially pages, we have to adopt a copy-on-write strategy. Here,
+When sharing partial pages, we have to adopt a copy-on-write strategy. Here,
 the two sequences share the same KV projections for the tokens “cheese cake
 and”. However, the last projection in the second page differs. Now when seq 2
 queries the prefix cache, it will need to allocate a fresh page and copy the
@@ -414,26 +407,8 @@ comparatively cheaper than re-computation.
 ### Implementing Prefix Caching
 
 Prefix caching is implemented in both vLLM and SGLang using entirely different
-strategies.
-
-[**vLLM uses a hashmap that maps each prefix to its KV
-projection](https://github.com/vllm-project/vllm/blob/d1f6d1c8af892c7269f113711783374eebb52511/vllm/sequence.py#L520):**
-
-```jsx
-e.g: HashMap["I"] -> KV_0
-     HashMap["I like"] -> KV_1
-     HashMap["I like to"] -> KV_2
-     HashMap["I like to eat"] -> KV_3
-     HashMap["I like to eat cheese"] -> KV_4
-     HashMap["I like to eat cheese cake"] -> KV_5
-     HashMap["I like to eat cheese cake and"] -> KV_6
-     ...
-```
-
-This is a particularly expensive operation as computes the hash of each prefix
-of the sequence which is $O(L^2)$. However, it seems like the overall latency
-of prefix cache lookup is very small in general so this inefficiency didn’t
-seem to matter for them.
+strategies. vLLM uses a hasing based implementation while SGLang uses a Trie based
+implementation.
 
 **SGLang utilizes a Radix Trie data structure:**
 
@@ -452,15 +427,15 @@ into the Trie. For example, the last partial blocks containing just the
 projections for the single token “fries” is not part of the Trie and not
 eligible for sharing.
 
-As an additional optimization, both SGLang and Modular uses a Radix Trie. The
+As an additional optimization, SGLang uses a Radix Trie. The
 Radix Trie compresses non branching chains of nodes in the original Trie into a
 one node. This is more space efficient and can yield some performance
 improvements as we reduce the depth of the tree. This reduces the overall
 amount of pointer indirection needed when inserting / matching tokens which is
 especially pronounced for very long common sequences.
 
-*IMO, the speed difference between a Trie and Radix Trie is probably not that
-significant.*
+However, the radix trie implementation adds additional complexity for page size
+> 1.
 
 #### Prefix Caching Overhead
 
@@ -545,56 +520,6 @@ We have two options for evicting sequences:
     and then 4 iterative TG steps.
   - This optimization is possible because we already know what the first 4
     generated tokens are.
-
-### Evicting blocks vs sequences
-
-Evicting blocks and evicting sequences are very similar but operate at
-different levels.
-
-- The prefix trie **evicts blocks** that are unused by any sequence (`ref_count
-  == 0`)
-- The scheduler **evicts sequences** to be re-scheduled at a later time. By
-  evicting a sequence, it releases the blocks it is using (`ref_count -= 1`)
-  and may allow the prefix trie to evict those blocks if no other sequences are
-  not using them.
-
-### Scheduling batches
-
-The scheduler is responsible for constructing batches of requests to run. It
-needs to make sure that there are sufficient pages for the batch to run
-successfully.
-
-The high-level pseudocode for what our scheduler will do is as follows:
-
-```python
-def schedule_batch(
-      sch : Scheduler,
-      candidate_reqs : List[Req],
-      num_steps: int
-) -> List[Req]:
-
-  kvcache = sch.paged_cache
-  pages_available = kvcache.get_num_available_pages()
-    
-    pages_used = 0
-    reqs_to_sch : List[Req] = []
-    for req in candidate_reqs:
-    
-       # add the req to the batch if it fits
-       # if it doesn't fit, it can be deferred until a future iteration
-       pages_needed = kvcache.additional_pages_needed_by_req(req, num_steps)
-       if pages_used + pages_needed < pages_available:
-          reqs_to_sch.append(req)
-          pages_used += pages_needed
-    
-    if reqs_to_sch.is_empty():
-         # we can't even run a single request :(
-       # now we need to evict a sequence and try again
-       # probably evict the newest sequence first
-       ...
-
-  return reqs_to_sch
-```
 
 ## Prefix Caching is Functional
 
