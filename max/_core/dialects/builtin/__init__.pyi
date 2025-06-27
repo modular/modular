@@ -974,6 +974,34 @@ class MemRefElementTypeInterface(Protocol):
     require types to provide their size or alignment given a data layout.
     """
 
+class PtrLikeTypeInterface(Protocol):
+    """
+    A ptr-like type represents an object storing a memory address. This object
+    is constituted by:
+    - A memory address called the base pointer. This pointer is treated as a
+      bag of bits without any assumed structure. The bit-width of the base
+      pointer must be a compile-time constant. However, the bit-width may remain
+      opaque or unavailable during transformations that do not depend on the
+      base pointer. Finally, it is considered indivisible in the sense that as
+      a `PtrLikeTypeInterface` value, it has no metadata.
+    - Optional metadata about the pointer. For example, the size of the  memory
+      region associated with the pointer.
+
+    Furthermore, all ptr-like types have two properties:
+    - The memory space associated with the address held by the pointer.
+    - An optional element type. If the element type is not specified, the
+      pointer is considered opaque.
+    """
+
+    @property
+    def memory_space(self) -> max._core.Attribute | None: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+    def has_ptr_metadata(self) -> bool: ...
+    def clone_ptr_with(
+        self, arg0: max._core.Attribute, arg1: max._core.Type, /
+    ) -> PtrLikeTypeInterface | None: ...
+
 class ShapedType(Protocol):
     """
     This interface provides a common API for interacting with multi-dimensional
