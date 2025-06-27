@@ -1312,11 +1312,13 @@ DebugInfo::DIScopeAttr TraitDeclOp::getLocScope() {
 void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
+  UnitAttr none;
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
         SymbolRefArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
+        /*definesClosure=*/none,
         /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{},
         /*linearTypeErrorMsg*/ {});
   result.regions[0]->push_back(new Block());

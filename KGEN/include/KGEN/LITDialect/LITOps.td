@@ -568,6 +568,10 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     DefaultValuedAttr<M_SymbolRefArrayAttr, "std::nullopt">:$immediateParents,
     EnumProp<LIT_TypeConvention>:$convention,
+    // If definesClosure attribute is present,
+    // then this is a compiler generated trait
+    // used to implement a closure
+    UnitAttr:$definesClosure,
     OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
