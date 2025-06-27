@@ -33,13 +33,39 @@ fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     constrained[
         False,
         # fmt: off
+        String(
         "no valid implementation of mma for for a=",
-        String(a.size), "x",  String(a.dtype),
-        ", b=",  String(b.size), "x",  String(b.dtype),
-        ", c=",  String(c.size), "x",  String(c.dtype),
-        ", and d=", String(d.size), "x", String(d.dtype),
+        a.size, "x",  a.dtype,
+        ", b=",  b.size, "x",  b.dtype,
+        ", c=",  c.size, "x",  c.dtype,
+        ", and d=", d.size, "x", d.dtype,
+        ),
         # fmt: on
     ]()
+
+
+@always_inline
+fn _has_type[type: DType](a: DType, b: DType, c: DType, d: DType) -> Bool:
+    return a is type and b is type and c is type and d is type
+
+
+@always_inline
+fn _has_type[
+    abcd: Tuple[DType, DType, DType, DType]
+](a: DType, b: DType, c: DType, d: DType) -> Bool:
+    return a is abcd[0] and b is abcd[1] and c is abcd[2] and d is abcd[3]
+
+
+@always_inline
+fn _has_shape[size: Int](a: Int, b: Int, c: Int, d: Int) -> Bool:
+    return a == size and b == size and c == size and d == size
+
+
+@always_inline
+fn _has_shape[
+    abcd: Tuple[Int, Int, Int, Int]
+](a: Int, b: Int, c: Int, d: Int) -> Bool:
+    return a == abcd[0] and b == abcd[1] and c == abcd[2] and d == abcd[3]
 
 
 @always_inline
@@ -57,45 +83,30 @@ fn _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     - llvm.amdgcn.wmma.i32.16x16x16.iu4
     """
 
-    # ===------------------------------------------------------------------===#
-    # F32 = F16 * F16 + F32 (16x16x16)
-    # ===------------------------------------------------------------------===#
     @parameter
-    if (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
-        # WMMA 16x16x16 F16 -> F32
-        var r = llvm_intrinsic[
-            "llvm.amdgcn.wmma.f32.16x16x16.f16", SIMD[c.dtype, c.size]
-        ](a, b, c)
-        d = rebind[__type_of(d)](r)
-    # ===------------------------------------------------------------------===#
-    # F32 = BF16 * BF16 + F32 (16x16x16)
-    # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.bfloat16
-        and a.size == 4
-        and b.dtype is DType.bfloat16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
-    ):
-        # WMMA 16x16x16 BF16 -> F32
-        var r = llvm_intrinsic[
-            "llvm.amdgcn.wmma.f32.16x16x16.bf16", SIMD[c.dtype, c.size]
-        ](a, b, c)
-        d = rebind[__type_of(d)](r)
-    else:
-        _unsupported_mma_op(d, a, b, c)
+    fn get_intrinsic_name() -> String:
+        # ===------------------------------------------------------------------===#
+        # F32 = F16 * F16 + F32 (16x16x16)
+        # Or
+        # F32 = BF16 * BF16 + F32 (16x16x16)
+        # ===------------------------------------------------------------------===#
+        @parameter
+        if (
+            _has_type[
+                (DType.float16, DType.float16, DType.float32, DType.float32)
+            ](a.dtype, b.dtype, c.dtype, d.dtype)
+            or _has_type[
+                (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
+            ](a.dtype, b.dtype, c.dtype, d.dtype)
+        ) and _has_shape[4](a.size, b.size, c.size, d.size):
+            alias type_name = "f16" if a.dtype is DType.float16 else "bf16"
+            return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
+        else:
+            _unsupported_mma_op(d, a, b, c)
+            return ""
+
+    var r = llvm_intrinsic[get_intrinsic_name(), SIMD[c.dtype, c.size]](a, b, c)
+    d = rebind[__type_of(d)](r)
 
 
 @always_inline
@@ -106,43 +117,34 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         _mma_wmma_rdna(d, a, b, c)
         return
 
+    alias zero: UInt32 = 0
+
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
     @parameter
-    if (
-        d.dtype is DType.float16
-        and a.dtype is DType.float16
-        and b.dtype is DType.float16
-        and c.dtype is DType.float16
-    ):
+    if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
         constrained[
             False, "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
         ]()
+
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
     # ===------------------------------------------------------------------===#
-    elif (
-        d.dtype is DType.float32
-        and d.size == 4
-        and a.dtype is DType.float16
-        and a.size == 4
-        and b.dtype is DType.float16
-        and b.size == 4
-        and c.dtype is DType.float32
-        and c.size == 4
+    elif _has_type[
+        (DType.float16, DType.float16, DType.float32, DType.float32)
+    ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
+        a.size, b.size, c.size, d.size
     ):
 
         @parameter
         if block_size == 16:
-            alias zero: UInt32 = 0
             # Note: 4x4x4_16B (i.e., 16 blocks).
             var r = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[c.dtype, c.size]
             ](a, b, c, zero, zero, zero)
             d = rebind[__type_of(d)](r)
         else:
-            alias zero: UInt32 = 0
             var r = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[c.dtype, c.size]
             ](a, b, c, zero, zero, zero)
@@ -157,7 +159,6 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.dtype is DType.float32
         and c.size == 16
     ):
-        alias zero: UInt32 = 0
         var r = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.32x32x8f16", SIMD[c.dtype, c.size]
         ](a, b, c, zero, zero, zero)
@@ -179,7 +180,6 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         @parameter
         if block_size == 16:
-            alias zero: UInt32 = 0
             # Note: 4x4x4_16B (i.e., 16 blocks)
             var r = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[c.dtype, c.size]
@@ -193,7 +193,6 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             )
             d = rebind[__type_of(d)](r)
         else:
-            alias zero: UInt32 = 0
             var r = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[c.dtype, c.size]
             ](
@@ -215,7 +214,6 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.dtype is DType.float32
         and c.size == 16
     ):
-        alias zero: UInt32 = 0
         var r = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[c.dtype, c.size]
         ](
@@ -241,7 +239,6 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.dtype is DType.float32
         and c.size == 4
     ):
-        alias zero: UInt32 = 0
         var r = llvm_intrinsic[
             "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[c.dtype, c.size]
         ](a, b, c, zero, zero, zero)
