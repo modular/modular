@@ -92,6 +92,7 @@ resources:
             --env "HF_TOKEN={{ properties['huggingFaceHubToken'] }}" \
             --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
             -v $HOME/.cache/huggingface:/root/.cache/huggingface \
+            -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
             --gpus 1 \
             -p 80:8000 \
             --ipc host \

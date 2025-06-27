@@ -14,6 +14,7 @@ You can run an LLM on an AMD GPU using the latest MAX full container (AMD) with 
 docker run \
   # HuggingFace configs
   -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
   --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
   --env "HF_TOKEN=$HF_TOKEN" \
   # AMD configs
