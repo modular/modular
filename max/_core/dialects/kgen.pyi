@@ -4109,6 +4109,35 @@ class TypeValueType(max._core.Type):
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
 
+class VariadicSplatType(max._core.Type):
+    """
+    The `!kgen.variadic_splat` type represents deferred type that splats
+    element type specified number of times. The type cannot be used standalone
+    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
+
+    ```mlir
+    !kgen.struct<(!kgen.variadic_splat<index, 3>)>
+    !llvm.struct<(!kgen.variadic_splat<index, 5>)>
+    ```
+
+    will be concretized to
+
+    ```mlir
+    !kgen.struct<(index, index, index)>
+    !llvm.struct<(index, index, index, index, index)>
+    ```
+    """
+
+    def __init__(
+        self,
+        element_type: max._core.Type,
+        count: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def element_type(self) -> max._core.Type | None: ...
+    @property
+    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class VariadicType(max._core.Type):
     """
     The `!kgen.variadic` type represents a homogeneously typed variadic sequence
