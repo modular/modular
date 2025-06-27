@@ -226,9 +226,8 @@ static ErrorOrSuccess buildEntrypoint(std::vector<std::string> buildArgs,
   llvm::append_range(buildCommand, buildArgs);
 
   std::string errorMessage;
-  int result =
-      llvm::sys::ExecuteAndWait(*driverPath, buildCommand, std::nullopt,
-                                std::nullopt, 0, 0, &errorMessage);
+  int result = llvm::sys::ExecuteAndWait(*driverPath, buildCommand,
+                                         std::nullopt, {}, 0, 0, &errorMessage);
   if (!errorMessage.empty())
     return Error(errorMessage);
 
@@ -284,9 +283,8 @@ static ErrorOrSuccess launchDebug(ArrayRef<std::string> options,
                      ArrayRef<StringRef>{entrypointPath, inputPath});
 
   std::string errorMessage;
-  int result =
-      llvm::sys::ExecuteAndWait(*driverPath, debugCommand, std::nullopt,
-                                std::nullopt, 0, 0, &errorMessage);
+  int result = llvm::sys::ExecuteAndWait(*driverPath, debugCommand,
+                                         std::nullopt, {}, 0, 0, &errorMessage);
   if (!errorMessage.empty())
     return Error(errorMessage);
   else if (result != 0)

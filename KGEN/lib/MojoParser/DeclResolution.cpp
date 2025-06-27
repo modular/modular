@@ -932,8 +932,9 @@ static bool isCapturingByDefault(FnOp funcOp, StructDeclOp parent,
     return WalkResult::advance();
   });
   return llvm::any_of(
-      llvm::concat<const ParamDeclAttr>(paramDecls, parent ? parent.getParams()
-                                                           : std::nullopt),
+      llvm::concat<const ParamDeclAttr>(
+          paramDecls,
+          parent ? parent.getParams() : llvm::ArrayRef<ParamDeclAttr>()),
       [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
