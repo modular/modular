@@ -1860,24 +1860,12 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   StringAttr opName = unboundOp.getName();
-  bool isDeferredOp = false;
-  NamedAttrList attrs;
-  if (llvm::any_of(unboundOp.getAttrs(), [](NamedAttribute attr) {
-        if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
-          return isa<DeferredType>(typedAttr.getType());
-        return false;
-      })) {
-    opName = StringAttr::get(context, DeferredOp::getOperationName());
-    isDeferredOp = true;
-  }
-
-  // Set up the OperationState for the thing we're building.
   OperationState state(call.getLocation(emitter), opName);
-  state.addOperands(opOperands);
 
-  // Process the attributes and figure out the result type if specified.
+  // Do special preprocessing of a specified type attribute. That needs to
+  // happen before useDeferredOp is called, because useDeferredOp will analyze
+  // result types stored in the state.
   bool hadTypeSpec = false;
-  std::optional<Attribute> propsAttr = std::nullopt;
   for (auto &attr : unboundOp.getAttrs()) {
     if (attr.getName() == "_type") {
       // We expect either a single type, `None`, or a `Tuple` of types.
@@ -1929,6 +1917,65 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       if (pushTypeToState(value, "_type value is not a type").failed())
         return {};
       hadTypeSpec = true;
+      continue;
+    }
+  }
+
+  // Return true if any attribute or type is deferred. If type is
+  // `!kgen.variadic_splat`, the operation has to be deferred, because it's
+  // expected it's used in struct type and operation is expecting fully valid
+  // struct type.
+  auto useDeferredOp = [&]() {
+    // If any attribute of the operation is deferred, the operaiton is deferred
+    // too.
+    if (llvm::any_of(unboundOp.getAttrs(), [](NamedAttribute attr) {
+          if (auto typedAttr = dyn_cast<TypedAttr>(attr.getValue()))
+            return isa<DeferredType>(typedAttr.getType());
+          return false;
+        })) {
+      return true;
+    }
+    mlir::AttrTypeWalker walker;
+    walker.addWalk([](Type type) {
+      return isa<VariadicSplatType>(type) ? WalkResult::interrupt()
+                                          : WalkResult::advance();
+    });
+
+    // If either result type or operands have `!kgen.variadic_splat` type, the
+    // operation has to be deferred.
+    // TODO: Try to avoid this if possible. For example, if operation has no
+    // InferTypeOpInterface, this is probably not needed.
+    if (llvm::any_of(state.types, [&](Type type) {
+          assert(!isa<DeferredType>(type) &&
+                 "Deferred type is not allowed in return");
+          return walker.walk(type).wasInterrupted();
+        })) {
+      return true;
+    }
+    if (llvm::any_of(opOperands, [&](Value operand) {
+          return walker.walk(operand.getType()).wasInterrupted();
+        })) {
+      return true;
+    }
+    return false;
+  };
+
+  bool isDeferredOp = false;
+  NamedAttrList attrs;
+  if (useDeferredOp()) {
+    // Change operation name within a state to `kgen.deferred`
+    state.name = mlir::OperationName(DeferredOp::getOperationName(), context);
+    isDeferredOp = true;
+  }
+
+  // Set up the OperationState for the thing we're building.
+  state.addOperands(opOperands);
+
+  // Process the attributes
+  std::optional<Attribute> propsAttr = std::nullopt;
+  for (auto &attr : unboundOp.getAttrs()) {
+    if (attr.getName() == "_type") {
+      // This attribute has been already processed.
       continue;
     }
     if (attr.getName() == "_region") {

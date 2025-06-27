@@ -608,6 +608,12 @@ void SROAPass::runOnOperation() {
         changed |= replacer.run(toDelete);
       } else if (auto structTy =
                      dyn_cast<StructType>(ptrType.getElementType())) {
+        if (llvm::any_of(structTy.getElementTypes(),
+                         [](Type t) { return isa<VariadicSplatType>(t); })) {
+          // TODO: Support variadic splat type. For now just disable it and
+          // expect post-elaborated SROA to handle that struct.
+          return;
+        }
         ReplaceStructs replacer{builder,        alloc,        structTy,
                                 maxNumElements, leafReplacer, valueMemCache};
         changed |= replacer.run(toDelete);
