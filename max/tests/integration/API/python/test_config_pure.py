@@ -119,7 +119,6 @@ def test_config__test_incompatible_quantization_encoding(
             max_batch_size=1,
             max_length=1,
             engine=PipelineEngine.MAX,
-            allow_dtype_casting=False,
         )
 
     # This should not raise, as float32 == f32.
@@ -134,6 +133,7 @@ def test_config__test_incompatible_quantization_encoding(
         max_batch_size=1,
         max_length=1,
         engine=PipelineEngine.MAX,
+        allow_dtype_casting=True,
     )
 
 
@@ -145,15 +145,15 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     with pytest.raises(ValueError):
-        # This should raise, as allow_dtype_casting is set to False, which means
-        # it will not cast the (bfloat16) quantization encoding to float32.
+        # This should raise, as allow_dtype_casting defaults to False, which
+        # means it will not cast the (bfloat16) quantization encoding to
+        # float32.
         config = PipelineConfig(
             model_path=llama_3_1_8b_instruct_local_path,
             quantization_encoding=SupportedEncoding.float32,
             max_batch_size=1,
             max_length=1,
             engine=PipelineEngine.MAX,
-            allow_dtype_casting=False,
         )
 
     # This should not raise, as allow_dtype_casting is set to True, which means
@@ -164,6 +164,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
         max_batch_size=1,
         max_length=1,
         engine=PipelineEngine.MAX,
+        allow_dtype_casting=True,
     )
 
 

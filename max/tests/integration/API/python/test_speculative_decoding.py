@@ -172,7 +172,7 @@ def test_config__validate_huggingface_engine(smollm2_135m_local_path) -> None:
     ):
         PipelineConfig(
             model_path=smollm2_135m_local_path,
-            quantization_encoding=SupportedEncoding.float32,
+            quantization_encoding=SupportedEncoding.bfloat16,
             device_specs=[DeviceSpec.accelerator()],
             draft_model_path=smollm2_135m_local_path,
             engine=PipelineEngine.HUGGINGFACE,
