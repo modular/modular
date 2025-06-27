@@ -788,6 +788,15 @@ TypeCheckedParamList::TypeCheckedParamList(
     ASTType type;
     if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+      auto fnType = dyn_cast<FnTypeGeneratorType>(type);
+      if (fnType && fnType.isUnified()) {
+        auto [wrapperOp, traitOp] = shared.getOrCreateParametricClosureWrapper(
+            declScope.getLoc(), fnType,
+            declScope.getNearestDeclOfType<FileModuleOp>(),
+            InlineLevel::Automatic);
+        type = TraitType::get(getFullyResolvedSymbolRef(
+            cast<mlir::SymbolOpInterface>(traitOp.getOperation())));
+      }
       type = addImplicitTypeParams(type, *this, /*append=*/false);
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
@@ -852,7 +861,7 @@ TypeCheckedParamList::TypeCheckedParamList(
   }
 }
 
-PogListAttr TypeCheckedParamList::getParamListAttr() {
+PogListAttr TypeCheckedParamList::getParamListAttr() const {
   return PogListAttr::get(
       shared.getContext(),
       PogListAttr::toPogs(names, passingKinds, variadicKinds), defaultPosParams,
