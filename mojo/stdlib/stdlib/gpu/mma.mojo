@@ -26,6 +26,13 @@ from memory import bitcast
 
 from utils import StaticTuple
 from utils.index import Index
+from gpu._utils import (
+    simd_to_llvm_struct,
+    llvm_struct_to_simd,
+    array_to_llvm_struct,
+    llvm_struct_to_array,
+    dtype_to_llvm_type,
+)
 
 
 @always_inline
@@ -451,6 +458,76 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
     else:
         _unsupported_mma_op(d, a, b, c)
+
+
+fn _dtype_to_nvvm_type[
+    out_type: DType, in_type: DType = out_type
+]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if out_type is DType.float16 or out_type is DType.uint32:
+        # Special case when input types are integers, the result has to be integer too.
+        if in_type != out_type and in_type.is_integral():
+            return __mlir_attr.`si32`
+        return __mlir_attr.`f16`
+    else:
+        return out_type.__mlir_type()
+
+
+fn _dtype_to_nvvm_wgmma_type[
+    out_type: DType, in_type: DType = out_type
+]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if out_type is DType.float8_e4m3fn:
+        return __mlir_attr[`#nvvm.wgmma_type<e4m3>`]
+    elif out_type is DType.float8_e5m2:
+        return __mlir_attr[`#nvvm.wgmma_type<e5m2>`]
+    elif out_type is DType.float16 or out_type is DType.uint32:
+        # Special case when input types are integers, the result has to be integer too.
+        if in_type != out_type and in_type.is_integral():
+            return __mlir_attr[`#nvvm.wgmma_type<s32>`]
+        return __mlir_attr[`#nvvm.wgmma_type<f16>`]
+    elif out_type is DType.int8:
+        return __mlir_attr[`#nvvm.wgmma_type<s8>`]
+    elif out_type is DType.uint8:
+        return __mlir_attr[`#nvvm.wgmma_type<u8>`]
+    else:
+        return __mlir_deferred_attr[
+            `#nvvm.wgmma_type<`, +_dtype_to_nvvm_type[out_type, in_type](), `>`
+        ]
+
+
+fn _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
+    return __mlir_deferred_attr[
+        `#nvvm.shape<m =`,
+        +m.value,
+        `, n =`,
+        +n.value,
+        `, k =`,
+        +k.value,
+        `>`,
+    ]
+
+
+fn _to_nvvm_scale_out[s: Int]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if s == 0:
+        return __mlir_attr.`#nvvm.wgmma_scale_out<zero>`
+    else:
+        return __mlir_attr.`#nvvm.wgmma_scale_out<one>`
+
+
+fn _to_nvvm_scale_in[s: Int]() -> __mlir_type.`!kgen.deferred`:
+    @parameter
+    if s == -1:
+        return __mlir_attr.`#nvvm.wgmma_scale_in<neg>`
+    else:
+        return __mlir_attr.`#nvvm.wgmma_scale_in<one>`
+
+
+fn _to_nvvm_layout[s: StaticString]() -> __mlir_type.`!kgen.deferred`:
+    return __mlir_deferred_attr[
+        `#nvvm.mma_layout<`, +_get_kgen_string[s](), `>`
+    ]
 
 
 @always_inline
@@ -985,25 +1062,35 @@ fn wgmma_async[
     alias layout_b_value = _get_kgen_string[layout_b]()
 
     # tensor core will interpret fp32 as tf32
-    alias a_type_value = __mlir_attr.tf32 if a_type is DType.float32 else a_type.__mlir_type()
-    alias b_type_value = __mlir_attr.tf32 if b_type is DType.float32 else b_type.__mlir_type()
+    alias a_type_value = DType.tensor_float32 if a_type is DType.float32 else a_type
+    alias b_type_value = DType.tensor_float32 if b_type is DType.float32 else b_type
 
-    var res = __mlir_op.`pop.nvvm.wgmma.mma_async.inline_array`[
-        shape_m = m.value,
-        shape_n = n.value,
-        shape_k = k.value,
-        type_a=a_type_value,
-        type_b=b_type_value,
-        type_c = c_dtype.__mlir_type(),
-        layout_a=layout_a_value,
-        layout_b=layout_b_value,
-        scale_d = scale_d.value,
-        scale_a = scale_a.value,
-        scale_b = scale_b.value,
-        _type = c_reg.type,
-    ](desc_a_value, desc_b_value, c_reg.array)
+    var llvmst = array_to_llvm_struct[c_dtype, width](c_reg)
+    # TODO: Simplify with parametric alias
+    var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
+        shape = _get_shape[m, n, k](),
+        typeA = _dtype_to_nvvm_wgmma_type[a_type_value](),
+        typeB = _dtype_to_nvvm_wgmma_type[b_type_value](),
+        typeD = _dtype_to_nvvm_wgmma_type[c_dtype, a_type_value](),
+        scaleD = _to_nvvm_scale_out[scale_d](),
+        scaleA = _to_nvvm_scale_in[scale_a](),
+        scaleB = _to_nvvm_scale_in[scale_b](),
+        layoutA = _to_nvvm_layout[layout_a](),
+        layoutB = _to_nvvm_layout[layout_b](),
+        _type = __mlir_type[
+            `!llvm.struct<(`,
+            __mlir_type[
+                `!kgen.variadic_splat<`,
+                dtype_to_llvm_type[c_dtype],
+                `, `,
+                width.value,
+                `>`,
+            ],
+            `)>`,
+        ],
+    ](llvmst, desc_a_value, desc_b_value)
 
-    return rebind[StaticTuple[Scalar[c_dtype], width]](res)
+    return llvm_struct_to_array[c_dtype, width](llvmres)
 
 
 @always_inline
@@ -1110,32 +1197,32 @@ fn wgmma_async[
     alias layout_a_value = _get_kgen_string[layout_a]()
     alias layout_b_value = _get_kgen_string[layout_b]()
 
-    fn dtype_to_nvvm_type[
-        out_type: DType, in_type: DType = out_type
-    ]() -> __mlir_type.`!kgen.deferred`:
-        @parameter
-        if out_type is DType.float16 or out_type is DType.uint32:
-            # Special case when input types are integers, the result has to be integer too.
-            if in_type != out_type and in_type.is_integral():
-                return __mlir_attr.`si32`
-            return __mlir_attr.`f16`
-        else:
-            return out_type.__mlir_type()
+    var llvmst = simd_to_llvm_struct[c_dtype, width](c_reg)
+    # TODO: Simplify with parametric alias
+    var llvmres = __mlir_op.`nvvm.wgmma.mma_async`[
+        shape = _get_shape[m, n, k](),
+        typeA = _dtype_to_nvvm_wgmma_type[a_type](),
+        typeB = _dtype_to_nvvm_wgmma_type[b_type](),
+        typeD = _dtype_to_nvvm_wgmma_type[c_dtype, a_type](),
+        scaleD = _to_nvvm_scale_out[scale_d](),
+        scaleA = _to_nvvm_scale_in[scale_a](),
+        scaleB = _to_nvvm_scale_in[scale_b](),
+        layoutA = _to_nvvm_layout[layout_a](),
+        layoutB = _to_nvvm_layout[layout_b](),
+        _type = __mlir_type[
+            `!llvm.struct<(`,
+            __mlir_type[
+                `!kgen.variadic_splat<`,
+                dtype_to_llvm_type[c_dtype],
+                `, `,
+                width.value,
+                `>`,
+            ],
+            `)>`,
+        ],
+    ](llvmst, desc_a_value, desc_b_value)
 
-    return __mlir_op.`pop.nvvm.wgmma.mma_async`[
-        shape_m = m.value,
-        shape_n = n.value,
-        shape_k = k.value,
-        type_a = dtype_to_nvvm_type[a_type](),
-        type_b = dtype_to_nvvm_type[b_type](),
-        type_c = dtype_to_nvvm_type[c_dtype, a_type](),
-        layout_a=layout_a_value,
-        layout_b=layout_b_value,
-        scale_d = scale_d.value,
-        scale_a = scale_a.value,
-        scale_b = scale_b.value,
-        _type = __type_of(c_reg.value),
-    ](desc_a_value, desc_b_value, c_reg.value)
+    return llvm_struct_to_simd[c_dtype, width](llvmres)
 
 
 @always_inline
