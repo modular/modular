@@ -25,6 +25,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
+from max.interfaces import LogProbabilities
 from max.nn import ReturnLogits
 from max.nn.kv_cache import (
     KVCacheInputs,
@@ -33,7 +34,7 @@ from max.nn.kv_cache import (
     estimate_kv_cache_size,
     load_kv_manager,
 )
-from max.pipelines.core import LogProbabilities, TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,

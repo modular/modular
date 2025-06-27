@@ -75,6 +75,7 @@ modular_py_binary(
     }),
     deps = [
         "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/pipelines/architectures",

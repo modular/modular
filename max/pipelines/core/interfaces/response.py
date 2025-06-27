@@ -19,54 +19,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
-
-
-class LogProbabilities:
-    """Log probabilities for an individual output token.
-
-    Attributes:
-        token_log_probabilities (list[float]): Probabilities of each token.
-        top_log_probabilities (list[dict[int, float]]): Top tokens and their corresponding probabilities.
-
-    """
-
-    def __init__(
-        self,
-        token_log_probabilities: list[float],
-        top_log_probabilities: list[dict[int, float]],
-    ) -> None:
-        self.token_log_probabilities = token_log_probabilities
-        self.top_log_probabilities = top_log_probabilities
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, LogProbabilities):
-            return False
-
-        if len(self.token_log_probabilities) != len(
-            other.token_log_probabilities
-        ):
-            return False
-
-        if not all(
-            a == b
-            for a, b in zip(
-                self.token_log_probabilities, other.token_log_probabilities
-            )
-        ):
-            return False
-
-        if len(self.top_log_probabilities) != len(other.top_log_probabilities):
-            return False
-
-        if not all(
-            a == b
-            for a, b in zip(
-                self.top_log_probabilities, other.top_log_probabilities
-            )
-        ):
-            return False
-
-        return True
+from max.interfaces import LogProbabilities
 
 
 class TextResponse:

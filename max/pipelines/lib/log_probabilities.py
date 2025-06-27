@@ -17,7 +17,7 @@ import logging
 from collections.abc import Sequence
 
 import numpy as np
-from max.pipelines.core import LogProbabilities
+from max.interfaces import LogProbabilities
 
 logger = logging.getLogger("max.pipelines")
 

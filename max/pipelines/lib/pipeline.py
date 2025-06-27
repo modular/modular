@@ -44,6 +44,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
+from max.interfaces import LogProbabilities
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -55,7 +56,6 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import (
     InputContext,
-    LogProbabilities,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
