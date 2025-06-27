@@ -291,7 +291,7 @@ fn _get_global_handle[
     dtype: DType,
     backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
-    var HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend)
+    var HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend, "_", ctx.id())
     if global_ptr := _get_global_or_null(HANDLE_NAME).bitcast[
         Handle[backend]
     ]():
@@ -329,18 +329,21 @@ fn matmul[
     Matmul using the vendor BLAS library. With a global handle.
     """
 
-    return matmul[use_tf32](
-        ctx,
-        _get_global_handle[a.type](ctx),
-        c,
-        a,
-        b,
-        c_row_major=c_row_major,
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        alpha=alpha,
-        beta=beta,
-    )
+    # Push the device context to ensure correct CUDA context is current for all
+    # vendor BLAS calls.
+    with ctx.push_context() as cur_ctx:
+        return matmul[use_tf32](
+            cur_ctx,
+            _get_global_handle[a.type](ctx),
+            c,
+            a,
+            b,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
+        )
 
 
 fn matmul[

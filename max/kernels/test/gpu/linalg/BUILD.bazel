@@ -21,7 +21,10 @@ _EXTRA_CONSTRAINTS = {
     "test_matmul_sm100.mojo": ["//:b200_gpu"],
     "test_tma_wgmma.mojo": ["//:h100_gpu"],
     "test_tma_wgmma_with_multicast.mojo": ["//:h100_gpu"],
-    "test_vendor_blas.mojo": ["//:nvidia_gpu"],
+    "test_vendor_blas.mojo": [
+        "//:nvidia_gpu",
+        "//:has_multi_gpu",
+    ],
     "test_warp_specialization_gemm_with_cluster.mojo": ["//:h100_gpu"],
     "test_warp_specialization_hilbert_gemm.mojo": ["//:h100_gpu"],
     "test_warp_specialization_gemm.mojo": ["//:h100_gpu"],

@@ -107,6 +107,55 @@ def dispatch_test_vendor_blas[
     )
 
 
+def test_vendor_blas_multi_gpu():
+    """Test vendor BLAS on multiple GPUs to ensure device contexts work correctly.
+    """
+
+    # Test on default device (GPU 0)
+    with DeviceContext() as ctx0:
+        # Test the specific failing shapes from the logs
+        dispatch_test_vendor_blas[transpose_b=True](
+            M=78, N=75837, K=5120, ctx=ctx0
+        )
+        dispatch_test_vendor_blas[transpose_b=True](
+            M=31, N=75837, K=5120, ctx=ctx0
+        )
+        # Also test a smaller shape
+        dispatch_test_vendor_blas[transpose_b=True](
+            M=64, N=128, K=256, ctx=ctx0
+        )
+
+    # Test on GPU 1 if available.
+    if DeviceContext.number_of_devices() >= 2:
+        with DeviceContext(device_id=1) as ctx1:
+            dispatch_test_vendor_blas[transpose_b=True](
+                M=78, N=75837, K=5120, ctx=ctx1
+            )
+            dispatch_test_vendor_blas[transpose_b=True](
+                M=31, N=75837, K=5120, ctx=ctx1
+            )
+            dispatch_test_vendor_blas[transpose_b=True](
+                M=64, N=128, K=256, ctx=ctx1
+            )
+
+        # Test alternating between GPUs to ensure handle management works
+        # correctly.
+        with DeviceContext(device_id=0) as ctx0:
+            dispatch_test_vendor_blas[transpose_b=True](
+                M=32, N=64, K=128, ctx=ctx0
+            )
+
+        with DeviceContext(device_id=1) as ctx1:
+            dispatch_test_vendor_blas[transpose_b=True](
+                M=32, N=64, K=128, ctx=ctx1
+            )
+
+        with DeviceContext(device_id=0) as ctx0:
+            dispatch_test_vendor_blas[transpose_b=True](
+                M=32, N=64, K=128, ctx=ctx0
+            )
+
+
 def main():
     with DeviceContext() as ctx:
         dispatch_test_vendor_blas[transpose_b=True](M=550, N=2048, K=8, ctx=ctx)
@@ -120,3 +169,6 @@ def main():
         dispatch_test_vendor_blas[transpose_b=False](
             M=1, N=1024, K=1024, ctx=ctx
         )
+
+    # Run multi-GPU test
+    test_vendor_blas_multi_gpu()
