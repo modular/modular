@@ -59,7 +59,7 @@ from utils._serialize import _serialize_elements, _serialize_elements_compact
 from .info import DEFAULT_GPU
 
 
-# Create empty structs to ensure type checking when using the C++ handles.
+# Create empty structs to ensure dtype checking when using the C++ handles.
 struct _DeviceContextCpp:
     pass
 
@@ -183,7 +183,7 @@ struct _DeviceBufferMode:
         return self._mode == other._mode
 
 
-struct HostBuffer[type: DType](Sized, Stringable, Writable):
+struct HostBuffer[dtype: DType](Sized, Stringable, Writable):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
 
@@ -192,10 +192,10 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
     [`enqueue_create_host_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer).
 
     Parameters:
-        type: Data type to be stored in the buffer.
+        dtype: Data type to be stored in the buffer.
     """
 
-    alias _HostPtr = UnsafePointer[Scalar[type]]
+    alias _HostPtr = UnsafePointer[Scalar[dtype]]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -214,7 +214,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[type]()
+        alias elem_size = sizeof[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         var host_ptr = Self._HostPtr()
 
@@ -262,7 +262,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
             not is_gpu(),
             "HostBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[type]()
+        alias elem_size = sizeof[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         # void AsyncRT_DeviceContext_createBuffer_owning(
         #     const DeviceBuffer **result, const DeviceContext *ctx,
@@ -378,16 +378,16 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
             external_call[
                 "AsyncRT_DeviceBuffer_bytesize", Int, _DeviceBufferPtr
             ](self._handle)
-            // sizeof[type]()
+            // sizeof[dtype]()
         )
 
     fn create_sub_buffer[
         view_type: DType
     ](self, offset: Int, size: Int) raises -> HostBuffer[view_type]:
-        """Creates a sub-buffer view of this buffer with a different element type.
+        """Creates a sub-buffer view of this buffer with a different element dtype.
 
         This method creates a new buffer that references a subset of the memory in this
-        buffer, potentially with a different element type. The sub-buffer shares the
+        buffer, potentially with a different element dtype. The sub-buffer shares the
         underlying memory with the original buffer.
 
         Parameters:
@@ -398,7 +398,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
             size: The number of elements in the new sub-buffer.
 
         Returns:
-            A new HostBuffer referencing the specified region with the specified element type.
+            A new HostBuffer referencing the specified region with the specified element dtype.
         """
         constrained[
             not is_gpu(),
@@ -431,7 +431,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         )
         return HostBuffer[view_type](new_handle, new_host_ptr)
 
-    fn enqueue_copy_to(self, dst: HostBuffer[type, **_]) raises:
+    fn enqueue_copy_to(self, dst: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to another host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -443,7 +443,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         """
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst: DeviceBuffer[type, **_]) raises:
+    fn enqueue_copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -459,7 +459,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
+    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -475,7 +475,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         self.context().enqueue_copy(dst_ptr, self)
 
-    fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
+    fn enqueue_copy_from(self, src: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -491,7 +491,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         self.context().enqueue_copy(self, src)
 
-    fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
+    fn enqueue_copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -507,7 +507,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         self.context().enqueue_copy(self, src)
 
-    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
+    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
         This method schedules a memory copy operation to this device buffer from the
@@ -523,7 +523,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         self.context().enqueue_copy(self, src_ptr)
 
-    fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
+    fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
 
         This method schedules a memory set operation that fills the entire buffer
@@ -635,7 +635,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         the specified writer. For large buffers, a compact representation is used.
 
         Parameters:
-            W: The writer type.
+            W: The writer dtype.
 
         Args:
             writer: The writer to output the formatted string to.
@@ -680,7 +680,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         return String.write(self)
 
-    fn __getitem__(self, idx: Int) -> Scalar[type]:
+    fn __getitem__(self, idx: Int) -> Scalar[dtype]:
         """Retrieves the element at the specified index from the host buffer.
 
         This operator allows direct access to individual elements in the host buffer
@@ -698,7 +698,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         return self._host_ptr[idx]
 
-    fn __setitem__(self: HostBuffer[type], idx: Int, val: Scalar[type]):
+    fn __setitem__(self: HostBuffer[dtype], idx: Int, val: Scalar[dtype]):
         """Sets the element at the specified index in the host buffer.
 
         This operator allows direct modification of individual elements in the host buffer
@@ -714,7 +714,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         ]()
         self._host_ptr[idx] = val
 
-    fn as_span(ref self, out span: Span[Scalar[type], __origin_of(self)]):
+    fn as_span(ref self, out span: Span[Scalar[dtype], __origin_of(self)]):
         """
         Returns a `Span` pointing to the underlying memory of the `HostBuffer`.
 
@@ -724,7 +724,7 @@ struct HostBuffer[type: DType](Sized, Stringable, Writable):
         return __type_of(span)(ptr=self._host_ptr, length=len(self))
 
 
-struct DeviceBuffer[type: DType](
+struct DeviceBuffer[dtype: DType](
     Copyable, DevicePassable, Movable, Sized, Stringable, Writable
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
@@ -735,15 +735,15 @@ struct DeviceBuffer[type: DType](
     [`enqueue_create_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_buffer).
 
     Parameters:
-        type: Data type to be stored in the buffer.
+        dtype: Data dtype to be stored in the buffer.
     """
 
     # Implementation of `DevicePassable`
-    alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[type]]
-    """DeviceBuffer types are remapped to UnsafePointer when passed to accelerator devices."""
+    alias device_type: AnyTrivialRegType = UnsafePointer[Scalar[dtype]]
+    """DeviceBuffer dtypes are remapped to UnsafePointer when passed to accelerator devices."""
 
     fn _to_device_type(self, target: OpaquePointer):
-        """Device type mapping from DeviceBuffer to the device's UnsafePointer.
+        """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.
         """
         # TODO: Allow the low-level DeviceContext implementation to intercept
         # these translations.
@@ -752,15 +752,15 @@ struct DeviceBuffer[type: DType](
     @staticmethod
     fn get_type_name() -> String:
         """
-        Gets this type's name, for use in error messages when handing arguments
+        Gets this dtype's name, for use in error messages when handing arguments
         to kernels.
         TODO: This will go away soon, when we get better error messages for
         kernel calls.
 
         Returns:
-            This type's name.
+            This dtype's name.
         """
-        return "DeviceBuffer[" + repr(type) + "]"
+        return String("DeviceBuffer[", dtype, "]")
 
     @staticmethod
     fn get_device_type_name() -> String:
@@ -771,11 +771,11 @@ struct DeviceBuffer[type: DType](
         kernel calls.
 
         Returns:
-            This type's name.
+            This dtype's name.
         """
-        return "UnsafePointer[Scalar[" + repr(type) + "]]"
+        return String("UnsafePointer[Scalar[", dtype, "]]")
 
-    alias _DevicePtr = UnsafePointer[Scalar[type]]
+    alias _DevicePtr = UnsafePointer[Scalar[dtype]]
     # _device_ptr must be the first word in the struct to enable passing of
     # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
@@ -797,7 +797,7 @@ struct DeviceBuffer[type: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[type]()
+        alias elem_size = sizeof[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         var device_ptr = Self._DevicePtr()
 
@@ -873,7 +873,7 @@ struct DeviceBuffer[type: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        alias elem_size = sizeof[type]()
+        alias elem_size = sizeof[dtype]()
         var cpp_handle = _DeviceBufferPtr()
         # void AsyncRT_DeviceContext_createBuffer_owning(
         #     const DeviceBuffer **result, const DeviceContext *ctx,
@@ -990,17 +990,17 @@ struct DeviceBuffer[type: DType](
             external_call[
                 "AsyncRT_DeviceBuffer_bytesize", Int, _DeviceBufferPtr
             ](self._handle)
-            // sizeof[type]()
+            // sizeof[dtype]()
         )
 
     @always_inline
     fn create_sub_buffer[
         view_type: DType
     ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
-        """Creates a sub-buffer view of this buffer with a different element type.
+        """Creates a sub-buffer view of this buffer with a different element dtype.
 
         This method creates a new buffer that references a subset of the memory in this
-        buffer, potentially with a different element type. The sub-buffer shares the
+        buffer, potentially with a different element dtype. The sub-buffer shares the
         underlying memory with the original buffer.
 
         Parameters:
@@ -1011,7 +1011,7 @@ struct DeviceBuffer[type: DType](
             size: The number of elements in the new sub-buffer.
 
         Returns:
-            A new DeviceBuffer referencing the specified region with the specified element type.
+            A new DeviceBuffer referencing the specified region with the specified element dtype.
         """
         constrained[
             not is_gpu(),
@@ -1044,7 +1044,7 @@ struct DeviceBuffer[type: DType](
         )
         return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
-    fn enqueue_copy_to(self, dst: DeviceBuffer[type, **_]) raises:
+    fn enqueue_copy_to(self, dst: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1060,7 +1060,7 @@ struct DeviceBuffer[type: DType](
         ]()
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst: HostBuffer[type, **_]) raises:
+    fn enqueue_copy_to(self, dst: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy from this buffer to a host buffer.
 
         This method schedules a memory copy operation from this buffer to the destination
@@ -1076,7 +1076,7 @@ struct DeviceBuffer[type: DType](
         ]()
         dst.context().enqueue_copy(dst, self)
 
-    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[type]]) raises:
+    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -1092,7 +1092,7 @@ struct DeviceBuffer[type: DType](
         ]()
         self.context().enqueue_copy(dst_ptr, self)
 
-    fn enqueue_copy_from(self, src: DeviceBuffer[type, **_]) raises:
+    fn enqueue_copy_from(self, src: DeviceBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from another device buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -1108,7 +1108,7 @@ struct DeviceBuffer[type: DType](
         ]()
         self.context().enqueue_copy(self, src)
 
-    fn enqueue_copy_from(self, src: HostBuffer[type, **_]) raises:
+    fn enqueue_copy_from(self, src: HostBuffer[dtype, **_]) raises:
         """Enqueues an asynchronous copy to this buffer from a host buffer.
 
         This method schedules a memory copy operation to this buffer from the source
@@ -1124,7 +1124,7 @@ struct DeviceBuffer[type: DType](
         ]()
         self.context().enqueue_copy(self, src)
 
-    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[type]]) raises:
+    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
         This method schedules a memory copy operation to this device buffer from the
@@ -1140,7 +1140,7 @@ struct DeviceBuffer[type: DType](
         ]()
         self.context().enqueue_copy(self, src_ptr)
 
-    fn enqueue_fill(self, val: Scalar[type]) raises -> Self:
+    fn enqueue_fill(self, val: Scalar[dtype]) raises -> Self:
         """Enqueues an operation to fill this buffer with a specified value.
 
         This method schedules a memory set operation that fills the entire buffer
@@ -1258,7 +1258,7 @@ struct DeviceBuffer[type: DType](
 
     fn map_to_host(
         self,
-        out mapped_buffer: _HostMappedBuffer[type],
+        out mapped_buffer: _HostMappedBuffer[dtype],
     ) raises:
         """Maps this device buffer to host memory for CPU access.
 
@@ -1298,7 +1298,7 @@ struct DeviceBuffer[type: DType](
             not is_gpu(),
             "DeviceBuffer is not supported on GPUs",
         ]()
-        mapped_buffer = _HostMappedBuffer[type](self.context(), self)
+        mapped_buffer = _HostMappedBuffer[dtype](self.context(), self)
 
     fn write_to[W: Writer](self, mut writer: W):
         """Writes a string representation of this buffer to the provided writer.
@@ -1307,7 +1307,7 @@ struct DeviceBuffer[type: DType](
         the specified writer. For large buffers, a compact representation is used.
 
         Parameters:
-            W: The writer type.
+            W: The writer dtype.
 
         Args:
             writer: The writer to output the formatted string to.
@@ -1511,9 +1511,9 @@ struct DeviceFunction[
     It handles the compilation, loading, and resource management of device functions.
 
     Parameters:
-        func_type: The type of the function to compile.
+        func_type: The dtype of the function to compile.
         func: The function to compile for GPU execution.
-        declared_arg_types: An optional containing a variadic of the declared types of the kernel signature.
+        declared_arg_types: An optional containing a variadic of the declared dtypes of the kernel signature.
         target: The target architecture for compilation. Defaults to the current GPU target.
         _ptxas_info_verbose: Whether to enable verbose PTX assembly output. Defaults to False.
 
@@ -2022,7 +2022,7 @@ struct DeviceFunction[
         )
 
         # Validate that all actual arguments do remap to the declared device
-        # type in the kernel.
+        # dtype in the kernel.
         @parameter
         if declared_arg_types:
             alias declared_num_args = len(
@@ -2033,9 +2033,9 @@ struct DeviceFunction[
                 "Wrong number of arguments to enqueue",
             ]()
 
-            # For each argument determine the size of the device type and
+            # For each argument determine the size of the device dtype and
             # calculate the offset into a contiguous memory area which will
-            # be used to remap the passed arguments into the device types.
+            # be used to remap the passed arguments into the device dtypes.
             var tmp_arg_offset = 0
 
             @parameter
@@ -2045,36 +2045,36 @@ struct DeviceFunction[
 
                 # Now we'll check if the given argument's device_type is
                 # what the kernel expects.
-                # TODO: Print out the expected type if possible.
+                # TODO: Print out the expected dtype if possible.
 
-                # First, check if they're handing in a device type, in other
-                # words, a type that can be passed directly and doesn't need to
+                # First, check if they're handing in a device dtype, in other
+                # words, a dtype that can be passed directly and doesn't need to
                 # be mapped. For example, Int, IndexList, etc.
                 @parameter
                 if _type_is_eq[actual_arg_type, actual_arg_type.device_type]():
-                    # Now check if they handed in the *correct* device type.
+                    # Now check if they handed in the *correct* device dtype.
                     constrained[
                         _type_is_eq[
                             declared_arg_type, actual_arg_type.device_type
                         ](),
-                        "Handed in wrong argument type for argument #",
+                        "Handed in wrong argument dtype for argument #",
                         String(i),
                         ", received a ",
                         actual_arg_type.get_type_name(),
                     ]()
                 else:
-                    # They handed in a host type, in other words, a type that
+                    # They handed in a host dtype, in other words, a dtype that
                     # needs to be mapped before handing it to the device. In
                     # this case, we use a more informative error message.
                     constrained[
                         _type_is_eq[
                             declared_arg_type, actual_arg_type.device_type
                         ](),
-                        "Handed in wrong argument type for argument #",
+                        "Handed in wrong argument dtype for argument #",
                         String(i),
                         ", received a ",
                         actual_arg_type.get_type_name(),
-                        " (which became device type ",
+                        " (which became device dtype ",
                         actual_arg_type.get_device_type_name(),
                         ")",
                     ]()
@@ -2110,7 +2110,7 @@ struct DeviceFunction[
         alias args_size = calculate_args_size()
 
         # Space to store the arguments to the kernel that have been converted
-        # from host type to device type.
+        # from host dtype to device dtype.
         var translated_args = InlineArray[Byte, args_size](uninitialized=True)
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2126,14 +2126,14 @@ struct DeviceFunction[
                 num_captures_static + num_passed_args, OpaquePointer
             ]()
 
-        # Since we skip over zero sized declared types when passing arguments
+        # Since we skip over zero sized declared dtypes when passing arguments
         # we need to know the current count arguments pushed.
         var translated_arg_idx = 0
 
         @parameter
         for i in range(num_passed_args):
             # If the arg offset is negative then the corresponding declared
-            # type is zero sized and we do not push the argument to the kernel.
+            # dtype is zero sized and we do not push the argument to the kernel.
             var translated_arg_offset = translated_arg_offsets[i]
             if translated_arg_offset >= 0:
                 alias actual_arg_type = Ts[i]
@@ -2827,14 +2827,14 @@ struct DeviceContext(Copyable, Movable):
         return String(api_ptr)
 
     fn enqueue_create_buffer[
-        type: DType
-    ](self, size: Int) raises -> DeviceBuffer[type]:
+        dtype: DType
+    ](self, size: Int) raises -> DeviceBuffer[dtype]:
         """Enqueues a buffer creation using the `DeviceBuffer` constructor.
 
         For GPU devices, the space is allocated in the device's global memory.
 
         Parameters:
-            type: The data type to be stored in the allocated memory.
+            dtype: The data type to be stored in the allocated memory.
 
         Args:
             size: The number of elements of `type` to allocate memory for.
@@ -2842,15 +2842,15 @@ struct DeviceContext(Copyable, Movable):
         Returns:
             The allocated buffer.
         """
-        return DeviceBuffer[type](self, size, _DeviceBufferMode._ASYNC)
+        return DeviceBuffer[dtype](self, size, _DeviceBufferMode._ASYNC)
 
     fn create_buffer_sync[
-        type: DType
-    ](self, size: Int) raises -> DeviceBuffer[type]:
+        dtype: DType
+    ](self, size: Int) raises -> DeviceBuffer[dtype]:
         """Creates a buffer synchronously using the `DeviceBuffer` constructor.
 
         Parameters:
-            type: The data type to be stored in the allocated memory.
+            dtype: The data type to be stored in the allocated memory.
 
         Args:
             size: The number of elements of `type` to allocate memory for.
@@ -2858,13 +2858,13 @@ struct DeviceContext(Copyable, Movable):
         Returns:
             The allocated buffer.
         """
-        var result = DeviceBuffer[type](self, size, _DeviceBufferMode._SYNC)
+        var result = DeviceBuffer[dtype](self, size, _DeviceBufferMode._SYNC)
         self.synchronize()
         return result
 
     fn enqueue_create_host_buffer[
-        type: DType
-    ](self, size: Int) raises -> HostBuffer[type]:
+        dtype: DType
+    ](self, size: Int) raises -> HostBuffer[dtype]:
         """Enqueues the creation of a HostBuffer.
 
         This function allocates memory on the host that is accessible by the device.
@@ -2884,7 +2884,7 @@ struct DeviceContext(Copyable, Movable):
         reduces the amount of memory available for other processes.
 
         Parameters:
-            type: The data type to be stored in the allocated memory.
+            dtype: The data type to be stored in the allocated memory.
 
         Args:
             size: The number of elements of `type` to allocate memory for.
@@ -2908,7 +2908,7 @@ struct DeviceContext(Copyable, Movable):
             # ...
         ```
         """
-        return HostBuffer[type](self, size)
+        return HostBuffer[dtype](self, size)
 
     @always_inline
     fn compile_function[
@@ -2946,7 +2946,7 @@ struct DeviceContext(Copyable, Movable):
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device type than the
+            _target: Change the target to different device dtype than the
                 one associated with this `DeviceContext`.
 
         Args:
@@ -3001,7 +3001,7 @@ struct DeviceContext(Copyable, Movable):
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device type than the
+            _target: Change the target to different device dtype than the
                 one associated with this `DeviceContext`.
 
         Args:
@@ -3061,7 +3061,7 @@ struct DeviceContext(Copyable, Movable):
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile.
             signature_func: The function to compile, passed in again. Used for
-                checking argument types later.
+                checking argument dtypes later.
                 Note: This will disappear in future versions.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
@@ -3073,7 +3073,7 @@ struct DeviceContext(Copyable, Movable):
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device type than the
+            _target: Change the target to different device dtype than the
                 one associated with this `DeviceContext`.
 
         Args:
@@ -3139,7 +3139,7 @@ struct DeviceContext(Copyable, Movable):
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device type than the
+            _target: Change the target to different device dtype than the
                 one associated with this `DeviceContext`.
 
         Args:
@@ -3199,7 +3199,7 @@ struct DeviceContext(Copyable, Movable):
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile.
             signature_func: The function to compile, passed in again. Used for
-                checking argument types later.
+                checking argument dtypes later.
                 Note: This will disappear in future versions.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
@@ -3211,7 +3211,7 @@ struct DeviceContext(Copyable, Movable):
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device type than the
+            _target: Change the target to different device dtype than the
                 one associated with this `DeviceContext`.
 
         Args:
@@ -3277,7 +3277,7 @@ struct DeviceContext(Copyable, Movable):
             _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
                 Toolkit to be installed. Changes `dump_asm` to output verbose
                 PTX assembly (default `False`).
-            _target: Change the target to different device type than the
+            _target: Change the target to different device dtype than the
                 one associated with this `DeviceContext`.
 
         Args:
@@ -3325,7 +3325,7 @@ struct DeviceContext(Copyable, Movable):
         existing CUDA/HIP code or for using specialized assembly optimizations.
 
         Parameters:
-            func_type: The type of the function to load.
+            func_type: The dtype of the function to load.
             func: The function reference.
 
         Args:
@@ -3396,9 +3396,9 @@ struct DeviceContext(Copyable, Movable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The type of the function to launch.
+            func_type: The dtype of the function to launch.
             func: The function to launch.
-            Ts: The types of the arguments being passed to the function.
+            Ts: The dtypes of the arguments being passed to the function.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -3492,9 +3492,9 @@ struct DeviceContext(Copyable, Movable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The type of the function to launch.
+            func_type: The dtype of the function to launch.
             func: The function to launch.
-            Ts: The types of the arguments being passed to the function.
+            Ts: The dtypes of the arguments being passed to the function.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -3586,7 +3586,7 @@ struct DeviceContext(Copyable, Movable):
         """Enqueues a compiled function for execution on this device.
 
         Parameters:
-            Ts: Argument types.
+            Ts: Argument dtypes.
 
         Args:
             f: The compiled function to execute.
@@ -3667,7 +3667,7 @@ struct DeviceContext(Copyable, Movable):
         """Enqueues a compiled function for execution on this device.
 
         Parameters:
-            Ts: Argument types.
+            Ts: Argument dtypes.
 
         Args:
             f: The compiled function to execute.
@@ -3752,7 +3752,7 @@ struct DeviceContext(Copyable, Movable):
         """Enqueues a compiled function for execution on this device.
 
         Parameters:
-            Ts: Argument types.
+            Ts: Argument dtypes.
 
         Args:
             f: The compiled function to execute.
@@ -3841,13 +3841,13 @@ struct DeviceContext(Copyable, Movable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The type of the function to launch.
+            func_type: The dtype of the function to launch.
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
             signature_func: The function to compile and launch, passed in
-                again. Used for checking argument types later.
+                again. Used for checking argument dtypes later.
                 Note: This will disappear in future versions.
-            actual_arg_types: The types of the arguments being passed to the function.
+            actual_arg_types: The dtypes of the arguments being passed to the function.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -3948,7 +3948,7 @@ struct DeviceContext(Copyable, Movable):
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
-            actual_arg_types: The types of the arguments being passed to the function.
+            actual_arg_types: The dtypes of the arguments being passed to the function.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4049,13 +4049,13 @@ struct DeviceContext(Copyable, Movable):
         overload takes in a function that's `capturing`.
 
         Parameters:
-            func_type: The type of the function to launch.
+            func_type: The dtype of the function to launch.
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
             signature_func: The function to compile and launch, passed in
-                again. Used for checking argument types later.
+                again. Used for checking argument dtypes later.
                 Note: This will disappear in future versions.
-            actual_arg_types: The types of the arguments being passed to the function.
+            actual_arg_types: The dtypes of the arguments being passed to the function.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4157,7 +4157,7 @@ struct DeviceContext(Copyable, Movable):
         Parameters:
             declared_arg_types: Types of the arguments to pass to the device function.
             func: The function to compile and launch.
-            actual_arg_types: The types of the arguments being passed to the function.
+            actual_arg_types: The dtypes of the arguments being passed to the function.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -4305,7 +4305,7 @@ struct DeviceContext(Copyable, Movable):
         underlying GPU runtime, which will execute them when resources are available.
 
         Parameters:
-            Ts: The types of the arguments to be passed to the device function.
+            Ts: The dtypes of the arguments to be passed to the device function.
 
         Args:
             f: The external device function to execute.
@@ -4634,18 +4634,18 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
         self,
-        dst_buf: DeviceBuffer[type, **_],
-        src_ptr: UnsafePointer[Scalar[type]],
+        dst_buf: DeviceBuffer[dtype, **_],
+        src_ptr: UnsafePointer[Scalar[dtype]],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
         device buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_buf: Device buffer to copy to.
@@ -4658,7 +4658,7 @@ struct DeviceContext(Copyable, Movable):
                 _CharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
-                UnsafePointer[Scalar[type]],
+                UnsafePointer[Scalar[dtype]],
             ](
                 self._handle,
                 dst_buf._handle,
@@ -4668,18 +4668,18 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
         self,
-        dst_buf: HostBuffer[type, **_],
-        src_ptr: UnsafePointer[Scalar[type]],
+        dst_buf: HostBuffer[dtype, **_],
+        src_ptr: UnsafePointer[Scalar[dtype]],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
         device buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_buf: Device buffer to copy to.
@@ -4692,7 +4692,7 @@ struct DeviceContext(Copyable, Movable):
                 _CharPtr,
                 _DeviceContextPtr,
                 _DeviceBufferPtr,
-                UnsafePointer[Scalar[type]],
+                UnsafePointer[Scalar[dtype]],
             ](
                 self._handle,
                 dst_buf._handle,
@@ -4702,17 +4702,17 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[type]],
-        src_buf: DeviceBuffer[type, **_],
+        dst_ptr: UnsafePointer[Scalar[dtype]],
+        src_buf: DeviceBuffer[dtype, **_],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_ptr: Host pointer to copy to.
@@ -4724,7 +4724,7 @@ struct DeviceContext(Copyable, Movable):
                 "AsyncRT_DeviceContext_DtoH_async",
                 _CharPtr,
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[type]],
+                UnsafePointer[Scalar[dtype]],
                 _DeviceBufferPtr,
             ](
                 self._handle,
@@ -4735,17 +4735,17 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[type]],
-        src_buf: HostBuffer[type, **_],
+        dst_ptr: UnsafePointer[Scalar[dtype]],
+        src_buf: HostBuffer[dtype, **_],
     ) raises:
         """Enqueues an async copy from the device to the host. The
         number of bytes copied is determined by the size of the device buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_ptr: Host pointer to copy to.
@@ -4757,7 +4757,7 @@ struct DeviceContext(Copyable, Movable):
                 "AsyncRT_DeviceContext_DtoH_async",
                 _CharPtr,
                 _DeviceContextPtr,
-                UnsafePointer[Scalar[type]],
+                UnsafePointer[Scalar[dtype]],
                 _DeviceBufferPtr,
             ](
                 self._handle,
@@ -4768,18 +4768,18 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[type]],
-        src_ptr: UnsafePointer[Scalar[type]],
+        dst_ptr: UnsafePointer[Scalar[dtype]],
+        src_ptr: UnsafePointer[Scalar[dtype]],
         size: Int,
     ) raises:
         """Enqueues an async copy of `size` elements from a device pointer to
         another device pointer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_ptr: Host pointer to copy to.
@@ -4793,15 +4793,17 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
-        self, dst_buf: DeviceBuffer[type, **_], src_buf: DeviceBuffer[type, **_]
+        self,
+        dst_buf: DeviceBuffer[dtype, **_],
+        src_buf: DeviceBuffer[dtype, **_],
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_buf: Device buffer to copy to.
@@ -4825,15 +4827,15 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
-        self, dst_buf: DeviceBuffer[type, **_], src_buf: HostBuffer[type, **_]
+        self, dst_buf: DeviceBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_buf: Device buffer to copy to.
@@ -4857,15 +4859,15 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
-        self, dst_buf: HostBuffer[type, **_], src_buf: DeviceBuffer[type, **_]
+        self, dst_buf: HostBuffer[dtype, **_], src_buf: DeviceBuffer[dtype, **_]
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_buf: Device buffer to copy to.
@@ -4889,15 +4891,15 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_copy[
-        type: DType
+        dtype: DType
     ](
-        self, dst_buf: HostBuffer[type, **_], src_buf: HostBuffer[type, **_]
+        self, dst_buf: HostBuffer[dtype, **_], src_buf: HostBuffer[dtype, **_]
     ) raises:
         """Enqueues an async copy from one device buffer to another. The amount
         of data transferred is determined by the size of the destination buffer.
 
         Parameters:
-            type: Type of the data being copied.
+            dtype: Type of the data being copied.
 
         Args:
             dst_buf: Device buffer to copy to.
@@ -4921,22 +4923,22 @@ struct DeviceContext(Copyable, Movable):
 
     @always_inline
     fn enqueue_memset[
-        type: DType
-    ](self, dst: DeviceBuffer[type, **_], val: Scalar[type]) raises:
+        dtype: DType
+    ](self, dst: DeviceBuffer[dtype, **_], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination device buffer to the specified value.
 
         Parameters:
-            type: Type of the data stored in the buffer.
+            dtype: Type of the data stored in the buffer.
 
         Args:
             dst: Destination buffer.
             val: Value to set all elements of `dst` to.
         """
-        alias bitwidth = bitwidthof[type]()
+        alias bitwidth = bitwidthof[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
-            "bitwidth of memset type must be one of [8,16,32,64]",
+            "bitwidth of memset dtype must be one of [8,16,32,64]",
         ]()
         var value: UInt64
 
@@ -4963,27 +4965,27 @@ struct DeviceContext(Copyable, Movable):
                 self._handle,
                 dst._handle,
                 value,
-                sizeof[type](),
+                sizeof[dtype](),
             )
         )
 
     fn enqueue_memset[
-        type: DType
-    ](self, dst: HostBuffer[type, **_], val: Scalar[type]) raises:
+        dtype: DType
+    ](self, dst: HostBuffer[dtype, **_], val: Scalar[dtype]) raises:
         """Enqueues an async memset operation, setting all of the elements in
         the destination host buffer to the specified value.
 
         Parameters:
-            type: Type of the data stored in the buffer.
+            dtype: Type of the data stored in the buffer.
 
         Args:
             dst: Destination buffer.
             val: Value to set all elements of `dst` to.
         """
-        alias bitwidth = bitwidthof[type]()
+        alias bitwidth = bitwidthof[dtype]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32 or bitwidth == 64,
-            "bitwidth of memset type must be one of [8,16,32,64]",
+            "bitwidth of memset dtype must be one of [8,16,32,64]",
         ]()
         var value: UInt64
 
@@ -5010,7 +5012,7 @@ struct DeviceContext(Copyable, Movable):
                 self._handle,
                 dst._handle,
                 value,
-                sizeof[type](),
+                sizeof[dtype](),
             )
         )
 
@@ -5505,12 +5507,12 @@ struct DeviceContext(Copyable, Movable):
         )
 
 
-struct DeviceMulticastBuffer[type: DType]:
+struct DeviceMulticastBuffer[dtype: DType]:
     """Represents a multicast memory object enables special memory operations to be broadcast
     across a group of devices.
 
     Parameters:
-        type: Data type to be stored in the associated memory regions.
+        dtype: Data dtype to be stored in the associated memory regions.
     """
 
     var _handle: _DeviceMulticastBufferPtr
@@ -5521,7 +5523,7 @@ struct DeviceMulticastBuffer[type: DType]:
         owned contexts: List[DeviceContext],
         size: Int,
     ) raises:
-        alias elem_size = sizeof[type]()
+        alias elem_size = sizeof[dtype]()
         var handle = _DeviceMulticastBufferPtr()
 
         var ctxs_len = len(contexts)
@@ -5553,17 +5555,17 @@ struct DeviceMulticastBuffer[type: DType]:
     @doc_private
     fn unicast_buffer_for(
         self, ctx: DeviceContext
-    ) raises -> DeviceBuffer[type]:
+    ) raises -> DeviceBuffer[dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        var buf_ptr = UnsafePointer[Scalar[type]]()
+        var buf_ptr = UnsafePointer[Scalar[dtype]]()
 
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_unicastBufferFor",
                 _CharPtr,
                 UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[UnsafePointer[Scalar[type]]],
+                UnsafePointer[UnsafePointer[Scalar[dtype]]],
                 _DeviceMulticastBufferPtr,
                 _DeviceContextPtr,
             ](
@@ -5574,22 +5576,22 @@ struct DeviceMulticastBuffer[type: DType]:
             )
         )
 
-        return DeviceBuffer[type](buf_handle, buf_ptr)
+        return DeviceBuffer[dtype](buf_handle, buf_ptr)
 
     @doc_private
     fn multicast_buffer_for(
         self, ctx: DeviceContext
-    ) raises -> DeviceBuffer[type]:
+    ) raises -> DeviceBuffer[dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr()
-        var buf_ptr = UnsafePointer[Scalar[type]]()
+        var buf_ptr = UnsafePointer[Scalar[dtype]]()
 
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_multicastBufferFor",
                 _CharPtr,
                 UnsafePointer[_DeviceBufferPtr],
-                UnsafePointer[UnsafePointer[Scalar[type]]],
+                UnsafePointer[UnsafePointer[Scalar[dtype]]],
                 _DeviceMulticastBufferPtr,
                 _DeviceContextPtr,
             ](
@@ -5600,16 +5602,16 @@ struct DeviceMulticastBuffer[type: DType]:
             )
         )
 
-        return DeviceBuffer[type](buf_handle, buf_ptr)
+        return DeviceBuffer[dtype](buf_handle, buf_ptr)
 
 
-struct _HostMappedBuffer[type: DType]:
+struct _HostMappedBuffer[dtype: DType]:
     var _ctx: DeviceContext
-    var _dev_buf: DeviceBuffer[type]
-    var _cpu_buf: HostBuffer[type]
+    var _dev_buf: DeviceBuffer[dtype]
+    var _cpu_buf: HostBuffer[dtype]
 
-    fn __init__(out self, ctx: DeviceContext, buf: DeviceBuffer[type]) raises:
-        var cpu_buf = ctx.enqueue_create_host_buffer[type](len(buf))
+    fn __init__(out self, ctx: DeviceContext, buf: DeviceBuffer[dtype]) raises:
+        var cpu_buf = ctx.enqueue_create_host_buffer[dtype](len(buf))
         self._ctx = ctx
         self._dev_buf = buf
         self._cpu_buf = cpu_buf
@@ -5617,7 +5619,7 @@ struct _HostMappedBuffer[type: DType]:
     fn __del__(owned self):
         pass
 
-    fn __enter__(mut self) raises -> HostBuffer[type]:
+    fn __enter__(mut self) raises -> HostBuffer[dtype]:
         self._dev_buf.enqueue_copy_to(self._cpu_buf)
         self._ctx.synchronize()
         return self._cpu_buf

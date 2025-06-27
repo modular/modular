@@ -14,7 +14,7 @@ from max.dtype import DType
 from max.graph import Graph, ops
 
 
-def test_shape_to_tensor_invalid_type():
+def test_shape_to_tensor_invalid_type() -> None:
     """Test that shape_to_tensor fails with non-shape inputs."""
     with Graph("shape_to_tensor_invalid") as graph:
         with pytest.raises(TypeError):
@@ -31,7 +31,7 @@ shared_static_shapes = st.shared(shapes(dims=static_dims()))
 
 
 @given(shape=shared_static_shapes)
-def test_shape_to_tensor_valid(shape: list[int]):
+def test_shape_to_tensor_valid(shape: list[int]) -> None:
     """Test that shape_to_tensor works with valid shape inputs."""
     with Graph("shape_to_tensor_valid") as graph:
         out = ops.shape_to_tensor(shape)

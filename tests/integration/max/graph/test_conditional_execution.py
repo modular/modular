@@ -33,16 +33,16 @@ def custom_ops_path() -> Path:
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
-def test_conditional_execution_no_results(session, capfd):
+def test_conditional_execution_no_results(session, capfd) -> None:
     with Graph(
         "conditional",
         input_types=(TensorType(DType.bool, [], device=device_ref),),
     ) as graph:
 
-        def then_fn():
+        def then_fn() -> None:
             ops.print("then")
 
-        def else_fn():
+        def else_fn() -> None:
             ops.print("else")
 
         ops.cond(graph.inputs[0].tensor, None, then_fn, else_fn)
@@ -62,7 +62,7 @@ def test_conditional_execution_no_results(session, capfd):
     assert "else" in captured.out
 
 
-def test_conditional_execution_with_results(session):
+def test_conditional_execution_with_results(session) -> None:
     with Graph(
         "conditional",
         input_types=(TensorType(DType.bool, [], device=device_ref),),
@@ -91,7 +91,7 @@ def test_conditional_execution_with_results(session):
     assert output[0].to_numpy() == 0
 
 
-def test_conditional_shape_to_tensor_solo_dim(session):
+def test_conditional_shape_to_tensor_solo_dim(session) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=device_ref
     )
@@ -136,7 +136,7 @@ def test_conditional_shape_to_tensor_solo_dim(session):
 @pytest.mark.skip(reason="assert fail")
 def test_conditional_inplace_user_supplied(
     custom_ops_path, session: InferenceSession
-):
+) -> None:
     import torch
 
     bt = BufferType(DType.float32, [2, 2], device=device_ref)
@@ -150,7 +150,7 @@ def test_conditional_inplace_user_supplied(
         buffer: BufferValue = graph.inputs[0].buffer
         cond = graph.inputs[1].tensor
 
-        def then_fn():
+        def then_fn() -> None:
             # this custom op is equivalent to buffer[0,0] += 1
             ops.inplace_custom(
                 "mutable_test_op", device=buffer.device, values=[buffer]
@@ -160,7 +160,7 @@ def test_conditional_inplace_user_supplied(
             )
             buffer[...] = ops.negate(buffer[...])
 
-        def else_fn():
+        def else_fn() -> None:
             # this custom op is equivalent to buffer[0,0] += 1
             ops.inplace_custom(
                 "mutable_test_op", device=buffer.device, values=[buffer]
@@ -193,7 +193,7 @@ def test_conditional_inplace_user_supplied(
     np.testing.assert_equal(rawbuffer.cpu().numpy(), actual)
 
 
-def test_conditional_nested_conditionals(session, capfd):
+def test_conditional_nested_conditionals(session, capfd) -> None:
     with Graph(
         "nested_conditionals",
         input_types=(
@@ -204,24 +204,24 @@ def test_conditional_nested_conditionals(session, capfd):
         cond_1 = graph.inputs[0].tensor
         cond_2 = graph.inputs[1].tensor
 
-        def true_fn_1():
+        def true_fn_1() -> None:
             ops.print("true_1")
 
-            def true_fn_2():
+            def true_fn_2() -> None:
                 ops.print("true_true_2")
 
-            def false_fn_2():
+            def false_fn_2() -> None:
                 ops.print("true_false_2")
 
             ops.cond(cond_2, None, true_fn_2, false_fn_2)
 
-        def false_fn_1():
+        def false_fn_1() -> None:
             ops.print("false_1")
 
-            def true_fn_2():
+            def true_fn_2() -> None:
                 ops.print("false_true_2")
 
-            def false_fn_2():
+            def false_fn_2() -> None:
                 ops.print("false_false_2")
 
             ops.cond(cond_2, None, true_fn_2, false_fn_2)

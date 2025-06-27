@@ -50,7 +50,7 @@ class RotaryEmbedding(Module):
         head_dim: Optional[int] = None,
         _freqs_cis: Optional[TensorValueLike] = None,
         interleaved: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         self.dim = dim
         self.n_heads = n_heads
@@ -216,7 +216,7 @@ class Llama3RotaryEmbedding(RotaryEmbedding):
         _freqs_cis: Optional[TensorValueLike] = None,
         interleaved: bool = True,
         scaling_params: Optional[Llama3RopeScalingParams] = None,
-    ):
+    ) -> None:
         super().__init__(
             dim,
             n_heads,
@@ -305,7 +305,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         _freqs_cis: Optional[TensorValueLike] = None,
         interleaved: bool = True,
         scaling_params: Optional[DeepseekYarnRopeScalingParams] = None,
-    ):
+    ) -> None:
         super().__init__(
             dim,
             n_heads,
@@ -559,7 +559,7 @@ class LongRoPERotaryEmbedding(RotaryEmbedding):
         _freqs_cis: Optional[TensorValueLike] = None,
         interleaved: bool = True,
         scaling_params: Optional[LongRoPEScalingParams] = None,
-    ):
+    ) -> None:
         """Initialize LongRoPE rotary embeddings.
 
         Args:

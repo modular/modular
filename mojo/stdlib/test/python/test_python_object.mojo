@@ -225,27 +225,27 @@ def test_dunder_methods(mut python: Python):
 
     # __lt__
     c = a < b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __le__
     c = a <= b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __gt__
     c = a > b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __ge__
     c = a >= b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __eq__
     c = a == b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __ne__
     c = a != b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __pos__
     c = +a

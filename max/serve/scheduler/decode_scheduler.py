@@ -33,10 +33,10 @@ from max.pipelines.core import (
     msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
+from max.profiler import traced
 from max.serve.config import Settings
 from max.serve.kvcache_agent.dispatcher_base import MessageType
 from max.serve.kvcache_agent.dispatcher_client import DispatcherClient
-from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.scheduler.base import PrefillRequest, PrefillResponse
 
@@ -60,7 +60,6 @@ class DecodeSchedulerConfig:
 class DecodeScheduler(Scheduler):
     def __init__(
         self,
-        process_control: ProcessControl,
         pipeline: TokenGenerator,
         scheduler_config: DecodeSchedulerConfig,
         paged_manager: PagedKVCacheManager,
@@ -70,16 +69,13 @@ class DecodeScheduler(Scheduler):
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
         dispatcher_client: DispatcherClient,
-    ):
+    ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.paged_manager = paged_manager
         self.zmq_ctx = zmq_ctx
         self.dispatcher_client = dispatcher_client
-
-        # Multiprocessing resources.
-        self.pc = process_control
 
         # Initialize Queues
         self.request_pull_socket = ZmqPullSocket[
@@ -153,6 +149,7 @@ class DecodeScheduler(Scheduler):
 
         return self.request_pull_socket.get_nowait()
 
+    @traced
     def handle_transfer_engine_response(
         self, message: KVTransferEngineMetadata
     ) -> None:
@@ -184,6 +181,7 @@ class DecodeScheduler(Scheduler):
         """
         self.response_push_socket.put_nowait(responses)
 
+    @traced
     def send_prefill_request(
         self,
         request_id: str,
@@ -216,6 +214,7 @@ class DecodeScheduler(Scheduler):
             ),
         )
 
+    @traced
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node.
 
@@ -277,6 +276,7 @@ class DecodeScheduler(Scheduler):
                 logger.error(e)
                 raise e
 
+    @traced
     def update_batch(self) -> None:
         """Updates the active batch by adding new requests from the decode queue and managing memory prefetching.
 
@@ -316,6 +316,7 @@ class DecodeScheduler(Scheduler):
                 logger.error(e)
                 raise e
 
+    @traced
     def calculate_batch_num_steps(self) -> int:
         """Calculate the number of steps to process in the current batch.
 
@@ -353,6 +354,7 @@ class DecodeScheduler(Scheduler):
 
         return self.scheduler_config.max_forward_steps_tg
 
+    @traced
     def stream_responses_to_frontend(
         self, responses: dict[str, TextGenerationResponse]
     ) -> None:
@@ -404,7 +406,8 @@ class DecodeScheduler(Scheduler):
                 del self.reserved_cache_indices[request_id]
                 del self.active_batch[request_id]
 
-    def schedule_batch(self, num_steps: int):
+    @traced
+    def schedule(self, num_steps: int) -> None:
         """Schedules a batch of requests for token generation and handles the responses.
 
         Args:
@@ -417,31 +420,28 @@ class DecodeScheduler(Scheduler):
         self._handle_terminated_responses(responses)
         self.stream_responses_to_frontend(responses)
 
-    def run(self) -> None:
+    @traced
+    def run_iteration(self) -> None:
         """Main scheduling loop that processes decode requests.
 
-        Continuously receives requests, updates batches, and schedules them for processing
-        while handling memory management. The loop continues until the process is cancelled.
+        Receives requests, updates batches, and schedules them for processing
+        while handling memory management.
         """
-        while not self.pc.is_canceled():
-            # Indicate that the process is still alive.
-            self.pc.beat()
+        # Eagerly reserve memory and send to prefill worker
+        self.reserve_memory_and_send_to_prefill()
 
-            # Eagerly reserve memory and send to prefill worker
-            self.reserve_memory_and_send_to_prefill()
+        # Update the active decode batch
+        self.update_batch()
 
-            # Update the active decode batch
-            self.update_batch()
+        # If empty, skip
+        if not self.active_batch:
+            return
 
-            # If empty, skip
-            if not self.active_batch:
-                continue
+        # Calculate num_steps
+        num_steps = self.calculate_batch_num_steps()
 
-            # Calculate num_steps
-            num_steps = self.calculate_batch_num_steps()
-
-            # Schedule Batch
-            self.schedule_batch(num_steps)
+        # Schedule Batch
+        self.schedule(num_steps)
 
     def needs_dispatcher_client(self) -> bool:
         return True
@@ -451,7 +451,6 @@ def load_decode_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    pc: ProcessControl,
     max_batch_size_tg: int,
     max_forward_steps_tg: int,
     dispatcher_client: DispatcherClient,
@@ -471,7 +470,6 @@ def load_decode_scheduler(
         )
 
     return DecodeScheduler(
-        process_control=pc,
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         paged_manager=paged_manager,

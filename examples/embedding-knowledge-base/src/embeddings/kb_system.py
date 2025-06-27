@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class SmartKnowledgeBase:
-    def __init__(self, endpoint: str = "http://localhost:8000/v1/embeddings"):
+    def __init__(
+        self, endpoint: str = "http://localhost:8000/v1/embeddings"
+    ) -> None:
         self.endpoint = endpoint
         self.documents: list[str] = []
         self.doc_titles: list[str] = []
@@ -61,7 +63,7 @@ class SmartKnowledgeBase:
         """Cached version for single text embedding."""
         return self._get_embedding([text])[0]
 
-    def add_document(self, title: str, content: str):
+    def add_document(self, title: str, content: str) -> None:
         """Add a single document with title."""
         self.doc_titles.append(title)
         self.documents.append(content)
@@ -78,7 +80,7 @@ class SmartKnowledgeBase:
         if len(self.documents) >= 3:
             self._cluster_documents()
 
-    def _cluster_documents(self, n_clusters: int = None):
+    def _cluster_documents(self, n_clusters: int = None) -> None:
         """Cluster documents into topics."""
         if n_clusters is None:
             n_clusters = max(2, len(self.documents) // 5)

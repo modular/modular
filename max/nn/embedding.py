@@ -170,7 +170,7 @@ class VocabParallelEmbedding(Module):
         devices: list[DeviceRef],
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Args:
             vocab_size: The number of unique items in the vocabulary.

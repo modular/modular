@@ -35,7 +35,7 @@ fn _ceillog2(x: Scalar) -> Int32:
 
 
 @register_passable("trivial")
-struct FastDiv[type: DType]:
+struct FastDiv[dtype: DType]:
     """Implements fast division for a given type.
 
     This struct provides optimized division by a constant divisor,
@@ -44,7 +44,7 @@ struct FastDiv[type: DType]:
     especially in scenarios where division is a frequent operation.
     """
 
-    alias uint_type = _uint_type_of_width[bitwidthof[type]()]()
+    alias uint_type = _uint_type_of_width[bitwidthof[dtype]()]()
 
     var _div: Scalar[Self.uint_type]
     var _mprime: Scalar[Self.uint_type]
@@ -64,14 +64,15 @@ struct FastDiv[type: DType]:
                 Defaults to 1.
         """
         constrained[
-            bitwidthof[type]() <= 32, "larger types are not currently supported"
+            bitwidthof[dtype]() <= 32,
+            "larger types are not currently supported",
         ]()
         self._div = divisor
 
         var cl = _ceillog2(UInt32(divisor))
         self._mprime = (
             (
-                (UInt64(1) << bitwidthof[type]())
+                (UInt64(1) << bitwidthof[dtype]())
                 * ((1 << cl.cast[DType.uint64]()) - divisor)
                 / divisor
             )

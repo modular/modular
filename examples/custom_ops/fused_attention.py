@@ -20,7 +20,7 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def main():
+def main() -> None:
     mojo_kernels = Path(__file__).parent / "kernels"
 
     dtype = DType.float32

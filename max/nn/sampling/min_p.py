@@ -38,7 +38,7 @@ class MinPSampler(nn.Module):
         dtype: DType,
         shape: ShapeLike,
         temperature: float = 1,
-    ):
+    ) -> None:
         self.dtype = dtype
         self.shape = Shape(shape)
         self.temperature = temperature

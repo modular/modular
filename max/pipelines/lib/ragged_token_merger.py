@@ -38,7 +38,7 @@ def ragged_token_merger(device: DeviceRef) -> Graph:
 
 
 class RaggedTokenMerger(nn.Module):
-    def __init__(self, device: DeviceRef):
+    def __init__(self, device: DeviceRef) -> None:
         self.device = device
 
     def __call__(

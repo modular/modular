@@ -146,7 +146,7 @@ class ZmqPushSocket(Generic[T]):
         zmq_ctx: zmq.Context,
         zmq_endpoint: Optional[str] = None,
         serialize: Callable[[Any], bytes] = pickle.dumps,
-    ):
+    ) -> None:
         self.zmq_endpoint = (
             zmq_endpoint
             if zmq_endpoint is not None
@@ -176,7 +176,7 @@ class ZmqPushSocket(Generic[T]):
         self,
         msg: Any,
         **kwargs,
-    ):
+    ) -> None:
         self.put(msg, flags=zmq.NOBLOCK, **kwargs)
 
     def put(
@@ -220,7 +220,7 @@ class ZmqPullSocket(Generic[T]):
         zmq_ctx: zmq.Context,
         zmq_endpoint: Optional[str] = None,
         deserialize=pickle.loads,
-    ):
+    ) -> None:
         self.zmq_endpoint = (
             zmq_endpoint
             if zmq_endpoint is not None
@@ -247,7 +247,7 @@ class ZmqPullSocket(Generic[T]):
             # Cancel the weakref finalizer since we've manually cleaned up
             self._finalize.detach()
 
-    def put_front_nowait(self, item: T):
+    def put_front_nowait(self, item: T) -> None:
         """A new method that allows us to add requests to the front of the queue."""
         if self._closed:
             raise RuntimeError("Socket is closed")
@@ -315,7 +315,7 @@ class ZmqRouterSocket(Generic[T]):
         bind: bool = True,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
-    ):
+    ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.router_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.ROUTER, bind=bind
@@ -396,7 +396,7 @@ class ZmqDealerSocket(Generic[T]):
         bind: bool = False,
         serialize: Callable[[Any], bytes] = pickle.dumps,
         deserialize: Callable[[Any], Any] = pickle.loads,
-    ):
+    ) -> None:
         self.zmq_endpoint = zmq_endpoint
         self.dealer_socket = _open_zmq_socket(
             zmq_ctx, self.zmq_endpoint, mode=zmq.DEALER, bind=bind

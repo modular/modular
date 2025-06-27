@@ -36,7 +36,7 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 )
 def test_scatter(
     session: InferenceSession, input, updates, indices, axis, expected
-):
+) -> None:
     input = np.array(input, dtype=np.float32)
     input_type = TensorType(DType.float32, input.shape, device_ref)
     with Graph("scatter", input_types=[input_type]) as graph:
@@ -94,7 +94,7 @@ def test_scatter(
 )
 def test_scatter_nd(
     session: InferenceSession, input_data, updates_data, indices_data, expected
-):
+) -> None:
     """Test scatter_nd operation with various input configurations."""
     input_array = np.array(input_data, dtype=np.float32)
     input_type = TensorType(DType.float32, input_array.shape, device_ref)

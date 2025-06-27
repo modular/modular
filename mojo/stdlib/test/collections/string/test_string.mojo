@@ -16,7 +16,6 @@
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
-    _StringCapacityField,
 )
 from math import isinf, isnan
 
@@ -71,11 +70,11 @@ def test_constructors():
 
     # Construction with capacity
     var s4 = String(capacity=1)
-    assert_equal(s4.capacity(), _StringCapacityField.INLINE_CAPACITY)
+    assert_true(s4.capacity() <= String.INLINE_CAPACITY)
 
     # Construction from Codepoint
     var s5 = String(Codepoint(65))
-    assert_equal(s5.capacity(), _StringCapacityField.INLINE_CAPACITY)
+    assert_true(s5.capacity() <= String.INLINE_CAPACITY)
     assert_equal(s5, "A")
 
 
@@ -1476,27 +1475,22 @@ def test_reserve():
 def test_uninit_ctor():
     var hello_len = len("hello")
     var s = String(unsafe_uninit_length=hello_len)
-    var hello = StaticString("hello").unsafe_ptr()
-    memcpy(s.unsafe_ptr_mut[is_unique_mut_ref=True](), hello, hello_len)
+    memcpy(s.unsafe_ptr(), StaticString("hello").unsafe_ptr(), hello_len)
     assert_equal(s, "hello")
 
     # Resize with uninitialized memory.
     var s2 = String()
     s2.resize(unsafe_uninit_length=hello_len)
-    memcpy(s2.unsafe_ptr_mut[is_unique_mut_ref=True](), hello, hello_len)
+    memcpy(s2.unsafe_ptr_mut(), StaticString("hello").unsafe_ptr(), hello_len)
     assert_equal(s2, "hello")
-    assert_equal(s2._capacity_or_data.is_inline(), True)
+    assert_equal(s2._is_inline(), True)
 
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
     s3.resize(unsafe_uninit_length=len(long))
-    memcpy(
-        s3.unsafe_ptr_mut[is_unique_mut_ref=True](),
-        long.unsafe_ptr(),
-        len(long),
-    )
+    memcpy(s3.unsafe_ptr_mut(), long.unsafe_ptr(), len(long))
     assert_equal(s3, long)
-    assert_equal(s3._capacity_or_data.is_inline(), False)
+    assert_equal(s3._is_inline(), False)
 
 
 def test_unsafe_cstr():
@@ -1541,56 +1535,89 @@ def test_variadic_ctors():
 
 
 def test_sso():
-    # String literals are stored inline when short and not nul-terminated.
-    var s: String = String("hello")
-    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
-    assert_equal(s._capacity_or_data.is_inline(), True)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
-
-    # String literals are stored out-of-line when longer than SSO and
-    # nul-terminated.
-    s = String("hellohellohellohellohellohellohellohellohellohellohello")
-    assert_equal(s.capacity(), 0)
-    assert_equal(s._capacity_or_data.is_inline(), False)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), True)
+    # String literals are initially stored as indirect regardless of length
+    var s = String("hello")
+    assert_equal(s.capacity(), 5)
+    assert_equal(len(s), 5)
+    assert_equal(s._is_inline(), False)
+    assert_equal(s._has_nul_terminator(), True)
+    assert_equal(s._is_indirect(), True)
     assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
+
+    # Adding a single char should remove the nul terminator and inline it.
+    s += "f"
+    assert_equal(len(s), 6)
+    assert_equal(s.capacity(), String.INLINE_CAPACITY)
+    assert_equal(s._is_inline(), True)
+    assert_equal(s._has_nul_terminator(), False)
+    assert_equal(s._is_indirect(), False)
+    assert_equal(s, "hellof")
+
+    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
+    var ptr = s.unsafe_cstr_ptr()
+    assert_equal(s._has_nul_terminator(), True)
+    assert_equal(ptr[len(s) - 1], ord("f"))
+    assert_equal(ptr[len(s)], 0)
+
+    # Test StringLiterals behave the same when above SSO capacity.
+    alias long = "hellohellohellohellohellohellohellohellohellohellohello"
+    s = String(long)
+    assert_equal(len(s), 55)
+    assert_equal(s.capacity(), 55)
+    assert_equal(s._is_inline(), False)
+    assert_equal(s._has_nul_terminator(), True)
+    assert_equal(s._is_indirect(), True)
+    assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
+
+    # Modifying it should remove the nul terminator.
+    s += "f"
+    assert_equal(len(s), 56)
+    assert_true(s.capacity() >= 56)
+    assert_equal(s._is_inline(), False)
+    assert_equal(s._has_nul_terminator(), False)
+    assert_equal(s._is_indirect(), False)
+    assert_equal(s, long + "f")
+
+    # Check that unsafe_cstr_ptr adds the nul terminator at the end.
+    ptr = s.unsafe_cstr_ptr()
+    assert_equal(s._has_nul_terminator(), True)
+    assert_equal(ptr[len(s) - 1], ord("f"))
+    assert_equal(ptr[len(s)], 0)
 
     # Empty strings are stored inline.
     s = String()
-    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
-    assert_equal(s._capacity_or_data.is_inline(), True)
-    assert_equal(s._capacity_or_data.has_nul_terminator(), False)
+    assert_equal(s.capacity(), String.INLINE_CAPACITY)
+    assert_equal(s._is_inline(), True)
+    assert_equal(s._has_nul_terminator(), False)
 
-    s += "f" * _StringCapacityField.INLINE_CAPACITY
-    assert_equal(len(s), _StringCapacityField.INLINE_CAPACITY)
-    assert_equal(s.capacity(), _StringCapacityField.INLINE_CAPACITY)
-    assert_equal(s._capacity_or_data.is_inline(), True)
+    s += "f" * String.INLINE_CAPACITY
+    assert_equal(len(s), String.INLINE_CAPACITY)
+    assert_equal(s.capacity(), String.INLINE_CAPACITY)
+    assert_equal(s._is_inline(), True)
 
     # One more byte.
     s += "f"
 
     # The capacity should be 2x the previous amount, rounded up to 8.
-    alias expected_capacity = (
-        _StringCapacityField.INLINE_CAPACITY * 2 + 7
-    ) & ~7
+    alias expected_capacity = (String.INLINE_CAPACITY * 2 + 7) & ~7
     assert_equal(s.capacity(), expected_capacity)
-    assert_equal(s._capacity_or_data.is_inline(), False)
+    assert_equal(s._is_inline(), False)
 
     # Shrink down to small, but stays out of line to maintain our malloc.
     s.resize(4)
     assert_equal(s.capacity(), expected_capacity)
-    assert_equal(s._capacity_or_data.is_inline(), False)
+    assert_equal(s._is_inline(), False)
     assert_equal(s, "ffff")
 
     # Copying the small out-of-line string should just bump the count.
     var s2 = s.copy()
-    assert_equal(s2._capacity_or_data.is_inline(), False)
+    assert_equal(s2._is_inline(), False)
     assert_equal(s2, "ffff")
 
     # Stringizing short things should be inline.
     s = String(42)
     assert_equal(s, "42")
-    assert_equal(s._capacity_or_data.is_inline(), True)
+    assert_equal(s._is_inline(), True)
 
 
 def test_python_object():

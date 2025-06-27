@@ -32,11 +32,11 @@ class WithLazyPipelineOptions(click.Command):
     and should be removed when the pipeline_config_options decorator is fast.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         self._options_loaded = False
         super().__init__(*args, **kwargs)
 
-    def _ensure_options_loaded(self):
+    def _ensure_options_loaded(self) -> None:
         if not self._options_loaded:
             # Lazily load and apply pipeline_config_options decorator
             from max.entrypoints.cli import pipeline_config_options

@@ -14,8 +14,8 @@
 
 # The following inputs and golden values were generated using the upstream code
 # [here](https://github.com/meta-llama/llama/blob/8fac8befd776bc03242fe7bc2236cdb41b6c609c/llama/model.py).
-def k_cache_input[type: DType]() -> List[Scalar[type]]:
-    return rebind[List[Scalar[type]]](
+def k_cache_input[dtype: DType]() -> List[Scalar[dtype]]:
+    return rebind[List[Scalar[dtype]]](
         List[Float32](
             # fmt: off
             -2.5095443725585938, 0.4880010485649109, 0.7845868468284607, 0.02864718623459339, 0.640755295753479, 0.5832474231719971, 1.0669267177581787, -0.4501533806324005,
@@ -35,8 +35,8 @@ def k_cache_input[type: DType]() -> List[Scalar[type]]:
     )
 
 
-def q_input[type: DType]() -> List[Scalar[type]]:
-    return rebind[List[Scalar[type]]](
+def q_input[dtype: DType]() -> List[Scalar[dtype]]:
+    return rebind[List[Scalar[dtype]]](
         List[Float32](
             # fmt: off
             1.9269152879714966, 1.4872840642929077, 0.9007171988487244, -2.1055209636688232, 0.6784184575080872, -1.2345448732376099, -0.04306747764348984, -1.6046669483184814,
@@ -56,8 +56,8 @@ def q_input[type: DType]() -> List[Scalar[type]]:
     )
 
 
-def freqs_cis_table_input[type: DType]() -> List[Scalar[type]]:
-    return rebind[List[Scalar[type]]](
+def freqs_cis_table_input[dtype: DType]() -> List[Scalar[dtype]]:
+    return rebind[List[Scalar[dtype]]](
         List[Float32](
             # fmt: off
             1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
@@ -97,8 +97,8 @@ def freqs_cis_table_input[type: DType]() -> List[Scalar[type]]:
     )
 
 
-def q_out_golden[type: DType]() -> List[Scalar[type]]:
-    return rebind[List[Scalar[type]]](
+def q_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
+    return rebind[List[Scalar[dtype]]](
         List[Float32](
             # fmt: off
             1.9269152879714966, 1.4872840642929077, 0.9007171988487244, -2.1055209636688232, 0.6784184575080872, -1.2345448732376099, -0.04306747764348984, -1.6046669483184814,
@@ -118,8 +118,8 @@ def q_out_golden[type: DType]() -> List[Scalar[type]]:
     )
 
 
-def k_out_golden[type: DType]() -> List[Scalar[type]]:
-    return rebind[List[Scalar[type]]](
+def k_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
+    return rebind[List[Scalar[dtype]]](
         List[Float32](
             # fmt: off
             -2.5095443725585938, 0.4880010485649109, 0.7845868468284607, 0.02864718623459339, 0.640755295753479, 0.5832474231719971, 1.0669267177581787, -0.4501533806324005,

@@ -58,7 +58,7 @@ class MoE(Module):
         intermediate_size: int = 8192,
         intermediate_size_mlp: int = 16384,
         dtype: DType = DType.bfloat16,
-    ):
+    ) -> None:
         """
         Args:
             devices: The devices to use to run this layer.
@@ -199,7 +199,7 @@ class DistributedMoE(MoE):
     This class has the same state keys as the non-distributed MoE Layer.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if not self.devices or len(self.devices) < 2:
             raise ValueError(

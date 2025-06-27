@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, StaticDim, TensorType, ops
 
 
-def test_slice_basic(graph_builder):
+def test_slice_basic(graph_builder) -> None:
     with graph_builder(
         input_types=[
             TensorType(DType.int32, [1, 2, 3, 4, 5], device=DeviceRef.CPU())
@@ -32,7 +32,7 @@ def test_slice_basic(graph_builder):
         graph.output(out)
 
 
-def test_slice_with_tensor_value(graph_builder):
+def test_slice_with_tensor_value(graph_builder) -> None:
     with graph_builder(
         input_types=[
             TensorType(DType.int32, [5, "in_dim"], device=DeviceRef.CPU())
@@ -113,7 +113,9 @@ def expected_slice_shape(shape, index):
     tensor_type=tensor_types(shapes=shared_shapes),
     index=shared_shapes.flatmap(shape_indexes),
 )
-def test_slice_valid_ints(graph_builder, tensor_type: TensorType, index):
+def test_slice_valid_ints(
+    graph_builder, tensor_type: TensorType, index
+) -> None:
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
 
@@ -129,7 +131,7 @@ def test_slice_valid_ints(graph_builder, tensor_type: TensorType, index):
 )
 def test_slice_valid_tensorvalues(
     graph_builder, tensor_type: TensorType, index
-):
+) -> None:
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
 
@@ -196,7 +198,7 @@ static_tensor_type = tensor_types(
 @given(tensor_type=static_tensor_type, rand=...)
 def test_slice_static_dims(
     graph_builder, tensor_type: TensorType, rand: random.Random
-):
+) -> None:
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
 

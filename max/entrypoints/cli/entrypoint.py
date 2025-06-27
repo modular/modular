@@ -30,5 +30,5 @@ class ModelGroup(click.Group):
 
 
 @click.command(cls=ModelGroup)
-def run_cli():
+def run_cli() -> None:
     pass

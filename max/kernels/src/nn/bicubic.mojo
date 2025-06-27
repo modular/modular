@@ -102,11 +102,11 @@ fn cubic_kernel(x: SIMD) -> __type_of(x):
 
 
 fn cpu_bicubic_kernel[
-    type: DType,
+    dtype: DType,
     rank: Int, //,
 ](
-    output_host: NDBuffer[mut=True, type, rank, *_],
-    input_host: NDBuffer[type, rank, *_],
+    output_host: NDBuffer[mut=True, dtype, rank, *_],
+    input_host: NDBuffer[dtype, rank, *_],
 ) -> None:
     """Perform bicubic interpolation on an NDBuffer of form NCHW.
 
@@ -177,15 +177,15 @@ fn cpu_bicubic_kernel[
                             sum_weights += weight
 
                     # store the result in the output tensor
-                    output_host[b, c, y_out, x_out] = sum_value.cast[type]()
+                    output_host[b, c, y_out, x_out] = sum_value.cast[dtype]()
 
 
 fn gpu_bicubic_kernel[
-    type: DType,
+    dtype: DType,
     rank: Int,
 ](
-    output: NDBuffer[mut=True, type, rank, MutableAnyOrigin],
-    input: NDBuffer[type, rank, MutableAnyOrigin],
+    output: NDBuffer[mut=True, dtype, rank, MutableAnyOrigin],
+    input: NDBuffer[dtype, rank, MutableAnyOrigin],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
@@ -252,14 +252,14 @@ fn gpu_bicubic_kernel[
                 sum_value += pixel_value * weight
                 sum_weights += weight
 
-        output[b, c, y_out, x_out] = sum_value.cast[type]()
+        output[b, c, y_out, x_out] = sum_value.cast[dtype]()
 
 
 fn resize_bicubic[
-    type: DType, rank: Int, //, target: StaticString
+    dtype: DType, rank: Int, //, target: StaticString
 ](
-    output: NDBuffer[mut=True, type, rank, *_],
-    input: NDBuffer[type, rank, *_],
+    output: NDBuffer[mut=True, dtype, rank, *_],
+    input: NDBuffer[dtype, rank, *_],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -279,7 +279,7 @@ fn resize_bicubic[
         # Use a fixed block size to avoid exceeding CUDA thread limits.
         var block_size = 256
         ctx.get_device_context().enqueue_function[
-            gpu_bicubic_kernel[type, rank]
+            gpu_bicubic_kernel[dtype, rank]
         ](
             output,
             input,

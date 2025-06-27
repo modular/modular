@@ -39,5 +39,5 @@ class RandomTokenGenerator:
         # Requests which produced 0 are "completed" and not returned
         return {rid: str(rvalue) for rid, rvalue in results.items() if rvalue}
 
-    def release(self, context: RandomTokenGeneratorContext):
+    def release(self, context: RandomTokenGeneratorContext) -> None:
         pass

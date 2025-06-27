@@ -33,7 +33,7 @@ def test_flatten_success(
     negative_index_start: bool,
     normalized_end: int,
     negative_index_end: bool,
-):
+) -> None:
     assume(normalized_start <= normalized_end)
 
     rank = input_type.rank
@@ -70,7 +70,9 @@ def test_flatten_success(
     start=...,
     end=...,
 )
-def test_flatten_failure_indexing(input_type: TensorType, start: int, end: int):
+def test_flatten_failure_indexing(
+    input_type: TensorType, start: int, end: int
+) -> None:
     rank = input_type.rank
     assume(not ((-rank <= start < rank) and (-rank <= end < rank)))
 
@@ -93,7 +95,7 @@ def test_flatten_failure_start_greater_end(
     negative_index_start: bool,
     normalized_end: int,
     negative_index_end: bool,
-):
+) -> None:
     assume(normalized_start > normalized_end)
 
     rank = input_type.rank

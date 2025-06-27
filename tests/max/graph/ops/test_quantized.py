@@ -44,7 +44,7 @@ def tensor_types_with_dtype(dtype: DType, **kwargs):
 )
 def test_qmatmul(
     graph_builder, base_type: TensorType, encoding: QuantizationEncoding
-):
+) -> None:
     """Test qmatmul with basic inputs."""
     *_, m, n = base_type.shape
     # Ensure non-zero dimensions
@@ -88,7 +88,7 @@ def test_qmatmul(
 )
 def test_dequantize(
     graph_builder, base_type: TensorType, encoding: QuantizationEncoding
-):
+) -> None:
     """Test dequantize with basic inputs."""
     *_, m, n = base_type.shape
     # For static dimensions, ensure they are divisible by block size
@@ -145,7 +145,7 @@ def test_dequantize(
 )
 def test_dequantize__error__nondivisible_block_size(
     graph_builder, base_type: TensorType, encoding: QuantizationEncoding
-):
+) -> None:
     """Test that dequantize raises an error when last dimension is not divisible by block size."""
     *_, m, n = base_type.shape
     # Only check divisibility for static dimensions
@@ -185,7 +185,7 @@ def test_dequantize__error__nondivisible_block_size(
 )
 def test_dequantize__error__nonstatic_last_dim(
     graph_builder, base_type: TensorType, encoding: QuantizationEncoding
-):
+) -> None:
     """Test that dequantize raises an error when last dimension is not static."""
     *_, m = base_type.shape
     dynamic_dim = Dim("dynamic")

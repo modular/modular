@@ -26,7 +26,7 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 
-alias type = DType.float32
+alias dtype = DType.float32
 
 
 fn test_conv_transposed_cudnn[
@@ -37,7 +37,7 @@ fn test_conv_transposed_cudnn[
     stride_val: Int = 1,
     dilation_val: Int = 1,
     pad_val: Int = 0,
-    type: DType = DType.float32,
+    dtype: DType = DType.float32,
 ](ctx: DeviceContext,) raises:
     """
     Fixed 1-D transposed-convolution test with correct QRSFC kernel layout.
@@ -76,10 +76,10 @@ fn test_conv_transposed_cudnn[
     alias output_shape5d = DimList(1, 1, 1, output_len, out_channels)
 
     # Create host buffers using HostNDBuffer
-    var input_host = HostNDBuffer[type, 4, input_shape4d](input_shape4d)
-    var filter_host = HostNDBuffer[type, 4, filter_shape4d](filter_shape4d)
-    var output_host = HostNDBuffer[type, 4, output_shape4d](output_shape4d)
-    var output_ref_host = HostNDBuffer[type, 4, output_shape4d](output_shape4d)
+    var input_host = HostNDBuffer[dtype, 4, input_shape4d](input_shape4d)
+    var filter_host = HostNDBuffer[dtype, 4, filter_shape4d](filter_shape4d)
+    var output_host = HostNDBuffer[dtype, 4, output_shape4d](output_shape4d)
+    var output_ref_host = HostNDBuffer[dtype, 4, output_shape4d](output_shape4d)
 
     random(input_host.tensor)
     random(filter_host.tensor)
@@ -92,14 +92,14 @@ fn test_conv_transposed_cudnn[
     var pad_w = Index(pad_val, pad_val)  # width padding (symmetric)
 
     # Execute naive reference implementation.
-    conv_transpose_naive[type](
-        NDBuffer[type, 5, MutableAnyOrigin](
+    conv_transpose_naive[dtype](
+        NDBuffer[dtype, 5, MutableAnyOrigin](
             output_ref_host.tensor.data, output_shape5d
         ),
-        NDBuffer[type, 5, MutableAnyOrigin](
+        NDBuffer[dtype, 5, MutableAnyOrigin](
             input_host.tensor.data, input_shape5d
         ),
-        NDBuffer[type, 5, MutableAnyOrigin](
+        NDBuffer[dtype, 5, MutableAnyOrigin](
             filter_host.tensor.data, filter_shape5d
         ),
         stride,
@@ -121,14 +121,14 @@ fn test_conv_transposed_cudnn[
         in_channels, out_channels, 1, kernel_len
     )
 
-    var input_nchw_host = HostNDBuffer[type, 4, input_shape4d_nchw](
+    var input_nchw_host = HostNDBuffer[dtype, 4, input_shape4d_nchw](
         input_shape4d_nchw
     )
     for w in range(input_len):
         for c in range(in_channels):
             input_nchw_host.tensor[0, c, 0, w] = input_host.tensor[0, 0, w, c]
 
-    var filter_nchw_host = HostNDBuffer[type, 4, filter_shape4d_nchw](
+    var filter_nchw_host = HostNDBuffer[dtype, 4, filter_shape4d_nchw](
         filter_shape4d_nchw
     )
     for r in range(1):
@@ -139,18 +139,18 @@ fn test_conv_transposed_cudnn[
                         r, s, f, c
                     ]
 
-    var output_nchw_host = HostNDBuffer[type, 4, output_shape4d_nchw](
+    var output_nchw_host = HostNDBuffer[dtype, 4, output_shape4d_nchw](
         output_shape4d_nchw
     )
 
     # Create device buffers using enqueue operations
-    var d_input = DeviceNDBuffer[type, 4, input_shape4d_nchw](
+    var d_input = DeviceNDBuffer[dtype, 4, input_shape4d_nchw](
         input_shape4d_nchw, ctx=ctx
     )
-    var d_filter = DeviceNDBuffer[type, 4, filter_shape4d_nchw](
+    var d_filter = DeviceNDBuffer[dtype, 4, filter_shape4d_nchw](
         filter_shape4d_nchw, ctx=ctx
     )
-    var d_output = DeviceNDBuffer[type, 4, output_shape4d_nchw](
+    var d_output = DeviceNDBuffer[dtype, 4, output_shape4d_nchw](
         output_shape4d_nchw, ctx=ctx
     )
     ctx.enqueue_copy(d_input.buffer, input_nchw_host.tensor.data)
@@ -161,7 +161,7 @@ fn test_conv_transposed_cudnn[
     var padding_hw = Index(0, pad_val)
 
     # Invoke cuDNN helper.
-    conv_transposed_cudnn[type, type, type](
+    conv_transposed_cudnn[dtype, dtype, dtype](
         d_input.tensor,  # dy (input grad)
         d_filter.tensor,  # w (filter)
         d_output.tensor,  # dx (output)

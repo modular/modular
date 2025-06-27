@@ -534,6 +534,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weight id, if different than the model_path
+
+        # TODO: These should ideally not call _weights_repo_id directly. I believe
+        # huggingface_weight_repo_id property can be used here?
         weight_model_id = (
             self._pipeline_config.model_config._weights_repo_id
             if self._pipeline_config.model_config._weights_repo_id
@@ -570,6 +573,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 self._pipeline_config.lora_config.max_num_loras,
                 self._pipeline_config.lora_config.lora_paths,
             )
+            self._pipeline_config._lora_manager = self._lora_manager
 
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
@@ -578,7 +582,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
-            weights=load_weights(weight_paths),
+            weights=weights,
             adapter=self._weight_adapters.get(
                 weights_format(weight_paths), None
             ),
@@ -734,7 +738,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
         tracer.next("build_token_frequency_csr_loop")
         for i, context in enumerate(batch):
             unique_tokens, counts = np.unique(
-                context.generated_tokens, return_counts=True
+                context.tokens if include_prompt else context.generated_tokens,
+                return_counts=True,
             )
             # Pad the tokens and counts to reserve space for new tokens
             unique_tokens = np.pad(

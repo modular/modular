@@ -151,7 +151,7 @@ class Module(Layer, ABC):
     the weight names to be unique within the model.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # `__init__` may be called if `__setattr__` is called before
         # `super().__init__()`. So, to avoid resetting the values, first
         # check to see if the layer has been initialized before.
@@ -161,7 +161,7 @@ class Module(Layer, ABC):
             self._weight_values: dict[str, DLPackCompatible] = {}
             self._shared_weights: dict[str, Weight] = {}
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name, value) -> None:
         try:
             if isinstance(value, Module):
                 self._sublayers[name] = value
@@ -183,7 +183,7 @@ class Module(Layer, ABC):
             return
         super().__setattr__(name, value)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         # TODO: Make this pretty
         return f"{type(self).__name__}({len(self.sublayers)} layers, {len(self.layer_weights)} weights)"
 
@@ -191,13 +191,13 @@ class Module(Layer, ABC):
     def layer_weights(self) -> dict[str, Weight]:
         return self._layer_weights
 
-    def __delattr__(self, name: str):
+    def __delattr__(self, name: str) -> None:
         self._sublayers.pop(name, None)
         self._layer_weights.pop(name, None)
         self._shared_weights.pop(name, None)
         super().__delattr__(name)
 
-    def set_shared_weight(self, name: str, weight: Weight):
+    def set_shared_weight(self, name: str, weight: Weight) -> None:
         setattr(self, name, weight)
         self._shared_weights[name] = weight
 
@@ -233,7 +233,7 @@ class Module(Layer, ABC):
         layer_weights = list(self.raw_state_dict().values())
         subgraph_input_types: list[Type] = []
 
-        def flatten(t, result):
+        def flatten(t, result) -> None:
             if isinstance(t, (list, tuple)):
                 for item in t:
                     flatten(item, result)
@@ -582,7 +582,7 @@ def add_layer_hook(
     _LAYER_HOOKS.append(fn)
 
 
-def clear_hooks():
+def clear_hooks() -> None:
     """Remove all hooks."""
     _LAYER_HOOKS.clear()
 

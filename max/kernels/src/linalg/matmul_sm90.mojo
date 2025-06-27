@@ -1900,9 +1900,6 @@ fn warp_specialize_gemm_with_multicasting[
     c_device: NDBuffer[c_type, 2, _, c_shape],
     a_device: NDBuffer[a_type, 2, _, a_shape],
     b_device: NDBuffer[b_type, 2, _, b_shape],
-    M: Int,
-    N: Int,
-    K: Int,
     ctx: DeviceContext,
 ) raises:
     var a = from_ndbuffer_row_major(a_device)
@@ -1910,6 +1907,9 @@ fn warp_specialize_gemm_with_multicasting[
     var c = from_ndbuffer_row_major(c_device)
 
     alias N_static = c_shape.get[1]()
+    var M = c_device.dim[0]()
+    var N = c_device.dim[1]()
+    var K = a_device.dim[1]()
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]

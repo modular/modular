@@ -27,14 +27,14 @@ alias length = 8192
 
 
 def run_elementwise[
-    type: DType, math_fn: fn (x: SIMD) -> __type_of(x)
-](ctx: DeviceContext, in_device: DeviceBuffer[type],):
-    alias pack_size = simdwidthof[type, target = get_gpu_target()]()
+    dtype: DType, math_fn: fn (x: SIMD) -> __type_of(x)
+](ctx: DeviceContext, in_device: DeviceBuffer[dtype],):
+    alias pack_size = simdwidthof[dtype, target = get_gpu_target()]()
 
-    var out_device = ctx.enqueue_create_buffer[type](length)
+    var out_device = ctx.enqueue_create_buffer[dtype](length)
 
-    var in_buffer = NDBuffer[type, 1](in_device._unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[type, 1](out_device._unsafe_ptr(), Index(length))
+    var in_buffer = NDBuffer[dtype, 1](in_device._unsafe_ptr(), Index(length))
+    var out_buffer = NDBuffer[dtype, 1](out_device._unsafe_ptr(), Index(length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
@@ -51,8 +51,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = math_fn(in_host[i])
 
-            alias atol = 1e-05 if type is DType.float32 else 1e-4
-            alias rtol = 2e-05 if type is DType.float32 else 2e-2
+            alias atol = 1e-05 if dtype is DType.float32 else 1e-4
+            alias rtol = 2e-05 if dtype is DType.float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,
@@ -62,22 +62,22 @@ def run_elementwise[
             )
 
 
-def test_exp[type: DType](ctx: DeviceContext):
-    var input = ctx.enqueue_create_buffer[type](length)
+def test_exp[dtype: DType](ctx: DeviceContext):
+    var input = ctx.enqueue_create_buffer[dtype](length)
     alias epsilon = 0.001
     with input.map_to_host() as in_host:
         for i in range(length):
-            in_host[i] = log(Scalar[type](i) + epsilon)
-    run_elementwise[type, exp](ctx, input)
+            in_host[i] = log(Scalar[dtype](i) + epsilon)
+    run_elementwise[dtype, exp](ctx, input)
 
 
-def test_exp2[type: DType](ctx: DeviceContext):
-    var input = ctx.enqueue_create_buffer[type](length)
+def test_exp2[dtype: DType](ctx: DeviceContext):
+    var input = ctx.enqueue_create_buffer[dtype](length)
     alias epsilon = 0.001
     with input.map_to_host() as in_host:
         for i in range(length):
-            in_host[i] = log(Scalar[type](i) + epsilon)
-    run_elementwise[type, exp2](ctx, input)
+            in_host[i] = log(Scalar[dtype](i) + epsilon)
+    run_elementwise[dtype, exp2](ctx, input)
 
 
 def main():

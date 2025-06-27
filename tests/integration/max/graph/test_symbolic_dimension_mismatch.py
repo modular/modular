@@ -13,7 +13,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 
 
-def test_symbolic_dimension_mismatch():
+def test_symbolic_dimension_mismatch() -> None:
     device = CPU()
 
     data = Tensor.from_numpy(np.zeros((3, 4), dtype=np.float32))

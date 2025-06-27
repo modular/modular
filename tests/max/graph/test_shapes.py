@@ -12,7 +12,7 @@ from max.graph import DeviceRef, Dim, Graph, StaticDim, TensorType, ops
 
 
 @given(shape=shapes())
-def test_shape_product_fits_in_int64(shape):
+def test_shape_product_fits_in_int64(shape) -> None:
     cumulative_product = 1
     for dim in shape:
         if isinstance(dim, StaticDim):

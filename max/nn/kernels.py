@@ -2394,3 +2394,76 @@ def topk_fused_sampling(
             )
         ],
     )[0].tensor
+
+
+def sgmv_lora_kernel(
+    input: TensorValue,
+    lora_a: TensorValue,
+    lora_b: TensorValue,
+    lora_ids: TensorValue,
+    lora_ranks: TensorValue,
+    input_row_offsets: TensorValue | None,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """
+    *** Stub lora kernel. Function signature subject to change... ***
+
+    Computes the SGMV LoRA kernel for some number of LoRAs A and B given the input.
+
+    out = Wx + xAB
+
+    SGMV can be explained by two independent kernels:
+        - shrink -> shrinks high-dimensional tensor to low-rank tensor
+        - expand -> expands low-rank tensor to high-dimensional tensor
+
+    where v = [0, ...] and y = (some output tensor)
+
+    SGMV-shrink:
+        v += xA
+
+    SGMV-expand:
+        y += vB
+
+    Args:
+        lora_a: The LoRA tensor for A
+        lora_b: The LoRA tensor for B
+        lora_ids: Ids of the LoRAs used for each sequence
+        lora_ranks: The ranks of the LoRAs ihn the batch
+        bias: The LoRA bias
+    """
+    out_dim = lora_b.shape[1]
+    output_shape = [dim for dim in input.shape[:-1]] + [out_dim]
+
+    return input
+
+
+def sgmv_qkv_lora_kernel(
+    input: TensorValue,
+    lora_a: TensorValue,
+    lora_b: TensorValue,
+    lora_ids: TensorValue,
+    lora_ranks: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_params: KVCacheParams,
+    kv_collection: PagedKVCacheCollection | ContinuousBatchingKVCacheCollection,
+    n_heads: int,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """
+    *** Stub QKV LoRA kernel. Function signature subject to change... ***
+
+    Computes the SGMV QKV LoRA kernel for Q, K, V projections with LoRA.
+
+    Args:
+        input: Input tensor
+        lora_a: LoRA A tensor (shared across Q, K, V)
+        lora_b: LoRA B tensor for combined QKV projections
+        lora_ids: Ids of the LoRAs used for each sequence
+        lora_ranks: The ranks of the LoRAs in the batch
+        input_row_offsets: Row offsets for ragged tensor processing
+        bias: Optional LoRA bias
+    """
+    total_seq_len = input.shape[0]
+    output_dim = n_heads * kv_params.head_dim
+
+    return input

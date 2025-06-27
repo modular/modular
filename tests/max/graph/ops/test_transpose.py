@@ -18,7 +18,7 @@ shared_types = st.shared(tensor_types())
 
 
 @given(input_type=shared_types, a=axes(shared_types), b=axes(shared_types))
-def test_transpose_output_shape(input_type: TensorType, a: int, b: int):
+def test_transpose_output_shape(input_type: TensorType, a: int, b: int) -> None:
     assume(input_type.rank > 0)
     with Graph("transpose", input_types=[input_type]) as graph:
         out = graph.inputs[0].transpose(a, b)
@@ -31,7 +31,7 @@ def test_transpose_output_shape(input_type: TensorType, a: int, b: int):
 
 # Rank zero transpose is a little different, since it really is a no-op.
 # The tests above filter it out, so we need to test it separately.
-def test_transpose_input_with_rank_zero():
+def test_transpose_input_with_rank_zero() -> None:
     with Graph(
         "transpose",
         input_types=[
@@ -43,7 +43,7 @@ def test_transpose_input_with_rank_zero():
         graph.output(out)
 
 
-def test_transpose_error_axis_1_out_of_bounds_input_with_rank_zero():
+def test_transpose_error_axis_1_out_of_bounds_input_with_rank_zero() -> None:
     with Graph(
         "transpose",
         input_types=[
@@ -60,7 +60,7 @@ def test_transpose_error_axis_1_out_of_bounds_input_with_rank_zero():
             graph.output(out)
 
 
-def test_transpose_error_axis_2_out_of_bounds_input_with_rank_zero():
+def test_transpose_error_axis_2_out_of_bounds_input_with_rank_zero() -> None:
     with Graph(
         "transpose",
         input_types=[
@@ -77,7 +77,7 @@ def test_transpose_error_axis_2_out_of_bounds_input_with_rank_zero():
             graph.output(out)
 
 
-def test_transpose_error_axis_1_out_of_bounds():
+def test_transpose_error_axis_1_out_of_bounds() -> None:
     with Graph(
         "transpose",
         input_types=[
@@ -96,7 +96,7 @@ def test_transpose_error_axis_1_out_of_bounds():
             graph.output(out)
 
 
-def test_transpose_error_axis_2_out_of_bounds():
+def test_transpose_error_axis_2_out_of_bounds() -> None:
     with Graph(
         "transpose",
         input_types=[
@@ -133,7 +133,7 @@ def invalid_axes(rank: int):
 )
 def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
     graph_builder, base_type: TensorType, valid_axis: int, invalid_axis: int
-):
+) -> None:
     """Test that transpose raises an error when an axis is out of bounds."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError, match="out of range"):
@@ -150,7 +150,7 @@ def test_transpose_error_out_of_bounds_axis_rank_gt_zero(
 )
 def test_transpose_error_out_of_bounds_rank_zero(
     graph_builder, base_type: TensorType, axis: int
-):
+) -> None:
     """Test that transpose raises an error when an axis is out of bounds for rank 0."""
     # We follow PyTorch's definition for valid axes for transposition on rank 0 tensors
     assume(axis not in (0, -1))

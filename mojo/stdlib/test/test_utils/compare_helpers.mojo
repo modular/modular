@@ -18,8 +18,10 @@
 
 
 fn _minmax[
-    type: DType, //
-](x: UnsafePointer[Scalar[type]], N: Int) -> Tuple[Scalar[type], Scalar[type]]:
+    dtype: DType, //
+](x: UnsafePointer[Scalar[dtype]], N: Int) -> Tuple[
+    Scalar[dtype], Scalar[dtype]
+]:
     var max_val = x[0]
     var min_val = x[0]
     for i in range(1, N):

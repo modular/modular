@@ -23,11 +23,11 @@ from .config_enums import (
 )
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import (
-    HuggingFaceFile,
     HuggingFaceRepo,
     download_weight_files,
     generate_local_model_path,
-    repo_exists_with_retry,
+    try_to_load_from_cache,
+    validate_hf_repo_access,
 )
 from .lora import LoRAManager
 from .max_config import (
@@ -63,13 +63,14 @@ from .tokenizer import (
     TextAndVisionTokenizer,
     TextTokenizer,
 )
+from .weight_path_parser import WeightPathParser
 
 __all__ = [
     "AudioGenerationConfig",
     "download_weight_files",
     "EmbeddingsPipeline",
     "generate_local_model_path",
-    "HuggingFaceFile",
+    "get_paged_manager",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
@@ -85,14 +86,13 @@ __all__ = [
     "PipelineEngine",
     "PipelineModel",
     "PipelineRole",
-    "PIPELINE_REGISTRY",
     "PipelineTokenizer",
+    "PIPELINE_REGISTRY",
     "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
     "ragged_token_merger",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
-    "repo_exists_with_retry",
     "RepoType",
     "RopeType",
     "SamplingConfig",
@@ -104,6 +104,8 @@ __all__ = [
     "TextGenerationPipeline",
     "TextTokenizer",
     "token_sampler",
+    "try_to_load_from_cache",
     "upper_bounded_default",
-    "get_paged_manager",
+    "validate_hf_repo_access",
+    "WeightPathParser",
 ]

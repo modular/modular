@@ -73,7 +73,7 @@ def test_broadcast_to_tensor_value(
     assert graph.output_types == [expected_type]
 
 
-def test_broadcast_to__error_message():
+def test_broadcast_to__error_message() -> None:
     input_shape = [6]
     output_shape = [6, 7]
 
@@ -94,7 +94,7 @@ def test_broadcast_to__error_message():
             ops.broadcast_to(graph.inputs[0].tensor, output_shape)
 
 
-def test_broadcast_to__error_message_symbolic_shapes():
+def test_broadcast_to__error_message_symbolic_shapes() -> None:
     input_shape = ["D0"]
     output_shape = ["D1", "D2"]
 

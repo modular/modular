@@ -24,6 +24,35 @@ bazel_dep(name = "protoc-gen-validate", version = "1.2.1.bcr.1")
 bazel_dep(name = "rules_mypy", version = "0.36.0", dev_dependency = True)
 bazel_dep(name = "rules_uv", version = "0.69.0", dev_dependency = True)
 
+# TODO: Remove when >0.4.1 is released
+archive_override(
+    module_name = "rules_mojo",
+    integrity = "sha256-XsI6VTuzUKH+VvZ73b9ACDGcUFiIIl6b6NCLtAB2m7k=",
+    strip_prefix = "rules_mojo-909129d91fcfe162be3c2707d58c7029ed18c0e9",
+    urls = [
+        "https://github.com/modular/rules_mojo/archive/909129d91fcfe162be3c2707d58c7029ed18c0e9.tar.gz",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_mypy",
+    patch_strip = 1,
+    patches = [
+        # https://github.com/theoremlp/rules_mypy/pull/105
+        "//bazel/public-patches:rules_mypy_mojo_srcs.patch",
+    ],
+)
+
+# TODO: Remove when > 1.7.1 is released
+archive_override(
+    module_name = "bazel_skylib",
+    integrity = "sha256-s1m/quGDjFCYqogKB5fhzp9rGc2V6NlFaLOBjdwrNGM=",
+    strip_prefix = "bazel-skylib-223e4e945801dfbc0bfa31d0900196f5bb54b0fc",
+    urls = [
+        "https://github.com/bazelbuild/bazel-skylib/archive/223e4e945801dfbc0bfa31d0900196f5bb54b0fc.tar.gz",
+    ],
+)
+
 single_version_override(
     module_name = "rules_python",
     patch_strip = 1,
@@ -73,27 +102,6 @@ python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 ]
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-pip.whl_mods(
-    additive_build_content = """
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
-
-cc_library(
-    name = "headers",
-    hdrs = glob(["site-packages/torch/include/**/*.h"]),
-    includes = ["site-packages/torch/include"],
-    visibility = ["//visibility:public"],
-)
-
-cc_library(
-    name = "api",
-    hdrs = glob(["site-packages/torch/include/torch/csrc/api/include/**/*.h"]),
-    includes = ["site-packages/torch/include/torch/csrc/api/include"],
-    visibility = ["//visibility:public"],
-)
-""",
-    hub_name = "whl_mods_hub",
-    whl_name = "torch",
-)
 pip.override(
     file = "xgrammar-0.1.18-cp{version}-cp{version}-manylinux_2_17_x86_64.manylinux2014_x86_64.whl".format(version = DEFAULT_PYTHON_VERSION.replace(".", "")),
     hub_name = "modular_amd_gpu_pip_deps",
@@ -103,68 +111,36 @@ pip.override(
         "//bazel/third-party:xgrammar-record.patch",
     ],
 )
-use_repo(pip, "whl_mods_hub")
-
 pip.parse(
-    extra_hub_aliases = {
-        "torch": [
-            "headers",
-            "api",
-        ],
-    },
     hub_name = "modular_amd_gpu_pip_deps",
     python_version = DEFAULT_PYTHON_VERSION,
     requirements_by_platform = {
         "//:bazel/pip/requirements/amd-gpu-requirements.txt": "linux_x86_64",
     },
-    whl_modifications = {
-        "@whl_mods_hub//:torch.json": "torch",
-    },
 )
 pip.parse(
-    extra_hub_aliases = {
-        "torch": [
-            "headers",
-            "api",
-        ],
-    },
     hub_name = "modular_nvidia_gpu_pip_deps",
     python_version = DEFAULT_PYTHON_VERSION,
     requirements_by_platform = {
         "//:bazel/pip/requirements/nvidia-gpu-requirements.txt": "linux_x86_64",
     },
-    whl_modifications = {
-        "@whl_mods_hub//:torch.json": "torch",
-    },
 )
-
-[pip.parse(
-    extra_hub_aliases = {
-        "torch": [
-            "headers",
-            "api",
-        ],
-    },
-    hub_name = "pip_torch-{}_deps".format(version),
+pip.parse(
+    hub_name = "pip_torch-{}_deps".format(DEFAULT_TORCH_VERSION),
     python_version = DEFAULT_PYTHON_VERSION,
     requirements_by_platform = {
-        "//:bazel/pip/requirements/torch/requirements-{}.txt".format(version): "linux_x86_64,linux_aarch64,osx_aarch64",
+        "//:bazel/pip/requirements/torch/requirements-{}.txt".format(DEFAULT_TORCH_VERSION): "linux_x86_64,linux_aarch64,osx_aarch64",
     },
-    whl_modifications = {
-        "@whl_mods_hub//:torch.json": "torch",
-    },
-) for version in TORCH_VERSIONS]
-
+)
 use_repo(
     pip,
     "modular_amd_gpu_pip_deps",
     "modular_nvidia_gpu_pip_deps",
 )
-
-[use_repo(
+use_repo(
     pip,
-    "pip_torch-{}_deps".format(version),
-) for version in TORCH_VERSIONS]
+    "pip_torch-{}_deps".format(DEFAULT_TORCH_VERSION),
+)
 
 module_versions = use_repo_rule("//bazel/pip:module_versions.bzl", "module_versions")
 

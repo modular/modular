@@ -138,9 +138,6 @@ def test_warp_specialize_gemm[
         c_device.tensor,
         a_device.tensor,
         b_device.tensor,
-        M,
-        N,
-        K,
         ctx,
     )
 

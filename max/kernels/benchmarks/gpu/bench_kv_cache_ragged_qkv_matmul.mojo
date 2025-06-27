@@ -29,14 +29,14 @@ from utils import IndexList
 
 
 fn _get_run_name[
-    type: DType,
+    dtype: DType,
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
 ](seq_len: Int, batch_size: Int, use_random_lengths: Bool) -> String:
     # fmt: off
     return String(
-        "fused_qkv_ragged_matmul(", type, ") : ",
+        "fused_qkv_ragged_matmul(", dtype, ") : ",
 
         # head_info
         "num_q_heads=", num_q_heads, ", ",

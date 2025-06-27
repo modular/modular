@@ -32,6 +32,8 @@ from ._cpython import (
     Py_ssize_t,
     PyMethodDef,
     PyObjectPtr,
+    GILAcquired,
+    GILReleased,
 )
 from .python_object import PythonObject
 

@@ -43,6 +43,12 @@ config_setting(
 )
 
 config_setting(
+    name = "tsan",
+    tags = ["maybe-unused"],
+    values = {"features": "tsan"},
+)
+
+config_setting(
     name = "ubsan",
     tags = ["maybe-unused"],
     values = {"features": "ubsan"},

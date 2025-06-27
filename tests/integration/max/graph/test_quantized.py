@@ -16,7 +16,7 @@ from max.graph.quantization import QuantizationEncoding
     accelerator_count() > 0,
     reason="Quantization only supported on cpu currently",
 )
-def test_qmatmul(session):
+def test_qmatmul(session) -> None:
     graph = Graph(
         "qmatmul",
         input_types=[
@@ -55,7 +55,7 @@ def test_qmatmul(session):
     accelerator_count() > 0,
     reason="Quantization only supported on cpu currently",
 )
-def test_dequantize(session):
+def test_dequantize(session) -> None:
     graph = Graph(
         "dequantize",
         input_types=[TensorType(DType.uint8, (1, 18), device=DeviceRef.CPU())],

@@ -328,8 +328,8 @@ def test_isqrt():
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
-def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = frexp(Scalar[type](123.45))
+def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = frexp(Scalar[dtype](123.45))
     assert_almost_equal(
         res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol
     )
@@ -337,7 +337,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res0[1].cast[DType.float32](), 7.0, atol=atol, rtol=rtol
     )
 
-    var res1 = frexp(Scalar[type](0.1))
+    var res1 = frexp(Scalar[dtype](0.1))
     assert_almost_equal(
         res1[0].cast[DType.float32](), 0.8, atol=atol, rtol=rtol
     )
@@ -345,7 +345,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res1[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
     )
 
-    var res2 = frexp(Scalar[type](-0.1))
+    var res2 = frexp(Scalar[dtype](-0.1))
     assert_almost_equal(
         res2[0].cast[DType.float32](), -0.8, atol=atol, rtol=rtol
     )
@@ -353,7 +353,7 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
         res2[1].cast[DType.float32](), -3.0, atol=atol, rtol=rtol
     )
 
-    var res3 = frexp(SIMD[type, 4](0, 2, 4, 5))
+    var res3 = frexp(SIMD[dtype, 4](0, 2, 4, 5))
     assert_almost_equal(
         res3[0].cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
@@ -368,18 +368,18 @@ def _test_frexp_impl[type: DType](*, atol: Float64, rtol: Float64):
     )
 
 
-def _test_log_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = log(Scalar[type](123.45))
+def _test_log_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8158, atol=atol, rtol=rtol
     )
 
-    var res1 = log(Scalar[type](0.1))
+    var res1 = log(Scalar[dtype](0.1))
     assert_almost_equal(
         res1.cast[DType.float32](), -2.3025, atol=atol, rtol=rtol
     )
 
-    var res2 = log(SIMD[type, 4](1, 2, 4, 5))
+    var res2 = log(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
@@ -387,25 +387,25 @@ def _test_log_impl[type: DType](*, atol: Float64, rtol: Float64):
         rtol=rtol,
     )
 
-    var res3 = log(Scalar[type](2.7182818284590452353602874713526624977572))
+    var res3 = log(Scalar[dtype](2.7182818284590452353602874713526624977572))
     assert_almost_equal(res3.cast[DType.float32](), 1.0, atol=atol, rtol=rtol)
 
-    var res4 = isinf(log(SIMD[type, 4](0, 1, 0, 0)))
+    var res4 = isinf(log(SIMD[dtype, 4](0, 1, 0, 0)))
     assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
 
 
-def _test_log2_impl[type: DType](*, atol: Float64, rtol: Float64):
-    var res0 = log2(Scalar[type](123.45))
+def _test_log2_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+    var res0 = log2(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
     )
 
-    var res1 = log2(Scalar[type](0.1))
+    var res1 = log2(Scalar[dtype](0.1))
     assert_almost_equal(
         res1.cast[DType.float32](), -3.3219, atol=atol, rtol=rtol
     )
 
-    var res2 = log2(SIMD[type, 4](1, 2, 4, 5))
+    var res2 = log2(SIMD[dtype, 4](1, 2, 4, 5))
     assert_almost_equal(
         res2.cast[DType.float32](),
         SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),

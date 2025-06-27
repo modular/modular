@@ -339,7 +339,12 @@ struct Optional[T: Copyable & Movable](
             This will abort on empty `Optional`.
         """
         if not self.__bool__():
-            abort(".value() on empty Optional")
+            abort(
+                "`Optional.value()` called on empty `Optional`. Consider using"
+                " `if optional:` to check whether the `Optional` is empty"
+                " before calling `.value()`, or use `.or_else()` to provide a"
+                " default value."
+            )
 
         return self.unsafe_value()
 
@@ -353,7 +358,7 @@ struct Optional[T: Copyable & Movable](
         Notes:
             This will **not** abort on empty `Optional`.
         """
-        debug_assert(self.__bool__(), ".value() on empty Optional")
+        debug_assert(self.__bool__(), "`.value()` on empty `Optional`")
         return self._value.unsafe_get[T]()
 
     fn take(mut self) -> T:
@@ -366,7 +371,12 @@ struct Optional[T: Copyable & Movable](
             This will abort on empty `Optional`.
         """
         if not self.__bool__():
-            abort(".take() on empty Optional")
+            abort(
+                "`Optional.take()` called on empty `Optional`. Consider using"
+                " `if optional:` to check whether the `Optional` is empty"
+                " before calling `.take()`, or use `.or_else()` to provide a"
+                " default value."
+            )
         return self.unsafe_take()
 
     fn unsafe_take(mut self) -> T:
@@ -378,7 +388,7 @@ struct Optional[T: Copyable & Movable](
         Notes:
             This will **not** abort on empty `Optional`.
         """
-        debug_assert(self.__bool__(), ".unsafe_take() on empty Optional")
+        debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
         return self._value.unsafe_replace[_NoneType, T](_NoneType())
 
     fn or_else(self, default: T) -> T:

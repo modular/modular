@@ -15,7 +15,7 @@ from max.graph.ops import logical_and
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
-def test_logical_and__same_type(graph_builder, tensor_type: TensorType):
+def test_logical_and__same_type(graph_builder, tensor_type: TensorType) -> None:
     with graph_builder(input_types=[tensor_type, tensor_type]) as graph:
         x, y = graph.inputs
         op = logical_and(x, y)
@@ -23,7 +23,9 @@ def test_logical_and__same_type(graph_builder, tensor_type: TensorType):
 
 
 @given(tensor_type=...)
-def test_logical_and__invalid_dtype(graph_builder, tensor_type: TensorType):
+def test_logical_and__invalid_dtype(
+    graph_builder, tensor_type: TensorType
+) -> None:
     assume(tensor_type.dtype != DType.bool)
     with graph_builder(input_types=[tensor_type, tensor_type]) as graph:
         x, y = graph.inputs
@@ -32,7 +34,7 @@ def test_logical_and__invalid_dtype(graph_builder, tensor_type: TensorType):
 
 
 @given(shapes=broadcastable_shapes(2))
-def test_logical_and__broadcast(graph_builder, shapes: list[Shape]):
+def test_logical_and__broadcast(graph_builder, shapes: list[Shape]) -> None:
     s1, s2 = shapes
     broadcast_shape = broadcast_shapes(s1, s2)
     with graph_builder(
@@ -48,7 +50,9 @@ def test_logical_and__broadcast(graph_builder, shapes: list[Shape]):
 
 @pytest.mark.skip("MSDK-1158")
 @given(s1=..., s2=...)
-def test_logical_and__invalid_broadcast(graph_builder, s1: Shape, s2: Shape):
+def test_logical_and__invalid_broadcast(
+    graph_builder, s1: Shape, s2: Shape
+) -> None:
     try:
         broadcast_shapes(s1, s2)
     except ValueError:
@@ -72,7 +76,7 @@ def test_logical_and__invalid_broadcast(graph_builder, s1: Shape, s2: Shape):
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)), b=...)
 def test_logical_and__python_bool(
     graph_builder, tensor_type: TensorType, b: bool
-):
+) -> None:
     with graph_builder(input_types=[tensor_type]) as graph:
         (x,) = graph.inputs
         assert logical_and(x, b).type == tensor_type

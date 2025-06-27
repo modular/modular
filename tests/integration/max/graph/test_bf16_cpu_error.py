@@ -16,7 +16,7 @@ from max.graph import DeviceRef, Graph, TensorType
     platform.machine() not in ["arm64", "aarch64"],
     reason="BF16 is only unsupported on ARM CPU architecture",
 )
-def test_bf16_cpu_input_error(session):
+def test_bf16_cpu_input_error(session) -> None:
     input_type = TensorType(
         dtype=DType.bfloat16, shape=["dim"], device=DeviceRef.CPU()
     )
@@ -40,7 +40,7 @@ def test_bf16_cpu_input_error(session):
     platform.machine() not in ["arm64", "aarch64"],
     reason="BF16 is only unsupported on ARM CPU architecture",
 )
-def test_bf16_cpu_output_error(session):
+def test_bf16_cpu_output_error(session) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=["dim"], device=DeviceRef.CPU()
     )

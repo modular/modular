@@ -486,9 +486,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     """
 
     # Aliases
-    alias Mutable = StringSlice[MutableOrigin.cast_from[origin].result]
+    alias Mutable = StringSlice[MutableOrigin.cast_from[origin]]
     """The mutable version of the `StringSlice`."""
-    alias Immutable = StringSlice[ImmutableOrigin.cast_from[origin].result]
+    alias Immutable = StringSlice[ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, origin]
@@ -507,7 +507,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     @always_inline("nodebug")
     fn __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutableOrigin.cast_from[other.origin].result],
+        out self: StringSlice[ImmutableOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -718,11 +718,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len = self.byte_length()
         var result = String(unsafe_uninit_length=len)
-        memcpy(
-            result.unsafe_ptr_mut[is_unique_mut_ref=True](),
-            self.unsafe_ptr(),
-            len,
-        )
+        memcpy(result.unsafe_ptr_mut(), self.unsafe_ptr(), len)
         return result^
 
     fn __repr__(self) -> String:
@@ -1090,13 +1086,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The string concatenated `n` times.
         """
-        var result = String()
-        if n <= 0:
-            return result
-        result.reserve(self.byte_length() * n)
+        var string = String()
+        var str_bytes = self.as_bytes()
+        var buffer = _WriteBufferStack(string)
         for _ in range(n):
-            result += self
-        return result
+            buffer.write_bytes(str_bytes)
+        buffer.flush()
+        return string
 
     @always_inline("nodebug")
     fn __merge_with__[

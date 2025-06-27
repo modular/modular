@@ -49,7 +49,9 @@ def torch_conv2d(
         ),
     ],
 )
-def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
+def test_conv2d(
+    session, input_type: TensorType, filter_type: TensorType
+) -> None:
     with Graph("conv2d", input_types=[input_type, filter_type]) as graph:
         x, filter = graph.inputs
         stride = (16, 16)
@@ -60,7 +62,7 @@ def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
         graph.output(conv)
 
         @modular_graph_test(session, graph)
-        def test_correctness(execute, inputs, torch_inputs):
+        def test_correctness(execute, inputs, torch_inputs) -> None:
             result = execute(inputs).to_numpy()
             x, w = torch_inputs
             expected = (

@@ -21,7 +21,7 @@ class Unity:
         return ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU())
 
 
-def test_load_rejects_non_contiguous_weights():
+def test_load_rejects_non_contiguous_weights() -> None:
     """Test that InferenceSession.load() raises ValueError for non-contiguous weight registry inputs."""
     graph = Graph(
         "unity",
@@ -42,7 +42,7 @@ def test_load_rejects_non_contiguous_weights():
         session.load(graph, weights_registry={"weight": weight_tensor.numpy()})
 
 
-def test_execute_rejects_non_contiguous_input():
+def test_execute_rejects_non_contiguous_input() -> None:
     """Test that model.execute() raises ValueError for non-contiguous input tensors."""
     graph = Graph(
         "unity",

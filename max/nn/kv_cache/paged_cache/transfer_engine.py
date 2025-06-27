@@ -110,7 +110,7 @@ class KVTransferEngine:
         total_num_pages: int,
         *,
         listen_port: int = 8040,
-    ):
+    ) -> None:
         if total_num_pages <= 0:
             raise ValueError(
                 f"Total number of pages {total_num_pages} must be greater than 0"
