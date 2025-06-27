@@ -63,6 +63,11 @@ written in Mojo.
 A simple example showing how to directly send inference to an LLMs using the
 MAX Python API, without starting a webserver (without an endpoint).
 
+## [Custom MAX models](custom-models/)
+
+An example of how to define and register a custom architecture with MAX for
+text generation or serving.
+
 ---
 
 ## Example code tests
