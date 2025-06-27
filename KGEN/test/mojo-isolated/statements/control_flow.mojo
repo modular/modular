@@ -500,7 +500,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
 
 
 @fieldwise_init
-struct IterRange(IteratorTrait, Copyable):
+struct IterRange(Iterator, Copyable):
     alias Element = Int
 
     var value: Int
@@ -565,7 +565,7 @@ fn use(value: MyType):
 fn parameter_for[a: Int](owned value: MyType):
     # CHECK-NEXT: kgen.param.for [[i:.*]]: !Int in :!IterRange apply
     # CHECK-NEXT: has_next
-    # CHECK-NEXT: get_next :{{.*}}parameter_for_generator{{.*}}<:!IteratorTrait_Copyable #IterRange1>
+    # CHECK-NEXT: get_next :{{.*}}parameter_for_generator{{.*}}<:!Iterator_Copyable #IterRange1>
     @parameter
     for i in IterRange(a):
         # CHECK: [[IMM:%.*]] = lit.ref.immut %value
