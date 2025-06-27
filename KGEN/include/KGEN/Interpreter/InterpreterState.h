@@ -301,7 +301,7 @@ private:
     /// Create a memory blob. If `hdl` is null, an owned blob will be created.
     explicit MemoryBlob(llvm::BumpPtrAllocator &allocator, int64_t baseAddr,
                         size_t size, size_t align, unsigned addressSpace,
-                        MemoryHandleAttr hdl);
+                        MemoryHandleAttr hdl, size_t refCount = 1);
 
     /// Mark or unmark the given region of the blob as a pointer value.
     ErrorOrSuccess setMarkedRegion(int64_t offset, int64_t regionSize,
@@ -330,7 +330,11 @@ private:
     bool isFreed() const { return isa<std::nullptr_t>(memory); }
 
     /// Free the owned memory.
-    void free() { memory = nullptr; }
+    void free() {
+      --refCount;
+      if (refCount == 0)
+        memory = nullptr;
+    }
 
     /// The base address of the blob.
     int64_t baseAddr;
@@ -342,6 +346,11 @@ private:
     unsigned addressSpace;
     /// The actual memory managed by the interpreter.
     MemoryT memory;
+
+    /// Ref count of the blob. Multiple Memref can point to the same blob
+    /// due to mlir::attr uniqueing. We need a ref count to free the blob
+    /// correctly.
+    size_t refCount;
     /// A bit is set for each offset value where pointer regions begin. The
     /// vector is lazily-initialized to save memory.
     std::optional<llvm::BitVector> pointerRegions;
@@ -361,7 +370,8 @@ private:
     ErrorOr<MemoryBlob &> addBlob(llvm::BumpPtrAllocator &allocator,
                                   size_t size, size_t align,
                                   unsigned addressSpace = 0,
-                                  MemoryHandleAttr hdl = {});
+                                  MemoryHandleAttr hdl = {},
+                                  bool resetRefCount = false);
 
     /// Return true if the table contains the address.
     bool contains(int64_t addr) { return addr >= minAddr && addr < maxAddr; }

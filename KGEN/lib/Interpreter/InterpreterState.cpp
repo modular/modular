@@ -52,9 +52,10 @@ InterpreterState::InterpreterState(TargetInfoAttr target)
 InterpreterState::MemoryBlob::MemoryBlob(llvm::BumpPtrAllocator &allocator,
                                          int64_t baseAddr, size_t size,
                                          size_t align, unsigned addressSpace,
-                                         MemoryHandleAttr hdl)
+                                         MemoryHandleAttr hdl, size_t refCount)
     : baseAddr(baseAddr), size(size), align(align), addressSpace(addressSpace),
-      memory(hdl ? MemoryT(hdl) : MemoryT(allocator.Allocate(size, align))) {}
+      memory(hdl ? MemoryT(hdl) : MemoryT(allocator.Allocate(size, align))),
+      refCount(refCount) {}
 
 /// Do one of the following:
 ///  (1) Mark a region as a Pointer
@@ -108,7 +109,7 @@ ErrorOrSuccess InterpreterState::MemoryBlob::setMarkedRegion(
 
 ErrorOr<InterpreterState::MemoryBlob &> InterpreterState::MemoryTable::addBlob(
     llvm::BumpPtrAllocator &allocator, size_t size, size_t align,
-    unsigned addressSpace, MemoryHandleAttr hdl) {
+    unsigned addressSpace, MemoryHandleAttr hdl, bool resetRefCount) {
   // Pick the base address of the new blob.
   int64_t baseAddr = minAddr;
   if (!blobs.empty()) {
@@ -124,7 +125,8 @@ ErrorOr<InterpreterState::MemoryBlob &> InterpreterState::MemoryTable::addBlob(
     return Error("interpreter is out of memory!");
 
   // Create the blob with aligned memory.
-  blobs.emplace_back(allocator, baseAddr, size, align, addressSpace, hdl);
+  blobs.emplace_back(allocator, baseAddr, size, align, addressSpace, hdl,
+                     (resetRefCount ? 0 : 1));
   return blobs.back();
 }
 
@@ -536,7 +538,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       map.blobs.emplace_back(&table, table.blobs.size());
       ErrorOr<MemoryBlob &> mem =
           table.addBlob(allocator, asmBlob.getSize(), asmBlob.getAlign(),
-                        blob.getAddressSpace(), hdl);
+                        blob.getAddressSpace(), hdl, /*resetRefCount=*/true);
       if (mem.isError())
         return mem.takeError();
       if (!hdl)
@@ -646,6 +648,58 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
         return {ptr.takeValue(), WalkResult::skip()};
       });
   addCustomReplacementsToLiftStore(liftStore);
+
+  mlir::AttrTypeWalker walker;
+  std::function<ErrorOrSuccess(MemorySpaceAttr memSpace,
+                               InternedMemorySpace & internedSpace,
+                               size_t blobIdx)>
+      refCountBlob = [&](MemorySpaceAttr memSpace,
+                         InternedMemorySpace &internedSpace,
+                         size_t blobIdx) -> ErrorOrSuccess {
+    MemoryBlobAttr blob = memSpace[blobIdx];
+    if (isGlobalBlob(blob))
+      return success();
+
+    // ref count heap memory handles
+    if (blob.getKind() == MemoryKind::Heap) {
+      auto [table, idx] = internedSpace.blobs[blobIdx];
+      MemoryBlob &memBlob = table->blobs[idx];
+      memBlob.refCount++;
+    }
+
+    // Recurse to ptrRegions for indirect memory references.
+    auto ptrItr = blob.getPointerRegions().begin();
+    auto ptrEnd = blob.getPointerRegions().end();
+    for (; ptrItr != ptrEnd; ++ptrItr) {
+      ErrorOrSuccess result =
+          refCountBlob(memSpace, internedSpace, ptrItr->blobIndex);
+      if (result.isError())
+        return result.takeError();
+    }
+    return success();
+  };
+
+  walker.addWalk([&](MemRefAttr ref) {
+    ErrorOr<InternedMemorySpace &> space = getOrInternSpace(ref.getModel());
+    if (space.isError()) {
+      err = space.takeError();
+      return WalkResult::interrupt();
+    }
+
+    ErrorOrSuccess result =
+        refCountBlob(ref.getModel().getMemory(), *space, ref.getIndex());
+    if (result.isError()) {
+      err = result.takeError();
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+
+  for (Attribute &arg : args) {
+    walker.walk(arg);
+    if (err)
+      return std::move(*err);
+  }
 
   for (Attribute &arg : args) {
     arg = replacer.replace(arg);
@@ -922,6 +976,7 @@ void InterpreterState::dump() {
       llvm::dbgs() << "blob:\n";
       llvm::dbgs() << "\tbase address:" << blob.baseAddr
                    << "\n\tsize: " << blob.size << "\n\talign: " << blob.align
+                   << "\n\trefCount: " << blob.refCount
                    << "\n\tcontents at physical address: " << data.c_str()
                    << "\n\tvalue as index (fixme): " << os.str().c_str()
                    << "\n";
