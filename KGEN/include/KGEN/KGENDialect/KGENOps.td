@@ -955,8 +955,10 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
   let summary = "compile-time for loop";
   let description = [{
     The `kgen.param.for` operation instantiates its body with values according
-    to its iterator. It takes an initial value, an iterate method that takes an
-    iterator instance and returns the next value plus the next iterator.
+    to its iterator. It takes an initial iterator value, a 'hasNext' function
+    that take an iterator and indicates whether more elements exist, and a
+    'getNextIter' function that takes an iterator instance and returns the next
+    iterator value.
 
     This operation can have loop-carried values - the "operands" inputs and
     results, which are values promoted within the loop by mem2reg.
@@ -965,7 +967,7 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
   let arguments = (ins
     TypedAttrInterface:$initial,
     AttrOfType<KGEN_FuncTypeGeneratorType>:$hasNext,
-    AttrOfType<KGEN_FuncTypeGeneratorType>:$getNext,
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$getNextIter,
     KGEN_ParamDeclAttr:$paramDecl,
     Variadic<AnyType>:$operands,
     UnitAttr:$bodyIsolated,
@@ -976,8 +978,8 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
 
   let builders = [
     OpBuilder<(ins "TypedAttr":$initial, "TypedAttr":$hasNext,
-                   "TypedAttr":$getNext, "ParamDeclAttr":$paramDecl), [{
-      build($_builder, $_state, {}, initial, hasNext, getNext, paramDecl,
+                   "TypedAttr":$getNextIter, "ParamDeclAttr":$paramDecl), [{
+      build($_builder, $_state, {}, initial, hasNext, getNextIter, paramDecl,
             {}, {}, {});
     }]>
   ];
@@ -985,7 +987,7 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
   let assemblyFormat = [{
     custom<ParamDecl>($paramDecl) `in` custom<ColonTypeParamValue>($initial)`\n`
     `has_next` custom<ColonTypeParamValue>($hasNext) `\n`
-    `get_next` custom<ColonTypeParamValue>($getNext)
+    `get_next_iter` custom<ColonTypeParamValue>($getNextIter)
     custom<Loop>($operands, type($operands), type($results), $body)
     `else` custom<RegionWithArgs>($elseRegion) attr-dict
   }];

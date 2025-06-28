@@ -43,6 +43,37 @@ fn test_for_list():
     debug_assert(concated == "abc")
 
 
+# derived from https://github.com/modular/modular/issues/4566
+fn test_critical_edge():
+    var a = 0
+
+    @parameter
+    for i in range(10):
+        a = i  # Compiler hung here
+    debug_assert(a == 9)
+
+
+# derived from https://github.com/modular/modular/issues/4836
+fn test_else_block():
+    var a: Int  # Init not required because always assigned in else.
+
+    @parameter
+    for i in range(10):
+        pass
+    else:
+        a = 1  # This should execute.
+    debug_assert(a == 1)
+
+    @parameter
+    for i in range(10):
+        if i == 4:
+            break
+    else:
+        debug_assert(False)  # This should NOT execute.
+
+
 fn main():
     test_unroll_warn_threshold()
     test_for_list()
+    test_critical_edge()
+    test_else_block()

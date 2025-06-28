@@ -1819,79 +1819,69 @@ kgen.generator export @param_for(%arg0: i1, %arg1: index) {
 
 // CHECK-LABEL: kgen.func @"sum_from_zero,upper=0"
 // CHECK-NEXT:    %idx0 = index.constant 0
-// CHECK-NEXT:    %0 = hlcf.loop "param_for_outer" () -> index
-// CHECK-NEXT:      hlcf.break "param_for_outer" %idx0
-// CHECK-NEXT:    }
-// CHECK-NEXT:    return %0
+// CHECK-NEXT:    return %idx0
 
 // CHECK-LABEL: kgen.func @"sum_from_zero,upper=1"
 // CHECK-NEXT:   %idx0 = index.constant 0
-// CHECK-NEXT:   %0 = hlcf.loop "param_for_outer" () -> index
-// CHECK-NEXT:     %1 = hlcf.loop () -> index
-// CHECK-NEXT:       %index1 = kgen.param.constant = <1>
-// CHECK-NEXT:       %2 = index.add %idx0, %index1
-// CHECK-NEXT:       break %2 : index
-// CHECK-NEXT:     }
-// CHECK-NEXT:     break "param_for_outer" %1 : index
-// CHECK-NEXT:   }
+// CHECK-NEXT:   %index1 = kgen.param.constant = <1>
+// CHECK-NEXT:   %0 = index.add %idx0, %index1
 // CHECK-NEXT:   return %0 : index
 
 // CHECK-LABEL: kgen.func @"sum_from_zero,upper=2"
 // CHECK-NEXT:   %idx0 = index.constant 0
-// CHECK-NEXT:   %0 = hlcf.loop "param_for_outer" () -> index
-// CHECK-NEXT:     %1 = hlcf.loop () -> index
-// CHECK-NEXT:       %index2 = kgen.param.constant = <2>
-// CHECK-NEXT:       %3 = index.add %idx0, %index2
-// CHECK-NEXT:       hlcf.break %3 : index
-// CHECK-NEXT:     }
-// CHECK-NEXT:     %2 = hlcf.loop () -> index
-// CHECK-NEXT:       %index1 = kgen.param.constant = <1>
-// CHECK-NEXT:       %3 = index.add %1, %index1
-// CHECK-NEXT:       hlcf.break %3 : index
-// CHECK-NEXT:     }
-// CHECK-NEXT:     hlcf.break "param_for_outer" %2 : index
-// CHECK-NEXT:   }
-// CHECK-NEXT:   kgen.return %0 : index
+// CHECK-NEXT:   %index2 = kgen.param.constant = <2>
+// CHECK-NEXT:   %0 = index.add %idx0, %index2
+// CHECK-NEXT:   %index1 = kgen.param.constant = <1>
+// CHECK-NEXT:   %1 = index.add %0, %index1
+// CHECK-NEXT:   return %1 : index
 
 kgen.generator @sum_from_zero<upper>() -> index {
   %idx0 = index.constant 0
   %0 = kgen.param.for i in upper
     has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero
+    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %idx0 : index) -> index {
-    %1 = kgen.param.constant = <i>
-    %2 = index.add %arg0, %1
-    kgen.param.for.continue %2 : index
-  } else (%arg1: index) {
-    kgen.param.yield %arg1 : index
+
+    kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, i)> {
+      %1 = kgen.param.constant = <i>
+      %2 = index.add %arg0, %1
+      kgen.param.for.continue %2 : index
+    } else {
+      kgen.param.for.break %arg0 : index
+    }
+    kgen.unreachable
+  } else {
+    kgen.unreachable
   }
   kgen.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func @terminators
 kgen.generator @terminators(%arg0: i1) {
-  // CHECK-NEXT: hlcf.loop "param_for_outer" {
-  // CHECK-NEXT:   hlcf.loop {
-  // CHECK-NEXT:     hlcf.if %arg0 {
-  // CHECK-NEXT:       kgen.return
-  // CHECK-NEXT:     } else {
-  // CHECK-NEXT:       hlcf.break
-  // CHECK-NEXT:     }
-  // CHECK-NEXT:     hlcf.break "param_for_outer"
+  // CHECK-NEXT: hlcf.loop {
+  // CHECK-NEXT:   hlcf.if %arg0 {
+  // CHECK-NEXT:     kgen.return
+  // CHECK-NEXT:   } else {
+  // CHECK-NEXT:     hlcf.break
   // CHECK-NEXT:   }
-  // CHECK-NEXT:   hlcf.break "param_for_outer"
+  // CHECK-NEXT:   kgen.unreachable
   // CHECK-NEXT: }
   kgen.param.for i in 1
-    has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero {
-    hlcf.if %arg0 {
-      kgen.return
+  has_next :(index) -> i1 @count_to_zero_has_next
+  get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero {
+    kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, i)> {
+      hlcf.if %arg0 {
+        kgen.return
+      } else {
+        kgen.param.for.continue
+      }
+      kgen.unreachable
     } else {
-      kgen.param.for.continue
+      kgen.param.for.break
     }
-    kgen.param.for.break
+    kgen.unreachable
   } else {
-    kgen.param.yield
+    kgen.unreachable
   }
   kgen.return
 }
@@ -1900,61 +1890,72 @@ kgen.generator @terminators(%arg0: i1) {
 kgen.generator @nested_param_for() {
   // CHECK: { 2, 2 }
   // CHECK: { 2, 1 }
-  // CHECK: { 1, 2 }
-  // CHECK: { 1, 1 }
   kgen.param.for i in 2
   has_next :(index) -> i1 @count_to_zero_has_next
-  get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero {
-    kgen.param.for j in 2
-    has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero {
-      kgen.param.constant: struct<(index, index)> = <{ i, j }>
-      kgen.param.for.continue
+  get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero {
+
+    kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, i)> {
+
+      kgen.param.for j in 2
+      has_next :(index) -> i1 @count_to_zero_has_next
+      get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero {
+
+        kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, j)> {
+          kgen.param.constant: struct<(index, index)> = <{ i, j }>
+
+          kgen.param.if <0> {
+            kgen.param.yield
+          } else {
+            kgen.param.yield
+          }
+
+          kgen.param.for.continue
+
+        } else {
+          kgen.param.for.break // Out of the nested one?
+        }
+        kgen.unreachable
+      } else {
+        kgen.unreachable
+      }
+      kgen.unreachable
     } else {
-      kgen.param.yield
+      kgen.param.for.break
     }
-    kgen.param.if <0> {
-      kgen.param.yield
-    } else {
-      kgen.param.yield
-    }
-    kgen.param.for.continue
+    kgen.unreachable
   } else {
-    kgen.param.yield
+    kgen.unreachable
   }
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @"for_else,upper=0"
-// CHECK-NEXT:    %0 = hlcf.loop "param_for_outer" () -> index
-// CHECK-NEXT:      %index1 = kgen.param.constant = <1>
-// CHECK-NEXT:      %1 = index.add %index1, %arg0
-// CHECK-NEXT:      hlcf.break "param_for_outer" %1
-// CHECK-NEXT:    }
-// CHECK-NEXT:    return %0
+// CHECK-NEXT:    %index1 = kgen.param.constant = <1>
+// CHECK-NEXT:    %0 = index.add %index1, %arg0
+// CHECK-NEXT:    return %0 : index
 
 // CHECK-LABEL: kgen.func @"for_else,upper=1"
-// CHECK-NEXT:    %0 = hlcf.loop "param_for_outer" () -> index
-// CHECK-NEXT:      %1 = hlcf.loop () -> index
-// CHECK-NEXT:        break %arg0
-// CHECK-NEXT:      }
-// CHECK-NEXT:      %index2 = kgen.param.constant = <2>
-// CHECK-NEXT:      %2 = index.add %index2, %1
-// CHECK-NEXT:      break "param_for_outer" %2
-// CHECK-NEXT:    }
-// CHECK-NEXT:    return %0
+// CHECK-NEXT:    %index2 = kgen.param.constant = <2>
+// CHECK-NEXT:    %0 = index.add %index2, %arg0
+// CHECK-NEXT:    return %0 : index
 
 kgen.generator @for_else<upper>(%arg0: index) -> index {
   kgen.param.declare param = <add(upper, 1)>
   %0 = kgen.param.for i in upper
     has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero
+    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
     (%arg1 = %arg0 : index) -> index {
-    kgen.param.for.continue %arg1 : index
-  } else (%arg1: index) {
-    %1 = kgen.param.constant = <param>
-    %2 = index.add %1, %arg1
-    kgen.param.yield %2 : index
+
+    kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, i)> {
+      kgen.param.for.continue %arg1 : index
+    } else {
+      %1 = kgen.param.constant = <param>
+      %2 = index.add %1, %arg1
+      kgen.param.for.break %2 : index
+    }
+    kgen.unreachable
+  } else {
+    kgen.unreachable
   }
   kgen.return %0 : index
 }
@@ -1965,21 +1966,26 @@ kgen.generator @parametric_result() {
   %0 = kgen.param.constant: array<a, i1> = <?>
   %1 = kgen.param.for i in 1
       has_next :(index) -> i1 @count_to_zero_has_next
-    get_next :(!kgen.pointer<index>, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none @count_to_zero
+      get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
     (%arg0 = %0 : !pop.array<a, i1>) -> !pop.array<a, i1> {
-    kgen.param.for.continue %arg0 : !pop.array<a, i1>
-  } else (%arg0: !pop.array<a, i1>) {
-    kgen.param.yield %arg0 : !pop.array<a, i1>
+
+    kgen.param.if <apply(:!lit.generator<(index) -> i1> @count_to_zero_has_next, i)> {
+      kgen.param.for.continue %arg0 : !pop.array<a, i1>
+    } else {
+      kgen.param.for.break %arg0 : !pop.array<a, i1>
+    }
+    kgen.unreachable
+  } else {
+    kgen.unreachable
   }
   kgen.return
 }
 
-kgen.generator @count_to_zero(%arg0: !kgen.pointer<index>, %arg1: !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none {
+kgen.generator @count_to_zero(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen.pointer<index> byref_result) -> !kgen.none {
   %i0 = pop.load %arg0 : !kgen.pointer<index>
   %idx1 = index.constant 1
   %1 = index.sub %i0, %idx1
-  %2 = kgen.struct.create(%1, %i0) : !kgen.struct<(index, index)>
-  pop.store %2, %arg1 : !kgen.pointer<struct<(index, index)>>
+  pop.store %1, %arg1 : !kgen.pointer<index>
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }

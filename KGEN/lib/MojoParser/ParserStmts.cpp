@@ -1232,36 +1232,6 @@ LIT::LoopOp StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
   return loopOp;
 }
 
-/// Given the type of an iterator, return the type that would be returned by
-/// __next__.
-static ASTType getIteratedType(IREmitter &emitter, ASTType iterType,
-                               ExprNode *seqExpr) {
-
-  // Look up __next__ without calling it.
-  auto handleLookupFailure = [&]() {
-    emitter.emitError(seqExpr->getLoc())
-        << "expected iterator of type " << iterType
-        << " to have __next__ method" << seqExpr->getRange();
-  };
-
-  // Next is generally a mutating method, so we need a MLValue to be able to
-  // type check it.  We'll use a synthetic variable for this.
-  BlockArgument bbArg = emitter.shared.getArgumentOwningBlock().addArgument(
-      RefType::getAnyOrigin(iterType, true), seqExpr->getLocation(emitter));
-
-  ASTExprAnd<AnyValue> selfValue = {MLValue(bbArg), seqExpr};
-  CallOperands emptyOperands(selfValue);
-  PValue nextFn = OverloadSet::lookupAndResolve(
-      iterType, "__next__", emptyOperands, seqExpr, CallSyntax::kMethodCall,
-      handleLookupFailure,
-      /*shouldPrintOverloadErrors*/ true, emitter);
-  if (!nextFn)
-    return {};
-
-  // The result of a call to next is the iterated value type.
-  return cast<FnTypeGeneratorType>(nextFn.getType()).getUserResultType();
-}
-
 // FIXME: This needs to parse this as a target expression and then handle it
 // like a destructuring pattern.
 static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
@@ -1280,6 +1250,7 @@ static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
 
 ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
                                       ExprNode *targetExpr, ExprNode *seqExpr) {
+  SMLoc seqLoc = seqExpr->getLoc();
   Location forLocation = translateLocation(forLoc);
   ASTDecl &scope = getParentDecl();
 
@@ -1295,36 +1266,78 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   //   while it.__has_next__():
   //       var e = it.__next__()
   //       <BODY>
-  // We capture the "it" expression as a PValue and then the "has_next" and
-  // "__next__" callees so we can iterate the value in the elaborator.
+  // We capture the "it" expression as a PValue and then the "__has_next__" and
+  // "__next__" callees so we can iterate the value in the elaborator.  The
+  // elaborator struggles with 'mut' arguments, so we use the paramfor_next_iter
+  // and paramfor_next_value functions to make it 'functional'.
+  //
+  // Parameter for loops are desugared into:
+  //   kgen.param.for 'it', initial=iterable.__iter__(),
+  //      has_next=..., get_next=... {
+  //       @parameter if it.has_next():
+  //         # Logically: alias e = it.__next__()
+  //         alias e = paramfor_next_value(it)
+  //         <BODY>
+  //       else:
+  //          param.for.else
+  //
+  // The elaborator instantiates the body of the loop N times with different
+  // versions of the iterator.
 
   // Emit the sequence and call __iter__ on it.
   AnyValue seqValue = emitter.emitExprCValue(seqExpr, EC_ForParamSeq);
   if (!seqValue)
     return failure();
   ValueDest rangeDest(EC_ForIterator);
-  PValue iterVal =
+  PValue initialIterVal =
       emitter.emitPValue({emitter.emitNamedMethodCall(
                               "__iter__", CallOperands({{seqValue, seqExpr}}),
                               rangeDest, CallSyntax::kMethodCall, seqExpr),
                           seqExpr},
                          EC_ForIterator);
-  if (!iterVal)
+  if (!initialIterVal)
     return failure();
 
-  ASTType iterType = iterVal.getRValueType();
+  ASTType iterType = initialIterVal.getRValueType();
 
-  // Sniff the type of the induction variable and create its declaration.
-  ASTType indexType = getIteratedType(emitter, iterType, seqExpr);
-  if (!indexType)
-    return failure();
+  // Resolve the paramfor_next_iter(iterator) and paramfor_next_value(iterator)
+  // functions.
+  auto getMutFnWrapper = [&](StringRef name) -> PValue {
+    // Bind the sequence initial value to the parameter for iterator generator.
+    // Start by looking up the builtin generator.
+    ArrayRef<ASTDecl *> paramForImpl =
+        shared.getBuiltinFunction(scope, "builtin._stubs", name, forLoc);
+    if (paramForImpl.empty())
+      return {};
 
-  // Look up __has_next__ without calling it.
-  auto handleLookupFailure = [&]() {
-    emitter.emitError(seqExpr->getLoc())
-        << "expected sequence of type " << iterType
-        << " to have __iter__ and __has_next__ methods";
+    // Resolve the overload with the sequence's type. This succeeds if the
+    // iterator type is currently supported.
+    ParamBindings bindings(scope);
+    bindings.add(seqExpr, PValue(iterType));
+    // We use paramfor_next_iter as a wrapper because the elaborator doesn't
+    // have a strong enough memory model to handle "mut" arguments to next.
+    OverloadSet call("paramfor_next_iter", paramForImpl, std::move(bindings),
+                     seqExpr, CallSyntax::kDirectCall);
+    return call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
   };
+
+  PValue getNextIter = getMutFnWrapper("paramfor_next_iter");
+  if (!getNextIter)
+    return failure();
+  PValue getNextValue = getMutFnWrapper("paramfor_next_value");
+  if (!getNextValue)
+    return failure();
+
+  // Build the iterator value parameter.
+  auto iterDecl = ParamDeclAttr::get(scope.mangleParamName("iter"), iterType);
+
+  // Look up __has_next__ without calling it so elaborator can call it when
+  // the kgen.param.for is instantiated.
+  auto handleLookupFailure = [&]() {
+    emitter.emitError(seqLoc) << "expected sequence of type " << iterType
+                              << " to have a '__has_next__' method";
+  };
+
   ASTExprAnd<AnyValue> selfValue = {UnknownAttr::get(iterType), seqExpr};
   CallOperands emptyOperands(selfValue);
   PValue hasNext = OverloadSet::lookupAndResolve(
@@ -1334,23 +1347,48 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   if (!hasNext)
     return failure();
 
-  // Bind the sequence initial value to the parameter for iterator generator.
-  // Start by looking up the builtin generator.
-  ArrayRef<ASTDecl *> paramForImpl = shared.getBuiltinFunction(
-      scope, "builtin._stubs", "parameter_for_generator", forLoc);
-  if (paramForImpl.empty())
-    return failure();
+  // Create the loop and parse the body into it.
+  auto paramFor = builder.create<ParamForOp>(forLocation, initialIterVal,
+                                             hasNext, getNextIter, iterDecl);
 
-  // Resolve the overload with the sequence's type. This succeeds if the
-  // iterator type is currently supported.
-  ParamBindings bindings(scope);
-  bindings.add(seqExpr, PValue(iterType));
-  OverloadSet call("parameter_for_generator", paramForImpl, std::move(bindings),
-                   seqExpr, CallSyntax::kDirectCall);
-  PValue iterate = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
-  if (!iterate)
-    return failure();
+  builder.createBlock(&paramFor.getBody());
 
+  // The entry to the body should be a check for the end of sequence:
+  //  @parameter if !iter.has_next(). Emit the condition as a parameter
+  // expression.
+  auto iterValue = PValue(ParamDeclRefAttr::get(iterDecl));
+  SyntheticNode iterUse(seqLoc, PValue(iterValue));
+  AttributeRefNode iterHasNext(&iterUse, seqLoc, "__has_next__");
+  CallNode hasNextCall(&iterHasNext, seqLoc, /*operands*/ {}, seqLoc);
+  auto hasNextI1 = emitter.emitExprI1(&hasNextCall, EC_ForIterator);
+  if (!hasNextI1)
+    return failure();
+  assert(hasNextI1.getIfPValue() && "expected PValue in param context");
+  auto paramIf =
+      builder.create<ParamIfOp>(forLocation, hasNextI1.getIfPValue());
+
+  // Keep going if we have more elements.
+  builder.createBlock(&paramIf.getThenRegion());
+
+  // If not, go to the else block.
+  builder.createBlock(&paramIf.getElseRegion());
+  builder.create<ParamForGotoElseOp>(forLocation);
+  // Keep inserting after this operation.
+  builder.setInsertionPointAfter(paramIf);
+  // We always continue or goto-else from the arms of the param.if.
+  builder.create<UnreachableOp>(forLocation);
+
+  // After the check for too-few elements, we extract the next element and bind
+  // to the target by calling the paramfor_next_iter "next_value" function.
+  ValueDest getNextValueDest(EC_ForIterator);
+  auto nextValue = emitter.emitIndirectCall(
+      getNextValue, CallOperands({{iterValue, seqExpr}}), getNextValueDest,
+      CallSyntax::kDirectCall, seqExpr);
+  if (!nextValue)
+    return failure();
+  assert(nextValue.getIfPValue() && "expected PValue in param context");
+
+  // TODO: Emit the target like a normal pattern, reading from the indvar.
   StringAttr target = decodeTarget(targetExpr, shared);
   if (!target)
     return failure();
@@ -1358,17 +1396,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
   // Everything resolved, so we'll be able to parse the body, don't skip it.
   skipBodyOnFailure.release();
 
-  // Build the induction variable parameter.
-  auto indVarDecl =
-      ParamDeclAttr::get(scope.mangleParamName(target.getValue()), indexType);
-
-  // Create the loop and parse the body into it.
-  auto paramFor = builder.create<ParamForOp>(forLocation, iterVal, hasNext,
-                                             iterate, indVarDecl);
-
-  builder.createBlock(&paramFor.getBody());
-
-  { // Create a scope for the induction variable.
+  { // Create a scope for the induction variable bindings.
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     // Push a new local variable scope for the subsequent suite.
@@ -1376,16 +1404,18 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
 
     // Add an ASTDecl for the induction variable.
     // TODO: Generalize to an arbitrary pattern.
-    auto value = PValue(ParamDeclRefAttr::get(indVarDecl));
     auto &vd = getDeclResolver().addFullyResolvedDecl(
-        value, target, targetExpr->getLoc(), curDeclScope);
+        nextValue.getIfPValue(), target, targetExpr->getLoc(), curDeclScope);
     getEmitter().shared.notifyListenerOnVariableDecl(vd, targetExpr->getLoc());
 
+    // Parse into the 'then' region of the parameter if.
+    builder.setInsertionPointToStart(&paramIf.getThenRegion().front());
+
+    // Parse the body.
     if (parseSuite(curIndent))
       return failure();
+    builder.create<ParamForContinueOp>(forLocation);
   }
-
-  builder.create<ParamForContinueOp>(forLocation);
 
   // Parse the else region if present.
   builder.createBlock(&paramFor.getElseRegion());

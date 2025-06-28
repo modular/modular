@@ -1805,8 +1805,9 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // Any code after the loop continues on with the breaks valid.
 
   // If the loop has an 'else' region, scan it and then intersect with the loop
-  // region.
-  if (loopOp.getNumRegions() == 2) {
+  // region.  ParamForLoopOp's will have an 'unreachable' in the else region
+  // because LowerSemanticCF already processed them.
+  if (loopOp.getNumRegions() == 2 && !isa<ParamForOp>(loopOp)) {
     scanBlock(loopOp.getRegion(1).front());
     liveValues &= breakSet;
   } else {
@@ -3190,12 +3191,14 @@ BitVector DestructorInsertion::unifyConsumedSets(const BitVector &set1,
 /// For a loop, we know the consume sets for any break statements, but need
 /// to iterate the loop to find the right continue sets to use.
 ///
-/// In terms of form, standard for loops will already have their 'else' block
-/// removed (merging the logic into the loop body on the exit) but @parameter
-/// 'for' statements still have an explicit 'else' block.
+/// In terms of form, both standard for and @parameter for loops will have their
+/// 'else' block removed (merged into their body).
 void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // True if this is a parameter for, false if this is an infinite HLCF::LoopOp.
   bool isParamFor = isa<ParamForOp>(loopOp);
+  assert((!isParamFor ||
+          isa<UnreachableOp>(loopOp.getRegion(1).front().front())) &&
+         "LowerSemanticCF should have handled this");
 
   auto loopBodySets = DestructorInsertion::copy(*this);
   // Any 'break's within the loop will produce the consume set for the
@@ -3207,29 +3210,14 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   // The original set will be what any 'break' statement sees.
   loopBodySets.breakSet = &breakSet;
 
-  // If there is an 'else' on a @parameter for, process it to determine the
-  // consume set going into the bottom of the loop.
-  BitVector elseBlockConsumeSet;
-  if (loopOp.getNumRegions() == 2 && isParamFor) {
-    scanBlock(loopOp.getRegion(1).front());
-    // Save the set of values consumed by the 'else' block for later.  It is
-    // possible that the loop will consume more values and we'll need to insert
-    // destructor calls into the else.
-    elseBlockConsumeSet = consumedValues;
-  }
-
   // The continueSet is the set of values consumed upwards from the top of the
   // loop and carried over the loop.
   //
-  // In the case of an infinite HLCF loop, we start the set with no values to be
-  // consumed, and with sentinel slot #0 unset indicating that the continue
-  // point isn't reachable.  This will cause the first iteration to propagate
-  // values up from the 'break' points to the consume set.
-  //
-  // In the case of a @parameter for (which terminates implicitly when the
-  // iterations are done) we propagate up the consume set at the top of the
-  // 'else' block.
-  auto continueSet = isParamFor ? consumedValues : BitVector(breakSet.size());
+  // We start the set with no values to be consumed, and with sentinel slot #0
+  // unset indicating that the continue point isn't reachable.  This will cause
+  // the first iteration to propagate values up from the 'break' points to the
+  // consume set.
+  BitVector continueSet(breakSet.size());
   loopBodySets.continueSet = &continueSet;
 
   // We need to dry run the body evaluation until we get to a stable
@@ -3274,15 +3262,6 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
   if (!dryRun) {
     loopBodySets.dryRun = false;
     loopBodySets.scanBlock(loopOp.getRegion(0).front());
-
-    // If we are a '@parameter for' with an else block, the loop body may have
-    // more demands than the else block does.  Make sure we destroy these values
-    // in the else block if needed.
-    if (!elseBlockConsumeSet.empty()) {
-      destroyValuesAtEntryIfNeeded(
-          elseBlockConsumeSet, loopOp.getRegion(1).front(),
-          loopBodySets.consumedValues, loopOp.getLoc());
-    }
   }
 
   consumedValues = std::move(loopBodySets.consumedValues);

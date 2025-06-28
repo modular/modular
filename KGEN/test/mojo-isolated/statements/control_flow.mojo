@@ -563,9 +563,9 @@ fn use(value: MyType):
 # CHECK-LABEL: lit.fn @"parameter_for
 # CHECK-SAME: <a: !Int>[mut [[LT:.*]]](%value: !lit.ref<!MyType, mut [[LT]]>
 fn parameter_for[a: Int](owned value: MyType):
-    # CHECK-NEXT: kgen.param.for [[i:.*]]: !Int in :!IterRange apply
+    # CHECK-NEXT: kgen.param.for [[iter:.*]]:  !IterRange in :!IterRange apply
     # CHECK-NEXT: has_next
-    # CHECK-NEXT: get_next :{{.*}}parameter_for_generator{{.*}}<:!Iterator_Copyable #IterRange1>
+    # CHECK-NEXT: get_next_iter :{{.*}}paramfor_next_iter{{.*}}<:!Iterator_Copyable #IterRange1>
     @parameter
     for i in IterRange(a):
         # CHECK: [[IMM:%.*]] = lit.ref.immut %value

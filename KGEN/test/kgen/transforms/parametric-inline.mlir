@@ -361,7 +361,7 @@ kgen.generator @parent<A>() {
 kgen.generator @callee() always_inline {
   kgen.param.for A in ?
      has_next :() -> i1 ?
-     get_next :() -> () ? {
+     get_next_iter :() -> () ? {
     kgen.param.constant = <A>
     kgen.param.for.continue
   } else {

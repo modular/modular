@@ -494,12 +494,14 @@ fn test_param_for1(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mem)
     var mem = MemExample()
 
-    # CHECK: kgen.param.for *"x`1": !Int in
+    # CHECK: kgen.param.for [[ITER:[*].*]]: !TrivialRange in
     # CHECK-NEXT: has_next
-    # CHECK-NEXT: get_next
+    # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
     @parameter
     for x in TrivialRange():
+        # CHECK-NEXT: kgen.param.if {{.*}}__has_next__
+
         # Make sure nothing sneaks in here.
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
@@ -532,6 +534,7 @@ fn test_param_for1(cond: Bool, cond2: Bool):
         marker()
         # CHECK-NEXT: kgen.param.for.continue
 
+    # This is the else from the param.if inside the param.for.
     # CHECK-NEXT: } else {
     else:
         # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %mem
@@ -542,7 +545,14 @@ fn test_param_for1(cond: Bool, cond2: Bool):
 
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
-        # CHECK-NEXT: kgen.param.yield
+        # CHECK-NEXT: kgen.param.for.break
+    # Finish out the param.if and the param.for
+    # CHECK-NEXT:   } {elseIsolated, thenIsolated}
+    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   kgen.unreachable
+    # CHECK-NEXT: } {bodyIsolated, elseIsolated}
+
 
 
 # CHECK-LABEL: lit.fn @"test_param_for2
@@ -551,12 +561,14 @@ fn test_param_for2():
     # CHECK: lit.call {{.*}}__init__{{.*}}(%mem)
     var mem = MemExample()
 
-    # CHECK: kgen.param.for *"x`1": !Int in
+    # CHECK: kgen.param.for [[ITER:[*].*]]: !TrivialRange in
     # CHECK-NEXT: has_next
-    # CHECK-NEXT: get_next
+    # CHECK-NEXT: get_next_iter
     # CHECK-SAME: {
     @parameter
     for x in TrivialRange():
+        # CHECK-NEXT: kgen.param.if {{.*}}__has_next__
+
         # Make sure nothing sneaks in here.
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
@@ -572,7 +584,7 @@ fn test_param_for2():
         # CHECK-NEXT: lit.call {{.*}}marker()
         marker()
 
-        # CHECK-NEXT: kgen.param.yield
+        # CHECK-NEXT: kgen.param.for.break
 
 
 # CHECK-LABEL: lit.fn @"test_elif

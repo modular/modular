@@ -793,7 +793,6 @@ void ParamForOp::getEntryTargets(
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == getNumOperands());
   targets.emplace_back(0, getOperands());
-  targets.emplace_back(1, getOperands());
 }
 
 ValueRange ParamForOp::getEntryArguments(std::optional<unsigned> target) {
@@ -869,9 +868,6 @@ void ParamForContinueOp::getBranchTargets(
   assert(operands.size() == getNumOperands());
   // Branch to the beginning of the body region only (not the else region).
   targets.emplace_back(0, getOperands());
-
-  // FIXME: This isn't correct when the else model changes.
-  targets.emplace_back(1, getOperands());
 }
 
 bool ParamForGotoElseOp::isParentNode(Operation *op) {
