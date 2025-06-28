@@ -1191,7 +1191,8 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
   ErrorOr<BufferRef> buf =
       ObjectCompiler::emitArchive(std::move(module), /*emitAssembly=*/true);
   if (buf.isError())
-    return Error("failed to lower LLVM IR to assembly");
+    return Error(Twine("failed to lower LLVM IR to assembly:") +
+                 buf.takeError().get());
   os << buf->getPointer()->getBuffer();
   return success();
 }

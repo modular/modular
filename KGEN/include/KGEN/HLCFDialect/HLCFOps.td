@@ -244,6 +244,8 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   ];
 
   let extraClassDeclaration = [{
+    Block &getBodyBlock() { return getBody().front(); }
+
     /// Check if the loop is decorated to be fully unrolled.
     bool isFullUnroll();
 

@@ -524,30 +524,34 @@ kgen.generator @param_for() -> index {
   pop.store %idx0, %mem : !kgen.pointer<index>
   // CHECK-NEXT: %0 = kgen.param.for
   // CHECK-NEXT: has_next
-  // CHECK-NEXT: get_next
+  // CHECK-NEXT: get_next_iter
   // CHECK-SAME: (%arg0 = %idx0 : index) -> index
   kgen.param.for decl: index in :index 2
     has_next :(index) -> i1 @has_next_wrapper
-    get_next :(index, !kgen.pointer<struct<(index, index, i1)>> byref_result) -> !kgen.none @wrapper {
-    // CHECK-NEXT: %index = kgen.param.constant
-    %0 = kgen.param.constant = <decl>
-    %1 = pop.load %mem : !kgen.pointer<index>
-    // CHECK-NEXT: %1 = index.add %arg0, %index
-    %2 = index.add %1, %0
-    pop.store %2, %mem : !kgen.pointer<index>
-    // CHECK-NEXT: kgen.param.for.continue %1
-    kgen.param.for.continue
-  // CHECK-NEXT: } else (%arg0: index) {
+    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @wrapper {
+
+    kgen.param.if <apply(:!lit.generator<(index) -> i1> @has_next_wrapper, decl)> {
+      // CHECK: %index = kgen.param.constant
+      %0 = kgen.param.constant = <decl>
+      %1 = pop.load %mem : !kgen.pointer<index>
+      // CHECK-NEXT: [[PLUS1:%*.]] = index.add %arg0, %index
+      %2 = index.add %1, %0
+      pop.store %2, %mem : !kgen.pointer<index>
+
+      // CHECK-NEXT: kgen.param.for.continue [[PLUS1]]
+      kgen.param.for.continue
+    } else { // CHECK-NEXT: } else {
+      // CHECK: kgen.param.for.break %arg0 : index
+      kgen.param.for.break
+    }
+    kgen.unreachable
+
+  // CHECK: } else {
   } else {
-    %0 = pop.load %mem : !kgen.pointer<index>
-    // CHECK-NEXT: %1 = index.add %arg0, %idx0
-    %1 = index.add %0, %idx0
-    pop.store %1, %mem : !kgen.pointer<index>
-    // CHECK-NEXT: kgen.param.yield %1 : index
-    kgen.param.yield
-  // CHECK-NEXT: }
+    // This block is removed by LowerSemanticCF.
+    kgen.unreachable
   }
   %1 = pop.load %mem : !kgen.pointer<index>
-  // CHECK-NEXT: return %0
+  // CHECK: return %0
   kgen.return %1 : index
 }

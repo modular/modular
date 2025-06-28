@@ -1137,28 +1137,27 @@ lit.fn @make_closure() {
 lit.fn @param_for_goto_else() {
   // CHECK-NEXT: kgen.param.for iter in ?
   // CHECK-NEXT: has_next :() -> i1 ?
-  // CHECK-NEXT: get_next :() -> () ? {
+  // CHECK-NEXT: get_next_iter :() -> () ? {
   kgen.param.for iter in ?
     has_next :() -> i1 ?
-    get_next :() -> () ? {
+    get_next_iter :() -> () ? {
     // CHECK-NEXT: kgen.param.if <?> {
     // CHECK-NEXT:   %0 = lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
     // CHECK-NEXT:   lit.call @make_closure() : !lit.generator<() -> ()>
     // CHECK-NEXT:   kgen.param.for.break
     // CHECK-NEXT: } else {
-    // CHECK-NEXT:   kgen.param.yield
+    // CHECK-NEXT:   lit.call @make_closure() : !lit.generator<() -> ()>
+    // CHECK-NEXT:   kgen.param.for.continue
     // CHECK-NEXT: } {elseIsolated, thenIsolated}
+    // CHECK-NEXT: kgen.unreachable
     kgen.param.if <?> {
       lit.call @self_recursive() : !lit.generator<() -> !kgen.none>
       kgen.param.for.goto.else
     } else {
-      kgen.param.yield
+      lit.call @make_closure() : !lit.generator<() -> ()>
+      kgen.param.for.continue
     }
-
-    // CHECK-NEXT: lit.call @make_closure() : !lit.generator<() -> ()>
-    // CHECK-NEXT: kgen.param.for.continue
-    lit.call @make_closure() : !lit.generator<() -> ()>
-    kgen.param.for.continue
+    kgen.unreachable
   } else {// CHECK-NEXT: } else {
     // CHECK-NEXT: kgen.unreachable
     lit.call @make_closure() : !lit.generator<() -> ()>

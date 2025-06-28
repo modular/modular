@@ -993,22 +993,27 @@ trait Iterator(Movable):
         ...
 
 
-# This type is tightly bound to the internals of "@parameter for" emission.
-struct _ParamForWrapper[IteratorT: Iterator & Copyable]:
-    var next_it: IteratorT
-    var value: IteratorT.Element
-
-    fn __init__(out self, it: IteratorT):
-        self.next_it = it
-        self.value = self.next_it.__next__()
-
-
-fn parameter_for_generator[
-    IteratorT: Iterator & Copyable
-](it: IteratorT) -> _ParamForWrapper[IteratorT]:
+fn paramfor_next_iter[
+    IteratorType: Iterator & Copyable
+](it: IteratorType) -> IteratorType:
     # NOTE: This function is called by the compiler's elaborator only when
-    # __has_next__ returns true.
-    return _ParamForWrapper(it)
+    # __has_next__ will return true.  This is needed because the interpreter
+    # memory model isn't smart enough to handle mut arguments cleanly.
+    var result = it
+    # This intentionally discards the value, but this only happens at comptime,
+    # so recomputing it in the body of the loop is fine.
+    _ = result.__next__()
+    return result
+
+
+fn paramfor_next_value[
+    IteratorType: Iterator & Copyable
+](it: IteratorType) -> IteratorType.Element:
+    # NOTE: This function is called by the compiler's elaborator only when
+    # __has_next__ will return true.  This is needed because the interpreter
+    # memory model isn't smart enough to handle mut arguments cleanly.
+    var result = it
+    return result.__next__()
 
 
 struct Optional[T: Copyable & Movable]:
