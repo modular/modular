@@ -324,6 +324,22 @@ struct InlineArray[
 
         self = other.copy()
 
+    fn __moveinit__(out self, owned other: Self):
+        """Move constructs the array from another array.
+
+        Args:
+            other: The array to move from.
+
+        Notes:
+            Moves the elements from the source array into this array.
+        """
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        for idx in range(size):
+            var ptr = self.unsafe_ptr() + idx
+            ptr.init_pointee_move(other[idx])
+
     fn __del__(owned self):
         """Deallocates the array and destroys its elements.
 
