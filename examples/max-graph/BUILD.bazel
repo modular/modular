@@ -6,6 +6,8 @@ modular_py_binary(
     imports = ["."],
     deps = [
         "//SDK/lib/API/python/max",
+        # FIXME: Hack, not used directly. Nightly tests fail without this dep.
+        "//SDK/lib/API/python/max/entrypoints:mojo",
         requirement("numpy"),
     ],
 )

@@ -28,6 +28,7 @@ _DEPS_FROM_WHEEL = [
     "//max/dtype",
     "//max/engine",
     "//max/graph",
+    "//max/interfaces",
     "//max/mojo",
     "//max/profiler",
     "//max/support",
