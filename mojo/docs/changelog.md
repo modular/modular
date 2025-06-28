@@ -63,6 +63,10 @@ what we publish.
   - The `PythonTypeBuilder` utility now allows registering bindings for Python
     static methods, i.e. methods that don't require an instance of the class.
 
+- Added `stol`, a more permissable version of `atol` allowing for partial parsing,
+  of strings without raising errors. [PR 3951](https://github.com/modular/modular/pull/3951)
+  by [jjvraw](https://github.com/jjvraw).
+
 ### Tooling changes
 
 - Added progress reporting support to the Mojo language server. This will emit progress
