@@ -358,8 +358,16 @@ class KVCacheManager(ABC, Generic[T]):
         max_lengths = kv_cache_inputs[0].max_lengths
 
         # Update the cache_lengths of our batch by the previous sequence length.
+        # Handle both single tensor and list of tensors for compatibility
+        if isinstance(prev_model_inputs.input_row_offsets, list):
+            # InternVL case: use the first tensor (row offsets are identical across devices)
+            row_offsets = prev_model_inputs.input_row_offsets[0]
+        else:
+            # Standard case: single tensor
+            row_offsets = prev_model_inputs.input_row_offsets
+
         updated_cache_lengths = self.increment_cache_lengths_model.execute(
-            prev_model_inputs.input_row_offsets, *cache_lengths
+            row_offsets, *cache_lengths
         )
 
         # Advance to the next step of the max_lengths tensor.
@@ -450,8 +458,9 @@ class KVCacheManager(ABC, Generic[T]):
             "update_cache_lengths",
             input_types=[input_row_offsets_type, *cache_lengths_types],
         ) as graph:
-            inp_row_offset, *cache_lengths = graph.inputs
-            assert isinstance(inp_row_offset, TensorValue)
+            inp_row_offset, *cache_lengths = (
+                inp.tensor for inp in graph.inputs
+            )
             # broadcast the inp_row_offset to all devices (naive)
             # get rid of this if statement after #51465 merges
             if len(self.devices) > 1:

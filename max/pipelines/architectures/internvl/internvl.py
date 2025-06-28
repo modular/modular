@@ -287,9 +287,9 @@ class InternVLLanguageModel(Module):
         signal_buffers: Iterable[BufferValue],
         kv_cache_inputs_per_dev: Sequence[tuple[TensorValue, ...]],
         return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
+        input_row_offsets: Sequence[TensorValue],
         image_embeddings: Sequence[TensorValue],
-        image_token_indices: TensorValue,
+        image_token_indices: Sequence[TensorValue],
     ) -> tuple[TensorValue, ...]:
         """Executes the language model forward pass.
 
@@ -311,14 +311,16 @@ class InternVLLanguageModel(Module):
         # Merge image embeddings into text embeddings.
         # Let the kernel handle the no-image embeddings case.
         # And use the first device's image embeddings since they're replicated.
-        h0_merged = merge_multimodal_embeddings(
-            inputs_embeds=h[0],
-            multimodal_embeddings=image_embeddings[0],
-            image_token_indices=image_token_indices,
-        )
-
-        # Distribute merged embeddings to all devices
-        h = distribute_value(h0_merged, self.devices)
+        h = [
+            merge_multimodal_embeddings(
+                inputs_embeds=h_device,
+                multimodal_embeddings=img_embed,
+                image_token_indices=img_tok_indices,
+            )
+            for h_device, img_embed, img_tok_indices in zip(
+                h, image_embeddings, image_token_indices
+            )
+        ]
 
         # Create KV cache collections.
         kv_collections = [
@@ -326,26 +328,26 @@ class InternVLLanguageModel(Module):
             for kv_cache_inputs in kv_cache_inputs_per_dev
         ]
 
-        # Distribute input row offsets
-        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
-
-        # Run through decoder layers
+        # Run through decoder layers.
         for idx, layer in enumerate(self.layers):
             h = layer(
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
                 kv_collections,
-                input_row_offsets_,
+                input_row_offsets,
             )
 
-        # Get last token logits only (no variable logits support)
-        h0 = h[0]
-        last_token_indices = input_row_offsets[1:] - 1
-        last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
+        # Get last token logits only (no variable logits support).
+        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
+        last_token_h = [
+            ops.gather(h_device, indices, axis=0)
+            for h_device, indices in zip(h, last_token_indices)
+        ]
         last_logits = ops.cast(
-            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
+            # Take only the device 0 logits to device-to-host transfer.
+            self.lm_head(self.norm(last_token_h))[0],
+            DType.float32,
         )
 
         return (last_logits,)
