@@ -259,4 +259,15 @@ def main():
                 alias length = test_lengths[length_idx]
 
                 print(_get_test_str[dtype](num_gpus, length))
-                allreduce_test[dtype=dtype, rank=1, ngpus=num_gpus](ctx, length)
+                try:
+                    allreduce_test[dtype=dtype, rank=1, ngpus=num_gpus](
+                        ctx, length
+                    )
+                except e:
+                    if "OUT_OF_MEMORY" in String(e):
+                        print(
+                            "Out of memory error occurred for ",
+                            _get_test_str[dtype](num_gpus, length),
+                        )
+                    else:
+                        raise e
