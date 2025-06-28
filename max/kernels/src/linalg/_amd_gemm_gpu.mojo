@@ -413,8 +413,8 @@ fn gemm_kernel[
     )
 
     # Warp organization
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
+    alias num_warps_m = UInt(BM // WM)
+    alias num_warps_n = UInt(BN // WN)
     alias warps_per_block = num_warps_m * num_warps_n
 
     # MMA instruction tiling
@@ -433,8 +433,7 @@ fn gemm_kernel[
 
     # Thread and warp indices
     var warp_id = get_warp_id()
-    var warp_m = warp_id // num_warps_n
-    var warp_n = warp_id % num_warps_n
+    var warp_m, warp_n = divmod(warp_id, num_warps_n)
 
     # Helper function for shared memory layout
     @always_inline
