@@ -99,7 +99,7 @@ what we publish.
   the wrong implementation for `float64`.
 - [#4121](https://github.com/modular/modular/issues/4121) - better error message
   for `.value()` on empty `Optional`.
-- [#4121](https://github.com/modular/modular/issues/4911) - `InlineArray`
+- [#4911](https://github.com/modular/modular/issues/4911) - `InlineArray`
   now calls the move constructor for its elements when moved.
 - [#3927](https://github.com/modular/modular/issues/3927) - `InlineArray`
   now can be constructed with a size of 0.
