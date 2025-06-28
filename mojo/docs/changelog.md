@@ -77,9 +77,9 @@ what we publish.
   `Iterator` does not currently have a variant for supporting iteration over
   borrowed `ref` values.
 
-- `InlineArray` can now be constructed with a size of 0. This makes it easier to use
-  `InlineArray` in situations where the number of elements is generic and could
-  also be 0. 
+- `InlineArray` can now be constructed with a size of 0. This makes it easier to
+  use `InlineArray` in situations where the number of elements is generic and
+  could also be 0.
 
 ### Tooling changes
 
