@@ -22,11 +22,6 @@ namespace M {
 // will return the same hash, even though the value is a different pointer.
 llvm::hash_code hashBlock(mlir::Block &block);
 
-// Returns true if both of the blocks hash to the same value, i.e are
-// equivalent. This is faster than hashing both individually and comparing
-// because we can early exit as soon as the hashes diverge.
-bool areBlocksSame(mlir::Block &b1, mlir::Block &b2);
-
 /// This function serializes an operation to MLIR bytecode and hashes the result
 /// using XXH3's 128-bit variant and then returns the result as a hex string.
 ///
