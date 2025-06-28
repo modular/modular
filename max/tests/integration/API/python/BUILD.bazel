@@ -12,7 +12,6 @@ modular_py_test(
         "test_engine.py",
         "test_explicit_device.py",
         "test_graph_telemetry.py",
-        "test_huggingface_utilities.py",
         "test_is_inf.py",
         "test_is_nan.py",
         "test_load_weights.py",
@@ -64,6 +63,7 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_config_pure.py",
+        "test_huggingface_utilities.py",
         "test_tokenizer.py",
         "test_weight_path_parser.py",
     ],
