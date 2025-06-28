@@ -91,7 +91,14 @@ what we publish.
 
 ### 🛠️ Fixed
 
-- [#4820](https://github.com/modular/modular/issues/4820) - `math.exp2` picks
-  the wrong implementation for `float64`.
 - [#4121](https://github.com/modular/modular/issues/4121) - better error message
   for `.value()` on empty `Optional`.
+
+- [#4566](https://github.com/modular/modular/issues/4566) - Hang when assigning
+  loop variable inside `@parameter for`.
+
+- [#4820](https://github.com/modular/modular/issues/4820) - `math.exp2` picks
+  the wrong implementation for `float64`.
+
+- [#4836](https://github.com/modular/modular/issues/4836) - Else path in
+  `@parameter for` broken.
