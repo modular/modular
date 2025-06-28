@@ -218,7 +218,6 @@ fn bench_matmul_all_reduce[
         @always_inline
         fn kernel_launch() raises:
             matmul_allreduce[
-                dtype=dtype,
                 ngpus=ngpus,
                 partition_dim=partition_dim,
                 overlap_with_dpl=overlap_with_dpl,
