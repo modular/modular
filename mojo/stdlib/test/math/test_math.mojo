@@ -443,6 +443,15 @@ def test_log2():
     if not CompilationTarget.has_neon():
         _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
+    assert_almost_equal(1.0, log2(2.0), atol=1e-4, rtol=1e-5)
+    assert_equal(1, log2(Scalar[DType.index](2)))
+    assert_equal(1, log2(UInt8(2)))
+    assert_equal(1, log2(UInt16(2)))
+    assert_equal(1, log2(UInt32(2)))
+    assert_equal(1, log2(UInt64(2)))
+    assert_equal(1, log2(UInt128(2)))
+    assert_equal(1, log2(UInt256(2)))
+
 
 def test_gcd():
     var l = [2, 4, 6, 8, 16]
