@@ -485,8 +485,10 @@ struct String(KeyElement):
     fn byte_length(self) -> Int:
         return 0
 
-    fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
-        return UnsafePointer[UInt8]()
+    fn unsafe_ptr(
+        self,
+    ) -> UnsafePointer[UInt8, mut=False, origin = __origin_of(self)]:
+        return {}
 
 
 @register_passable("trivial")

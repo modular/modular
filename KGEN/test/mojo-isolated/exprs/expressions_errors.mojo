@@ -915,3 +915,16 @@ fn test_var_decl_error():
   var a = Y # expected-error {{use of unknown declaration 'Y'}}
   var b = a # no secondary error.
   var c = b+1 # no tertiary error.
+
+# MOCO-2094 - String memory leak observed in _get_dylib_function
+fn test_comptime_materialize():
+  # This is ok!
+  alias bad = String("hello").unsafe_ptr()
+  # This is ok too.
+  alias byte = bad[]
+  # Swimmingly fine.
+  var rt_byte = byte
+
+  # expected-error @below {{cannot materialize compile-time value of type 'UnsafePointer[UInt8, mut=False, origin=ComptimeOrigin]' to a runtime value}}
+  # expected-note @below {{the type contains an origin referring to a compile-time value}}
+  var use_bad = bad

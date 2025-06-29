@@ -37,7 +37,7 @@ def LIT_FnType : DialectType<LITDialect,
     CPred<"llvm::isa<FnType>($_self)">, "LIT function type", "FnType">;
 
 //===----------------------------------------------------------------------===//
-// FuncTypeGeneratorType
+// FnTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
 def LIT_FnTypeGeneratorType : DialectType<LITDialect,

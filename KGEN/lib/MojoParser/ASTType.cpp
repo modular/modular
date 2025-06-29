@@ -1357,3 +1357,30 @@ ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
     return nonParam;
   return *this;
 }
+
+/// Return true if this type contains any origins that are unmaterializable
+/// from comptime to runtime. Consider some code like this:
+///
+///   alias ptr = String("foo"+"bar").unsafe_ptr()
+///   alias elt1 = ptr[0] # Yields "f", which works fine.
+///   # This can't work.
+///   var runtime_ptr = ptr
+///
+bool ASTType::containsUnmaterializableOrigins(SharedState &shared) const {
+  for (auto o : shared.cachedOriginFinder.findOriginsIn(mlirType)) {
+    // Ignore field sensitivity.
+    while (auto field = dyn_cast<OriginFieldAttr>(o))
+      o = field.getBase();
+
+    // Actually global memory /can/ be materialized, so that it totally fine. We
+    // allow AnyOriginAttr because it is the general "disable checking" origin.
+    // Banning it prevents many important patterns from working, e.g. default
+    // arguments of null UnsafePointer.
+    if (isa<StaticOriginAttr, AnyOriginAttr>(o))
+      continue;
+    // Otherwise, it is something we can't track.
+    return true;
+  }
+
+  return false;
+}

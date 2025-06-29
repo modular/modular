@@ -173,6 +173,10 @@ public:
   /// can find them.
   ASTType getWithUnknownParametersReplaced(SharedState &shared) const;
 
+  /// Return true if this type contains any origins that are unmaterializable
+  /// from comptime to runtime.
+  bool containsUnmaterializableOrigins(SharedState &shared) const;
+
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
