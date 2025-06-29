@@ -39,7 +39,7 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 ClosureEmitter::ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared)
-    : StructEmitter(shared), ctx(shared.getContext()), moduleDecl(moduleDecl),
+    : FunctionEmitter(shared), ctx(shared.getContext()), moduleDecl(moduleDecl),
       node(moduleDecl.getLoc()), fileModuleOp(cast<FileModuleOp>(moduleDecl)),
       selfName(StringAttr::get(ctx, "self")),
       otherName(StringAttr::get(ctx, "other")),
@@ -192,7 +192,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       decl, "__init__", /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(ctx),
       {fnPtrType, selfType.getRefForArgument("self", /*isMut=*/true)},
       {ArgConvention::ReadReg, ArgConvention::ByRefResult}, argListAttrs,
-      noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
+      shared.getNoneType(), SpecialFunctionKind::kInit, decl.getLoc(), b);
   func.setInlineLevel(InlineLevel::Always);
 
   Value self = func.getArgument(1);
@@ -673,6 +673,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   addFieldsToStruct(declOp, structDecl, opaquePtrType, *shared.declResolver);
   declOp.setClosureSignature(dependentSignatureType);
 
+  StructEmitter structEmitter(structDecl);
+  Type noneType = shared.getNoneType();
+
   StructFieldOp impl = *declOp.getFieldDecls().begin();
   // function ptr fields
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
@@ -680,7 +683,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto dtorMetadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}));
   auto dtorSig = FuncTypeGeneratorType::get(
-      /*inputParamTypes=*/{}, b.getFunctionType(opaquePtrType, noneType),
+      /*paramTypes=*/{}, b.getFunctionType(opaquePtrType, noneType),
       ArgConvention::ReadReg,
       /*effects=*/{}, dtorMetadata, PogListAttr::get(ctx));
 
@@ -693,7 +696,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly}));
   auto cpySignatureType = FuncTypeGeneratorType::get(
-      /*inputParamTypes=*/{}, fnType, {ArgConvention::ReadReg},
+      /*paramTypes=*/{}, fnType, {ArgConvention::ReadReg},
       /*effects=*/{}, metadata, PogListAttr::get(ctx));
   auto copy = addFieldOpAndDecl(copyFieldAttr, cpySignatureType, declOp,
                                 structDecl, b, getDeclResolver());
@@ -708,7 +711,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   FunctionType functionType =
       b.getFunctionType(dependentSignatureType.getArguments(), resultType);
   FnTypeGeneratorType signatureType = FuncTypeGeneratorType::get(
-      /*inputParamTypes=*/{}, functionType,
+      /*paramTypes=*/{}, functionType,
       dependentSignatureType.getArgConventions(),
       dependentSignatureType.getFnEffects(), sigMetadata,
       PogListAttr::get(ctx));
@@ -721,8 +724,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
                                       declOp, structDecl, b, getDeclResolver());
 
   std::optional<ValueInfo> stubs =
-      addMissingValueMemberStubsToStruct(structDecl,
-                                         /*forceGenerateDestructor=*/true);
+      structEmitter.addMissingValueMemberStubsToStruct(
+          /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
 
   FnOp copyCtr = stubs->copyinit;
@@ -773,7 +776,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     storeField(b, copySelf, call.getResult(0), impl);
   }
   // Copy all the fields over as well.
-  if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
+  if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
     return {};
 
   // Populate move constructor.
@@ -791,7 +794,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     storeField(b, moveExisting, nullPtr, impl);
   }
   // Move all the fields over as well.
-  if (failed(populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
+  if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
     return {};
 
   // Add the __call__ Method.
@@ -802,12 +805,11 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
           refToSelfType, ArgConvention::ReadMem, signatureType);
   // The __call__ method is effectively the in-source body of the function. Mark
   // it as *not* synthetic so that debugging will step into the body.
-  auto [callMethod, _] = synthesizeMethodInStruct(
+  auto [callMethod, _] = structEmitter.synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
-      closureMethodSignatureType.getArgListAttrs(), resultType, structDecl,
-      structDecl.getLoc(), SpecialFunctionKind::kNormal,
-      closureMethodSignatureType.getFnEffects(),
+      closureMethodSignatureType.getArgListAttrs(), resultType,
+      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects(),
       /*suffix=*/"", /*synthetic=*/false);
 
   // Populate the body of ClosureWrapper::__call__.
@@ -887,6 +889,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   auto [structDecl, declOp] = createStruct(shared, moduleDecl, implName,
                                            paramDecls, nestedFnDecl.getLoc());
 
+  StructEmitter structEmitter(structDecl);
+
   // Generate the __call__ method.
 
   // Build the call signature from the closure signature. This means inserting
@@ -915,10 +919,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   Type closureResultType = wrapperSig.getResults().front();
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
                                                   &declOp.getFields().front());
-  auto [callFunc, _] = synthesizeMethodInStruct(
+  auto [callFunc, _] = structEmitter.synthesizeMethodInStruct(
       "__call__", callInputTypes, callConventions,
-      PogListAttr::get(ctx, callPogs), closureResultType, structDecl,
-      structDecl.getLoc(), SpecialFunctionKind::kNormal,
+      PogListAttr::get(ctx, callPogs), closureResultType,
+      SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
   callFunc.setInlineLevel(InlineLevel::Always);
 
@@ -968,16 +972,16 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // 'ref' captures are modeled wrong: we're storing the /values/ in the closure
   // instead of the /addresses/. fieldTypes above should be adding a layer of
   // lit.ref, which would allow us to use the simple form.
-  FnOp initFunc = synthesizeFieldwiseInit(
-      structDecl, initSigTypes, initSigConventions,
+  FnOp initFunc = structEmitter.synthesizeFieldwiseInit(
+      initSigTypes, initSigConventions,
       PogListAttr::get(ctx, initSigNames, initSigPassingKinds),
       shared.getNoneType());
   if (!initFunc) // This can fail when the members aren't copy/moveable.
     return {};
 
   // Add the copy and move constructors and dtor.
-  (void)addMissingValueMemberStubsToStruct(structDecl,
-                                           /*forceGenerateDestructor=*/true);
+  (void)structEmitter.addMissingValueMemberStubsToStruct(
+      /*forceGenerateDestructor=*/true);
 
   builder =
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
@@ -1237,9 +1241,11 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   ASTDecl &closureDecl =
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
            .getDecl(shared);
-  auto [initTmp, _] = addVoidMethod(
-      closureDecl, "__init__", argTypes, argConventions, argListAttrsOfInit,
-      SpecialFunctionKind::kInit, initParams, paramListAttrsOfInit);
+  auto [initTmp, _] =
+      StructEmitter(closureDecl)
+          .addVoidMethod("__init__", argTypes, argConventions,
+                         argListAttrsOfInit, SpecialFunctionKind::kInit,
+                         initParams, paramListAttrsOfInit);
   auto init = initTmp;
   init.setInlineLevel(InlineLevel::Always);
 
@@ -1363,8 +1369,8 @@ FnOp ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   auto [topLevelDtor, dtorDecl] = synthesizeFunction(
       moduleDecl, generateName("_dtor_"), topLevelParams, paramListAttrs,
       opaquePtrType, ArgConvention::ReadReg,
-      PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}), noneType,
-      SpecialFunctionKind::kNormal, loc, builder);
+      PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}),
+      shared.getNoneType(), SpecialFunctionKind::kNormal, loc, builder);
 
   // Populate destructor body.
   {

@@ -374,7 +374,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
   // Declare the function at the bottom of the decl.
   b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
-  StructEmitter structEmitter(shared);
+  FunctionEmitter structEmitter(shared);
   auto [thunk, thunkDecl] = structEmitter.synthesizeFunction(
       moduleDecl, name, paramDecls,
       PogListAttr::get(ctx, thunkSignature.getInputParamTypes().size() + 1),
