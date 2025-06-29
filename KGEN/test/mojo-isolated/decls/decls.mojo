@@ -674,7 +674,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.fn @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.generator<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm #lit.comptime.origin>> read_mem|pos_vararg) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 

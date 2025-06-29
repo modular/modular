@@ -549,7 +549,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
     if (bestFitness->getArgsNeedingOrigins().any() &&
-        // Parameter emission can always use immortal origins.
+        // Parameter emission can always use comptime origins.
         emitter.builder) {
       // Emit one or more operands to memory.  We know this can't infinitely
       // loop because there is a forward progress guarantee here.

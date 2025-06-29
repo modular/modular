@@ -563,6 +563,13 @@ static void printUnpackKind(AsmPrinter &p, bool kwOnly) {
 bool StaticOriginAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
+// ComptimeOriginAttr
+//===----------------------------------------------------------------------===//
+
+// Origins are treated as simple constants, allowing folding of function calls.
+bool ComptimeOriginAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // OriginUnionAttr
 //===----------------------------------------------------------------------===//
 

@@ -747,6 +747,24 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  // Special case bool constants instead of printing as 0/1.
+  if (auto boolAttr = dyn_cast<BoolAttr>(param)) {
+    os << (boolAttr.getValue() ? "True" : "False");
+    return;
+  }
+
+  if (auto noneAttr = dyn_cast<NoneAttr>(param)) {
+    os << "None";
+    return;
+  }
+
+  if (auto strAttr = dyn_cast<StringAttr>(param)) {
+    os << '"';
+    printAsMojoStringLiteral(strAttr, os);
+    os << '"';
+    return;
+  }
+
   if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
     if (isa<StaticOriginAttr>(originField.getBase())) {
       if (originField.getField().str() == "__constants__" &&
@@ -785,33 +803,21 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto anyLife = dyn_cast<AnyOriginAttr>(param)) {
-    if (anyLife.getType().isMutableKnown(true))
+  if (auto anyOrig = dyn_cast<AnyOriginAttr>(param)) {
+    if (anyOrig.getType().isMutableKnown(true))
       os << "MutableAnyOrigin";
-    else if (anyLife.getType().isMutableKnown(false))
+    else if (anyOrig.getType().isMutableKnown(false))
       os << "ImmutableAnyOrigin";
     else
       os << "SomeAnyOrigin";
     return;
   }
 
-  // Special case bool constants instead of printing as 0/1.
-  if (auto boolAttr = dyn_cast<BoolAttr>(param)) {
-    os << (boolAttr.getValue() ? "True" : "False");
+  if (auto comptimeOrig = dyn_cast<ComptimeOriginAttr>(param)) {
+    os << "ComptimeOrigin";
     return;
   }
 
-  if (auto noneAttr = dyn_cast<NoneAttr>(param)) {
-    os << "None";
-    return;
-  }
-
-  if (auto strAttr = dyn_cast<StringAttr>(param)) {
-    os << '"';
-    printAsMojoStringLiteral(strAttr, os);
-    os << '"';
-    return;
-  }
   /// A StructAttr is due to an inline @always_inline("builtin") initializer.
   /// Elide it if we have the default type with a literal so we don't print
   /// Int(42), but print it if it is something weird like IntLiteral(42)
