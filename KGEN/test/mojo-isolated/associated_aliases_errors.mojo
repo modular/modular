@@ -47,17 +47,17 @@ trait TraitWithInitializedAlias:
     alias Z: Int = Int()
 
 
-# expected-error @below {{struct 'StructConformingExplicitlyWithNoMatchingAlias' does not implement all requirements for 'MyTrait'}}
+# expected-error @below {{'StructConformingExplicitlyWithNoMatchingAlias' does not implement all requirements for 'MyTrait'}}
 struct StructConformingExplicitlyWithNoMatchingAlias(MyTrait):
     pass
 
 
-# expected-error @below {{struct 'StructConformingExplicitlyWithMismatchedAlias' does not implement all requirements for 'MyTrait'}}
+# expected-error @below {{'StructConformingExplicitlyWithMismatchedAlias' does not implement all requirements for 'MyTrait'}}
 struct StructConformingExplicitlyWithMismatchedAlias(MyTrait):
     alias N: Bool = Bool()
 
 
-# expected-error @below {{struct 'StructConformingExplicitlyWithMemberSameName' does not implement all requirements for 'MyTrait'}}
+# expected-error @below {{'StructConformingExplicitlyWithMemberSameName' does not implement all requirements for 'MyTrait'}}
 struct StructConformingExplicitlyWithMemberSameName(MyTrait):
     var N: Int
 

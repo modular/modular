@@ -176,7 +176,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   DenseMap<StringAttr, TypedAttr> aliasValues;
 
   // Prepare an error. It will be abandoned if the check succeeds.
-  diag = shared.emitError(structDecl.getLoc(), "struct ")
+  diag = shared.emitError(structDecl.getLoc())
          << selfType << " does not implement all requirements for "
          << ASTType(TraitType::get(parent));
 
@@ -351,31 +351,37 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
         }
       }
     }
+
+    // If we had signature resolution errors, don't try to check the
+    // conformance.
+    if (hadErrors) {
+      diag->abandon();
+      diag.reset();
+      return failure();
+    }
   }
 
+  // If everything looks good, succeed without emitting an error.
   if (allMatchFound) {
     diag->abandon();
     diag.reset();
-  } else if (traitDecl.getIfOperation()) {
-    diag->attachNote(traitDecl.getLoc())
-        << "trait " << ASTType(TraitType::get(parent)) << " declared here";
-    if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
-      if (auto it = inheritedFrom->find(parent);
-          it != inheritedFrom->end() && it->second.first != parent) {
-        ASTDecl &parentDecl =
-            emitter.getDeclResolver().getDeclForTypeSymbol(it->second.first);
-        diag->attachNote(parentDecl.getLoc())
-            << "inherited through '" << *parentDecl.getNameIfOperation()
-            << "' here";
-      }
-    }
-    hadErrors = true;
+    return success();
   }
 
-  if (hadErrors)
-    return failure();
-
-  return success();
+  // Otherwise, emit the set of requirements that are missing.
+  diag->attachNote(traitDecl.getLoc())
+      << "trait " << ASTType(TraitType::get(parent)) << " declared here";
+  if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
+    if (auto it = inheritedFrom->find(parent);
+        it != inheritedFrom->end() && it->second.first != parent) {
+      ASTDecl &parentDecl =
+          emitter.getDeclResolver().getDeclForTypeSymbol(it->second.first);
+      diag->attachNote(parentDecl.getLoc())
+          << "inherited through '" << *parentDecl.getNameIfOperation()
+          << "' here";
+    }
+  }
+  return failure();
 }
 
 /// Given a decl for a struct or trait type, return true if this type conforms

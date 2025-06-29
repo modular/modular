@@ -47,7 +47,7 @@ trait SimpleTrait:
         pass
 
 
-# expected-error @below {{struct 'TraitStruct' does not implement all requirements for 'MyMovable'}}
+# expected-error @below {{'TraitStruct' does not implement all requirements for 'MyMovable'}}
 struct TraitStruct(SimpleTrait, MyMovable):
     fn some_method(self):
         pass
