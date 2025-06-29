@@ -102,3 +102,6 @@ what we publish.
 
 - [#4836](https://github.com/modular/modular/issues/4836) - Else path in
   `@parameter for` broken.
+
+- [#4499](https://github.com/modular/modular/issues/4499) - Traits with
+  `ref self` cause issues when used as parameter.
