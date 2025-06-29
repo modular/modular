@@ -204,6 +204,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](StaticOriginAttr) { return emptyStruct; });
   replacer.addInferredDomainNonRecursiveReplacement(
+      [=](ComptimeOriginAttr) { return emptyStruct; });
+  replacer.addInferredDomainNonRecursiveReplacement(
       [=](OriginUnionAttr) { return emptyStruct; });
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](OriginMutCastAttr) { return emptyStruct; });

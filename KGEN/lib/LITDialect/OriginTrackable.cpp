@@ -680,6 +680,18 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
         hasOrigin |= handleOriginAttr(typedAttr, results);
         handled = true;
       }
+
+      // If this is a parameter call, only look at the result type, not the
+      // completely arbitrary stuff that may be nested within it.
+      if (auto oper = dyn_cast<ParamOperatorAttr>(typedAttr)) {
+        if (oper.getOpcode() == POC::ApplyResultSlot ||
+            oper.getOpcode() == POC::Apply) {
+          hasOrigin |= scanForOrigins(
+              oper.getType(), typesAndAttrsWithoutOrigins, visited, results);
+          handled = true;
+        }
+      }
+
     } else {
       // Don't recurse into vtable attributes: they are effectively function
       // references, not accesses to the origins within the function.

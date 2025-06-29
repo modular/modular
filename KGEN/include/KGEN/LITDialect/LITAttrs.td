@@ -444,6 +444,29 @@ def AnyOriginAttr : LITTypedAttr<"AnyOrigin", "any.origin"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ComptimeOriginAttr
+//===----------------------------------------------------------------------===//
+
+def ComptimeOriginAttr : LITTypedAttr<"ComptimeOrigin", "comptime.origin", [
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>
+  ]> {
+  let summary = "A !lit.origin<mut> value that refers to comptime memory";
+  let description = [{
+    This attribute is a singleton (for each mutability) which represents the
+    origin of memory that is interpreted at comptime. This allows the compiler
+    to reason locally about references within the interpreter to compile-time
+    only memory without references leaking to runtime.
+  }];
+
+  let parameters = (ins
+    AttributeSelfTypeParameter<"", "OriginType">:$type
+  );
+
+  let assemblyFormat = "";
+}
+
+
+//===----------------------------------------------------------------------===//
 // StaticOriginAttr
 //===----------------------------------------------------------------------===//
 

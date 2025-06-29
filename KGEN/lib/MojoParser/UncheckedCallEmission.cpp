@@ -436,7 +436,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     auto expectedVararg = cast<VariadicType>(expectedType);
     if (auto refType = dyn_cast<RefType>(expectedVararg.getElementType())) {
       auto origin = getCommonOrigin();
-      if (!origin) // No arguments, use immortal with same mutability.
+      if (!origin) // No arguments, use empty origin with expected mutability.
         origin = OriginUnionAttr::get(refType.getOrigin().getType());
 
       refType = refType.getWithOrigin(getCommonOrigin());
@@ -982,7 +982,7 @@ struct DanglingImplicitOriginRefEraser
     auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
     if (!ref || ref.getDepth() < depth)
       return nullptr;
-    return OriginUnionAttr::get({}, ref.getType());
+    return ComptimeOriginAttr::get(ref.getContext(), ref.getType());
   }
 
   /// Get this signature with all the implicit origins bound to the empty union.
@@ -1044,10 +1044,11 @@ TypedAttr CallEmitter::emitCallInParamContext(
     if (implicitOriginRefEraser)
       arg = implicitOriginRefEraser->replace(arg);
 
-    // Put memory-only arguments into memory ("PRValue" to "PLValue"
-    // conversion).
+    // Put memory-only arguments into memory, like a "PRValue to PLValue"
+    // conversion.
     if (hasAddress(convention)) {
-      auto immortal = OriginUnionAttr::get(arg.getContext());
+      auto immortal = ComptimeOriginAttr::get(
+          arg.getContext(), OriginType::get(arg.getContext(), false));
       arg = StoreToMemAttr::get(arg, RefType::get(arg.getType(), immortal));
     }
 
