@@ -398,6 +398,7 @@ fn stack_allocation[
     ]()
 
 
+# TODO: make this private
 @always_inline
 fn stack_allocation[
     count: Int,
@@ -406,7 +407,15 @@ fn stack_allocation[
     name: Optional[StaticString] = None,
     alignment: Int = alignof[type]() if is_gpu() else 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[type, address_space=address_space]:
+](
+    out res: UnsafePointer[
+        type,
+        address_space=address_space,
+        alignment=alignment,
+        mut=True,
+        origin = MutableOrigin.empty,
+    ]
+):
     """Allocates data buffer space on the stack given a data type and number of
     elements.
 
@@ -420,6 +429,7 @@ fn stack_allocation[
     Returns:
         A data pointer of the given type pointing to the allocated space.
     """
+    alias U = __type_of(res)
 
     @parameter
     if is_gpu():
@@ -433,9 +443,7 @@ fn stack_allocation[
                 name = _get_kgen_string[global_name](),
                 count = count.value,
                 memoryType = __mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
-                _type = UnsafePointer[
-                    type, address_space=address_space, alignment=alignment
-                ]._mlir_type,
+                _type = U._mlir_type,
                 alignment = alignment.value,
             ]()
         elif address_space == _GPUAddressSpace.CONSTANT:
@@ -445,9 +453,7 @@ fn stack_allocation[
             return __mlir_op.`pop.global_alloc`[
                 name = _get_kgen_string[global_name](),
                 count = count.value,
-                _type = UnsafePointer[
-                    type, address_space=address_space, alignment=alignment
-                ]._mlir_type,
+                _type = U._mlir_type,
                 alignment = alignment.value,
             ]()
 
@@ -460,19 +466,13 @@ fn stack_allocation[
                 _type = UnsafePointer[type]._mlir_type,
                 alignment = alignment.value,
             ]()
-            return __mlir_op.`pop.pointer.bitcast`[
-                _type = UnsafePointer[
-                    type, address_space=address_space
-                ]._mlir_type
-            ](generic_ptr)
+            return __mlir_op.`pop.pointer.bitcast`[_type = U._mlir_type](
+                generic_ptr
+            )
 
     # Perofrm a stack allocation of the requested size, alignment, and type.
     return __mlir_op.`pop.stack_allocation`[
-        count = count.value,
-        _type = UnsafePointer[
-            type, address_space=address_space, alignment=alignment
-        ]._mlir_type,
-        alignment = alignment.value,
+        count = count.value, _type = U._mlir_type, alignment = alignment.value
     ]()
 
 
