@@ -45,7 +45,7 @@ fn make_string[
 
     try:
         directory = _dir_of_current_file() / "data"
-        var f = open(directory / filename, "rb")
+        var f = open(directory / filename, "r")
 
         @parameter
         if length > 0:
