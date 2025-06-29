@@ -384,3 +384,16 @@ fn test_print_errors(s: MyStruct):
 trait MyWritable:
   fn method(self):
      pass
+
+# Issue #4499: https://github.com/modular/modular/issues/4499
+# Traits with ref self cause issues when used as parameter
+trait MyTrait4499:
+  fn method(ref self): ...
+struct MyStruct4499(MyTrait4499):
+  fn method(ref self): pass
+struct Owner4499[T: MyTrait4499]:
+  fn __init__(out self): pass
+fn my_func4499(arg0: Owner4499, arg1: Owner4499): pass
+fn test_4499_exclusivity():
+    # Should be ok.
+    my_func4499(Owner4499[MyStruct4499](), Owner4499[MyStruct4499]())
