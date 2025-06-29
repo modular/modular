@@ -659,32 +659,41 @@ static bool handleOriginAttr(TypedAttr attr,
 }
 
 template <typename TypeOrAttr>
-static bool scanForOrigins(TypeOrAttr pvalue,
+static bool scanForOrigins(TypeOrAttr typeOrAttr,
                            DenseSet<const void *> &typesAndAttrsWithoutOrigins,
                            DenseMap<const void *, bool> &visited,
                            SmallVectorImpl<TypedAttr> &results) {
-  const void *pvaluePtr = pvalue.getAsOpaquePointer();
+  const void *rawPtr = typeOrAttr.getAsOpaquePointer();
 
   // Ignore types we have already scanned.
-  if (typesAndAttrsWithoutOrigins.contains(pvaluePtr))
+  if (typesAndAttrsWithoutOrigins.contains(rawPtr))
     return false;
-  if (auto it = visited.find(pvaluePtr); it != visited.end())
+  if (auto it = visited.find(rawPtr); it != visited.end())
     return it->second;
 
   // If this has origin type, process it.
   bool handled = false;
   bool hasOrigin = false;
-  if constexpr (std::is_base_of_v<Attribute, TypeOrAttr>)
-    if (auto typedAttr = dyn_cast<TypedAttr>(pvalue))
+  if constexpr (std::is_base_of_v<Attribute, TypeOrAttr>) {
+    if (auto typedAttr = dyn_cast<TypedAttr>(typeOrAttr)) {
       if (isa<OriginType>(typedAttr.getType())) {
         hasOrigin |= handleOriginAttr(typedAttr, results);
         handled = true;
       }
+    } else {
+      // Don't recurse into vtable attributes: they are effectively function
+      // references, not accesses to the origins within the function.
+      // FIXME: TypeParamAttr shouldn't carry vtables directly, they should be
+      // indirect via a symbol.
+      if (isa<VTableEntryAttr>(typeOrAttr))
+        return false;
+    }
+  }
 
   if (!handled) {
     // Recursively check for any nested types, e.g. the input/outputs of a
     // function type, types like !pop.scalar<ty> etc.
-    pvalue.walkImmediateSubElements(
+    typeOrAttr.walkImmediateSubElements(
         [&](Attribute attr) {
           hasOrigin |= scanForOrigins(attr, typesAndAttrsWithoutOrigins,
                                       visited, results);
@@ -698,12 +707,12 @@ static bool scanForOrigins(TypeOrAttr pvalue,
   // If we can prove that this subtree doesn't contain origins, then remember
   // this so we don't revisit this type/attribute in the future.
   if (!hasOrigin)
-    typesAndAttrsWithoutOrigins.insert(pvaluePtr);
+    typesAndAttrsWithoutOrigins.insert(rawPtr);
   else
     // We don't need to visit the same attribute more than once to find origin
     // references. This is required to prevent splatting the parameter
     // expression tree.
-    visited.try_emplace(pvaluePtr, hasOrigin);
+    visited.try_emplace(rawPtr, hasOrigin);
   return hasOrigin;
 }
 
