@@ -17,6 +17,7 @@ You can run an LLM on GPU using the latest MAX full container with the following
 docker run \
   --gpus 1 \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
   --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
   --env "HF_TOKEN=<secret>" \
   -p 8000:8000 \

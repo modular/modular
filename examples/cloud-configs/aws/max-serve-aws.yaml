@@ -217,6 +217,7 @@ Resources:
             --env "HF_TOKEN=${HuggingFaceHubToken}" \
             --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
             -v /home/ec2-user/.cache/huggingface:/root/.cache/huggingface \
+            -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
             --gpus 1 \
             -p 80:8000 \
             --ipc=host \

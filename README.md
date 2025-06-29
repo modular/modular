@@ -61,6 +61,7 @@ For example, you can start a container for an NVIDIA GPU with this command:
 ```sh
 docker run --gpus=1 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
     -p 8000:8000 \
     docker.modular.com/modular/max-nvidia-full:latest \
     --model-path modularai/Llama-3.1-8B-Instruct-GGUF
