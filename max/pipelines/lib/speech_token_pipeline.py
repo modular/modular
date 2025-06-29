@@ -120,6 +120,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
             ).to(self._devices[0])
 
         else:
+            self._check_need_penalties(context_batch)
             frequency_data = None
             frequency_penalty = None
             presence_penalty = None

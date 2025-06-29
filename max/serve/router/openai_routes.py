@@ -1037,8 +1037,17 @@ async def openai_create_completion(
         for i, prompt in enumerate(prompts):
             prompt = cast(Union[str, Sequence[int]], prompt)
             sampling_params = SamplingParams(
+                top_k=completion_request.top_k,
+                top_p=completion_request.top_p,
+                temperature=completion_request.temperature,
+                frequency_penalty=completion_request.frequency_penalty,
+                presence_penalty=completion_request.presence_penalty,
+                repetition_penalty=completion_request.repetition_penalty,
                 max_new_tokens=completion_request.max_tokens,
+                min_new_tokens=completion_request.min_tokens,
                 ignore_eos=completion_request.ignore_eos,
+                seed=completion_request.seed,
+                stop_token_ids=completion_request.stop_token_ids,
             )
             tgr = TokenGeneratorRequest(
                 # Generate a unique id for each prompt in the request

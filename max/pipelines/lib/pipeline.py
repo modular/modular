@@ -774,6 +774,19 @@ class TextGenerationPipeline(TokenGenerator[T]):
             ),
         )
 
+    def _check_need_penalties(self, batch: list[T]) -> None:
+        """Check if the batch has penalties, but do_penalties is False."""
+        for context in batch:
+            if (
+                context.sampling_params.frequency_penalty != 0.0
+                or context.sampling_params.presence_penalty != 0.0
+                or context.sampling_params.repetition_penalty != 1.0
+            ):
+                logger.warning(
+                    "penalties are provided in the request, but the model was not configured with do_penalties=True, ignoring"
+                )
+                return
+
     @traced
     def _build_min_tokens_masks(
         self,
@@ -968,6 +981,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             ).to(self._devices[0])
 
         else:
+            self._check_need_penalties(context_batch)
             frequency_data = None
             frequency_penalty = None
             presence_penalty = None
