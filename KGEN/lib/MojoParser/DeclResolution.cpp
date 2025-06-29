@@ -1437,7 +1437,7 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
 }
 
 void DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {
-  StructEmitter gen(shared);
+  StructEmitter gen(*decl.getParentDecl());
   switch (fn.getSpecialFunctionKind()) {
   default:
     // Matching by name is a bit gross, but we don't have general synthesized
@@ -2397,10 +2397,10 @@ static FnOp findFieldwiseInit(ASTDecl &structDecl) {
 
 void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   // Generate the fieldwise init.
-  StructEmitter structEmitter(shared);
+  StructEmitter structEmitter(structDecl);
   StructDeclOp declOp = cast<StructDeclOp>(structDecl);
   // Generate the copy and memberwise init stubs.
-  auto stubs = structEmitter.addMissingValueMemberStubsToStruct(structDecl);
+  auto stubs = structEmitter.addMissingValueMemberStubsToStruct();
   if (!stubs) {
     emitError(decoratorLoc, "'@value' cannot synthesize fieldwise init for '")
         << declOp.getSymName() << "'";
@@ -2415,7 +2415,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
 
   // Generate the fieldwise init unless it already has one.
   if (!findFieldwiseInit(structDecl))
-    structEmitter.synthesizeFieldwiseInit(structDecl);
+    structEmitter.synthesizeFieldwiseInit();
 }
 
 /// Process the @fieldwise_init body decorator on structs. 'isRequired'
@@ -2432,8 +2432,8 @@ void StructBodyDecorators::processFieldwiseInitDecorator(SMLoc decoratorLoc,
   }
 
   // Generate the fieldwise init.
-  StructEmitter structEmitter(shared);
-  auto fn = structEmitter.synthesizeFieldwiseInit(structDecl);
+  StructEmitter structEmitter(structDecl);
+  auto fn = structEmitter.synthesizeFieldwiseInit();
   if (!fn)
     return;
 
@@ -2583,7 +2583,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     structOp.setDestructorAttr(dtorAttr);
   } else if (implicitlyDestructible) {
     synthesizedDtor = true;
-    (void)StructEmitter(shared).synthesizeEmptyDtor(structDecl);
+    (void)StructEmitter(structDecl).synthesizeEmptyDtor();
   }
 
   // If the struct conforms to well-known traits but doesn't have explicit
@@ -2591,15 +2591,13 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // These can all be synthesized without resolving the members.
   if (conformsToTrait("Movable") &&
       !shared.typeHasMember(structDecl, "__moveinit__", structDecl.getLoc()))
-    StructEmitter(shared).synthesizeEmptyMoveOrCopyInit(structDecl,
-                                                        /*isMove=*/true);
+    StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
   if (conformsToTrait("Copyable") &&
       !shared.typeHasMember(structDecl, "__copyinit__", structDecl.getLoc()))
-    StructEmitter(shared).synthesizeEmptyMoveOrCopyInit(structDecl,
-                                                        /*isMove=*/false);
+    StructEmitter(structDecl).synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
   if (conformsToTrait("ExplicitlyCopyable") &&
       !shared.typeHasMember(structDecl, "copy", structDecl.getLoc()))
-    StructEmitter(shared).synthesizeEmptyExplicitCopy(structDecl);
+    StructEmitter(structDecl).synthesizeEmptyExplicitCopy(structDecl);
 
   // This collects all the resolved struct fields. Now that the body is
   // completely resolved, check the declared fields for extra invariants.

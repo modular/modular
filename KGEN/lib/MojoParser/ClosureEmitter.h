@@ -40,7 +40,7 @@ struct FnOpAttributes {
   /// FunctionType with named references to parameters
   FunctionType functionType;
 };
-class ClosureEmitter : public StructEmitter {
+class ClosureEmitter : public FunctionEmitter {
 public:
   ClosureEmitter(ASTDecl &moduleDecl, SharedState &shared);
 
