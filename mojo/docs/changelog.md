@@ -39,6 +39,12 @@ what we publish.
 
 ### Standard library changes
 
+- The `Dict` now has an `H` parameter which allows users to provider a
+  custom `Hasher` type.
+  - `default_hasher` (AHasher) and `default_comp_time_hasher` (Fnv1a)
+    are now provided
+  - The `H` parameter of `Dict` defaults to `default_hasher`
+
 - The `Hashable` trait has been updated to use a new data flow strategy.
   - Users are now required to implement the method
     `fn __hash__[H: Hasher](self, mut hasher: H):`
