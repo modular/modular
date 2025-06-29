@@ -24,6 +24,20 @@ from testing import (
 )
 
 
+def test_Py_IncRef_DecRef(mut python: Python):
+    var cpy = python.cpython()
+
+    # this is the smallest integer that's GC'd by the Python interpreter
+    var n = cpy.PyLong_FromSsize_t(257)
+    assert_equal(cpy._Py_REFCNT(n), 1)
+
+    cpy.Py_IncRef(n)
+    assert_equal(cpy._Py_REFCNT(n), 2)
+
+    cpy.Py_DecRef(n)
+    assert_equal(cpy._Py_REFCNT(n), 1)
+
+
 def test_PyObject_HasAttrString(mut python: Python):
     var cpython_env = python.cpython()
 
@@ -111,6 +125,10 @@ def test_PyCapsule(mut python: Python):
 def main():
     # initializing Python instance calls init_python
     var python = Python()
+
+    # Reference Counting
+    test_Py_IncRef_DecRef(python)
+
     test_PyObject_HasAttrString(python)
     test_PyDict(python)
     test_PyCapsule(python)
