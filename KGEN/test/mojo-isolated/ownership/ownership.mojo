@@ -1128,6 +1128,8 @@ fn test_ref_field(owned mem: MemPair):
   _ = r == r
   # CHECK-NEXT: lit.call {{.*}}MemPair::@"__del__
 
+fn get_inner_ptr(s: String) -> UnsafePointer[UInt8]:
+  return {}
 fn use_inner_pointer(ptr: UnsafePointer[UInt8]): pass
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime1
@@ -1135,7 +1137,7 @@ fn handleAnyLifetime1():
   str = String()
   # Make sure this keeps alive str until after the call.
   # CHECK: lit.call {{.*}}use_inner_pointer
-  use_inner_pointer(str.unsafe_ptr())
+  use_inner_pointer(get_inner_ptr(str))
   # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%str)
   # CHECK-NEXT: lit.var.lifetime.end %str
 

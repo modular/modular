@@ -1495,6 +1495,13 @@ static bool shouldEmitParameterCall(RValue callee,
                                     ArrayRef<ASTExprAnd<AnyValue>> argValues,
                                     SharedState &shared) {
   auto calleeSig = cast<FnTypeGeneratorType>(callee.getRValueType());
+
+  // If this returns something like an UnsafePointer with an unusual origin,
+  // materialization will fail, so we can't emit it as a parameter call.
+  if (ASTType(calleeSig.getUserResultType())
+          .containsUnmaterializableOrigins(shared))
+    return false;
+
   argValues = dropResultSlots(argValues, calleeSig);
 
   // We cannot inline this if any of the arguments are dynamic.

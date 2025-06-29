@@ -724,23 +724,40 @@ LValue IREmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return {};
 }
 
-/// Helper to check if we are trying to materialize a dynamic type value.
-static bool emitErrorForMaterializingTypeValues(IREmitter &emitter,
-                                                ASTExprAnd<PValue> value,
-                                                ExprContext context) {
+/// This verifies that the specified PValue can be materialized to a runtime
+/// value, emits an error if it cannot.
+static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
+                                                      ASTExprAnd<PValue> value,
+                                                      ExprContext context) {
   TypedAttr attr = value.ir.get();
-  if (isa<ModuleAttr>(attr) || !isTypeExpr(attr))
-    return false;
+  // We cannot emit types as values yet.
+  if (isTypeExpr(attr) && !isa<ModuleAttr>(attr)) {
+    const ExprNode *expr = value.expr;
+    InflightDiag diag = emitter.emitError(
+        expr->getLoc(), "dynamic type values not permitted yet");
+    if (context == EC_VarInit)
+      diag << "; try creating an `alias` instead of a `var`";
+    else if (context == EC_CallArgValue)
+      diag << "; try passing types as a parameters instead of arguments";
+    diag << expr->getRange();
+    return failure();
+  }
 
-  const ExprNode *expr = value.expr;
-  InflightDiag diag = emitter.emitError(
-      expr->getLoc(), "dynamic type values not permitted yet");
-  if (context == EC_VarInit)
-    diag << "; try creating an `alias` instead of a `var`";
-  else if (context == EC_CallArgValue)
-    diag << "; try passing types as a parameters instead of arguments";
-  diag << expr->getRange();
-  return true;
+  // We cannot emit a value that contains an origin in its type (e.g. a
+  // StringSlice or UnsafePointer) because the origin will be incorrect -
+  // referring to immortal compile-time memory.
+  if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
+    const ExprNode *expr = value.expr;
+    auto diag = emitter.emitError(
+        expr->getLoc(), "cannot materialize compile-time value of type ");
+    diag << ASTType(attr.getType()) << " to a runtime value"
+         << expr->getRange();
+    diag.attachNote(expr->getLoc())
+        << "the type contains an origin referring to a compile-time value";
+    return failure();
+  }
+
+  return success();
 }
 
 SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
@@ -755,8 +772,9 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     return {};
   }
 
-  // We don't allow materializing Type values yet.
-  if (emitErrorForMaterializingTypeValues(*this, value, context))
+  // Diagnose issues about types that cannot be comptime -> runtime
+  // materialized.
+  if (failed(emitErrorIfUnmaterializableValue(*this, value, context)))
     return {};
 
   Location location = expr->getLocation(*this);
@@ -1243,25 +1261,23 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   // Materialize any PValue directly, so we can handle non-copyable and
   // non-movable types.
   if (auto pValue = value.ir.getIfPValue()) {
-    // We don't allow materializing Type values yet.
-    if (emitErrorForMaterializingTypeValues(*this, {pValue, value.expr},
-                                            dest.context))
-      return {};
-
     // PValues don't have origins and are immortal with respect to the compiler.
     // Emit a memcpy into the LValue. Creating an SSA value of the memory-only
     // type for the sake of memcpy is safe because the bulk store will ensure
     // the variable does not get promoted off the stack, and after struct
     // lowering, the type is erased down to its MLIR constituents anyways.
-    Location loc = translateLocation(value.expr->getLoc());
+
+    // FIXME: This isn't correct - it is emitting memory-only values into an
+    // SSA value and then using lit.ref.store on the memory only value!
     SRValue regValue = emitPValueToSRValue({pValue, value.expr}, dest.context);
-    CValue result;
+    if (!regValue)
+      return {};
     MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)
       return {};
-    builder->create<RefStoreOp>(loc, regValue, destBuffer);
-    result = MRValue(destBuffer);
-
+    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()),
+                                regValue, destBuffer);
+    CValue result = MRValue(destBuffer);
     return emitCResult(result, value.expr, dest);
   }
 

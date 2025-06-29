@@ -702,6 +702,18 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
     }
   }
 
+  // Values of function types should only consider any origins in the capture
+  // set, not recursively nested types in the arguments or parameters defined by
+  // the signature.
+  if constexpr (std::is_base_of_v<Type, TypeOrAttr>) {
+    if (auto fnType = dyn_cast<FnTypeGeneratorType>(typeOrAttr)) {
+      hasOrigin |=
+          scanForOrigins(fnType.getCaptureOrigins(),
+                         typesAndAttrsWithoutOrigins, visited, results);
+      handled = true;
+    }
+  }
+
   if (!handled) {
     // Recursively check for any nested types, e.g. the input/outputs of a
     // function type, types like !pop.scalar<ty> etc.

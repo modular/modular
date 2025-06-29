@@ -178,17 +178,15 @@ struct ParametricMutability:
         self.take_inout()
 
 
-fn test_ref[
-    mut: Bool, origin: Origin[mut]._mlir_type
-](ref [origin]arg: String):
+fn test_ref[mut: Bool, origin: Origin[mut]](ref [origin]arg: String):
     pass
 
 
 fn call_test_ref(mut s: String):
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, Origin[$0.value]](ref [$1] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, Origin[$0]](ref [$1._mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
-    # expected-error @+1 {{cannot use parameterized function of type 'fn[MutableOrigin](ref [$0] arg: String) -> None' without binding all its parameters}}
+    # expected-error @+1 {{cannot use parameterized function of type 'fn[MutableOrigin](ref [$0._mlir_origin] arg: String) -> None' without binding all its parameters}}
     var f2 = test_ref[True]
     # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)

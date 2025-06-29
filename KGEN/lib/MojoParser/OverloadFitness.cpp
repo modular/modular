@@ -1028,6 +1028,9 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   argListAttr = signature.getArgListAttrs();
   DefaultValueHandler defaultHandler(argListAttr);
+  // FiXME: This should be substituting implicit parameters as the arguments are
+  // bound to be able to handle things like
+  // https://github.com/modular/modular/issues/3855 correctly.
   for (auto [expectedArgIdx, expectedTypeX, expectedConvention] :
        llvm::enumerate(signature.getArguments(),
                        signature.getArgConventions())) {
