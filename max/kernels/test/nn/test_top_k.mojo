@@ -322,7 +322,7 @@ fn main() raises:
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling
-    # CHECK: 1,1,0,6,1,
+    # CHECK: 4,1,0,6,4,
     test_2d_sorted_sampling()
 
     fn test_3d_sorted_sampling() raises:
@@ -334,7 +334,7 @@ fn main() raises:
         )
 
     # CHECK-LABEL: test_3d_sorted_sampling
-    # 6,2,8,5,1,1,5,1,2,1,0,3,3,3,8,
+    # 6,9,5,2,3,1,7,9,5,1,9,0,2,3,4,
     test_3d_sorted_sampling()
 
     @parameter
@@ -363,7 +363,7 @@ fn main() raises:
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 6,6,0,0,6,6,6,7,3,1,0,0,0,0,0,0,0,3,6,2,6,3,3,4,9,3,6,6,5,6,6,9,6,9,6,3,5,5,6,6,4,4,6,7,8,9,3,3,3,0,
+    # CHECK: 6,6,0,0,5,2,6,4,3,1,0,4,8,0,0,0,5,7,7,4,6,3,4,2,5,3,6,7,8,6,6,5,9,7,8,3,7,4,8,6,2,8,6,4,5,7,8,3,5,0,
     test_2d_sorted_sampling_temp()
 
     fn test_2d_sorted_sampling_temp_zero() raises:
