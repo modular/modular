@@ -28,6 +28,31 @@ what we publish.
   optional parameter list (just like functions). Parametric aliases are
   considered first class parameter values, too.
 
+- The compiler now detects attempts to materialize references (and related types
+  like slices/pointers) to comptime interpreter stack memory into runtime code.
+  The compiler cannot currently track the lifetime of internal stack objects
+  when materialized to runtime, which could cause memory leaks.  Consider this
+  example:
+
+  ```mojo
+  fn test_comptime_materialize():
+    # This is ok! Forms a comptime reference to a comptime "stack" value of String
+    # type.
+    alias bad = String("foo" + "bar").unsafe_ptr()
+    # This is ok too, dereferences the pointer at comptime loading the byte.
+    alias byte = bad[]
+    # This materializes a Byte from comptime to runtime.
+    var rt_byte = byte
+    # Error: cannot materialize to runtime value, the type contains an origin
+    # referring to a compile-time value
+    var use_bad = bad
+  ```
+
+  Previously the compiler would materialize the memory representation of the
+  `String` value but not know it needs to be destroyed.  It now detects the
+  problem. If you run into this, rework the code to materialize the full object
+  (e.g. the String) to runtime explicitly.
+
 ### Language changes
 
 - The `@value` decorator has been formally deprecated with a warning, it will

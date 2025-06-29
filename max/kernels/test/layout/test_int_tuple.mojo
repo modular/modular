@@ -81,24 +81,24 @@ def test_tuple_slicing():
     print("== test_tuple_slicing")
 
     alias tr = IntTuple(0, 1, 2, 3, 4)
-    alias sl0 = tr[-1]
-    alias sl1 = tr[-2]
-    alias sl2 = tr[1:4]
-    alias sl3 = tr[1:5:2]
-    alias sl4 = tr[:]
-    alias sl5 = tr[:5:2]
-    alias sl6 = tr[-3:]
-    alias sl7 = tr[-3:-1]
-    alias sl8 = tr[:-1]
-    assert_equal(String(sl0), "4")
-    assert_equal(String(sl1), "3")
-    assert_equal(String(sl2), "(1, 2, 3)")
-    assert_equal(String(sl3), "(1, 3)")
-    assert_equal(String(sl4), "(0, 1, 2, 3, 4)")
-    assert_equal(String(sl5), "(0, 2, 4)")
-    assert_equal(String(sl6), "(2, 3, 4)")
-    assert_equal(String(sl7), "(2, 3)")
-    assert_equal(String(sl8), "(0, 1, 2, 3)")
+    alias sl0 = String(tr[-1])
+    alias sl1 = String(tr[-2])
+    alias sl2 = String(tr[1:4])
+    alias sl3 = String(tr[1:5:2])
+    alias sl4 = String(tr[:])
+    alias sl5 = String(tr[:5:2])
+    alias sl6 = String(tr[-3:])
+    alias sl7 = String(tr[-3:-1])
+    alias sl8 = String(tr[:-1])
+    assert_equal(sl0, "4")
+    assert_equal(sl1, "3")
+    assert_equal(sl2, "(1, 2, 3)")
+    assert_equal(sl3, "(1, 3)")
+    assert_equal(sl4, "(0, 1, 2, 3, 4)")
+    assert_equal(sl5, "(0, 2, 4)")
+    assert_equal(sl6, "(2, 3, 4)")
+    assert_equal(sl7, "(2, 3)")
+    assert_equal(sl8, "(0, 1, 2, 3)")
 
 
 def test_tuple_basic_ops():
