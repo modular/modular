@@ -444,6 +444,41 @@ Major players involved: `doesNominalTypeConformTo` calls
 See [Conformance.md](KGEN/docs/arcana/Conformance.md) for more on how this
 all works.
 
+### Allocation
+
+We rarely use `new` or `make_unique` or `make_shared`.
+
+Rules of thumb:
+
+- When allocating an MLIR op, create it via `OpBuilder::create` or
+  `ImplicitLocOpBuilder::create`, for example
+  `b.create<LIT::ReturnOp>(results)`.
+- When allocating an attribute, we often use its `::get` static method, for
+  example `BoolAttr::get(context, value)`.
+- When allocating a `mlir::Type`, we either:
+  - Call its `::get` static method, for example
+    `LIT::StructType::get(symbol, unbound, sig)`.
+
+`::get` methods are often declared in our tablegen `.td` files, via the
+`let builders = [` directive. Their implementations are defined in the
+corresponding `.cpp` file.
+
+If you're not sure how a Something is created, you can search for:
+`(alloc\w*<|create<)Something|Something::get`
+
+Parser-specific:
+
+- When creating an `ASTType`:
+  - It's a lightweight wrapper, a value type, you can directly construct one
+    given an `mlir::Type`.
+  - Some you can get from SharedState, for example
+    `shared.getBuiltinBoolType(declScope, loc)`.
+  - `StructDeclOp::bindReference` creates one from a `StructDeclOp`.
+- When allocating memory that shouldn't escape the parser invocation, use
+  `SharedState::allocPersistent` or `ExprParser::alloc` (which calls
+  `allocPersistent` for you). We do this for expression nodes (e.g.
+  `alloc<BoolLiteralNode>(startTok.getLoc(), false)`) and `ASTDecl`s.
+
 <!--
 rule of thumb: if we use it when parsing statements/expressions, feel free to
 factor it out into a common helper.
