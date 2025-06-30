@@ -118,3 +118,55 @@ trait Stencil:
     alias rank: Int
     # expected-error @below {{associated alias declarations in a trait shouldn't have an initializer}}
     alias Index = TensorIndex[rank]
+
+
+# // -----
+
+# Tests that we get a nice error when an override alias has an incompatible
+# type.
+
+
+struct ZInt:
+    pass
+
+
+struct ZBool:
+    pass
+
+
+trait TraitWithTypeAlias:
+    # expected-note @below {{parent trait's alias defined here}}
+    alias T: ZBool
+
+
+trait TraitWithSameTypeAlias(TraitWithTypeAlias):
+    # expected-error @below {{invalid redefinition of 'T': cannot convert 'ZInt' to parent trait's alias's type 'ZBool'}}
+    alias T: ZInt
+
+
+# // -----
+
+# Makes sure that we don't crash if there are multiple overrides.
+
+
+struct ZInt:
+    pass
+
+
+struct ZBool:
+    pass
+
+
+struct ZFloat:
+    pass
+
+
+trait SuperTrait:
+    alias T: ZFloat
+
+
+trait TraitWithTooManyAliases(SuperTrait):
+    # expected-note @below {{previous definition here}}
+    alias T: ZBool
+    # expected-error @below {{invalid redefinition of 'T'}}
+    alias T: ZInt

@@ -227,8 +227,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl, SymbolRefAttr parent,
 
   auto checkAlias = [&](StringAttr name, ASTDecl *traitAliasDecl,
                         AliasDeclOp traitAlias) -> LogicalResult {
-    // TODO(MOCO-1140): check traitAlias.getInheritedFrom(); implement
-    // inheritance of alias decls.
+    if (traitAlias.getInheritedFrom())
+      return success();
+
     if (failed(shared.declResolver->resolveSignature(*traitAliasDecl,
                                                      structDecl.getLoc()))) {
       hadErrors = true;

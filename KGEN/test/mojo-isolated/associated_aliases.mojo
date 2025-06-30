@@ -53,6 +53,7 @@ fn testTraitWithAliasAndStructWithMatchingAlias():
 
 # Tests that we correctly call get_vtable_entry when looking up a trait's alias,
 # even when we're looking up an alias that originally came from a grandparent.
+# (See also MOCO-1992)
 
 
 @fieldwise_init
@@ -72,8 +73,7 @@ trait TraitWithTypeAlias:
 
 
 trait TraitWithSameTypeAlias(TraitWithTypeAlias):
-    # TODO(MOCO-1992): Make it so we can omit this.
-    alias T: TraitWithAlias
+    pass
 
 
 # CHECK-LABEL: lit.fn @"testTraitWithRefinedTypeAlias
@@ -867,7 +867,7 @@ trait AA:
         ...
 
 
-trait BB:
+trait BB(AA):
     fn __init__(out self):
         ...
 
@@ -888,6 +888,59 @@ fn fa[T: A]() -> T.Type:
 fn fb[T: B]() -> T.Type:
     # CHECK: lit.call{{.*}}fa{{.*}}#[[BTypeAsAATypeValue]]
     return fa[T]()
+
+
+# // -----
+
+# Tests that a trait or struct can declare an alias that is a more specific type
+# of *both* of its parent traits' aliases' types.
+# This is like the above STATCBMS test but with two parent traits.
+
+
+trait AA:
+    fn __init__(out self):
+        ...
+
+
+trait BB:
+    fn __init__(out self):
+        ...
+
+
+trait CC(AA, BB):
+    fn __init__(out self):
+        ...
+
+
+trait A:
+    alias Type: AA
+
+
+trait B:
+    alias Type: BB
+
+
+trait TraitWithExplicitOverride(A, B):
+    alias Type: CC
+
+
+fn receiveTraitWithExplicitOverride[T: TraitWithExplicitOverride]():
+    alias cc: CC = T.Type
+
+
+struct StructWithExplicitOverride(A, B):
+    alias Type: CC = CC()
+
+
+fn receiveStructWithExplicitOverride[T: StructWithExplicitOverride]():
+    alias cc: CC = T.Type
+
+
+# TODO(MOCO-2123): Make this work:
+# trait TraitWithNoOverride(A, B):
+#     pass
+# fn receiveTraitWithNoOverride[T: TraitWithNoOverride]():
+#     alias Something = T.Type
 
 
 # TODO(MOCO-1143): Make this work:
