@@ -24,7 +24,7 @@ import msgspec
 import torch
 from max import driver
 from max._core import nixl
-from max.driver import CPU
+from max.driver import CPU, Accelerator
 from max.driver.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines")
@@ -120,6 +120,18 @@ class KVTransferEngine:
             raise ValueError(
                 f"Tensor num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
             )
+
+        # Regardless of whether the tensor is on CPU / GPU, we must ensure that
+        # CUDADriver.cpp is called which loads the libcuda.so.1 and libnvidia-ml.so.1
+        # symbols PRIOR to loading the UCX CUDA backend.
+        acc = Accelerator()
+        if acc.api != "cuda":
+            raise NotImplementedError(
+                "Currently UCX only supports CUDA devices."
+            )
+        # This device is unused. It is created for the sole purpose of loading
+        # the CUDA symbols.
+        del acc
 
         # Create agent
         self.name = name
