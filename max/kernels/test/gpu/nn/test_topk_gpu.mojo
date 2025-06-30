@@ -360,6 +360,18 @@ fn fill_random[
 
 
 @parameter
+fn fill_constant[
+    rank: Int, dtype: DType
+](mut buffer: NDBuffer[mut=True, dtype, rank]):
+    var total_elements = buffer.num_elements()
+    for i in range(total_elements):
+        if i % 3 == 1:
+            buffer.data[i] = 1.0
+        else:
+            buffer.data[i] = 0.0
+
+
+@parameter
 fn fill_iota[rank: Int, dtype: DType](mut buf: NDBuffer[mut=True, dtype, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
@@ -754,6 +766,16 @@ fn main() raises:
         )
         print_test_case(test_case19)
         test_case_batched[bf16_type, fill_random](ctx, test_case19)
+
+        # Test with identical values
+        alias test_case20 = TestCase[_sampling=False](
+            N=50,
+            K=25,
+            block_size=256,
+            batch_size=2,
+        )
+        print_test_case(test_case20)
+        test_case_batched[dtype, fill_constant](ctx, test_case20)
 
         # Run minimum top-k tests
         test_min_topk[dtype](ctx)

@@ -582,9 +582,17 @@ fn _warp_reduce_topk[
     ) -> TopK_2[T, largest]:
         @parameter
         if largest:
-            return a if a.u > b.u else b
+            if a.u > b.u:
+                return a
+            elif a.u < b.u:
+                return b
+            return a if a.p < b.p else b
         else:
-            return a if a.u < b.u else b
+            if a.u < b.u:
+                return a
+            elif a.u > b.u:
+                return b
+            return a if a.p < b.p else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
     alias limit = log2_floor(WARP_SIZE)
