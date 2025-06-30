@@ -667,7 +667,7 @@ fn random[
         rand(buffer.data, buffer.num_elements(), min=min, max=max)
 
 
-fn update_bench_config(mut b: Bench) raises:
+fn update_bench_config_args(mut b: Bench) raises:
     # TODO: refactor and move to bencher.mojo when internal_utils is available in oss.
 
     # b.config.out_file = Path(arg_parse("bench-out-file", String(b.config.out_file)))
@@ -677,8 +677,12 @@ fn update_bench_config(mut b: Bench) raises:
     b.config.max_runtime_secs = arg_parse(
         "bench-max-runtime-secs", b.config.max_runtime_secs
     )
+    # TODO: min_warmuptime_secs will be removed from bencher.mojo and here.
     b.config.min_warmuptime_secs = arg_parse(
         "bench-min-warmuptime-secs", b.config.min_warmuptime_secs
+    )
+    b.config.num_warmup_iters = arg_parse(
+        "bench-num-warmup-iters", b.config.num_warmup_iters
     )
     # set bench-max-batch-size=1 for single iteration
     b.config.max_batch_size = arg_parse(

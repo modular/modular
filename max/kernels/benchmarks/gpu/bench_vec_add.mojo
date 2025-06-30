@@ -17,7 +17,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu import *
 from gpu.host import DeviceContext
-from internal_utils import update_bench_config
+from internal_utils import update_bench_config_args
 from testing import assert_equal
 
 
@@ -95,7 +95,7 @@ fn bench_vec_add(
 def main():
     alias block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
-    update_bench_config(m)
+    update_bench_config_args(m)
 
     with DeviceContext() as ctx:
         bench_vec_add(m, block_dim=block_dim, length=32 * 1024, context=ctx)

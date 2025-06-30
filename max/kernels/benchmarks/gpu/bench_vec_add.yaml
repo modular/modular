@@ -15,6 +15,6 @@ name: bench_vec_add
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_vec_add.mojo
 
 params:
-- block_dim: 256
-- block_dim: 512
-- block_dim: 1024
+- block_dim: [256, 512, 1024]
+  $bench-min-runtime-secs: [0.1]
+  $bench-max-iters: [1000]

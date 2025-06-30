@@ -24,7 +24,7 @@ from internal_utils import (
     arg_parse,
     env_get_shape,
     int_list_to_tuple,
-    update_bench_config,
+    update_bench_config_args,
 )
 
 
@@ -76,7 +76,7 @@ fn main() raises:
         BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)
     )
 
-    update_bench_config(m)
+    update_bench_config_args(m)
 
     bench_func[dtype, shape[0], shape[1], shape[2], stages](m, mode)
 
