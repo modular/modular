@@ -58,6 +58,10 @@ build --remote_upload_local_results
 build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
 build --remote_instance_name=modular-public
 
+build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
+build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
+build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
+
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
 build:cache --remote_cache=grpcs://modular.aws-us-west-2.buildbuddy.io
