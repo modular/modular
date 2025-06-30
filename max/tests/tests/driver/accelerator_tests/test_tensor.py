@@ -149,6 +149,22 @@ def test_dlpack_device() -> None:
     assert device_tuple[1] == 0  # should be the default device
 
 
+def test_dlpack_device_pinned() -> None:
+    gpu_device = Accelerator()
+
+    pinned_tensor = Tensor(DType.int32, (3, 3), device=gpu_device, pinned=True)
+    device_tuple = pinned_tensor.__dlpack_device__()
+    assert len(device_tuple) == 2
+    assert isinstance(device_tuple[0], int)
+    if gpu_device.api == "cuda":
+        assert device_tuple[0] == 3  # DLDeviceType::kDLCUDAHost
+    elif gpu_device.api == "hip":
+        assert device_tuple[0] == 11  # DLDeviceType::kDLROCMHost
+    else:
+        raise ValueError(f"Unsupported device API: {gpu_device.api}")
+    assert device_tuple[1] == 0  # should be the default device
+
+
 def test_scalar() -> None:
     # We should be able to create scalar values on accelerators.
     acc = Accelerator()
