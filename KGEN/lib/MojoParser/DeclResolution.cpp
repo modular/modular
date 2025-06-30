@@ -2930,6 +2930,20 @@ static void replaceTraitMethodSelfTypes(FnOp func, TypedAttr parentSelfType,
     arg.setType(replacer.replace(arg.getType()));
 }
 
+/// Update the types for a method pulled from a trait base to a derived trait,
+/// so they refer to the correct self type.
+static void replaceTraitAliasSelfTypes(AliasDeclOp alias,
+                                       TypedAttr parentSelfType,
+                                       TypedAttr traitSelfType) {
+  assert(isa<ParamDeclRefAttr>(parentSelfType) &&
+         isa<ParamDeclRefAttr>(traitSelfType));
+  AttrReplacer replacer(parentSelfType, traitSelfType);
+  alias.setParamDeclAttr(
+      ParamDeclAttr::get(alias.getParamDecl().getName(),
+                         // Get updated type with new Self.
+                         replacer.replace(alias.getParamDecl().getType())));
+}
+
 void DeclResolver::addParentDeclsToTrait(
     TraitDeclOp traitOp, ASTDecl &traitDecl,
     DenseSet<std::pair<StringAttr, StringAttr>> &existingFns) {
@@ -2939,8 +2953,13 @@ void DeclResolver::addParentDeclsToTrait(
 
   // Now just pull in the functions in the bodies of all parents.
   Block &body = *traitOp.getBody();
-  for (SymbolRefAttr parent : traitOp.getCanonicalTrait().getSymbols()) {
-    ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
+  for (SymbolRefAttr parentOrSelf : traitOp.getCanonicalTrait().getSymbols()) {
+    ASTDecl &parentOrSelfDecl = getDeclForTypeSymbol(parentOrSelf);
+    if (&parentOrSelfDecl == &traitDecl)
+      continue;
+    SymbolRefAttr parent = parentOrSelf;
+    auto &parentDecl = parentOrSelfDecl;
+
     if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       continue;
 
@@ -2948,36 +2967,116 @@ void DeclResolver::addParentDeclsToTrait(
 
     // Inherit function members, which we can override without worry because
     // they are all just declarations.
-    for (auto &[name, decls] : parentDecl.getDeclsInScope()) {
-      if (decls.empty() || !isa<FnOp>(decls.front()))
+    for (auto &[name, declsInParent] : parentDecl.getDeclsInScope()) {
+      if (declsInParent.empty())
         continue;
-      for (ASTDecl *decl : decls) {
-        if (failed(resolveBody(*decl, traitDecl.getLoc())))
-          continue;
-        auto func = cast<FnOp>(decl);
-        if (func.getInheritedFrom())
-          continue;
-        // Ensure that a function with the same name and signature hasn't
-        // already been declared.
-        if (!existingFns.insert({name, func.getSymNameAttr()}).second)
-          continue;
-        func = func.clone();
+      if (isa<FnOp>(declsInParent.front())) {
+        for (ASTDecl *decl : declsInParent) {
+          if (failed(resolveBody(*decl, traitDecl.getLoc())))
+            continue;
+          auto func = cast<FnOp>(decl);
+          if (func.getInheritedFrom())
+            continue;
+          // Ensure that a function with the same name and signature hasn't
+          // already been declared.
+          if (!existingFns.insert({name, func.getSymNameAttr()}).second)
+            continue;
+          func = func.clone();
 
-        // We copied down the function from a base trait to a derived trait,
-        // and its type (e.g. self arguments, but not limited to them) will
-        // refer to the T parameter from the base trait.  That will have a
-        // metatype from the base trait which we need to update to our correct
-        // Self type.
-        replaceTraitMethodSelfTypes(func, PValue(parentSelfType).get(),
-                                    PValue(traitSelfType).get());
+          // We copied down the function from a base trait to a derived trait,
+          // and its type (e.g. self arguments, but not limited to them) will
+          // refer to the T parameter from the base trait.  That will have a
+          // metatype from the base trait which we need to update to our correct
+          // Self type.
+          replaceTraitMethodSelfTypes(func, PValue(parentSelfType).get(),
+                                      PValue(traitSelfType).get());
 
-        // Mark the function as inherited so that conformance checking won't
-        // give duplicate errors if it is not provided.
-        func.setInheritedFromAttr(parent);
-        body.push_back(func);
-        ASTDecl &clonedDecl =
-            addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
-        finalizeFuncSignature(func, clonedDecl);
+          // Mark the function as inherited so that conformance checking won't
+          // give duplicate errors if it is not provided.
+          func.setInheritedFromAttr(parent);
+          body.push_back(func);
+          ASTDecl &clonedDecl =
+              addFullyResolvedDecl(&*func, name, decl->getLoc(), &traitDecl);
+          finalizeFuncSignature(func, clonedDecl);
+        }
+      } else if (auto parentAliasDecl =
+                     dyn_cast<AliasDeclOp>(declsInParent.front())) {
+        assert(declsInParent.size() == 1 &&
+               "Can't have two aliases with same name.");
+        auto &declInParent = *declsInParent.front();
+
+        if (failed(resolveSignature(declInParent, traitDecl.getLoc())))
+          continue;
+        if (parentAliasDecl.getInheritedFrom())
+          continue;
+
+        ArrayRef<ASTDecl *> overrides = traitDecl.lookupInCurrentScope(name);
+        // If there's no overrides, then we need to copy the alias decl from the
+        // parent trait into this one.
+        if (overrides.size() == 0) {
+          auto newAliasDecl = parentAliasDecl.clone();
+
+          // We copied down the alias from a base trait to a derived trait,
+          // and its type will refer to the T parameter from the base trait.
+          // That will have a metatype from the base trait which we need to
+          // update to our correct Self type.
+          replaceTraitAliasSelfTypes(newAliasDecl, PValue(parentSelfType).get(),
+                                     PValue(traitSelfType).get());
+
+          // Mark the alias as inherited so that conformance checking won't give
+          // duplicate errors if it is not provided.
+          newAliasDecl.setInheritedFromAttr(parent);
+          body.push_back(newAliasDecl);
+          addFullyResolvedDecl(&*newAliasDecl, name, declInParent.getLoc(),
+                               &traitDecl);
+          // We don't need to call something like finalizeFuncSignature for
+          // aliases because we can't have multiple aliases with the same name
+          // (there's no such thing as alias overloading).
+        } else {
+
+          // Theoretically there should be at most one override, since
+          // duplicates aren't even added to the trait's ASTDecl entries.
+          assert(overrides.size() == 1);
+
+          auto override = overrides.front();
+          auto overrideAliasDecl = dyn_cast<AliasDeclOp>(override);
+          if (!overrideAliasDecl) {
+            auto diag =
+                emitError(override->getLoc(), "invalid redefinition of ")
+                << name;
+            diag.attachNote(overrideAliasDecl->getLoc())
+                << "cannot overload with this non-alias definition";
+            continue;
+          }
+
+          // Resolve the override so we get the type.
+          if (failed(resolveSignature(*override, traitDecl.getLoc())))
+            continue;
+
+          SyntheticNode synthNode(traitDecl.getLoc());
+          auto overrideAliasType = overrideAliasDecl.getType();
+          // Conjure a fake value here that we can hand to
+          // canImplicitlyConvertToType.
+          // TODO: Make a version of canImplicitlyConvertToType that can take
+          // two types directly.
+          // TODO: Be able to do this with canZeroCostConvert since we don't
+          // want to call implicit constructors here.
+          auto overrideAliasParamValue =
+              PValue(ParamDeclRefAttr::get(overrideAliasDecl.getParamDecl()));
+          if (!IREmitter::canImplicitlyConvertToType(
+                  {overrideAliasParamValue, synthNode},
+                  parentAliasDecl.getParamDecl().getType(), traitDecl)) {
+            auto diag =
+                emitError(override->getLoc(), "invalid redefinition of ")
+                << name << ": cannot convert " << overrideAliasType
+                << " to parent trait's alias's type "
+                << parentAliasDecl.getParamDecl().getType();
+            diag.attachNote(parentAliasDecl->getLoc())
+                << "parent trait's alias defined here";
+          }
+
+          // Dont add anything
+        }
       }
     }
   }
@@ -3003,14 +3102,19 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   // overload candidates.
   DenseSet<std::pair<StringAttr, StringAttr>> existingFns;
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    if (decls.empty() || !isa<FnOp>(decls.front()))
+    if (decls.empty())
       continue;
-    for (ASTDecl *decl : decls) {
-      auto func = cast<FnOp>(*decl);
-      if (failed(resolveBody(*decl, decl->getLoc())))
-        return failure();
+    if (isa<FnOp>(decls.front())) {
+      for (ASTDecl *decl : decls) {
+        auto func = cast<FnOp>(*decl);
+        if (failed(resolveBody(*decl, decl->getLoc())))
+          return failure();
 
-      existingFns.insert({name, func.getSymNameAttr()});
+        existingFns.insert({name, func.getSymNameAttr()});
+      }
+    } else if (auto alias = dyn_cast<AliasDeclOp>(decls.front())) {
+      if (failed(resolveBody(alias, lexer, *decls.front())))
+        return failure();
     }
   }
 

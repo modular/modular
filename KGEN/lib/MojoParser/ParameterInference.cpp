@@ -27,8 +27,7 @@ using namespace M::KGEN::LIT;
 
 #define DEBUG_TYPE "LITEXPRCALLS"
 
-// DO NOT SUBMIT, thoughts on where this should go?
-//     also we should probably return something other than a bool.
+// TODO(MOCO-1106): Put this in a better place.
 extern bool checkConventionsConvertible(ArgConvention expectedConv,
                                         ArgConvention actualConv);
 

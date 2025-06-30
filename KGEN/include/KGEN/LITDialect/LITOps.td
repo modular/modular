@@ -738,7 +738,9 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     KGEN_ParamDeclAttr:$paramDecl,
     OptionalAttr<TypedAttrInterface>:$value,
     OptionalAttr<LIT_DocStringAttr>:$docString,
-    OptionalAttr<StrAttr>:$deprecationWarning
+    OptionalAttr<StrAttr>:$deprecationWarning,
+    // The trait symbol this function is inherited from. None if self-declared.
+    OptionalAttr<SymbolRefAttr>:$inheritedFrom
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
@@ -753,8 +755,8 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
   let builders = [
     OpBuilder<(ins "ParamDeclAttr":$decl,
               CArg<"TypedAttr", "{}">:$value), [{
-      build($_builder, $_state, decl, value, /*deprecationWarning=*/{},
-            /*docString=*/{});
+      build($_builder, $_state, decl, value, /*docString=*/{},
+            /*deprecationWarning=*/{}, /*inheritedFrom=*/{});
     }]>,
   ];
 
