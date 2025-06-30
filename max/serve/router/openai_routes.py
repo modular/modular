@@ -23,6 +23,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
+from random import randint
 from time import perf_counter_ns
 from typing import Any, Literal, Optional, Union, cast
 from urllib.parse import unquote, urlparse
@@ -641,7 +642,7 @@ async def openai_create_chat_completion(
             max_new_tokens=completion_request.max_tokens,
             min_new_tokens=completion_request.min_tokens,
             ignore_eos=completion_request.ignore_eos,
-            seed=completion_request.seed or 0,
+            seed=completion_request.seed or randint(0, 2**63 - 1),
             stop_token_ids=completion_request.stop_token_ids,
             stop=completion_request.stop,
         )
@@ -1055,7 +1056,7 @@ async def openai_create_completion(
                 max_new_tokens=completion_request.max_tokens,
                 min_new_tokens=completion_request.min_tokens,
                 ignore_eos=completion_request.ignore_eos,
-                seed=completion_request.seed or 0,
+                seed=completion_request.seed or randint(0, 2**63 - 1),
                 stop_token_ids=completion_request.stop_token_ids,
                 stop=completion_request.stop,
             )
