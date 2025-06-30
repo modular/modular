@@ -8,7 +8,7 @@ import pytest
 import torch
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn import ReturnLogits
+from max.nn import DistributedGemmConfig, ReturnLogits
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.architectures.internvl.model_config import (
     InternVLConfig,
@@ -88,6 +88,7 @@ def llm_config() -> Llama3Config:
         devices=[DeviceRef.GPU()],
         clip_qkv=None,
         float8_config=None,
+        dist_gemm_config=DistributedGemmConfig.generate(),
     )
 
 

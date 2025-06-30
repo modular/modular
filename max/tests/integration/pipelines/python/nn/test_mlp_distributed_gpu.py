@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+import math
 from collections.abc import Sequence
 from typing import Optional, Union
 
@@ -22,7 +23,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import MLP, DistributedMLP, Module, Signals
+from max.nn import MLP, DistributedGemmConfig, DistributedMLP, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
 
 DTYPE = DType.float32
@@ -42,10 +43,10 @@ ACCURACY_ATOL = 1e-6
 
 
 def generate_tensor(
-    shape: tuple[int, ...], dtype: DType, seed: int = 1234
+    shape: tuple[int, ...], dtype: DType, hidden_dim: int, seed: int = 1234
 ) -> torch.Tensor:
     torch.manual_seed(seed)  # Set fixed seed for reproducibility
-    return torch.randn(shape, dtype=dtype)
+    return torch.randn(shape, dtype=dtype) * (1.0 / math.sqrt(hidden_dim))
 
 
 def torch_linear(weight, bias_tensor=None, **kwargs) -> nn.Linear:
@@ -136,6 +137,7 @@ def mlp_output(
     has_bias: bool = False,
     bias: Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
     use_subgraphs: bool = True,
+    enable_matmul_allreduce: bool = False,
 ):
     # Initialize the device-contexts
     devices: list[Device] = (
@@ -180,6 +182,7 @@ def mlp_output(
             devices=devices_refs,
             activation_function=activation_function,
             has_bias=has_bias,
+            dist_gemm_config=DistributedGemmConfig(enable_matmul_allreduce),
         )
 
     if use_subgraphs:
@@ -207,7 +210,6 @@ def mlp_output(
         graph_input, *graph_signal_buffers = graph.inputs
         assert isinstance(graph_input, TensorValue)
         assert are_all_buffer_values_sequence(graph_signal_buffers)
-
         if n_gpus <= 1:
             graph_output = mlp(graph_input)
         else:
@@ -241,20 +243,34 @@ def compare_mlp_outputs(
     n_gpus: int = 0,
     has_bias: bool = False,
     use_subgraphs: bool = True,
+    seq_len: int = 1,
+    enable_matmul_allreduce: bool = False,
 ) -> None:
     if n_gpus > accelerator_count():
         pytest.skip(f"Not enough GPUs to run test with {n_gpus} GPUs.")
 
-    gate_proj_w = generate_tensor((hidden_dim, dim), torch_dtype, seed=42)
-    down_proj_w = generate_tensor((dim, hidden_dim), torch_dtype, seed=43)
-    up_proj_w = generate_tensor((hidden_dim, dim), torch_dtype, seed=44)
+    gate_proj_w = generate_tensor(
+        (hidden_dim, dim), torch_dtype, hidden_dim, seed=42
+    )
+    down_proj_w = generate_tensor(
+        (dim, hidden_dim), torch_dtype, hidden_dim, seed=43
+    )
+    up_proj_w = generate_tensor(
+        (hidden_dim, dim), torch_dtype, hidden_dim, seed=44
+    )
     if has_bias:
-        gate_proj_b = generate_tensor((hidden_dim,), torch_dtype, seed=42)
-        down_proj_b = generate_tensor((dim,), torch_dtype, seed=43)
-        up_proj_b = generate_tensor((hidden_dim,), torch_dtype, seed=44)
+        gate_proj_b = generate_tensor(
+            (hidden_dim,), torch_dtype, hidden_dim, seed=42
+        )
+        down_proj_b = generate_tensor((dim,), torch_dtype, hidden_dim, seed=43)
+        up_proj_b = generate_tensor(
+            (hidden_dim,), torch_dtype, hidden_dim, seed=44
+        )
 
     device = "cuda" if n_gpus > 0 else "cpu"
-    x = generate_tensor((1, dim), torch_dtype, seed=45).to(device)
+    x = generate_tensor((seq_len, dim), torch_dtype, hidden_dim, seed=45).to(
+        device
+    )
 
     if has_bias:
         max_output = mlp_output(
@@ -268,6 +284,7 @@ def compare_mlp_outputs(
             has_bias=has_bias,
             bias=(gate_proj_b, down_proj_b, up_proj_b),
             use_subgraphs=use_subgraphs,
+            enable_matmul_allreduce=enable_matmul_allreduce,
         )
     else:
         max_output = mlp_output(
@@ -279,6 +296,7 @@ def compare_mlp_outputs(
             dtype,
             n_gpus=n_gpus,
             use_subgraphs=use_subgraphs,
+            enable_matmul_allreduce=enable_matmul_allreduce,
         )
 
     if has_bias:
@@ -443,4 +461,16 @@ def test_mlp_distributed(n_gpus: int) -> None:
         DType.float32,
         use_subgraphs=False,
         n_gpus=n_gpus,
+    )
+
+    compare_mlp_outputs(
+        14336,
+        4096,
+        "silu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=False,
+        n_gpus=n_gpus,
+        enable_matmul_allreduce=True,
+        seq_len=4096,
     )
