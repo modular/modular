@@ -245,7 +245,7 @@ def test_cpasync_producer_consumer_pipeline[
     dst_host = HostNDBuffer[DType.float32, 1, shape1d](shape1d)
     var dst_device = DeviceNDBuffer[DType.float32, 1, shape1d](shape1d, ctx=ctx)
 
-    ctx.enqueue_function[cpaysnc_producer_consumer_pipeline_kernel[4]](
+    ctx.enqueue_function[cpaysnc_producer_consumer_pipeline_kernel[num_stages]](
         src_device.tensor.data,
         dst_device.tensor.data,
         grid_dim=(1),

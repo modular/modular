@@ -32,6 +32,8 @@ alias WARPGROUP_SIZE = 128
 # ===----------------------------------------------------------------------=== #
 # Load A and B from using TMA
 # ===----------------------------------------------------------------------=== #
+
+
 @always_inline
 fn async_load_AB[
     a_type: DType,
@@ -212,3 +214,212 @@ fn async_load_AB[
         for k_iter in range(num_full_k_iters - 1):
             producer_loop[pipeline_stages](k_iter)
         producer_loop[num_remaining_k_iters](num_full_k_iters - 1)
+
+
+# ===----------------------------------------------------------------------=== #
+# Load A and B from using cp.async
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn async_load_AB[
+    a_type: DType,
+    b_type: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    a_smem_layout: Layout,
+    b_smem_layout: Layout,
+    pipeline_stages: Int, //,
+    /,
+    *,
+    swizzle_mode: TensorMapSwizzle,
+    cp_size: Int,
+    num_k_iters: Int,
+    block_tile_shape: IndexList[3],
+](
+    a: LayoutTensor[
+        a_type,
+        a_layout,
+        MutableAnyOrigin,
+    ],
+    b: LayoutTensor[
+        b_type,
+        b_layout,
+        MutableAnyOrigin,
+    ],
+    block_idx_m: UInt,
+    block_idx_n: UInt,
+    a_smem_iter: LayoutTensorIter[
+        a_type,
+        a_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128, **_,
+    ],
+    b_smem_iter: LayoutTensorIter[
+        b_type,
+        b_smem_layout,
+        MutableAnyOrigin,
+        address_space = AddressSpace.SHARED,
+        alignment=128, **_,
+    ],
+    mut write_pipeline_states: PipelineState[pipeline_stages],
+    empty_mbar: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+    full_mbar: UnsafePointer[
+        SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+    ],
+):
+    alias BM = block_tile_shape[0]
+    alias BN = block_tile_shape[1]
+    alias BK = block_tile_shape[2]
+
+    alias num_full_k_iters = ceildiv(num_k_iters, pipeline_stages)
+    alias num_remaining_k_iters = num_k_iters % pipeline_stages
+
+    alias num_threads_per_row = BK // cp_size
+    alias thread_layout = Layout.row_major(
+        WARPGROUP_SIZE // num_threads_per_row, num_threads_per_row
+    )
+
+    @always_inline
+    @parameter
+    fn producer_loop[
+        num_pipeline_stages_to_unroll: Int,
+    ](k_iter: Int):
+        @parameter
+        for j in range(num_pipeline_stages_to_unroll):
+            var write_idx = write_pipeline_states.index()
+
+            empty_mbar[write_idx].wait(write_pipeline_states.phase())
+
+            var a_smem_tile = a_smem_iter.next(write_idx)[].vectorize[
+                1, cp_size
+            ]()
+            var b_smem_tile = b_smem_iter.next(write_idx)[].vectorize[
+                1, cp_size
+            ]()
+
+            var a_gmem_tile = a.tile[BM, BK](
+                block_idx_m, k_iter * pipeline_stages + j
+            ).vectorize[1, cp_size]()
+            var b_gmem_tile = b.tile[BN, BK](
+                block_idx_n, k_iter * pipeline_stages + j
+            ).vectorize[1, cp_size]()
+
+            async_copy_with_bound_check[thread_layout, swizzle_mode](
+                a_gmem_tile, a_smem_tile
+            )
+
+            async_copy_with_bound_check[thread_layout, swizzle_mode](
+                b_gmem_tile, b_smem_tile
+            )
+
+            async_copy_arrive(full_mbar[write_idx].unsafe_ptr())
+            _ = full_mbar[write_idx].arrive()
+            write_pipeline_states.step()
+
+        @parameter
+        for j in range(num_pipeline_stages_to_unroll, pipeline_stages):
+            var write_idx = write_pipeline_states.index()
+            empty_mbar[write_idx].wait(write_pipeline_states.phase())
+            _ = full_mbar[write_idx].arrive()
+            write_pipeline_states.step()
+
+    @parameter
+    if num_remaining_k_iters == 0:
+        for k_iter in range(num_full_k_iters):
+            producer_loop[pipeline_stages](k_iter)
+    else:
+        for k_iter in range(num_full_k_iters - 1):
+            producer_loop[pipeline_stages](k_iter)
+        producer_loop[num_remaining_k_iters](num_full_k_iters - 1)
+
+
+@always_inline
+fn async_copy_with_bound_check[
+    type: DType, //,
+    thread_layout: Layout,
+    swizzle_mode: TensorMapSwizzle,
+](
+    src: LayoutTensor[
+        type, _, MutableAnyOrigin, address_space = AddressSpace.GENERIC, *_, **_
+    ],
+    dst: LayoutTensor[
+        type, _, MutableAnyOrigin, address_space = AddressSpace.SHARED, *_, **_
+    ],
+):
+    constrained[src.layout.rank() == 2, "Global memory tile must be rank 2."]()
+
+    alias src_shape1 = src.layout.shape[1].value()
+    alias swizzle_bytes = swizzle_mode.bytes()
+    constrained[
+        src_shape1 * src.element_size * sizeof[src.dtype]() == swizzle_bytes,
+        String(
+            "Global memory tile shape-1 ",
+            src_shape1 * src.element_size,
+            "must match swizzle bytes.",
+            swizzle_bytes,
+        ),
+    ]()
+
+    var src_frag = src.distribute[thread_layout](thread_idx.x)
+    var dst_frag = dst.distribute[thread_layout](thread_idx.x)
+
+    alias src_stride0 = src.layout.stride[0].value()
+    var src_bound0 = Int32(src.runtime_layout.shape.value[0])
+    var src_bound1 = Int32(src.runtime_layout.shape.value[1]) * dst.element_size
+
+    var dst_frag_offset = dst_frag.distance(dst.ptr)
+    alias dst_stride0 = dst.layout.stride[0].value()
+    var dst_frag_base_coord0 = Int32(dst_frag_offset // dst_stride0)
+    var dst_frag_base_coord1 = Int32(dst_frag_offset % dst_stride0)
+    alias swizzle = make_swizzle[
+        8,
+        Int(swizzle_bytes // sizeof[dst.dtype]()),
+        Int(simdwidthof[dst.dtype]()),
+    ]()
+
+    alias num_vecs = dst_frag.layout.size()
+
+    @parameter
+    for i in range(num_vecs):
+        alias dst_idx = dst_frag.layout(i)
+        alias dst_idx_base = dst_idx % swizzle.size()
+        alias dst_idx_diff = dst_idx - dst_idx_base
+        var dst_swizzled_idx = Int32(
+            swizzle(dst_frag_offset + dst_idx_base) + dst_idx_diff
+        )
+        var dst_ptr = dst.ptr + Int(dst_swizzled_idx)
+
+        # TODO: we should be able to use idx2crd for this.
+        alias dst_shifted_coord0 = dst_idx // dst_stride0
+        alias dst_shifted_coord1 = dst_idx % dst_stride0
+        var dst_coord0 = dst_shifted_coord0 + dst_frag_base_coord0
+        var dst_coord1 = dst_shifted_coord1 + dst_frag_base_coord1
+
+        # if thread_idx.x == 0:
+        #     alias dst_shape0 = dst.layout.shape[0].value()
+        #     alias dst_shape1 = dst.layout.shape[1].value()
+        #     print(dst_shape0, dst_shape1, dst_stride0)
+
+        alias cp_size = dst.element_size * sizeof[dst.dtype]()
+
+        var src_ptr = (
+            src.ptr.address_space_cast[AddressSpace.GLOBAL]()
+            + dst_coord1
+            + dst_coord0 * src_stride0
+        )
+
+        if dst_coord0 < src_bound0 and dst_coord1 < src_bound1:
+            async_copy[
+                cp_size,
+                bypass_L1_16B=False,
+                fill = Scalar[dst.dtype](0),
+            ](src_ptr, dst_ptr, src_size=cp_size)
+        else:
+            # Zero-fill the OOB address
+            async_copy[
+                cp_size, bypass_L1_16B=False, fill = Scalar[dst.dtype](0)
+            ](src_ptr, dst_ptr, src_size=0)

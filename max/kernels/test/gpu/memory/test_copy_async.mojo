@@ -190,7 +190,7 @@ fn _verify_test_async_copy_with_zero_fill(asm: StringSlice) raises -> None:
         "cp.async.ca.shared.global.L2::128B [%r1], [%rd1], 4, %r2;" in asm
     )
     assert_true(
-        "cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r2;" in asm
+        "cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r4;" in asm
     )
 
 
