@@ -264,6 +264,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
             llm_state_dict=llm_weights_dict,
+            vision_state_dict=vision_model_weights_dict,
             dtype=self.dtype,
             n_devices=len(self.devices),
             logits_postprocessor=None,
