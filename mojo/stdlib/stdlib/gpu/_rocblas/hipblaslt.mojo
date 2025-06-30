@@ -150,10 +150,55 @@ struct hipblasOperation_t:
 
 @fieldwise_init
 @register_passable("trivial")
+struct hipblasLtOrder_t:
+    var _value: Int32
+    alias COL = Self(0)
+    alias ROW = Self(1)
+    alias COL16_4R16 = Self(100)
+    alias COL16_4R8 = Self(101)
+    alias COL16_4R4 = Self(102)
+    alias COL16_4R2 = Self(103)
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+@fieldwise_init
+@register_passable("trivial")
 struct hipblasLtMatmulDescAttributes_t:
     var _value: Int32
     alias TRANSA = Self(0)
     alias TRANSB = Self(1)
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+
+@fieldwise_init
+@register_passable("trivial")
+struct hipblasLtMatmulLayoutAttribute_t:
+    var _value: Int32
+    alias BATCH_COUNT = Self(0)
+    alias STRIDED_BATCH_COUNT = Self(1)
+    alias TYPE = Self(2)
+    alias ORDER = Self(3)
+    alias ROWS = Self(4)
+    alias COLS = Self(5)
+    alias LD = Self(6)
 
     @implicit
     fn __init__(out self, value: Int):
@@ -296,6 +341,23 @@ fn hipblasLtMatrixLayoutCreate(
             Int64,
         ) -> Status,
     ]()(mat_layout, type, rows, cols, ld)
+
+
+fn hipblasLtMatrixLayoutSetAttribute(
+    mat_layout: hipblasLtMatrixLayout_t,
+    attr: hipblasLtMatmulLayoutAttribute_t,
+    buf: OpaquePointer,
+    size_in_bytes: Int,
+) raises -> Status:
+    return _get_dylib_function[
+        "hipblasLtMatrixLayoutSetAttribute",
+        fn (
+            hipblasLtMatrixLayout_t,
+            hipblasLtMatmulLayoutAttribute_t,
+            OpaquePointer,
+            Int,
+        ) -> Status,
+    ]()(mat_layout, attr, buf, size_in_bytes)
 
 
 fn hipblasLtMatrixLayoutDestroy(
