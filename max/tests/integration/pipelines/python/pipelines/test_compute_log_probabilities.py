@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, accelerator_count
+from max.driver import CPU, Accelerator, Tensor, accelerator_count
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.interfaces import LogProbabilities
@@ -474,8 +474,14 @@ def test_log_probabilities_new_randomized(
         device=device,
         model=model,
         input_row_offsets=packed.input_row_offsets,
-        logits=packed.logits,
-        next_token_logits=packed.next_token_logits,
+        logits=(
+            Tensor.from_numpy(packed.logits).to(device)
+            if packed.logits is not None
+            else None
+        ),
+        next_token_logits=(
+            Tensor.from_numpy(packed.next_token_logits).to(device)
+        ),
         tokens=packed.tokens,
         sampled_tokens=packed.sampled_tokens,
         batch_top_n=packed.batch_top_n,
@@ -522,8 +528,14 @@ def test_log_probabilities_new_randomized_gpu(
         device=device,
         model=model,
         input_row_offsets=packed.input_row_offsets,
-        logits=packed.logits,
-        next_token_logits=packed.next_token_logits,
+        logits=(
+            Tensor.from_numpy(packed.logits).to(device)
+            if packed.logits is not None
+            else None
+        ),
+        next_token_logits=(
+            Tensor.from_numpy(packed.next_token_logits).to(device)
+        ),
         tokens=packed.tokens,
         sampled_tokens=packed.sampled_tokens,
         batch_top_n=packed.batch_top_n,
