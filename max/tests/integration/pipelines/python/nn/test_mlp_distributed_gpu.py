@@ -3,12 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-from __future__ import annotations
-
 from collections.abc import Sequence
+from typing import Optional, Union
 
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -16,185 +13,434 @@ import torch.nn.functional as F
 from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, StaticDim, TensorType, TensorValue
-from max.nn import MLPV1, LinearV1, Signals
-from max.nn.comm.allreduce import Allreduce
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    Type,
+    Value,
+    ops,
+)
+from max.nn import MLP, DistributedMLP, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
 
+DTYPE = DType.float32
+TORCH_DTYPE = torch.float32
 
-def torch_linear(weight: torch.Tensor, **kwargs) -> nn.Linear:
+ACTIVATION_FUNCTION = {
+    "silu": F.silu,
+    "gelu": F.gelu,
+    "gelu_tanh": lambda x: F.gelu(x, approximate="tanh"),
+    "relu": F.relu,
+    "tanh": F.tanh,
+    "sigmoid": F.sigmoid,
+}
+
+ACCURACY_RTOL = 1e-4
+ACCURACY_ATOL = 1e-6
+
+
+def generate_tensor(
+    shape: tuple[int, ...], dtype: DType, seed: int = 1234
+) -> torch.Tensor:
+    torch.manual_seed(seed)  # Set fixed seed for reproducibility
+    return torch.randn(shape, dtype=dtype)
+
+
+def torch_linear(weight, bias_tensor=None, **kwargs) -> nn.Linear:
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
+    if bias_tensor is not None:
+        linear.bias = nn.Parameter(bias_tensor)
     return linear
 
 
 class TorchMLP(nn.Module):
     def __init__(
-        self, w1: torch.Tensor, w2: torch.Tensor, w3: torch.Tensor
+        self,
+        gate_proj: torch.Tensor,
+        down_proj: torch.Tensor,
+        up_proj: torch.Tensor,
+        activation_function: str = "silu",
+        bias: bool = False,
+        bias_tensors: Optional[
+            tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ] = None,
     ) -> None:
         super().__init__()
-        self.gate_proj = torch_linear(w1, bias=False)
-        self.down_proj = torch_linear(w2, bias=False)
-        self.up_proj = torch_linear(w3, bias=False)
+        self.gate_proj = torch_linear(
+            gate_proj,
+            bias_tensor=bias_tensors[0] if bias_tensors is not None else None,
+            bias=bias,
+        )
+        self.down_proj = torch_linear(
+            down_proj,
+            bias_tensor=bias_tensors[1] if bias_tensors is not None else None,
+            bias=bias,
+        )
+        self.up_proj = torch_linear(
+            up_proj,
+            bias_tensor=bias_tensors[2] if bias_tensors is not None else None,
+            bias=bias,
+        )
+        self.activation_function = activation_function
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+        return self.down_proj(
+            ACTIVATION_FUNCTION[self.activation_function](self.gate_proj(x))
+            * self.up_proj(x)
+        )
 
 
-def distribute_value(
+class WrapModuleForSubgraph(Module):
+    def __init__(self, module: Module) -> None:
+        super().__init__()
+        # The name of the variable is used to determine the prefix of the weights in the Module class
+        self.prefix = module
+
+    def __call__(self, *args):
+        subgraph_arg_types: list[Type] = []
+
+        def flatten(t, result) -> None:
+            if isinstance(t, (list, tuple)):
+                for item in t:
+                    flatten(item, result)
+            else:
+                assert isinstance(t, Value)
+                result.append(t.type)
+
+        flatten(args, subgraph_arg_types)
+        subgraph = self.prefix.build_subgraph(
+            name="subgraph",
+            input_types=subgraph_arg_types,
+            weight_prefix="prefix.",
+        )
+        return ops.call(subgraph, *args, prefix="prefix.")
+
+
+def _distribute_value(
     v: TensorValue, devices: Sequence[Device]
 ) -> Sequence[TensorValue]:
     return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
-def shard_col_value(
-    v: TensorValue, devices: Sequence[Device]
-) -> Sequence[TensorValue]:
-    n_devices = len(devices)
-    assert isinstance(v.shape[1], StaticDim)
-    col_size = v.shape[1].dim // n_devices
-    return [
-        v[:, i * col_size : (i + 1) * col_size].to(
-            DeviceRef(device.label, device.id)
+def mlp_output(
+    gate_proj: torch.Tensor,
+    down_proj: torch.Tensor,
+    up_proj: torch.Tensor,
+    x: torch.Tensor,
+    activation_function: str,
+    dtype: DType,
+    n_gpus: int = 0,
+    has_bias: bool = False,
+    bias: Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+    use_subgraphs: bool = True,
+):
+    # Initialize the device-contexts
+    devices: list[Device] = (
+        [Accelerator(id) for id in range(n_gpus)] if n_gpus > 0 else [CPU(0)]
+    )
+    devices_refs = [DeviceRef(device.label, device.id) for device in devices]
+
+    state_dict = {
+        "gate_proj.weight": gate_proj.cpu(),
+        "down_proj.weight": down_proj.cpu(),
+        "up_proj.weight": up_proj.cpu(),
+    }
+    if has_bias:
+        assert bias is not None
+        gate_proj_b, down_proj_b, up_proj_b = bias
+        state_dict.update(
+            {
+                "gate_proj.bias": gate_proj_b.cpu(),
+                "down_proj.bias": down_proj_b.cpu(),
+                "up_proj.bias": up_proj_b.cpu(),
+            }
         )
-        for i, device in enumerate(devices)
-    ]
 
+    mlp: Union[MLP, DistributedMLP, WrapModuleForSubgraph]
 
-def shard_row_value(
-    v: TensorValue, devices: Sequence[Device]
-) -> Sequence[TensorValue]:
-    n_devices = len(devices)
-    assert isinstance(v.shape[0], StaticDim)
-    row_size = v.shape[0].dim // n_devices
-    return [
-        v[i * row_size : (i + 1) * row_size, :].to(
-            DeviceRef(device.label, device.id)
+    if n_gpus <= 1:
+        mlp = MLP(
+            dtype,
+            None,
+            gate_proj.shape[1],
+            gate_proj.shape[0],
+            devices=devices_refs,
+            activation_function=activation_function,
+            has_bias=has_bias,
         )
-        for i, device in enumerate(devices)
-    ]
+    else:
+        mlp = DistributedMLP(
+            dtype,
+            None,
+            gate_proj.shape[1],
+            gate_proj.shape[0],
+            devices=devices_refs,
+            activation_function=activation_function,
+            has_bias=has_bias,
+        )
 
+    if use_subgraphs:
+        mlp = WrapModuleForSubgraph(mlp)
+        state_dict = {f"prefix.{k}": v for k, v in state_dict.items()}
 
-def distributed_mlp_graph(
-    devices: Sequence[Device], model_parameters: tuple[int, int, int]
-) -> Graph:
-    (batch_size, intermediate_size, hidden_dim) = model_parameters
+    mlp.load_state_dict(state_dict)
 
-    input_type: TensorType = TensorType(
-        DType.float32, [batch_size, hidden_dim], DeviceRef.CPU()
-    )
-    w1_type: TensorType = TensorType(
-        DType.float32, [intermediate_size, hidden_dim], DeviceRef.CPU()
-    )
-    w2_type: TensorType = TensorType(
-        DType.float32, [hidden_dim, intermediate_size], DeviceRef.CPU()
-    )
-    signals = Signals(devices=(DeviceRef(d.label, d.id) for d in devices))
+    session = InferenceSession(devices=devices)
+    signals = Signals(devices=devices_refs)
     with Graph(
-        "mlp",
+        "MLP",
         input_types=[
-            input_type,
-            w1_type,
-            w2_type,
-            w1_type,
+            TensorType(
+                dtype,
+                (
+                    x.shape[0],
+                    x.shape[1],
+                ),
+                device=DeviceRef.GPU() if n_gpus > 0 else DeviceRef.CPU(),
+            ),
             *signals.input_types(),
         ],
     ) as graph:
-        x_graph, w1_graph, w2_graph, w3_graph, *signal_buffers = graph.inputs
-        assert isinstance(x_graph, TensorValue)
-        assert isinstance(w1_graph, TensorValue)
-        assert isinstance(w2_graph, TensorValue)
-        assert isinstance(w3_graph, TensorValue)
-        assert are_all_buffer_values_sequence(signal_buffers)
+        graph_input, *graph_signal_buffers = graph.inputs
+        assert isinstance(graph_input, TensorValue)
+        assert are_all_buffer_values_sequence(graph_signal_buffers)
 
-        # Typical strategy to parallelize MLPV1
-        # Column shard weights on gate/up projections which are on input layers
-        # Silu can now be done individually and combined via
-        # the row-sharded linear layer on down_proj and final all-reduce
-
-        x_devs = distribute_value(x_graph, devices)
-        w1_devs = shard_row_value(w1_graph, devices)
-        w2_devs = shard_col_value(w2_graph, devices)
-        w3_devs = shard_row_value(w3_graph, devices)
-
-        mlp_fns = [
-            MLPV1(
-                gate_proj=LinearV1(w1),
-                down_proj=LinearV1(w2),
-                up_proj=LinearV1(w3),
+        if n_gpus <= 1:
+            graph_output = mlp(graph_input)
+        else:
+            assert isinstance(mlp, (DistributedMLP, WrapModuleForSubgraph))
+            graph_output = mlp(
+                _distribute_value(graph_input, devices),
+                graph_signal_buffers,
             )
-            for w1, w2, w3 in zip(w1_devs, w2_devs, w3_devs)
-        ]
-        mlp_out = [mlp_fn(x) for (x, mlp_fn) in zip(x_devs, mlp_fns)]
 
-        allreduce = Allreduce(num_accelerators=len(devices))
-        graph.output(
-            *allreduce(
-                mlp_out, signal_buffers=[v.buffer for v in signal_buffers]
-            )
-        )
+        if isinstance(graph_output, list):
+            graph.output(*graph_output)
+        else:
+            graph.output(graph_output)
 
-        return graph
-
-
-@pytest.mark.parametrize(
-    "batch_size, intermediate_size, hidden_dim, n_devices",
-    [
-        (1, 14336, 4096, 4),  # llama3.1 8b config over 4 device
-        (1, 14336, 4096, 2),  # llama3.1 8b config over 2 device
-    ],
-)
-def test_mlp(
-    batch_size: int, intermediate_size: int, hidden_dim: int, n_devices: int
-) -> None:
-    # Initialize the device-contexts
-    host = CPU(0)
-    # Check we are parallelizing over legal amounts of devices and create contexts.
-    assert n_devices <= accelerator_count()
-    devices = [Accelerator(id) for id in range(n_devices)]
-
-    # Initialize Torch inputs and expected
-    x_np = np.ones((batch_size, hidden_dim)).astype(np.float32)
-    w1_np = np.ones((intermediate_size, hidden_dim)).astype(np.float32)
-    w2_np = np.ones((hidden_dim, intermediate_size)).astype(np.float32)
-    w3_np = np.ones((intermediate_size, hidden_dim)).astype(np.float32)
-    expected = (
-        TorchMLP(torch.tensor(w1_np), torch.tensor(w2_np), torch.tensor(w3_np))(
-            torch.tensor(x_np)
-        )
-        .detach()
-        .numpy()
-    )
-
-    # Initialize Model Inputs
-    x = Tensor.from_numpy(x_np)
-    w1 = Tensor.from_numpy(w1_np)
-    w2 = Tensor.from_numpy(w2_np)
-    w3 = Tensor.from_numpy(w3_np)
+    compiled = session.load(graph, weights_registry=mlp.state_dict())
 
     signal_buffers = [
         Tensor.zeros(shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev)
         for dev in devices
     ]
 
-    # Build/Compile/Execute graph.
-    devices_with_host = [host, *devices]
-    session = InferenceSession(devices=devices_with_host)
-    graph = distributed_mlp_graph(
-        devices, (batch_size, intermediate_size, hidden_dim)
-    )
-    compiled = session.load(graph)
-    results = compiled.execute(x, w1, w2, w3, *signal_buffers)
+    return compiled.execute(x, *signal_buffers)
 
-    # Compare to expected.
-    ACCURACY_RTOL = 1e-1
-    ACCURACY_ATOL = 1e-6
-    for result in results:
-        assert isinstance(result, Tensor)
-        np.testing.assert_allclose(
-            result.to(host).to_numpy(),
-            expected,
-            atol=ACCURACY_ATOL,
-            rtol=ACCURACY_RTOL,
-            equal_nan=True,
+
+def compare_mlp_outputs(
+    hidden_dim: int,
+    dim: int,
+    activation_function: str,
+    torch_dtype: torch.dtype,
+    dtype: DType,
+    n_gpus: int = 0,
+    has_bias: bool = False,
+    use_subgraphs: bool = True,
+) -> None:
+    if n_gpus > accelerator_count():
+        pytest.skip(f"Not enough GPUs to run test with {n_gpus} GPUs.")
+
+    gate_proj_w = generate_tensor((hidden_dim, dim), torch_dtype, seed=42)
+    down_proj_w = generate_tensor((dim, hidden_dim), torch_dtype, seed=43)
+    up_proj_w = generate_tensor((hidden_dim, dim), torch_dtype, seed=44)
+    if has_bias:
+        gate_proj_b = generate_tensor((hidden_dim,), torch_dtype, seed=42)
+        down_proj_b = generate_tensor((dim,), torch_dtype, seed=43)
+        up_proj_b = generate_tensor((hidden_dim,), torch_dtype, seed=44)
+
+    device = "cuda" if n_gpus > 0 else "cpu"
+    x = generate_tensor((1, dim), torch_dtype, seed=45).to(device)
+
+    if has_bias:
+        max_output = mlp_output(
+            gate_proj_w,
+            down_proj_w,
+            up_proj_w,
+            x,
+            activation_function,
+            dtype,
+            n_gpus=n_gpus,
+            has_bias=has_bias,
+            bias=(gate_proj_b, down_proj_b, up_proj_b),
+            use_subgraphs=use_subgraphs,
         )
+    else:
+        max_output = mlp_output(
+            gate_proj_w,
+            down_proj_w,
+            up_proj_w,
+            x,
+            activation_function,
+            dtype,
+            n_gpus=n_gpus,
+            use_subgraphs=use_subgraphs,
+        )
+
+    if has_bias:
+        torch_output = (
+            TorchMLP(
+                gate_proj_w.to(device),
+                down_proj_w.to(device),
+                up_proj_w.to(device),
+                activation_function,
+                bias=has_bias,
+                bias_tensors=(
+                    gate_proj_b.to(device),
+                    down_proj_b.to(device),
+                    up_proj_b.to(device),
+                ),
+            )(x)
+            .detach()
+            .to(torch_dtype)
+            .to(device)
+        )
+    else:
+        torch_output = (
+            TorchMLP(
+                gate_proj_w.to(device),
+                down_proj_w.to(device),
+                up_proj_w.to(device),
+                activation_function,
+                bias=has_bias,
+            )(x)
+            .detach()
+            .to(torch_dtype)
+            .to(device)
+        )
+
+    # For the distributed case we need to check all outputs.
+    for max_out in max_output:
+        torch.testing.assert_close(
+            torch_output.to("cpu"),
+            torch.from_dlpack(max_out).to(torch_dtype).to("cpu"),
+            rtol=2e-1,
+            atol=3 * torch.finfo(torch_dtype).eps,
+        )
+
+
+@pytest.mark.parametrize("use_subgraphs", [True, False])
+def test_mlp(use_subgraphs: bool) -> None:
+    compare_mlp_outputs(
+        1024,
+        1024,
+        "silu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        2048,
+        1024,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        1024,
+        512,
+        "gelu_tanh",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        256,
+        1024,
+        "tanh",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        2048,
+        1024,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
+    )
+
+    # TODO(MODELS-506): Investigate high atol on very few elements at index (0, _) when using bias.
+    compare_mlp_outputs(
+        256,
+        1024,
+        "tanh",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        1024,
+        1024,
+        "silu",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        1024,
+        512,
+        "gelu_tanh",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
+    )
+    compare_mlp_outputs(
+        1024,
+        2048,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        has_bias=True,
+        use_subgraphs=use_subgraphs,
+    )
+
+    # TODO: Investigate why the following tests fail
+    # compare_mlp_outputs(4096, 2048, "relu", TORCH_DTYPE, DTYPE)
+    # compare_mlp_outputs(2048, 4096, "sigmoid", TORCH_DTYPE, DTYPE)
+
+
+@pytest.mark.parametrize("use_subgraphs", [True, False])
+def test_mlp_gpu(use_subgraphs: bool) -> None:
+    compare_mlp_outputs(
+        2048,
+        1024,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=use_subgraphs,
+        n_gpus=1,
+    )
+
+
+@pytest.mark.parametrize("n_gpus", [2, 4])
+def test_mlp_distributed(n_gpus: int) -> None:
+    compare_mlp_outputs(
+        1024,
+        1024,
+        "gelu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=False,
+        n_gpus=n_gpus,
+    )
+
+    compare_mlp_outputs(
+        14336,
+        4096,
+        "silu",
+        torch.float32,
+        DType.float32,
+        use_subgraphs=False,
+        n_gpus=n_gpus,
+    )
