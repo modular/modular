@@ -137,6 +137,13 @@ modular_cc_test(
     name = "NixlTest",
     size = "small",
     srcs = ["NixlTest.cpp"],
+    # Even though this is just a CPU transfer, currently the only UCX backend
+    # is the CUDA one so NVIDIA GPU is always required.
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ],
+    tags = ["gpu"],
     deps = [
         "//AsyncRT:NIXL",
     ],
@@ -155,6 +162,7 @@ modular_cc_test(
         "MODULAR_NIXL_PLUGIN_DIR": "AsyncRT",
     },
     gpu_constraints = [
+        "//:has_gpu",
         "//:has_multi_gpu",
         "//:nvidia_gpu",
     ],
