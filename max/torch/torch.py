@@ -7,13 +7,12 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Optional, Union, cast
+from typing import Union, cast
 
 from max import mlir
 from max._core import Attribute
-from max._core import Type as _Type
 from max._core.dialects import builtin, kgen
 from max.driver import Accelerator, Tensor, accelerator_count
 from max.dtype import DType
@@ -143,7 +142,7 @@ ParameterKey = tuple[str, Union[bool, int, str, DType]]
 class CustomOp:
     library: CustomOpLibrary
     name: str
-    parameters: Optional[ParametersDict]
+    parameters: ParametersDict | None
 
     _custom_op_def: CustomOpDef
     _parameter_specializations: dict[tuple[ParameterKey, ...], CustomOp]
@@ -152,7 +151,7 @@ class CustomOp:
         self,
         library: CustomOpLibrary,
         name: str,
-        parameters: Optional[ParametersDict] = None,
+        parameters: ParametersDict | None = None,
     ) -> None:
         self.library = library
         self.name = name
@@ -403,7 +402,7 @@ def op_signature(custom_op: CustomOp) -> inspect.Signature:
 
 TorchTensors = Union[torch.Tensor, Sequence[torch.Tensor]]
 
-CompiledModelKey = tuple[_Type, ...]
+CompiledModelKey = tuple[Hashable, ...]
 ModelSignature = tuple[tuple[TensorType, ...], tuple[TensorType, ...]]
 
 
@@ -418,8 +417,12 @@ def model_signature(
     return (input_types, result_types)
 
 
-def model_key(args: Iterable[torch.Tensor]) -> CompiledModelKey:
-    return tuple(torch_tensor_to_type(arg).to_mlir() for arg in args)
+def model_key(
+    args: Iterable[torch.Tensor], parameters: ParametersDict
+) -> CompiledModelKey:
+    args_key = tuple(torch_tensor_to_type(arg).to_mlir() for arg in args)
+    params_key = tuple(sorted(parameters.items()))
+    return args_key + params_key
 
 
 def compile_custom_op(op: CustomOp) -> CustomOpDef:
@@ -441,7 +444,7 @@ def compile_custom_op(op: CustomOp) -> CustomOpDef:
     def compile_model(*args: torch.Tensor) -> Model:
         # Computing the key requires an active mlir context
         with context:
-            key = model_key(args)
+            key = model_key(args, parameters)
 
         if not (model := model_cache.get(key)):
             sig = model_signature(
@@ -462,7 +465,10 @@ def compile_custom_op(op: CustomOp) -> CustomOpDef:
         model(*converted)
         return None
 
-    name = f"max::torch.{op.name}"
+    suffix = "".join(
+        f"{key}_{value}" for key, value in sorted(parameters.items())
+    )
+    name = f"max::torch.{op.name}_{suffix}"
     callable.__signature__ = signature  # type: ignore
     custom_op = torch.library.custom_op(
         name, callable, mutates_args=mutated_args
