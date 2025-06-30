@@ -38,7 +38,6 @@ def create_test_vision_config(
         qk_normalization=True,
         qkv_bias=False,
         num_hidden_layers=24,
-        use_mean_pooling=True,
         o_proj_bias=True,
     )
 
