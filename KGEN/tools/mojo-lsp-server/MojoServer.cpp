@@ -44,6 +44,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <optional>
+#include <random>
 
 /// Shorthand to create a new MOTR trace from the ID stored in a LSPResponder.
 #if MOTR_ENABLED
@@ -525,13 +526,19 @@ private:
 
   /// Generates a new progress token.
   std::string generateToken() {
-    return "server-" + std::to_string(tokenCounter++);
+    std::lock_guard<std::mutex> rngLock(rngMutex);
+    // generate a 32-character ASCII string
+    std::uniform_int_distribution<unsigned char> distribution('a', 'z');
+    std::string id(32, 'a');
+
+    for (size_t i = 0; i < id.size(); ++i)
+      id[i] = distribution(rng);
+
+    return id;
   }
 
-  /// Monotonically increasing counter used to generate server-side progress
-  /// tokens. An overflow of this counter violates the LSP, but should happen
-  /// infrequently, if ever.
-  uint64_t tokenCounter = 0;
+  std::default_random_engine rng;
+  std::mutex rngMutex;
 
   llvm::StringMap<llvm::unique_function<void(LogicalResult)>> responders;
   std::mutex respondersMutex;
