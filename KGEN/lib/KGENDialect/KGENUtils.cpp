@@ -2263,6 +2263,7 @@ ParseResult KGEN::parseMemSymbolParts(AsmParser &p,
 
 SymbolConstantAttr KGEN::makeSymbol(Type type, SymbolRefAttr symbol,
                                     ParameterExprArrayAttr paramValues,
+                                    ArrayRef<ArgConvention> argConventions,
                                     bool isConstructor) {
   SmallVector<Type> inputs;
   if (isConstructor) {
@@ -2273,7 +2274,10 @@ SymbolConstantAttr KGEN::makeSymbol(Type type, SymbolRefAttr symbol,
   return SymbolConstantAttr::get(
       symbol,
       FuncTypeGeneratorType::get(
-          {}, FunctionType::get(type.getContext(), inputs, {}), {}, {}, {}, {}),
+          {},
+          FunctionType::get(type.getContext(), inputs,
+                            {NoneType::get(type.getContext())}),
+          argConventions, {}, {}, {}),
       paramValues);
 }
 

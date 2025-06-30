@@ -487,6 +487,7 @@ ParseResult parseMemSymbolParts(AsmParser &p, MemSymbolTripleParts &parts);
 
 SymbolConstantAttr makeSymbol(Type type, SymbolRefAttr symbol,
                               ParameterExprArrayAttr paramValues,
+                              ArrayRef<ArgConvention> argConventions,
                               bool isConstructor = true);
 void printMemSymbolTripleAttrWithoutType(
     AsmPrinter &p, SymbolConstantAttr copy, SymbolConstantAttr move,

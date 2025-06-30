@@ -2,7 +2,7 @@
 
 // COM: Use of 'C' appears only in a location inside the closure.
 
-// CHECK: kgen.generator @foo_fn<C>(%arg0: !kgen.pointer<none> loc("{{.*}}":{{.*}}:{{.*}})) {
+// CHECK: kgen.generator @foo_fn<C>(%arg0: !kgen.pointer<none> loc("{{.*}}":{{.*}}:{{.*}}) read_mem) {
 // CHECK-NEXT:   kgen.return loc(#loc
 // CHECK-NEXT: } loc(#loc
 kgen.generator @foo<C>() {
