@@ -22,10 +22,7 @@ from max.graph import TensorValue
 from max.graph.weights import WeightData
 from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import (
-    KVCacheConfig,
-    PipelineConfig,
-)
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 
 from ..llama3.model_config import Llama3Config
@@ -208,4 +205,5 @@ class Qwen3Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             float8_config=base_config.float8_config,
             use_subgraphs=base_config.use_subgraphs,
+            dist_gemm_config=base_config.dist_gemm_config,
         )

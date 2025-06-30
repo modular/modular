@@ -13,7 +13,7 @@ from max.mlir.dialects import mo
 
 from ..graph import Graph  # noqa
 from ..type import _ChainType
-from ..value import BufferValue, TensorValue
+from ..value import BufferValue, TensorType, TensorValue
 
 
 def sum(
@@ -87,4 +87,37 @@ def sum(
 
     Graph.current._update_chain(out_chain)
 
+    return [res.tensor for res in results]
+
+
+def matmul_allreduce(
+    inputs: Iterable[TensorValue],
+    weights: Iterable[TensorValue],
+    signal_buffers: Iterable[BufferValue],
+) -> list[TensorValue]:
+    def infer_out_type(a: TensorValue, b: TensorValue) -> TensorType:
+        if a.rank != 2 or b.rank != 2:
+            raise ValueError("matmul_allreduce inputs must be 2D")
+        m = a.shape[-2]
+        n = b.shape[-2]
+        out_shape = a.shape[:-2] + [m, n]
+        return TensorType(
+            dtype=a.dtype,
+            shape=out_shape,
+            device=a.device,
+        )
+
+    in_chain = Graph.current._current_chain
+    *results, out_chain = Graph.current._add_op(
+        mo.distributed_matmul_allreduce,
+        # Types for 2 outputs: chain, list of tensors
+        [infer_out_type(a, b) for a, b in zip(inputs, weights)],
+        _ChainType().to_mlir(),
+        list(inputs),
+        list(weights),
+        signal_buffers,
+        in_chain,
+    )
+
+    Graph.current._update_chain(out_chain)
     return [res.tensor for res in results]
