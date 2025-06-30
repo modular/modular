@@ -2454,6 +2454,63 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
       impl->progressMgr);
 }
 
+/// Convert a UTF-16 based offset to a UTF-8 offset, using a UTF-8 encoded
+/// string as a reference. Assumes that the string is already correctly UTF-8
+/// encoded; performs no validation.
+static int convertUtf16Offset(StringRef line, int utf16Offset) {
+  // Count upwards through the string until we find where the UTF-16 offset
+  // matches up.
+  size_t utf8Units = 0;
+  int utf16Units = 0;
+  while (utf8Units < line.size()) {
+    if (utf16Units >= utf16Offset) {
+      break;
+    }
+
+    uint8_t c = line[utf8Units];
+
+    // How many bytes is this code point?
+    // 1 byte -> 1 UTF-16 code unit
+    if ((c & 0b10000000) == 0) {
+      utf8Units += 1;
+      utf16Units += 1;
+    }
+    // 2 bytes -> 1 UTF-16 code unit
+    else if ((c & 0b11100000) == 0b11000000) {
+      utf8Units += 2;
+      utf16Units += 1;
+    }
+    // 3 bytes -> 1 UTF-16 code unit, still
+    else if ((c & 0b11110000) == 0b11100000) {
+      utf8Units += 3;
+      utf16Units += 1;
+    }
+    // 4 bytes -> 2 UTF-16 code units: the code point will be encoded as a
+    // high/low surrogate pair.
+    else if ((c & 0b11111000) == 0b11110000) {
+      utf8Units += 4;
+      utf16Units += 2;
+    } else {
+      assert(false && "invalid UTF-8???");
+      utf8Units += 1;
+      utf16Units += 1;
+    }
+  }
+
+  return utf8Units;
+}
+
+/// Gets a line from the main buffer of a SourceMgr given its zero-based line
+/// number.
+static StringRef getLine(llvm::SourceMgr &mgr, int lineNum) {
+  // SourceMgr uses 1-based indices for line/column; add 1 here.
+  StringRef line{mgr.getBufferInfo(mgr.getMainFileID())
+                     .getPointerForLineNumber(lineNum + 1)};
+  // line includes everything after the start of the line, so trim it.
+  line = line.take_until([](char c) { return c == '\n'; });
+  return line;
+}
+
 void MojoServer::updateDocument(
     const lsp::URIForFile &uri,
     ArrayRef<lsp::TextDocumentContentChangeEvent> changes, int64_t version) {
@@ -2469,9 +2526,35 @@ void MojoServer::updateDocument(
   // Try to update the document. If we fail, erase the file from the server. A
   // failed updated generally means we've fallen out of sync somewhere.
   std::string contents = textDoc->getContents().str();
-  if (failed(lsp::TextDocumentContentChangeEvent::applyTo(changes, contents))) {
-    lsp::Logger::error("Failed to update contents of {0}", uri.file());
-    return removeDocument(uri);
+  for (const auto &change : changes) {
+    if (!change.range) {
+      contents = change.text;
+    } else {
+      llvm::SourceMgr tmpMgr;
+      tmpMgr.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(contents),
+                                SMLoc());
+
+      // Convert the UTF-16-based ranges from the LSP change set to ones where
+      // the character offset is in UTF-8 code units (bytes). This stops us from
+      // using the wrong offsets to accidentally slice multi-byte code points
+      // apart and causing weird desynchronization issues.
+      lsp::Range convertedRange(
+          {
+              change.range->start.line,
+              convertUtf16Offset(getLine(tmpMgr, change.range->start.line),
+                                 change.range->start.character),
+          },
+          {
+              change.range->end.line,
+              convertUtf16Offset(getLine(tmpMgr, change.range->end.line),
+                                 change.range->end.character),
+          });
+      SMRange rangeLoc = convertedRange.getAsSMRange(tmpMgr);
+      size_t n =
+          (size_t)(rangeLoc.End.getPointer() - rangeLoc.Start.getPointer());
+      size_t start = rangeLoc.Start.getPointer() - contents.data();
+      contents.replace(start, n, change.text);
+    }
   }
 
   // Overwrite the original document with the new contents.
