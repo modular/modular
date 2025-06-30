@@ -39,7 +39,6 @@ def vision_config() -> VisionConfig:
         qkv_bias=True,
         o_proj_bias=True,
         num_hidden_layers=24,
-        use_mean_pooling=False,
     )
 
 
@@ -731,10 +730,6 @@ def vision_model_weights(
     )
     weights["mlp1.fc2.bias"] = (
         torch.randn(llm_hidden_size, dtype=torch.bfloat16) * MLP1_FC_STD
-    )
-
-    weights["layernorm.weight"] = (
-        torch.randn(hidden_size, dtype=torch.bfloat16) * NORM_STD
     )
 
     return weights

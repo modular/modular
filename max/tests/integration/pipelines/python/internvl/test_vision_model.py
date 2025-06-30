@@ -239,17 +239,6 @@ def generate_torch_outputs(
             .to("cuda")
         )
 
-    # Load final layernorm weight if not using mean pooling
-    if hasattr(vision_tower, "layernorm") and hasattr(
-        vision_tower.layernorm, "weight"
-    ):
-        if "layernorm.weight" in vision_model_weights:
-            vision_tower.layernorm.weight.data = (
-                vision_model_weights["layernorm.weight"]
-                .to(torch.bfloat16)
-                .to("cuda")
-            )
-
     # Load multimodal projector weights
     projector = model.multi_modal_projector
 
@@ -342,13 +331,6 @@ def generate_max_outputs(
             else:
                 # Keep all other weights as-is
                 mapped_state_dict[weight_name] = value.cpu()
-
-        # Add final layer norm weight (initialized to ones, standard layer norm initialization)
-        # This matches the PyTorch reference implementation where the final layernorm is applied
-        hidden_size = internvl_config.vision_config.hidden_size
-        mapped_state_dict["layernorm.weight"] = torch.ones(
-            hidden_size, dtype=torch.bfloat16
-        ).cpu()
 
         return mapped_state_dict
 
@@ -448,6 +430,6 @@ def test_vision_model(
     torch.testing.assert_close(
         torch_output.to(torch.bfloat16),
         max_output.to(torch.bfloat16),
-        rtol=256 * torch.finfo(torch.bfloat16).eps,
-        atol=256 * torch.finfo(torch.bfloat16).eps,
+        rtol=4 * torch.finfo(torch.bfloat16).eps,
+        atol=16 * torch.finfo(torch.bfloat16).eps,
     )
