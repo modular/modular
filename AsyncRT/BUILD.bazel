@@ -219,6 +219,19 @@ modular_shared_library(
             "include/AsyncRT/NIXL/utils/ucx/**",
         ],
     ),
+    linkopts = select({
+        # This allows us to ignore missing libcuda.so.1 and libnvidia-ml.so.1
+        # symbols at link time. But now it requires that they are available at
+        # runtime when this plugin is loaded. This shared lib does not automatically
+        # load them if they are missing. They should be loaded in advance to loading
+        # this plugin.
+        "@platforms//os:linux": [
+            "-Wl,-z,undefs",
+        ],
+        "@platforms//os:macos": [
+            "-Wl,-undefined,dynamic_lookup",
+        ],
+    }),
     tags = ["maybe-unused"],
     target_compatible_with = [
         "@platforms//cpu:x86_64",

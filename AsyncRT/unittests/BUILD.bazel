@@ -160,6 +160,8 @@ modular_cc_test(
     ],
     tags = ["gpu"],
     deps = [
+        ":TestUtils",
+        "//AsyncRT:DeviceContextImpl",
         "//AsyncRT:NIXL",
     ],
 )
