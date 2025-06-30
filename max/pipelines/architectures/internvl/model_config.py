@@ -70,9 +70,6 @@ class VisionConfig:
     num_hidden_layers: int
     """Number of hidden layers in the vision encoder."""
 
-    use_mean_pooling: bool
-    """Whether to use mean pooling instead of final layernorm."""
-
     @staticmethod
     def generate(vision_config: AutoConfig, dtype: DType) -> VisionConfig:
         """Generate VisionConfig from HuggingFace vision config.
@@ -101,9 +98,6 @@ class VisionConfig:
             qkv_bias=getattr(vision_config, "qkv_bias", False),
             o_proj_bias=getattr(vision_config, "o_proj_bias", True),
             num_hidden_layers=getattr(vision_config, "num_hidden_layers", 32),
-            use_mean_pooling=getattr(
-                vision_config, "use_mean_pooling", True
-            ),  # Default to True for InternVL
         )
 
 
