@@ -30,4 +30,8 @@ from ._utils import (
     random,
     update_bench_config_args,
     zero,
+    Timer,
+    initialize,
+    InitializationType,
+    init_vector_launch,
 )
