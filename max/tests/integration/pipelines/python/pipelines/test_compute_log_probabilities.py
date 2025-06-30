@@ -11,9 +11,14 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
+from max.driver import CPU, Accelerator, accelerator_count
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef
 from max.interfaces import LogProbabilities
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
+    compute_log_probabilities_ragged_new,
+    log_probabilities_ragged_graph,
     log_softmax,
 )
 
@@ -424,6 +429,98 @@ def test_log_probabilities_randomized(seed: int) -> None:
     batch = random_batch(rng)
     packed = PackedInput.from_items(batch)
     outputs = compute_log_probabilities_ragged(
+        input_row_offsets=packed.input_row_offsets,
+        logits=packed.logits,
+        next_token_logits=packed.next_token_logits,
+        tokens=packed.tokens,
+        sampled_tokens=packed.sampled_tokens,
+        batch_top_n=packed.batch_top_n,
+        batch_echo=packed.batch_echo,
+    )
+    assert len(outputs) == len(batch)
+    for item, output in zip(batch, outputs):
+        verify_output(item, output)
+
+
+@pytest.fixture(scope="module")
+def cpu_device() -> CPU:
+    return CPU()
+
+
+@pytest.fixture(scope="module")
+def cpu_session(cpu_device: CPU) -> InferenceSession:
+    return InferenceSession(devices=[cpu_device])
+
+
+@pytest.fixture(scope="module")
+def cpu_model(cpu_device: CPU, cpu_session: InferenceSession) -> Model:
+    graph = log_probabilities_ragged_graph(
+        DeviceRef.from_device(cpu_device), levels=3
+    )
+    return cpu_session.load(graph)
+
+
+@pytest.mark.parametrize("seed", range(50))
+def test_log_probabilities_new_randomized(
+    seed: int, cpu_device: CPU, cpu_session: InferenceSession, cpu_model: Model
+) -> None:
+    device = cpu_device
+    session = cpu_session
+    model = cpu_model
+    rng = np.random.default_rng(seed)
+    batch = random_batch(rng)
+    packed = PackedInput.from_items(batch)
+    outputs = compute_log_probabilities_ragged_new(
+        device=device,
+        model=model,
+        input_row_offsets=packed.input_row_offsets,
+        logits=packed.logits,
+        next_token_logits=packed.next_token_logits,
+        tokens=packed.tokens,
+        sampled_tokens=packed.sampled_tokens,
+        batch_top_n=packed.batch_top_n,
+        batch_echo=packed.batch_echo,
+    )
+    assert len(outputs) == len(batch)
+    for item, output in zip(batch, outputs):
+        verify_output(item, output)
+
+
+@pytest.fixture(scope="module")
+def gpu_device() -> Accelerator:
+    return Accelerator()
+
+
+@pytest.fixture(scope="module")
+def gpu_session(gpu_device: Accelerator) -> InferenceSession:
+    return InferenceSession(devices=[gpu_device])
+
+
+@pytest.fixture(scope="module")
+def gpu_model(gpu_device: Accelerator, gpu_session: InferenceSession) -> Model:
+    graph = log_probabilities_ragged_graph(
+        DeviceRef.from_device(gpu_device), levels=3
+    )
+    return gpu_session.load(graph)
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="no GPU")
+@pytest.mark.parametrize("seed", range(50))
+def test_log_probabilities_new_randomized_gpu(
+    seed: int,
+    gpu_device: Accelerator,
+    gpu_session: InferenceSession,
+    gpu_model: Model,
+) -> None:
+    device = gpu_device
+    session = gpu_session
+    model = gpu_model
+    rng = np.random.default_rng(seed)
+    batch = random_batch(rng)
+    packed = PackedInput.from_items(batch)
+    outputs = compute_log_probabilities_ragged_new(
+        device=device,
+        model=model,
         input_row_offsets=packed.input_row_offsets,
         logits=packed.logits,
         next_token_logits=packed.next_token_logits,

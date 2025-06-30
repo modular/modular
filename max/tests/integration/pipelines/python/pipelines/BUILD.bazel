@@ -29,6 +29,31 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_compute_log_probabilities_gpu",
+    size = "medium",
+    srcs = ["test_compute_log_probabilities.py"],
+    args = [
+        "-k",
+        "gpu",
+    ],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        # TODO: Sanitizer libs aren't available when python loads nanobind shared libs
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/interfaces",
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/lib/API/python/max/pipelines/core",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "tests_gpu",
     size = "large",
     srcs = glob(["**/*_gpu.py"]),
