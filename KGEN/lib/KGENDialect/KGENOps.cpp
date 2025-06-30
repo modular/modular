@@ -1691,15 +1691,18 @@ assembleMemSymbolTripleAttr(MemSymbolTripleParts symbolTriple,
   SymbolConstantAttr copy;
   if (symbolTriple.copy.callee)
     copy = makeSymbol(captureType, symbolTriple.copy.callee,
-                      symbolTriple.copy.paramValues);
+                      symbolTriple.copy.paramValues,
+                      {ArgConvention::ReadMem, ArgConvention::ByRefResult});
   SymbolConstantAttr move;
   if (symbolTriple.move.callee)
     move = makeSymbol(captureType, symbolTriple.move.callee,
-                      symbolTriple.move.paramValues);
+                      symbolTriple.move.paramValues,
+                      {ArgConvention::OwnedMem, ArgConvention::ByRefResult});
   SymbolConstantAttr del;
   if (symbolTriple.del.callee)
     del = makeSymbol(captureType, symbolTriple.del.callee,
-                     symbolTriple.del.paramValues, /*isConstructor=*/false);
+                     symbolTriple.del.paramValues, {ArgConvention::OwnedMem},
+                     /*isConstructor=*/false);
   return MemSymbolTripleAttr::get(context, copy, move, del);
 }
 
