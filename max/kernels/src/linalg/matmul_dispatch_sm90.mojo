@@ -1142,6 +1142,11 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     var m = c.dim[0]()
 
+    # We have fast gemv for BF16 and FP32, skip H100 matmul here
+    # and continue dispatching outside to reach the fast gemv.
+    if m == 1:
+        return DISPATCH_MISS
+
     # GTC matmul configs
     @parameter
     if a_is_bfloat16_or_float32 and static_N == 2560 and static_K == 8192:
