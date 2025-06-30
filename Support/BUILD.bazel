@@ -93,6 +93,7 @@ modular_cc_library(
     hdrs = ["include/Support/HashUtils.h"],
     deps = [
         ":Base",
+        ":Compiler",
         "@llvm-project//mlir:BytecodeWriter",
         "@xxhash",
     ],

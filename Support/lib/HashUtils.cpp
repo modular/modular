@@ -9,22 +9,22 @@
 #include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/Block.h"
-#include "mlir/IR/BlockSupport.h"
 #include "mlir/IR/BuiltinDialect.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include "Support/Compiler/Threading.h"
 
 #include "xxh3.h"
 #include "xxhash.h"
 
 using namespace mlir;
 
-namespace M {
-
+namespace {
 /// A raw_ostream that hash the content using the xxhash algorithm.
 class raw_xxhash_stream : public raw_ostream {
   XXH3_state_t State;
@@ -49,8 +49,9 @@ public:
 
   uint64_t current_pos() const override { return 0; }
 };
+} // namespace
 
-FailureOr<std::string> getBytecodeHash(mlir::Operation *op) {
+FailureOr<std::string> M::getBytecodeHash(mlir::Operation *op) {
   auto unknownLoc = UnknownLoc::get(op->getContext());
 
   auto *builtin = op->getContext()->getLoadedDialect<mlir::BuiltinDialect>();
@@ -76,4 +77,42 @@ FailureOr<std::string> getBytecodeHash(mlir::Operation *op) {
   return std::string(output);
 }
 
-} // namespace M
+FailureOr<std::string> M::getModuleBytecodeHash(mlir::ModuleOp module) {
+  auto context = module.getContext();
+  auto ops =
+      llvm::map_to_vector(module.getOps(), [](Operation &op) { return &op; });
+
+  using CacheT = llvm::SmallVector<std::string>;
+
+  auto workFunc = [&](CacheT &cache, Operation *op) -> LogicalResult {
+    auto result = M::getBytecodeHash(op);
+    if (failed(result))
+      return failure();
+    cache.push_back(std::move(*result));
+    return success();
+  };
+
+  auto consolidateFn = [](CacheT &original, ArrayRef<CacheT> caches) {
+    raw_xxhash_stream hasher;
+
+    for (const CacheT &cache : caches)
+      llvm::interleave(cache, hasher, "");
+
+    SmallString<32> output;
+    llvm::toHex(hasher.hash(), /*LowerCase=*/true, output);
+    original.push_back(std::string(output));
+  };
+
+  CacheT resultCache;
+  auto result = failableParallelForEach(
+      /*ctx=*/context,
+      /*range=*/ops,
+      /*func=*/workFunc,
+      /*cache=*/resultCache,
+      /*consolidate=*/consolidateFn);
+
+  if (failed(result))
+    return failure();
+
+  return resultCache[0];
+}
