@@ -166,7 +166,7 @@ fn make_closure(x: Int) -> Int:
 
 
 fn make_closure(x: Int):
-    # CHECK: [[RAW_CLOSURE:%.*]] = lit.closure.init[{{.*}}](%x)(%arg0[y]: !Int1) unified -> !Int1 {
+    # CHECK: [[RAW_CLOSURE:%.*]] = lit.closure.init[{{.*}}](%x)(%arg0[y]: !Int1) -> !Int1 {
     # CHECK-NEXT: [[BODY_OP:%.*]] = lit.call @{{.*}}@Int::@"__add__{{.*}}"(%x, %arg0) : !lit.generator<("lhs": !Int1, "rhs": !Int1) -> !Int1>
     # CHECK-NEXT: lit.return [[BODY_OP]] : !Int1
     # CHECK-NEXT: lit.end_fn

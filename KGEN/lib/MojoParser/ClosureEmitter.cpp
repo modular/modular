@@ -1549,11 +1549,16 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &nestedFnDecl,
   ParamDeclAttr origin =
       ParamDeclAttr::get(originAttr, OriginType::get(ctx, true));
   auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));
+  FnTypeGeneratorType original = nestedFn.getFuncTypeGenerator();
+  FnTypeGeneratorType withoutUnified = FnTypeGeneratorType::get(
+      original.getInputParamTypes(), original.getValues(),
+      original.getArgConventions(), original.getFnEffects().setUnified(false),
+      original.getFnMetadata(), original.getMetadata());
   auto closure = builder.create<LIT::ClosureInitOp>(
-      location, refType, nestedFn.getFuncTypeGenerator(),
-      nestedFn.getFunctionType(), ValueRange(captureValues),
-      ArrayAttr::get(ctx, captureInfo), OriginSetAttr::get(ctx, origins),
-      nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin, vTable);
+      location, refType, withoutUnified, nestedFn.getFunctionType(),
+      ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
+      OriginSetAttr::get(ctx, origins), nestedFn.getInputParams(),
+      nestedFn.getInlineLevel(), origin, vTable);
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
 
   // (2) Create the wrapper instance and populate it with the closure init op
