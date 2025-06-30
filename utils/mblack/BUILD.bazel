@@ -1,17 +1,19 @@
-load("//bazel:api.bzl", "modular_py_binary", "pkg_files", "requirement", "strip_prefix")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "shim.py",
+    "LICENSE",
+    "src/mblib2to3/Grammar.txt",
+    "src/mblib2to3/PatternGrammar.txt",
 ])
 
-modular_py_binary(
-    name = "mblack",
+modular_py_library(
+    name = "mblack-lib",
     srcs = glob(["src/**/*.py"]),
     data = glob(["src/**/*.txt"]),
     imports = ["src"],
-    main = "src/mblack/__main__.py",
     tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
     deps = [
         requirement("click"),
@@ -20,6 +22,13 @@ modular_py_binary(
         requirement("platformdirs"),
         requirement("tomli"),
     ],
+)
+
+modular_py_binary(
+    name = "mblack",
+    srcs = ["src/mblack/__main__.py"],
+    tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
+    deps = [":mblack-lib"],
 )
 
 pkg_files(
