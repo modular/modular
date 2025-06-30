@@ -31,3 +31,25 @@ fn main() raises:
       .semanticTokensFull(doc, [](ArrayRef<Mojo::LSP::SemanticToken>) {})
       .execute();
 }
+
+TEST(RegressionTest, moto983) {
+  // The original issue was caused by a misinterpretation of the LSP's encoding
+  // of column offsets, where we interpreted them as UTF-8 offsets instead of
+  // UTF-16 code unit offsets as required by the specification. This caused the
+  // server's internal view to diverge from reality as it incorrectly sliced
+  // multi-byte code points.
+
+  Document doc("test:///foo.mojo", R"(
+fn main():
+    var str = "Hello 🔥"
+
+    print(str)
+
+    )");
+
+  createTestClient()
+      .open(doc)
+      .update(doc, mlir::lsp::Range{{0, 24}, {1, 0}}, "")
+      .onDiagnostics(doc, [](auto diags) { EXPECT_TRUE(diags.empty()); })
+      .execute();
+}

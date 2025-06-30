@@ -173,6 +173,10 @@ public:
   /// textDocument/diagnostic
   LSPBatchClient &onDiagnostics(const Document &doc, DiagnosticHandler handler);
 
+  /// Dispatch a document update
+  LSPBatchClient &update(const Document &doc, const mlir::lsp::Range &range,
+                         std::string change);
+
   /// Actual `execute` logic.
   ErrorOrSuccess doExecute(const LSPServerStdioFiles &ioFiles,
                            StringRef lspServerPath);

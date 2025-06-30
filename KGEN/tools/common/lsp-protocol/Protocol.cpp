@@ -456,6 +456,13 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &value,
 // Serialization methods not available in the upstream MLIR code
 //===----------------------------------------------------------------------===//
 
+llvm::json::Value lsp::toJSON(const DidChangeTextDocumentParams &params) {
+  return llvm::json::Object{
+      {"textDocument", params.textDocument},
+      {"contentChanges", params.contentChanges},
+  };
+}
+
 llvm::json::Value lsp::toJSON(const TextDocumentItem &params) {
   return llvm::json::Object{{"uri", params.uri},
                             {"languageId", params.languageId},

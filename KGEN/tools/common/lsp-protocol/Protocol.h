@@ -519,6 +519,8 @@ bool fromJSON(const llvm::json::Value &value, WorkDoneProgressEndParams &params,
 // Serialization methods not available in the upstream MLIR code
 //===----------------------------------------------------------------------===//
 
+llvm::json::Value toJSON(const DidChangeTextDocumentParams &params);
+
 llvm::json::Value toJSON(const TextDocumentItem &params);
 
 llvm::json::Value toJSON(const DidOpenTextDocumentParams &params);

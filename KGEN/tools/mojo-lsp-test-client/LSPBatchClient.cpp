@@ -210,6 +210,16 @@ LSPBatchClient &LSPBatchClient::completion(
   return *this;
 }
 
+LSPBatchClient &LSPBatchClient::update(const Document &doc,
+                                       const mlir::lsp::Range &range,
+                                       std::string change) {
+  lsp::TextDocumentContentChangeEvent event{range, std::nullopt, change};
+  lsp::DidChangeTextDocumentParams params{
+      lsp::VersionedTextDocumentIdentifier{doc.getURI(), 0}, {event}};
+  notify("textDocument/didChange", toJSON(params));
+  return *this;
+}
+
 void LSPBatchClient::appendJSONRequest(RequestId id, StringRef method,
                                        const llvm::json::Value &params) {
   llvm::json::Value jsonRequest = llvm::json::Object{
