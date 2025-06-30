@@ -377,6 +377,27 @@ All the above mostly applies to the parser. In later passes, we more often
 interact directly with our MLIR nodes and the built-in MLIR classes like
 `mlir::Value` and `mlir::Type`.
 
+### ASTDecl
+
+The Mojo parser largely doesn't think in terms of ASTs, it handles IR; the
+parser consumes text directly (lexing it lazily on the fly), and produces
+semi-flattened IR: a tree of structured control flow (`if`, `loop`, `try`, etc)
+containing lists of SSA statements (`lit.call`, etc).
+
+However, even though the parser doesn't _produce_ an AST, it does
+create a temporary one. For every scope (`fn`,
+`struct`, `if`, `loop`, `try`, anything inheriting `ASTDeclInterface`) we have
+an `ASTDecl` that does some bookkeeping for it.
+
+Its main purpose is to track members: directly owned children, children inherited
+from parent traits, and anything else that might be visible in some way from
+inside the scope.
+
+Then, various places in the parser can use `ASTDecl::lookupInCurrentScope` to
+find any of those matching a certain name.
+
+It also holds a cursor for lazily, gradually parsing itself (see `ASTDecl::getCursor`).
+
 ### Types
 
 The parser generally doesn't interact with `mlir::Type` directly, we instead use
@@ -407,6 +428,21 @@ compiler.
   call. Try not to use it directly if you can avoid it.
 - `emitGetterSetterAccess`: Useful for doing field accesses (like `ship.hp`) or
   subscripts (like `my_list[42]`).
+
+### Witness Tables and Conformance
+
+"Conformance" is when we check whether a struct (or a trait) correctly meets all
+the requirements for a parent trait.
+
+This is done via `doesNominalTypeConformTo`, which also has the side effect of
+first filling in the particular witness table (a.k.a. vtable a.k.a.
+`ConformanceOp`) for the struct+trait pair (or trait+trait pair), see CALROC.
+
+Major players involved: `doesNominalTypeConformTo` calls
+`DeclResolver::resolveBody(ConformanceOp, ASTDecl &)` which calls `verifyConformance`.
+
+See [Conformance.md](KGEN/docs/arcana/Conformance.md) for more on how this
+all works.
 
 <!--
 rule of thumb: if we use it when parsing statements/expressions, feel free to
