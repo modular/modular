@@ -475,9 +475,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._weight_adapters = weight_adapters
 
         # Expand eos tokens if more are provided in pipeline_config
-        if self._pipeline_config.ignore_eos:
-            self._eos_token_id = set([])
-        elif (
+        if (
             "eos_token_id"
             in self._pipeline_config.model_config.huggingface_config
         ):

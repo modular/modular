@@ -155,9 +155,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         )
 
         # Expand EOS
-        if pipeline_config.ignore_eos:
-            self._eos_token_id = set([])
-        elif "eos_token_id" in target_config:
+        if "eos_token_id" in target_config:
             eos_tokens = target_config.eos_token_id
             if isinstance(eos_tokens, int):
                 if eos_tokens != eos_token_id:
@@ -174,6 +172,8 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
                 msg = f"eos_token_id in huggingface_config, is neither int or list: {eos_tokens}"
                 logger.warning(msg)
                 self._eos_token_id = set([eos_token_id])
+        else:
+            self._eos_token_id = set([eos_token_id])
 
         target_hf_repo = (
             self.pipeline_config.model_config.huggingface_weight_repo
