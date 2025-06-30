@@ -34,7 +34,7 @@ def kernel_library() -> Generator[KernelLibrary]:
     yield KernelLibrary(mlir.Context(), [path])
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="module")
 def op_library(kernel_library: KernelLibrary) -> Generator[CustomOpLibrary]:
     """Set up the kernel library for the current system."""
     yield CustomOpLibrary(kernel_library)
