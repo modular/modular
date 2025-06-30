@@ -62,8 +62,6 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "histogram",
     srcs = ["histogram.py"],
-    # TODO(DEVA-433): Fix failing histogram test
-    create_test = False,
 )
 
 mojo_binary(
