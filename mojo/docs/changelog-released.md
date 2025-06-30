@@ -4910,7 +4910,7 @@ Special thanks to our community contributors:
   ```
 
 - [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject) now conforms
-  to the [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait, meaning
+  to the [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, meaning
   that it can be used as key type for
   [`Dict`](/mojo/stdlib/collections/dict/Dict). This allows you to easily build
   and interact with Python dictionaries in Mojo:
@@ -6143,7 +6143,7 @@ experience without dedicated sugar.
   `Dict` stores values that conform to the
   [`CollectionElement`](/mojo/stdlib/builtin/value/CollectionElement)
   trait. Keys need to conform to the new
-  [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait, which is
+  [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, which is
   not yet implemented by other standard library types. In the short term, you
   can create your own wrapper types to use as keys. For example, the following
   sample defines a `StringKey` type and uses it to create a dictionary that maps
