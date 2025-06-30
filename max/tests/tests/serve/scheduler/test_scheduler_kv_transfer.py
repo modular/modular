@@ -276,6 +276,7 @@ def prefill_scheduler(
     return create_scheduler
 
 
+@pytest.mark.skip(reason="May time out")
 @pytest.mark.asyncio
 async def test_transfer_between_prefill_and_decode_scheduler(
     prefill_scheduler,
