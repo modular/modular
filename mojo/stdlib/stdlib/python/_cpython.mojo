@@ -47,10 +47,10 @@ alias Py_hash_t = Py_ssize_t
 # ===-----------------------------------------------------------------------===#
 
 # ref: https://github.com/python/cpython/blob/main/Include/compile.h
-alias Py_single_input = 256
-alias Py_file_input = 257
-alias Py_eval_input = 258
-alias Py_func_type_input = 345
+alias Py_single_input: c_int = 256
+alias Py_file_input: c_int = 257
+alias Py_eval_input: c_int = 258
+alias Py_func_type_input: c_int = 345
 
 # 0 when Stackless Python is disabled
 # ref: https://github.com/python/cpython/blob/main/Include/object.h
@@ -462,7 +462,7 @@ struct PyObject(
     - https://docs.python.org/3/c-api/structures.html#c.PyObject
     """
 
-    var object_ref_count: Int
+    var object_ref_count: Py_ssize_t
     var object_type: PyTypeObjectPtr
 
     fn __init__(out self):
@@ -1091,7 +1091,7 @@ struct CPython(Copyable, Defaultable, Movable):
     # have to always be the case - but often it is and it's convenient for
     # debugging. We shouldn't rely on this function anywhere - its only purpose
     # is debugging.
-    fn _Py_REFCNT(self, ptr: PyObjectPtr) -> Int:
+    fn _Py_REFCNT(self, ptr: PyObjectPtr) -> Py_ssize_t:
         if not ptr:
             return -1
         # NOTE:
@@ -1107,7 +1107,7 @@ struct CPython(Copyable, Defaultable, Movable):
         #   treats the object pointer "as if" it was a pointer to just the first
         #   field.
         # TODO(MSTDL-950): Should use something like `addr_of!`
-        return ptr.unsized_obj_ptr.bitcast[Int]()[]
+        return ptr.unsized_obj_ptr.bitcast[Py_ssize_t]()[]
 
     # ===-------------------------------------------------------------------===#
     # Python GIL and threading
@@ -1438,13 +1438,13 @@ struct CPython(Copyable, Defaultable, Movable):
         owned str: String,
         globals: PyObjectPtr,
         locals: PyObjectPtr,
-        run_mode: Int,
+        run_mode: c_int,
     ) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/veryhigh.html#c.PyRun_String).
         """
         var result = self.lib.call["PyRun_String", PyObjectPtr](
-            str.unsafe_cstr_ptr(), Int32(run_mode), globals, locals
+            str.unsafe_cstr_ptr(), run_mode, globals, locals
         )
 
         self.log(
@@ -1485,7 +1485,7 @@ struct CPython(Copyable, Defaultable, Movable):
         self,
         owned str: String,
         owned filename: String,
-        compile_mode: Int,
+        compile_mode: c_int,
     ) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/veryhigh.html#c.Py_CompileString).
@@ -1494,7 +1494,7 @@ struct CPython(Copyable, Defaultable, Movable):
         var r = self.lib.call["Py_CompileString", PyObjectPtr](
             str.unsafe_cstr_ptr(),
             filename.unsafe_cstr_ptr(),
-            Int32(compile_mode),
+            compile_mode,
         )
         self._inc_total_rc()
         return r
@@ -1709,11 +1709,11 @@ struct CPython(Copyable, Defaultable, Movable):
         """
         return self.lib.call["PyObject_IsTrue", c_int](obj)
 
-    fn PyObject_Length(self, obj: PyObjectPtr) -> Int:
+    fn PyObject_Length(self, obj: PyObjectPtr) -> Py_ssize_t:
         """[Reference](
         https://docs.python.org/3/c-api/object.html#c.PyObject_Length).
         """
-        return Int(self.lib.call["PyObject_Length", Int](obj))
+        return self.lib.call["PyObject_Length", Py_ssize_t](obj)
 
     fn PyObject_Hash(self, obj: PyObjectPtr) -> Py_hash_t:
         """[Reference](
@@ -2088,7 +2088,7 @@ struct CPython(Copyable, Defaultable, Movable):
         https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_AsUTF8AndSize).
         """
 
-        var length = Int(0)
+        var length = Py_ssize_t(0)
         var ptr = self.lib.call[
             "PyUnicode_AsUTF8AndSize", UnsafePointer[c_char]
         ](py_object, UnsafePointer(to=length)).bitcast[UInt8]()
