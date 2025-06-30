@@ -219,8 +219,8 @@ def compute_log_probabilities_ragged_new(
     model: Model,
     *,
     input_row_offsets: np.ndarray,
-    logits: np.ndarray | None,
-    next_token_logits: np.ndarray,
+    logits: Tensor | None,
+    next_token_logits: Tensor,
     tokens: np.ndarray,
     sampled_tokens: np.ndarray,
     batch_top_n: Sequence[int],
@@ -270,6 +270,11 @@ def compute_log_probabilities_ragged_new(
         assert logits.shape[0] == tokens.shape[0]
         assert logits.shape[1] == next_token_logits.shape[1]
     vocab_size = next_token_logits.shape[1]
+    if logits is not None:
+        assert logits.device == device
+        assert logits.dtype == DType.float32
+    assert next_token_logits.device == device
+    assert next_token_logits.dtype == DType.float32
     if logits is None:
         assert not any(batch_echo)
         kernel_logits = next_token_logits
@@ -288,8 +293,9 @@ def compute_log_probabilities_ragged_new(
         [np.zeros(1, dtype=output_counts.dtype), np.cumsum(output_counts)]
     )
     token_row_offsets = input_row_offsets
+    assert kernel_logits.dtype == DType.float32
     model_outputs = model.execute(
-        Tensor.from_numpy(kernel_logits.astype(np.float32)).to(device),
+        kernel_logits,
         Tensor.from_numpy(tokens.astype(np.uint32)).to(device),
         Tensor.from_numpy(sampled_tokens.astype(np.uint32)).to(device),
         Tensor.from_numpy(logit_row_offsets.astype(np.uint32)).to(device),
