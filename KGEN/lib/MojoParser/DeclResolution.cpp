@@ -1908,32 +1908,35 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     if (p.parseExpression(initExpr, decl.getIndentation()))
       return failure();
 
+    IREmitter emitter(sigDecl, EC_AliasValue);
+
+    // Emit the value and convert to the expected type if we know it.
+    PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
+    if (!rhsValue)
+      return failure();
+
+    // If we had no declared type (`alias x = 42`), infer the type from the
+    // initializer.
+    if (!type)
+      type = rhsValue.getType();
+
+    // If there are input parameters, we need to emit a value generator attr.
+    type = parameterizeType(type);
+    if (!paramSignature.paramDeclAttrs.empty()) {
+      TypedAttr remappedBody = remapper.replace(rhsValue.get());
+      rhsValue = cast<TypedAttr>(
+          GeneratorAttr::get(remappedBody, cast<GeneratorType>(type)));
+    }
+
     if (isa<LIT::TraitDeclOp>(parentDecl)) {
       p.emitError(identifierLoc) << "associated alias declarations in a trait "
                                     "shouldn't have an initializer";
-      // Don't return; continue parsing as if it has no name, so that references
-      // to the name will resolve.
+      // Don't add it to attrs, just pretend it has no value.
+      // Though above, we did use the value to figure out the type above, which
+      // is nice.
+      // Don't return; continue parsing as if it has no value, so that
+      // references to the name will resolve.
     } else {
-      IREmitter emitter(sigDecl, EC_AliasValue);
-
-      // Emit the value and convert to the expected type if we know it.
-      PValue rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
-      if (!rhsValue)
-        return failure();
-
-      // If we had no declared type (`alias x = 42`), infer the type from the
-      // initializer.
-      if (!type)
-        type = rhsValue.getType();
-
-      // If there are input parameters, we need to emit a value generator attr.
-      type = parameterizeType(type);
-      if (!paramSignature.paramDeclAttrs.empty()) {
-        TypedAttr remappedBody = remapper.replace(rhsValue.get());
-        rhsValue = cast<TypedAttr>(
-            GeneratorAttr::get(remappedBody, cast<GeneratorType>(type)));
-      }
-
       // Remember the value
       attrs.set(aliasDeclOp.getValueAttrName(), rhsValue.get());
     }

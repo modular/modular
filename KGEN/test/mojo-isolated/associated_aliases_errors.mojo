@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -verify-diagnostics %s
+# RUN: %parse-mojo-isolated --mojo-disable-builtins -split-input-file -verify-diagnostics %s
 
 
 trait Copyable:
@@ -61,6 +61,7 @@ struct StructConformingExplicitlyWithMismatchedAlias(MyTrait):
 struct StructConformingExplicitlyWithMemberSameName(MyTrait):
     var N: Int
 
+
 @fieldwise_init
 struct StructWithNoMatchingAlias:
     pass
@@ -100,3 +101,20 @@ fn testError2():
     # expected-error @below {{invalid call to 'funcForMyTrait': could not deduce parameter 'T' of callee 'funcForMyTrait'}}
     # expected-note @below {{failed to infer parameter 'T', argument type 'StructWithMismatchedAlias' does not conform to trait 'MyTrait'}}
     var whatev: Int = funcForMyTrait(StructWithMismatchedAlias())
+
+
+# // -----
+
+
+struct Int:
+    pass
+
+
+struct TensorIndex[rank: Int]:
+    pass
+
+
+trait Stencil:
+    alias rank: Int
+    # expected-error @below {{associated alias declarations in a trait shouldn't have an initializer}}
+    alias Index = TensorIndex[rank]
