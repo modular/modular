@@ -210,10 +210,8 @@ class PrefillScheduler(Scheduler):
         while self.available_cache_indices:
             try:
                 prefill_request = self.get_prefill_request()
+                prefill_request.context.reset()
                 logger.info("received from decode node!")
-
-                if prefill_request.context.start_idx == 0:
-                    prefill_request.context.unassign_from_cache()
 
                 if not prefill_request.context.is_assigned_to_cache:
                     prefill_request.context.assign_to_cache(

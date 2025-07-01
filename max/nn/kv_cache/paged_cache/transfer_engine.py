@@ -21,10 +21,9 @@ from collections import defaultdict
 from uuid import uuid4
 
 import msgspec
-import numpy as np
 import torch
 from max._core import nixl
-from max.driver import Accelerator
+from max.driver import CPU, Accelerator
 from max.driver.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines")
@@ -178,8 +177,7 @@ class KVTransferEngine:
             self.cpu_staging_buffer = Tensor(
                 shape=(self.total_num_pages, self.elts_per_page),
                 dtype=tensor.dtype,
-                device=tensor.device,
-                pinned=True,
+                device=CPU(),
             )
 
         # Determine base address
@@ -187,7 +185,7 @@ class KVTransferEngine:
             self.base_addr = _get_tensor_base_addr(self.tensor)
         else:
             # torch does not support dlpack on pinned memory
-            self.base_addr = np.from_dlpack(self.cpu_staging_buffer).ctypes.data
+            self.base_addr = _get_tensor_base_addr(self.cpu_staging_buffer)
 
         # Register memory
         self.memory_type = (
