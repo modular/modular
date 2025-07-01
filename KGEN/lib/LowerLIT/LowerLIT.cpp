@@ -169,7 +169,14 @@ SingletonTypeHelper::lookupStructSingletonFields(SymbolRefAttr ref) {
   } else {
     // If not already processed, the StructDeclOp must already exist in the
     // symbol table.
-    StructDeclOp decl = cast<StructDeclOp>(symtab.lookupSymbolIn(module, ref));
+    Operation *op = symtab.lookupSymbolIn(module, ref);
+    if (op == nullptr) {
+      // This might be the struct currently being lowered, in which case, the
+      // symbol name have been updated, yet the cache entry has not yet being
+      // populated.
+      op = symtab.lookupSymbolIn(module, refName);
+    }
+    StructDeclOp decl = cast<StructDeclOp>(op);
     SmallVector<std::pair<StringAttr, Type>> fields;
     for (StructFieldOp field : decl.getFieldDecls())
       fields.emplace_back(field.getNameAttr(), field.getType());
