@@ -128,7 +128,7 @@ modular_python_binding_py_library(
 
 modular_py_library(
     name = "max",
-    srcs = [],
+    srcs = ["experimental/tensor.py"],
     deps = [
         ":_core",
         "//SDK/lib/API/python/max/driver",
