@@ -15,7 +15,7 @@ lit_tests(
         ],
     ),
     data = [
-        "//utils/mblack:shim.py",
+        "//utils/mblack",
     ] + glob([
         "**/inputs/**",
         "package/test_package/**/*.mojo",
@@ -26,7 +26,7 @@ lit_tests(
         "test/inputs/**/*.🔥",
     ]),
     env = {
-        "MODULAR_MOJO_MAX_MBLACK_PATH": "$(location //utils/mblack:shim.py)",
+        "MODULAR_MOJO_MAX_MBLACK_PATH": "$(rootpath //utils/mblack)",
     },
     mojo_deps = [
         "@mojo//:layout",
