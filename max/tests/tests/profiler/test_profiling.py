@@ -7,12 +7,12 @@
 import unittest.mock
 
 import pytest
-from max.profiler import Trace, traced
+from max.profiler import Tracer, traced
 
 
 def test_profiling() -> None:
     """Tests that profiling functions do not error."""
-    with Trace("foo"):
+    with Tracer("foo"):
         pass
 
     @traced(message="baz", color="red")
@@ -28,7 +28,7 @@ def test_profiling() -> None:
     foo()
     bar()
 
-    Trace("I'm here").mark()
+    Tracer("I'm here").mark()
 
 
 def test_profiling_disabled() -> None:
@@ -49,5 +49,5 @@ async def test_async_profiling() -> None:
     async def foo() -> None:
         await bar()
 
-    with Trace("potato"):
+    with Tracer("potato"):
         await foo()
