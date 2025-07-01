@@ -153,8 +153,8 @@ def compute_diff(
         metric_type: Either "kl_div" or "mae"
 
     Returns:
-        Formatted diff string (+X.XXe-XX if worse results,
-          -X.XXe-XX if better results,
+        Formatted diff string (+X.XXe-XX (1.3x) if worse results,
+          -X.XXe-XX (1.4x) if better results,
           ---- if no change)
     """
     # Early return if discrepancy reports missing
@@ -167,20 +167,32 @@ def compute_diff(
     prev_val = previous_verdict.discrepancy_report.default_metric
     curr_val = current_verdict.discrepancy_report.default_metric
 
-    # Calculate diff on displayed values to avoid precision confusion
     diff = float(f"{curr_val:.2e}") - float(f"{prev_val:.2e}")
 
     if diff == 0:
         return "---"
 
-    return f"{diff:+.2e}"
+    ratio_indicator = ""
+    if prev_val != 0:
+        abs_ratio = abs(curr_val / prev_val)
+        if abs_ratio < 1:
+            abs_ratio = 1 / abs_ratio
+
+        if abs_ratio >= 100:
+            ratio_indicator = " (>99x)"
+        elif abs_ratio >= 10:
+            ratio_indicator = f" ({int(abs_ratio):>3}x)"
+        else:
+            ratio_indicator = f" ({abs_ratio:3.1f}x)"
+
+    return f"{diff:+.2e}{ratio_indicator}"
 
 
 def dump_results(
     verdicts: Mapping[str, VerificationVerdict],
     *,
     to: TextIO = sys.stdout,
-    previous_verdicts: Optional[Mapping[str, VerificationVerdict]] = None,
+    previous_verdicts: Mapping[str, VerificationVerdict] | None = None,
 ) -> None:
     # Even if verdicts is empty, we want to make sure to call write.  When we
     # call this from 'main', click passes us a LazyFile, and if we don't write
