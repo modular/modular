@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "lit_tests", "requirement")
+load("//bazel:api.bzl", "lit_tests")
 
 filegroup(
     name = "pytest_inputs",
@@ -44,11 +44,5 @@ lit_tests(
         "//GenericML/tools/mt",
         "//KGEN/tools/mojo",
         "//SDK/tools/modular-api-executor",
-    ],
-    deps = [
-        requirement("numpy"),
-        requirement("requests"),
-        requirement("torch"),
-        requirement("torchvision"),
     ],
 )
