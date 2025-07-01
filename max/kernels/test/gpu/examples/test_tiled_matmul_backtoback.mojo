@@ -510,7 +510,6 @@ fn b2b_gemm[
                 )
 
                 alias dst_static_idx = __type_of(d_gmem_frag).layout(i)
-                var dst_idx = 0
 
                 @parameter
                 if d_layout.all_dims_known():
@@ -554,7 +553,6 @@ fn b2b_gemm[
             for i in range(__type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
                 alias dst_static_idx: UInt = __type_of(d_gmem_frag).layout(i)
-                var dst_idx = 0
 
                 @parameter
                 if d_layout.all_dims_known():
