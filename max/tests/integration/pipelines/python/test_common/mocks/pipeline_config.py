@@ -136,3 +136,17 @@ def mock_pipeline_config_hf_dependencies(func):
             mock_huggingface_config(mock_estimate_memory_footprint(func))
         )
     )
+
+
+# This is a helper decorator to mock the PipelineConfig.resolve() method.
+# In practice, it is used to skip all the other validation and resolution steps.
+# We're just testing if the config fields are set correctly.
+def mock_pipeline_config_resolve(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with patch(
+            "max.pipelines.lib.config.PipelineConfig.resolve", return_value=None
+        ):
+            return func(*args, **kwargs)
+
+    return wrapper

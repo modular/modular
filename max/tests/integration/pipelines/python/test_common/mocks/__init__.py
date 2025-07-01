@@ -27,6 +27,7 @@ from .pipeline_config import (
     mock_huggingface_config,
     mock_huggingface_hub_repo_exists_with_retry,
     mock_pipeline_config_hf_dependencies,
+    mock_pipeline_config_resolve,
 )
 from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
@@ -89,12 +90,13 @@ def retrieve_mock_text_generation_pipeline(
 
 
 __all__ = [
-    "MockTextTokenizer",
     "DummyMAXModelConfig",
     "DummyPipelineConfig",
+    "MockTextTokenizer",
     "mock_estimate_memory_footprint",
     "mock_huggingface_config",
     "mock_huggingface_hub_repo_exists_with_retry",
     "mock_pipeline_config_hf_dependencies",
+    "mock_pipeline_config_resolve",
     "retrieve_mock_text_generation_pipeline",
 ]
