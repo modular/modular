@@ -32,7 +32,7 @@ There are three kinds of types you'll see in the codebase:
     various MLIR attributes we defined.
 - **Helpers** like builders, transformers, and algorithms, which help us
   manipulate the above two things. For example:
-  - Our `ExprEmitter` wraps a `mlir::OpBuilder` and helps us output expressions.
+  - Our `IREmitter` wraps a `mlir::OpBuilder` and helps us output expressions.
   - `OverloadSet` represents a call's valid candidates and gives us methods to
     help narrow them down and call them.
   - `ParameterInferenceState` holds all of the tentative conclusions/bindings
@@ -311,12 +311,12 @@ So, let's do this:
   is an l-value.
 - Make a wrapper class `CValue` which only holds an `mlir::Value` that we know
   has a known size.
-- Make it so our code that handles this, `ExprEmitter::emitStoreToLValue`, only
+- Make it so our code that handles this, `IREmitter::emitStoreToLValue`, only
   takes in an `LValue` and a `CValue`, like this:
 
 ```c++
-CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
-                                      ExprContext context) {
+CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+                                    ExprContext context) {
 ```
 
 Now, the caller is forced to ensure that the source is a concrete value, and the
@@ -397,6 +397,19 @@ Then, various places in the parser can use `ASTDecl::lookupInCurrentScope` to
 find any of those matching a certain name.
 
 It also holds a cursor for lazily, gradually parsing itself (see `ASTDecl::getCursor`).
+
+You can `dyn_cast` an `ASTDecl` to its underlying operation, like
+`dyn_cast<VarDeclOp>(myAstDecl)`, but that **does not** mean `ASTDecl` is a
+superclass for any operations. That's our own custom sugar for this equivalent
+statement: `dyn_cast<VarDeclOp>(myAstDecl.getIfOperation())` (we do this via the
+`struct CastInfo` in `ASTDecl.h`).
+
+An `ASTDecl` will usually be backed by an operation, but can also be backed by a
+`CValue`. One time, we observed a `struct MyStruct<T: AnyType>` containing a
+child "T" that was an `ASTDecl` that was backed by a `ParamDeclRefAttr("T")`
+`PValue`. So our best theory is that `ASTDecl`s can be `CValue`s when we want to
+store a precomputed reference (`ParamDeclRefAttr`) instead of a pointer to the
+actual declaration (`ParamDeclAttr`), presumably for performance reasons.
 
 ### Types
 

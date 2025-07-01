@@ -4,8 +4,6 @@ markdown-notebook-data-directory: mdnb-data/manual-correspondence/
 
 # Mojo ↔ IR ↔ C++ Correspondence
 
-(This page is heavily WIP, check back later)
-
 For any given piece of language semantics, there are three different domains in
 which you will view things:
 
@@ -31,8 +29,9 @@ fn main():
     sprongle
 ```
 
-Doing that is pretty straightforward, just copy the `var` statement. Check out
-[this PR](https://github.com/modularml/modular/pull/62701) to see it in action.
+Creating a new statement is pretty straightforward, just copy the `var`
+statement. Check out [this PR](https://github.com/modularml/modular/pull/62701)
+for an example.
 
 ## Function Calls
 
@@ -60,9 +59,9 @@ fn main():
 
 Let's see the C++ to generate that `zork(42)` call!
 
-There's two ways to do this: the canonical way, and the easy way.
+There's two ways to do this: the manual way, and the easy way.
 
-The canonical way:
+The manual way:
 
 - Lookup "zork" from the current scope.
 - Assemble an OverloadSet containing the lookup results.
@@ -113,7 +112,10 @@ result->emitCall(std::move(operands), dest, emitter);
 (You cant use OverloadSet::lookup because there is no `ASTType` around.)
 
 See this code in context
-[here](https://github.com/modularml/modular/pull/62701).
+[here](https://github.com/modularml/modular/pull/62701/files#diff-42ea563c834abefb6324d1bd2762b5646f776d563179fb4ad98e7318cd90fb96R2743).
+
+If you want to specify parameters, we have another section for that, see
+Function Calls With Parameters.
 
 The easier way to do all that is to conjure up some expression nodes, pretend
 they came from the user, and emit them:
@@ -130,12 +132,16 @@ callNode.emitIR(dest, emitter);
 ```
 
 See this code in context
-[here](https://github.com/modularml/modular/pull/62701).
+[here](https://github.com/modularml/modular/pull/62701/files#diff-42ea563c834abefb6324d1bd2762b5646f776d563179fb4ad98e7318cd90fb96R2776).
 
-<!-- TODO: automatically extract this from the basics PR -->
+<!--
 
-<!-- TODO: don't inline code like that, extract it from the PR or preferably
-from main -->
+TODO: automatically extract this from the basics PR
+
+TODO: don't inline code like that, extract it from the PR or preferably
+from main
+
+-->
 
 ## Method Calls
 
@@ -230,14 +236,6 @@ For other cases, use the approach in the above Function Calls section.
 
 ## Declaring a Variable
 
-(WIP)
-
-<!--
-# declaring a local variable
-fn main():
-  var b = True
--->
-
 ```mojo
 fn foo():
   var x: Int = 5
@@ -263,506 +261,196 @@ module {
 }
 ```
 
+To do this in the parser, just use `IREmitter::emitVarDecl`:
+
+```c++
+ASTType intType = shared.lookupNamedType("Int", *curDeclScope, smLoc);
+VarDeclOp varDeclOp =
+    emitter.emitVarDecl("x", intType.mlirType, loc, VarDeclKind::Var);
+ValueDest dest(MLValue(varDeclOp), EC_VarInit);
+IntLiteralNode int5Node("5");
+if (!int5Node.emitIR(dest, emitter)) {
+  emitError(varDeclOp.getLoc(), "failed emitting var decl");
+  return failure();
+}
+// Optional, but required if you want `DeclRefNode`s to reference it.
+getDeclResolver().addFullyResolvedDecl(DeclIRValue(xVarDeclOp), "x", smLoc,
+                                        curDeclScope);
+```
+
+See this code in context
+[here](https://github.com/modularml/modular/pull/62701/files#diff-42ea563c834abefb6324d1bd2762b5646f776d563179fb4ad98e7318cd90fb96R2787).
+
+In our real code, this is done very circuitously through our powerful pattern
+matching subsystem. But in the end, it really is just a call to `emitVarDecl`.
+
 ## Reassigning a Local Variable
 
-(WIP)
-
-<!--
-- reassigning
+```mojo
 fn main():
-  var x = 42
-  var b = (x < 73)
-  b = x > 73
--->
-
-## Overloads
-
-(WIP)
-
-<!--
-- overloads (should be included in that)
--->
-
-```python
-fn foo() -> Int:
-  return 5
-
-fn foo(arg: Int) -> Int:
-  return arg + 5
-
-fn main():
-  var value = foo()
+  var x = 5
+  x = 7
 ```
 
-<wolfram-cell ctext="Input21.wl" />
+<!-- TODO: add some IR -->
 
-`$ kgen-translate --import-mojo example.mojo`
+To do this in the parser, create a `BinOpNode` and call `emitIR` on it.
 
-```mlir
-module {
-  lit.file_module @example {
-    lit.func @"foo()"() -> !Int attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %0 = kgen.param.constant: !Int = <{5}>
-      lit.return %0 : !Int
-      lit.end_func
-    }
-    lit.func @"foo(::Int)"(%arg: !Int) -> !Int attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %0 = kgen.param.constant: !Int = <{5}>
-      %1 = lit.call @stdlib::@builtin::@int::@Int::@"__add__(::Int,::Int)"(%arg, %0) : !lit.signature<("self": !Int, "rhs": !Int) -> !Int>
-      lit.return %1 : !Int
-      lit.end_func
-    }
-    lit.func @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind = 0 : i8} {
-      %value = lit.var.decl "value" var : !lit.ref<!Int, mut *"value`">
-      %0 = lit.call @example::@"foo()"() : !lit.signature<() -> !Int>
-      lit.ref.store %0, %value : <!Int, mut *"value`">
-      %none = kgen.param.constant: none = <#kgen.none>
-      lit.return %none : !kgen.none
-      lit.end_func
-    }
-    lit.func export C @main(%argc: !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>, %argv: !kgen.pointer<pointer<scalar<ui8>>>) -> !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>> attributes {linkageName = "main", sourceName = "__mojo_main_prototype", specialFnKind = 0 : i8} {
-      %0 = lit.call @stdlib::@builtin::@_startup::@"__wrap_and_execute_main[fn() -> None](::SIMD[{int32}, {1}],__mlir_type.!kgen.pointer<pointer<scalar<ui8>>>)"<:!lit.signature<() -> !kgen.none> @example::@"main()">(%argc, %argv) : !lit.signature<("argc": !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>, "argv": !kgen.pointer<pointer<scalar<ui8>>>) -> !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>>
-      lit.return %0 : !lit.struct<#SIMD <:!DType {:dtype si32}, :!Int {1}>>
-      lit.end_func
-    }
-  }
-  lit.package @stdlib { }
+```c++
+DeclRefNode xRefNode("x");
+IntLiteralNode int7Node("7");
+BinOpNode assignNode(ExprNode::Kind::kAssign, &xRefNode, smLoc, &int7Node);
+ValueDest ignoredDest(EC_Assignment);
+AnyValue result = assignNode.emitIR(ignoredDest, emitter);
+if (!result) {
+  emitError(smLoc, "failed assigning variable");
+  return failure();
 }
 ```
+
+See this code in context
+[here](https://github.com/modularml/modular/pull/62701/files#diff-42ea563c834abefb6324d1bd2762b5646f776d563179fb4ad98e7318cd90fb96R2808).
+
+Or, if you want to be lower-level than that, you can use
+`IREmitter::emitResult`:
+
+```c++
+SyntheticNode locNode(smLoc);
+auto int7PValue =
+    PValue(IntegerAttr::get(IndexType::get(shared.getContext()), 7));
+ValueDest dest(MLValue(xVarDeclOp), EC_VarInit);
+emitter.emitResult(int7PValue, &locNode, dest);
+```
+
+See this code in context
+[here](https://github.com/modularml/modular/pull/62701/files#diff-42ea563c834abefb6324d1bd2762b5646f776d563179fb4ad98e7318cd90fb96R2822).
 
 ## If Statement
 
-(WIP)
+```mojo
+fn bork() -> Int:
+    if True:
+        return 5
+    else:
+        return 7
+```
 
-<!--
-- if statement
-fn main():
-  var b = True
-  if b:
-    print("hello")
-  else:
-    print("howdy")
--->
+```mlir
+lit.fn @"bork()"() -> !Int attributes {sourceName = "bork", specialFnKind = 0 : i8} {
+  hlcf.elif {
+    %0 = kgen.param.constant: i1 = <1>
+    hlcf.elif.yield %0
+  } then {
+    %0 = kgen.param.constant: !Int = <{5}>
+    lit.return %0 : !Int
+    hlcf.yield
+  } else {
+    kgen.unreachable
+  }
+  lit.end_fn
+}
+```
+
+To do this in the parser, use ParserStmts.cpp's `emitIfClause` or follow its
+example (use an `IREmitter` to create an `HLCF::ElifOp` and then insert
+into its various regions).
 
 ## Operators
 
-(WIP)
-
-<!--
-- calling an operator
-fn main():
-  var x = 42
-  var b = (x < 73)
-  print(b)
--->
+To do an operator, like a less than or greater than, use a `BinOpNode` like we
+saw in Reassigning a Local Variable.
 
 ## Loops
 
-(WIP)
-
-<!--
-- loop
-fn main():
-  for i in range(0, 3):
+```mojo
+fn hello():
     print("hello")
-but dont do this like the parser:
-  //   var it = iterable.__iter__()
-  //   while not it.__isatend__():
-  //       var e = it.__next__()
-  //       <BODY>
-just do it like this:
-  //   var i = 0
-  //   while i < 3:
-  //       print("hello")
-  //       i = i + 1
--->
 
-## Combining it all
 
-(WIP)
-
-<!--
-- nested for-loop:
 fn main():
-  for row in range(0, 18):
-    for col in range(0, 80):
-      print(".")
-    print("\n")
--->
-
-<!--
-- pulling it all together:
-fn main():
-  var player_row = 1
-  var player_col = 2
-  for row in range(0, 18):
-    for col in range(0, 80):
-      if row == player_row && col == player_col:
-        print("@")
-      else:
-        print(".")
-    print("\n")
--->
-
-## Aliases
-
-(WIP)
-
-```python
-alias MyInt64 = Scalar[DType.int64]
+    var i = 0
+    while i < 5:
+        hello()
+        i = i + 1
 ```
 
-<wolfram-cell ctext="Input15.wl" />
-
-`$ kgen-translate --import-mojo example.mojo`
-
 ```mlir
-module {
-  lit.file_module @example {
-    lit.alias.decl *"MyInt64`0x": anystruct<#SIMD <:!DType {:dtype si64}, :!Int {1}>> = <@stdlib::@builtin::@simd::@SIMD<:!DType {:dtype si64}, :!Int {1}>>
+lit.fn @"main()"() -> !kgen.none attributes {sourceName = "main", specialFnKind = 0 : i8} {
+  %i = lit.var.decl "i" var : !lit.ref<!Int, mut *"i`">
+  %0 = kgen.param.constant: !Int = <{0}>
+  lit.ref.store %0, %i : <!Int, mut *"i`">
+  lit.loop cond {
+    %1 = lit.ref.load %i : <!Int, mut *"i`">
+    %2 = kgen.param.constant: !Int = <{5}>
+    %3 = lit.call @stdlib::@builtin::@stubs::@Int::@"__lt__(::Int,::Int)"(%1, %2) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Bool>
+    %4 = lit.call @stdlib::@builtin::@stubs::@Bool::@"__mlir_i1__(::Bool)"(%3) : !lit.generator<("self": !Bool) -> i1>
+    lit.loop.condition %4 : i1
+  } body {
+    %1 = lit.call @main::@"hello()"() : !lit.generator<() -> !kgen.none>
+    %2 = lit.ref.load %i : <!Int, mut *"i`">
+    %3 = kgen.param.constant: !Int = <{1}>
+    %4 = lit.call @stdlib::@builtin::@stubs::@Int::@"__add__(::Int,::Int)"(%2, %3) : !lit.generator<("lhs": !Int, "rhs": !Int) -> !Int>
+    lit.ref.store %4, %i : <!Int, mut *"i`">
+    lit.loop.continue
+  } else {
+    lit.loop.yield
   }
-  lit.package @stdlib { }
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
 }
 ```
 
-<!--
-- defining an alias:
-fn main():
-  alias initial_player_row = 1
-  alias initial_player_col = 2
-  var player_row = initial_player_row
-  var player_col = initial_player_col
-  for row in range(0, 18):
-    for col in range(0, 80):
-      if row == player_row && col == player_col:
-        print("@")
-      else:
-        print(".")
-    print("\n")
--->
+To do this in the parser, do the same thing as `StmtParser::parseWhileStmt`;
+create a `LIT::LoopOp` and insert into the various blocks.
 
-## Defining a Function
+## Bonus challenge: combining it all
 
-(WIP)
-
-<!--
-- defining a function:
-fn display(player_row: Int, player_col: Int):
-  for row in range(0, 18):
-    for col in range(0, 80):
-      if row == player_row && col == player_col:
-        print("@")
-      else:
-        print(".")
-    print("\n")
-fn main():
-  alias initial_player_row = 1
-  alias initial_player_col = 2
-  var player_row = initial_player_row
-  var player_col = initial_player_col
-  display(player_row, player_col)
--->
+A challenge, if you're following along... make it so this program:
 
 ```mojo
-fn foo():
-  pass
+fn printStr(x: String):
+    print(x)
+
+fn main():
+    sprongle
 ```
 
-<wolfram-cell ctext="Input09.wl" />
-
-`$ kgen-translate --import-mojo example.mojo`
-
-```mlir
-module {
-  lit.file_module @example {
-    lit.func @"foo()"() -> !kgen.none attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %none = kgen.param.constant: none = <#kgen.none>
-      lit.return %none : !kgen.none
-      lit.end_func
-    }
-  }
-}
-```
-
-In the parser, you would call `StructEmitter::synthesizeFunction` (yes, even for
-non-struct functions. We might soon rename that to `FnEmitter`).
-
-<!--
-- use a struct: n/a because weve already been using one
--->
-
-## Structs
-
-(WIP)
-
-### Struct Declaration
-
-(WIP)
+Does the same thing as this program:
 
 ```mojo
-struct Person:
-  var name: String
-  var age: Int
-```
+fn printStr(x: String):
+    print(x)
 
-<wolfram-cell ctext="Input13.wl" />
-
-`$ kgen-translate --import-mojo example.mojo`
-
-```mlir
-module {
-  lit.file_module @example {
-    lit.struct.decl @Person(!AnyType) attributes {sourceName = #Person_name}
-      destructor :!lit.signature<[1]("self": !lit.ref<!Person, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @example::@Person::@"__del__(example::Person)" {
-      lit.struct.field name : !String
-      lit.struct.field age : !Int
-      lit.func @"__del__(example::Person)"[mut *"self`"](%self: !lit.ref<!Person, mut *"self`"> owned_in_mem, |) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__del__", specialFnKind = 5 : i8} {
-        %none = kgen.param.constant: none = <#kgen.none>
-        lit.ownership.mark_destroyed %self : <!Person, mut *"self`">
-        lit.return %none : !kgen.none
-        lit.end_func
-      }
-    }
-  }
-  lit.package @stdlib { }
-}
-```
-
-### Struct Type Symbol Reference
-
-(WIP)
-
-`!Person` is used to reference the `@Person` declaration:
-
-```python
-struct Person:
-  var name: String
-  var age: Int
-
-fn foo(x: Person):
-  pass
-```
-
-<wolfram-cell ctext="Input14.wl" />
-
-`$ kgen-translate --import-mojo example.mojo`
-
-```mlir
-module {
-  lit.file_module @example {
-    lit.struct.decl @Person(!AnyType) attributes {sourceName = #Person_name}
-      destructor :!lit.signature<[1]("self": !lit.ref<!Person, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @example::@Person::@"__del__(example::Person)" {
-      lit.struct.field name : !String
-      lit.struct.field age : !Int
-      lit.func @"__del__(example::Person)"[mut *"self`"](%self: !lit.ref<!Person, mut *"self`"> owned_in_mem, |) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__del__", specialFnKind = 5 : i8} {
-        %none = kgen.param.constant: none = <#kgen.none>
-        lit.ownership.mark_destroyed %self : <!Person, mut *"self`">
-        lit.return %none : !kgen.none
-        lit.end_func
-      }
-    }
-    lit.func @"foo(example::Person)"[imm *"x`"](%x: !lit.ref<!Person, imm *"x`"> borrow_in_mem) -> !kgen.none attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %none = kgen.param.constant: none = <#kgen.none>
-      lit.return %none : !kgen.none
-      lit.end_func
-    }
-  }
-  lit.package @stdlib { }
-}
-```
-
-<!--
-- structs:
-  - declare a struct
-      struct Player:
-        var row: Int
-        var col: Int
-  - receive a struct
-      fn display(player: Player):
-        for row in range(0, 18):
-          for col in range(0, 80):
-            if row == player_row && col == player_col:
-              print("@")
+fn main():
+    var player_row = 1
+    var player_col = 2
+    var row = 0
+    var col = 0
+    while row < 18:
+        while col < 80:
+            if row == player_row and col == player_col:
+                printStr("@")
             else:
-              print(".")
-          print("\n")
-  - construct a struct
-      fn main():
-        alias initial_player_row = 1
-        alias initial_player_col = 2
-        var player = Player(initial_player_row, initial_player_col)
-        display(player)
--->
-
-### Modify a Field
-
-(WIP)
-
-<!--
-- modify struct:
-    struct Player:
-      var row: Int
-      var col: Int
-    fn display(player: Player):
-      for row in range(0, 18):
-        for col in range(0, 80):
-          if row == player_row && col == player_col:
-            print("@")
-          else:
-            print(".")
-        print("\n")
-    fn main():
-      alias initial_player_row = 1
-      alias initial_player_col = 2
-      var player = Player(initial_player_row, initial_player_col)
-      player.row = player.row + 1
-      display(player)
--->
-
-## Argument Conventions
-
-(WIP)
-
-<!-- **TODO:** Present this as a tab-view -->
-
-### Borrowed
-
-(WIP)
-
-```python
-fn foo(borrowed arg: String):
-  pass
+                printStr(".")
+            col = col + 1
+        printStr("\n")
+        row = row + 1
 ```
 
-<wolfram-cell ctext="Input10.wl" />
+You'll need variables, assignments, loops, operators, and if-else statements.
+Good luck!
 
-`$ kgen-translate --import-mojo example.mojo`
+## Coming in V2
 
-```mlir
-module {
-  lit.file_module @example {
-    lit.func @"foo(stdlib::collections::string::String)"[imm *"arg`"](%arg: !lit.ref<!String, imm *"arg`"> borrow_in_mem) -> !kgen.none attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %none = kgen.param.constant: none = <#kgen.none>
-      lit.return %none : !kgen.none
-      lit.end_func
-    }
-  }
-  lit.package @stdlib { }
-}
-```
+This doc is lazily populated, so let Evan know if you want to know about
+anything, especially:
 
-### Inout
-
-(WIP)
-
-```python
-fn foo(inout arg: String):
-  pass
-```
-
-<wolfram-cell ctext="Input11.wl" />
-
-`$ kgen-translate --import-mojo example.mojo`
-
-```mlir
-module {
-  lit.file_module @example {
-    lit.func @"foo(stdlib::collections::string::String&)"[mut *"arg`"](%arg: !lit.ref<!String, mut *"arg`"> inout) -> !kgen.none attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %none = kgen.param.constant: none = <#kgen.none>
-      lit.return %none : !kgen.none
-      lit.end_func
-    }
-  }
-  lit.package @stdlib { }
-}
-```
-
-### Owned
-
-(WIP)
-
-```python
-fn foo(owned arg: String):
-  pass
-```
-
-<wolfram-cell ctext="Input12.wl" />
-
-`$ kgen-translate --import-mojo example.mojo`
-
-```mlir
-module {
-  lit.file_module @example {
-    lit.func @"foo(stdlib::collections::string::String)"[mut *"arg`"](%arg: !lit.ref<!String, mut *"arg`"> owned_in_mem) -> !kgen.none attributes {sourceName = "foo", specialFnKind = 0 : i8} {
-      %none = kgen.param.constant: none = <#kgen.none>
-      lit.return %none : !kgen.none
-      lit.end_func
-    }
-  }
-  lit.package @stdlib { }
-}
-```
-
-### Argument Conventions: Register Passability
-
-(WIP)
-
-<!--
-Subtle that args vs ret type convention is different for
-register-passable vs register-passable trivial. Write about this in
-compiler manual.
--->
-
-<!--
-- register-passability
--->
-
-<!--
-- argument conventions
-  - borrowed
-  - inout
-  - owned
-show inout by adding a move function:
-    struct Player:
-      var row: Int
-      var col: Int
-    fn move_player(mut player: Player):
-      player.row = player.row + 1
-    fn display(player: Player):
-      for row in range(0, 18):
-        for col in range(0, 80):
-          if row == player_row && col == player_col:
-            print("@")
-          else:
-            print(".")
-        print("\n")
-    fn main():
-      alias initial_player_row = 1
-      alias initial_player_col = 2
-      var player = Player(initial_player_row, initial_player_col)
-      move_player(player)
-      display(player)
--->
-
-<!--
-- reference types
--->
-
-## Methods
-
-(WIP)
-
-<!--
-- methods
-    make move_player into a method on player.
--->
-
-<!--
-- declaration vs uses
-- variadics
-- raises
-- using a generic struct such as tuple
-- making a trait
-  - conforming a struct to a trait
-
--->
+- Printing
+- Aliases
+- Defining a function
+- Struct declaration
+- Using a struct; struct type symbol reference
+- Modifying a field
+- Argument conventions: borrowed, inout, owned, register passability
+- Overloads
