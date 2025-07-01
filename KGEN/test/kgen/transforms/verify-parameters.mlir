@@ -83,3 +83,25 @@ kgen.generator @use_associated_alias(%arg: index) -> !kgen.none {
   %none = kgen.call @expect_associated_alias<:!kgen.type #wrapper_index>(%arg) : !kgen.generator<(index) -> !kgen.none>
   kgen.return %none : !kgen.none
 }
+
+// -----
+
+kgen.struct.generator @MyFoo<T: type> = struct_inst<"MyFoo"[T]<:type T>(data: typevalue<T>)> {
+  kgen.conformance @Fooable {
+    kgen.witness "foo" : (!kgen.param<:type T>) -> index = @myfoo_foo<:type T>
+  }
+}
+
+kgen.generator @myfoo_foo<T: !kgen.type>(%arg: !kgen.param<:type T>) -> index {
+  %answer = kgen.param.constant: index = <42>
+  kgen.return %answer : index
+}
+
+#MyFooIndex = #kgen.type<typevalue<#kgen.genref<@MyFoo<:type index>>>, struct<(index)>> : !kgen.type
+
+// CHECK-LABEL: kgen.generator @simplify_call_param
+kgen.generator @simplify_call_param(%arg: index) -> index {
+  // CHECK-NEXT: kgen.call @myfoo_foo<:type index>(%arg0)
+  %result = kgen.call_param[(index) -> index: #kgen.get_witness<#MyFooIndex, "Fooable", "foo">](%arg)
+  kgen.return %result : index
+}
