@@ -775,7 +775,7 @@ fn rms_norm_gpu_warp_tiling[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int] (
+    output_fn: fn[width: Int, alignment: Int] (
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -828,7 +828,7 @@ fn rms_norm_gpu_warp_tiling[
                     gamma_val + weight_offset
                 )
 
-            output_fn(row, idx, norm_val)
+            output_fn[simd_width, align](row, idx, norm_val)
 
 
 fn rms_norm_gpu_block[
@@ -838,7 +838,7 @@ fn rms_norm_gpu_block[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int] (
+    output_fn: fn[width: Int, alignment: Int] (
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -897,7 +897,7 @@ fn rms_norm_gpu_block[
                         gamma_val + weight_offset
                     )
 
-                output_fn(row, offset, norm_val)
+                output_fn[simd_width, align](row, offset, norm_val)
 
 
 fn rms_norm_gpu[
@@ -906,7 +906,7 @@ fn rms_norm_gpu[
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int] (
+    output_fn: fn[width: Int, alignment: Int] (
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -931,12 +931,12 @@ fn rms_norm_gpu[
     @parameter
     @always_inline
     fn output_fn_2d[
-        simd_width: Int
+        simd_width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
         # Translate given 2d index back to original Nd tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
-        output_fn(indices.canonicalize(), val)
+        output_fn[simd_width, alignment](indices.canonicalize(), val)
 
     @parameter
     @always_inline
@@ -1020,7 +1020,9 @@ fn rms_norm_gpu[
 fn rms_norm_cpu[
     dtype: DType, //,
     input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[dtype, width],
-    output_fn: fn[width: Int] (Int, Int, SIMD[dtype, width]) capturing -> None,
+    output_fn: fn[width: Int, alignment: Int] (
+        Int, Int, SIMD[dtype, width]
+    ) capturing -> None,
     multiply_before_cast: Bool,
 ](
     gamma: NDBuffer[dtype, 1],
@@ -1071,7 +1073,7 @@ fn rms_norm_cpu[
                     gamma_val + weight_offset
                 )
 
-            output_fn[simd_width](row, col, norm_val)
+            output_fn[simd_width, 1](row, col, norm_val)
 
         vectorize[_normalize, simd_width](num_cols)
 
@@ -1082,7 +1084,7 @@ fn rms_norm_cpu[
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int] (
+    output_fn: fn[width: Int, alignment: Int] (
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
@@ -1112,14 +1114,14 @@ fn rms_norm_cpu[
         @parameter
         @always_inline
         fn output_fn_2d[
-            simd_width: Int
+            simd_width: Int, alignment: Int
         ](row: Int, col: Int, val: SIMD[dtype, simd_width]) -> None:
             # Translate given 2d index back to the original Nd tensor.
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
             indices[rank - 1] = col
-            output_fn[simd_width](indices, val)
+            output_fn[simd_width, alignment](indices, val)
 
         @__copy_capture(row_idx)
         @parameter
@@ -1155,7 +1157,7 @@ fn _rms_norm_impl[
     input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-    output_fn: fn[width: Int] (
+    output_fn: fn[width: Int, alignment: Int] (
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     /,
@@ -1209,6 +1211,9 @@ fn rms_norm[
     input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    output_0_fn: fn[width: Int, rank: Int, alignment: Int] (
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
     /,
     target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
@@ -1217,21 +1222,14 @@ fn rms_norm[
     gamma: NDBuffer[dtype, 1],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    output: NDBuffer[mut=True, dtype, rank],
     ctx: DeviceContextPtr,
 ) raises:
-    if output.dynamic_shape.canonicalize() != shape:
-        raise Error("Input and output buffers are not same shape")
-
-    alias align = simdwidthof[dtype]()
-
     @always_inline
-    @__copy_capture(output)
     @parameter
-    fn identity_output_fn[
-        width: Int
+    fn output_fn_wrapper[
+        width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        output.store(idx, val)
+        output_0_fn[width, rank, alignment](idx, val)
 
     @always_inline
     @parameter
@@ -1246,7 +1244,7 @@ fn rms_norm[
             dtype,
             rank,
             input_0_fn,
-            identity_output_fn,
+            output_fn_wrapper,
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](shape, gamma, epsilon, weight_offset, ctx)

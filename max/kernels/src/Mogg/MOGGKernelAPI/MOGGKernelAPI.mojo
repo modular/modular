@@ -4156,13 +4156,16 @@ struct RMSNorm:
         target: StaticString,
         multiply_before_cast: Bool = True,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
+        output: FusedOutputTensor[dtype=dtype, rank=rank],
         input: FusedInputTensor[dtype=dtype, rank=rank],
         gamma: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
         @parameter
         @always_inline
         fn input_fn[
@@ -4172,13 +4175,23 @@ struct RMSNorm:
                 rebind[IndexList[input.rank]](coords)
             )
 
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
         var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         rms_norm[
             dtype,
             rank,
             input_fn,
+            output_fn,
             target=target,
             multiply_before_cast=multiply_before_cast,
         ](
@@ -4186,7 +4199,6 @@ struct RMSNorm:
             gamma_buf,
             epsilon,
             weight_offset,
-            output_buf,
             ctx,
         )
 

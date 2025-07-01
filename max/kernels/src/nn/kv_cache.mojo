@@ -699,7 +699,7 @@ def rms_norm_kv_cache_ragged_continuous_batching[
     @parameter
     @__copy_capture(k_cache)
     fn key_cache_output_fn[
-        width: Int
+        width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -853,7 +853,7 @@ def rms_norm_kv_cache_ragged_paged[
     @parameter
     @__copy_capture(k_cache)
     fn key_cache_output_fn[
-        width: Int
+        width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(

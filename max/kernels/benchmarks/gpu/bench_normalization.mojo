@@ -164,9 +164,11 @@ fn bench_rms_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     fn identity_output_fn[
-        width: Int
+        width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        data_buf.store(idx, val)
+        data_buf.store[width=width, alignment=alignment](
+            rebind[IndexList[rank]](idx), val
+        )
 
     @always_inline
     @__copy_capture(shape, gamma, epsilon, weight_offset)

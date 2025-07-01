@@ -74,9 +74,9 @@ fn run_rms_norm_gpu[
     @__copy_capture(data_buf)
     @parameter
     fn identity_output_fn[
-        width: Int
+        width: Int, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        data_buf.store(idx, val)
+        data_buf.store[width=width, alignment=alignment](idx, val)
 
     rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
         shape, gamma, epsilon, weight_offset, ctx
