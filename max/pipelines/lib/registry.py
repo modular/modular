@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import unittest.mock
 from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 
 import torch
@@ -29,19 +28,12 @@ from max.pipelines.core import (
     PipelineTask,
     PipelineTokenizer,
 )
-
-# transformers creates an OTLP exporter on import, which causes OTEL to
-# spew error logs in some configurations.  So we have to trick transformers
-# into not making such assumptions.
-with unittest.mock.patch(
-    "opentelemetry.sdk.resources.Resource.create", side_effect=ImportError
-):
-    from transformers import (
-        AutoConfig,
-        AutoTokenizer,
-        PreTrainedTokenizer,
-        PreTrainedTokenizerFast,
-    )
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+)
 
 if TYPE_CHECKING:
     from .audio_generator_pipeline import AudioGeneratorPipeline

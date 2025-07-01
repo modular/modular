@@ -102,7 +102,7 @@ class ModelGroup(click.Group):
     help="Show the MAX version and exit.",
 )
 def main() -> None:
-    pass
+    configure_telemetry()
 
 
 def configure_telemetry() -> None:
@@ -188,7 +188,6 @@ def cli_serve(
     )
 
     # Initialize config, and serve.
-
     # Load tokenizer & pipeline.
     pipeline_config: PipelineConfig
     if task == PipelineTask.AUDIO_GENERATION:
@@ -342,5 +341,4 @@ if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
-    configure_telemetry()
     main()
