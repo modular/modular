@@ -8922,26 +8922,36 @@ struct DistributedAllGather:
         dtype: DType,
         rank: Int,
         target: StaticString,
+        _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype, rank, *_],
         inputs: InputVariadicTensors[dtype, rank, *_],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, *_
+        ],
         dev_ctxs_input: DeviceContextPtrList,
-    ) raises:
+    ) capturing raises:
         """Distributed allgather operation implementation.
 
         Args:
             outputs: Output tensors (one per GPU) to store gathered results.
             inputs: Input tensors (one per GPU) containing values to gather.
+            signal_buffers: Device buffer values used for synchronization.
             dev_ctxs_input: Device contexts for participating GPUs.
         """
         alias num_devices = inputs.size
         constrained[
-            outputs.size == num_devices * num_devices,
+            signal_buffers.size == num_devices
+            and outputs.size == num_devices * num_devices,
             (
-                "expected allgather output buffers to have num_devices *"
-                " num_devices elements for variadic output"
+                "expected allgather inputs, signal buffers to have the same"
+                " number of elements and outputs to have num_devices *"
+                " num_devices"
             ),
         ]()
+
+        var input_size_bytes = inputs[0].size() * sizeof[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         var dev_ctxs = List[DeviceContext]()
         for i in range(len(dev_ctxs_input)):
@@ -8963,7 +8973,17 @@ struct DistributedAllGather:
         @parameter
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-        allgather[ngpus=num_devices](in_bufs, out_bufs, dev_ctxs)
+
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+            UnsafePointer[Signal]()
+        )
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
 
 
 @compiler.register("mo.distributed.matmul_allreduce")

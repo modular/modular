@@ -346,7 +346,7 @@ class InternVLLanguageModel(Module):
         ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(self.norm(last_token_h))[0],
+            self.lm_head(self.norm(last_token_h), signal_buffers)[0],
             DType.float32,
         )
 
@@ -1143,8 +1143,8 @@ class InternVisionEncoderLayer(Module):
         # Handle QK normalization case
         if self.config.vision_config.qk_normalization:
             # Allgather Q and K only (not V) for QK normalization
-            q_complete = allgather(q_partials, axis=-1)
-            k_complete = allgather(k_partials, axis=-1)
+            q_complete = allgather(q_partials, signal_buffers, axis=-1)
+            k_complete = allgather(k_partials, signal_buffers, axis=-1)
             # V stays partial - no need to allgather
 
             # Process attention with QK normalization

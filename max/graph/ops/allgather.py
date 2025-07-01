@@ -12,13 +12,15 @@ from collections.abc import Iterable
 from max.mlir.dialects import mo
 
 from ..graph import Graph  # noqa
-from ..type import TensorType
-from ..value import TensorValue
+from ..type import TensorType, _ChainType
+from ..value import BufferValue, TensorValue
 from .concat import concat
 
 
 def allgather(
-    inputs: Iterable[TensorValue], axis: int = 0
+    inputs: Iterable[TensorValue],
+    signal_buffers: Iterable[BufferValue],
+    axis: int = 0,
 ) -> list[TensorValue]:
     """Collective allgather operation.
 
@@ -31,6 +33,7 @@ def allgather(
 
     Args:
         inputs: The input tensors to gather.
+        signal_buffers: Device buffer values used for synchronization.
         axis: Dimension to concatenate the input tensors. Defaults to 0.
 
     Returns:
@@ -39,6 +42,14 @@ def allgather(
     """
     # Convert `inputs` to list since we'll iterate over it multiple times.
     inputs = list(inputs)
+    signal_buffers = list(signal_buffers)
+
+    if len(inputs) != len(signal_buffers):
+        raise ValueError(
+            f"expected number of inputs ({len(inputs)}) and number of "
+            f"signal buffers ({len(signal_buffers)}) to match"
+        )
+
     if len(inputs) < 2:
         return inputs
 
@@ -102,10 +113,22 @@ def allgather(
                 ).to_mlir()
             )
 
-    # Stage the allgather op.
-    results = Graph.current._add_op(
-        mo.distributed_allgather, output_types, inputs
+    # Get the current chain for synchronization
+    in_chain = Graph.current._current_chain
+
+    # Stage the allgather op with signal buffers and chain.
+    *results, out_chain = Graph.current._add_op(
+        mo.distributed_allgather,
+        # Output types: tensors + chain
+        output_types,
+        _ChainType().to_mlir(),
+        inputs,
+        signal_buffers,
+        in_chain,
     )
+
+    # Update the chain
+    Graph.current._update_chain(out_chain)
 
     # Convert results to TensorValues.
     all_outputs = [res.tensor for res in results]

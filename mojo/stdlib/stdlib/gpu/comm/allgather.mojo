@@ -214,8 +214,7 @@ fn _allgather_p2p[
         # Calculate grid size.
         var max_length = 0
         for i in range(ngpus):
-            if lengths[i] > max_length:
-                max_length = lengths[i]
+            max_length = max(max_length, lengths[i])
 
         alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
         # Use ceildiv for max_length to ensure we have enough threads.
@@ -280,6 +279,7 @@ fn allgather[
         ctxs: List of device contexts for participating GPUs.
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
+
     # Default max blocks if not specified
     var max_num_blocks = _max_num_blocks.or_else(216)
 

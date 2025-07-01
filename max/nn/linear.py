@@ -579,7 +579,7 @@ class ColumnParallelLinear(Linear):
             self.distributed_linear_layers.append(layer)
 
     def __call__(  # type: ignore[override]
-        self, x: Sequence[TensorValue]
+        self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 
@@ -587,7 +587,7 @@ class ColumnParallelLinear(Linear):
             x: Input tensor of shape ``(..., in_dim)``.
                 The last dimension must match the layer's ``in_dim``.
                 The input tensor must reside on :obj:`device`.
-            signal_buffers: Buffers for peer-to-peer communication in allreduce.
+            signal_buffers: Buffers for peer-to-peer communication in allgather.
 
         Returns:
             Output tensor of shape ``(..., out_dim)``.
@@ -600,7 +600,7 @@ class ColumnParallelLinear(Linear):
             self.distributed_linear_layers[i](x[i])
             for i in range(self.num_devices)
         ]
-        return ops.allgather(linear_outs, axis=-1)
+        return ops.allgather(linear_outs, signal_buffers, axis=-1)
 
 
 def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:

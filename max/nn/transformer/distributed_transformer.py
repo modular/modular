@@ -194,7 +194,8 @@ class DistributedTransformer(Module):
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
         last_token_distributed = distribute_value(last_token_h, self.devices)
         last_logits = ops.cast(
-            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
+            self.lm_head(self.norm(last_token_distributed), signal_buffers)[0],
+            DType.float32,
         )
 
         logits = None
@@ -213,7 +214,9 @@ class DistributedTransformer(Module):
             )
             last_indices = ops.reshape(offsets, shape=(-1,))
             logits = ops.gather(
-                ops.cast(self.lm_head(self.norm(h))[0], DType.float32),
+                ops.cast(
+                    self.lm_head(self.norm(h), signal_buffers)[0], DType.float32
+                ),
                 last_indices,
                 axis=0,
             )
@@ -225,7 +228,9 @@ class DistributedTransformer(Module):
                 device=self.devices[0],
             )
         elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
+            logits = ops.cast(
+                self.lm_head(self.norm(h), signal_buffers)[0], DType.float32
+            )
             offsets = input_row_offsets
 
         if logits is not None and offsets is not None:
