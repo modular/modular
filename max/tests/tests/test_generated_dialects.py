@@ -294,3 +294,9 @@ def test_construct_pass_with_options(mlir_context) -> None:
     )
     assert isinstance(with_options, Pass)
     assert with_options.name == "MOToMOGG"
+
+
+def test_get_context_from_cpp(mlir_context) -> None:
+    loc = mlir.Location.current
+    module = builtin.ModuleOp(loc)
+    assert module.context is mlir_context
