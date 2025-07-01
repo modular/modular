@@ -19,7 +19,7 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn import ColumnParallelLinear, Linear
+from max.nn import ColumnParallelLinear, Linear, Signals
 
 
 def _distribute_value(
@@ -73,17 +73,25 @@ def _multi_gpu_linear(
         devices=[DeviceRef(device.label, device.id) for device in devices],
     )
     distributed_linear.load_state_dict(state_dict)
+
+    # Create signals for distributed communication
+    device_refs = [DeviceRef(device.label, device.id) for device in devices]
+    signals = Signals(device_refs)
+
     with Graph(
         "distributed_linear",
         input_types=[
             TensorType(
                 DType.float32, [batch_size, in_dim], device=DeviceRef.GPU()
             )
-        ],
+        ]
+        + signals.input_types(),
     ) as distributed_graph:
         assert isinstance(distributed_graph.inputs[0], TensorValue)
         inputs = _distribute_value(distributed_graph.inputs[0], devices)
-        distributed_graph.output(*distributed_linear(inputs))
+        # Pass signal buffers to the distributed linear layer
+        signal_buffers = [inp.buffer for inp in distributed_graph.inputs[1:]]
+        distributed_graph.output(*distributed_linear(inputs, signal_buffers))
 
     return session.load(
         distributed_graph,
@@ -139,7 +147,16 @@ def test_linear(
     compiled_distributed_linear = _multi_gpu_linear(
         batch_size, in_dim, out_dim, state_dict, session, devices
     )
-    distributed_outputs = compiled_distributed_linear(input)
+
+    # Create signals for execution
+    device_refs = [DeviceRef(device.label, device.id) for device in devices]
+    signals = Signals(device_refs)
+
+    # Synchronize devices before execution
+    for dev in devices:
+        dev.synchronize()
+
+    distributed_outputs = compiled_distributed_linear(input, *signals.buffers())
 
     for n, output in enumerate(distributed_outputs):
         assert isinstance(output, Tensor)
