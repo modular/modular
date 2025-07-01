@@ -26,6 +26,7 @@ from internal_utils._utils import (
     initialize,
     random,
     static,
+    init_vector_launch,
 )
 from linalg.matmul_gpu import _matmul_gpu
 
@@ -122,20 +123,28 @@ fn bench_matmul[
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[DType.bfloat16](cache_c)
 
+    # TODO: remove init_on_gpu flag and the loading on CPU
+    alias init_on_gpu = True
     var a_host = HostNDBuffer[dtype, 1](DimList(cache_a))
     var b_host = HostNDBuffer[dtype, 1](DimList(cache_b))
 
     @parameter
-    if dtype is DType.float8_e4m3fn:
-        random(a_host.tensor)
-        random(b_host.tensor)
-    else:
-        initialize(a_host.tensor, init_type)
-        initialize(b_host.tensor, init_type)
+    if not init_on_gpu:
 
-    ctx.enqueue_copy(buffer_a, a_host.tensor.data)
-    ctx.enqueue_copy(buffer_b, b_host.tensor.data)
-    ctx.synchronize()
+        @parameter
+        if dtype is DType.float8_e4m3fn:
+            random(a_host.tensor)
+            random(b_host.tensor)
+        else:
+            initialize(a_host.tensor, init_type)
+            initialize(b_host.tensor, init_type)
+
+        ctx.enqueue_copy(buffer_a, a_host.tensor.data)
+        ctx.enqueue_copy(buffer_b, b_host.tensor.data)
+        ctx.synchronize()
+    else:
+        init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)
+        init_vector_launch[dtype](buffer_b, cache_b, init_type, ctx)
 
     @parameter
     @__copy_capture(
@@ -176,7 +185,6 @@ fn bench_matmul[
                     c_row_major=True,
                     transpose_b=transpose_b,
                 )
-
             else:
                 _matmul_gpu[
                     use_tensor_core=True,
@@ -209,6 +217,7 @@ fn bench_matmul[
     _ = buffer_a^
     _ = buffer_b^
     _ = buffer_c^
+
     _ = a_host^
     _ = b_host^
 
