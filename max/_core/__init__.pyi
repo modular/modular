@@ -12,7 +12,7 @@ from typing import Callable, Generic, TypeVar
 
 from max.mlir import Attribute as MlirAttribute
 from max.mlir import Block as MlirBlock
-from max.mlir import Location
+from max.mlir import Context, Location
 from max.mlir import Type as MlirType
 from max.mlir import Value as MlirValue
 
@@ -120,6 +120,8 @@ class Operation:
     @staticmethod
     def _from_cmlir(arg: object, /) -> Operation: ...
     def __eq__(self, arg: object, /) -> bool: ...
+    @property
+    def context(self) -> Context: ...
     @property
     def results(self) -> Sequence[Value[Type]]: ...
     @property
