@@ -261,15 +261,18 @@ fn layer_norm_gpu_warp_tiling[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    output_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
 ](
-    output: NDBuffer[dtype, 2, MutableAnyOrigin],
+    shape: IndexList[2],
     beta: NDBuffer[dtype, 1, MutableAnyOrigin],
     epsilon: Scalar[dtype],
 ):
     alias align = alignof[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
-    var num_cols = output.dim[1]()
+    var num_cols = shape[1]
     var tid: UInt = thread_idx.x
     var row: UInt = block_idx.x
 
@@ -313,9 +316,7 @@ fn layer_norm_gpu_warp_tiling[
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
             ]() + beta_val.cast[accum_type]()
-            output.store[alignment=align](
-                Index(row, idx), norm_val.cast[dtype]()
-            )
+            output_fn[simd_width, align](row, idx, norm_val.cast[dtype]())
 
 
 fn layer_norm_gpu_block[
@@ -327,15 +328,18 @@ fn layer_norm_gpu_block[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    output_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
 ](
-    output: NDBuffer[dtype, 2, MutableAnyOrigin],
+    shape: IndexList[2],
     beta: NDBuffer[dtype, 1, MutableAnyOrigin],
     epsilon: Scalar[dtype],
 ):
     alias align = alignof[SIMD[dtype, simd_width]]()
     alias accum_type = get_accum_type[dtype]()
 
-    var num_cols: UInt = output.dim[1]()
+    var num_cols: UInt = shape[1]
     var tid = thread_idx.x
     var row = block_idx.x
 
@@ -396,27 +400,21 @@ fn layer_norm_gpu_block[
                     * norm_factor
                     * gamma_val.cast[accum_type]()
                 ) + beta_val.cast[accum_type]()
-                output.store[alignment=align](
-                    Index(row, offset), norm_val.cast[dtype]()
+                output_fn[simd_width, align](
+                    row, offset, norm_val.cast[dtype]()
                 )
 
 
 fn layer_norm_reshape[
-    dtype: DType, rank: Int, //, output_rank: Int
-](
-    shape: IndexList[rank, **_],
-    buf: NDBuffer[dtype, rank, *_],
-    out result: NDBuffer[dtype, output_rank, buf.origin],
-):
+    rank: Int, //, output_rank: Int
+](shape: IndexList[rank, **_],) -> IndexList[output_rank]:
     @parameter
     if rank == output_rank:
-        return rebind[__type_of(result)](buf)
+        return rebind[IndexList[output_rank]](shape)
 
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
-    var new_shape = IndexList[output_rank](prod_all_but_last_dim, last_dim)
-    var output_rs = reshape[output_rank](buf, new_shape)
-    return output_rs
+    return IndexList[output_rank](prod_all_but_last_dim, last_dim)
 
 
 fn layer_norm_gpu[
@@ -428,11 +426,13 @@ fn layer_norm_gpu[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    output_fn: fn[width: Int, rank: Int, alignment: Int] (
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
 ](
     shape: IndexList[rank, **_],
     beta: NDBuffer[dtype, 1],
     epsilon: Scalar[dtype],
-    output: NDBuffer[mut=True, dtype, rank, *_],
     *,
     ctx: DeviceContext,
 ) raises:
@@ -445,9 +445,9 @@ fn layer_norm_gpu[
         return
 
     alias rank_rs = 2
-    var output_rs = layer_norm_reshape[rank_rs](shape, output)
-    var rows = output_rs.dim[0]()
-    var cols = output_rs.dim[1]()
+    var flattened_shape = layer_norm_reshape[rank_rs](shape)
+    var rows = flattened_shape[0]
+    var cols = flattened_shape[1]
 
     @parameter
     @always_inline
@@ -458,6 +458,15 @@ fn layer_norm_gpu[
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
+
+    @parameter
+    @always_inline
+    fn output_fn_2d[
+        simd_width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
 
     alias simd_width = simdwidthof[dtype, target = get_gpu_target()]()
     alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
@@ -474,9 +483,11 @@ fn layer_norm_gpu[
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             ctx.enqueue_function[
-                layer_norm_gpu_warp_tiling[simd_width, input_fn_2d, gamma_fn]
+                layer_norm_gpu_warp_tiling[
+                    simd_width, input_fn_2d, gamma_fn, output_fn_2d
+                ]
             ](
-                output_rs,
+                flattened_shape,
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
@@ -485,9 +496,11 @@ fn layer_norm_gpu[
             )
         else:
             ctx.enqueue_function[
-                layer_norm_gpu_block[simd_width, input_fn_2d, gamma_fn]
+                layer_norm_gpu_block[
+                    simd_width, input_fn_2d, gamma_fn, output_fn_2d
+                ]
             ](
-                output_rs,
+                flattened_shape,
                 beta,
                 epsilon,
                 grid_dim=grid_dim,
@@ -495,8 +508,10 @@ fn layer_norm_gpu[
                 attributes=pdl_launch_attributes(),
             )
     else:
-        ctx.enqueue_function[layer_norm_gpu_block[1, input_fn_2d, gamma_fn]](
-            output_rs,
+        ctx.enqueue_function[
+            layer_norm_gpu_block[1, input_fn_2d, gamma_fn, output_fn_2d]
+        ](
+            flattened_shape,
             beta,
             epsilon,
             grid_dim=grid_dim,
@@ -521,8 +536,12 @@ fn layer_norm_cpu[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
+    output_fn: fn[width: Int, alignment: Int] (
+        row: Int, col: Int, val: SIMD[dtype, width]
+    ) capturing -> None,
 ](
-    out_buf: NDBuffer[mut=True, dtype, 2, _, _],
+    num_rows: Int,
+    num_cols: Int,
     beta: NDBuffer[dtype, 1],
     epsilon: Scalar[dtype],
 ) raises:
@@ -536,21 +555,27 @@ fn layer_norm_cpu[
         dtype: The x and out buffers' elements dtype.
         input_fn: Function called to generate an input value.
         gamma_fn: Function called to generate a gamma value.
+        output_fn: Function called to store the output value.
 
     Args:
-        out_buf: The output buffer.
+        num_rows: The number of rows in the input tensor.
+        num_cols: The number of columns in the input tensor.
         beta: The beta value to use in the layernorm calculation.
         epsilon: The eps value to use in the layernorm calculation.
     """
     alias simd_width = simdwidthof[dtype]()
 
-    var num_rows = out_buf.dim[0]()
-    var num_cols = out_buf.dim[1]()
-
     for row in range(num_rows):
-        var out_slice = NDBuffer[dtype, 1, _, out_buf.shape.at[1]()](
-            out_buf._offset(Index(row, 0)), num_cols
-        )
+
+        @always_inline
+        @parameter
+        @__copy_capture(row)
+        fn output_fn_1d[
+            dtype_: DType, simd_width: Int, alignment: Int
+        ](idx: Int, val: SIMD[dtype_, simd_width]):
+            output_fn[simd_width, alignment](
+                row, idx, rebind[SIMD[dtype, simd_width]](val)
+            )
 
         @__copy_capture(row)
         @parameter
@@ -561,7 +586,6 @@ fn layer_norm_cpu[
 
         var sum_val = map_reduce[
             simd_width,
-            out_buf.shape.at[1](),
             dtype,
             dtype,
             __origin_of(),
@@ -569,21 +593,26 @@ fn layer_norm_cpu[
             __origin_of(),
             _simd_sum_elementwise,
             _simd_sum,
-        ](out_slice, 0)
+            output_fn_1d,
+        ](num_cols, 0)
 
         var mean_val = _sum_to_mean(sum_val, num_cols)
-        var var_val = variance(out_slice, mean_val, 0)  # use biased estimator
+        var var_val = variance[dtype, input_gen_wrapper](
+            num_cols, mean_val, 0
+        )  # use biased estimator
         var norm_factor = isqrt(var_val + epsilon)
 
-        @__copy_capture(out_slice, norm_factor, mean_val)
+        @__copy_capture(norm_factor, mean_val, row)
         @parameter
         fn _normalize[simd_width: Int](col: Int):
-            var out_val = out_slice.load[width=simd_width](col)
+            var out_val = input_fn[simd_width](row, col)
             var gamma_val = gamma_fn[simd_width, 1](col)
             var norm_val = (
                 out_val - mean_val
             ) * norm_factor * gamma_val + beta.load[width=simd_width](col)
-            out_slice.store(col, norm_val)
+            output_fn[simd_width, alignof[dtype]()](
+                row, col, rebind[SIMD[dtype, simd_width]](norm_val)
+            )
 
         vectorize[_normalize, simd_width](num_cols)
 
@@ -597,35 +626,25 @@ fn layer_norm_cpu[
     gamma_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         dtype, width
     ],
-](
-    shape: IndexList[rank, **_],
-    beta: NDBuffer[dtype, 1],
-    epsilon: Scalar[dtype],
-    output: NDBuffer[mut=True, dtype, rank, *_],
-):
+    output_fn: fn[width: Int, rank: Int, alignment: Int] (
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
+](shape: IndexList[rank], beta: NDBuffer[dtype, 1], epsilon: Scalar[dtype],):
     var last_dim = shape[rank - 1]
-    var prod_all_but_last_dim = shape.flattened_length() // last_dim
-    var flat_shape = Index(prod_all_but_last_dim, last_dim)
 
-    var output_buf = reshape[2](output, flat_shape)
+    var prod_all_but_last_dim = 1
+
+    @parameter
+    for i in range(rank - 1):
+        prod_all_but_last_dim *= shape[i]
 
     var num_workers = min(parallelism_level(), prod_all_but_last_dim)
     var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
-    @__copy_capture(
-        chunk_size, prod_all_but_last_dim, last_dim, output_buf, epsilon
-    )
+    @__copy_capture(chunk_size, prod_all_but_last_dim, last_dim, epsilon)
     @parameter
     fn task_func(thread_id: Int) raises:
-        var num_rows = min(
-            chunk_size, prod_all_but_last_dim - thread_id * chunk_size
-        )
         var row_idx = thread_id * chunk_size
-        var thread_starting_coord = Index(row_idx, 0)
-        var per_thread_dims = DimList(num_rows, last_dim)
-        var output_buf_view = NDBuffer[dtype, 2](
-            output_buf._offset(thread_starting_coord), per_thread_dims
-        )
 
         @__copy_capture(row_idx)
         @parameter
@@ -640,7 +659,22 @@ fn layer_norm_cpu[
             indices[rank - 1] = col
             return input_fn[simd_width](indices.canonicalize())
 
-        layer_norm_cpu[input_fn_2d, gamma_fn](output_buf_view, beta, epsilon)
+        @__copy_capture(row_idx)
+        @parameter
+        @always_inline
+        fn output_fn_2d[
+            simd_width: Int, alignment: Int
+        ](row: Int, col: Int, val: SIMD[dtype, simd_width]):
+            # Translate given 2d index back to original Nd tensor
+            var indices = _get_start_indices_of_nth_subvolume(
+                row_idx + row, shape
+            )
+            indices[rank - 1] = col
+            output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
+
+        layer_norm_cpu[input_fn_2d, gamma_fn, output_fn_2d](
+            chunk_size, shape[rank - 1], beta, epsilon
+        )
 
     sync_parallelize[task_func](num_workers)
 
@@ -655,6 +689,9 @@ fn layer_norm[
     input_1_fn: fn[_width: Int, _rank: Int] (
         IndexList[_rank]
     ) capturing -> SIMD[dtype, _width],
+    output_0_fn: fn[width: Int, rank: Int, alignment: Int] (
+        idx: IndexList[rank], val: SIMD[dtype, width]
+    ) capturing -> None,
     /,
     target: StaticString = "cpu",
 ](
@@ -662,7 +699,6 @@ fn layer_norm[
     gamma_shape: IndexList[1],
     beta: NDBuffer[dtype, 1],
     epsilon: Scalar[dtype],
-    output: NDBuffer[mut=True, dtype, rank, *_],
     ctx: DeviceContextPtr,
 ) raises:
     # Note: we only support reduction along the last dimension
@@ -671,9 +707,6 @@ fn layer_norm[
 
     if beta.dynamic_shape[0] != shape[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
-
-    if output.dynamic_shape.canonicalize() != shape:
-        raise Error("Input and output buffers are not same shape")
 
     @always_inline
     @parameter
@@ -687,15 +720,16 @@ fn layer_norm[
 
         @parameter
         if is_cpu[target]():
-            layer_norm_cpu[input_0_fn, input_1_fn](
-                shape.canonicalize(), beta, epsilon, output
-            )
-        elif is_gpu[target]():
-            layer_norm_gpu[input_0_fn, input_1_fn](
+            layer_norm_cpu[input_0_fn, input_1_fn, output_0_fn](
                 shape.canonicalize(),
                 beta,
                 epsilon,
-                output,
+            )
+        elif is_gpu[target]():
+            layer_norm_gpu[input_0_fn, input_1_fn, output_0_fn](
+                shape.canonicalize(),
+                beta,
+                epsilon,
                 ctx=ctx.get_device_context(),
             )
         else:

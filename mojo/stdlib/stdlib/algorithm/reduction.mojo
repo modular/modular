@@ -20,7 +20,7 @@ from algorithm import map_reduce
 """
 
 from math import align_down, ceildiv
-from sys.info import simdwidthof, sizeof
+from sys.info import simdwidthof, sizeof, alignof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -147,23 +147,64 @@ fn map_reduce[
     Returns:
         The computed reduction value.
     """
+
+    @always_inline
+    @parameter
+    fn output_fn[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: Int, val: SIMD[_dtype, width]):
+        dst.store(idx, rebind[SIMD[dtype, width]](val))
+
+    return map_reduce[
+        simd_width,
+        dtype,
+        acc_type,
+        origins_gen,
+        input_gen_fn,
+        origins_vec,
+        reduce_vec_to_vec_fn,
+        reduce_vec_to_scalar_fn,
+        output_fn,
+    ](len(dst), init)
+
+
+@always_inline
+@parameter
+fn map_reduce[
+    simd_width: Int,
+    dtype: DType,
+    acc_type: DType,
+    origins_gen: OriginSet,
+    input_gen_fn: fn[dtype: DType, width: Int] (Int) capturing [
+        origins_gen
+    ] -> SIMD[dtype, width],
+    origins_vec: OriginSet,
+    reduce_vec_to_vec_fn: fn[acc_type: DType, dtype: DType, width: Int] (
+        SIMD[acc_type, width], SIMD[dtype, width]
+    ) capturing [origins_vec] -> SIMD[acc_type, width],
+    reduce_vec_to_scalar_fn: fn[dtype: DType, width: Int] (
+        SIMD[dtype, width]
+    ) -> Scalar[dtype],
+    output_fn: fn[dtype_: DType, width: Int, alignment: Int] (
+        idx: Int, val: SIMD[dtype_, width]
+    ) capturing -> None,
+](length: Int, init: Scalar[acc_type]) -> Scalar[acc_type]:
     alias unroll_factor = 8  # TODO: search
     # TODO: explicitly unroll like vectorize_unroll does.
     alias unrolled_simd_width = simd_width * unroll_factor
-    var length = len(dst)
     var unrolled_vector_end = align_down(length, unrolled_simd_width)
     var vector_end = align_down(length, simd_width)
 
     var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width](init)
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
         var val_simd = input_gen_fn[dtype, unrolled_simd_width](i)
-        dst.store(i, val_simd)
+        output_fn[dtype, unrolled_simd_width, alignof[dtype]()](i, val_simd)
         acc_unrolled_simd = reduce_vec_to_vec_fn(acc_unrolled_simd, val_simd)
 
     var acc_simd = SIMD[acc_type, simd_width](init)
     for i in range(unrolled_vector_end, vector_end, simd_width):
         var val_simd = input_gen_fn[dtype, simd_width](i)
-        dst.store(i, val_simd)
+        output_fn[dtype, simd_width, alignof[dtype]()](i, val_simd)
         acc_simd = reduce_vec_to_vec_fn(acc_simd, val_simd)
 
     var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](
@@ -172,7 +213,7 @@ fn map_reduce[
     acc = reduce_vec_to_vec_fn(acc, reduce_vec_to_scalar_fn(acc_simd))
     for i in range(vector_end, length):
         var val = input_gen_fn[dtype, 1](i)
-        dst[i] = val
+        output_fn[dtype, 1, alignof[dtype]()](i, val)
         acc = reduce_vec_to_vec_fn(acc, val)
     return acc[0].value
 
@@ -1335,7 +1376,15 @@ fn sum(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
     Returns:
         The sum of the buffer elements.
     """
-    return reduce[_simd_sum_elementwise](src, Scalar[src.type](0))
+
+    @parameter
+    @always_inline
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+
+    return sum[src.type, input_fn_1d](len(src))
 
 
 fn sum[
@@ -1420,6 +1469,72 @@ fn sum[
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
     ](input_shape, Scalar[dtype](0), reduce_dim, context=context)
+
+
+fn sum[
+    dtype: DType,
+    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+        dtype_, width
+    ],
+](length: Int) raises -> Scalar[dtype]:
+    """
+    Computes the sum of a 1D array using a provided input function.
+
+    This function performs a reduction (sum) over a 1-dimensional array of the specified length and data type.
+    The input values are provided by the `input_fn_1d` function, which takes an index and returns a SIMD vector
+    of the specified width and data type. The reduction is performed using a single thread for deterministic results.
+
+    Parameters:
+        dtype: The data type of the elements to sum.
+        input_fn_1d: A function that takes a data type, SIMD width, and index, and returns a SIMD vector of input values.
+
+    Args:
+        length: The number of elements in the 1D array.
+
+    Returns:
+        The sum of all elements as a scalar of the specified data type.
+
+    Raises:
+        Any exception raised by the input function or reduction process.
+    """
+
+    @always_inline
+    @parameter
+    fn input_fn_nd[
+        _dtype: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
+        return input_fn_1d[dtype, width](idx[0])._refine[_dtype]()
+
+    var out: Scalar[dtype] = 0
+
+    @always_inline
+    @parameter
+    fn output_fn[
+        _dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_dtype, width]):
+        out = value._refine[dtype, 1]()
+
+    @always_inline
+    @parameter
+    fn reduce_fn_wrapper[
+        dtype: DType, width: Int
+    ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return acc + val
+
+    var shape = IndexList[1](length)
+
+    _reduce_generator[
+        input_fn_nd,
+        output_fn,
+        reduce_fn_wrapper,
+        single_thread_blocking_override=True,
+    ](
+        shape,
+        init=Scalar[dtype](0),
+        reduce_dim=0,
+    )
+
+    return out
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1562,14 +1677,14 @@ fn mean(src: NDBuffer[rank=1]) raises -> Scalar[src.type]:
 
     debug_assert(len(src) != 0, "input must not be empty")
 
-    var total = sum(src)
-    var buffer_len = len(src)
-
     @parameter
-    if src.type.is_integral():
-        return total // buffer_len
-    else:
-        return total / buffer_len
+    @always_inline
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+
+    return mean[src.type, input_fn_1d](len(src))
 
 
 fn mean[
@@ -1740,6 +1855,23 @@ fn mean[
             )
 
 
+fn mean[
+    dtype: DType,
+    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+        dtype_, width
+    ],
+](length: Int) raises -> Scalar[dtype]:
+    # TODO docstring.
+
+    var total = sum[dtype, input_fn_1d](length)
+
+    @parameter
+    if dtype.is_integral():
+        return total // length
+    else:
+        return total / length
+
+
 # ===-----------------------------------------------------------------------===#
 # variance
 # ===-----------------------------------------------------------------------===#
@@ -1767,24 +1899,45 @@ fn variance(
 
     debug_assert(len(src) > 1, "input length must be greater than 1")
 
+    @parameter
+    @always_inline
+    @__copy_capture(src)
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+
+    return variance[src.type, input_fn_1d](len(src), mean_value, correction)
+
+
+fn variance[
+    dtype: DType,
+    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+        dtype_, width
+    ],
+](length: Int, mean_value: Scalar[dtype], correction: Int = 1) raises -> Scalar[
+    dtype
+]:
+    # TODO docstring.
+
     @always_inline
     @parameter
-    fn input_fn[
+    fn input_fn_nd[
         _dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[_dtype, width]:
         var mean_simd = SIMD[mean_value.dtype, width](mean_value).cast[_dtype]()
-        var x = src.load[width=width](idx[0])
+        var x = input_fn_1d[_dtype, width](idx[0])
         var diff = x.cast[_dtype]() - mean_simd
         return (diff * diff)._refine[_dtype]()
 
-    var out: Scalar[src.type] = 0
+    var out: Scalar[dtype] = 0
 
     @always_inline
     @parameter
     fn output_fn[
         _dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank], value: SIMD[_dtype, width]):
-        out = value._refine[src.type, 1]()
+        out = value._refine[dtype, 1]()
 
     @always_inline
     @parameter
@@ -1793,10 +1946,10 @@ fn variance(
     ](acc: SIMD[dtype, width], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return acc + val
 
-    var shape = IndexList[1](len(src))
+    var shape = IndexList[1](length)
 
     _reduce_generator[
-        input_fn,
+        input_fn_nd,
         output_fn,
         reduce_fn_wrapper,
         single_thread_blocking_override=True,
@@ -1806,7 +1959,7 @@ fn variance(
         reduce_dim=0,
     )
 
-    return out / (len(src) - correction)
+    return out / (length - correction)
 
 
 fn variance(
@@ -1826,8 +1979,24 @@ fn variance(
         The variance value of the elements in a buffer.
     """
 
-    var mean_value = mean(src)
-    return variance(src, mean_value, correction)
+    @always_inline
+    @parameter
+    fn input_fn_1d[
+        dtype_: DType, width: Int
+    ](idx: Int) capturing -> SIMD[dtype_, width]:
+        return rebind[SIMD[dtype_, width]](src.load[width=width](idx))
+
+    return variance[src.type, input_fn_1d](len(src), correction)
+
+
+fn variance[
+    dtype: DType,
+    input_fn_1d: fn[dtype_: DType, width: Int] (idx: Int) capturing -> SIMD[
+        dtype_, width
+    ],
+](length: Int, correction: Int = 1) raises -> Scalar[dtype]:
+    var mean_value = mean[dtype, input_fn_1d](length)
+    return variance[dtype, input_fn_1d](length, mean_value, correction)
 
 
 # ===-----------------------------------------------------------------------===#

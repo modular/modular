@@ -64,7 +64,17 @@ fn run_layer_norm_cpu[
     ](idx: IndexList[rank]) -> SIMD[dtype, width]:
         return gamma.load[width=width](idx[0])
 
-    layer_norm_cpu[input_fn, gamma_fn](shape, beta, epsilon, output_buf)
+    @__copy_capture(output_buf)
+    @always_inline
+    @parameter
+    fn output_fn[
+        width: Int, _rank: Int, alignment: Int
+    ](idx: IndexList[_rank], val: SIMD[dtype, width]):
+        output_buf.store[width=width, alignment=alignment](
+            rebind[IndexList[rank]](idx), rebind[SIMD[dtype, width]](val)
+        )
+
+    layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
 
     for r in range(rows):
         var vec = NDBuffer[dtype, 1](input_ptr + r * cols, cols)
@@ -85,14 +95,23 @@ fn run_layer_norm_cpu[
 
 
 def main():
+    print("0")
     run_layer_norm_cpu[DType.float32](Index(3, 5))
+    print("1")
     run_layer_norm_cpu[DType.float32](Index(3, 8))
+    print("2")
     run_layer_norm_cpu[DType.float32](Index(7, 33))
+    print("3")
     run_layer_norm_cpu[DType.float32](Index(1, 1024))
+    print("4")
     run_layer_norm_cpu[DType.float32](Index(1, 8192))
 
     # variable rank
+    print("5")
     run_layer_norm_cpu[DType.float32](Index(0))
+    print("6")
     run_layer_norm_cpu[DType.float32](Index(5))
+    print("7")
     run_layer_norm_cpu[DType.float32](Index(3, 4, 10, 20, 8))
+    print("8")
     run_layer_norm_cpu[DType.float32](Index(1, 5, 6, 10, 128))

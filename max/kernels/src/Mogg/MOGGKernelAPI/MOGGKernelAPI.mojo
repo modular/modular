@@ -4088,13 +4088,16 @@ struct LayerNorm:
         rank: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
+        output: FusedOutputTensor[dtype=dtype, rank=rank],
         input: FusedInputTensor[dtype=dtype, rank=rank],
         gamma: FusedInputTensor[dtype=dtype, rank=1],
         beta: InputTensor[dtype=dtype, rank=1],
         epsilon: Scalar[dtype=dtype],
         ctx: DeviceContextPtr,
     ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
         @parameter
         @always_inline
         fn input_fn[
@@ -4111,15 +4114,23 @@ struct LayerNorm:
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](rebind[IndexList[1]](coords))
 
-        var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        @parameter
+        @always_inline
+        fn output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
 
-        layer_norm[dtype, rank, input_fn, gamma_fn, target=target](
+        var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
+
+        layer_norm[dtype, rank, input_fn, gamma_fn, output_fn, target=target](
             input.shape(),
             gamma.shape(),
             beta_buf,
             epsilon,
-            output_buf,
             ctx,
         )
 
