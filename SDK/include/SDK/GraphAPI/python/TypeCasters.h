@@ -215,6 +215,16 @@ public:
     value = unwrap(mlirPythonCapsuleToContext(capsule.ptr()));
     return !mlirContextIsNull(wrap(value));
   }
+
+  static handle from_cpp(::mlir::MLIRContext *t, rv_policy policy,
+                         cleanup_list *cleanup) noexcept {
+    static nb::handle contextCAPICreate =
+        nb::module_::import_("max.mlir")
+            .attr("Context")
+            .attr(MLIR_PYTHON_CAPI_FACTORY_ATTR);
+    nb::handle capsule = mlirPythonContextToCapsule(wrap(t));
+    return contextCAPICreate(capsule).release();
+  }
 };
 
 /// Casts MlirLocation <-> mlir::Location.
