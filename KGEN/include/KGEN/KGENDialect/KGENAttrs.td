@@ -451,7 +451,7 @@ def KGEN_UpcastAttr : KGEN_ExprAttr<"Upcast", "upcast"> {
     "TypedAttr":$inputTypeValue,
     VTableParam:$vTable
   );
-  let assemblyFormat = "`<` $inputTypeValue `,` $vTable `>`";
+  let assemblyFormat = "`<` $inputTypeValue (`,` $vTable^)? `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
