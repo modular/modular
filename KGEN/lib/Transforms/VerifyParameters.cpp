@@ -14,6 +14,7 @@
 #include "Support/Compiler/Threading.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
 #include "llvm/Support/Mutex.h"
@@ -29,11 +30,16 @@ namespace M::KGEN {
 namespace {
 class ParameterSimplifier : public ParameterEvaluator {
 public:
-  ParameterSimplifier(ModuleOp module, SymbolTableCollection &symtabs)
-      : module(module), symtabs(symtabs) {}
+  ParameterSimplifier(ModuleOp module, SymbolTableCollection &symtabs,
+                      ParameterEvaluationContext &evalContext)
+      : module(module), symtabs(symtabs) {
+    setEvaluationContext(&evalContext);
+  }
   ParameterSimplifier(const ParameterSimplifier &other)
       : ParameterEvaluator(other.getParameterValues()), module(other.module),
-        symtabs(other.symtabs) {}
+        symtabs(other.symtabs) {
+    setEvaluationContext(other.getEvaluationContext());
+  }
 
 private:
   ModuleOp module;
@@ -125,6 +131,16 @@ static void propagateTrivialParameters(Region *region,
       rebind.replaceAllUsesWith(rebind.getInput());
       rebind.erase();
       continue;
+    }
+
+    // GeneratorUser ops need concretize callee to be called when the callee
+    // attr is updated.
+    if (auto generatorUser = dyn_cast<GeneratorUserOpInterface>(op)) {
+      if (auto symCst =
+              dyn_cast<SymbolConstantAttr>(generatorUser.getCallee())) {
+        IRRewriter b{OpBuilder(op)};
+        generatorUser.concretizeCallee(b, symCst);
+      }
     }
   }
 
@@ -237,9 +253,10 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     VerboseCompilerTimeTraceScope traceScope("propagateTrivialParameters");
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
-      propagateTrivialParameters(
-          declRegion, graph, graph,
-          ParameterSimplifier(module, analysis.getSymbolTables()));
+      propagateTrivialParameters(declRegion, graph, graph,
+                                 ParameterSimplifier(module,
+                                                     analysis.getSymbolTables(),
+                                                     evaluationContext));
     }
   }
 };

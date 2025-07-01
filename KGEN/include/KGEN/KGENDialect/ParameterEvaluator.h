@@ -109,6 +109,9 @@ public:
   void setEvaluationContext(ParameterEvaluationContext *context) {
     evaluationContext = context;
   }
+  ParameterEvaluationContext *getEvaluationContext() const {
+    return evaluationContext;
+  }
 
   /// Set a value for the specified parameter declaration to the specified
   /// simplified value.
