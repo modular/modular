@@ -159,6 +159,13 @@ kgen.generator export @bindIt(){
   kgen.return
 }
 
+"some.op"() {
+  // CHECK: identityUpcast = #kgen.type<array<1, i1>> : !kgen.type
+  identityUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type> : !kgen.type,
+  // CHECK-SAME: vtableUpcast = #kgen.type<array<1, i1>, {"entry1" : () -> index = @entry1}> : !kgen.type
+  vtableUpcast = #kgen.upcast<#kgen.type<array<1, i1>> : !kgen.type, #kgen<vtable "entry1" : () -> index = @entry1>> : !kgen.type
+} : () -> ()
+
 // CHECK-LABEL: kgen.generator @closureSymbol()
 kgen.generator @closureSymbol(){
   // CHECK: kgen.param.declare symbol: <!kgen.param_closure<@foo "fn">>
