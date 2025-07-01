@@ -384,7 +384,7 @@ type of error condition and propagates all others:
 import sys
 import time
 
-struct ConditionalTimer:
+struct ConditionalTimer(Copyable):
     var start_time: Int
 
     fn __init__(out self):
