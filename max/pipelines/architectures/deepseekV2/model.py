@@ -45,7 +45,7 @@ from max.pipelines.lib import (
     upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged_new,
+    compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
 from transformers import AutoConfig
@@ -433,7 +433,7 @@ class DeepseekV2Model(PipelineModel[TextContext]):
         tokens = model_inputs.tokens.to_numpy()
         input_row_offsets = model_inputs.input_row_offsets.to_numpy()
 
-        return compute_log_probabilities_ragged_new(
+        return compute_log_probabilities_ragged(
             self.logprobs_device,
             self.logprobs_model,
             input_row_offsets=input_row_offsets,

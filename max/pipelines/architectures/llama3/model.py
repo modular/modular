@@ -43,7 +43,7 @@ from max.pipelines.lib import (
     SupportedEncoding,
 )
 from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged_new,
+    compute_log_probabilities_ragged,
     log_probabilities_ragged_graph,
 )
 from max.profiler import traced
@@ -550,7 +550,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         tokens = llama3_inputs.tokens.to_numpy()
         input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
 
-        return compute_log_probabilities_ragged_new(
+        return compute_log_probabilities_ragged(
             self.logprobs_device,
             self.logprobs_model,
             input_row_offsets=input_row_offsets,
