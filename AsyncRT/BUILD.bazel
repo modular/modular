@@ -202,6 +202,7 @@ modular_cc_library(
         "//Support:Threading",
         "@llvm-project//llvm:Support",
     ],
+    # This is needed for `utils/sync-stubfiles.py` to work
     alwayslink = True,
 )
 
