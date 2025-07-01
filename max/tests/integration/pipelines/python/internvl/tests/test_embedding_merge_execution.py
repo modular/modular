@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+import os
+
+import pytest
 import torch
 from max.driver import CPU, Tensor
 from max.dtype import DType
@@ -16,6 +19,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
+from utils.config_loader import ConfigNames, get_config_loader
 
 
 def merge_multimodal_embeddings_torch_reference(
@@ -46,10 +50,32 @@ def merge_multimodal_embeddings_torch_reference(
     return result
 
 
-def test_single_image_merge_execution() -> None:
+@pytest.mark.parametrize(
+    "config_name",
+    [
+        pytest.param(ConfigNames.INTERNVL_2B),
+        pytest.param(ConfigNames.INTERNVL_8B),
+        pytest.param(
+            ConfigNames.INTERNVL_38B,
+            marks=[
+                pytest.mark.skipif(
+                    not os.environ.get("INTERNVL_38B_TESTS"),
+                    reason="38B tests disabled (set INTERNVL_38B_TESTS env var to enable)",
+                ),
+            ],
+        ),
+    ],
+)
+def test_single_image_merge_execution(config_name: ConfigNames) -> None:
     """Test execution of embedding merge for a single image with flattened tensors."""
+    torch.manual_seed(42)
+
+    # Load config to get the LLM hidden size for this model
+    config_loader = get_config_loader()
+    hf_config = config_loader.load_hf_config(config_name)
+    hidden_size = hf_config["llm_config"]["hidden_size"]
+
     seq_len = 10
-    hidden_size = 768
     img_context_token_id = 100
     num_image_tokens = 4
     device = CPU()
@@ -131,9 +157,32 @@ def test_single_image_merge_execution() -> None:
     assert torch.allclose(actual_output[7:], text_embeds[7:])
 
 
-def test_batch_merge_variable_positions_execution() -> None:
+@pytest.mark.parametrize(
+    "config_name",
+    [
+        pytest.param(ConfigNames.INTERNVL_2B),
+        pytest.param(ConfigNames.INTERNVL_8B),
+        pytest.param(
+            ConfigNames.INTERNVL_38B,
+            marks=[
+                pytest.mark.skipif(
+                    not os.environ.get("INTERNVL_38B_TESTS"),
+                    reason="38B tests disabled (set INTERNVL_38B_TESTS env var to enable)",
+                ),
+            ],
+        ),
+    ],
+)
+def test_batch_merge_variable_positions_execution(
+    config_name: ConfigNames,
+) -> None:
     """Test merging embeddings for batch with different placeholder positions using flattened tensors."""
-    hidden_size = 768
+    torch.manual_seed(42)
+
+    # Load config to get the LLM hidden size for this model
+    config_loader = get_config_loader()
+    hf_config = config_loader.load_hf_config(config_name)
+    hidden_size = hf_config["llm_config"]["hidden_size"]
     img_context_token_id = 100
     device = CPU()
     device_ref = DeviceRef.CPU()
@@ -242,6 +291,8 @@ def test_batch_merge_variable_positions_execution() -> None:
 
 def test_ragged_multimodal_embeddings_execution() -> None:
     """Test merging with ragged sequences of multimodal embeddings using flattened tensors."""
+    torch.manual_seed(42)
+
     hidden_size = 768
     img_context_token_id = 100
     device = CPU()
@@ -357,6 +408,8 @@ def test_ragged_multimodal_embeddings_execution() -> None:
 
 def test_no_image_context_tokens_fast_path_execution() -> None:
     """Test fast path when no image context tokens are present."""
+    torch.manual_seed(42)
+
     seq_len = 10
     hidden_size = 768
     img_context_token_id = 100
@@ -425,6 +478,8 @@ def test_no_image_context_tokens_fast_path_execution() -> None:
 
 def test_count_mismatch_error() -> None:
     """Test that count mismatch is handled gracefully."""
+    torch.manual_seed(42)
+
     seq_len = 10
     hidden_size = 768
     img_context_token_id = 100
@@ -490,6 +545,8 @@ def test_count_mismatch_error() -> None:
 
 def test_large_sequence_performance() -> None:
     """Test performance with large sequence lengths using flattened tensors."""
+    torch.manual_seed(42)
+
     seq_len = 2048
     hidden_size = 4096
     img_context_token_id = 100

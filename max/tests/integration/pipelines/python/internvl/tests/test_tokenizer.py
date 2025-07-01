@@ -70,7 +70,7 @@ async def test_internvl_tokenizer_image_token_indices(mocker) -> None:
         return_value=mock_tokenizer,
     )
 
-    # Mock config with vision config
+    # Mock config with vision config using realistic values from internvl-2B
     mock_config = MagicMock()
     mock_config.vision_config.image_size = 448
     mock_config.vision_config.patch_size = 14
@@ -104,9 +104,12 @@ async def test_internvl_tokenizer_image_token_indices(mocker) -> None:
         ),  # Pre-computed indices
     }
 
-    # Create a real image for the test
+    # Create a real image for the test using config dimensions
     img_buffer = io.BytesIO()
-    Image.new("RGB", (448, 448), color="red").save(img_buffer, format="PNG")
+    image_size = 448
+    Image.new("RGB", (image_size, image_size), color="red").save(
+        img_buffer, format="PNG"
+    )
     test_image = img_buffer.getvalue()
 
     # Create request with image

@@ -24,8 +24,21 @@ modular_py_library(
 modular_py_test(
     name = "internvl",
     size = "large",
-    srcs = glob(["test_*.py"]) + ["conftest.py"],
+    srcs = glob(
+        [
+            "tests/test_*.py",
+            "utils/*.py",
+            "internvl_impl/*.py",
+        ],
+    ) + ["tests/__init__.py"],
+    data = [
+        "configs/internvl-2B.json",
+        "configs/internvl-38B.json",
+        "configs/internvl-8B.json",
+        "//ModularFramework/tools/max",
+    ],
     gpu_constraints = ["//:has_multi_gpu"],
+    imports = ["."],
     tags = [
         "gpu",
         "no-sandbox",
@@ -33,8 +46,10 @@ modular_py_test(
     deps = [
         ":torch_utils",
         "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/graph",
         "//SDK/lib/API/python/max/nn",
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/serve",
@@ -44,6 +59,7 @@ modular_py_test(
         requirement("pytest-asyncio"),
         requirement("pytest-mock"),
         requirement("requests"),
+        requirement("timm"),
         requirement("torch"),
         requirement("torchvision"),
         requirement("transformers"),
