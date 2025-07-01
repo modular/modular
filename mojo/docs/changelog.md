@@ -102,6 +102,10 @@ what we publish.
   `Iterator` does not currently have a variant for supporting iteration over
   borrowed `ref` values.
 
+- `InlineArray` can now be constructed with a size of 0. This makes it easier to
+  use `InlineArray` in situations where the number of elements is generic and
+  could also be 0.
+
 ### Tooling changes
 
 - Added progress reporting support to the Mojo language server. This will emit progress
@@ -130,3 +134,9 @@ what we publish.
 
 - [#4499](https://github.com/modular/modular/issues/4499) - Traits with
   `ref self` cause issues when used as parameter.
+
+- [#4911](https://github.com/modular/modular/issues/4911) - `InlineArray`
+  now calls the move constructor for its elements when moved.
+
+- [#3927](https://github.com/modular/modular/issues/3927) - `InlineArray`
+  now can be constructed with a size of 0.
