@@ -577,7 +577,34 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
 
 LogicalResult LITLowerer::lowerTraitDecl(TraitDeclOp traitDecl,
                                          Block::iterator symTableIt) {
-  flattenAndRenameSymbol(traitDecl, symbolTable, symTableIt);
+  // Update the name of this trait, incorporating any parents.
+  StringAttr traitName =
+      flattenAndRenameSymbol(traitDecl, symbolTable, symTableIt);
+
+  // Process operations within the trait body.
+  for (Operation &member : llvm::make_early_inc_range(
+           traitDecl.getFields().front().getOperations())) {
+    if (auto func = dyn_cast<FnOp>(member)) {
+      // Check if the function has a non-empty body (more than just
+      // kgen.unreachable).
+      Block *funcBody = func.getBody();
+      bool hasEmptyBody = funcBody->getOperations().size() == 1 &&
+                          isa<KGEN::UnreachableOp>(funcBody->front());
+
+      if (!hasEmptyBody) {
+        // Lower the function with non-empty body.
+        SmallVector<VariadicKind> variadics = llvm::map_to_vector(
+            traitDecl.getSignature().getParamListAttrs().getPogs(),
+            [](PogMetadataAttr pogAttr) { return pogAttr.getVariadic(); });
+        if (failed(lowerLITFunc(func, traitDecl->getIterator(),
+                                traitName.getValue() + "::",
+                                traitDecl.getInputParams(), variadics)))
+          return failure();
+      }
+    }
+    // We don't care about other operations in the trait body for now.
+  }
+
   symbolTable.erase(traitDecl);
   return success();
 }

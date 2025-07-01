@@ -297,6 +297,30 @@ lit.struct.decl @foo {
 // -----
 
 //===----------------------------------------------------------------------===//
+// Traits
+//===----------------------------------------------------------------------===//
+
+lit.trait.decl @RetZero {
+  // CHECK-LABEL: kgen.generator @"RetZero::return_zero"
+  lit.fn @return_zero() -> index {
+    %idx0_0 = index.constant 0
+    kgen.return %idx0_0 : index
+  }
+}
+
+// -----
+
+lit.trait.decl @NestedParams<A> {
+  // CHECK-LABEL: kgen.generator @"NestedParams::nested_params"<A, B>
+  lit.fn @nested_params<B>() -> index {
+    %idx0_0 = index.constant 0
+    kgen.return %idx0_0 : index
+  }
+}
+
+// -----
+
+//===----------------------------------------------------------------------===//
 // Error
 //===----------------------------------------------------------------------===//
 lit.struct.decl @Error {}
