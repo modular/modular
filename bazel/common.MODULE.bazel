@@ -78,13 +78,6 @@ PYTHON_VERSIONS = [
 
 DEFAULT_TORCH_VERSION = "2_7_0"
 
-TORCH_VERSIONS = [
-    "2_5_0",
-    "2_5_1",
-    "2_6_0",
-    "2_7_0",
-]
-
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 
 [
@@ -149,7 +142,6 @@ module_versions(
     default_python_version = DEFAULT_PYTHON_VERSION,
     default_torch_version = DEFAULT_TORCH_VERSION,
     python_versions = PYTHON_VERSIONS,
-    torch_versions = TORCH_VERSIONS,
 )
 
 types = use_extension("@rules_mypy//mypy:types.bzl", "types")
