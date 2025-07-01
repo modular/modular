@@ -10,10 +10,10 @@ There are 3 ways to profile currently: context manager, decorator, and manual st
 
 @tracing and Tracer need to have the MODULAR_ENABLE_PROFILING = 1 env variable set.
 
-`Trace` Context manager:
+`Tracer` as a context manager:
 
 ```python
-with Trace("foo", color="blue"):
+with Tracer("foo", color="blue"):
     # Run `bar()` inside the profiling span.
     bar()
 # The profiling span ends when the context manager exits.
@@ -33,10 +33,7 @@ def bar() -> None:
     pass
 ```
 
-`Tracer` Manual Stack manager (which can also be used as a context manager):
-
-Note: The `Tracer` object can also be used as a context manager the same way the
-`Trace` context manager is used.
+`Tracer` as a manual trace stack manager:
 
 ```python
 tracer = Tracer("foo", color="blue")
@@ -44,24 +41,19 @@ tracer.push("bar")
 # ...
 tracer.pop()
 
+# or as a context manager:
 with Tracer("foo", color="blue") as tracer:
     # The parent span is named "foo".
     tracer.push("bar")
     # The sub-span is named "bar".
     tracer.pop()
 ```
-
 """
 
-from max._core.profiler import (
-    Trace,
-    is_profiling_enabled,
-    set_gpu_profiling_state,
-)
+from max._core.profiler import is_profiling_enabled, set_gpu_profiling_state
 from max.profiler.tracing import Tracer, traced
 
 __all__ = [
-    "Trace",
     "Tracer",
     "is_profiling_enabled",
     "set_gpu_profiling_state",

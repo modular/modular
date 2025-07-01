@@ -151,11 +151,18 @@ class Tracer:
         self.pop()
         self.push(message, color)
 
-    def __del__(self) -> None:
+    def cleanup(self) -> None:
+        """
+        Pop all traces that were pushed.
+        """
         while self.trace_stack:
             self.pop()
 
-    def __enter__(self) -> None: ...
+    def __del__(self) -> None:
+        self.cleanup()
+
+    def __enter__(self) -> Tracer:
+        return self
 
     def __exit__(
         self,
@@ -163,4 +170,12 @@ class Tracer:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.pop()
+        self.cleanup()
+
+    def mark(self) -> None:
+        """
+        Mark the current trace.
+        """
+        assert self.trace_stack, "stack underflow in Tracer.mark()"
+        if self.trace_stack[-1] is not None:
+            self.trace_stack[-1].mark()
