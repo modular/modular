@@ -29,7 +29,7 @@ from max.pipelines.core import (
     msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
-from max.profiler import Trace, traced
+from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
@@ -792,7 +792,7 @@ class TokenGenerationScheduler(Scheduler):
     def _schedule(self, sch_output: SchedulerOutput) -> None:
         assert sch_output.batch_size > 0
 
-        with Trace(f"_schedule({sch_output})"):
+        with Tracer(f"_schedule({sch_output})"):
             if sch_output.batch_type == BatchType.ContextEncoding:
                 self._schedule_ce(sch_output)
             else:

@@ -32,7 +32,7 @@ from max.pipelines.core import (
     TTSContext,
     msgpack_numpy_decoder,
 )
-from max.profiler import Trace, traced
+from max.profiler import Tracer, traced
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.common import flush_batch_logger, get_batch_logger
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -374,7 +374,7 @@ class AudioGenerationScheduler(Scheduler):
         assert batch.batch_size > 0
 
         # execute the batch
-        with Trace(f"_schedule({batch})"):
+        with Tracer(f"_schedule({batch})"):
             responses = self.pipeline.next_chunk(batch.reqs)
 
         # add the encoded requests to the continuous batch
