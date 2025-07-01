@@ -253,7 +253,7 @@ struct InlineArray[
         var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
         ```
         """
-
+        debug_assert(len(elems) == size, "No. of elems must match array size")
         self = Self(storage=elems^)
 
     @always_inline

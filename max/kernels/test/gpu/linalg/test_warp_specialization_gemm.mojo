@@ -92,11 +92,17 @@ def test_warp_specialize_gemm[
     # Initialize matmul operands
     random(a_host.tensor)
     random(b_host.tensor)
+    # at = a_host.tensor
+    # bt = b_host.tensor
+    # for i in range(M):
+    #     for j in range(K):
+    #         at[i, j] = i * K + j
+    #         bt[i, j] = i * K + j
+
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
 
     # Move operands to the Device
-
     ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
 
@@ -107,7 +113,7 @@ def test_warp_specialize_gemm[
     var b = from_ndbuffer_row_major(b_device.tensor)
     var c = from_ndbuffer_row_major(c_device.tensor)
 
-    alias block_tile_shape = Index(128, wgmma_n, 64)
+    alias block_tile_shape = Index(64 * num_consumer, wgmma_n, 64)
 
     alias matmul_config = MatmulConfig[
         a_type, b_type, c_type, transpose_b, mma_shape = Index(64, wgmma_n, 16)
@@ -170,26 +176,6 @@ def test_warp_specialize_gemm[
 
 def main():
     with DeviceContext() as ctx:
-        test_warp_specialize_gemm[
-            256,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            num_consumer=2,
-        ](ctx, dynamic(8192), static[2560](), static[8192]())
-
-        test_warp_specialize_gemm[
-            128,
-            DType.bfloat16,
-            DType.bfloat16,
-            DType.bfloat16,
-            num_consumer=2,
-        ](ctx, static[128](), static[128](), static[128]())
-
-        test_warp_specialize_gemm[
-            64, DType.bfloat16, DType.bfloat16, DType.bfloat16
-        ](ctx, static[128](), static[64](), static[64]())
-
         alias wgmma_n = List[Int](128, 256)
 
         @parameter
@@ -233,3 +219,21 @@ def main():
                     num_consumer=j,
                     schedule = MatmulSchedule.TILE2D,
                 ](ctx, dynamic(201), static[2048](), static[200]())
+
+        # K is aligned by 8B
+        test_warp_specialize_gemm[
+            128,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            num_consumer=2,
+        ](ctx, dynamic(150), static[3200](), static[588]())
+
+        # K is aligned by 4B
+        test_warp_specialize_gemm[
+            256,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            num_consumer=2,
+        ](ctx, dynamic(90), static[256](), static[270]())

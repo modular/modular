@@ -75,9 +75,9 @@ from linalg.matmul_sm90 import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
-    producer_main_loop,
     warp_specialized_gemm_output,
 )
+from linalg.mamtul_loadop_sm90 import async_load_AB
 from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
@@ -539,7 +539,7 @@ fn grouped_matmul_kernel[
                 + UInt(block_idx_swizzle[0]) * BN
             )
 
-            producer_main_loop[
+            async_load_AB[
                 block_tile_shape=block_tile_shape,
                 cluster_shape=cluster_shape,
                 partitioned_multicast=False,

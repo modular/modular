@@ -752,6 +752,11 @@ class Graph:
                 " impossible." + f"\n{e}"
             ) from None
 
+    def _erase_output_if_present(self) -> None:
+        terminator = self._body.operations[-1]
+        if isinstance(terminator, mo.OutputOp):
+            terminator.erase()
+
     @property
     def output_types(self) -> list[Type]:
         """View of the types of the graph output terminator."""

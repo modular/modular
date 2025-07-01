@@ -282,3 +282,11 @@ def test_device_type(mlir_context) -> None:
     assert cuda0 != cuda1_2 != host
     assert cuda0 != DeviceRef.CPU()
     assert cuda1 == cuda1_2
+
+
+def test_type_hashing(mlir_context) -> None:
+    lhs = TensorType(DType.float32, [7, 2], device=DeviceRef.CPU())
+    rhs = TensorType(DType.float32, [7, 2], device=DeviceRef.CPU())
+
+    assert lhs.to_mlir() == rhs.to_mlir()
+    assert hash(lhs.to_mlir() == rhs.to_mlir())

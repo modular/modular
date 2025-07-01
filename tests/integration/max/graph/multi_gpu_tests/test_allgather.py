@@ -8,8 +8,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Tensor, accelerator_count
@@ -22,23 +20,29 @@ from max.graph import (
     TensorValue,
     ops,
 )
+from max.nn import Signals
 
 M = 512
 N = 1024
 
 
-def allgather_graph(devices: Iterable[DeviceRef], axis: int) -> Graph:
+def allgather_graph(signals: Signals, axis: int) -> Graph:
+    devices = signals.devices
     with Graph(
         "allgather",
         input_types=[
             TensorType(dtype=DType.float32, shape=[M, N], device=device)
             for device in devices
-        ],
+        ]
+        + signals.input_types(),
     ) as graph:
-        for input in graph.inputs:
+        num_devices = len(devices)
+        for input in graph.inputs[:num_devices]:
             assert isinstance(input, TensorValue)
         allgather_outputs = ops.allgather(
-            (v.tensor for v in graph.inputs), axis=axis
+            inputs=(v.tensor for v in graph.inputs[:num_devices]),
+            signal_buffers=(v.buffer for v in graph.inputs[num_devices:]),
+            axis=axis,
         )
         graph.output(*allgather_outputs)
         return graph
@@ -52,9 +56,8 @@ def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
         pytest.skip(
             f"Not enough GPUs to run allgather test with {num_gpus} GPUs."
         )
-    graph = allgather_graph(
-        [DeviceRef.GPU(id=id) for id in range(num_gpus)], axis
-    )
+    signals = Signals(devices=[DeviceRef.GPU(id=id) for id in range(num_gpus)])
+    graph = allgather_graph(signals, axis)
     host = CPU()
     devices = [Accelerator(n) for n in range(num_gpus)]
 
@@ -79,7 +82,7 @@ def test_allgather_execution_even(num_gpus: int, axis: int) -> None:
     for dev in devices:
         dev.synchronize()
 
-    outputs = compiled.execute(*tensor_inputs)
+    outputs = compiled.execute(*tensor_inputs, *signals.buffers())
 
     expected_output = np.concatenate(numpy_inputs, axis=axis)
 
@@ -116,15 +119,19 @@ def test_allgather_execution_uneven(
 
     # Create graph with different input shapes
     devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices)
     with Graph(
         "allgather_uneven",
         input_types=[
             TensorType(dtype=DType.float32, shape=shape, device=device)
             for shape, device in zip(shapes, devices)
-        ],
+        ]
+        + signals.input_types(),
     ) as graph:
         allgather_outputs = ops.allgather(
-            (v.tensor for v in graph.inputs), axis=axis
+            inputs=(v.tensor for v in graph.inputs[:num_gpus]),
+            signal_buffers=(v.buffer for v in graph.inputs[num_gpus:]),
+            axis=axis,
         )
         graph.output(*allgather_outputs)
 
@@ -147,7 +154,7 @@ def test_allgather_execution_uneven(
         )
         offset += size
 
-    outputs = compiled.execute(*tensor_inputs)
+    outputs = compiled.execute(*tensor_inputs, *signals.buffers())
 
     expected_output = np.concatenate(numpy_inputs, axis=axis)
 

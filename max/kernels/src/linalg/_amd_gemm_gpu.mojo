@@ -615,7 +615,7 @@ fn gemm_kernel[
         for i in range(c_gmem_fragment.layout.size()):
             alias src_idx = c_reg_fragment.layout(i)
             alias dst_static_idx: UInt = c_gmem_fragment.layout(i)
-            var dst_idx = 0
+            var dst_idx: Int
 
             @parameter
             if c_gmem_fragment.layout.all_dims_known():

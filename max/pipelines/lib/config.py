@@ -137,9 +137,6 @@ class PipelineConfig(MAXConfig):
     pdl_level: str = os.environ.get("PDL_LEVEL", "0")
     """Level of overlap of kernel launch via programmatic dependent grid control."""
 
-    ignore_eos: bool = False
-    """Ignore EOS and continue generating tokens, even when an EOS variable is hit."""
-
     custom_architectures: list[str] = field(default_factory=list)
     """A list of custom architecture implementations to register.
     Each input can either be a raw module name or an import path followed by a colon and the module name.

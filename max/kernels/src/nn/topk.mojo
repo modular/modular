@@ -488,9 +488,7 @@ fn _top_k_sampling[
             seed_val = seed.value()[batch]
 
         # Use the same RNG as the GPU sampling implementation
-        var rng_state = Random(
-            seed=seed_val, offset=out_idxs_tmp[batch, 0].cast[DType.uint64]()
-        )
+        var rng_state = Random(seed=seed_val)
         var rng = rng_state.step_uniform()
 
         # Sample using the normalized probabilities
@@ -584,9 +582,17 @@ fn _warp_reduce_topk[
     ) -> TopK_2[T, largest]:
         @parameter
         if largest:
-            return a if a.u > b.u else b
+            if a.u > b.u:
+                return a
+            elif a.u < b.u:
+                return b
+            return a if a.p < b.p else b
         else:
-            return a if a.u < b.u else b
+            if a.u < b.u:
+                return a
+            elif a.u > b.u:
+                return b
+            return a if a.p < b.p else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
     alias limit = log2_floor(WARP_SIZE)
@@ -979,10 +985,7 @@ fn _topk_stage2[
                 var seed_val = UInt64(0)
                 if seed:
                     seed_val = seed[batch_id]
-                var rng_state = Random(
-                    seed=seed_val,
-                    offset=_local_topk_idxs[0].cast[DType.uint64](),
-                )
+                var rng_state = Random(seed=seed_val)
                 var rng = rng_state.step_uniform()
                 var softmax_norm = s_sum[0]
                 var r = softmax_norm * _top_p * rng[0].cast[T]()

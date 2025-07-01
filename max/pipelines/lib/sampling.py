@@ -249,6 +249,8 @@ def token_sampler(
             )
         # Concat tokens to previous tokens.
         all_tokens = ops.concat([prev_tokens, tokens], -1)
+        # increment the seed tensor by 1
+        seed = seed + 1
 
         # Gather logits if needed to return.
         if "existing_logits" in _input_dict:
@@ -277,10 +279,10 @@ def token_sampler(
 
             all_logits = ops.concat([existing_logits, new_logits], -1)
             tokens = ops.squeeze(tokens, -1)
-            graph.output(tokens, all_tokens, all_logits)
+            graph.output(tokens, all_tokens, all_logits, seed)
         else:
             tokens = ops.squeeze(tokens, -1)
-            graph.output(tokens, all_tokens)
+            graph.output(tokens, all_tokens, seed)
 
         return graph
 

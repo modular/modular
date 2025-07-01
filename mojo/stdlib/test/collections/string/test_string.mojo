@@ -1020,26 +1020,28 @@ def test_strip():
     # with default strip chars
     var empty_string = String()
     assert_true(empty_string.strip() == "")
-    alias comp_empty_string_stripped = String().strip()
+    alias comp_empty_string_stripped = String(String().strip())
     assert_true(comp_empty_string_stripped == "")
 
     var space_string = String(" \t\n\r\v\f  ")
     assert_true(space_string.strip() == "")
-    alias comp_space_string_stripped = String(" \t\n\r\v\f  ").strip()
+    alias comp_space_string_stripped = String(String(" \t\n\r\v\f  ").strip())
     assert_true(comp_space_string_stripped == "")
 
     var str0 = String("     n ")
     assert_true(str0.strip() == "n")
-    alias comp_str0_stripped = String("     n ").strip()
+    alias comp_str0_stripped = String(String("     n ").strip())
     assert_true(comp_str0_stripped == "n")
 
     var str1 = String("string")
     assert_true(str1.strip() == "string")
-    alias comp_str1_stripped = String("string").strip()
+    alias comp_str1_stripped = String(String("string").strip())
     assert_true(comp_str1_stripped == "string")
 
     var str2 = String(" \t\n\t\v\fsomething \t\n\t\v\f")
-    alias comp_str2_stripped = String(" \t\n\t\v\fsomething \t\n\t\v\f").strip()
+    alias comp_str2_stripped = String(
+        String(" \t\n\t\v\fsomething \t\n\t\v\f").strip()
+    )
     assert_true(str2.strip() == "something")
     assert_true(comp_str2_stripped == "something")
 
@@ -1047,15 +1049,15 @@ def test_strip():
     var str3 = String("mississippi")
     assert_true(str3.strip("mips") == "")
     assert_true(str3.strip("mip") == "ssiss")
-    alias comp_str3_stripped = String("mississippi").strip("mips")
+    alias comp_str3_stripped = String(String("mississippi").strip("mips"))
     assert_true(comp_str3_stripped == "")
 
     var str4 = String(" \n mississippimississippi \n ")
     assert_true(str4.strip(" ") == "\n mississippimississippi \n")
     assert_true(str4.strip("\nmip ") == "ssissippimississ")
 
-    alias comp_str4_stripped = String(" \n mississippimississippi \n ").strip(
-        " "
+    alias comp_str4_stripped = String(
+        String(" \n mississippimississippi \n ").strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
 

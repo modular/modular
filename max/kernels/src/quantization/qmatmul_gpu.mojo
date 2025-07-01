@@ -708,7 +708,7 @@ fn multistage_qgemm_kernel[
         for i in range(__type_of(c_gmem_frag).layout.size()):
             alias src_idx = c_reg_frag.layout(i)
             alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-            var dst_idx = 0
+            var dst_idx: Int
 
             @parameter
             if c_gmem_frag.layout.all_dims_known():
@@ -797,7 +797,7 @@ fn multistage_qgemm_kernel[
                 )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_gmem_frag.layout.all_dims_known():

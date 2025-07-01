@@ -42,7 +42,10 @@ from max.pipelines.lib import (
     PipelineModel,
     SupportedEncoding,
 )
-from max.pipelines.lib.log_probabilities import compute_log_probabilities_ragged
+from max.pipelines.lib.log_probabilities import (
+    compute_log_probabilities_ragged,
+    log_probabilities_ragged_graph,
+)
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -144,6 +147,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
             return_logits,
         )
         self.model = self.load_model(session)
+        self.logprobs_device = devices[0]
+        self.logprobs_model = self.load_logprobs_model(session)
 
         # Initialize state needed for communication collectives.
         # Contents of signal buffer should be filled with zeros.
@@ -359,10 +364,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
     @traced
-    def load_model(
-        self,
-        session: InferenceSession,
-    ) -> Model:
+    def load_model(self, session: InferenceSession) -> Model:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
         assert self.pipeline_config.max_batch_size, (
@@ -382,6 +384,14 @@ class LlamaModelBase(PipelineModel[TextContext]):
         )
 
         return model
+
+    @traced
+    def load_logprobs_model(self, session: InferenceSession) -> Model:
+        # TODO: Perhaps 'levels' ought to be configurable.
+        graph = log_probabilities_ragged_graph(
+            DeviceRef.from_device(self.logprobs_device), levels=3
+        )
+        return session.load(graph)
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[TensorValue]
@@ -529,12 +539,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None] | None:
-        if model_outputs.logits is not None:
-            logits = model_outputs.logits.to_numpy()
-        else:
-            logits = None
+        logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits.to_numpy()
+        next_token_logits = model_outputs.next_token_logits
 
         assert isinstance(model_inputs, Llama3Inputs)
         llama3_inputs: Llama3Inputs = model_inputs
@@ -544,6 +551,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
         input_row_offsets = llama3_inputs.input_row_offsets.to_numpy()
 
         return compute_log_probabilities_ragged(
+            self.logprobs_device,
+            self.logprobs_model,
             input_row_offsets=input_row_offsets,
             logits=logits,
             next_token_logits=next_token_logits,

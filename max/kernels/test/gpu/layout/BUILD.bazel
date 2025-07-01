@@ -26,7 +26,8 @@ _H100_TESTS = [
     "test_tma_mc_swizzle.mojo",
     "test_tma_swizzle.mojo",
     "test_wgmma.mojo",
-    "test_wgmma_e4m3_e5m2_layouts.mojo",
+    #    "test_wgmma_e4m3_e5m2_layouts_f16.mojo",
+    #    "test_wgmma_e4m3_e5m2_layouts_f32.mojo",
     "test_wgmma_int8_uint8_layouts.mojo",
     "test_wgmma_layouts.mojo",
     "test_wgmma_with_static_tuple_output_bf16.mojo",
@@ -57,7 +58,8 @@ _FILECHECK_TESTS = [
     "test_tensor_core_nvidia.mojo",
     "test_tensor_core_sm90.mojo",
     "test_tiled_matmul_gpu.mojo",
-    "test_wgmma_e4m3_e5m2_layouts.mojo",
+    #    "test_wgmma_e4m3_e5m2_layouts_f16.mojo",
+    #    "test_wgmma_e4m3_e5m2_layouts_f32.mojo",
     "test_wgmma_int8_uint8_layouts.mojo",
     "test_wgmma_layouts.mojo",
 ]
@@ -87,6 +89,8 @@ _FILECHECK_TESTS = [
         exclude = _FILECHECK_TESTS + [
             "matmul_kernels.mojo",  # Imported source, not a test
             "tensor_core_kernels.mojo",  # Imported source, not a test
+            "test_wgmma_e4m3_e5m2_layouts_f16.mojo",  # KERN-1874
+            "test_wgmma_e4m3_e5m2_layouts_f32.mojo",  # KERN-1874
         ],
     )
 ]

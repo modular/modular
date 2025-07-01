@@ -155,6 +155,7 @@ async def lifespan(
                 f"\n\n**********\nServer ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)\n**********\n"
             )
             yield
+    # TODO: Will we ever get here? KeyboardInterrupt is handled in the serve.py entrypoint.
     except KeyboardInterrupt as e:
         # Exit gracefully if user used Ctrl+C
         logger.info("Workers have shut down successfully (keyboard interrupt)")
@@ -193,6 +194,7 @@ def fastapi_app(
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
     logger.info(f"Settings: {settings}")
+
     app = FastAPI(
         title="MAX Serve",
         lifespan=partial(

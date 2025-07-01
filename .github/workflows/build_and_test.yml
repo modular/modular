@@ -16,6 +16,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+  push:
+    branches:
+    - main
+    paths:
+    - "bazel/mojo.MODULE.bazel"
 
 permissions:
   contents: read
@@ -47,4 +52,19 @@ jobs:
 
       - name: Build and Test
         run: |
-          ./bazelw test --config=ci --build_tag_filters=-skip-external-ci-${{ matrix.os }} --test_tag_filters=-skip-external-ci-${{ matrix.os }} -- //...
+          if [[ -n "${BUILDBUDDY_TOKEN:-}" ]]; then
+            # NOTE: Read+write token that only runs on trusted PRs.
+            args=(
+              --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_TOKEN
+            )
+          else
+            # NOTE: Readonly token that we're ok with being here.
+            args=(
+              --remote_header=x-buildbuddy-api-key=gJPttl2LQEONgD2aKziQ
+              --remote_upload_local_results=false
+            )
+          fi
+
+          ./bazelw test --config=ci --config=public-cache "${args[@]}" --build_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network --test_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network -- //...
+        env:
+          BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

@@ -706,7 +706,7 @@ fn async_copy[
 ](
     src: UnsafePointer[Scalar[dtype], address_space = AddressSpace.GLOBAL],
     dst: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED],
-    src_size: Int32 = 0,
+    src_size: Int32 = Int32(size),
     predicate: Bool = False,
 ):
     """Asynchronously copies data from global memory to shared memory.

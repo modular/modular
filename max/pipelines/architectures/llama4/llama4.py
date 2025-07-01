@@ -222,14 +222,17 @@ class Llama4TextModel(Module):
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
         last_token_distributed = distribute_value(last_token_h, self.devices)
         last_logits = ops.cast(
-            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
+            self.lm_head(self.norm(last_token_distributed), signal_buffers)[0],
+            DType.float32,
         )
 
         logits = None
         offsets = None
 
         if self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
+            logits = ops.cast(
+                self.lm_head(self.norm(h), signal_buffers)[0], DType.float32
+            )
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
 
         if logits is not None and offsets is not None:

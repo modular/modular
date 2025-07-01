@@ -39,15 +39,18 @@ from gpu.host import get_gpu_target
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.tensor_ops import tc_reduce_gevm_8x
+from logger import Logger, Level
 from memory import memset_zero, stack_allocation
 
 from utils import IndexList
 from utils.index import Index
+from utils.write import Writable, Writer
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import GemmShape, elementwise_epilogue_type
+from sys.param_env import env_get_string
 
 # layout imports
 from layout import (
@@ -61,7 +64,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 
 
 @fieldwise_init
-struct GEMVAlgorithm(Copyable, Movable):
+struct GEMVAlgorithm(Copyable, Movable, Stringable, Writable):
     var _value: Int
 
     alias GEMV_KERNEL = Self(0)
@@ -82,6 +85,30 @@ struct GEMVAlgorithm(Copyable, Movable):
 
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
+
+    fn __str__(self) -> String:
+        """Returns the string representation of this algorithm.
+
+        Returns:
+            String: A human-readable string representation of the algorithm.
+        """
+        if self is Self.GEMV_KERNEL:
+            return "GEMV_KERNEL"
+        elif self is Self.GEMV_KERNEL_VECTOR:
+            return "GEMV_KERNEL_VECTOR"
+        elif self is Self.GEMV_SPLIT_K:
+            return "GEMV_SPLIT_K"
+        elif self is Self.GEVM_KERNEL_VECTOR:
+            return "GEVM_KERNEL_VECTOR"
+        elif self is Self.GEVM_KERNEL:
+            return "GEVM_KERNEL"
+        elif self is Self.MATMUL_NAIVE:
+            return "MATMUL_NAIVE"
+        else:
+            return String("UNKNOWN_GEMV_ALGORITHM(", self._value, ")")
+
+    fn write_to[W: Writer](self, mut writer: W) -> None:
+        writer.write(String(self))
 
 
 @always_inline
@@ -230,6 +257,7 @@ fn gemv_split_k[
     num_threads: UInt,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
+    check_bounds: Bool = True,
 ](
     output: NDBuffer[mut=True, c_type, 2, MutableAnyOrigin, c_shape],
     act: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
@@ -245,10 +273,19 @@ fn gemv_split_k[
     The impl can actually handle M > 1 but it's only optimal fro tiny M. We use
     it for M = 1 only.
     """
+
+    # tile_m represents how many rows each thread will process of the output activation matrix
+    # tile_n represents how many rows each thread will process of the weight matrix.
+
     # Nvidia vectorized load is 16B.
     alias tile_k = simd_width * num_threads
+
+    # which rows of the activation matrix each thread will process
     var tile_id_m = block_idx.x * tile_m
+
+    # which rows of the weight matrix each thread will process
     var tile_id_n = block_idx.y * tile_n
+
     var tid = thread_idx.x
     var tile_a = stack_allocation[
         simd_width, a_type, address_space = AddressSpace.LOCAL
@@ -256,8 +293,13 @@ fn gemv_split_k[
     var tile_w = stack_allocation[
         tile_n * simd_width, b_type, address_space = AddressSpace.LOCAL
     ]()
+
+    # these are the partial accumlations for each thread this a matrix of values
+    # since each thread will process a tile_m x tile_n partials of the output vector
     var acc = stack_allocation[
-        tile_m * tile_n, s_type, address_space = AddressSpace.LOCAL
+        tile_m * tile_n,
+        s_type,
+        address_space = AddressSpace.LOCAL,
     ]()
 
     alias align_act = alignof[SIMD[a_type, simd_width]]()
@@ -274,6 +316,16 @@ fn gemv_split_k[
 
         @parameter
         for i in range(tile_n):
+            # Here we load data @ idxK from the weight matrix
+            # and store it into tile_w. We skip this if if the current
+            # row we are reading from (i + tile_id_n) is greater than the number
+            # of rows in the weight matrix.
+
+            @parameter
+            if check_bounds:
+                if i + tile_id_n >= n:
+                    continue
+
             var b_vec = weight.data.load[
                 width=simd_width, alignment=align_weight
             ](weight_idx + i * k + idxK)
@@ -282,11 +334,25 @@ fn gemv_split_k[
 
         @parameter
         for i in range(tile_m):
+            # Here we load data @ idxK from the activation matrix
+            # and store it into tile_a. We skip this if if the current
+            # row we are reading from (i + tile_id_m) is greater than the number
+            # of rows in the activation matrix. This should never be the case if
+            # tile_m is 1.
+
+            @parameter
+            if check_bounds:
+                if i + tile_id_m >= m:
+                    continue
+
             var a_vec = act.data.load[width=simd_width, alignment=align_act](
                 act_idx + i * k + idxK
             )
 
             tile_a.store[alignment=align_act](i * simd_width, a_vec)
+
+            # Now we multiply tile_a by tile_w and store the partials
+            # in acc
 
             @parameter
             for j in range(tile_n):
@@ -339,7 +405,14 @@ fn gemv_split_k[
                 Index(0, output_idx + mid * n + nid), val.cast[c_type]()
             )
         else:
-            output.data.store(output_idx + mid * n + nid, val.cast[c_type]())
+            var idx = output_idx + mid * n + nid
+
+            @parameter
+            if check_bounds:
+                if idx >= n:
+                    continue
+
+            output.data.store(idx, val.cast[c_type]())
 
 
 # Row Vector-Matrix multiplication
@@ -504,6 +577,7 @@ fn gemv_gpu_dispatch[
     a: NDBuffer[rank=2, *_, **_],
     b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
+    logger: Logger,
 ) raises:
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
@@ -517,10 +591,16 @@ fn gemv_gpu_dispatch[
     var b_tensor = from_ndbuffer_row_major(b)
     var a_tensor = from_ndbuffer_row_major(a)
 
+    alias has_N = c.shape.has_value[1]()
+    alias static_N = c.shape.get[1]() if has_N else UNKNOWN_VALUE
+
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
+        logger.info("Executing: GEMV_SPLIT_K kernel")
         alias num_threads = 128
         alias tile_m = 1
         alias tile_n = 2
+        alias check_bounds = static_N % tile_n != 0
+
         alias kernel = gemv_split_k[
             c.type,
             c.shape,
@@ -533,6 +613,7 @@ fn gemv_gpu_dispatch[
             tile_n=tile_n,
             num_threads=num_threads,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            check_bounds=check_bounds,
         ]
         ctx.enqueue_function[kernel](
             c,
@@ -546,6 +627,7 @@ fn gemv_gpu_dispatch[
         )
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
+        logger.info("Executing: GEMV_KERNEL_VECTOR kernel")
         if transpose_b == False:
             var block_dim = min(
                 align_up(k // simd_width, WARP_SIZE),
@@ -556,9 +638,7 @@ fn gemv_gpu_dispatch[
             alias b_alignment = b.alignment
             var aligned_b = b.data.static_alignment_cast[b_alignment]()
 
-            alias has_N = c.shape.has_value[1]()
             alias has_K = a.shape.has_value[1]()
-            alias static_N = c.shape.get[1]() if has_N else UNKNOWN_VALUE
             alias static_K = a.shape.get[1]() if has_K else UNKNOWN_VALUE
             alias b_layout_template = Layout.row_major(static_N, static_K)
 
@@ -673,6 +753,7 @@ fn gemv_gpu_dispatch[
             )
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL and transpose_b == False:
+        logger.info("Executing: GEMV_KERNEL (no transpose)")
         ctx.enqueue_function[
             gemv_kernel[
                 c.type,
@@ -693,6 +774,7 @@ fn gemv_gpu_dispatch[
         )
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL and transpose_b == True:
+        logger.info("Executing: GEMV_KERNEL (with transpose)")
         ctx.enqueue_function[
             gemv_kernel[
                 c.type,
@@ -713,6 +795,7 @@ fn gemv_gpu_dispatch[
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
     elif kernel_func is GEMVAlgorithm.GEVM_KERNEL:
+        logger.info("Executing: GEVM_KERNEL")
         ctx.enqueue_function[
             gevm_kernel[
                 c.type,
@@ -732,7 +815,8 @@ fn gemv_gpu_dispatch[
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
-    elif kernel_func is GEMVAlgorithm.MATMUL_NAIVE:
+    else:
+        logger.info("Executing: MATMUL_NAIVE kernel")
         alias BLOCK_DIM = 16
         ctx.enqueue_function[
             matmul_kernel_naive[
@@ -753,9 +837,21 @@ fn gemv_gpu_dispatch[
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
-    else:
-        print("Gemv Kernel selection mismatch")
-        return
+
+
+fn log_shape[
+    has_mode_1: Bool, has_mode_2: Bool, name: String
+](logger: Logger, mode_1: Int, mode_2: Int,) -> None:
+    logger.info(
+        name + ": ",
+        "("
+        + (String("_") if has_mode_1 else "")
+        + String(mode_1)
+        + ", "
+        + (String("_") if has_mode_2 else "")
+        + String(mode_2)
+        + ")",
+    )
 
 
 @always_inline
@@ -768,11 +864,31 @@ fn gemv_gpu[
     b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
 ) raises:
+    alias DEFAULT_LEVEL = Level._from_str(
+        env_get_string["LOGGING_LEVEL", "WARNING"]()
+    )
+    var logger = Logger[DEFAULT_LEVEL]()
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
     alias simd_width = simdwidthof[a.type, target = get_gpu_target()]()
+
+    # Log top-level information
+    logger.info("---- GEMV execution started ----")
+    logger.info("MxNxK: ", String(m), "x", String(n), "x", String(k))
+    logger.info("Transpose B: ", transpose_b)
+    logger.info("Data types: A=", a.type, " B=", b.type, " C=", c.type)
+
+    alias has_M = c.shape.has_value[0]()
+    alias has_N = c.shape.has_value[1]()
+    alias has_K = a.shape.has_value[1]()
+
+    # Log dimension static/dynamic status
+    log_shape[has_M, has_K, "A"](logger, m, k)
+    log_shape[has_K, has_N, "B"](logger, k, n)
+    log_shape[has_M, has_N, "C"](logger, m, n)
 
     # Kernel selection
     var kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
@@ -823,6 +939,7 @@ fn gemv_gpu[
                     simd_width,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
+                logger.info("Executing: GEVM_TENSOR_CORE_KERNEL_VECTOR_8X")
                 ctx.enqueue_function[kernel](
                     c,
                     a,
@@ -854,7 +971,7 @@ fn gemv_gpu[
         transpose_b=transpose_b,
         reduction_method=reduction_method,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](kernel_func, c, a, b, ctx)
+    ](kernel_func, c, a, b, ctx, logger)
 
 
 # Parallelized version of Gemv

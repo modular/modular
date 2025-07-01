@@ -33,6 +33,7 @@ from .linear import (
     MLP,
     MLPV1,
     ColumnParallelLinear,
+    DistributedGemmConfig,
     DistributedMLP,
     Float8Config,
     Float8InputScaleSpec,

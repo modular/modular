@@ -129,8 +129,15 @@ fn matmul_dispatch_sm90[
     alias N = c.shape.get[1]()
     alias N_multiple_of_8 = N % 8 == 0
 
+    # Support K multiple of 16B for FP8 due to using TMA.
+    # 4B and 8B alignments are supported for BF16/FP32 by using
+    # cp.async.ca.
     alias K = a.shape.get[1]()
     alias K_multiple_of_16B = K * sizeof[a_type]() % 16 == 0
+    alias K_multiple_of_4B = K * sizeof[a_type]() % 4 == 0
+    alias K_align_supported = (K_multiple_of_16B and is_AB_fp8) or (
+        K_multiple_of_4B and (is_AB_bf16 or is_AB_fp32)
+    )
 
     # General constraints for H100 matmul
     # fmt: off
@@ -140,7 +147,7 @@ fn matmul_dispatch_sm90[
         transpose_b and \
         has_static_NK and \
         N_multiple_of_8 and \
-        K_multiple_of_16B
+        K_align_supported
     ):
         return DISPATCH_MISS
     # fmt: on
@@ -1134,6 +1141,11 @@ fn matmul_dispatch_sm90_bf16_fp32[
     alias BK = 64 // size_factor
 
     var m = c.dim[0]()
+
+    # We have fast gemv for BF16 and FP32, skip H100 matmul here
+    # and continue dispatching outside to reach the fast gemv.
+    if m == 1:
+        return DISPATCH_MISS
 
     # GTC matmul configs
     @parameter

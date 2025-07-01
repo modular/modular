@@ -346,7 +346,7 @@ class InternVLLanguageModel(Module):
         ]
         last_logits = ops.cast(
             # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(self.norm(last_token_h))[0],
+            self.lm_head(self.norm(last_token_h), signal_buffers)[0],
             DType.float32,
         )
 
@@ -1143,8 +1143,8 @@ class InternVisionEncoderLayer(Module):
         # Handle QK normalization case
         if self.config.vision_config.qk_normalization:
             # Allgather Q and K only (not V) for QK normalization
-            q_complete = allgather(q_partials, axis=-1)
-            k_complete = allgather(k_partials, axis=-1)
+            q_complete = allgather(q_partials, signal_buffers, axis=-1)
+            k_complete = allgather(k_partials, signal_buffers, axis=-1)
             # V stays partial - no need to allgather
 
             # Process attention with QK normalization
@@ -1277,6 +1277,8 @@ class InternVLVisionModel(Module):
     - Positional embeddings with interpolation support for varying resolutions
     - Stack of transformer encoder layers
     - Optional final layer normalization (when not using mean pooling, occurs in larger variants)
+    - Pixel shuffle for downsampling
+    - MLP projection to language model hidden size
 
     Note:
         Currently limited to single-device execution for the vision component,
@@ -1322,71 +1324,6 @@ class InternVLVisionModel(Module):
                 for _ in range(config.vision_config.num_hidden_layers)
             ]
         )
-
-        # Add final layer normalization to match PyTorch reference implementation
-        # In PyTorch: self.layernorm = nn.Identity() if config.use_mean_pooling else nn.LayerNorm(...)
-        vision_config = config.vision_config
-
-        # Only create layernorm if use_mean_pooling is False
-        self.layernorm: RMSNorm | LayerNorm | None
-        if not getattr(vision_config, "use_mean_pooling", False):
-            if vision_config.norm_type == "rms_norm":
-                self.layernorm = RMSNorm(
-                    dim=vision_config.hidden_size,
-                    dtype=config.llm_config.dtype,
-                    eps=vision_config.layer_norm_eps,
-                    multiply_before_cast=False,  # Match PyTorch behavior: cast first, then multiply
-                )
-            else:  # layer_norm
-                self.layernorm = LayerNorm(
-                    dims=vision_config.hidden_size,
-                    device=default_device,
-                    dtype=config.llm_config.dtype,
-                    eps=vision_config.layer_norm_eps,
-                )
-
-            # Set replicate sharding strategy for layernorm
-            self.layernorm.weight.sharding_strategy = (
-                ShardingStrategy.replicate(len(self.devices))
-            )
-            if (
-                hasattr(self.layernorm, "bias")
-                and self.layernorm.bias is not None
-            ):
-                self.layernorm.bias.sharding_strategy = (
-                    ShardingStrategy.replicate(len(self.devices))
-                )
-
-            # Create per-device layernorm instances
-            self.layernorm_per_device: list[RMSNorm | LayerNorm] = []
-            for n, device in enumerate(self.devices):
-                ln_copy: RMSNorm | LayerNorm
-                if vision_config.norm_type == "rms_norm":
-                    ln_copy = RMSNorm(
-                        dim=vision_config.hidden_size,
-                        dtype=config.llm_config.dtype,
-                        eps=vision_config.layer_norm_eps,
-                        multiply_before_cast=False,
-                    )
-                else:
-                    ln_copy = LayerNorm(
-                        dims=vision_config.hidden_size,
-                        device=device,
-                        dtype=config.llm_config.dtype,
-                        eps=vision_config.layer_norm_eps,
-                    )
-                ln_copy.weight = self.layernorm.weight.shard(n, device)
-                if (
-                    isinstance(ln_copy, LayerNorm)
-                    and isinstance(self.layernorm, LayerNorm)
-                    and self.layernorm.bias is not None
-                ):
-                    ln_copy.bias = self.layernorm.bias.shard(n, device)
-                self.layernorm_per_device.append(ln_copy)
-        else:
-            # Use identity (no-op) when mean pooling is used
-            self.layernorm = None
-            self.layernorm_per_device = []
 
         # Initialize the multimodal projector (mlp1).
         self.mlp1 = InternVLMLP1(config)
@@ -1466,14 +1403,7 @@ class InternVLVisionModel(Module):
                 hidden_states_list, signal_buffers
             )
 
-        # Apply layernorm if it exists (when use_mean_pooling is False)
-        if self.layernorm is not None:
-            vit_embeds_processed = [
-                self.layernorm_per_device[i](hidden_states_list[i])
-                for i in range(len(hidden_states_list))
-            ]
-        else:
-            vit_embeds_processed = hidden_states_list
+        vit_embeds_processed = hidden_states_list
 
         # Remove CLS token (first token) from each device's embeddings.
         # Shape: [batch, num_positions, embed_dim] -> [batch, num_positions-1, embed_dim]

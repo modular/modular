@@ -3407,6 +3407,11 @@ class CreateCompletionRequest(BaseModel):
         description="The maximum number of [tokens](/tokenizer) that can be generated in the completion.\n\nThe token count of your prompt plus `max_tokens` cannot exceed the model's context length. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.\n",
         examples=[16],
     )
+    min_tokens: Optional[conint(ge=0)] = Field(
+        0,
+        description="Minimum number of tokens to generate per output sequence before EOS or stop_token_ids can be generated\n",
+        examples=[16],
+    )
     n: Optional[conint(ge=1, le=128)] = Field(
         1,
         description='How many completions to generate for each prompt.\n\n**Note:** Because this parameter generates many completions, it can quickly consume your token quota. Use carefully and ensure that you have reasonable settings for `max_tokens` and `stop`.\n',
@@ -3415,6 +3420,10 @@ class CreateCompletionRequest(BaseModel):
     presence_penalty: Optional[confloat(ge=-2.0, le=2.0)] = Field(
         0,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
+    )
+    repetition_penalty: Optional[confloat(gt=0.0)] = Field(
+        1,
+        description="Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far. Values > 1 encourage the model to use new tokens, while values < 1 encourage the model to repeat tokens.\n",
     )
     seed: Optional[conint(ge=-9223372036854775808, le=9223372036854775807)] = (
         Field(
@@ -3425,6 +3434,10 @@ class CreateCompletionRequest(BaseModel):
     stop: Optional[Union[str, List[str]]] = Field(
         None,
         description='Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.\n',
+    )
+    stop_token_ids: Optional[List[int]] = Field(
+        None,
+        description='List of tokens that stop the generation when they are generated. The returned output will contain the stop tokens unless the stop tokens are special tokens.\n',
     )
     stream: Optional[bool] = Field(
         False,
@@ -3439,6 +3452,11 @@ class CreateCompletionRequest(BaseModel):
     temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
+        examples=[1],
+    )
+    top_k: Optional[conint(ge=1, le=255)] = Field(
+        1,
+        description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
     )
     top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(
@@ -4810,6 +4828,11 @@ class CreateChatCompletionRequest(BaseModel):
         None,
         description="The maximum number of [tokens](/tokenizer) that can be generated in the chat completion.\n\nThe total length of input tokens and generated tokens is limited by the model's context length. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.\n",
     )
+    min_tokens: Optional[conint(ge=0)] = Field(
+        0,
+        description="Minimum number of tokens to generate per output sequence before EOS or stop_token_ids can be generated\n",
+        examples=[16],
+    )
     n: Optional[conint(ge=1, le=128)] = Field(
         1,
         description='How many chat completion choices to generate for each input message. Note that you will be charged based on the number of generated tokens across all of the choices. Keep `n` as `1` to minimize costs.',
@@ -4818,6 +4841,10 @@ class CreateChatCompletionRequest(BaseModel):
     presence_penalty: Optional[confloat(ge=-2.0, le=2.0)] = Field(
         0,
         description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.\n\n[See more information about frequency and presence penalties.](/docs/guides/text-generation/parameter-details)\n",
+    )
+    repetition_penalty: Optional[confloat(gt=0.0)] = Field(
+        1,
+        description="Float that penalizes new tokens based on whether they appear in the prompt and the generated text so far. Values > 1 encourage the model to use new tokens, while values < 1 encourage the model to repeat tokens.\n",
     )
     response_format: Optional[
         Union[
@@ -4843,6 +4870,10 @@ class CreateChatCompletionRequest(BaseModel):
         None,
         description='Up to 4 sequences where the API will stop generating further tokens.\n',
     )
+    stop_token_ids: Optional[List[int]] = Field(
+        None,
+        description='List of tokens that stop the generation when they are generated. The returned output will contain the stop tokens unless the stop tokens are special tokens.\n',
+    )
     stream: Optional[bool] = Field(
         False,
         description='If set, partial message deltas will be sent, like in ChatGPT. Tokens will be sent as data-only [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format) as they become available, with the stream terminated by a `data: [DONE]` message. [Example Python code](https://cookbook.openai.com/examples/how_to_stream_completions).\n',
@@ -4851,6 +4882,11 @@ class CreateChatCompletionRequest(BaseModel):
     temperature: Optional[confloat(ge=0.0, le=2.0)] = Field(
         1,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
+        examples=[1],
+    )
+    top_k: Optional[conint(ge=1, le=255)] = Field(
+        1,
+        description='Integer that controls the number of top tokens to consider.\n',
         examples=[1],
     )
     top_p: Optional[confloat(ge=0.0, le=1.0)] = Field(

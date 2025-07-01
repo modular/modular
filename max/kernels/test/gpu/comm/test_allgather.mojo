@@ -15,7 +15,9 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.comm.allgather import allgather
+from gpu.comm.allreduce import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext
+from sys import sizeof
 from testing import assert_equal
 
 
@@ -27,12 +29,25 @@ def all_gather_test[
     Each device should receive individual copies of all inputs,
     not a single concatenated buffer.
     """
+
     # Create device buffers for all GPUs.
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
     var host_buffers = List[UnsafePointer[Scalar[dtype]]](capacity=ngpus)
 
-    # Initialize input buffers.
+    # Create signal buffers for synchronization
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+        UnsafePointer[Signal]()
+    )
+
+    # Calculate temp buffer size for signals.
+    var max_length = 0
+    for i in range(ngpus):
+        max_length = max(max_length, lengths[i])
+    var temp_buffer_num_bytes = ngpus * sizeof[dtype]() * max_length
+
+    # Initialize input buffers and signal buffers.
     for i in range(ngpus):
         var length = lengths[i]
 
@@ -49,6 +64,15 @@ def all_gather_test[
             host_nd_buf[j] = Scalar[dtype](
                 i * 1000 + j
             )  # Device i has values i*1000 + index
+
+        # Create and initialize signal buffers.
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](
+                sizeof[Signal]() + temp_buffer_num_bytes
+            )
+        )
+        list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
+        rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
         # Copy to device.
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
@@ -86,11 +110,50 @@ def all_gather_test[
                 DimList(lengths[input_idx]),
             )
 
+    # Test the naive implementation explicitly.
+    print("  Testing backward compatible implementation (naive path)")
     allgather(in_bufs, out_bufs, list_of_ctx)
 
     # Synchronize all devices.
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
+
+    # Verify results for old implementation.
+    _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
+
+    # Reset output buffers for second test.
+    for device_idx in range(ngpus):
+        for input_idx in range(ngpus):
+            list_of_ctx[device_idx].enqueue_memset[dtype](
+                out_bufs_list[device_idx][input_idx], val=0
+            )
+
+    # Test the implementation with rank_sigs (P2P-capable).
+    print("  Testing new implementation with rank_sigs (P2P-capable)")
+    allgather(in_bufs, out_bufs, rank_sigs, list_of_ctx)
+
+    # Synchronize all devices.
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # Verify results for new implementation.
+    _verify_results[dtype](out_bufs_list, list_of_ctx, lengths, ngpus)
+
+    # Clean up.
+    for i in range(ngpus):
+        host_buffers[i].free()
+    _ = signal_buffers^
+
+
+fn _verify_results[
+    dtype: DType
+](
+    out_bufs_list: List[List[DeviceBuffer[dtype]]],
+    list_of_ctx: List[DeviceContext],
+    lengths: List[Int],
+    ngpus: Int,
+) raises:
+    """Helper function to verify allgather results."""
 
     # Verify results - each device should have copies of all inputs.
     for device_idx in range(ngpus):
@@ -127,10 +190,6 @@ def all_gather_test[
                     raise e
 
             host_output.free()
-
-    # Clean up.
-    for i in range(ngpus):
-        host_buffers[i].free()
 
 
 def main() -> None:

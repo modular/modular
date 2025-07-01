@@ -21,10 +21,11 @@ from collections import defaultdict
 from uuid import uuid4
 
 import msgspec
+import numpy as np
 import torch
 from max import driver
 from max._core import nixl
-from max.driver import CPU
+from max.driver import Accelerator
 from max.driver.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines")
@@ -121,6 +122,18 @@ class KVTransferEngine:
                 f"Tensor num elements {tensor.num_elements} must be divisible by total number of pages {total_num_pages}"
             )
 
+        # Regardless of whether the tensor is on CPU / GPU, we must ensure that
+        # CUDADriver.cpp is called which loads the libcuda.so.1 and libnvidia-ml.so.1
+        # symbols PRIOR to loading the UCX CUDA backend.
+        acc = Accelerator()
+        if acc.api != "cuda":
+            raise NotImplementedError(
+                "Currently UCX only supports CUDA devices."
+            )
+        # This device is unused. It is created for the sole purpose of loading
+        # the CUDA symbols.
+        del acc
+
         # Create agent
         self.name = name
         self.agent = nixl.Agent(
@@ -168,10 +181,11 @@ class KVTransferEngine:
                 "TransferEngine does not support GPUDirect, "
                 "falling back to slow CPU TCP transfers until it is supported."
             )
+            # pinned memory need to be declared with the target device
             self.cpu_staging_buffer = Tensor(
                 shape=(self.total_num_pages, self.elts_per_page),
                 dtype=tensor.dtype,
-                device=CPU(),
+                device=tensor.device,
                 pinned=True,
             )
 
@@ -179,7 +193,8 @@ class KVTransferEngine:
         if self.cpu_staging_buffer is None:
             self.base_addr = _get_tensor_base_addr(self.tensor)
         else:
-            self.base_addr = _get_tensor_base_addr(self.cpu_staging_buffer)
+            # torch does not support dlpack on pinned memory
+            self.base_addr = np.from_dlpack(self.cpu_staging_buffer).ctypes.data
 
         # Register memory
         self.memory_type = (

@@ -63,6 +63,7 @@ from kv_cache.types import (
 )
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from linalg.bmm import batched_matmul, batched_matmul_shape
+from linalg.distributed_matmul import matmul_allreduce
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
@@ -8833,7 +8834,6 @@ struct DistributedAllReduceSum:
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
 
-
         Args:
             outputs: Output tensors (one per GPU) to store reduced results.
             inputs: Input tensors (one per GPU) containing values to reduce.
@@ -8922,26 +8922,36 @@ struct DistributedAllGather:
         dtype: DType,
         rank: Int,
         target: StaticString,
+        _trace_name: StaticString,
     ](
         outputs: OutputVariadicTensors[dtype, rank, *_],
         inputs: InputVariadicTensors[dtype, rank, *_],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, *_
+        ],
         dev_ctxs_input: DeviceContextPtrList,
-    ) raises:
+    ) capturing raises:
         """Distributed allgather operation implementation.
 
         Args:
             outputs: Output tensors (one per GPU) to store gathered results.
             inputs: Input tensors (one per GPU) containing values to gather.
+            signal_buffers: Device buffer values used for synchronization.
             dev_ctxs_input: Device contexts for participating GPUs.
         """
         alias num_devices = inputs.size
         constrained[
-            outputs.size == num_devices * num_devices,
+            signal_buffers.size == num_devices
+            and outputs.size == num_devices * num_devices,
             (
-                "expected allgather output buffers to have num_devices *"
-                " num_devices elements for variadic output"
+                "expected allgather inputs, signal buffers to have the same"
+                " number of elements and outputs to have num_devices *"
+                " num_devices"
             ),
         ]()
+
+        var input_size_bytes = inputs[0].size() * sizeof[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
         var dev_ctxs = List[DeviceContext]()
         for i in range(len(dev_ctxs_input)):
@@ -8963,7 +8973,155 @@ struct DistributedAllGather:
         @parameter
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
-        allgather[ngpus=num_devices](in_bufs, out_bufs, dev_ctxs)
+
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+            UnsafePointer[Signal]()
+        )
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            allgather[ngpus=num_devices](in_bufs, out_bufs, rank_sigs, dev_ctxs)
+
+
+@compiler.register("mo.distributed.matmul_allreduce")
+struct DistributedMatmulAllReduce:
+    @staticmethod
+    fn execute[
+        a_type: DType,
+        b_type: DType,
+        c_type: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: FusedOutputVariadicTensors[c_type, 2, *_],
+        inputs: InputVariadicTensors[a_type, 2, *_],
+        weights: InputVariadicTensors[b_type, 2, *_],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, *_
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        """Distributed allreduce operation implementation for sum reduction.
+
+
+        Args:
+            outputs: Output tensors (one per GPU) to store reduced results.
+            inputs: Input tensors (one per GPU) containing matmul inputs.
+            weights: Input tensors (one per GPU) containing matmul inputs.
+            signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Implementation Notes:
+            1. Uses naive reduction implementation when P2P access unavailable.
+            2. Requires input/output buffers to be device-allocated and aligned.
+            3. Signal buffers must be device-allocated and large enough to fit
+               the buffer + signals metadata.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in allreduce.mojo)
+            - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
+            - Requires identical tensor shapes across all participating GPUs
+        """
+        alias num_devices = inputs.size
+        constrained[
+            weights.size == num_devices
+            and signal_buffers.size == num_devices
+            and outputs.size == num_devices,
+            (
+                "expected allreduce inputs, weights, outputs, and signal"
+                " buffers to all have the same number of elements"
+            ),
+        ]()
+
+        var input_size_bytes = outputs[0].size() * sizeof[c_type]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        var dev_ctxs = List[DeviceContext]()
+        for i in range(len(dev_ctxs_input)):
+            dev_ctxs.append(dev_ctxs_input[i])
+
+        # Get the static buffer dimensions
+        alias n_dim = weights.static_specs[0].shape.at[0]()
+        alias k_dim = weights.static_specs[0].shape.at[1]()
+        constrained[not n_dim.is_dynamic(), "n dimension should be static"]()
+        constrained[not k_dim.is_dynamic(), "k dimension should be static"]()
+
+        alias A_static_shape = DimList(Dim(), k_dim)
+        alias B_static_shape = DimList(n_dim, k_dim)
+        alias C_static_shape = DimList(Dim(), n_dim)
+
+        # Marshal input and output variadic tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape], num_devices
+        ](NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape]())
+        var weight_bufs = InlineArray[
+            NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape], num_devices
+        ](NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape]())
+
+        @parameter
+        for i in range(num_devices):
+            in_bufs[i] = rebind[
+                NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape]
+            ](managed_tensor_slice_to_ndbuffer(inputs[i]))
+            weight_bufs[i] = managed_tensor_slice_to_ndbuffer(weights[i])
+
+        var out_bufs = InlineArray[
+            NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
+        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+
+        @parameter
+        for i in range(num_devices):
+            out_bufs[i] = rebind[
+                NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]
+            ](managed_tensor_slice_to_ndbuffer(outputs[i]))
+
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
+            UnsafePointer[Signal]()
+        )
+
+        @parameter
+        for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        fn outputs_lambda[
+            input_index: Int,
+            _type: DType,
+            _rank: Int,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]) -> None:
+            constrained[
+                input_index < num_devices, "tensor index out of bounds"
+            ]()
+            return outputs[input_index]._lambda_store[
+                width=_width, element_alignment=_alignment
+            ](rebind[IndexList[2]](coords), rebind[SIMD[c_type, _width]](val))
+
+        # Allocate temporarie buffers to store the matmul outputs
+        var c_temp_bufs = InlineArray[
+            NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
+        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+
+        @parameter
+        for i in range(num_devices):
+            var device_buffer = dev_ctxs[i].enqueue_create_buffer[c_type](
+                out_bufs[i].num_elements()
+            )
+            c_temp_bufs[i] = NDBuffer[
+                c_type, 2, MutableAnyOrigin, C_static_shape
+            ](device_buffer.unsafe_ptr(), out_bufs[i].dynamic_shape)
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            matmul_allreduce[
+                ngpus=num_devices,
+                outputs_lambda=outputs_lambda,
+            ](in_bufs, weight_bufs, c_temp_bufs, out_bufs, rank_sigs, dev_ctxs)
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
