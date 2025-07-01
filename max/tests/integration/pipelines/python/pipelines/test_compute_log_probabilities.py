@@ -17,26 +17,90 @@ from max.graph import DeviceRef
 from max.interfaces import LogProbabilities
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
-    compute_log_probabilities_ragged_new,
     log_probabilities_ragged_graph,
-    log_softmax,
 )
+
+
+def log_softmax(x: np.ndarray, axis: int = -1) -> np.ndarray:
+    """Compute the logarithm of the softmax function.
+
+    This implementation uses the identity log(softmax(x)) = x - log(sum(exp(x)))
+    with numerical stability improvements to prevent overflow/underflow.
+
+    Args:
+        x: Input array
+        axis: Axis to compute values along
+
+    Returns:
+        Array with same shape as x, representing log(softmax(x))
+    """
+    # Subtract max value for numerical stability (prevents exp overflow)
+    x_max = np.amax(x, axis=axis, keepdims=True)
+
+    # Compute exp(x - x_max) which is now safe from overflow
+    shifted_x = x - x_max
+    exp_shifted = np.exp(shifted_x)
+
+    # Suppress -inf warnings from log(0)
+    # This can happen when input contains extreme negative values (-inf),
+    # which become 0 after exp() operation
+    with np.errstate(divide="ignore"):
+        sum_exp = np.sum(exp_shifted, axis=axis, keepdims=True)
+        log_sum_exp = np.log(sum_exp)
+
+    # Final result: x - x_max - log(sum(exp(x - x_max)))
+    # This is mathematically equivalent to log(softmax(x))
+    return shifted_x - log_sum_exp
 
 
 def _check_log_probabilities_equal(
     actual: LogProbabilities, expected: LogProbabilities
 ) -> None:
-    assert actual.token_log_probabilities == expected.token_log_probabilities
-    assert actual.top_log_probabilities == expected.top_log_probabilities
+    np.testing.assert_allclose(
+        actual.token_log_probabilities, expected.token_log_probabilities
+    )
+    assert len(actual.top_log_probabilities) == len(
+        expected.top_log_probabilities
+    )
+    for actual_top, expected_top in zip(
+        actual.top_log_probabilities, expected.top_log_probabilities
+    ):
+        assert actual_top.keys() == expected_top.keys()
+        key_order = list(expected_top.keys())
+        actual_values = [actual_top[key] for key in key_order]
+        expected_values = [expected_top[key] for key in key_order]
+        np.testing.assert_allclose(actual_values, expected_values, rtol=1e-6)
 
 
-def test_compute_log_probabilities() -> None:
+@pytest.fixture(scope="module")
+def cpu_device() -> CPU:
+    return CPU()
+
+
+@pytest.fixture(scope="module")
+def cpu_session(cpu_device: CPU) -> InferenceSession:
+    return InferenceSession(devices=[cpu_device])
+
+
+@pytest.fixture(scope="module")
+def cpu_model(cpu_device: CPU, cpu_session: InferenceSession) -> Model:
+    graph = log_probabilities_ragged_graph(
+        DeviceRef.from_device(cpu_device), levels=3
+    )
+    return cpu_session.load(graph)
+
+
+def test_compute_log_probabilities(cpu_device: CPU, cpu_model: Model) -> None:
+    device = cpu_device
+    model = cpu_model
+
     input_row_offsets = np.array([0, 2], dtype=np.uint32)
     batch_logits = np.array(
         [
             [0.5, 0.25, 0.7, 0.3, 1, 0.05],  # top-3 index = 0, 2, 4
             [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # top-3 index = 2, 3, 4
-        ]
+        ],
+        dtype=np.float32,
     )
     batch_tokens = np.array([0, 1, 4])
     get_logits_and_samples = lambda x, y: (batch_logits, batch_tokens)
@@ -46,9 +110,11 @@ def test_compute_log_probabilities() -> None:
 
     # Check top 3
     output = compute_log_probabilities_ragged(
+        device,
+        model,
         input_row_offsets=input_row_offsets,
-        logits=batch_logits,
-        next_token_logits=batch_logits[-1:],
+        logits=Tensor.from_numpy(batch_logits).to(device),
+        next_token_logits=Tensor.from_numpy(batch_logits[-1:]).to(device),
         tokens=batch_tokens[:-1],
         sampled_tokens=batch_tokens[-1:],
         batch_top_n=[3],
@@ -78,9 +144,11 @@ def test_compute_log_probabilities() -> None:
 
     # Check top 1
     output = compute_log_probabilities_ragged(
+        device,
+        model,
         input_row_offsets=input_row_offsets,
-        logits=batch_logits,
-        next_token_logits=batch_logits[-1:],
+        logits=Tensor.from_numpy(batch_logits).to(device),
+        next_token_logits=Tensor.from_numpy(batch_logits[-1:]).to(device),
         tokens=batch_tokens[:-1],
         sampled_tokens=batch_tokens[-1:],
         batch_top_n=[1],
@@ -107,7 +175,12 @@ def test_compute_log_probabilities() -> None:
     _check_log_probabilities_equal(output[0], expected_log_probs)
 
 
-def test_compute_log_probabilities_batch() -> None:
+def test_compute_log_probabilities_batch(
+    cpu_device: CPU, cpu_model: Model
+) -> None:
+    device = cpu_device
+    model = cpu_model
+
     input_row_offsets = np.array([0, 2, 3, 4], dtype=np.uint32)
     batch_logits = np.array(
         [
@@ -115,14 +188,16 @@ def test_compute_log_probabilities_batch() -> None:
             [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # batch 1 token 2; top index: 2
             [0.4, 0.42, 0.3, 0.89, 0.07, 0.5],  # b. 2; top 5 idx: 0, 1, 2, 3, 5
             [100, 100, 100, 100, 100, 100],  # batch 3
-        ]
+        ],
+        dtype=np.float32,
     )
     batch_next_token_logits = np.array(
         [
             [0.1, 0.2, 0.9, 0.3, 0.4, 0.14],  # batch 1; top index: 2
             [0.4, 0.42, 0.3, 0.89, 0.07, 0.5],  # b. 2; top 5 idx: 0, 1, 2, 3, 5
             [100, 100, 100, 100, 100, 100],  # batch 3
-        ]
+        ],
+        dtype=np.float32,
     )
     # batch 1 = [0, 1]; batch 2 = [0]; batch 3 = [0]
     batch_tokens = np.array([0, 1, 0, 0])
@@ -134,9 +209,11 @@ def test_compute_log_probabilities_batch() -> None:
     log_probs2 = log_softmax(batch_logits[2:3], axis=-1)
 
     output = compute_log_probabilities_ragged(
+        device,
+        model,
         input_row_offsets=input_row_offsets,
-        logits=batch_logits,
-        next_token_logits=batch_next_token_logits,
+        logits=Tensor.from_numpy(batch_logits).to(device),
+        next_token_logits=Tensor.from_numpy(batch_next_token_logits).to(device),
         tokens=batch_tokens,
         sampled_tokens=batch_sampled_tokens,
         batch_top_n=batch_top_n,
@@ -183,28 +260,41 @@ def test_compute_log_probabilities_batch() -> None:
     )
 
 
-def test_compute_log_probabilities_ragged() -> None:
+def test_compute_log_probabilities_ragged(
+    cpu_device: CPU, cpu_model: Model
+) -> None:
+    device = cpu_device
+    model = cpu_model
+
     output = compute_log_probabilities_ragged(
+        device,
+        model,
         input_row_offsets=np.array([0, 3, 5, 8]),
-        logits=np.array(
-            [
-                [10, 11],  # batch 0 token 0
-                [11, 12],  # batch 0 token 1
-                [12, 13],  # batch 0 token 2
-                [20, 21],  # batch 1 token 0
-                [21, 22],  # batch 1 token 1
-                [30, 31],  # batch 2 token 0
-                [31, 32],  # batch 2 token 1
-                [32, 33],  # batch 2 token 2
-            ]
-        ),
-        next_token_logits=np.array(
-            [
-                [12, 13],  # batch 0 token 2
-                [21, 22],  # batch 1 token 1
-                [32, 33],  # batch 2 token 2
-            ]
-        ),
+        logits=Tensor.from_numpy(
+            np.array(
+                [
+                    [10, 11],  # batch 0 token 0
+                    [11, 12],  # batch 0 token 1
+                    [12, 13],  # batch 0 token 2
+                    [20, 21],  # batch 1 token 0
+                    [21, 22],  # batch 1 token 1
+                    [30, 31],  # batch 2 token 0
+                    [31, 32],  # batch 2 token 1
+                    [32, 33],  # batch 2 token 2
+                ],
+                dtype=np.float32,
+            )
+        ).to(device),
+        next_token_logits=Tensor.from_numpy(
+            np.array(
+                [
+                    [12, 13],  # batch 0 token 2
+                    [21, 22],  # batch 1 token 1
+                    [32, 33],  # batch 2 token 2
+                ],
+                dtype=np.float32,
+            )
+        ).to(device),
         tokens=np.array([1, 1, 0, 1, 0, 1, 0, 1], dtype=np.int32),
         sampled_tokens=np.array([0, 1, 0], dtype=np.int32),
         batch_top_n=[1, 0, 1],
@@ -424,53 +514,15 @@ def verify_output(
 # answers.  (Specifically, ties in the top-n are implementation-dependent, and
 # we want to tolerate any tie-breaking strategy.)
 @pytest.mark.parametrize("seed", range(50))
-def test_log_probabilities_randomized(seed: int) -> None:
-    rng = np.random.default_rng(seed)
-    batch = random_batch(rng)
-    packed = PackedInput.from_items(batch)
-    outputs = compute_log_probabilities_ragged(
-        input_row_offsets=packed.input_row_offsets,
-        logits=packed.logits,
-        next_token_logits=packed.next_token_logits,
-        tokens=packed.tokens,
-        sampled_tokens=packed.sampled_tokens,
-        batch_top_n=packed.batch_top_n,
-        batch_echo=packed.batch_echo,
-    )
-    assert len(outputs) == len(batch)
-    for item, output in zip(batch, outputs):
-        verify_output(item, output)
-
-
-@pytest.fixture(scope="module")
-def cpu_device() -> CPU:
-    return CPU()
-
-
-@pytest.fixture(scope="module")
-def cpu_session(cpu_device: CPU) -> InferenceSession:
-    return InferenceSession(devices=[cpu_device])
-
-
-@pytest.fixture(scope="module")
-def cpu_model(cpu_device: CPU, cpu_session: InferenceSession) -> Model:
-    graph = log_probabilities_ragged_graph(
-        DeviceRef.from_device(cpu_device), levels=3
-    )
-    return cpu_session.load(graph)
-
-
-@pytest.mark.parametrize("seed", range(50))
-def test_log_probabilities_new_randomized(
-    seed: int, cpu_device: CPU, cpu_session: InferenceSession, cpu_model: Model
+def test_log_probabilities_randomized(
+    seed: int, cpu_device: CPU, cpu_model: Model
 ) -> None:
     device = cpu_device
-    session = cpu_session
     model = cpu_model
     rng = np.random.default_rng(seed)
     batch = random_batch(rng)
     packed = PackedInput.from_items(batch)
-    outputs = compute_log_probabilities_ragged_new(
+    outputs = compute_log_probabilities_ragged(
         device=device,
         model=model,
         input_row_offsets=packed.input_row_offsets,
@@ -512,19 +564,15 @@ def gpu_model(gpu_device: Accelerator, gpu_session: InferenceSession) -> Model:
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="no GPU")
 @pytest.mark.parametrize("seed", range(50))
-def test_log_probabilities_new_randomized_gpu(
-    seed: int,
-    gpu_device: Accelerator,
-    gpu_session: InferenceSession,
-    gpu_model: Model,
+def test_log_probabilities_randomized_gpu(
+    seed: int, gpu_device: Accelerator, gpu_model: Model
 ) -> None:
     device = gpu_device
-    session = gpu_session
     model = gpu_model
     rng = np.random.default_rng(seed)
     batch = random_batch(rng)
     packed = PackedInput.from_items(batch)
-    outputs = compute_log_probabilities_ragged_new(
+    outputs = compute_log_probabilities_ragged(
         device=device,
         model=model,
         input_row_offsets=packed.input_row_offsets,
