@@ -184,6 +184,6 @@ class LoRAConfig(MAXConfig):
     def help() -> dict[str, str]:
         return {
             "lora_paths": "List of paths to the LoRAs.",
-            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16",
-            "max_num_loras": "The maximum number of active LoRAs in a batch",
+            "max_lora_rank": "The maximum rank of all possible LoRAs. Typically 8 or 16. Default is 16.",
+            "max_num_loras": "The maximum number of active LoRAs in a batch. Default is 100.",
         }
