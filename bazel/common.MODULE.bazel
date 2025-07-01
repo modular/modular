@@ -5,7 +5,7 @@ bazel_dep(name = "aspect_rules_js", version = "2.3.8")
 
 # TODO: Upgrade when https://github.com/aspect-build/rules_py/issues/595 is fixed
 bazel_dep(name = "aspect_rules_py", version = "1.4.0")
-bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.0")
 bazel_dep(name = "grpc", version = "1.68.0", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "protobuf", version = "29.1")
@@ -40,16 +40,6 @@ single_version_override(
     patches = [
         # https://github.com/theoremlp/rules_mypy/pull/105
         "//bazel/public-patches:rules_mypy_mojo_srcs.patch",
-    ],
-)
-
-# TODO: Remove when > 1.7.1 is released
-archive_override(
-    module_name = "bazel_skylib",
-    integrity = "sha256-s1m/quGDjFCYqogKB5fhzp9rGc2V6NlFaLOBjdwrNGM=",
-    strip_prefix = "bazel-skylib-223e4e945801dfbc0bfa31d0900196f5bb54b0fc",
-    urls = [
-        "https://github.com/bazelbuild/bazel-skylib/archive/223e4e945801dfbc0bfa31d0900196f5bb54b0fc.tar.gz",
     ],
 )
 
