@@ -3,7 +3,6 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "shim.py",
     "LICENSE",
     "src/mblib2to3/Grammar.txt",
     "src/mblib2to3/PatternGrammar.txt",
@@ -33,10 +32,7 @@ modular_py_binary(
 
 pkg_files(
     name = "mblack_files",
-    srcs = glob(
-        ["**"],
-        exclude = ["shim.py"],
-    ),
+    srcs = glob(["**"]),
     prefix = "mblack",
     strip_prefix = strip_prefix.from_pkg(""),
 )
