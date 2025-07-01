@@ -610,7 +610,7 @@ fn layer_norm_cpu[
             var norm_val = (
                 out_val - mean_val
             ) * norm_factor * gamma_val + beta.load[width=simd_width](col)
-            output_fn[simd_width, alignof[dtype]()](
+            output_fn[simd_width, 1](
                 row, col, rebind[SIMD[dtype, simd_width]](norm_val)
             )
 
