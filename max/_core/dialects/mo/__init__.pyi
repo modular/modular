@@ -1241,10 +1241,17 @@ class DistributedAllgatherOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         outputs: Sequence[max._core.Value[max._core.Type]],
+        out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class DistributedAllreduceSumOp(max._core.Operation):
     """
