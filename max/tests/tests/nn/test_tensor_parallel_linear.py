@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, Weight
+from max.nn import Signals
 from max.nn.linear import ColumnParallelLinear
 
 
@@ -28,17 +29,24 @@ def test_column_parallel_linear_valid() -> None:
     """Tests ColumnParallelLinear with valid arguments."""
     gpu0 = DeviceRef.GPU(id=0)
     gpu1 = DeviceRef.GPU(id=1)
+    devices = [gpu0, gpu1]
+    signals = Signals(devices)
     linear = ColumnParallelLinear(
-        in_dim=16, out_dim=32, dtype=DType.float32, devices=[gpu0, gpu1]
+        in_dim=16, out_dim=32, dtype=DType.float32, devices=devices
     )
     with Graph(
         "column_parallel_linear",
         input_types=[
             TensorType(DType.float32, shape=(1, 16), device=gpu0),
             TensorType(DType.float32, shape=(1, 16), device=gpu1),
-        ],
+        ]
+        + signals.input_types(),
     ) as graph:
-        x0, x1 = linear([inp.tensor for inp in graph.inputs])
+        num_devices = len(devices)
+        x0, x1 = linear(
+            [inp.tensor for inp in graph.inputs[:num_devices]],
+            [inp.buffer for inp in graph.inputs[num_devices:]],
+        )
         assert x0.device == gpu0
         assert x1.device == gpu1
         graph.output(x0, x1)
@@ -48,6 +56,8 @@ def test_column_parallel_linear_tied_weight_valid() -> None:
     """Tests ColumnParallelLinear with a valid tied_weight."""
     gpu0 = DeviceRef.GPU(id=0)
     gpu1 = DeviceRef.GPU(id=1)
+    devices = [gpu0, gpu1]
+    signals = Signals(devices)
 
     tied_weight = Weight(
         name="tied_weight",
@@ -59,7 +69,7 @@ def test_column_parallel_linear_tied_weight_valid() -> None:
         in_dim=16,
         out_dim=32,
         dtype=DType.float32,
-        devices=[gpu0, gpu1],
+        devices=devices,
         tied_weight=tied_weight,
     )
     assert linear.weight is tied_weight
@@ -69,9 +79,14 @@ def test_column_parallel_linear_tied_weight_valid() -> None:
         input_types=[
             TensorType(DType.float32, shape=(1, 16), device=gpu0),
             TensorType(DType.float32, shape=(1, 16), device=gpu1),
-        ],
+        ]
+        + signals.input_types(),
     ) as graph:
-        x0, x1 = linear([inp.tensor for inp in graph.inputs])
+        num_devices = len(devices)
+        x0, x1 = linear(
+            [inp.tensor for inp in graph.inputs[:num_devices]],
+            [inp.buffer for inp in graph.inputs[num_devices:]],
+        )
         assert x0.device == gpu0
         assert x1.device == gpu1
         graph.output(x0, x1)
