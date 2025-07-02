@@ -654,6 +654,13 @@ def test_replace():
     var s3 = String("a   complex  test case  with some  spaces")
     assert_equal("a  complex test case with some spaces", s3.replace("  ", " "))
 
+    # Test Unicode codepoints
+    var s4 = String("Mꙩjꙩ")
+    assert_equal("Mojo", s4.replace("ꙩ", "o"))
+    assert_equal("🔥🔥🔥🔥", s4.replace("Mꙩjꙩ", "🔥🔥🔥🔥"))
+    assert_equal("🔥M🔥o🔥j🔥o", StaticString("Mojo").replace("", "🔥"))
+    assert_equal("🔥M🔥ꙩ🔥j🔥ꙩ", s4.replace("", "🔥"))
+
 
 def test_rfind():
     # Basic usage.
