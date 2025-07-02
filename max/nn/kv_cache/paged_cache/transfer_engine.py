@@ -23,10 +23,16 @@ from uuid import uuid4
 import msgspec
 import torch
 from max._core import nixl
-from max.driver import CPU, Accelerator
+from max.driver import Accelerator
 from max.driver.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _enable_ucx_logging() -> None:
+    import os
+
+    os.environ["UCX_LOG_LEVEL"] = "debug"
 
 
 def _get_tensor_base_addr(tensor: Tensor) -> int:
@@ -47,6 +53,7 @@ class KVTransferEngineMetadata(
     bytes_per_page: int
     base_addr: int
     memory_type: nixl.MemoryType
+    device_id: int
 
 
 class XferReqData(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
@@ -99,9 +106,6 @@ class KVTransferEngine:
     completed_xfers: dict[str, set[str]]
     """Map of agent names to completed transfers."""
 
-    cpu_staging_buffer: Tensor | None
-    """CPU staging buffer for GPU->GPU transfers."""
-
     def __init__(
         self,
         name: str,
@@ -110,6 +114,9 @@ class KVTransferEngine:
         *,
         listen_port: int = 8040,
     ) -> None:
+        # Comment out the below to enable UCX logging
+        # _enable_ucx_logging()
+
         if total_num_pages <= 0:
             raise ValueError(
                 f"Total number of pages {total_num_pages} must be greater than 0"
@@ -159,40 +166,26 @@ class KVTransferEngine:
                 "UCX not currently available, please ensure it is supported by your system."
             )
 
-        ucx_params = self.agent.get_plugin_params("ucx")
-        self.ucx_backend = self.agent.create_backend(
-            type="ucx", init_params=ucx_params[0]
-        )
-
-        # TODO(E2EOPT-216) Delete CPU staging buffer after GPU->GPU is supported
-        # Maybe allocate a CPU staging buffer for GPU->GPU transfers
-        # So GPU->GPU would actually be GPU->CPU->CPU->GPU.
-        self.cpu_staging_buffer = None
-        if not tensor.device.is_host:
-            logger.warning(
-                "TransferEngine does not support GPUDirect, "
-                "falling back to slow CPU TCP transfers until it is supported."
-            )
-            # pinned memory need to be declared with the target device
-            self.cpu_staging_buffer = Tensor(
-                shape=(self.total_num_pages, self.elts_per_page),
-                dtype=tensor.dtype,
-                device=CPU(),
-            )
-
-        # Determine base address
-        if self.cpu_staging_buffer is None:
-            self.base_addr = _get_tensor_base_addr(self.tensor)
+        # Determine device ID
+        device = self.tensor.device
+        if not device.is_host:
+            self.device_id = device.id
         else:
-            # torch does not support dlpack on pinned memory
-            self.base_addr = _get_tensor_base_addr(self.cpu_staging_buffer)
+            self.device_id = 0
+
+        ucx_params = self.agent.get_plugin_params("ucx")[0]
+        if not device.is_host:
+            ucx_params["gpu_device_id"] = str(self.device_id)
+        self.ucx_backend = self.agent.create_backend(
+            type="ucx",
+            init_params=ucx_params,
+        )
 
         # Register memory
         self.memory_type = (
-            nixl.MemoryType.DRAM
-            if self.tensor.device.is_host
-            else nixl.MemoryType.VRAM
+            nixl.MemoryType.DRAM if device.is_host else nixl.MemoryType.VRAM
         )
+        self.base_addr = _get_tensor_base_addr(self.tensor)
         num_bytes = self.tensor.num_elements * self.tensor.dtype.size_in_bytes
         self.reg_dlist = nixl.RegistrationDescriptorList(
             type=self.memory_type,
@@ -200,7 +193,7 @@ class KVTransferEngine:
                 (
                     self.base_addr,
                     num_bytes,
-                    self.memory_type.value,
+                    self.device_id,
                     "",
                 )
             ],
@@ -236,6 +229,7 @@ class KVTransferEngine:
             bytes_per_page=self.bytes_per_page,
             base_addr=self.base_addr,
             memory_type=self.memory_type,
+            device_id=self.device_id,
         )
 
     def connect(self, remote: KVTransferEngineMetadata) -> None:
@@ -307,21 +301,13 @@ class KVTransferEngine:
                     f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
                 )
 
-        # Stage data to CPU staging buffer before xfer
-        if self.cpu_staging_buffer is not None:
-            for src_idx in src_idxs:
-                self.cpu_staging_buffer[src_idx, :].inplace_copy_from(
-                    self.tensor[src_idx, :]
-                )
-            self.cpu_staging_buffer.device.synchronize()
-
         bytes_per_page = self.bytes_per_page
 
         # Prepare source descriptor list
         descs_src: list[tuple[int, int, int]] = []
         for src_idx in src_idxs:
             src_addr = self.base_addr + src_idx * bytes_per_page
-            descs_src.append((src_addr, bytes_per_page, self.memory_type.value))
+            descs_src.append((src_addr, bytes_per_page, self.device_id))
         xfer_dlist_src = nixl.TransferDescriptorList(
             type=self.memory_type, descs=descs_src
         )
@@ -330,9 +316,7 @@ class KVTransferEngine:
         descs_dst: list[tuple[int, int, int]] = []
         for dst_idx in dst_idxs:
             dst_addr = remote.base_addr + dst_idx * bytes_per_page
-            descs_dst.append(
-                (dst_addr, bytes_per_page, remote.memory_type.value)
-            )
+            descs_dst.append((dst_addr, bytes_per_page, remote.device_id))
         xfer_dlist_dst = nixl.TransferDescriptorList(
             type=remote.memory_type, descs=descs_dst
         )
@@ -432,25 +416,11 @@ class KVTransferEngine:
             xfer_req_id.xfer_name in self.completed_xfers[xfer_req_id.src_name]
         )
 
-    def finalize_transfer(self, xfer_req_id: XferReqData) -> None:
-        """Finalize a completed transfer by copying data from staging buffer and cleaning up.
-
-        Args:
-            xfer_req_id: The transfer request data containing transfer metadata.
-        """
-        if self.cpu_staging_buffer is not None:
-            for dst_idx in xfer_req_id.dst_idxs:
-                self.tensor[dst_idx, :].inplace_copy_from(
-                    self.cpu_staging_buffer[dst_idx, :]
-                )
-            self.cpu_staging_buffer.device.synchronize()
-
     def recv_xfer_sync(self, xfer_req_id: XferReqData) -> None:
         """Wait for a transfer initiated by remote engine to complete."""
         while not self.is_complete(xfer_req_id):
             self.update_completed_xfers()
 
-        self.finalize_transfer(xfer_req_id)
         self.completed_xfers[xfer_req_id.src_name].remove(xfer_req_id.xfer_name)
 
     def cleanup(self) -> None:

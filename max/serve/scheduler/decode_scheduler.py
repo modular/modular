@@ -354,11 +354,6 @@ class DecodeScheduler(Scheduler):
                 )
                 continue
 
-            # Finalize Transfer
-            self.transfer_engine.finalize_transfer(
-                prefill_response.transfer_metadata
-            )
-
             # Add to active batch.
             self.active_batch[prefill_response.id] = prefill_response.context
 
