@@ -98,72 +98,82 @@ struct DType(
     alias float8_e3m4 = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e3m4> : !kgen.dtype`
     )
-    """Represents an 8-bit e3m4 floating point format, encoded as `seeemmmm`:
+    """Represents an 8-bit `e3m4` floating point format, encoded as
+    `s.eee.mmmm`:
+
     - (s)ign: 1 bit
     - (e)xponent: 3 bits
     - (m)antissa: 4 bits
     - exponent bias: 3
-    - nan: 00111111, 11111111
-    - -0: 10000000
+    - nan: {0,1}.111.1111
     - fn: finite (no inf or -inf encodings)
+    - -0: 1.000.0000
     """
+
+    # reference for the 4 float8 types
+    # https://onnx.ai/onnx/technical/float8.html
+
     alias float8_e4m3fn = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e4m3fn> : !kgen.dtype`
     )
-    """Represents the E4M3 floating point format defined in the [OFP8
-    standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
+    """Represents the 8-bit `E4M3` floating point format defined in the
+    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1).
 
     This type is named differently across libraries and vendors, for example:
     - Mojo, PyTorch, JAX, and LLVM refer to it as `e4m3fn`.
     - OCP, NVIDIA CUDA, and AMD ROCm refer to it as `e4m3`.
 
     In these contexts, they are all referring to the same finite type specified
-    in the OFP8 standard above, encoded as `seeeemmm`:
+    in the OFP8 standard above, encoded as `s.eeee.mmm`:
+
     - (s)ign: 1 bit
     - (e)xponent: 4 bits
     - (m)antissa: 3 bits
     - exponent bias: 7
-    - nan: 01111111, 11111111
-    - -0: 10000000
+    - nan: {0,1}.1111.111
     - fn: finite (no inf or -inf encodings)
+    - -0: 1.0000.000
     """
     alias float8_e4m3fnuz = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e4m3fnuz> : !kgen.dtype`
     )
-    """Represents an 8-bit e4m3fnuz floating point format, encoded as
-    `seeeemmm`:
+    """Represents an 8-bit `e4m3fnuz` floating point format
+    ([ref](https://arxiv.org/pdf/2206.02915)), encoded as `s.eeee.mmm`:
+
     - (s)ign: 1 bit
     - (e)xponent: 4 bits
     - (m)antissa: 3 bits
     - exponent bias: 8
-    - nan: 10000000
+    - nan: 1.0000.000
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
     """
     alias float8_e5m2 = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e5m2> : !kgen.dtype`
     )
-    """Represents the 8-bit E5M2 floating point format from the [OFP8
-    standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
-    encoded as `seeeeemm`:
+    """Represents the 8-bit `E5M2` floating point format defined in the
+    [OFP8 standard](https://www.opencompute.org/documents/ocp-8-bit-floating-point-specification-ofp8-revision-1-0-2023-12-01-pdf-1),
+    encoded as `s.eeeee.mm`:
+
     - (s)ign: 1 bit
     - (e)xponent: 5 bits
     - (m)antissa: 2 bits
     - exponent bias: 15
-    - nan: {0,1}11111{01,10,11}
-    - inf: 01111100
-    - -inf: 11111100
-    - -0: 10000000
+    - nan: {0,1}.11111.{01,10,11}
+    - inf: {0,1}.11111.00
+    - -0: 1.00000.00
     """
     alias float8_e5m2fnuz = DType(
         __mlir_attr.`#kgen.dtype.constant<f8e5m2fnuz> : !kgen.dtype`
     )
-    """Represents an 8-bit floating point format, encoded as `seeeeemm`:
+    """Represents an 8-bit `e5m2fnuz` floating point format
+    ([ref](https://arxiv.org/pdf/2206.02915)), encoded as `s.eeeee.mm`:
+
     - (s)ign: 1 bit
     - (e)xponent: 5 bits
     - (m)antissa: 2 bits
     - exponent bias: 16
-    - nan: 10000000
+    - nan: 1.00000.00
     - fn: finite (no inf or -inf encodings)
     - uz: unsigned zero (no -0 encoding)
     """
