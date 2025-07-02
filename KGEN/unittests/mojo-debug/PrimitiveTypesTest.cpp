@@ -158,6 +158,7 @@ TEST(PrimitiveTypesTest, testPointerToClosure) {
 
 TEST(PrimitiveTypesTest, testBuiltinTypes) {
   StopContext ctx = buildAndLaunch("builtin_types.mojo");
+  EXPECT_EQ(ctx.runCommand("v none").output, "(None) none = None\n");
   EXPECT_EQ(ctx.runCommand("v a_var_index").output,
             "(index) a_var_index = 48\n");
   EXPECT_EQ(ctx.runCommand("v a_register_passable_struct").output,
@@ -199,8 +200,8 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_EQ(ctx.runCommand("v another_float").output,
             "(scalar<f32>) another_float = ([0] = 4.125)\n");
   EXPECT_STREQ(ctx.frame.FindVariable("^ uncommon name").GetValue(), "1123123");
-  EXPECT_EQ(ctx.runCommand("v a_string_literal").output,
-            "(StringLiteral[:string \"fofofo\"]) a_string_literal = {}\n");
+  EXPECT_EQ(ctx.runCommand("v a_string").output,
+            "(String) a_string = \"fofofo\"\n");
   // FIXME(37682): Reenable list printing
   // (*index, scalar<f64>, index) a_list = {
   //   [0] = 1
@@ -255,5 +256,4 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   [1] = ([0] = 2)
 }
 )");
-  EXPECT_EQ(ctx.runCommand("v none").output, "(None) none = None\n");
 }
