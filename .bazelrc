@@ -31,6 +31,10 @@ common --build_runfile_links=false
 build --test_output=errors
 build --test_summary=terse
 
+# Disable layering check for third parties since we don't care about their
+# layers, and we're not using this ourselves yet.
+build --features=-layering_check --host_features=-layering_check
+
 # Silence warnings in external dependencies used in tests
 build --per_file_copt=external/.*@-w --host_per_file_copt=external/.*@-w
 
