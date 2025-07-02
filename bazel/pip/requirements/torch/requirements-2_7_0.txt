@@ -278,13 +278,13 @@ grpcio-status==1.57.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via google-api-core
 grpcio-tools==1.68.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
-h11==0.14.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+h11==0.16.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   httpcore
     #   uvicorn
 hf-transfer==0.1.8 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
-httpcore==1.0.5 ; sys_platform == 'darwin' or sys_platform == 'linux'
+httpcore==1.0.9 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via httpx
 httpx==0.27.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
@@ -410,7 +410,7 @@ jupyter-server==2.14.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     #   notebook-shim
 jupyter-server-terminals==0.5.3 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via jupyter-server
-jupyterlab==4.2.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
+jupyterlab==4.2.7 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via notebook
 jupyterlab-pygments==0.3.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via nbconvert
@@ -902,7 +902,7 @@ sentence-transformers==3.3.1 ; sys_platform == 'darwin' or sys_platform == 'linu
     #   mteb
 sentinel==1.0.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
-setuptools==70.1.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+setuptools==80.9.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   ctranslate2
@@ -1058,7 +1058,7 @@ torchvision==0.22.0+cpu ; (platform_machine == 'x86_64' and sys_platform == 'dar
     # via
     #   -r bazel/pip/requirements/torch/requirements-2_7_0.in
     #   timm
-tornado==6.4.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+tornado==6.5.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   ipykernel
     #   jupyter-client
