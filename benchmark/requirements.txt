@@ -2,6 +2,7 @@ aiohttp
 datasets
 huggingface_hub[hf_transfer]
 huggingface_hub
+msgspec
 numpy
 protobuf
 tqdm
