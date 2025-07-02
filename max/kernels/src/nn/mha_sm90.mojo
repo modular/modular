@@ -52,6 +52,7 @@ from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_k_major,
     tile_layout_mn_major,
+    tile_to_descriptor,
 )
 from layout.tma_async import PipelineState, SharedMemBarrier
 from nn.mha_mask import MHAMask, TileMaskStatus

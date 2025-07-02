@@ -20,7 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host.info import A100, H100
+from gpu.host.info import A100, H100, B200
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_score_mod import IdentityScoreMod
@@ -171,7 +171,9 @@ fn test[
         num_heads,
         depth,
         BK=OptionalReg[UInt](128 // sizeof[qkv_type]()),
-        num_pipeline_stages=4 if ctx.device_info is H100 else 2,
+        num_pipeline_stages=4 if (
+            ctx.device_info is H100 or ctx.device_info is B200
+        ) else 2,
     )
 
     @parameter
@@ -271,8 +273,9 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
+        alias is_sm90orsm100 = ctx.device_info is H100 or ctx.device_info is B200
         alias min_depth = 64
-        alias max_depth = 256 if ctx.device_info is H100 else 128
+        alias max_depth = 256 if is_sm90orsm100 else 128
 
         @parameter
         for d in range(
@@ -492,7 +495,7 @@ def main():
             ](1, 600, ctx)
 
             @parameter
-            if ctx.device_info is A100 or ctx.device_info is H100:
+            if ctx.device_info is A100 or is_sm90orsm100:
                 test[
                     DType.bfloat16,
                     DType.bfloat16,

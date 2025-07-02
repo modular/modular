@@ -84,16 +84,15 @@ from nn._amd_flash_attention_gpu import mha_single_batch as amd_mha_single_batch
 from nn.mha_mask import MaterializedMask, MHAMask, TileMaskStatus
 from nn.mha_operand import KVCacheMHAOperand, MHAOperand, NDBufferMHAOperand
 from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
-from nn.mha_sm90 import (
+from nn.mha_sm90 import mha_sm90_dispatch
+from nn.mha_sm100 import mha_sm100_dispatch
+from nn.mha_utils import (
     DynamicInt,
+    FlashAttentionAlgorithm,
+    MHAConfig,
     NoPartition,
     SplitKPartition,
     StaticInt,
-    mha_sm90_dispatch,
-)
-from nn.mha_utils import (
-    FlashAttentionAlgorithm,
-    MHAConfig,
     _copy_frag_to_smem,
     _kernel_mask,
     get_start_and_end_for_partitions,
@@ -313,7 +312,8 @@ fn flash_attention[
         # H and D are always known for opaque KVCache types, we only check Q.
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]()
-        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (ctx.device_info is H100 and mask_t.mask_safe_out_of_bounds)))
+        alias is_sm90or100 = (ctx.device_info is H100) or (ctx.device_info is B200)
+        alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.device_info is A100)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
         alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
         alias kv_num_heads = cache_t.kv_params.num_heads
@@ -415,38 +415,67 @@ fn flash_attention_dispatch[
 
     @parameter
     if _is_flash_attention_applicable:
+        alias is_sm90 = ctx.device_info is H100
+        alias is_sm100 = ctx.device_info is B200
         if not is_token_generation:
             # TODO note that we have to handle mask tensor alignment here.
             # Choose matmul parameters based on dtype.
             @parameter
             if (
-                ctx.device_info is H100
+                (is_sm90 or is_sm100)
                 and q_half_float
                 and (ragged or not _use_valid_length)
                 and config.algorithm == FlashAttentionAlgorithm(3)
             ):
-                mha_sm90_dispatch[
-                    config=config,
-                    group=group,
-                    use_score_mod=use_score_mod,
-                    ragged=ragged,
-                    _is_cache_length_accurate=_is_cache_length_accurate,
-                ](
-                    output.data,
-                    q.data,
-                    k,
-                    v,
-                    mask_functor,
-                    score_mod_functor,
-                    valid_length,
-                    DynamicInt(max_prompt_len),
-                    max_cache_valid_length,
-                    scale,
-                    kv_input_row_offsets,
-                    batch_size,
-                    NoPartition[get_accum_type[q.dtype]()](),
-                    ctx,
-                )
+
+                @parameter
+                if is_sm90:
+                    mha_sm90_dispatch[
+                        config=config,
+                        group=group,
+                        use_score_mod=use_score_mod,
+                        ragged=ragged,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                    ](
+                        output.data,
+                        q.data,
+                        k,
+                        v,
+                        mask_functor,
+                        score_mod_functor,
+                        valid_length,
+                        DynamicInt(max_prompt_len),
+                        max_cache_valid_length,
+                        scale,
+                        kv_input_row_offsets,
+                        batch_size,
+                        NoPartition[get_accum_type[q.dtype]()](),
+                        ctx,
+                    )
+                else:
+                    constrained[is_sm100]()
+                    mha_sm100_dispatch[
+                        config=config,
+                        group=group,
+                        use_score_mod=use_score_mod,
+                        ragged=ragged,
+                        _is_cache_length_accurate=_is_cache_length_accurate,
+                    ](
+                        output.data,
+                        q.data,
+                        k,
+                        rebind[k_t](v),
+                        mask_functor,
+                        score_mod_functor,
+                        valid_length,
+                        DynamicInt(max_prompt_len),
+                        max_cache_valid_length,
+                        scale,
+                        kv_input_row_offsets,
+                        batch_size,
+                        NoPartition[get_accum_type[q.dtype]()](),
+                        ctx,
+                    )
 
             else:
                 alias BM = config.block_m()
@@ -533,8 +562,8 @@ fn flash_attention_dispatch[
                 batch_size, max_cache_valid_length, ctx
             )
 
-            alias use_sm90_kernel = (
-                ctx.device_info is H100
+            alias use_fa3_kernel = (
+                (is_sm90 or is_sm100)
                 and q_half_float
                 and (ragged or not _use_valid_length)
                 and mask_t.mask_safe_out_of_bounds
@@ -568,29 +597,55 @@ fn flash_attention_dispatch[
             if num_partitions_value == 1:
 
                 @parameter
-                if use_sm90_kernel:
-                    mha_sm90_dispatch[
-                        config=config,
-                        group=group,
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ](
-                        output.data,
-                        q.data,
-                        k,
-                        v,
-                        mask_functor,
-                        score_mod_functor,
-                        valid_length,
-                        StaticInt[1](),
-                        max_cache_valid_length,
-                        scale,
-                        kv_input_row_offsets,
-                        batch_size,
-                        NoPartition[accum_type](),
-                        ctx,
-                    )
+                if use_fa3_kernel:
+
+                    @parameter
+                    if is_sm90:
+                        mha_sm90_dispatch[
+                            config=config,
+                            group=group,
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            output.data,
+                            q.data,
+                            k,
+                            v,
+                            mask_functor,
+                            score_mod_functor,
+                            valid_length,
+                            StaticInt[1](),
+                            max_cache_valid_length,
+                            scale,
+                            kv_input_row_offsets,
+                            batch_size,
+                            NoPartition[accum_type](),
+                            ctx,
+                        )
+                    else:
+                        mha_sm100_dispatch[
+                            config=config,
+                            group=group,
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            output.data,
+                            q.data,
+                            k,
+                            rebind[k_t](v),
+                            mask_functor,
+                            score_mod_functor,
+                            valid_length,
+                            StaticInt[1](),
+                            max_cache_valid_length,
+                            scale,
+                            kv_input_row_offsets,
+                            batch_size,
+                            NoPartition[accum_type](),
+                            ctx,
+                        )
                 else:
                     alias nullptr = UnsafePointer[Scalar[accum_type]]()
                     ctx.enqueue_function[kernel](
@@ -660,32 +715,61 @@ fn flash_attention_dispatch[
                 )
 
                 @parameter
-                if use_sm90_kernel:
-                    mha_sm90_dispatch[
-                        config=config,
-                        group=group,
-                        use_score_mod=use_score_mod,
-                        ragged=ragged,
-                        _is_cache_length_accurate=_is_cache_length_accurate,
-                    ](
-                        output_intermediate.data,
-                        q.data,
-                        k,
-                        v,
-                        mask_functor,
-                        score_mod_functor,
-                        valid_length,
-                        StaticInt[1](),
-                        max_cache_valid_length,
-                        scale,
-                        kv_input_row_offsets,
-                        batch_size,
-                        SplitKPartition(
-                            exp_sum_qk_max_data._unsafe_ptr(),
-                            num_partitions_value,
-                        ),
-                        ctx,
-                    )
+                if use_fa3_kernel:
+
+                    @parameter
+                    if is_sm90:
+                        mha_sm90_dispatch[
+                            config=config,
+                            group=group,
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            output_intermediate.data,
+                            q.data,
+                            k,
+                            v,
+                            mask_functor,
+                            score_mod_functor,
+                            valid_length,
+                            StaticInt[1](),
+                            max_cache_valid_length,
+                            scale,
+                            kv_input_row_offsets,
+                            batch_size,
+                            SplitKPartition(
+                                exp_sum_qk_max_data._unsafe_ptr(),
+                                num_partitions_value,
+                            ),
+                            ctx,
+                        )
+                    else:
+                        mha_sm100_dispatch[
+                            config=config,
+                            group=group,
+                            use_score_mod=use_score_mod,
+                            ragged=ragged,
+                            _is_cache_length_accurate=_is_cache_length_accurate,
+                        ](
+                            output_intermediate.data,
+                            q.data,
+                            k,
+                            rebind[k_t](v),
+                            mask_functor,
+                            score_mod_functor,
+                            valid_length,
+                            StaticInt[1](),
+                            max_cache_valid_length,
+                            scale,
+                            kv_input_row_offsets,
+                            batch_size,
+                            SplitKPartition(
+                                exp_sum_qk_max_data._unsafe_ptr(),
+                                num_partitions_value,
+                            ),
+                            ctx,
+                        )
                 else:
                     ctx.enqueue_function[kernel](
                         q.data,
@@ -720,7 +804,7 @@ fn flash_attention_dispatch[
                     num_heads=num_heads,
                     num_threads=WARP_SIZE,
                     group=group,
-                    use_exp2=use_sm90_kernel,
+                    use_exp2=use_fa3_kernel,
                 ]
 
                 ctx.enqueue_function[kernel_reduce](
@@ -832,7 +916,8 @@ fn flash_attention[
     # H and D are always known.
     # fmt: off
     alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
-    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (ctx.device_info is H100 or ctx.device_info is A100 or ctx.device_info is B200)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (ctx.device_info is H100 and mask_t.mask_safe_out_of_bounds)))
+    alias is_sm90or100 = (ctx.device_info is H100) or (ctx.device_info is B200)
+    alias head_depth_supported = q.shape.get[rank-1]() == 128 or (q.shape.get[rank-1]() == 64 and (is_sm90or100 or ctx.device_info is A100)) or (q.shape.get[rank-1]() == 256 and (has_amd_gpu_accelerator() or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)))
     alias flash_attention_applicable = flash_attention_hw_supported[type]() and head_depth_known and head_depth_supported and not naive_kernel
 
     alias q_half_float = q.dtype in (DType.float16, DType.bfloat16)

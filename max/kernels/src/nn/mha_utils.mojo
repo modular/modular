@@ -327,12 +327,17 @@ struct MHAConfig(Copyable, Movable, Writable):
         return String.write(self)
 
     fn write_to[W: Writer](self, mut writer: W):
-        writer.write("ampere_")
+        if self.algorithm == 2:
+            writer.write("ampere_")
+        else:
+            writer.write("fa3_")
         writer.write(self.type, "_")
         # Use BNxBM to match MatmulConfig, which matches cublas
         writer.write(self.block_n(), "x", self.block_m(), "_")
         writer.write(self.block_k(), "x")
         writer.write(self.num_pipeline_stages)
+        writer.write(",depth = ", self.depth)
+        writer.write(",num_attention_heads = ", self.num_heads)
 
 
 @always_inline
