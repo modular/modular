@@ -213,6 +213,7 @@ mojo.gpu_toolchains(
         "MI355": "mi355",
         "Navi": "radeon",
         "AMD Radeon Graphics": "radeon",
+        "AMD Radeon VII": "vega20",
     },
     # GPU name -> target accelerator
     supported_gpus = {
@@ -230,6 +231,7 @@ mojo.gpu_toolchains(
         "mi355": "amdgpu:gfx950",
         "rtx4090": "nvidia:89",
         "rtx5090": "nvidia:120a",
+        "vega20": "amdgpu:gfx906",
     },
 )
 use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
