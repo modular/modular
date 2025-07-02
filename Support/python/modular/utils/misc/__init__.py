@@ -18,7 +18,6 @@ which point compatibility concerns will be addressed).
 from ._misc import (
     create_dir_symlink,
     create_symlink,
-    get_ordinal,
     modular_dtype_to_np_dtype,
     set_env_var,
 )
