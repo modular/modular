@@ -13,4 +13,3 @@ xgrammar
 gptqmodel @ https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp312-cp312-linux_x86_64.whl
 nvidia-nvtx-cu12
 nvtx
-nixl

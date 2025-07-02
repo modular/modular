@@ -511,8 +511,6 @@ networkx==3.2.1 ; sys_platform == 'linux'
     # via torch
 ninja==1.11.1.4 ; sys_platform == 'linux'
     # via xgrammar
-nixl==0.2.0 ; sys_platform == 'linux'
-    # via -r bazel/pip/requirements/nvidia-gpu-requirements.in
 nltk==3.9.1 ; sys_platform == 'linux'
     # via
     #   lm-eval
