@@ -13,5 +13,5 @@ fn use_string(s: String) -> Int:
 
 
 fn main():
-    var foo = String("4") + String("2")
+    var foo = "4" + "2"
     print(use_string(foo))  # breakpoint

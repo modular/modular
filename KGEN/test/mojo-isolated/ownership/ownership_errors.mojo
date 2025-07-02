@@ -481,7 +481,7 @@ fn return_owned_arg_ref(owned x: String) -> Pointer[String, __origin_of(x)]:
 fn test38421():
     # this is getting a reference to the expression temporary for the string.
     # expected-note @+1 {{'(expression temporary)' declared here}}
-    var reference = return_owned_arg_ref(String("abc"))
+    var reference = return_owned_arg_ref("abc")
 
     # This is an error since the rvalue temp slot is uninitialized here.
     # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}

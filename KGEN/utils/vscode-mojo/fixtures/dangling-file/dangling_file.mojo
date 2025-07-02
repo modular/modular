@@ -6,5 +6,5 @@
 
 
 fn main():
-    var some_string = String("let_string")
+    var some_string = "let_string"
     print(some_string)

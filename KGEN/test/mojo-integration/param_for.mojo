@@ -34,10 +34,10 @@ fn test_for_list():
     debug_assert(fp_cnt == 6.0)
 
     # Test for strings
-    concated = String("")
+    concated = ""
 
     @parameter
-    for str in [String("a"), "b", "c"]:
+    for str in ["a", "b", "c"]:
         var str2 = str  # Work around origin issue.
         concated += str2
     debug_assert(concated == "abc")
