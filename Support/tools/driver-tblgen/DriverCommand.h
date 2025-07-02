@@ -19,8 +19,6 @@
 
 namespace M {
 
-class CommandOption;
-
 /// A convenience wrapper for an `Alias` TableGen record. This provides
 /// getters for the record's values, as well as other helper functions.
 class CommandAlias {
@@ -124,49 +122,6 @@ private:
   SmallVector<const llvm::Record *> subcommands;
 };
 
-/// A wrapper around an LLVM `OptionGroup` record, as well as all of the
-/// (continuously sorted) options that belong to that group. This helps backends
-/// print options group-wise.
-///
-/// Instead of constructing instances of this class directly, use the static
-/// `getAll` member function to construct a collection of them based on parsed
-/// TableGen records.
-class CommandOptionGroup {
-public:
-  /// Given a set of parsed TableGen records, returns a sorted list of all the
-  /// option groups defined therein, along with their options. If any of the
-  /// option group records are invalid, returns an error.
-  static ErrorOr<std::vector<CommandOptionGroup>>
-  getAll(const llvm::RecordKeeper &records);
-
-  /// Return the underlying LLVM `OptionGroup` record.
-  const llvm::Record *getGroup() const { return group; }
-  /// Return all the options that belong to this group.
-  ArrayRef<CommandOption> getOptions() const { return options; }
-
-  StringRef getGroupName() const {
-    return getGroup()->getValueAsString("Name");
-  }
-
-  /// Return the option group's index value, if one is defined.
-  std::optional<int64_t> getIndex() const;
-
-  /// Return whether the option group is hidden from help text.
-  bool isHidden() const;
-
-  /// Given an LLVM `Option` record, either add it to the sorted list of group
-  /// options, or return the option that was already added. If the option record
-  /// is to be newly added but is invalid, this returns an error.
-  ErrorOr<CommandOption &> findOrCreateOption(const llvm::Record *option);
-
-private:
-  /// Initializes the wrapper with the given `OptionGroup` record.
-  CommandOptionGroup(const llvm::Record *group);
-
-  const llvm::Record *group;
-  std::vector<CommandOption> options;
-};
-
 /// A wrapper around an LLVM `Option` record, plus all of its aliases, which are
 /// stored in a continuously sorted list. This helps backends print options and
 /// their aliases side-by-side.
@@ -226,11 +181,53 @@ private:
     assert(option->isSubClassOf("Option") && "unexpected record class");
   }
   /// Allow `CommandOptionGroup` to construct instances of this class.
-  friend ErrorOr<CommandOption &>
-  CommandOptionGroup::findOrCreateOption(const llvm::Record *);
+  friend class CommandOptionGroup;
 
   const llvm::Record *option;
   SmallVector<CommandAlias> aliases;
+};
+
+/// A wrapper around an LLVM `OptionGroup` record, as well as all of the
+/// (continuously sorted) options that belong to that group. This helps backends
+/// print options group-wise.
+///
+/// Instead of constructing instances of this class directly, use the static
+/// `getAll` member function to construct a collection of them based on parsed
+/// TableGen records.
+class CommandOptionGroup {
+public:
+  /// Given a set of parsed TableGen records, returns a sorted list of all the
+  /// option groups defined therein, along with their options. If any of the
+  /// option group records are invalid, returns an error.
+  static ErrorOr<std::vector<CommandOptionGroup>>
+  getAll(const llvm::RecordKeeper &records);
+
+  /// Return the underlying LLVM `OptionGroup` record.
+  const llvm::Record *getGroup() const { return group; }
+  /// Return all the options that belong to this group.
+  ArrayRef<CommandOption> getOptions() const { return options; }
+
+  StringRef getGroupName() const {
+    return getGroup()->getValueAsString("Name");
+  }
+
+  /// Return the option group's index value, if one is defined.
+  std::optional<int64_t> getIndex() const;
+
+  /// Return whether the option group is hidden from help text.
+  bool isHidden() const;
+
+  /// Given an LLVM `Option` record, either add it to the sorted list of group
+  /// options, or return the option that was already added. If the option record
+  /// is to be newly added but is invalid, this returns an error.
+  ErrorOr<CommandOption &> findOrCreateOption(const llvm::Record *option);
+
+private:
+  /// Initializes the wrapper with the given `OptionGroup` record.
+  CommandOptionGroup(const llvm::Record *group);
+
+  const llvm::Record *group;
+  std::vector<CommandOption> options;
 };
 
 /// A comparator that can be used to sort option groups and options, based on
