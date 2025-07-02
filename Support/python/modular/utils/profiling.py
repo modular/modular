@@ -14,11 +14,10 @@ performance analysis-related helpers.
 import json
 from copy import deepcopy as dcopy
 from functools import cached_property
+from logging import warning
 from pathlib import Path
 from re import sub
 from typing import Any, Callable, Optional
-
-from modular.utils.logging import warning
 
 EventDict = dict[str, Any]
 TraceDict = dict[str, Any]

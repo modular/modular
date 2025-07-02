@@ -4,12 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import logging
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Union
-
-from modular.utils import logging
 
 ShellCommand = Iterable[Union[str, Path]]
 
