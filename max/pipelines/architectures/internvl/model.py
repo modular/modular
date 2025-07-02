@@ -114,6 +114,26 @@ class InternVLInputs(ModelInputs):
         return self.pixel_values is not None
 
 
+def _assert_image_embeddings_invariant(
+    image_embeddings: Sequence[Tensor], image_token_indices: Sequence[Tensor]
+) -> None:
+    # Check for shape mismatch that causes scatter_nd OOB access.
+    for i, (embed, indices) in enumerate(
+        zip(image_embeddings, image_token_indices)
+    ):
+        embed_count = embed.shape[0]
+        indices_count = indices.shape[0]
+        if embed_count != indices_count:
+            logger.error(
+                f"[CRITICAL] Device {i}: Vision embedding count ({embed_count}) "
+                f"!= image token indices count ({indices_count})."
+            )
+        assert embed_count == indices_count, (
+            f"Vision embedding shape mismatch on device {i}: {embed_count} embeddings "
+            f"but {indices_count} indices."
+        )
+
+
 class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     """An InternVL pipeline model for multimodal text generation."""
 
@@ -637,6 +657,10 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 if isinstance(output, Tensor)
             ]
             image_token_indices = model_inputs.image_token_indices
+
+            _assert_image_embeddings_invariant(
+                image_embeddings, image_token_indices
+            )
         else:
             # Initialize empty tensors for text-only mode.
             image_embeddings = self._create_empty_image_embeddings()
