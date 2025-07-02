@@ -378,6 +378,38 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
               exportABI.has_value());
 }
 
+static void applyExtern(SMLoc loc, ASTDecl &decl, FnOp func,
+                        const CallNode &node) {
+  auto &shared = decl.getShared();
+  ArrayRef<Operand> operands = node.operands;
+  if (operands.size() != 1) {
+    shared.emitError(node.getLoc(), "@extern requires 1 argument");
+    return;
+  }
+
+  Operand operand = operands[0];
+  auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
+  if (!strNode || !operand.isPositional()) {
+    shared.emitError(node.getLoc(), "@extern requires a string argument");
+    return;
+  }
+  std::string libName = strNode->getValue();
+  func.setLinkageName(libName);
+
+  if (!func.getInputParams().empty()) {
+    shared.emitError(node.getLoc(), "@extern cannot be applied to a function "
+                                    "with parameters");
+    return;
+  }
+
+  if (isa<TraitDeclOp, StructDeclOp>(*decl.getParentDecl())) {
+    shared.emitError(node.getLoc(), "@extern cannot be applied to a method");
+    return;
+  }
+
+  func.setIsExtern(true);
+}
+
 namespace {
 struct FnSigDecorators : public SharedStateUser {
   FnSigDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
@@ -490,6 +522,8 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
         funcOp.setInlineLevel(InlineLevel::AlwaysBuiltin);
       else if (declRef->spelling == "export")
         applyExport(decorator->getLoc(), decl, baseName, *callNode, funcOp);
+      else if (declRef->spelling == "extern")
+        applyExtern(decorator->getLoc(), decl, funcOp, *callNode);
       else if (declRef->spelling == "__move_capture")
         applyCopyOrMoveCapture(*callNode, /*isMove=*/true, declRef->spelling);
       else if (declRef->spelling == "__copy_capture")
@@ -792,6 +826,15 @@ void FnSigDecorators::registerLLVMArgMetadata(const CallNode &node) {
 }
 
 void FnSigDecorators::finalize() {
+  if (funcOp.getIsExtern()) {
+    if (funcOp.getInlineLevel() != InlineLevel::Never &&
+        funcOp.getInlineLevel() != InlineLevel::Automatic) {
+      emitError(funcOp.getLoc(), "extern functions cannot be inlined");
+      return;
+    }
+    funcOp.setInlineLevel(InlineLevel::Never);
+  }
+
   if (!llvmArgMetadata.empty())
     funcOp.setLLVMArgMetadataArrayAttr(
         ArrayAttr::get(getContext(), llvmArgMetadata));
@@ -1472,8 +1515,9 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   // About to parse the body.
   endFn.setUnresolved(false);
 
-  // If this is a method in a trait, we only allow a "..."
-  if (isa<TraitDeclOp>(*decl.getParentDecl())) {
+  // If this is a method in a trait, or an extern function, we only allow a
+  // "..." as the body.
+  if (isa<TraitDeclOp>(*decl.getParentDecl()) || funcOp.getIsExtern()) {
     // Skip any docstring's that might be present.
     ParserBase p(shared, lexer);
     p.parseDocString(decl);
@@ -1631,6 +1675,13 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
   if (isa<TraitDeclOp>(*decl.getParentDecl())) {
     shared.emitError(decl.getLoc(),
                      "unexpected function body in trait function "
+                     "declaration, use `...`");
+    return success();
+  }
+
+  if (funcOp.getIsExtern()) {
+    shared.emitError(decl.getLoc(),
+                     "unexpected function body in extern function "
                      "declaration, use `...`");
     return success();
   }

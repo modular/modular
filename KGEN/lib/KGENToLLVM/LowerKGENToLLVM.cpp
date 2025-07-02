@@ -495,9 +495,11 @@ public:
     TargetInfoAttr target = getTypeConverter()->getTarget();
 
     // Mark all functions as internal for now - we'll clean this up later.
-    auto funcOp =
-        createLLVMFunc(b, target, func.getLoc(), func.getNameAttr(), funcType,
-                       getLinkageKind(func.getExportKind()));
+    LLVM::Linkage linkage = func.getIsExtern()
+                                ? LLVM::Linkage::External
+                                : getLinkageKind(func.getExportKind());
+    auto funcOp = createLLVMFunc(b, target, func.getLoc(), func.getNameAttr(),
+                                 funcType, linkage);
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
 
@@ -528,8 +530,11 @@ public:
     convertInlineLevel(funcOp, func.getInlineLevel());
 
     // And move the func's body into the new function.
-    b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(), funcOp.end());
-    (void)b.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
+    if (!func.getIsExtern()) {
+      b.inlineRegionBefore(func.getBodyRegion(), funcOp.getBody(),
+                           funcOp.end());
+      (void)b.convertRegionTypes(&funcOp.getBody(), *getTypeConverter());
+    }
 
     // Drop empty struct arguments.
     dropEmptyStructArguments(funcOp, b);

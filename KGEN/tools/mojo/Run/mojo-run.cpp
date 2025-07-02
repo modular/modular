@@ -187,8 +187,8 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
           state, args, compilationOptions, sourceManager, ctx, options::OPT_I,
           options::OPT_optimization_level, options::OPT_debug_level,
           options::OPT_sanitize, options::OPT_shared_libasan,
-          options::OPT_external_libasan, options::OPT_debug_info_language,
-          options::OPT_num_threads))
+          options::OPT_external_libasan, options::OPT_bitcode_libs,
+          options::OPT_debug_info_language, options::OPT_num_threads))
     return state.reportError(err.getError());
   if (ErrorOrSuccess err = parseTargetOptions(
           state, args, compilationOptions, sourceManager, ctx, target,

@@ -97,8 +97,14 @@ defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
     "and must be present at both compile time and run time of the program."
   >>;
 
+defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
+  ExperimentalCompilationOptionGroup, Index<4>, MetaVarName<"LIBS">,
+  HelpText<
+    "External bitcode libraries to link into the generated LLVM IR."
+  >>;
+
 defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
-  ExperimentalCompilationOptionGroup, Index<3>, MetaVarName<"LANGUAGE">,
+  ExperimentalCompilationOptionGroup, Index<5>, MetaVarName<"LANGUAGE">,
   HelpText<
     "Sets the language to emit as part of the debug info. The supported "
     "languages are: `Mojo`, and `C`. `C` is the default, and is useful to "

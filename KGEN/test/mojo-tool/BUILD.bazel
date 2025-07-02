@@ -37,8 +37,10 @@ lit_tests(
         "//conditions:default": [],
     }),
     tools = [
+        "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/mojo",
+        "@llvm-project//llvm:llvm-as",
         "@llvm-project//llvm:llvm-objdump",
     ],
     deps = [

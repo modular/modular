@@ -32,6 +32,7 @@ ErrorOrSuccess M::parseCompilationOptions(
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
     llvm::opt::OptSpecifier sharedLibasan,
     llvm::opt::OptSpecifier externalLibasan,
+    llvm::opt::OptSpecifier bitcodeLibs,
     llvm::opt::OptSpecifier debugInfoLanguageId,
     llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath) {
   // Process the sanitizers.
@@ -70,6 +71,11 @@ ErrorOrSuccess M::parseCompilationOptions(
                      "--sanitize=address");
       compilationOptions.externalLibasan = libPath;
     }
+  }
+
+  if (bitcodeLibs.isValid()) {
+    compilationOptions.bitcodeLibs =
+        llvm::to_vector_of<std::string>(args.getAllArgValues(bitcodeLibs));
   }
 
   // Enable overwriting of the auto-imported paths, which is where the compiler

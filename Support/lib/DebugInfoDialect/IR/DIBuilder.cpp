@@ -63,8 +63,11 @@ DISubprogramAttr DIBuilder::createSubprogram(SourceNameAttr sourceName,
                                              DISubroutineType type) {
   // The only non-local scope we have is the file scope.
   // TODO(MOCO-834): Properly handle nested function.
-  return DISubprogramAttr::get(compileUnit, file, sourceName, linkageName, file,
-                               line, scopeLine, subprogramFlags, type);
+  bool isDefinition =
+      bitEnumContainsAny(subprogramFlags, SubprogramFlags::Definition);
+  return DISubprogramAttr::get(isDefinition ? compileUnit : nullptr, file,
+                               sourceName, linkageName, file, line, scopeLine,
+                               subprogramFlags, type);
 }
 
 DIFileAttr DIBuilder::createFile(StringRef name, StringRef directory) {

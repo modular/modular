@@ -85,6 +85,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
+    UnitAttr:$isExtern,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
     DefaultValuedAttr<DictArrayAttr, "std::nullopt">:$LLVMArgMetadata,
     DefaultValuedAttr<StringArrayAttr, "std::nullopt">:$crossDeviceCaptures,
@@ -112,6 +113,8 @@ def KGEN_FuncOp : KGENOp<"func", [
     void setResAttrsAttr(ArrayAttr attrs) {}
     Attribute removeArgAttrsAttr() { return nullptr; }
     Attribute removeResAttrsAttr() { return nullptr; }
+
+    bool isExternal() { return getIsExtern(); }
   }];
 
   let builders = [
@@ -120,6 +123,7 @@ def KGEN_FuncOp : KGENOp<"func", [
                    CArg<"InlineLevel",
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
+                   CArg<"bool", "false">:$isExtern,
                    CArg<"ArrayRef<TypedAttr>", "{}">:$decorators,
                    CArg<"DictionaryAttr", "{}">:$llvmMetadata,
                    CArg<"ArrayAttr", "{}">:$llvmArgMetadata), [{
@@ -129,7 +133,7 @@ def KGEN_FuncOp : KGENOp<"func", [
         llvmArgMetadata = ArrayAttr::get(name.getContext(), {});
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
       build($_builder, $_state, name, sigGen, decorators, inlineLevel,
-            exportKind, llvmMetadata, llvmArgMetadata,
+            exportKind, isExtern, llvmMetadata, llvmArgMetadata,
             /*crossDeviceCaptures=*/{}, /*coroutineType=*/{});
     }]>,
   ];
@@ -174,6 +178,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
+    UnitAttr:$isExtern,
     // To be able to store pre-elaborated names of the `llvm_metadata`,
     // decompose LLVM metadata into array of attributes of even size.
     // Each even attribute corresponds to the name of in `llvm_metadata`,
@@ -199,6 +204,8 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     void setResAttrsAttr(ArrayAttr attrs) {}
     Attribute removeArgAttrsAttr() { return nullptr; }
     Attribute removeResAttrsAttr() { return nullptr; }
+
+    bool isExternal() { return getIsExtern(); }
   }];
 
   let builders = [
@@ -214,7 +221,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
         llvmArgMetadataArray = ArrayAttr::get(name.getContext(), {});
       build($_builder, $_state, name, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
-            llvmMetadataArray, llvmArgMetadataArray);
+            /*isExtern=*/false, llvmMetadataArray, llvmArgMetadataArray);
     }]>,
     OpBuilder<(ins "StringAttr":$name, "FuncTypeGeneratorType":$type), [{
       build($_builder, $_state, name, type, type.getBody().getValues(), {}, {});

@@ -100,7 +100,8 @@ struct CallGraphNode
   /// Return true if at the end of processing, the function is dead and will be
   /// erased.
   bool isFunctionDead() {
-    return (isAllInlined() || !reachable) && !func.isExported();
+    return (isAllInlined() || !reachable) && !func.isExported() &&
+           !func.isExternal();
   }
 
   /// Should callee be inlined or not given a threshold.

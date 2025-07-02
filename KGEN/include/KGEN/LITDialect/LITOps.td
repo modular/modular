@@ -61,6 +61,7 @@ def LIT_FnOp : LITOp<"fn", [
     UnitAttr:$isDef,  // Present if 'def' absent if 'fn'.
     UnitAttr:$isSynthetic,
     UnitAttr:$isImplicitConversion,
+    UnitAttr:$isExtern,
     KGEN_ExportKindAttr:$exportKind,
     KGEN_InlineLevelAttr:$inlineLevel,
     DefaultValuedOptionalAttr<I8Attr, "0">:$specialFnKind,
@@ -128,6 +129,9 @@ def LIT_FnOp : LITOp<"fn", [
 
     /// Return true if this was defined as a 'def', not a 'fn'.
     bool isDef() { return getIsDef(); }
+
+    /// Override the default implementation of isExternal.
+    bool isExternal() { return getIsExtern(); }
 
     mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
     mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
