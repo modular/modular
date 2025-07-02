@@ -77,6 +77,35 @@ modular_py_binary(
     ],
 )
 
+modular_py_binary(
+    name = "verify_layers_e2e",
+    srcs = glob(["verify_layers/*.py"]),
+    data = [
+        "//Kernels/tools/gpu-query",
+    ],
+    env = {
+        # MODULAR_CUDA_QUERY_PATH is required by the model scripts.
+        "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
+        # PIPELINES_TESTDATA is required by the model scripts.
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/llama3/testdata"
+        ),
+    },
+    ignore_collisions = True,
+    main = "verify_layers/cli.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":generate_llm_logits",
+        ":verify",
+        "//SDK/integration-test/pipelines/python/test_common",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("matplotlib"),
+        requirement("pandas"),
+    ],
+)
+
 modular_py_test(
     name = "test_pipelines_cli",
     size = "enormous",
