@@ -2270,6 +2270,7 @@ class FuncOp(max._core.Operation):
         decorators: DecoratorsAttr,
         inline_level: InlineLevelAttr,
         export_kind: ExportKindAttr,
+        is_extern: max._core.dialects.builtin.UnitAttr,
         _llvm_metadata: max._core.dialects.builtin.DictionaryAttr,
         _llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr,
         cross_device_captures: max._core.dialects.m.StringArrayAttr,
@@ -2284,6 +2285,7 @@ class FuncOp(max._core.Operation):
         type: FuncType,
         inline_level: InlineLevel = InlineLevel.automatic,
         export_kind: ExportKind = ExportKind.not_exported,
+        is_extern: bool = False,
         decorators: Sequence[max._core.dialects.builtin.TypedAttr] = [],
         llvm_metadata: max._core.dialects.builtin.DictionaryAttr = ...,
         llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr = ...,
@@ -2312,6 +2314,12 @@ class FuncOp(max._core.Operation):
     def export_kind(self) -> ExportKind: ...
     @export_kind.setter
     def export_kind(self, arg: ExportKindAttr, /) -> None: ...
+    @property
+    def is_extern(self) -> bool: ...
+    @is_extern.setter
+    def is_extern(
+        self, arg: max._core.dialects.builtin.UnitAttr, /
+    ) -> None: ...
     @property
     def _llvm_metadata(self) -> max._core.dialects.builtin.DictionaryAttr: ...
     @_llvm_metadata.setter
@@ -2372,6 +2380,7 @@ class GeneratorOp(max._core.Operation):
         decorators: DecoratorsAttr,
         inline_level: InlineLevelAttr,
         export_kind: ExportKindAttr,
+        is_extern: max._core.dialects.builtin.UnitAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
@@ -2430,6 +2439,12 @@ class GeneratorOp(max._core.Operation):
     def export_kind(self) -> ExportKind: ...
     @export_kind.setter
     def export_kind(self, arg: ExportKindAttr, /) -> None: ...
+    @property
+    def is_extern(self) -> bool: ...
+    @is_extern.setter
+    def is_extern(
+        self, arg: max._core.dialects.builtin.UnitAttr, /
+    ) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
