@@ -657,5 +657,11 @@ class Llama3Config(MAXModelConfig, Llama3ConfigBase):
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             float8_config=float8_config,
             use_subgraphs=pipeline_config.model_config.use_subgraphs,
-            dist_gemm_config=DistributedGemmConfig.generate(),
+            # Force-disable matmul-allreduce overlap for llama FP8.
+            # TODO: GEX-2388: Figure out the issue and re-enable this.
+            dist_gemm_config=DistributedGemmConfig(
+                enable_matmul_allreduce=False
+            )
+            if dtype.is_float8()
+            else DistributedGemmConfig.generate(),
         )
