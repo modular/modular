@@ -371,8 +371,26 @@ class InternVLProcessor:
                     "<|image|>", image_tokens, 1
                 )
             else:
-                # If no <image> placeholder, prepend to text
-                processed_text = image_tokens + "\n" + processed_text
+                # If no <image> placeholder, find the last user prompt and
+                # insert the image tokens at the beginning of it.
+                user_prompt_start = "<|im_start|>user\n"
+                last_user_prompt_idx = processed_text.rfind(user_prompt_start)
+
+                if last_user_prompt_idx != -1:
+                    # Insert after "<|im_start|>user\n"
+                    insertion_point = last_user_prompt_idx + len(
+                        user_prompt_start
+                    )
+                    processed_text = (
+                        processed_text[:insertion_point]
+                        + image_tokens
+                        + "\n"
+                        + processed_text[insertion_point:]
+                    )
+                else:
+                    # Fallback for plain text prompts (no chat template)
+                    # or if no user turn is present.
+                    processed_text = image_tokens + "\n" + processed_text
 
             image_array = preprocess_image_to_tensor(
                 image,
