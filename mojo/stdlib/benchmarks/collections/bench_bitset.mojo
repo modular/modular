@@ -193,8 +193,8 @@ fn bench_bitset_difference[width: Int](mut b: Bencher) raises:
 
 def main():
     seed()
-    alias widths = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
-    alias sizes = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
+    alias widths = (1, 2, 4, 8, 16)
+    alias sizes = (10, 30, 50, 100, 1000)
     var m = Bench(BenchConfig(num_repetitions=1))
 
     @parameter

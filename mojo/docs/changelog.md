@@ -53,6 +53,29 @@ what we publish.
   problem. If you run into this, rework the code to materialize the full object
   (e.g. the String) to runtime explicitly.
 
+- `StringLiteral` now automatically materializes to a `String` when used at
+  runtime:
+
+  ```mojo
+  alias param = "foo"        # type = StringLiteral
+  var runtime_value = "bar"  # type = String
+  var runtime_value2 = param # type = String
+  ```
+
+  This enables all the behavior users expect without having to convert
+  or annotate types, for example:
+
+  ```mojo
+  var string = "hello"
+  string += " world"
+
+  var if_result = "foo" if True else "bar"
+  ```
+
+Initializing a `String` from a `StringLiteral` initially points to static
+constant memory, and does not perform SSO or allocate until the first
+mutation.
+
 ### Language changes
 
 - The `@value` decorator has been formally deprecated with a warning, it will

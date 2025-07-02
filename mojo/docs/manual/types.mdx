@@ -411,7 +411,7 @@ Adjacent literals are concatenated together, so you can define a long string
 using a series of literals broken up over several lines:
 
 ```
-var s = "A very long string which is "
+alias s = "A very long string which is "
         "broken into two literals for legibility."
 ```
 
@@ -419,7 +419,7 @@ To define a multi-line string, enclose the literal in three single or double
 quotes:
 
 ```
-var s = """
+alias s = """
 Multi-line string literals let you
 enter long blocks of text, including
 newlines."""
@@ -428,19 +428,12 @@ newlines."""
 Note that the triple double quote form is also used for API documentation
 strings.
 
-Unlike `IntLiteral` and `FloatLiteral`, `StringLiteral` doesn't automatically
-materialize to a runtime type. In some cases, you may need to explicitly convert
-`StringLiteral` values to `String`.
+A `StringLiteral` will materialize to a `String` when used at run-time:
 
 ```mojo
-# Variable is type `StringLiteral`
-var s1 = "Example"
-
-# Variable is type `String`
-var s2: String = "Example"
-
-# Variable is type `String`
-var s3 = String("Example")
+alias param = "foo"        # type = StringLiteral
+var runtime_value = "bar"  # type = String
+var runtime_value2 = param # type = String
 ```
 
 ## Booleans

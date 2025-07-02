@@ -97,7 +97,7 @@ from sys.info import is_32bit
 from sys.ffi import c_char
 
 from bit import count_leading_zeros
-from memory import memcpy, memset
+from memory import memcpy, memset, memcmp
 from python import PythonConvertible, PythonObject, ConvertibleFromPython
 
 from utils import IndexList, Variant
@@ -165,16 +165,13 @@ struct String(
     # When FLAG_HAS_NUL_TERMINATOR is set, the byte past the end of the string
     # is known to be an accessible 'nul' terminator.
     alias FLAG_HAS_NUL_TERMINATOR = UInt(1) << (UInt.BITWIDTH - 3)
-    # When FLAG_IS_INDIRECT is set, the string is pointing to data owned
-    # elsewhere such as a StringLiteral or StaticString.
-    alias FLAG_IS_INDIRECT = UInt(1) << (UInt.BITWIDTH - 2)
+    # When FLAG_IS_REF_COUNTED is set, the string is pointing to a mutable buffer
+    # that may have other references to it.
+    alias FLAG_IS_REF_COUNTED = UInt(1) << (UInt.BITWIDTH - 2)
     # When FLAG_IS_INLINE is set, the string is inline or "Short String
     # Optimized" (SSO). The first 23 bytes of the fields are treated as UTF-8
     # data
     alias FLAG_IS_INLINE = UInt(1) << (UInt.BITWIDTH - 1)
-    # To set the StringLiteral capacity field directly without runtime bitshifts
-    alias SET_INDIRECT_WITH_NUL = 0 | Self.FLAG_IS_INDIRECT | Self.FLAG_HAS_NUL_TERMINATOR
-    # The start of the length field in the storage: this is the top byte, which
     # gives us 5 bits for the length.
     alias INLINE_LENGTH_START = UInt(Int.BITWIDTH - 8)
     alias INLINE_LENGTH_MASK = UInt(0b1_1111 << Self.INLINE_LENGTH_START)
@@ -194,9 +191,10 @@ struct String(
     @always_inline("nodebug")
     fn __init__(out self):
         """Construct an empty string."""
-        self = Self(capacity=0)
+        self._capacity_or_data = Self.FLAG_IS_INLINE
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    @always_inline
+    @always_inline("nodebug")
     fn __init__(out self, *, capacity: Int):
         """Construct an empty string with a given capacity.
 
@@ -204,16 +202,17 @@ struct String(
             capacity: The capacity of the string to allocate.
         """
         if capacity <= Self.INLINE_CAPACITY:
-            self._capacity_or_data = 0 | Self.FLAG_IS_INLINE
+            self._capacity_or_data = Self.FLAG_IS_INLINE
             __mlir_op.`lit.ownership.mark_initialized`(
                 __get_mvalue_as_litref(self)
             )
         else:
             self._capacity_or_data = (capacity + 7) >> 3
-            self._ptr_or_data = Self._alloc(capacity + 7)
+            self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
             self._len_or_data = 0
+            self._set_ref_counted()
 
-    @always_inline
+    @always_inline("nodebug")
     @implicit  # does not allocate.
     fn __init__(out self, data: StaticString):
         """Construct a `String` from a `StaticString` without allocating.
@@ -223,9 +222,9 @@ struct String(
         """
         self._len_or_data = data._slice._len
         self._ptr_or_data = data._slice._data
-        # Always use static constant representation initially (capacity=0),
-        # defer inlining decision until mutation to avoid unnecessary memcpy.
-        self._capacity_or_data = 0 | Self.FLAG_IS_INDIRECT
+        # Always use static constant representation initially, defer inlining
+        # decision until mutation to avoid unnecessary memcpy.
+        self._capacity_or_data = 0
 
     @always_inline("nodebug")
     @implicit  # does not allocate.
@@ -239,11 +238,10 @@ struct String(
         self._ptr_or_data = UnsafePointer(
             __mlir_op.`pop.string.address`(data.value)
         ).bitcast[Byte]()
-        # Always use static constant representation initially (capacity=0),
-        # defer inlining decision until mutation to avoid unnecessary memcpy.
-        self._capacity_or_data = Self.SET_INDIRECT_WITH_NUL
+        # Always use static constant representation initially, defer inlining
+        # decision until mutation to avoid unnecessary memcpy.
+        self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
 
-    @always_inline
     fn __init__(out self, *, bytes: Span[Byte, *_]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
@@ -255,7 +253,6 @@ struct String(
         self = Self(unsafe_uninit_length=length)
         memcpy(self.unsafe_ptr_mut(), bytes.unsafe_ptr(), length)
 
-    @no_inline
     fn __init__[T: Stringable](out self, value: T):
         """Initialize from a type conforming to `Stringable`.
 
@@ -267,7 +264,6 @@ struct String(
         """
         self = value.__str__()
 
-    @no_inline
     fn __init__[T: StringableRaising](out self, value: T) raises:
         """Initialize from a type conforming to `StringableRaising`.
 
@@ -282,7 +278,6 @@ struct String(
         """
         self = value.__str__()
 
-    @no_inline
     fn __init__[
         *Ts: Writable
     ](out self, *args: *Ts, sep: StaticString = "", end: StaticString = ""):
@@ -324,7 +319,6 @@ struct String(
     # TODO(MOCO-1791): Default arguments and param inference aren't powerful
     # to declare sep/end as StringSlice.
     @staticmethod
-    @no_inline
     fn __init__[
         *Ts: Writable
     ](
@@ -373,6 +367,7 @@ struct String(
         end.write_to(buffer)
         buffer.flush()
 
+    @always_inline("nodebug")
     fn copy(self) -> Self:
         """Explicitly copy the provided value.
 
@@ -381,6 +376,7 @@ struct String(
         """
         return self  # Just use the implicit copyinit.
 
+    @always_inline("nodebug")
     fn __init__(out self, *, unsafe_uninit_length: UInt):
         """Construct a String with the specified length, with uninitialized
         memory. This is unsafe, as it relies on the caller initializing the
@@ -393,7 +389,6 @@ struct String(
         self = Self(capacity=unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)
 
-    @always_inline
     fn __init__(
         out self,
         *,
@@ -411,7 +406,6 @@ struct String(
         # Copy the data.
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
-    @always_inline
     fn __init__(
         out self, *, unsafe_from_utf8_ptr: UnsafePointer[UInt8, mut=_, origin=_]
     ):
@@ -450,8 +444,7 @@ struct String(
         self._len_or_data = other._len_or_data
         self._capacity_or_data = other._capacity_or_data
 
-        # If the other string is out-of-line and not indirect, increment the
-        # refcount of the out-of-line representation.
+        # Increment the refcount if it has a mutable buffer.
         self._add_ref()
 
     # ===------------------------------------------------------------------=== #
@@ -464,43 +457,32 @@ struct String(
 
     @always_inline("nodebug")
     fn capacity(self) -> UInt:
-        # If indirect return length to ensure reallocation has enough space.
-        if self._is_indirect():
-            return len(self)
         # Max inline capacity before reallocation.
         if self._is_inline():
             return Self.INLINE_CAPACITY
+        if not self._is_ref_counted():
+            return self._len_or_data
         return self._capacity_or_data << 3
 
     @always_inline("nodebug")
     fn _has_nul_terminator(self) -> Bool:
-        return self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR != 0
+        return Bool(self._capacity_or_data & Self.FLAG_HAS_NUL_TERMINATOR)
 
     @always_inline("nodebug")
-    fn _set_has_nul_terminator(mut self, value: Bool):
-        if value:
-            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
-        else:
-            self._capacity_or_data &= ~Self.FLAG_HAS_NUL_TERMINATOR
-
-    @always_inline("nodebug")
-    fn _is_indirect(self) -> Bool:
-        return self._capacity_or_data & Self.FLAG_IS_INDIRECT != 0
-
-    @always_inline("nodebug")
-    fn _set_is_indirect(mut self, value: Bool):
-        if value:
-            self._capacity_or_data |= Self.FLAG_IS_INDIRECT
-        else:
-            self._capacity_or_data &= ~Self.FLAG_IS_INDIRECT
+    fn _clear_nul_terminator(mut self):
+        self._capacity_or_data &= ~Self.FLAG_HAS_NUL_TERMINATOR
 
     @always_inline("nodebug")
     fn _is_inline(self) -> Bool:
-        return self._capacity_or_data & Self.FLAG_IS_INLINE != 0
+        return Bool(self._capacity_or_data & Self.FLAG_IS_INLINE)
 
     @always_inline("nodebug")
-    fn _set_is_inline(mut self):
-        self._capacity_or_data |= Self.FLAG_IS_INLINE
+    fn _set_ref_counted(mut self):
+        self._capacity_or_data |= Self.FLAG_IS_REF_COUNTED
+
+    @always_inline("nodebug")
+    fn _is_ref_counted(self) -> Bool:
+        return Bool(self._capacity_or_data & Self.FLAG_IS_REF_COUNTED)
 
     # ===------------------------------------------------------------------=== #
     # Pointer Field Helpers
@@ -519,36 +501,27 @@ struct String(
     @always_inline("nodebug")
     fn _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
-        if self._is_indirect() or self._is_inline():
-            # If indirect or not inline return false
+        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+            return self._refcount().load() == 1
+        else:
             return False
-        return self._refcount().load() == 1
 
     @always_inline("nodebug")
     fn _add_ref(mut self):
         """Atomically increment the refcount."""
-        if self._is_indirect() or self._is_inline():
-            # If indirect or not inline, we don't need to do anything.
-            return
-
-        _ = self._refcount().fetch_add(1)
+        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+            _ = self._refcount().fetch_add(1)
 
     @always_inline("nodebug")
     fn _drop_ref(mut self):
         """Atomically decrement the refcount and deallocate self if the result
         hits zero."""
         # If indirect or inline we don't need to do anything.
-        if self._is_indirect() or self._is_inline():
-            return
-
-        # Offset the pointer to get access to the prepended refcount
-        var atomic_ptr = (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
-            Atomic[DType.index]
-        ]()
-        # Drop the ref count if we have a mutable buffer and free if there are no other references.
-        if atomic_ptr[].fetch_sub(1) == 1:
-            # Free the ref count and string data
-            atomic_ptr.bitcast[Byte]().free()
+        if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
+            var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
+            var refcount = ptr.bitcast[Atomic[DType.index]]()
+            if refcount[].fetch_sub(1) == 1:
+                ptr.free()
 
     @staticmethod
     fn _alloc(capacity: Int) -> UnsafePointer[Byte]:
@@ -592,7 +565,6 @@ struct String(
             args[i].write_to(self)
 
     @staticmethod
-    @no_inline
     fn write[
         *Ts: Writable
     ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
@@ -678,17 +650,27 @@ struct String(
             result.append_byte(ptr[i])
         return result^
 
-    @always_inline("nodebug")
-    fn __eq__(self, other: String) -> Bool:
+    fn __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 
         Args:
-            other: The rhs of the operation.
+            rhs: The rhs of the operation.
 
         Returns:
             True if the Strings are equal and False otherwise.
         """
-        return self.as_string_slice() == other.as_string_slice()
+        # Early exit if lengths differ
+        var self_len = self.byte_length()
+        var other_len = rhs.byte_length()
+        if self_len != other_len:
+            return False
+        var self_ptr = self.unsafe_ptr()
+        var rhs_ptr = rhs.unsafe_ptr()
+        # same pointer and length, so equal
+        if self_len == 0 or self_ptr == rhs_ptr:
+            return True
+        # Compare memory directly
+        return memcmp(self_ptr, rhs_ptr, self_len) == 0
 
     @always_inline("nodebug")
     fn __eq__(self, other: StringSlice) -> Bool:
@@ -786,7 +768,6 @@ struct String(
         memcpy(result_ptr + lhs_len, rhs.unsafe_ptr(), rhs_len)
         return result^
 
-    @always_inline
     fn __add__(self, other: StringSlice) -> String:
         """Creates a string by appending a string slice at the end.
 
@@ -804,13 +785,12 @@ struct String(
         Args:
             byte: The byte to append.
         """
-        self._set_has_nul_terminator(False)
+        self._clear_nul_terminator()
         var len = self.byte_length()
         self.reserve(len + 1)
-        (self.unsafe_ptr_mut() + len).init_pointee_move(byte)
+        self.unsafe_ptr_mut()[len] = byte
         self.set_byte_length(len + 1)
 
-    @always_inline
     fn __radd__(self, other: StringSlice[mut=False]) -> String:
         """Creates a string by prepending another string slice to the start.
 
@@ -834,9 +814,8 @@ struct String(
             other_len,
         )
         self.set_byte_length(new_len)
-        self._set_has_nul_terminator(False)
+        self._clear_nul_terminator()
 
-    @always_inline
     fn __iadd__(mut self, other: StringSlice[mut=False]):
         """Appends another string slice to this string.
 
@@ -875,7 +854,6 @@ struct String(
         """
         return self.byte_length() > 0
 
-    @always_inline("nodebug")
     fn __len__(self) -> Int:
         """Get the string length of in bytes.
 
@@ -936,6 +914,7 @@ struct String(
         """
         return StringSlice(self).__repr__()
 
+    @always_inline("nodebug")
     fn __fspath__(self) -> String:
         """Return the file system path representation (just the string itself).
 
@@ -970,7 +949,6 @@ struct String(
     # Methods
     # ===------------------------------------------------------------------=== #
 
-    @no_inline
     fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this string to the provided Writer.
@@ -1033,7 +1011,6 @@ struct String(
             result.write(elems[i])
         return result^
 
-    @always_inline
     fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
 
@@ -1112,6 +1089,7 @@ struct String(
         Returns:
             The pointer to the underlying memory.
         """
+
         if self._is_inline():
             # The string itself holds the data.
             return UnsafePointer(to=self).bitcast[Byte]()
@@ -1156,12 +1134,11 @@ struct String(
             var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
             var len = self.byte_length()
             ptr[len] = 0
-            self._set_has_nul_terminator(True)
+            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
             return self.unsafe_ptr().bitcast[c_char]()
 
         return self.unsafe_ptr().bitcast[c_char]()
 
-    @always_inline("nodebug")
     fn as_bytes(self) -> Span[Byte, __origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
 
@@ -1173,7 +1150,6 @@ struct String(
             ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
-    @always_inline("nodebug")
     fn as_bytes_mut(mut self) -> Span[Byte, __origin_of(self)]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
@@ -1186,7 +1162,6 @@ struct String(
             ptr=self.unsafe_ptr_mut(), length=self.byte_length()
         )
 
-    @always_inline("nodebug")
     fn as_string_slice(self) -> StringSlice[__origin_of(self)]:
         """Returns a string slice of the data owned by this string.
 
@@ -1198,7 +1173,6 @@ struct String(
         #   guaranteed to be valid.
         return StringSlice(unsafe_from_utf8=self.as_bytes())
 
-    @always_inline("nodebug")
     fn as_string_slice_mut(mut self) -> StringSlice[__origin_of(self)]:
         """Returns a mutable string slice of the data owned by this string.
 
@@ -1207,7 +1181,6 @@ struct String(
         """
         return StringSlice(unsafe_from_utf8=self.as_bytes_mut())
 
-    @always_inline("nodebug")
     fn byte_length(self) -> Int:
         """Get the string length in bytes.
 
@@ -1221,10 +1194,8 @@ struct String(
         else:
             return self._len_or_data
 
-    @always_inline("nodebug")
     fn set_byte_length(mut self, new_len: Int):
         if self._is_inline():
-            debug_assert(new_len <= Self.INLINE_CAPACITY)
             self._capacity_or_data = (
                 self._capacity_or_data & ~Self.INLINE_LENGTH_MASK
             ) | (new_len << Self.INLINE_LENGTH_START)
@@ -1556,7 +1527,6 @@ struct String(
         """
         return self.as_string_slice().removesuffix(suffix)
 
-    @always_inline
     fn __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
         If the string cannot be parsed as an int, an error is raised.
@@ -1566,7 +1536,6 @@ struct String(
         """
         return atol(self)
 
-    @always_inline
     fn __float__(self) raises -> Float64:
         """Parses the string as a float point number and returns that value. If
         the string cannot be parsed as a float, an error is raised.
@@ -1708,7 +1677,7 @@ struct String(
             extended by the difference, and the new bytes are initialized to
             `fill_byte`.
         """
-        self._set_has_nul_terminator(False)
+        self._clear_nul_terminator()
         var old_len = self.byte_length()
         if length > old_len:
             memset(
@@ -1718,7 +1687,6 @@ struct String(
             )
         self.set_byte_length(length)
 
-    @always_inline
     fn resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
         uninitialized.
@@ -1730,12 +1698,11 @@ struct String(
         Args:
             unsafe_uninit_length: The new size.
         """
-        self._set_has_nul_terminator(False)
+        self._clear_nul_terminator()
         if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
         self.set_byte_length(unsafe_uninit_length)
 
-    @always_inline
     fn reserve(mut self, new_capacity: UInt):
         """Reserves the requested capacity.
 
@@ -1750,9 +1717,7 @@ struct String(
             return
         self._realloc_mutable(new_capacity)
 
-    # This converts an indirect string to inline form to make it mutable on the
-    # stack.
-    @no_inline
+    # Make a string mutable on the stack.
     fn _inline_string(mut self):
         var length = len(self)
         var new_string = Self()
@@ -1766,20 +1731,20 @@ struct String(
     # This is the out-of-line implementation of reserve called when we need
     # to grow the capacity of the string. Make sure our capacity at least
     # doubles to avoid O(n^2) behavior, and make use of extra space if it exists.
-    @no_inline
     fn _realloc_mutable(mut self, capacity: UInt):
         # Get these fields before we change _capacity_or_data
         var byte_len = self.byte_length()
         var old_ptr = self.unsafe_ptr()
-        var new_capacity = max(capacity, self.capacity() * 2) + 7
-        var new_ptr = self._alloc(new_capacity)
+        var new_capacity = (max(capacity, self.capacity() * 2) + 7) >> 3
+        var new_ptr = self._alloc(new_capacity << 3)
         memcpy(new_ptr, old_ptr, byte_len)
         # If mutable buffer drop the ref count
         self._drop_ref()
-
         self._len_or_data = byte_len
         self._ptr_or_data = new_ptr
-        self._capacity_or_data = new_capacity >> 3
+        # Assign directly to clear existing flags
+        self._capacity_or_data = new_capacity
+        self._set_ref_counted()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1896,7 +1861,6 @@ fn _repr_ascii(c: UInt8) -> String:
             return hex(uc, prefix=r"\x")
 
 
-@always_inline
 fn ascii(value: StringSlice) -> String:
     """Get the ASCII representation of the object.
 
@@ -2060,7 +2024,6 @@ fn atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     return result
 
 
-@always_inline
 fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     """Trims leading whitespace, handles the sign of the number in the string.
 
@@ -2082,7 +2045,6 @@ fn _trim_and_handle_sign(str_slice: StringSlice, str_len: Int) -> (Int, Bool):
     return start + (Int(p) or Int(n)), n
 
 
-@always_inline
 fn _handle_base_prefix(
     pos: Int, str_slice: StringSlice, str_len: Int, base: Int
 ) -> (Int, Bool):

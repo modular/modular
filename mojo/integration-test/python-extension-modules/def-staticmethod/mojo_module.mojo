@@ -70,14 +70,14 @@ struct Dummy(Defaultable, Movable, Representable):
     fn takes_zero_raises_returns() raises -> PythonObject:
         var s = Python().evaluate("getattr(sys.modules[__name__], 's')")
         if s != "just a python string":
-            raise "`s` must be 'just a python string'"
+            raise String("`s` must be 'just a python string'")
 
         return PythonObject("just another python string")
 
     @staticmethod
     fn takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
         if a != PythonObject("foo"):
-            raise "input must be 'foo'"
+            raise String("input must be 'foo'")
         return a
 
     @staticmethod
@@ -85,7 +85,7 @@ struct Dummy(Defaultable, Movable, Representable):
         a: PythonObject, b: PythonObject
     ) raises -> PythonObject:
         if a != PythonObject("foo"):
-            raise "first input must be 'foo'"
+            raise String("first input must be 'foo'")
         return a + b
 
     @staticmethod
@@ -93,7 +93,7 @@ struct Dummy(Defaultable, Movable, Representable):
         a: PythonObject, b: PythonObject, c: PythonObject
     ) raises -> PythonObject:
         if a != PythonObject("foo"):
-            raise "first input must be 'foo'"
+            raise String("first input must be 'foo'")
         return a + b + c
 
     @staticmethod
@@ -130,7 +130,7 @@ struct Dummy(Defaultable, Movable, Representable):
     fn takes_zero_raises() raises:
         var s = Python().evaluate("getattr(sys.modules[__name__], 's')")
         if s != "just a python string":
-            raise "`s` must be 'just a python string'"
+            raise String("`s` must be 'just a python string'")
 
         _ = Python().eval(
             "setattr(sys.modules[__name__], 's', 'Hark! A mojo function calling"
@@ -140,13 +140,13 @@ struct Dummy(Defaultable, Movable, Representable):
     @staticmethod
     fn takes_one_raises(list_obj: PythonObject) raises:
         if len(list_obj) != 3:
-            raise "list_obj must have length 3"
+            raise String("list_obj must have length 3")
         list_obj[PythonObject(0)] = PythonObject("baz")
 
     @staticmethod
     fn takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
         if len(list_obj) != 3:
-            raise "list_obj must have length 3"
+            raise String("list_obj must have length 3")
         list_obj[PythonObject(0)] = obj
 
     @staticmethod
@@ -154,7 +154,7 @@ struct Dummy(Defaultable, Movable, Representable):
         list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
     ) raises:
         if len(list_obj) != 3:
-            raise "list_obj must have length 3"
+            raise String("list_obj must have length 3")
         list_obj[PythonObject(0)] = obj + obj2
 
     @staticmethod

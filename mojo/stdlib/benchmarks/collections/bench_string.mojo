@@ -320,22 +320,22 @@ def main():
                 BenchId(String("bench_string_split_none", suffix))
             )
             m.bench_function[bench_string_splitlines[length, fname]](
-                BenchId(String("bench_string_splitlines" + suffix))
+                BenchId(String("bench_string_splitlines", suffix))
             )
             m.bench_function[bench_string_lower[length, fname]](
-                BenchId(String("bench_string_lower" + suffix))
+                BenchId(String("bench_string_lower", suffix))
             )
             m.bench_function[bench_string_upper[length, fname]](
-                BenchId(String("bench_string_upper" + suffix))
+                BenchId(String("bench_string_upper", suffix))
             )
             m.bench_function[bench_string_replace[length, fname, old, new]](
-                BenchId(String("bench_string_replace" + suffix))
+                BenchId(String("bench_string_replace", suffix))
             )
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
-                BenchId(String("bench_string_is_valid_utf8" + suffix))
+                BenchId(String("bench_string_is_valid_utf8", suffix))
             )
             m.bench_function[bench_write_utf8[length, fname]](
-                BenchId(String("bench_write_utf8" + suffix))
+                BenchId(String("bench_write_utf8", suffix))
             )
 
     results = Dict[String, (Float64, Int)]()

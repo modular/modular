@@ -31,6 +31,7 @@ from utils._visualizers import lldb_formatter_wrapping_type
 
 
 @register_passable("trivial")
+@nonmaterializable(String)
 struct StringLiteral[value: __mlir_type.`!kgen.string`](
     Boolable,
     Copyable,

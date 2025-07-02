@@ -908,6 +908,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return Self.__eq__(self, rhs=rhs_same)
 
+    fn __eq__(self, rhs: String) -> Bool:
+        """Verify if a `StringSlice` is equal to another `String`.
+
+        Args:
+            rhs: The `StringSlice` to compare against.
+
+        Returns:
+            If the `StringSlice` is equal to the input in length and contents.
+        """
+        return self == rhs.as_string_slice()
+
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for

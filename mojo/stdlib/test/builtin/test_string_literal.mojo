@@ -236,7 +236,7 @@ def test_iter():
     # Test iterating over a string
     var s = "one"
     var i = 0
-    for c in s:
+    for c in s.codepoints():
         if i == 0:
             assert_equal(String(c), "o")
         elif i == 1:

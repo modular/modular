@@ -125,8 +125,8 @@ def test_short_nvptx_ptr():
     # CHECK-NEXT: shl.b32
     # CHECK-NEXT: mov.b32
     # CHECK-NEXT: add.s32
-    # CHECK-NEXT: ld.global.u32
-    # CHECK-NEXT: st.shared.u32
+    # CHECK-NEXT: ld.global.b32
+    # CHECK-NEXT: st.shared.b32
     with DeviceContext() as ctx:
         _ = ctx.compile_function[do_some_shared_mem_op, dump_asm=True]()
 

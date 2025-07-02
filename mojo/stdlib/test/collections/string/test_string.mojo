@@ -1543,7 +1543,6 @@ def test_sso():
     assert_equal(len(s), 5)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
-    assert_equal(s._is_indirect(), True)
     assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Adding a single char should remove the nul terminator and inline it.
@@ -1552,7 +1551,6 @@ def test_sso():
     assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
     assert_equal(s._has_nul_terminator(), False)
-    assert_equal(s._is_indirect(), False)
     assert_equal(s, "hellof")
 
     # Check that unsafe_cstr_ptr adds the nul terminator at the end.
@@ -1568,7 +1566,6 @@ def test_sso():
     assert_equal(s.capacity(), 55)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
-    assert_equal(s._is_indirect(), True)
     assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Modifying it should remove the nul terminator.
@@ -1577,7 +1574,6 @@ def test_sso():
     assert_true(s.capacity() >= 56)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), False)
-    assert_equal(s._is_indirect(), False)
     assert_equal(s, long + "f")
 
     # Check that unsafe_cstr_ptr adds the nul terminator at the end.
