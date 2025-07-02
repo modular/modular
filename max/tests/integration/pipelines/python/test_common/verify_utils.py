@@ -12,7 +12,6 @@ from typing import Any, Optional, Union
 
 import numpy as np
 import numpy.typing
-from modular.utils.verify import is_close
 from scipy.spatial import distance
 from scipy.special import rel_entr, softmax
 
@@ -410,7 +409,7 @@ class ToleranceValidator(ValidatorBase):
         self, target, reference, **kwargs
     ) -> ValidationResultCollection:
         isoff = np.logical_not(
-            is_close(
+            _is_close(
                 target,
                 reference,
                 absolute_tolerance=self._atol,
@@ -663,7 +662,7 @@ def _print_pareto_tolerances(
 
     def within_tolerance(atol, rtol):
         return np.all(
-            is_close(
+            _is_close(
                 a,
                 b,
                 atol,
@@ -696,7 +695,7 @@ def _print_pareto_tolerances(
         (atol, rtol) = vals
         return (
             np.sum(
-                is_close(
+                _is_close(
                     a,
                     b,
                     absolute_tolerance=0,
@@ -816,8 +815,48 @@ def _print_diff_table(
     table.print()
 
 
-def _parse_shapes_from_spec(shape_str: str) -> tuple[int, ...]:
-    """Converts a shape spec from string format "1x10x256xf32" to
-    tuple format (1, 10, 256).
+def _is_close(
+    a: numpy.typing.NDArray,
+    b: numpy.typing.NDArray,
+    absolute_tolerance: float,
+    relative_tolerance: float,
+    equal_nan: bool,
+):
+    """Checks if the two input values are numerically within a tolerance.
+
+    When the type is integral, then equality is checked. When the type is
+    floating point, then this checks if the two input values are numerically the
+    close using the $abs(a - b) <= max(rtol * max(abs(a), abs(b)), atol)$
+    formula.
+
+    Unlike Pythons's `math.isclose`, this implementation is symmetric. I.e.
+    `isclose(a,b) == isclose(b,a)`.
+
+    Args:
+      a: The first value to compare.
+      a: The second value to compare.
+      absolute_tolerance: The absolute tolerance.
+      relative_tolerance: The relative tolerance.
+      equal_nan: Whether to compare NaN's as equal.
+
+    Returns:
+      A boolean vector where a and b are equal within the specified tolerance.
     """
-    return tuple(int(x) for x in shape_str.split("x")[:-1])
+    finite = np.isfinite(a) & np.isfinite(b)
+
+    result = np.zeros_like(finite)
+    result[finite] = (
+        np.abs(a - b)
+        <= np.maximum(
+            absolute_tolerance,
+            relative_tolerance * np.maximum(np.abs(a), np.abs(b)),
+        )
+    )[finite]
+    # Explicit check for equality of infinite values.
+    result[~finite] = a[~finite] == b[~finite]
+
+    if equal_nan:
+        both_nan = np.isnan(a) & np.isnan(b)
+        result[both_nan] = both_nan[both_nan]
+
+    return result
