@@ -267,7 +267,7 @@ gptqmodel @ https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gpt
     # via -r bazel/pip/requirements/amd-gpu-requirements.in
 greenlet==3.1.1 ; platform_python_implementation == 'CPython' and sys_platform == 'linux'
     # via gevent
-grpcio==1.68.0 ; sys_platform == 'linux'
+grpcio==1.73.1 ; sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/requirements.in
     #   google-api-core

@@ -265,7 +265,7 @@ googleapis-common-protos==1.63.2 ; sys_platform == 'darwin' or sys_platform == '
     #   opentelemetry-exporter-otlp-proto-http
 greenlet==3.1.1 ; (platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_python_implementation == 'CPython' and sys_platform == 'linux')
     # via gevent
-grpcio==1.68.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+grpcio==1.73.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   google-api-core
