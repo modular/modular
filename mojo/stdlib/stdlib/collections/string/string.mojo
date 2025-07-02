@@ -1091,9 +1091,13 @@ struct String(
 
         if self._is_inline():
             # The string itself holds the data.
-            return UnsafePointer(to=self).bitcast[Byte]()
+            return (
+                UnsafePointer(to=self)
+                .bitcast[Byte]()
+                .origin_cast[False, __origin_of(self)]()
+            )
         else:
-            return self._ptr_or_data
+            return self._ptr_or_data.origin_cast[False, __origin_of(self)]()
 
     fn unsafe_ptr_mut(
         mut self, owned capacity: UInt = 0
