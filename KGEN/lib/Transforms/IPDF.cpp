@@ -337,9 +337,6 @@ struct Graph : public SCCGraph<Graph, Node> {
                   size_t &seqIdx);
   bool doAnalysis(Node *node);
   void doRewrite(const Node *node);
-
-  /// A map from function name to node for efficient lookup.
-  DenseMap<StringAttr, Node *> nodeMap;
 };
 } // namespace
 
@@ -615,7 +612,5 @@ void IPDF::runOnOperation() {
 
   Graph g;
   g.build(getOperation(), symtab);
-  for (auto &[func, node] : g.nodes)
-    g.nodeMap.try_emplace(func.getSymNameAttr(), &node);
   g.run(runtime);
 }
