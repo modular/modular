@@ -966,6 +966,23 @@ def func_overloaded(x: Int):
 def func_overloaded(x: Bool):
   ...
 
+##===----------------------------------------------------------------------===##
+# Extern Functions
+##===----------------------------------------------------------------------===##
+
+# expected-error @+2 {{unexpected function body in extern function declaration, use `...`}}
+@extern("add_one")
+fn my_extern_add_one(x: Int) -> Int:
+    return x + 1
+
+
+struct HasExtern:
+  # expected-error @+1 {{@extern cannot be applied to a method}}
+  @extern("add_one_struct")
+  fn my_extern_struct_add_one(self, x: Int) -> Int:
+    ...
+
+
 @fieldwise_init
 struct HasBoolParam[a: Bool]:
    pass

@@ -460,11 +460,11 @@ LITLowerer::lowerLITFunc(FnOp func, Block::iterator symTableIt,
 
   // Directly lower since these operations are exactly identical right now.
   OperationState state(func.getLoc(), GeneratorOp::getOperationName());
-  GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
-                     func.getFunctionTypeAttr(), inputParamsArr,
-                     func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-                     func.getExportKindAttr(), func.getLLVMMetadataArray(),
-                     func.getLLVMArgMetadataArray());
+  GeneratorOp::build(
+      b, state, func.getSymNameAttr(), sigAttr, func.getFunctionTypeAttr(),
+      inputParamsArr, func.getDecoratorsAttr(), func.getInlineLevelAttr(),
+      func.getExportKindAttr(), func.getIsExternAttr(),
+      func.getLLVMMetadataArray(), func.getLLVMArgMetadataArray());
 
   for (const NamedAttribute &attr : func->getDialectAttrs())
     state.attributes.push_back(attr);

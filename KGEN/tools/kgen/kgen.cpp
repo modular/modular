@@ -73,6 +73,11 @@ public:
       "enable-mlir-diagnostics",
       cl::desc("Print .mojo diagnostics through MLIR."), llvm::cl::init(false)};
 
+  M::cl::MListOpt<std::string> bitcodeLibs{
+      "bitcode-libs",
+      cl::desc(
+          "External bitcode libraries to link into the generated LLVM IR.")};
+
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
@@ -211,6 +216,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.saveTemps)
     options.saveTempsPrefix = clOptions.tempsDir;
   options.verboseOutput = (clOptions.cmd == Command::kEmitAssemblyVerbose);
+  options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);

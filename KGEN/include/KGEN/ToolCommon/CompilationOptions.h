@@ -113,6 +113,7 @@ public:
 
   std::string saveTempsPrefix = "";
   std::string searchPaths = "";
+  SmallVector<std::string> bitcodeLibs = {};
 
   bool verboseOutput = false;
 

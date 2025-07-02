@@ -426,7 +426,7 @@ void RemoveUnusedParams::runOnOperation() {
       // to assume it's a generator op.
       auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
           cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
-      if (!calledFunc)
+      if (!calledFunc || calledFunc.isExternal())
         return;
 
       // Track the caller of this generator, but only one entry per call.
