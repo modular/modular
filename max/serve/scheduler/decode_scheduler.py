@@ -213,7 +213,6 @@ class DecodeScheduler(Scheduler):
             ),
         )
 
-    @traced
     def reserve_memory_and_send_to_prefill(self) -> None:
         """Continuously pulls requests from the request queue and forwards them to the prefill node.
 
@@ -278,7 +277,6 @@ class DecodeScheduler(Scheduler):
                 logger.error(e)
                 raise e
 
-    @traced
     def update_batch(self) -> None:
         """Updates the active batch by adding new requests from the decode queue and managing memory prefetching.
 
@@ -464,7 +462,6 @@ class DecodeScheduler(Scheduler):
         self._handle_terminated_responses(responses)
         self.stream_responses_to_frontend(responses)
 
-    @traced
     def run_iteration(self) -> None:
         """Main scheduling loop that processes decode requests.
 

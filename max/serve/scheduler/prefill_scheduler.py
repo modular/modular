@@ -174,7 +174,6 @@ class PrefillScheduler(Scheduler):
         prefill_request.context.reset()
         self.preempted_prefill.put(prefill_request)
 
-    @traced
     def cleanup_active_transfers(self) -> None:
         """Cleans up completed transfers from the active transfers dictionary.
 
@@ -195,7 +194,6 @@ class PrefillScheduler(Scheduler):
         for id in to_be_deleted:
             del self.active_transfers[id]
 
-    @traced
     def update_batch(self) -> None:
         """Updates the active batch by pulling requests from the prefill queue.
 
@@ -294,7 +292,6 @@ class PrefillScheduler(Scheduler):
                 req_id, input_context, xfer_data
             )
 
-    @traced
     def run_iteration(self) -> None:
         """Main scheduling loop that processes prefill requests.
 

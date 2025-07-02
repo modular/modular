@@ -28,7 +28,6 @@ import psutil
 import zmq
 import zmq.asyncio
 import zmq.constants
-from max.profiler import traced
 
 logger = logging.getLogger("max.serve")
 
@@ -282,7 +281,6 @@ class ZmqPullSocket(Generic[T]):
 
         return self._pull_from_socket(**kwargs)
 
-    @traced
     def get_nowait(self, **kwargs) -> T:
         return self.get(flags=zmq.NOBLOCK, **kwargs)
 
