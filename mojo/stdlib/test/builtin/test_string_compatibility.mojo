@@ -10,12 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Testing compatibility between `String`, `StaticString`, and `StringSlice`
-in various expressions. String literals now materialize as `String` by default.
-This is to ensure good ergonomics for users, where they don't
-have to convert between string types in expressions, while still getting
-optimal performance where possible.
-"""
+# RUN: %mojo %s
 
 from testing import assert_equal, assert_true
 
@@ -78,7 +73,7 @@ def test_alias_expressions():
     assert_equal(alias_if_static, "foo")
 
 
-def test_string_types_compatability(
+def test_string_types_compatibility(
     string: String,
     static_string: StaticString,
     string_slice: StringSlice,
@@ -322,7 +317,7 @@ def main():
     var static_string = StaticString("static_string")
     var string_slice = "string_slice".as_string_slice()
 
-    test_string_types_compatability(string, static_string, string_slice)
+    test_string_types_compatibility(string, static_string, string_slice)
     test_string_slice_conversions(string, string_slice)
     test_equality_operations(string, static_string, string_slice)
     test_chained_operations(string, static_string, string_slice)
