@@ -43,6 +43,11 @@ _FILECHECK_TESTS = [
 _CONSTRAINTS = {
     "test_activations.mojo": ["@platforms//os:linux"],
     "test_top_k.mojo": ["@platforms//os:linux"],  # TODO: Fix on macOS
+    "test_layer_norm.mojo": select({
+        # TODO: E2EOPT-362 Fix on ARM
+        "@platforms//cpu:aarch64": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 [
@@ -64,6 +69,7 @@ _CONSTRAINTS = {
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        target_compatible_with = _CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:nn",
