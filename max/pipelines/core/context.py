@@ -859,10 +859,17 @@ class TextAndVisionContext(
         default_factory=dict
     )
 
+    # HACK: We store a copy of the pixel value in case we need to reset the context
+    # in the event of a request preemption.
+    _saved_pixel_values: tuple[np.ndarray, ...] = msgspec.field(
+        default_factory=tuple
+    )
+
     def __post_init__(self) -> None:
         super().__post_init__()
         if len(self.pixel_values) > 1:
             raise ValueError("only one image supported in Llama Vision")
+        self._saved_pixel_values = self.pixel_values
 
     def update(
         self,
@@ -875,6 +882,11 @@ class TextAndVisionContext(
         # Update context not to re-encode the same image in next steps. There are no image tokens
         # expected after context encoding.
         self.pixel_values = tuple()
+
+    def reset(self) -> None:
+        """Resets the context's state by combining all tokens into a new prompt."""
+        super().reset()
+        self.pixel_values = self._saved_pixel_values
 
 
 SPEECH_TOKEN_audio_chunk_size = 128
