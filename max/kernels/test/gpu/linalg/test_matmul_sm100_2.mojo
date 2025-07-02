@@ -388,6 +388,7 @@ def test_tma_umma_pair_cta[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
+    benchmark: Bool = False,
 ](ctx: DeviceContext):
     alias M = prob_shape[0]
     alias N = prob_shape[1]
@@ -511,35 +512,168 @@ def test_tma_umma_pair_cta[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_size),
     )
 
-    vendor_blas.matmul(
-        ctx,
-        c_ref.device_buffer(),
-        a.device_buffer[update=False](),
-        b.device_buffer[update=False](),
-        c_row_major=True,
-        transpose_b=transpose_b,
-    )
+    if benchmark:
+        alias num_runs = 100
+        alias num_warmup = 10
 
-    ctx.synchronize()
+        @always_inline
+        @parameter
+        fn run_kernel(ctx: DeviceContext) raises:
+            alias kernel = tma_umma_kernel_pair_cta[
+                a_type,
+                b_type,
+                c_type,
+                __type_of(a_tma_op).layout,
+                __type_of(b_tma_op).layout,
+                __type_of(c_tma_op).layout,
+                __type_of(a_tma_op).desc_layout,
+                __type_of(b_tma_op).desc_layout,
+                __type_of(c_tma_op).desc_layout,
+                block_tile_shape,
+                mma_shape,
+                transpose_b=transpose_b,
+                cluster_shape=cluster_shape,
+                a_swizzle=a_swizzle,
+                b_swizzle=b_swizzle,
+                cta_group=cta_group,
+            ]
 
-    c_host = c.tensor()
-    c_host_ref = c_ref.tensor()
-
-    for m in range(M):
-        for n in range(N):
-            assert_almost_equal(
-                c_host[m, n],
-                c_host_ref[m, n],
-                atol=1e-3,
-                rtol=1e-4,
-                msg=String(m) + ", " + String(n),
+            ctx.enqueue_function[kernel](
+                a_tma_op,
+                b_tma_op,
+                c_tma_op,
+                K // BK,
+                grid_dim=(
+                    align_up(M // BM, Int(cluster_shape[0])),
+                    align_up(N // BN // cta_group, Int(cluster_shape[1])),
+                    1,
+                ),
+                block_dim=(128),
+                shared_mem_bytes=smem_size,
+                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                    smem_size
+                ),
             )
+
+        # Warmup
+        for _ in range(num_warmup):
+            run_kernel(ctx)
+        ctx.synchronize()
+        print("finished warmup")
+
+        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var sectime = nstime * 1e-9
+        var TFlop = 2.0 * M * N * K * 1e-12
+
+        print("  Average time: ", sectime * 1000, " ms")
+        print("  Performance: ", TFlop / sectime, " TFLOPS")
+        print()
+    else:
+        vendor_blas.matmul(
+            ctx,
+            c_ref.device_buffer(),
+            a.device_buffer[update=False](),
+            b.device_buffer[update=False](),
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
+
+        ctx.synchronize()
+
+        c_host = c.tensor()
+        c_host_ref = c_ref.tensor()
+
+        for m in range(M):
+            for n in range(N):
+                assert_almost_equal(
+                    c_host[m, n],
+                    c_host_ref[m, n],
+                    atol=1e-3,
+                    rtol=1e-4,
+                    msg=String(m) + ", " + String(n),
+                )
 
     print("\n=== TEST PASSED ===")
     _ = a^
     _ = b^
     _ = c^
     _ = c_ref^
+
+
+fn get_dic_of_shapes(
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int]]
+) -> Tuple[Int, Int, Int]:
+    try:
+        return dic_bro[index]
+    except error:
+        print("error")
+        return (128, 128, 128)
+
+
+fn make_dic_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
+    var dic = Dict[Int, Tuple[Int, Int, Int]]()
+    dic[0] = (8192, 2560, 8192)
+    dic[1] = (4096, 2560, 8192)
+    dic[2] = (512, 2560, 8192)
+    dic[3] = (8192, 8192, 2048)
+    dic[4] = (4096, 8192, 2048)
+    dic[5] = (512, 8192, 2048)
+    dic[6] = (8192, 14336, 8192)
+    dic[7] = (4096, 14336, 8192)
+    dic[8] = (512, 14336, 8192)
+    dic[9] = (8192, 8192, 7168)
+    dic[10] = (4096, 8192, 7168)
+    dic[11] = (512, 8192, 7168)
+    return dic
+
+
+fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+    alias a_type = DType.bfloat16
+    alias b_type = DType.bfloat16
+    alias c_type = DType.bfloat16
+    alias umma_shape = Index(64, 128, 16)
+    alias transpose_b = True
+    alias BK = 64
+
+    alias dic_of_shapes = make_dic_of_shapes()
+
+    print("Benchmarking blackwell_matmul_tma_umma_kernel")
+    print("============================================")
+    print("Shapes: [M, N, K]")
+    print("Data types: a=", a_type, ", b=", b_type, ", c=", c_type)
+    print("UMMA shape:", umma_shape[0], "x", umma_shape[1], "x", umma_shape[2])
+    print("BK:", BK)
+    print("transpose_b:", transpose_b)
+    print()
+
+    @parameter
+    for i in range(len(dic_of_shapes)):
+        alias shape = get_dic_of_shapes(i, dic_of_shapes)
+        try:
+            print(
+                "Benchmarking shape: [",
+                shape[0],
+                ",",
+                shape[1],
+                ",",
+                shape[2],
+                "]",
+            )
+            test_tma_umma_pair_cta[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                Index(shape[0], shape[1], shape[2]),
+                Index(64, 64, 64),
+                Index(128, 128, 16),
+                cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+                cta_group=2,
+                benchmark=True,
+            ](ctx)
+        except e:
+            print("Error: Failed to run benchmark for this shape")
 
 
 def main():
@@ -660,3 +794,7 @@ def main():
             b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
             cta_group=2,
         ](ctx)
+
+        # Run the benchmark
+        print("\n\n========== Running Benchmarks ==========\n")
+        benchmark_blackwell_matmul(ctx)
