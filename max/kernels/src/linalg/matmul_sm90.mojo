@@ -96,7 +96,7 @@ from .utils_gpu import (
     get_hilbert_lut_with_cache,
 )
 
-from .mamtul_loadop_sm90 import async_load_AB
+from .matmul_loadop_sm90 import async_load_AB
 
 alias WARP_GROUP_SIZE = 128
 alias NumWarpPerWarpGroup = 4

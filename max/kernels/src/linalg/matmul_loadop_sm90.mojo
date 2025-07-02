@@ -399,11 +399,6 @@ fn async_copy_with_bound_check[
         var dst_coord0 = dst_shifted_coord0 + dst_frag_base_coord0
         var dst_coord1 = dst_shifted_coord1 + dst_frag_base_coord1
 
-        # if thread_idx.x == 0:
-        #     alias dst_shape0 = dst.layout.shape[0].value()
-        #     alias dst_shape1 = dst.layout.shape[1].value()
-        #     print(dst_shape0, dst_shape1, dst_stride0)
-
         alias cp_size = dst.element_size * sizeof[dst.dtype]()
 
         var src_ptr = (

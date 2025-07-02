@@ -77,7 +77,7 @@ from linalg.matmul_sm90 import (
     consumer_main_loop,
     warp_specialized_gemm_output,
 )
-from linalg.mamtul_loadop_sm90 import async_load_AB
+from linalg.matmul_loadop_sm90 import async_load_AB
 from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
