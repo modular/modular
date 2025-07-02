@@ -17,13 +17,14 @@ from sys import alignof, simdwidthof, sizeof
 from testing import assert_true
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, _make_tuple
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
+from gpu.globals import WARPGROUP_SIZE
 from gpu.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -95,9 +96,6 @@ from linalg.utils_gpu import (
     MatmulConfig,
 )
 from layout.tma_async import _tma_desc_tile_layout
-
-alias WARP_GROUP_SIZE = 128
-
 
 from linalg.matmul_sm90 import (
     _is_valid_grid_shape,
@@ -240,7 +238,7 @@ fn compile_sm90_matmul_ptx[
     ]()
     alias c_tma_desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1])
 
-    alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * sizeof[a_type]()
         + BN * BK * sizeof[b_type]()

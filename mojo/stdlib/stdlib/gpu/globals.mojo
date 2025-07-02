@@ -69,6 +69,29 @@ fn _resolve_warp_size() -> Int:
 
 
 # ===-----------------------------------------------------------------------===#
+# WARPGROUP_SIZE
+# ===-----------------------------------------------------------------------===#
+
+
+alias WARPGROUP_SIZE = _resolve_warpgroup_size()
+"""The number of threads in a warpgroup on Nvidia GPUs.
+
+On Nvidia GPUs after hopper, a warpgroup consists of 4 subsequent arps
+i.e. 128 threads. The first warp id must be multiple of 4.
+
+Warpgroup is used for wgmma instructions on Hopper and tcgen05.ld on Blackwell.
+"""
+
+
+fn _resolve_warpgroup_size() -> Int:
+    # We can't constrain it here because the constant is used on host for
+    # compilation test w/o nvidia GPUs.
+    # constrained[is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."]()
+
+    return 128
+
+
+# ===-----------------------------------------------------------------------===#
 # MAX_THREADS_PER_BLOCK_METADATA
 # ===-----------------------------------------------------------------------===#
 

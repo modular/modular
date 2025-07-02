@@ -16,13 +16,14 @@ from sys import alignof, simdwidthof, sizeof
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, _make_tuple
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
 from gpu.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
+from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from gpu.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
@@ -98,8 +99,7 @@ from .utils_gpu import (
 
 from .matmul_loadop_sm90 import async_load_AB
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
+alias NumWarpPerWarpGroup = WARPGROUP_SIZE // WARP_SIZE
 
 
 @always_inline
@@ -349,10 +349,10 @@ fn warp_specialized_gemm_output[
     block_y: Int,
     block_x: Int,
 ):
-    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // WARP_GROUP_SIZE
+    alias c_frag_size = wgmma_shape[0] * wgmma_shape[1] // WARPGROUP_SIZE
     alias num_m_mmas = BM // wgmma_shape[0] // num_consumer
     alias num_n_mmas = BN // wgmma_shape[1]
-    alias num_consumer_threads = num_consumer * WARP_GROUP_SIZE
+    alias num_consumer_threads = num_consumer * WARPGROUP_SIZE
     alias simd_size = simdwidthof[c_type]()
     alias BM = c_tile_shape[0]
     alias BN = c_tile_shape[1]
@@ -887,8 +887,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
-    var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
+    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
+    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
     alias num_k_iters = ceildiv(K, BK)
 
     var rank_m = block_id_in_cluster.y
@@ -1025,7 +1025,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel[
             output_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
-            thread_idx.x - WARP_GROUP_SIZE,
+            thread_idx.x - WARPGROUP_SIZE,
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )
@@ -1197,8 +1197,8 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
-    var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
+    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
+    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
     alias num_k_iters = ceildiv(K, BK)
 
     var rank_m = block_id_in_cluster.y
@@ -1344,7 +1344,7 @@ fn tma_wgmma_warp_specialized_gemm_kernel_persistent[
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
-                thread_idx.x - WARP_GROUP_SIZE,
+                thread_idx.x - WARPGROUP_SIZE,
                 block_y,
                 block_x,
             )
@@ -1871,8 +1871,8 @@ fn cpasync_wgmma_kernel[
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
-    var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
+    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
+    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
     alias num_k_iters = ceildiv(K, BK)
 
     var rank_m = block_id_in_cluster.y
@@ -1891,7 +1891,7 @@ fn cpasync_wgmma_kernel[
 
         @parameter
         for i in range(pipeline_stages):
-            full[i].init(WARP_GROUP_SIZE)
+            full[i].init(WARPGROUP_SIZE)
             empty[i].init(num_consumer * CLUSTER_SIZE)
 
     # We need this to guarantee that the Pipeline init is visible
@@ -1999,7 +1999,7 @@ fn cpasync_wgmma_kernel[
             output_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
-            thread_idx.x - WARP_GROUP_SIZE,
+            thread_idx.x - WARPGROUP_SIZE,
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )
@@ -2157,7 +2157,7 @@ fn warp_specialize_gemm_with_multicasting[
         var grid_y = ceildiv(M, BM)
         lut_ptr = get_hilbert_lut_with_cache(ctx, grid_x, grid_y)._unsafe_ptr()
 
-    alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * sizeof[a_type]()
         + BN * BK * sizeof[b_type]()

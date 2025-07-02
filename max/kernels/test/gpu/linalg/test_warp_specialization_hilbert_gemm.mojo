@@ -32,9 +32,6 @@ from linalg.utils_gpu import MatmulConfig
 
 from utils.index import Index
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
-
 
 def test_warp_specialize_gemm[
     wgmma_n: Int,
