@@ -38,7 +38,7 @@ fn test_literal_from_comptime_string[s: String]() -> StaticString:
 
 fn main():
     # CHECK: hello world
-    StringParam[String("hello") + " " + "world"]().print_it()
+    StringParam["hello" + " " + "world"]().print_it()
 
     alias strValue: String = "thrice"
     # CHECK-COUNT-4: thrice
