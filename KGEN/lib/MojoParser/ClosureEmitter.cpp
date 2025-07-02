@@ -494,7 +494,7 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
                            parameters, wrapperSignature.getParamListAttrs(),
                            argumentTypes, wrapperSignature.getArgConventions(),
                            wrapperSignature.getArgListAttrs(), result,
-                           SpecialFunctionKind::kNormal, smLocation, b,
+                           traitFnOp.getSpecialFunctionKind(), smLocation, b,
                            wrapperSignature.getFnEffects().setUnified(false),
                            "", true, traitFnOp.getInlineLevel());
 
@@ -532,6 +532,15 @@ StructDeclOp ClosureEmitter::createStructWrapper(StringRef baseName,
         shared.getEvaluationContext().getBindParamsAttr(symbol, paramArgs),
         origins, operands);
     ValueRange results = callOp.getResults();
+    // if this is a del, mark the self as destroyed. If it is a move, mark the
+    // existing as destroyed.
+    SpecialFunctionKind kind =
+        (SpecialFunctionKind)traitFnOp.getSpecialFnKind();
+    if (kind == SpecialFunctionKind::kMoveInit ||
+        kind == SpecialFunctionKind::kDel) {
+      auto arg0 = op.getBodyRegion().front().getArgument(0);
+      b.create<LIT::OwnershipMarkDestroyedOp>(arg0);
+    }
     b.create<LIT::ReturnOp>(results);
     b.create<LIT::EndFnOp>();
   };
