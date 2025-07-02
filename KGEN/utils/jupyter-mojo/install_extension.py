@@ -5,10 +5,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import logging
 import shutil
+import subprocess
 from pathlib import Path
-
-from modular.utils import logging, subprocess
 
 
 def main() -> None:
@@ -20,7 +20,7 @@ def main() -> None:
 
     # Install the python package.
     try:
-        subprocess.run_shell_command(
+        subprocess.check_call(
             ["python3", "-m", "pip", "install", "-e", str(extension_dir)],
         )
     except:
@@ -29,7 +29,7 @@ def main() -> None:
 
     # Build the type script extension.
     try:
-        subprocess.run_shell_command(
+        subprocess.check_call(
             ["jlpm", "run", "build"],
             cwd=extension_dir,
         )
@@ -41,7 +41,7 @@ def main() -> None:
 
     # Link to the extension directory.
     try:
-        subprocess.run_shell_command(
+        subprocess.check_call(
             [
                 "jupyter",
                 "labextension",
