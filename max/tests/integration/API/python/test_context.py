@@ -572,3 +572,29 @@ def test_tts_context_msgpack_serialization_and_speech_tokens() -> None:
     assert np.array_equal(original_context.speech_tokens, initial_speech_tokens)
     assert original_context._speech_token_end_idx == 3
     assert original_context.block_counter == 1
+
+
+def test_vision_context_reset() -> None:
+    context = TextAndVisionContext(
+        prompt="my sample prompt",
+        max_length=50,
+        tokens=np.array([0, 1, 2, 3, 4]),
+        pixel_values=(np.array([10, 11, 12, 13, 14]),),
+    )
+    assert len(context.pixel_values) == 1
+    assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
+    assert context.start_idx == 0
+    assert context.active_length == 5
+
+    # The pixel values should be unset after update.
+    context.update(5)
+    assert context.pixel_values == tuple()
+    assert context.start_idx == 5
+    assert context.active_length == 1
+
+    # The pixel values should be restored after reset.
+    context.reset()
+    assert len(context.pixel_values) == 1
+    assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
+    assert context.start_idx == 0
+    assert context.active_length == 6
