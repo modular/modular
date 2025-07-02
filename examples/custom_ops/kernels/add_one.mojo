@@ -52,4 +52,4 @@ struct AddOne:
     fn shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+        raise Error("NotImplemented")

@@ -50,4 +50,4 @@ struct AddConstant[value: Int]:
     fn shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
-        raise "NotImplemented"
+        raise Error("NotImplemented")

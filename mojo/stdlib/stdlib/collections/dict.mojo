@@ -791,7 +791,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             # SAFETY: We just checked that `entry` is present.
             return entry.unsafe_value().value
 
-        raise "KeyError"
+        raise Error("KeyError")
 
     fn get(self, key: K) -> Optional[V]:
         """Get a value from the dictionary by key.
@@ -857,7 +857,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             entry = None
             self._len -= 1
             return entry_value^.reap_value()
-        raise "KeyError"
+        raise Error("KeyError")
 
     fn popitem(mut self) raises -> DictEntry[K, V]:
         """Remove and return a (key, value) pair from the dictionary.
