@@ -62,7 +62,7 @@ fn PyInit_mojo_module() -> PythonObject:
 fn takes_zero_raises_returns() raises -> PythonObject:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
-        raise String("`s` must be 'just a python string'")
+        raise Error("`s` must be 'just a python string'")
 
     return PythonObject("just another python string")
 
@@ -70,7 +70,7 @@ fn takes_zero_raises_returns() raises -> PythonObject:
 @export
 fn takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise String("input must be 'foo'")
+        raise Error("input must be 'foo'")
     return a
 
 
@@ -79,7 +79,7 @@ fn takes_two_raises_returns(
     a: PythonObject, b: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise String("first input must be 'foo'")
+        raise Error("first input must be 'foo'")
     return a + b
 
 
@@ -88,7 +88,7 @@ fn takes_three_raises_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
-        raise String("first input must be 'foo'")
+        raise Error("first input must be 'foo'")
     return a + b + c
 
 
@@ -130,7 +130,7 @@ fn takes_three_returns(
 fn takes_zero_raises() raises:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
-        raise String("`s` must be 'just a python string'")
+        raise Error("`s` must be 'just a python string'")
 
     _ = Python().eval(
         "setattr(sys.modules['test_module'], 's', 'Hark! A mojo function"
@@ -141,14 +141,14 @@ fn takes_zero_raises() raises:
 @export
 fn takes_one_raises(list_obj: PythonObject) raises:
     if len(list_obj) != 3:
-        raise String("list_obj must have length 3")
+        raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = PythonObject("baz")
 
 
 @export
 fn takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
     if len(list_obj) != 3:
-        raise String("list_obj must have length 3")
+        raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj
 
 
@@ -157,7 +157,7 @@ fn takes_three_raises(
     list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
 ) raises:
     if len(list_obj) != 3:
-        raise String("list_obj must have length 3")
+        raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj + obj2
 
 

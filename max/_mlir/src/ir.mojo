@@ -529,13 +529,13 @@ struct Operation(Copyable, Movable, Stringable, Writable):
     fn successor(self, successor_idx: Int) raises -> Block:
         var block = _c.IR.mlirOperationGetSuccessor(self.c, successor_idx)
         if not block.ptr:
-            raise "IndexError"
+            raise Error("IndexError")
         return block
 
     fn region(self, region_idx: Int) raises -> Region:
         var region = _c.IR.mlirOperationGetRegion(self.c, region_idx)
         if not region.ptr:
-            raise "IndexError"
+            raise Error("IndexError")
         return region
 
     fn num_results(self) -> Int:
