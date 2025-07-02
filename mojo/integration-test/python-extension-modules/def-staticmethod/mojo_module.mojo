@@ -24,6 +24,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
         _ = (
             b.add_type[Dummy]("Dummy")
+            .def_init_defaultable[Dummy]()
             # def_staticmethod with return, raising
             .def_staticmethod[Dummy.takes_zero_raises_returns](
                 "takes_zero_raises_returns"

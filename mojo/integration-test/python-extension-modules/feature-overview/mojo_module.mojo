@@ -48,12 +48,15 @@ fn PyInit_mojo_module() -> PythonObject:
 
         _ = (
             b.add_type[Person]("Person")
+            .def_init_defaultable[Person]()
             .def_method[Person.obj_name]("name")
             .def_method[Person.change_name]("change_name")
         )
-        _ = b.add_type[Int]("Int")
-        _ = b.add_type[String]("String")
-        _ = b.add_type[FailToInitialize]("FailToInitialize")
+        _ = b.add_type[Int]("Int").def_init_defaultable[Int]()
+        _ = b.add_type[String]("String").def_init_defaultable[String]()
+        _ = b.add_type[FailToInitialize](
+            "FailToInitialize"
+        ).def_init_defaultable[FailToInitialize]()
         return b.finalize()
     except e:
         return abort[PythonObject](

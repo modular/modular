@@ -21,6 +21,11 @@ from memory import stack_allocation
 from python import Python, PythonObject
 from python._cpython import (
     Py_TPFLAGS_DEFAULT,
+    Py_tp_new,
+    Py_tp_dealloc,
+    Py_tp_init,
+    Py_tp_methods,
+    Py_tp_repr,
     PyCFunction,
     PyMethodDef,
     PyObject,
@@ -30,8 +35,13 @@ from python._cpython import (
     PyType_Slot,
     PyType_Spec,
     GILAcquired,
+    destructor,
+    reprfunc,
+    Typed_initproc,
+    Typed_newfunc,
 )
 from python._python_func import PyObjectFunction
+from python.python_object import _unsafe_alloc_init
 from builtin._startup import _ensure_current_or_global_runtime_init
 
 # ===-----------------------------------------------------------------------===#
@@ -118,20 +128,6 @@ fn lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
-# typedef int (*initproc)(PyObject*, PyObject*, PyObject*)
-alias Typed_initproc = fn (
-    PyObjectPtr,
-    PythonObject,
-    PyObjectPtr,  # NULL if no keyword arguments were passed
-) -> c_int
-
-# typedef PyObject *(*newfunc)(PyTypeObject*, PyObject*, PyObject*)
-alias Typed_newfunc = fn (
-    PyTypeObjectPtr,
-    PythonObject,
-    PyObjectPtr,
-) -> PyObjectPtr
-
 
 struct PyMojoObject[T: AnyType]:
     """Storage backing a PyObject* wrapping a Mojo value.
@@ -165,62 +161,7 @@ struct PyMojoObject[T: AnyType]:
     """
 
 
-fn _default_tp_new_wrapper[
-    T: Defaultable & Movable
-](
-    subtype: PyTypeObjectPtr,
-    args: PythonObject,
-    kwargs: PyObjectPtr,
-) -> PyObjectPtr:
-    """Python-compatible wrapper around a Mojo initializer function.
-
-    This function serves as the `tp_new` slot for Python type objects that
-    wrap Mojo values. It creates new Python objects containing default-initialized
-    Mojo values of type `T`. The function follows Python's object creation
-    protocol and handles error cases by setting appropriate Python exceptions.
-
-    This wrapper is designed to be used with Python types that don't accept
-    any initialization arguments, creating objects with default Mojo values.
-
-    Parameters:
-        T: The wrapped Mojo type that must be `Defaultable` and `Movable`.
-
-    Args:
-        subtype: Pointer to the Python type object for which to create an instance.
-            This allows for proper subtype handling in Python's type system.
-        args: Tuple of positional arguments passed from Python. Must be empty
-            for this default initializer.
-        kwargs: Pointer to keyword arguments dictionary passed from Python.
-            Must be NULL for this default initializer.
-
-    Returns:
-        A new Python object pointer containing a default-initialized Mojo value
-        of type `T`, or a null pointer if an error occurs during creation.
-
-    Note:
-        This function sets a Python `ValueError` exception if any arguments
-        are provided, since the default initializer expects no parameters.
-        The returned object follows Python's reference counting rules where
-        the caller takes ownership of the new reference.
-    """
-
-    var cpython = Python().cpython()
-
-    try:
-        if len(args) or kwargs:
-            raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
-
-        # Create a new Python object with a default initialized Mojo value.
-        return PythonObject._unsafe_alloc(subtype, T()).steal_data()
-
-    except e:
-        # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
-        var error_type = cpython.get_error_global("PyExc_ValueError")
-        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
-        return {}
-
-
-fn _tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
+fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -228,7 +169,7 @@ fn _tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
     the Python object memory.
 
     Parameters:
-        T: The wrapped Mojo type that must be `Defaultable` and `Representable`.
+        T: The wrapped Mojo type.
 
     Args:
         py_self: Pointer to the Python object to be deallocated.
@@ -247,9 +188,7 @@ fn _tp_dealloc_wrapper[T: Defaultable & Representable](py_self: PyObjectPtr):
     cpython.PyObject_Free(py_self.unsized_obj_ptr.bitcast[NoneType]())
 
 
-fn _tp_repr_wrapper[
-    T: Defaultable & Representable
-](py_self: PyObjectPtr) -> PyObjectPtr:
+fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
     `PyMojoObject`.
 
@@ -258,7 +197,7 @@ fn _tp_repr_wrapper[
     and returns the result as a Python string object.
 
     Parameters:
-        T: The wrapped Mojo type that must be `Defaultable` and `Representable`.
+        T: The wrapped Mojo type that must be `Representable`.
 
     Args:
         py_self: Pointer to the Python object to get representation for.
@@ -374,7 +313,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     fn add_type[
-        T: Movable & Defaultable & Representable
+        T: Representable
     ](mut self, type_name: StaticString) -> ref [
         self.type_builders
     ] PythonTypeBuilder:
@@ -541,8 +480,8 @@ struct PythonTypeBuilder(Copyable, Movable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: List[PyType_Slot]
-    """List of Python type slots that define the behavior of the type."""
+    var _slots: Dict[Int, OpaquePointer]
+    """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
     """List of method definitions that will be exposed on the Python type."""
@@ -563,13 +502,11 @@ struct PythonTypeBuilder(Copyable, Movable):
         self.type_name = type_name
         self._type_id = None
         self.basicsize = basicsize
-        self._slots = []
+        self._slots = {}
         self.methods = []
 
     @staticmethod
-    fn bind[
-        T: Movable & Defaultable & Representable
-    ](type_name: StaticString) -> PythonTypeBuilder:
+    fn bind[T: Representable](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
         Parameters:
@@ -585,12 +522,10 @@ struct PythonTypeBuilder(Copyable, Movable):
             type_name,
             basicsize=sizeof[PyMojoObject[T]](),
         )
-        b._slots = List[PyType_Slot](
-            # All wrapped Mojo types are allocated generically.
-            PyType_Slot.tp_new(_default_tp_new_wrapper[T]),
-            PyType_Slot.tp_dealloc(_tp_dealloc_wrapper[T]),
-            PyType_Slot.tp_repr(_tp_repr_wrapper[T]),
-        )
+        b._insert_slot(PyType_Slot.tp_new(_py_new_function_nonregistered))
+        b._insert_slot(PyType_Slot.tp_dealloc(_tp_dealloc_wrapper[T]))
+        b._insert_slot(PyType_Slot.tp_repr(_tp_repr_wrapper[T]))
+
         b.methods = List[PyMethodDef]()
         b._type_id = get_type_name[T]()
 
@@ -631,12 +566,15 @@ struct PythonTypeBuilder(Copyable, Movable):
         if self.methods:
             self.methods.append(PyMethodDef())  # Zeroed item as terminator
             # FIXME: Avoid leaking the methods data pointer in this way.
-            self._slots.append(
-                PyType_Slot.tp_methods(self.methods.steal_data())
-            )
+            self._insert_slot(PyType_Slot.tp_methods(self.methods.steal_data()))
+
+        # Convert _slots dictionary to a list of PyType_Slot structs
+        var slots = List[PyType_Slot]()
+        for slot_entry in self._slots.items():
+            slots.append(PyType_Slot(c_int(slot_entry.key), slot_entry.value))
 
         # Zeroed item terminator
-        self._slots.append(PyType_Slot.null())
+        slots.append(PyType_Slot.null())
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
@@ -645,7 +583,7 @@ struct PythonTypeBuilder(Copyable, Movable):
             0,
             Py_TPFLAGS_DEFAULT,
             # Note: This pointer is only "read-only" by PyType_FromSpec.
-            self._slots.unsafe_ptr(),
+            slots.unsafe_ptr(),
         )
 
         # Construct a Python 'type' object from our type spec.
@@ -670,6 +608,58 @@ struct PythonTypeBuilder(Copyable, Movable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    fn _insert_slot(mut self, slot: PyType_Slot):
+        """Insert a slot into the type builder.
+        If the slot is already present, it will be replaced.
+
+        Args:
+            slot: The PyType_Slot to insert.
+        """
+        self._slots[Int(slot.slot)] = slot.pfunc
+
+    fn def_init_defaultable[
+        T: Defaultable & Movable,
+    ](mut self) raises -> ref [self] Self:
+        """Declare a binding for the `__init__` method of the type which
+        initializes the type with a default value."""
+
+        @always_inline
+        fn default_init_func(
+            out self: T, args: PythonObject, kwargs: PythonObject
+        ) raises:
+            if len(args) > 0 or kwargs.py_object:
+                raise "unexpected arguments passed to default initializer function of wrapped Mojo type"
+            self = T()
+
+        self._insert_slot(
+            PyType_Slot.tp_new(_py_new_function_wrapper[T, default_init_func])
+        )
+        return self
+
+    fn def_py_init[
+        T: Movable, //,
+        init_func: fn (out T, args: PythonObject, kwargs: PythonObject),
+    ](mut self) raises -> ref [self] Self:
+        """Declare a binding for the `__init__` method of the type."""
+
+        @always_inline
+        fn raising_wrapper[
+            init_func: fn (out t: T, args: PythonObject, kwargs: PythonObject)
+        ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
+            t = init_func(args, kwargs)
+
+        return self.def_py_init[raising_wrapper[init_func]]()
+
+    fn def_py_init[
+        T: Movable, //,
+        init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+    ](mut self) raises -> ref [self] Self:
+        """Declare a binding for the `__init__` method of the type."""
+        self._insert_slot(
+            PyType_Slot.tp_new(_py_new_function_wrapper[T, init_func])
+        )
+        return self
 
     fn def_py_c_method[
         static_method: Bool = False
@@ -850,6 +840,51 @@ struct PythonTypeBuilder(Copyable, Movable):
 # ===-----------------------------------------------------------------------===#
 # PyCFunction Wrappers
 # ===-----------------------------------------------------------------------===#
+
+
+fn _py_new_function_nonregistered(
+    subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> PyObjectPtr:
+    var cpython = Python().cpython()
+    var error_type = cpython.get_error_global("PyExc_TypeError")
+    cpython.PyErr_SetString(
+        error_type,
+        "No initializer registered for this type. Use def_py_init() or"
+        " def_init_defaultable() to register an initializer.".unsafe_cstr_ptr(),
+    )
+    return {}
+
+
+fn _py_new_function_wrapper[
+    T: Movable,
+    user_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+](
+    subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> PyObjectPtr:
+    """Wrapper function that adapts a Mojo `PyInitFunction` to be callable from
+    Python.
+    """
+
+    var kwargs = PythonObject(from_owned_ptr=kwargs_ptr)
+    var args = PythonObject(from_owned_ptr=args_ptr)
+
+    __disable_del args
+    __disable_del kwargs
+
+    var cpython = Python().cpython()
+
+    try:
+
+        fn create_func(out self: T) raises capturing:
+            self = user_func(args, kwargs)
+
+        return _unsafe_alloc_init[create_func](subtype).steal_data()
+
+    except e:
+        # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
+        var error_type = cpython.get_error_global("PyExc_ValueError")
+        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        return {}
 
 
 fn _py_c_function_wrapper[

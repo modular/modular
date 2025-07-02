@@ -24,6 +24,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
         _ = (
             b.add_type[Person]("Person")
+            .def_init_defaultable[Person]()
             # def_method with return, raising
             .def_method[Person.get_name]("get_name")
             .def_method[Person.split_name]("split_name")

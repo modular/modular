@@ -108,8 +108,11 @@ mutation.
 
 - Python interop changes:
 
-  - The `PythonTypeBuilder` utility now allows registering bindings for Python
-    static methods, i.e. methods that don't require an instance of the class.
+  - The `PythonTypeBuilder` utility now allows:
+    - registering bindings for Python static methods, i.e. methods that don't
+      require an instance of the class.
+    - registering initializers that take arguments. Types no longer need to be
+      `Defaultable` to be exposed and created from Python.
 
 - Added `Iterator` trait for modeling types that produce a sequence of values.
 

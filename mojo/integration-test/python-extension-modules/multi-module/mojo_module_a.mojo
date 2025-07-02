@@ -23,6 +23,7 @@ fn PyInit_mojo_module_a() -> PythonObject:
         var m = PythonModuleBuilder("mojo_module_a")
         _ = (
             m.add_type[TestStruct]("TestStruct")
+            .def_init_defaultable[TestStruct]()
             .def_method[TestStruct.set_a]("set_a")
             .def_method[TestStruct.set_b]("set_b")
         )
