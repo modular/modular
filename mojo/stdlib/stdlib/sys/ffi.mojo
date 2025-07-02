@@ -511,8 +511,7 @@ fn _try_find_dylib[
             pass
 
     raise Error(
-        String("Failed to load " + dylib_name + " from ")
-        + String(" or ").join(paths)
+        String("Failed to load " + dylib_name + " from " + " or ".join(paths))
     )
 
 

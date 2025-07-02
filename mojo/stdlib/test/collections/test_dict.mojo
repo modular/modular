@@ -25,7 +25,7 @@ def test_dict_construction():
 
 
 def test_dict_literals():
-    a = {String("foo"): 1, String("bar"): 2}
+    a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
 
     b = {1: 4, 2: 7, 3: 18}
@@ -643,12 +643,12 @@ def test_dict_comprehension():
     var d1 = {x: x * x for x in range(10) if x & 1}
     assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
 
-    var s2 = {a * b: b for a in [String("foo"), String("bar")] for b in [1, 2]}
+    var s2 = {a * b: b for a in ["foo", "bar"] for b in [1, 2]}
     var d1reference = {
-        String("foo"): 1,
-        String("bar"): 1,
-        String("foofoo"): 2,
-        String("barbar"): 2,
+        "foo": 1,
+        "bar": 1,
+        "foofoo": 2,
+        "barbar": 2,
     }
     assert_true(is_equal(s2, d1reference))
 

@@ -379,7 +379,7 @@ struct LinkedList[
             self._size -= 1
             return data^
 
-        raise String("Invalid index for pop: {}").format(Int(i))
+        raise String("Invalid index for pop: ", Int(i))
 
     fn maybe_pop(mut self) -> Optional[ElementType]:
         """Removes the tail of the list and returns it, if it exists.
@@ -538,7 +538,7 @@ struct LinkedList[
                 self._head = node
             self._size += 1
         else:
-            raise String("Index {} out of bounds").format(i)
+            raise String("Index ", i, " out of bounds")
 
     fn extend(mut self, owned other: Self):
         """Extends the list with another.

@@ -41,7 +41,7 @@ def test_span_list_int():
 
 
 def test_span_list_str():
-    var l = [String("a"), "b", "c", "d", "e", "f", "g"]
+    var l = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span(l)
     assert_equal(len(s), len(l))
     for i in range(len(s)):
@@ -235,7 +235,7 @@ def test_swap_elements():
     assert_equal(l[1], 5)
     assert_equal(l[4], 2)
 
-    var l2 = [String("hi"), "hello", "hey"]
+    var l2 = ["hi", "hello", "hey"]
     var s2 = Span(l2)
     s2.swap_elements(0, 2)
     assert_equal(l2[0], "hey")

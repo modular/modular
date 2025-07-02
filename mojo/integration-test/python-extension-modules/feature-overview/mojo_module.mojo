@@ -94,7 +94,7 @@ fn case_raise_string_error() -> PythonObject:
 
 # Returning New Mojo Values
 fn create_string() raises -> PythonObject:
-    var result = String("Hello")
+    var result = "Hello"
 
     return PythonObject(alloc=result^)
 

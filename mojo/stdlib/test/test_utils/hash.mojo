@@ -28,7 +28,7 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
             var diff = dif_bits(hashes[i], hashes[j])
             assert_true(
                 diff > upper_bound,
-                String("Index: {}:{}, diff between: {} and {} is: {}").format(
+                "Index: {}:{}, diff between: {} and {} is: {}".format(
                     i, j, hashes[i], hashes[j], diff
                 ),
                 location=__call_location(),
@@ -53,7 +53,7 @@ def assert_fill_factor[
     var fill_factor = 1 - unfilled / num_buckets
     assert_true(
         fill_factor >= lower_bound,
-        String("Fill factor for {} is {}, provided lower bound was {}").format(
+        "Fill factor for {} is {}, provided lower bound was {}".format(
             label, fill_factor, lower_bound
         ),
         location=__call_location(),

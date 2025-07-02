@@ -284,6 +284,7 @@ fn initialize_tensor_from_cpu_example():
             if host_buf[i] != expected_values[i]:
                 raise Error(
                     String("Unexpected value ", host_buf[i], " at position ", i)
+                )
         print("Success")
     except error:
         print(error)

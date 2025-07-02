@@ -120,7 +120,7 @@ def test_print():
         print(">", x, file=checker.stream())
         checker.check_line_starts_with("> 0.6535")
 
-        print(String("Hello world"), file=checker.stream())
+        print("Hello world", file=checker.stream())
         checker.check_line("Hello world")
 
 

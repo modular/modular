@@ -67,7 +67,7 @@ def main():
     else:
         print("Finished executing 'for' loop")
 
-    animals = [String("cat"), "aardvark", "hippopotamus", "dog"]
+    animals = ["cat", "aardvark", "hippopotamus", "dog"]
     for animal in animals:
         if animal == "dog":
             print("Found a dog")

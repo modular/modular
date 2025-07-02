@@ -1773,7 +1773,7 @@ fn mean[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
+        return ";".join(
             trace_arg("input", input_shape, dtype),
             trace_arg("output", output_shape, dtype),
         )

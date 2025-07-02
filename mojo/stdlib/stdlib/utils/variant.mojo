@@ -26,7 +26,7 @@ fn to_string(mut x: IntOrString) -> String:
 
 # They have to be mutable for now, and implement Copyable & Movable
 var an_int = IntOrString(4)
-var a_string = IntOrString(String("I'm a string!"))
+var a_string = IntOrString("I'm a string!")
 var who_knows = IntOrString(0)
 import random
 if random.random_ui64(0, 1):
@@ -75,7 +75,7 @@ struct Variant[*Ts: Copyable & Movable](Copyable, ExplicitlyCopyable, Movable):
 
     # They have to be mutable for now, and implement Copyable & Movable
     var an_int = IntOrString(4)
-    var a_string = IntOrString(String("I'm a string!"))
+    var a_string = IntOrString("I'm a string!")
     var who_knows = IntOrString(0)
     import random
     if random.random_ui64(0, 1):

@@ -1211,7 +1211,7 @@ fn avg_pool[
             ctx, input, filter, strides, dilations, paddings, output, ceil_mode
         )
     else:
-        constrained[False, String("Unknown target ") + target]()
+        constrained[False, "Unknown target " + target]()
 
 
 @always_inline
@@ -1240,4 +1240,4 @@ fn max_pool[
             ctx, input, filter, strides, dilations, paddings, output, ceil_mode
         )
     else:
-        constrained[False, String("Unknown target ") + target]()
+        constrained[False, "Unknown target " + target]()

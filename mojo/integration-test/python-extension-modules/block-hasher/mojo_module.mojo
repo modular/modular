@@ -82,7 +82,7 @@ fn _mojo_block_hasher[
     var result_py_list = cpython.PyList_New(num_hashes)
 
     # Initial hash seed value
-    alias initial_hash = hash(String("None"))
+    alias initial_hash = hash("None")
 
     # Performing hashing
     var prev_hash = initial_hash

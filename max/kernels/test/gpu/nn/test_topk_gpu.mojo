@@ -133,7 +133,7 @@ fn test_case_batched[
             ctx.enqueue_copy(topk_idxs.tensor.data, device_out_idxs.buffer)
             ctx.synchronize()
 
-        alias msg = "tk-smpl-gpu" if sampling else String("tk-gpu")
+        alias msg = "tk-smpl-gpu" if sampling else "tk-gpu"
         time_kernel[run_func](m, ctx, msg)
 
     _topk_gpu[sampling=sampling, largest=largest](
@@ -424,7 +424,7 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True](
 
 
 fn print_test_case(test_case: TestCase):
-    var num_blocks_per_in_msg = String("auto")
+    var num_blocks_per_in_msg = "auto"
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
     print(
@@ -444,10 +444,10 @@ fn print_test_case(test_case: TestCase):
 
 
 fn print_test_case(test_case: TestCaseMultiRank):
-    var num_blocks_per_in_msg = String("auto")
+    var num_blocks_per_in_msg = "auto"
     if test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(test_case.num_blocks_per_input.value())
-    var block_size_msg = String("auto")
+    var block_size_msg = "auto"
     if test_case.block_size:
         block_size_msg = String(test_case.block_size.value())
     print(

@@ -295,7 +295,7 @@ def test_ndbuffer_tofile():
     var buf_stack = InlineArray[Float32, 2 * 2](uninitialized=True)
     var buf = NDBuffer[DType.float32, 2, _, DimList(2, 2)](buf_stack)
     buf.fill(2.0)
-    with NamedTemporaryFile(name=String("test_ndbuffer")) as TEMP_FILE:
+    with NamedTemporaryFile(name="test_ndbuffer") as TEMP_FILE:
         buf.tofile(TEMP_FILE.name)
 
         with open(TEMP_FILE.name, "r") as f:

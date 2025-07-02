@@ -480,7 +480,7 @@ fn _split_extension(
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 
-    return String(path), String("")
+    return String(path), ""
 
 
 fn split_extension[
@@ -524,7 +524,7 @@ fn splitroot[
         A tuple containing three strings: (drive, root, tail).
     """
     var p = path.__fspath__()
-    alias empty = String("")
+    alias empty = ""
 
     # Relative path, e.g.: 'foo'
     if p[:1] != sep:

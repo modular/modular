@@ -16,4 +16,4 @@
 
 fn main():
     # CHECK: 536870913
-    print(String("*") * 0x2000_0000)
+    print("*" * 0x2000_0000)

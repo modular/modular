@@ -34,26 +34,26 @@ from test_utils import (
 
 def test_hash_byte_array():
     assert_equal(
-        hash[HasherType=Fnv1a](String("a")),
-        hash[HasherType=Fnv1a](String("a")),
+        hash[HasherType=Fnv1a]("a"),
+        hash[HasherType=Fnv1a]("a"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a](String("b")),
-        hash[HasherType=Fnv1a](String("b")),
-    )
-
-    assert_equal(
-        hash[HasherType=Fnv1a](String("c")),
-        hash[HasherType=Fnv1a](String("c")),
+        hash[HasherType=Fnv1a]("b"),
+        hash[HasherType=Fnv1a]("b"),
     )
 
     assert_equal(
-        hash[HasherType=Fnv1a](String("d")),
-        hash[HasherType=Fnv1a](String("d")),
+        hash[HasherType=Fnv1a]("c"),
+        hash[HasherType=Fnv1a]("c"),
+    )
+
+    assert_equal(
+        hash[HasherType=Fnv1a]("d"),
+        hash[HasherType=Fnv1a]("d"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a](String("d")),
-        hash[HasherType=Fnv1a](String("d")),
+        hash[HasherType=Fnv1a]("d"),
+        hash[HasherType=Fnv1a]("d"),
     )
 
 
@@ -179,7 +179,7 @@ def test_hash_simd_values():
 
 
 def test_hash_at_compile_time():
-    alias h = hash[HasherType=Fnv1a](String("hello"))
+    alias h = hash[HasherType=Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 

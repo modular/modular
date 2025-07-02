@@ -34,26 +34,26 @@ from test_utils import (
 
 def test_hash_byte_array():
     assert_equal(
-        hash[HasherType=DJBX33A](String("a")),
-        hash[HasherType=DJBX33A](String("a")),
+        hash[HasherType=DJBX33A]("a"),
+        hash[HasherType=DJBX33A]("a"),
     )
     assert_equal(
-        hash[HasherType=DJBX33A](String("b")),
-        hash[HasherType=DJBX33A](String("b")),
-    )
-
-    assert_equal(
-        hash[HasherType=DJBX33A](String("c")),
-        hash[HasherType=DJBX33A](String("c")),
+        hash[HasherType=DJBX33A]("b"),
+        hash[HasherType=DJBX33A]("b"),
     )
 
     assert_equal(
-        hash[HasherType=DJBX33A](String("d")),
-        hash[HasherType=DJBX33A](String("d")),
+        hash[HasherType=DJBX33A]("c"),
+        hash[HasherType=DJBX33A]("c"),
+    )
+
+    assert_equal(
+        hash[HasherType=DJBX33A]("d"),
+        hash[HasherType=DJBX33A]("d"),
     )
     assert_equal(
-        hash[HasherType=DJBX33A](String("d")),
-        hash[HasherType=DJBX33A](String("d")),
+        hash[HasherType=DJBX33A]("d"),
+        hash[HasherType=DJBX33A]("d"),
     )
 
 
@@ -180,7 +180,7 @@ def test_hash_simd_values():
 
 
 def test_hash_at_compile_time():
-    alias h = hash[HasherType=DJBX33A](String("hello"))
+    alias h = hash[HasherType=DJBX33A]("hello")
     # can not do equality compare as the hash function is unstable on different platforms
     assert_true(h != 0)
 

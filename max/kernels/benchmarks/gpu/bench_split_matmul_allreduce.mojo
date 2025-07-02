@@ -56,14 +56,12 @@ fn _get_run_name[
 
     var ngpus_str = String("/ngpus=", ngpus)
     var num_partitions_str = (
-        String("/num_partitions=", num_partitions) if num_partitions
-        > 1 else String()
+        String("/num_partitions=", num_partitions) if num_partitions > 1 else ""
     )
     var partition_dim_str = (
-        String("/partition_dim=", partition_dim) if num_partitions
-        > 1 else String()
+        String("/partition_dim=", partition_dim) if num_partitions > 1 else ""
     )
-    var overlap_str = String("/overlap") if overlap_with_dpl else String()
+    var overlap_str = "/overlap" if overlap_with_dpl else ""
     return String(
         vendor_str,
         type_str,

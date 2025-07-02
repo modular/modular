@@ -120,8 +120,7 @@ And you can chain function calls across lines:
 
 ```mojo
 def print_hello():
-    text = String(",")
-          .join("Hello", " world!")
+    text = ",".join("Hello", " world!")
     print(text)
 ```
 

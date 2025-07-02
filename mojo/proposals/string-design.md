@@ -184,8 +184,8 @@ explicit mutable access with `_mut` suffixed version of these:
 
 ```mojo
 def test_copy():
-    var s0 = String("find")
-    var s1 = String(s0)       # Maintains a pointer to immutable memory
+    var s0 = "find"
+    var s1 = s0       # Maintains a pointer to immutable memory
     s1.unsafe_ptr_mut()[3] = ord("e")
     assert_equal("find", s0)
     assert_equal("fine", s1)

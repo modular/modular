@@ -62,7 +62,7 @@ def main():
         if (list[i] > threshold):
             count += 1
 
-    print(StaticString("{} items over 0.6").format(count))
+    print("{} items over 0.6".format(count))
 ```
 
 The `@parameter for` construct unrolls at the beginning of compilation, which

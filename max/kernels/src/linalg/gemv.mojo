@@ -843,14 +843,14 @@ fn log_shape[
     has_mode_1: Bool, has_mode_2: Bool, name: String
 ](logger: Logger, mode_1: Int, mode_2: Int,) -> None:
     logger.info(
-        name + ": ",
-        "("
-        + (String("_") if has_mode_1 else "")
-        + String(mode_1)
-        + ", "
-        + (String("_") if has_mode_2 else "")
-        + String(mode_2)
-        + ")",
+        name,
+        ": (",
+        "_" if has_mode_1 else "",
+        mode_1,
+        ", ",
+        "_" if has_mode_2 else "",
+        mode_2,
+        ")",
     )
 
 

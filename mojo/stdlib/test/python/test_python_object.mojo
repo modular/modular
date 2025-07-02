@@ -298,8 +298,8 @@ fn test_string_conversions(mut python: Python) raises -> None:
     assert_true(mojo_capitalized == "Mojo")
 
     # string object
-    var mo_str = String("mo")
-    var jo_str = String("jo")
+    var mo_str = "mo"
+    var jo_str = "jo"
     var mojo_str = mo_str + jo_str
     py_str = PythonObject(mojo_str)
     py_capitalized = py_str.capitalize()

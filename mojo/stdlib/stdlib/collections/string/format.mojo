@@ -25,13 +25,13 @@ Replacement fields can mapped to the arguments in one of two ways:
 - Automatic indexing by argument position:
 
   ```mojo
-  var s = String("{} is {}").format("Mojo", "🔥")
+  var s = "{} is {}".format("Mojo", "🔥")
   ```
 
 - Manual indexing by argument position:
 
   ```mojo
-  var s = String("{1} is {0}").format("hot", "🔥")
+  var s = "{1} is {0}".format("hot", "🔥")
   ```
 
 The replacement fields can also contain the `!r` or `!s` conversion flags, to
@@ -39,7 +39,7 @@ indicate whether the argument should be formatted using `repr()` or `String()`,
 respectively:
 
 ```mojo
-var s = String("{!r}").format(myComplicatedObject)
+var s = "{!r}".format(myComplicatedObject)
 ```
 
 Note that the following features from Python's `str.format()` are
@@ -54,13 +54,13 @@ Examples:
 
 ```mojo
 # Basic formatting
-var s1 = String("Hello {0}!").format("World")  # Hello World!
+var s1 = "Hello {0}!".format("World")  # Hello World!
 
 # Multiple arguments
-var s2 = String("{0} plus {1} equals {2}").format(1, 2, 3)  # 1 plus 2 equals 3
+var s2 = "{0} plus {1} equals {2}".format(1, 2, 3)  # 1 plus 2 equals 3
 
 # Conversion flags
-var s4 = String("{!r}").format("test")  # "'test'"
+var s4 = "{!r}".format("test")  # "'test'"
 ```
 
 This module has no public API; its functionality is available through the

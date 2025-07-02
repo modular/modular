@@ -33,7 +33,7 @@ Core Features:
 Example:
 ```mojo
     # Basic string creation and manipulation
-    var s = String("Hello, 世界")
+    var s = "Hello, 世界" # runtime type is `String`
     var slice = s[0:5] # "Hello"
 
     # Unicode-aware operations
@@ -42,7 +42,7 @@ Example:
 
     # String formatting
     var name = "Mojo"
-    var formatted = String("Hello, {name}!")
+    var formatted = "Hello, {name}!"
 ```
 
 Note:

@@ -53,8 +53,8 @@ Example:
 
 ```mojo
 # String creation and basic operations
-var s1 = String("Hello")
-var s2 = String("World")
+var s1 = "Hello"
+var s2 = "World"
 var combined = s1 + " " + s2  # "Hello World"
 
 # String-to-number conversion
@@ -66,7 +66,7 @@ var char = chr(65)  # "A"
 var code = ord("A")  # 65
 
 # String formatting
-print(String("Codepoint {} is {}").format(code, char)) # Codepoint 65 is A
+print("Codepoint {} is {}".format(code, char)) # Codepoint 65 is A
 
 # ASCII utilities
 var ascii_str = ascii("Hello")  # ASCII-only string
@@ -873,7 +873,7 @@ struct String(
         ```mojo
         from testing import assert_equal
 
-        var s = String("ನಮಸ್ಕಾರ")
+        var s = "ನಮಸ್ಕಾರ"
 
         assert_equal(len(s), 21)
         assert_equal(len(s.codepoints()), 7)
@@ -885,7 +885,7 @@ struct String(
         ```mojo
         from testing import assert_equal
 
-        var s = String("abc")
+        var s = "abc"
 
         assert_equal(len(s), 3)
         assert_equal(len(s.codepoints()), 3)
@@ -981,20 +981,17 @@ struct String(
         return String(elems, sep=sep)
 
     fn join[
-        T: Copyable & Movable & Writable, //, buffer_size: Int = 4096
+        T: Copyable & Movable & Writable
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
         directly into that. The `buffer_size` defaults to 4096 bytes to match
-        the default page size on arm64 and x86-64, but you can increase this if
-        you're joining a very large `List` of elements to write into the stack
-        instead of the heap.
+        the default page size on arm64 and x86-64.
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
                 `Movable` and `Writable` traits.
-            buffer_size: The max size of the stack buffer.
 
         Args:
             elems: The input values.
@@ -1005,10 +1002,12 @@ struct String(
         var result = String()
         if not len(elems):
             return result^
-        result.write(elems[0])
+        var buffer = _WriteBufferStack(result)
+        buffer.write(elems[0])
         for i in range(1, len(elems)):
-            result.write(self)
-            result.write(elems[i])
+            buffer.write(self)
+            buffer.write(elems[i])
+        buffer.flush()
         return result^
 
     fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
@@ -1025,7 +1024,7 @@ struct String(
         ```mojo
         from testing import assert_equal
 
-        var s = String("abc")
+        var s = "abc"
         var iter = s.codepoints()
         assert_equal(iter.__next__(), Codepoint.ord("a"))
         assert_equal(iter.__next__(), Codepoint.ord("b"))
@@ -1040,7 +1039,7 @@ struct String(
         from testing import assert_equal
 
         # A visual character composed of a combining sequence of 2 codepoints.
-        var s = String("á")
+        var s = "á"
         assert_equal(s.byte_length(), 3)
 
         var iter = s.codepoints()
@@ -1069,7 +1068,7 @@ struct String(
         ```mojo
         from testing import assert_equal, assert_true
 
-        var s = String("abc")
+        var s = "abc"
         var iter = s.codepoint_slices()
         assert_true(iter.__next__() == "a")
         assert_true(iter.__next__() == "b")
@@ -1284,13 +1283,13 @@ struct String(
 
         ```mojo
         # Splitting a space
-        _ = String("hello world").split(" ") # ["hello", "world"]
+        _ = "hello world".split(" ") # ["hello", "world"]
         # Splitting adjacent separators
-        _ = String("hello,,world").split(",") # ["hello", "", "world"]
+        _ = "hello,,world".split(",") # ["hello", "", "world"]
         # Splitting with maxsplit
-        _ = String("1,2,3").split(",", 1) # ['1', '2,3']
+        _ = "1,2,3".split(",", 1) # ['1', '2,3']
         # Splitting with an empty separator
-        _ = StringSlice("123").split("") # ["", "1", "2", "3", ""]
+        _ = "123".split("") # ["", "1", "2", "3", ""]
         ```
         """
         return _to_string_list(
@@ -1312,17 +1311,14 @@ struct String(
 
         ```mojo
         # Splitting an empty string or filled with whitespaces
-        _ = String("      ").split() # []
-        _ = String("").split() # []
+        _ = "      ".split() # []
+        _ = "".split() # []
 
         # Splitting a string with leading, trailing, and middle whitespaces
-        _ = String("      hello    world     ").split() # ["hello", "world"]
+        _ = "      hello    world     ".split() # ["hello", "world"]
         # Splitting adjacent universal newlines:
-        _ = String(
-            "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world"
-        ).split()  # ["hello", "world"]
+        _ = "hello \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e\\x85\\u2028\\u2029world".split()  # ["hello", "world"]
         ```
-        .
         """
         return _to_string_list(
             self.as_string_slice().split(sep, maxsplit=maxsplit)
@@ -1581,9 +1577,9 @@ struct String(
 
         ```mojo
         # Manual indexing:
-        print(String("{0} {1} {0}").format("Mojo", 1.125)) # Mojo 1.125 Mojo
+        print("{0} {1} {0}".format("Mojo", 1.125)) # Mojo 1.125 Mojo
         # Automatic indexing:
-        print(String("{} {}").format(True, "hello world")) # True hello world
+        print("{} {}".format(True, "hello world")) # True hello world
         ```
         """
         return _FormatCurlyEntry.format(self, args)

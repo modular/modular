@@ -132,7 +132,7 @@ def test_optional_take_mutates():
 
 
 def test_optional_explicit_copy():
-    var v1 = Optional[String](String("test"))
+    var v1 = Optional[String]("test")
 
     var v2 = v1.copy()
 
@@ -166,7 +166,7 @@ def test_optional_equality():
 
 
 def test_optional_copied():
-    var data = String("foo")
+    var data = "foo"
 
     var opt_ref: Optional[Pointer[String, __origin_of(data)]] = Optional(
         Pointer(to=data)
@@ -175,7 +175,7 @@ def test_optional_copied():
     # Copy the optional Pointer value.
     var opt_owned: Optional[String] = opt_ref.copied()
 
-    assert_equal(opt_owned.value(), String("foo"))
+    assert_equal(opt_owned.value(), "foo")
 
 
 def test_optional_unwrap():

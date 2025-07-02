@@ -30,15 +30,15 @@ def test_variadic_list():
 
 def test_contains():
     # There are additional tests for `List.__contains__` in the `test_list.mojo` file.
-    var l = [String("Hello"), ",", "World", "!"]
+    var l = ["Hello", ",", "World", "!"]
     assert_true("Hello" in l)
-    assert_true(l.__contains__(String(",")))
+    assert_true(l.__contains__(","))
     assert_true("World" in l)
     assert_true("!" in l)
     assert_false("Mojo" in l)
     assert_false(l.__contains__("hello"))
     assert_false("" in l or l.__contains__(""))
-    assert_true("Hello" in l and String("Hello") in l)
+    assert_true("Hello" in l and "Hello" in l)
 
 
 def main():

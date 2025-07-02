@@ -1351,7 +1351,7 @@ fn elementwise[
         var shape_str = trace_arg("shape", shape)
         var vector_width_str = String("vector_width=", simd_width)
 
-        return String(";").join(
+        return ";".join(
             shape_str,
             vector_width_str,
         )

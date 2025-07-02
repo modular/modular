@@ -221,7 +221,7 @@ fn test_case_sampling[
                 )
 
         time_kernel[run_func](
-            m, "top-p-sampling" if is_top_p else String("min-p-sampling")
+            m, "top-p-sampling" if is_top_p else "min-p-sampling"
         )
 
     # Run sampling

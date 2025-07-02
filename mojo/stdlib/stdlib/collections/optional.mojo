@@ -426,7 +426,7 @@ struct Optional[T: Copyable & Movable](
         Copy the value of an `Optional[Pointer[_]]`
 
         ```mojo
-        var data = String("foo")
+        var data = "foo"
         var opt = Optional(Pointer(to=data))
         var opt_owned: Optional[String] = opt.copied()
         ```

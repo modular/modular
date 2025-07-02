@@ -252,7 +252,7 @@ fn append_twice(mut s: String, other: String):
    s += other
 
 fn invalid_access():
-  var my_string = String("o")  # Create a run-time String value
+  var my_string = "o"  # Create a run-time String value
 
   # error: passing `my_string` mut is invalid since it is also passed
   # read.
@@ -270,8 +270,8 @@ reference (or need to pass the same value to two arguments) is to make a copy:
 
 ```mojo
 fn valid_access():
-  var my_string = String("o")           # Create a run-time String value
-  var other_string = String(my_string)  # Create a copy of the String value
+  var my_string = "o"           # Create a run-time String value
+  var other_string = my_string  # Create a copy of the String value
   append_twice(my_string, other_string)
   print(my_string)
 ```
@@ -311,7 +311,7 @@ three ways:
       pass
 
   def main():
-      take(String("A brand-new String!"))
+      take("A brand-new String!")
   ```
 
 The following code works by making a copy of the string, because `take_text()`
@@ -323,7 +323,7 @@ fn take_text(owned text: String):
     print(text)
 
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message)
     print(message)
 ```
@@ -339,7 +339,7 @@ variable is no longer initialized. That is, this version does not compile:
 
 ```mojo
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message^)
     print(message)  # error: use of uninitialized value 'message'
 ```
@@ -355,7 +355,7 @@ fn take_text(owned text: String):
     print(text)
 
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message^)
 ```
 

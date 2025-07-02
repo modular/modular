@@ -3838,7 +3838,7 @@ struct PadConstant:
                 ctx.get_device_context(),
             )
         else:
-            constrained[False, String("Unknown target ") + target]()
+            constrained[False, "Unknown target " + target]()
 
     @staticmethod
     fn shape[

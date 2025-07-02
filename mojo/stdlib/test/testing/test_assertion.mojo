@@ -90,14 +90,14 @@ def test_assert_equal_with_simd():
 
 def test_assert_equal_with_list():
     assert_equal(
-        [String("This"), String("is"), String("Mojo")],
-        List(String("This"), String("is"), String("Mojo")),
+        ["This", "is", "Mojo"],
+        List("This", "is", "Mojo"),
     )
 
     with assert_raises():
         assert_equal(
-            [String("This"), String("is"), String("Mojo")],
-            List(String("This"), String("is"), String("mojo")),
+            ["This", "is", "Mojo"],
+            List("This", "is", "mojo"),
         )
 
 
@@ -229,7 +229,7 @@ def test_assert_custom_location():
 
 def test_assert_equal_stringslice():
     str1 = StaticString("This is Mojo")
-    str2 = String("This is Mojo")
+    str2 = "This is Mojo"
     str3 = StaticString("This is mojo")
 
     fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
