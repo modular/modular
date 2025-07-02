@@ -77,9 +77,9 @@ struct Foo:
 
 var f = Foo()
 
-# CHECK: (StringLiteral[""]) empty =
-# CHECK: (StringLiteral["abcdefghijklmnopqrstuvwxyz1234567890"]) long =
-# CHECK: (StringLiteral["123"]) short =
+# CHECK: (String) empty = ""
+# CHECK: (String) long = "abcdefghijklmnopqrstuvwxyz1234567890"
+# CHECK: (String) short = "123"
 var empty = ""
 var long = "abcdefghijklmnopqrstuvwxyz1234567890"
 var short = "123"

@@ -11,7 +11,7 @@
 # CHECK: (Int) x =
 var x = 12
 
-# CHECK: (StringLiteral["foo"]) y =
+# CHECK: (String) y = "foo"
 var y = "foo"
 
 struct Bar:

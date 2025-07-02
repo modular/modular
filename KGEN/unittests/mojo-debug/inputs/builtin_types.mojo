@@ -66,6 +66,8 @@ alias AFloatOrBoolOrSimd = __mlir_type[
 
 
 fn main():
+    var none = None
+
     var a_var_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`
     ]()
@@ -88,7 +90,7 @@ fn main():
 
     var `^ uncommon name` = 1123123
 
-    var a_string_literal = "fofofo"
+    var a_string = "fofofo"
 
     var a_list = [1, 2, 3]
 
@@ -108,8 +110,6 @@ fn main():
         index = Int(2).value,
     ](c_simd)
 
-    var none = None
-
     print("breakpoint")  # breakpoint
 
     keep_alive(
@@ -123,7 +123,7 @@ fn main():
         a_float,
         another_float,
         `^ uncommon name`,
-        a_string_literal,
+        a_string,
         a_list,
         a_simd,
         b_simd,
