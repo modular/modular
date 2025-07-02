@@ -617,11 +617,11 @@ struct assert_raises:
 
     # Good! Caught the raised error, test passes
     with assert_raises():
-        raise "SomeError"
+        raise Error("SomeError")
 
     # Also good!
     with assert_raises(contains="Some"):
-        raise "SomeError"
+        raise Error("SomeError")
 
     # This will assert, we didn't raise
     with assert_raises():
@@ -629,7 +629,7 @@ struct assert_raises:
 
     # This will let the underlying error propagate, failing the test
     with assert_raises(contains="Some"):
-        raise "OtherError"
+        raise Error("OtherError")
     ```
     """
 
