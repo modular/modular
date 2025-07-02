@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import itertools
 import traceback
 from collections.abc import Iterable, Sequence
 from contextvars import ContextVar
@@ -550,21 +551,18 @@ class Graph:
         # Add symbolic dims of tensor results to the list of graph params and
         # declared output params of the op
         # Use a dict as an ordered set for new param decls. Maps keys to None.
-        result_shapes = (
-            value.shape
-            for result in op.results
-            if isinstance(
-                value := Value.from_mlir(result), (TensorValue, BufferValue)
+        result_parameters = set(
+            itertools.chain.from_iterable(
+                value.type.parameters
+                for result in op.results
+                if isinstance(
+                    value := Value.from_mlir(result), (TensorValue, BufferValue)
+                )
             )
         )
-        result_params = {
-            str(dim)
-            for shape in result_shapes
-            for dim in shape
-            if isinstance(dim, SymbolicDim)
-        }
+        names = [parameter.name for parameter in result_parameters]
         # Track any newly declared parameters.
-        if new_params := dict.fromkeys(result_params - self._params.keys()):
+        if new_params := dict.fromkeys(names - self._params.keys()):
             self._params.update(new_params)
             si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
             # We can't overload the setter yet, so the interface annotation is wrong
