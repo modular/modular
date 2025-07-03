@@ -10,8 +10,8 @@ from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, TensorType
 
 
-@pytest.mark.skip("MAXPLAT-XXX: parameter with no declaration")
-def test_MAXPLAT_328__not_divisible_by_4(session):
+@pytest.mark.skip("MAXPLAT-332: parameter with no declaration")
+def test_rebind__new_parameter_expression__not_divisible_by_4(session):
     input = Tensor(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -26,8 +26,8 @@ def test_MAXPLAT_328__not_divisible_by_4(session):
         model.execute(input)
 
 
-@pytest.mark.skip("MAXPLAT-XXX: parameter with no declaration")
-def test_MAXPLAT_328__divisible_by_4(session):
+@pytest.mark.skip("MAXPLAT-332: parameter with no declaration")
+def test_rebind__new_parameter_expression__divisible_by_4(session):
     input = Tensor(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -42,7 +42,7 @@ def test_MAXPLAT_328__divisible_by_4(session):
     assert result.shape == (2, 4, 4)
 
 
-def test_MAXPLAT_328__no_new_parameter__not_divisible_by_4(session):
+def test_rebind__no_new_parameter__not_divisible_by_4(session):
     input = Tensor(DType.float32, [7, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 
@@ -57,7 +57,7 @@ def test_MAXPLAT_328__no_new_parameter__not_divisible_by_4(session):
         model.execute(input)
 
 
-def test_MAXPLAT_328__no_new_parameter__divisible_by_4(session):
+def test_rebind__no_new_parameter__divisible_by_4(session):
     input = Tensor(DType.float32, [8, 4], device=CPU())
     input_type = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 

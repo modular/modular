@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import pytest
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -118,3 +119,12 @@ def test_max_graph_export_import_mlir(session) -> None:
         output2 = compiled2.execute(a, b)[0].to_numpy()
         assert output2 == a_np + b_np
         assert output == output2
+
+
+def test_no_output_error_message(session) -> None:
+    with Graph("test", input_types=()) as graph:
+        pass
+
+    # TODO(MAXPLAT-331): Improve error message and test it here
+    with pytest.raises(Exception):
+        session.load(graph)

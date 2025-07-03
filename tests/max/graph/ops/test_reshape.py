@@ -234,8 +234,8 @@ def test_MAXPLAT_328_no_new_parameter():
         graph.output(x.reshape([n_patches // 4, 4, 2048]))
 
 
-@pytest.mark.skip("MAXPLAT-XXX: This is currently a compile-time error")
-def test_MAXPLAT_328_statically_not_divisible_by_4():
+@pytest.mark.skip("MAXPLAT-330: This is currently a compile-time error")
+def test_reshape_statically_known_impossible_shape():
     input_type = TensorType(
         DType.float32, [7, 4], device=DeviceRef.from_device(CPU())
     )
@@ -246,3 +246,16 @@ def test_MAXPLAT_328_statically_not_divisible_by_4():
         n_patches, _ = x.shape
         with pytest.raises(Exception):
             x.reshape([n_patches // 4, 4, 4])
+
+
+@pytest.mark.skip(
+    "MAXPLAT-329: Point users towards using a rebind before reshape"
+)
+def test_reshape_needs_rebind_error_message():
+    input_type = TensorType(
+        DType.float32, ["n_patches", 2048], DeviceRef.from_device(CPU())
+    )
+    with Graph("test_MAXPLAT_329", input_types=[input_type]) as graph:
+        (x,) = graph.inputs
+        n_patches, _ = x.tensor.shape
+        graph.output(x.tensor.reshape([n_patches // 4, 4, 2048]))
