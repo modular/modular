@@ -13,7 +13,7 @@ There are 3 ways to profile currently: context manager, decorator, and manual st
 `Tracer` as a context manager:
 
 ```python
-with Tracer("foo", color="blue"):
+with Tracer("foo", color="modular_purple"):
     # Run `bar()` inside the profiling span.
     bar()
 # The profiling span ends when the context manager exits.
@@ -36,13 +36,13 @@ def bar() -> None:
 `Tracer` as a manual trace stack manager:
 
 ```python
-tracer = Tracer("foo", color="blue")
+tracer = Tracer("foo", color="modular_purple")
 tracer.push("bar")
 # ...
 tracer.pop()
 
 # or as a context manager:
-with Tracer("foo", color="blue") as tracer:
+with Tracer("foo", color="modular_purple") as tracer:
     # The parent span is named "foo".
     tracer.push("bar")
     # The sub-span is named "bar".
