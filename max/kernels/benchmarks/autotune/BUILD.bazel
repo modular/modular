@@ -1,5 +1,6 @@
 load(
     "//bazel:api.bzl",
+    "modular_py_binary",
     "modular_py_library",
     "modular_py_test",
     "pkg_files",
@@ -21,6 +22,25 @@ modular_py_library(
     deps = [
         "//Support/python:support",
         # Deps required for kbench/kplot/kprofile
+        requirement("numpy"),
+        requirement("click"),
+        requirement("pandas"),
+        requirement("rich"),
+        requirement("plotly"),
+        requirement("kaleido"),
+        requirement("pyyaml"),
+        requirement("ruamel-yaml"),
+    ],
+)
+
+modular_py_binary(
+    name = "kbench",
+    srcs = [
+        "kbench.py",
+        "utils.py",
+    ],
+    imports = ["."],
+    deps = [
         requirement("numpy"),
         requirement("click"),
         requirement("pandas"),
