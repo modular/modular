@@ -40,6 +40,8 @@ single_version_override(
     patches = [
         # https://github.com/theoremlp/rules_mypy/pull/105
         "//bazel/public-patches:rules_mypy_mojo_srcs.patch",
+        # https://github.com/theoremlp/rules_mypy/pull/106
+        "//bazel/public-patches:rules_mypy_pycross.patch",
     ],
 )
 
