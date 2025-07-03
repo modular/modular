@@ -58,7 +58,6 @@ from gpu.mma import (
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (

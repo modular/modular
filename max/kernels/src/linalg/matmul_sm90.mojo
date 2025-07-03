@@ -444,7 +444,7 @@ fn warp_specialized_gemm_output[
 
                         st_matrix[simd_width=4](offset, d_reg_f32_packed)
 
-            named_barrier[num_consumer_threads, 10]()
+            named_barrier[num_consumer_threads,](10)
 
             alias thread_layout = Layout.row_major(
                 num_consumer_threads // (WG_BN // simd_size),
@@ -510,7 +510,7 @@ fn warp_specialized_gemm_output[
                         )
                         c_smem_frag[i, 0] = reg_val
 
-                named_barrier[num_consumer_threads, 10]()
+                named_barrier[num_consumer_threads,](10)
 
             @parameter
             if elementwise_lambda_fn:
@@ -603,7 +603,7 @@ fn warp_specialized_gemm_output[
                         c_gmem_wg_tile.vectorize[1, simd_size](),
                         c_smem_tile.vectorize[1, simd_size](),
                     )
-            named_barrier[num_consumer_threads, 10]()
+            named_barrier[num_consumer_threads,](10)
 
     else:
 

@@ -42,9 +42,13 @@ alias _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
     "USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM", False
 ]()
 
+alias MaxHardwareBarriers = 16
+
 
 @always_inline("nodebug")
-fn named_barrier[num_threads: Int32, id: Int32 = 0]():
+fn named_barrier[
+    num_threads: Int32,
+](id: Int32 = 0):
     """Performs a named synchronization barrier at the block level.
 
     This function creates a synchronization point using a specific barrier ID, allowing
@@ -54,6 +58,8 @@ fn named_barrier[num_threads: Int32, id: Int32 = 0]():
 
     Parameters:
         num_threads: The number of threads that must reach the barrier before any can proceed.
+
+    Args:
         id: The barrier identifier (0-16). Default is 0.
 
     Notes:
@@ -65,7 +71,8 @@ fn named_barrier[num_threads: Int32, id: Int32 = 0]():
         - The barrier ID must not exceed 16.
         - All threads participating in the barrier must specify the same num_threads value.
     """
-    constrained[id <= 16, "barrier id should not exceed 16"]()
+
+    debug_assert(id <= MaxHardwareBarriers, "barrier id should not exceed 16")
     constrained[
         is_nvidia_gpu(), "named barrier is only supported by NVIDIA GPUs"
     ]()
