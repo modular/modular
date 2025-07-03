@@ -14,7 +14,7 @@ bazel_dep(name = "rules_mojo", version = "0.4.1")
 bazel_dep(name = "rules_multirun", version = "0.12.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 bazel_dep(name = "rules_proto", version = "7.0.2")
-bazel_dep(name = "rules_pycross", version = "0.7.1")
+bazel_dep(name = "rules_pycross", version = "0.8.0")
 bazel_dep(name = "rules_python", version = "1.4.0-rc4")
 bazel_dep(name = "rules_shell", version = "0.4.1")
 
