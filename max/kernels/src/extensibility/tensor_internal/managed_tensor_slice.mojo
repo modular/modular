@@ -267,6 +267,30 @@ fn rebuild_static_tensor_specs_with_output_lambda[
     )
 
 
+@register_internal("rebuild_static_tensor_specs_with_compute_output_lambda")
+@no_inline
+fn rebuild_static_tensor_specs_with_compute_output_lambda[
+    func_type: AnyTrivialRegType, //,
+    dtype: DType,
+    rank: Int,
+](
+    spec: StaticTensorSpec[dtype, rank],
+    out_compute_lambda: func_type,
+) -> StaticTensorSpec[dtype, rank]:
+    return StaticTensorSpec[dtype, rank](
+        shape=spec.shape,
+        strides=spec.strides,
+        alignment=spec.alignment,
+        address_space=spec.address_space,
+        exclusive=spec.exclusive,
+        in_lambda=None,
+        out_lambda=None,
+        out_compute_lambda=rebind[spec.out_compute_lambda_t](
+            out_compute_lambda
+        ),
+    )
+
+
 # Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
 @__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
 @register_internal("mogg.dps_input_fusion_hook")
@@ -378,6 +402,51 @@ fn _mixed_precision_output_fusion_hook_impl[
         rebuild_static_tensor_specs_with_output_lambda[src_dtype, src_rank](
             mixed_in_spec,
             _output_lambda,
+        )
+    ]()
+
+
+@__mogg_intrinsic_attr("mogg.dps_mixed_precision_compute_output_fusion_hook")
+@register_internal("mogg.dps_mixed_precision_compute_output_fusion_hook")
+@no_inline
+fn _mixed_precision_compute_output_fusion_hook_impl[
+    mut: Bool, //,
+    # DType and rank after casting/view fusion.
+    rank: Int,
+    dst_dtype: DType,
+    # DType and shape before casting/view fusion.
+    src_rank: Int,
+    src_shape: DimList,
+    src_dtype: DType,
+    io_spec: IOSpec[mut],
+    static_spec: StaticTensorSpec[dst_dtype, rank],
+](
+    tensor: ManagedTensorSlice[io_spec=io_spec, static_spec=static_spec]
+) -> StaticTensorSpec[src_dtype, src_rank]:
+    @always_inline
+    @parameter
+    fn _compute_output_lambda[
+        _w: Int, _elem_align: Int = 1
+    ](i: IndexList[src_rank], v: SIMD[src_dtype, _w]) -> SIMD[src_dtype, _w]:
+        return v
+
+    alias mixed_in_spec = StaticTensorSpec[src_dtype, src_rank](
+        shape=src_shape,
+        strides=static_spec.strides,
+        alignment=static_spec.alignment,
+        address_space=static_spec.address_space,
+        exclusive=static_spec.exclusive,
+        in_lambda=None,
+        out_lambda=None,
+        out_compute_lambda=None,
+    )
+
+    return _extract_tensor_spec[
+        rebuild_static_tensor_specs_with_compute_output_lambda[
+            src_dtype, src_rank
+        ](
+            mixed_in_spec,
+            _compute_output_lambda,
         )
     ]()
 

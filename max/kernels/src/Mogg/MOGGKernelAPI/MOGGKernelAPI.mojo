@@ -231,6 +231,7 @@ from tensor_internal import (
     _input_fusion_hook_impl,
     _mixed_precision_input_fusion_hook_impl,
     _mixed_precision_output_fusion_hook_impl,
+    _mixed_precision_compute_output_fusion_hook_impl,
     _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
@@ -772,6 +773,7 @@ fn export():
     alias __output_fusion_hook_impl = _output_fusion_hook_impl
     alias __mixed_precision_input_fusion_hook_impl = _mixed_precision_input_fusion_hook_impl
     alias __mixed_precision_output_fusion_hook_impl = _mixed_precision_output_fusion_hook_impl
+    alias __mixed_precision_compute_output_fusion_hook_impl = _mixed_precision_compute_output_fusion_hook_impl
 
 
 # ===-----------------------------------------------------------------------===#
