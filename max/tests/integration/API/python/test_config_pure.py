@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from max.driver import DeviceSpec, accelerator_count
+from max.entrypoints.cli.config import parse_task_flags
 from max.pipelines import PIPELINE_REGISTRY, PipelineEngine, SupportedEncoding
 from max.pipelines.lib import (
     MAXModelConfig,
@@ -25,8 +26,46 @@ from test_common.pipeline_model_dummy import DUMMY_ARCH
 from test_common.registry import prepare_registry
 
 # ===----------------------------------------------------------------------=== #
-# Tests for refactored utility methods
+# Tests for utility methods
 # ===----------------------------------------------------------------------=== #
+
+
+class TestClickFlagParsing:
+    """Test suite for the click flag parsing."""
+
+    def test_parse_task_flags(self) -> None:
+        """Test parsing of task flags."""
+        flags = parse_task_flags(("flag1=value1", "flag2=value2"))
+        assert flags == {"flag1": "value1", "flag2": "value2"}
+
+    def test_parse_task_flags_with_dash_prefix(self) -> None:
+        """Test parsing of task flags with dash prefix."""
+        with pytest.raises(
+            ValueError,
+            match="Flag must be in format 'flag_name=flag_value', got: --flag3=value3",
+        ):
+            parse_task_flags(("flag1=value1", "flag2=value2", "--flag3=value3"))
+
+    def test_parse_task_flags_with_space_in_value(self) -> None:
+        """Test parsing of task flags with space in value."""
+        with pytest.raises(
+            ValueError,
+            match="Flag must be in format 'flag_name=flag_value', got: flag3 value3",
+        ):
+            parse_task_flags(("flag1=value1", "flag2=value2", "flag3 value3"))
+
+    def test_parse_task_flags_with_dash_in_flag_name(self) -> None:
+        """Test parsing of task flags with dash in flag name."""
+
+        # flag-3 is converted to flag_3
+        flags = parse_task_flags(
+            ("flag1=value1", "flag2=value2", "flag-3=value3")
+        )
+        assert flags == {
+            "flag1": "value1",
+            "flag2": "value2",
+            "flag_3": "value3",
+        }
 
 
 class TestPipelineConfigUtilityMethods:
