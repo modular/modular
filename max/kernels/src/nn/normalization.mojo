@@ -645,6 +645,7 @@ fn layer_norm_cpu[
     @parameter
     fn task_func(thread_id: Int) raises:
         var row_idx = thread_id * chunk_size
+        var chunk_rows = min(chunk_size, prod_all_but_last_dim - row_idx)
 
         @__copy_capture(row_idx)
         @parameter
@@ -673,7 +674,7 @@ fn layer_norm_cpu[
             output_fn[simd_width, rank, alignment](indices.canonicalize(), val)
 
         layer_norm_cpu[input_fn_2d, gamma_fn, output_fn_2d](
-            chunk_size, shape[rank - 1], beta, epsilon
+            chunk_rows, shape[rank - 1], beta, epsilon
         )
 
     sync_parallelize[task_func](num_workers)
