@@ -13,13 +13,13 @@ class Trace:
     Context manager for creating profiling spans.
 
     Examples:
-        >>> with Trace("foo", color="blue"):
+        >>> with Trace("foo", color="modular_purple"):
         >>>   # Run `bar()` inside the profiling span.
         >>>   bar()
         >>> # The profiling span ends when the context manager exits.
     """
 
-    def __init__(self, message: str, color: str = "blue") -> None:
+    def __init__(self, message: str, color: str = "modular_purple") -> None:
         """
         Constructs and initializes the underlying Mojo Trace object.
 

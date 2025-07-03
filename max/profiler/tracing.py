@@ -17,16 +17,25 @@ from max._core.profiler import Trace, is_profiling_enabled
 
 _FuncType = TypeVar("_FuncType", bound=Callable)
 
+# For the list of valid colors, take a look at the struct `Color` in:
+# `open-source/max/mojo/stdlib/stdlib/gpu/host/_tracing.mojo`
+
 
 @overload
 def traced(
-    func: _FuncType, *, message: str | None = None, color: str = "blue"
+    func: _FuncType,
+    *,
+    message: str | None = None,
+    color: str = "modular_purple",
 ) -> _FuncType: ...
 
 
 @overload
 def traced(
-    func: None = None, *, message: str | None = None, color: str = "blue"
+    func: None = None,
+    *,
+    message: str | None = None,
+    color: str = "modular_purple",
 ) -> Callable[[_FuncType], _FuncType]: ...
 
 
@@ -34,7 +43,7 @@ def traced(
     func: Callable | None = None,
     *,
     message: str | None = None,
-    color: str = "blue",
+    color: str = "modular_purple",
 ) -> Callable:
     """Decorator for creating a profiling span for `func`.
 
@@ -97,12 +106,12 @@ class Tracer:
 
     Example:
     ```python
-    tracer = Tracer("foo", color="blue")
+    tracer = Tracer("foo", color="modular_purple")
     tracer.push("bar")
     # ...
     tracer.pop()
 
-    with Tracer("foo", color="blue") as tracer:
+    with Tracer("foo", color="modular_purple") as tracer:
         # The parent span is named "foo".
         tracer.push("bar")
         # The sub-span is named "bar".
@@ -110,7 +119,9 @@ class Tracer:
     ```
     """
 
-    def __init__(self, message: str | None = None, color: str = "blue") -> None:
+    def __init__(
+        self, message: str | None = None, color: str = "modular_purple"
+    ) -> None:
         """
         Initialize the stack.
         Optionally push a new trace onto the stack if message is not None.
@@ -118,7 +129,9 @@ class Tracer:
         self.trace_stack: list[Trace | None] = []
         self.push(message, color)
 
-    def push(self, message: str | None = None, color: str = "blue") -> None:
+    def push(
+        self, message: str | None = None, color: str = "modular_purple"
+    ) -> None:
         """
         Push a new trace onto the stack.
         None is pushed if profiling is disabled or if message is None.
@@ -144,7 +157,7 @@ class Tracer:
         if trace is not None:
             trace.__exit__(exc_type, exc_value, traceback)
 
-    def next(self, message: str, color: str = "blue") -> None:
+    def next(self, message: str, color: str = "modular_purple") -> None:
         """
         Pop current then push a new trace with the next message.
         """
