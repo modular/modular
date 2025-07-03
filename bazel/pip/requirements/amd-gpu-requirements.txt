@@ -688,7 +688,7 @@ protobuf==5.29.1 ; sys_platform == 'linux'
     #   onnxruntime
     #   opentelemetry-proto
     #   proto-plus
-psutil==6.0.0 ; sys_platform == 'linux'
+psutil==7.0.0 ; sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/requirements.in
     #   accelerate
