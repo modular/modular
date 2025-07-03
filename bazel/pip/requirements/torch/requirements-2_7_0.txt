@@ -236,7 +236,7 @@ gevent==24.2.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   geventhttpclient
     #   locust
-geventhttpclient==2.0.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
+geventhttpclient==2.3.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via locust
 gguf==0.17.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
@@ -917,7 +917,6 @@ six==1.16.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   asttokens
     #   bleach
-    #   geventhttpclient
     #   langdetect
     #   python-dateutil
     #   rfc3339-validator
@@ -1150,6 +1149,7 @@ uri-template==1.3.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
 urllib3==1.26.19 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   botocore
+    #   geventhttpclient
     #   requests
     #   responses
 uvicorn==0.30.5 ; sys_platform == 'darwin' or sys_platform == 'linux'
