@@ -3,6 +3,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_multirun//:defs.bzl", "multirun", command = "command_force_opt")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//bazel:api.bzl", "mojo_binary")
 
 exports_files(["mblack-wrapper.py"])
 
@@ -114,6 +115,19 @@ command(
     ],
     command = "@mblack",
     visibility = ["//visibility:public"],
+)
+
+mojo_binary(
+    name = "check_licenses",
+    srcs = [":check_licenses.mojo"],
+    deps = ["@mojo//:stdlib"],
+)
+
+command(
+    name = "check_licenses.check",
+    # arguments = ["."],  # ???
+    command = ":check_licenses",
+    run_from_workspace_root = True,
 )
 
 multirun(
