@@ -224,11 +224,9 @@ void WebServer::addWebSocketClient(const mg_connection *conn) {
 }
 
 void WebServer::removeWebSocketClient(const mg_connection *conn) {
-  wsClients.erase(std::remove_if(wsClients.begin(), wsClients.end(),
-                                 [conn](const WebSocketClient &client) {
-                                   return client.conn == conn;
-                                 }),
-                  wsClients.end());
+  std::erase_if(wsClients, [conn](const WebSocketClient &client) {
+    return client.conn == conn;
+  });
   MOTR_LOG("WebServer[{}] client disconnected, remaining: {}", config.name,
            wsClients.size());
 }
