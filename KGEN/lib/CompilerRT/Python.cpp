@@ -9,6 +9,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
+#include <cctype>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -53,8 +54,7 @@ static std::optional<std::string> findLibPython(const std::string &pythonBin) {
   while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
     result += buffer.data();
   }
-  result.erase(std::remove_if(result.begin(), result.end(), ::isspace),
-               result.end());
+  std::erase_if(result, ::isspace);
   return result;
 }
 
