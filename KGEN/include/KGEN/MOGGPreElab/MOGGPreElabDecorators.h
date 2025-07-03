@@ -75,6 +75,9 @@ constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =
 
 constexpr StringLiteral MOGG_INTRINSIC_MIXED_PRECISION_OUTPUT_FUSION_HOOK =
     "mogg.dps_mixed_precision_output_fusion_hook";
+constexpr StringLiteral
+    MOGG_INTRINSIC_MIXED_PRECISION_COMPUTE_OUTPUT_FUSION_HOOK =
+        "mogg.dps_mixed_precision_compute_output_fusion_hook";
 constexpr StringLiteral MOGG_INTRINSIC_MIXED_PRECISION_INPUT_FUSION_HOOK =
     "mogg.dps_mixed_precision_input_fusion_hook";
 
