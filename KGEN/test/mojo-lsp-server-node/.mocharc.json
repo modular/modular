@@ -1,0 +1,4 @@
+{
+  "timeout": "30s",
+  "allowUncaught": false
+}

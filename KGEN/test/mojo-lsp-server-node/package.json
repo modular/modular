@@ -8,7 +8,8 @@
     "typescript": "5.8.3",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-protocol": "^3.17.5",
-    "mocha-junit-reporter": "^2.2.1"
+    "mocha-junit-reporter": "^2.2.1",
+    "mocha-multi-reporters": "1.5.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": []
