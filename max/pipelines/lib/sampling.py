@@ -164,19 +164,20 @@ def token_sampler(
                 list(_input_dict).index("repetition_penalty")
             ].tensor
 
+            # repetition penalty needs to be applied first
+            apply_penalties_to_logits(
+                logits_buffer,
+                ops.buffer_load(repetition_freq_data),
+                repetition_freq_offsets,
+                repetition_penalty=repetition_penalty,
+            )
+
             apply_penalties_to_logits(
                 logits_buffer,
                 ops.buffer_load(penalty_freq_data),
                 penalty_freq_offsets,
                 frequency_penalty=frequency_penalty,
                 presence_penalty=presence_penalty,
-            )
-
-            apply_penalties_to_logits(
-                logits_buffer,
-                ops.buffer_load(repetition_freq_data),
-                repetition_freq_offsets,
-                repetition_penalty=repetition_penalty,
             )
 
         if sampling_config.enable_min_tokens:
