@@ -82,8 +82,6 @@ class ModelGroup(click.Group):
     def get_command(self, ctx, cmd_name):
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
-            if any(param.name == "task_flags" for param in rv.params):
-                rv.ignore_unknown_options = True
             return rv
         supported = ", ".join(self.list_commands(ctx))
         ctx.fail(
@@ -161,7 +159,12 @@ def common_server_options(func):
 @click.option(
     "--task", type=str, default="text_generation", help="The task to run."
 )
-@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
+@click.option(
+    "--task-arg",
+    multiple=True,
+    type=str,  # Take them all in as strings
+    help="Task-specific arguments to pass to the underlying model (can be used multiple times).",
+)
 def cli_serve(
     profile_serve: bool,
     performance_fake: str,
@@ -170,7 +173,7 @@ def cli_serve(
     experimental_enable_kvcache_agent: bool,
     port: int,
     task: str,
-    task_flags: list[str],
+    task_arg: tuple[str, ...],
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -192,7 +195,7 @@ def cli_serve(
     pipeline_config: PipelineConfig
     if task == PipelineTask.AUDIO_GENERATION:
         pipeline_config = AudioGenerationConfig.from_flags(
-            parse_task_flags(task_flags), **config_kwargs
+            parse_task_flags(task_arg), **config_kwargs
         )
     else:
         pipeline_config = PipelineConfig(**config_kwargs)
