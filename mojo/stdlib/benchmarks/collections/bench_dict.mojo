@@ -15,6 +15,7 @@
 # the -t flag. Remember to replace it again before pushing any code.
 
 from collections.dict import DictEntry
+from hashlib import Hasher
 from math import ceil
 from random import *
 from sys import sizeof
@@ -100,9 +101,9 @@ fn bench_dict_lookup[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn total_bytes_used(items: Dict[Int, Int]) -> Int:
+fn total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
     # the allocated memory by entries:
-    var entry_size = sizeof[Optional[DictEntry[Int, Int]]]()
+    var entry_size = sizeof[Optional[DictEntry[Int, Int, H]]]()
     var amnt_bytes = items._entries.capacity * entry_size
     amnt_bytes += sizeof[Dict[Int, Int]]()
 

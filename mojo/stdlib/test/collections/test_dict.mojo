@@ -15,7 +15,7 @@
 from collections.dict import OwnedKwargsDict
 
 from test_utils import CopyCounter
-from hashlib import Hashable, Hasher
+from hashlib import Hashable, Hasher, default_comp_time_hasher
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -613,8 +613,8 @@ fn test_dict_setdefault() raises:
 def test_compile_time_dict():
     alias N = 10
 
-    fn _get_dict() -> Dict[String, Int32]:
-        var res = Dict[String, Int32]()
+    fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+        var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
             res[String(i)] = i
         return res
