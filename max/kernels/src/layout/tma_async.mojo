@@ -209,6 +209,38 @@ struct SharedMemBarrier(Copyable, Movable):
         """
         return mbarrier_arrive_expect_tx_relaxed(self.unsafe_ptr(), bytes)
 
+    @always_inline
+    fn arrive_and_expect_bytes(
+        ref [AddressSpace.SHARED]self,
+        bytes: Int32,
+        cta_id: UInt32,
+        pred: UInt32,
+    ):
+        """Configure the barrier to expect a specific number to bytes to be transferred
+        at a remote CTA.
+
+         Used with TMA operations to indicate the expected size of data transfer.
+         The barrier will be satisfied when the specified number of bytes has been
+         transferred at the specified CTA in the cluster.
+
+        Args:
+            bytes: Number of bytes expected to be transferred.
+            cta_id: The CTA ID in a cluster to configure an arrival.
+            pred: Predication on the arrival configuration instruction.
+        """
+
+        alias asm = """
+        .reg .pred p;
+        .reg .b32 remAddr32;
+        setp.eq.u32 p, $2, 1;
+        @p mapa.shared::cluster.u32  remAddr32, $0, $1;
+        @p mbarrier.arrive.expect_tx.shared::cluster.b64  _, [remAddr32], $3;
+        """
+
+        inlined_assembly[asm, NoneType, constraints="r,r,r,r"](
+            Int32(Int(self.unsafe_ptr())), cta_id, pred, bytes
+        )
+
     @always_inline("nodebug")
     fn wait(ref [AddressSpace.SHARED]self, phase: UInt32 = 0):
         """Wait until the barrier is satisfied.
