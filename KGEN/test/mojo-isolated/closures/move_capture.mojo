@@ -20,7 +20,7 @@ fn use(u: Thing):
 
 
 # CHECK-LABEL: lit.fn @"outer
-fn outer(owned x: Thing):
+fn outer(var x: Thing):
     # CHECK: call {{.*}}__init__{{.*}}(%x, %{{.*}})
     @__move_capture(x)
     fn nested() escaping:

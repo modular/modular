@@ -59,7 +59,7 @@ fn use(x: Int):
     pass
 
 
-fn make_diff_closures(m: MemType, z: __mlir_type.index, owned w: Int):
+fn make_diff_closures(m: MemType, z: __mlir_type.index, var w: Int):
     var x = w
 
     fn ret_mem(y: MemType) -> MemType:
@@ -71,6 +71,6 @@ fn make_diff_closures(m: MemType, z: __mlir_type.index, owned w: Int):
     fn ret_none(p: Int):
         use(m)
 
-    fn capture_slvalue(owned q: Int, ww: Int):
+    fn capture_slvalue(var q: Int, ww: Int):
         x = x + x
         use(w)

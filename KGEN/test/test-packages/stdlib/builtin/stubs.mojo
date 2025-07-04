@@ -540,7 +540,7 @@ struct List[T: AnyType](Copyable, Movable):
     fn __init__(out self, *elements: T, __list_literal__: () = ()):
         pass
 
-    fn append(mut self, owned value: T):
+    fn append(mut self, var value: T):
         pass
 
     fn __getitem__(ref self, idx: Int) -> ref [self] T:
@@ -551,7 +551,7 @@ struct Set[T: AnyType]:
     fn __init__(out self, *elements: T, __set_literal__: () = ()):
         pass
 
-    fn add(mut self, owned value: T):
+    fn add(mut self, var value: T):
         pass
 
 
@@ -1026,7 +1026,7 @@ struct Optional[T: Copyable & Movable]:
         pass
 
     @implicit
-    fn __init__(out self, owned value: T):
+    fn __init__(out self, var value: T):
         pass
 
     @implicit

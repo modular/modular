@@ -158,17 +158,17 @@ struct ExampleCM:
   fn __exit__(self, err: Error) -> Bool:
     return True # Raise
 
-def withUsingImmutableVariable(owned a: ExampleCM):
+def withUsingImmutableVariable(var a: ExampleCM):
   var x = 77
   with a^ as x:
     pass
 
 # External Issue #529 https://github.com/modular/mojo/issues/529
-def withWithNoColon(owned a: ExampleCM):
+def withWithNoColon(var a: ExampleCM):
   # expected-error @below {{expected ':' or ',' after 'with' expression}}
   with a^ as b
 
-fn withNoRaise(owned mgr: ExampleCM): # expected-note {{or mark surrounding function as 'raises'}}
+fn withNoRaise(var mgr: ExampleCM): # expected-note {{or mark surrounding function as 'raises'}}
   with mgr^:
     # expected-error @below {{cannot raise error in this context}}
     # expected-note @below {{try surrounding 'raise' in a 'try' block}}
@@ -187,7 +187,7 @@ fn withNoRaise(owned mgr: ExampleCM): # expected-note {{or mark surrounding func
 struct BadCM: # expected-note {{'BadCM' declared here}}
   fn __init__(out self): pass
 
-  fn __enter__(owned self) -> Int:
+  fn __enter__(var self) -> Int:
     return 42
   fn __exit__(self):
     pass # normal

@@ -69,7 +69,7 @@ struct OverloadArgumentConventions:
         x2 *= 2
         self.val = x2
 
-    fn __init__(out self, *, owned x3: Int):
+    fn __init__(out self, *, var x3: Int):
         self.val = x3 * 3
 
 

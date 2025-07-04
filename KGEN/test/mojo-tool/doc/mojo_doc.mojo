@@ -155,7 +155,7 @@ def fn_that_raises() -> Int:
 # CHECK:          "description": "This is an mut arg."
 # CHECK:          "name": "inoutArg"
 # CHECK:          "type": "Int"
-# CHECK:          "convention": "owned"
+# CHECK:          "convention": "var"
 # CHECK:          "description": "This is an owned arg."
 # CHECK:          "name": "ownedArg"
 # CHECK:          "type": "Int"
@@ -163,7 +163,7 @@ def fn_that_raises() -> Int:
 # CHECK:          "description": "This is a borrowedArg."
 # CHECK:          "name": "borrowedArg"
 # CHECK:          "type": "Int"
-# CHECK:      "signature": "fn_with_args(arg: Int, mut inoutArg: Int, owned ownedArg: Int, borrowedArg: Int)",
+# CHECK:      "signature": "fn_with_args(arg: Int, mut inoutArg: Int, var ownedArg: Int, borrowedArg: Int)",
 # CHECK:      "summary": "This is a function summary."
 
 
@@ -487,7 +487,7 @@ fn variadic_arg_hack[
 # CHECK:         "passingKind": "pos_or_kw",
 # CHECK:         "type": "Int"
 
-# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, owned **kwargs: String)",
+# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, var **kwargs: String)",
 
 
 fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: String):

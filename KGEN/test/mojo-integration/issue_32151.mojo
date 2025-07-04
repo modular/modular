@@ -36,14 +36,14 @@ struct MTuple[T: Copyable & Movable](Copyable, Movable, Stringable, Writable):
         return self
 
     @always_inline
-    fn cons(self, owned other: Self) -> Self:
+    fn cons(self, var other: Self) -> Self:
         var new = self
         for e in other.elts:
             new.elts.append(e)
         return new
 
     @always_inline
-    fn __add__(self, owned other: Self) -> Self:
+    fn __add__(self, var other: Self) -> Self:
         var new = Self()
         for e in self.elts:
             new.elts.append(e)

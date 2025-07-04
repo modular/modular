@@ -25,7 +25,7 @@ struct EmptyExplicit:
         pass
 
     # CHECK-LABEL: @"consume
-    fn consume(owned self):
+    fn consume(var self):
         # CHECK: lit.ownership.mark_destroyed %self
         __disable_del self
         # CHECK-NOT: lit.call {{.*}}__del__
@@ -42,7 +42,7 @@ struct ImplicitlyDestructibleContainerOfExplicit:
     fn __del__(owned self):
         self.m^.consume()
 
-fn foo1[T: Movable](owned x: T) -> T:
+fn foo1[T: Movable](var x: T) -> T:
     # Is fine, we move it away instead of calling x.__del__()
     return x^
 
@@ -50,6 +50,6 @@ fn foo2[T: UnknownDestructibility](x: T):
     # Is fine, since x is a borrow
     pass
 
-fn foo3[T: ImplicitlyDestructible](owned x: T):
+fn foo3[T: ImplicitlyDestructible](var x: T):
     # Is fine, there's a x.__del__() available
     pass

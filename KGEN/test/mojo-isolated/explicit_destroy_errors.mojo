@@ -14,7 +14,7 @@ from builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 struct EmptyExplicit:
     fn __init__(out self):
         pass
-    fn consume(owned self):
+    fn consume(var self):
         __disable_del self
 
 fn errorExample():
@@ -38,7 +38,7 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
 
 # CHECK-LABEL: @"foo
 # expected-error @below {{Unhandled explicit_destroy type UnknownDestructibility}}
-fn foo[T: UnknownDestructibility](owned x: T):
+fn foo[T: UnknownDestructibility](var x: T):
     pass
 
 
@@ -50,7 +50,7 @@ trait LinearCopyable:
 
 # CHECK-LABEL: @"receiveLinearCopyable
 # expected-error @below {{Unhandled explicit_destroy type LinearCopyable}}
-fn receiveLinearCopyable[T: LinearCopyable](owned x: T):
+fn receiveLinearCopyable[T: LinearCopyable](var x: T):
     pass
 
 @explicit_destroy
@@ -59,7 +59,7 @@ struct LinearCopyableStruct(LinearCopyable):
         pass
 
 # CHECK-LABEL: @"upcastLinearCopyable
-fn upcastLinearCopyable(owned x: LinearCopyableStruct):
+fn upcastLinearCopyable(var x: LinearCopyableStruct):
     receiveLinearCopyable(x)
 
 

@@ -459,7 +459,7 @@ struct MyStringReturningCtx:
     fn __init__(out self):
         self.s = "hey"
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         return self^
 
     fn __moveinit__(out self, owned existing: Self):
@@ -655,7 +655,7 @@ fn test_elif(cond: Bool, cond2: Bool):
 # https://github.com/modular/mojo/issues/3710
 # Mojo frees memory while reference to it is still in use
 # CHECK-LABEL: lit.fn @"loop_any_origin
-fn loop_any_origin(owned mem: MemExample, cond: Bool):
+fn loop_any_origin(var mem: MemExample, cond: Bool):
     # CHECK: lit.call {{.*}}unsafe_ptr
     ptr = mem.unsafe_ptr()
 

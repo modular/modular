@@ -14,5 +14,5 @@ fn Error():
 
 struct FailingStruct:
     # expected-error @below {{'Error' doesn't resolve to a type}}
-    fn failure(owned self) raises:
+    fn failure(var self) raises:
         pass

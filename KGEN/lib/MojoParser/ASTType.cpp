@@ -1061,7 +1061,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
 
   auto printConvention = [&os](ArgConvention conv) {
     if (conv == ArgConvention::OwnedMem)
-      os << "owned ";
+      os << "var ";
     else if (conv == ArgConvention::Mut)
       os << "mut ";
     else if (conv == ArgConvention::ByRefResult)

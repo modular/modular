@@ -32,7 +32,7 @@ struct SomeReg(SomeTrait):
 
 
 # This function takes a pack of owned values by Trait.
-fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
+fn takeOwnedAnyTypePack[*Ts: AnyType](var *rest: *Ts):
     pass
 
 
@@ -51,7 +51,7 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
 # CHECK-LABEL: lit.fn @"takeOwnedSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<{{.*}}@VariadicPack<:!Bool {:i1 1}, {{.*}}origin<1> = *"rest`"},
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>, mut *"rest`1"> owned_in_mem|pack_vararg)
-fn takeOwnedSomeTraitPack[*Ts: SomeTrait](owned *rest: *Ts):
+fn takeOwnedSomeTraitPack[*Ts: SomeTrait](var *rest: *Ts):
     pass
 
 

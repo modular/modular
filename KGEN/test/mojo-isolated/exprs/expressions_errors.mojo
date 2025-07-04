@@ -177,16 +177,16 @@ fn test_func_type():
     alias float1: async fn() -> None = test_func_type
     # expected-error @below {{fn[Int]() -> MemType}}
     alias float2: fn[a: Int]() -> MemType = test_func_type
-    # expected-error @below {{fn[Int](owned Int) -> MemType}}
-    alias float3: fn[a: Int](owned Int) -> MemType = test_func_type
+    # expected-error @below {{fn[Int](var Int) -> MemType}}
+    alias float3: fn[a: Int](var Int) -> MemType = test_func_type
     # expected-error @below {{fn[Int](mut *Int) -> None}}
     alias float4: fn[a: Int](mut *Int) -> None = test_func_type
     # expected-error @below {{fn(*MemType) raises capturing -> None}}
     alias float5: def(*MemType) capturing -> None = test_func_type
-    # expected-error @below {{'fn[*AnyType](owned * *$0) capturing -> None'}}
-    alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{'fn[*AnyType](owned * *$0) capturing -> None'}}
-    alias float6a: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
+    # expected-error @below {{'fn[*AnyType](var * *$0) capturing -> None'}}
+    alias float6: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
+    # expected-error @below {{'fn[*AnyType](var * *$0) capturing -> None'}}
+    alias float6a: fn[*Ts: AnyType](var* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[AnyTrivialRegType](mut *$0) capturing -> None}}
     alias float7: fn[T: AnyTrivialRegType](mut *T) capturing -> None = test_func_type
 

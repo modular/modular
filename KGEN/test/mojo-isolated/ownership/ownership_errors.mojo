@@ -33,7 +33,7 @@ struct MemExample:
     fn noop(self):
         pass
 
-    fn consume(owned self):
+    fn consume(var self):
         pass
 
     fn __del__(owned self):
@@ -61,7 +61,7 @@ struct RegExample:
     fn __del__(owned self):
         pass
 
-    fn consume(owned self):
+    fn consume(var self):
         pass
 
 
@@ -308,21 +308,21 @@ fn testClosure(a: Bool):
 
 
 # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
-fn disableDtor(owned x: MoreComplexExample):
+fn disableDtor(var x: MoreComplexExample):
     x.mem^.consume()
 
 
-fn badMarkDestroyed(owned x: MoreComplexExample):
+fn badMarkDestroyed(var x: MoreComplexExample):
     # expected-error @+1 {{can only mark full values as destroyed, not subfields}}
     __disable_del x.mem
 
 
 fn fieldConsumeError(
-    owned w: MoreComplexExample,  # expected-note {{'w' declared here}}
+    var w: MoreComplexExample,  # expected-note {{'w' declared here}}
     # expected-error @+1 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
-    owned x: MoreComplexExample,
-    owned y: MoreComplexExample,
-    owned z: MoreComplexExample,  # expected-note {{'z' declared here}}
+    var x: MoreComplexExample,
+    var y: MoreComplexExample,
+    var z: MoreComplexExample,  # expected-note {{'z' declared here}}
 ):
     x.mem^.consume()
 
@@ -353,7 +353,7 @@ struct SimpleStructNoDtor:
         pass
 
 
-fn consume(owned x: SimpleStructNoDtor):
+fn consume(var x: SimpleStructNoDtor):
     pass
 
 
@@ -378,7 +378,7 @@ struct StructWithNoDel:
         self.x = a
 
 
-fn take(owned x: StructWithNoDel):
+fn take(var x: StructWithNoDel):
     pass
 
 
@@ -474,7 +474,7 @@ fn bad_addr_space[
 # Returning a reference to the caller's stack.
 # https://github.com/modularml/modular/issues/38421
 # This is valid to declare...
-fn return_owned_arg_ref(owned x: String) -> Pointer[String, __origin_of(x)]:
+fn return_owned_arg_ref(var x: String) -> Pointer[String, __origin_of(x)]:
     return Pointer(to=x)
 
 
@@ -501,7 +501,7 @@ struct StrArray:
     fn __getitem__(self, x: Int) -> String:
         return String()
 
-    fn __setitem__(mut self, x: Int, owned value: String):
+    fn __setitem__(mut self, x: Int, var value: String):
         pass
 
 
@@ -514,7 +514,7 @@ fn test_inout_ref(mut v: StrArray, i: Int):
 
 
 # expected-note @below {{'a' declared here}}
-fn test_disable_del(owned a: MemExample, owned b: String, owned c: MemExample):
+fn test_disable_del(var a: MemExample, var b: String, var c: MemExample):
     # expected-warning @+1 {{assignment to 'tmp1' was never used}}
     tmp1 = a.x
     __disable_del a

@@ -16,7 +16,7 @@ struct RegPassable(Copyable):
     pass
 
 
-fn owned_generic[T: AnyType](owned x: T):
+fn owned_generic[T: AnyType](var x: T):
     pass
 
 
@@ -25,7 +25,7 @@ fn borrowed_generic[T: AnyType](x: T):
 
 
 # CHECK-LABEL: lit.fn @"test_owned{{.*}}(%x: !lit.ref<!RegPassable, mut *"x`"> owned_in_mem)
-fn test_owned(owned x: RegPassable):
+fn test_owned(var x: RegPassable):
     # CHECK: [[XIMUT:%.*]] = lit.ref.immut %x : <!RegPassable, mut *"x`">
     # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMUT]])
     borrowed_generic(x)

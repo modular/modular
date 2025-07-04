@@ -238,7 +238,7 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: <T: !Movable
 # CHECK-SAME: :!Movable T, {{.*}}> owned_in_mem
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
-fn move_me[T: Movable](owned value: T) -> T:
+fn move_me[T: Movable](var value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
     # CHECK-NEXT: call[{{.*}}get_vtable_entry({{.*}} T, "__moveinit__")]{{.*}}(%value, %__result__)
     return value^
@@ -386,14 +386,14 @@ fn ambiguous_thunk(x: ThunkAmbiguityRP):
 
 
 trait OwnedArguments:
-    fn take(owned self, owned x: RegTraitType):
+    fn take(var self, var x: RegTraitType):
         ...
 
 
 # CHECK-LABEL: lit.struct.decl @NoDtor
 @register_passable
 struct NoDtor(OwnedArguments, DefaultConstructible):
-    fn take(owned self, owned x: RegTraitType):
+    fn take(var self, var x: RegTraitType):
         pass
 
     fn __init__(out self):
@@ -816,7 +816,7 @@ struct Foo[T: EmptyTrait]:
 
 
 # CHECK-LABEL: lit.fn @"test_infer_sub_trait
-fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
+fn test_infer_sub_trait[T: OtherEmptyTrait](var foo: Foo[T], bar: Bar[T]):
     # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait [!kgen.param<:!OtherEmptyTrait T>, {{.*}}], :!OtherEmptyTrait T>(%foo, %bar)
     var copy = foo.infer_sub_trait(bar)
 
@@ -914,11 +914,11 @@ struct TestNamedResultConformance(Trait1):
         pass
 
 fn test_pack_of_traits1[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait]
-                       (owned *args: *elt_types):
+                       (var *args: *elt_types):
      pass
 
 fn test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
-    owned storage: VariadicPack[_, _, elt_trait, *elt_types]):
+    var storage: VariadicPack[_, _, elt_trait, *elt_types]):
      pass
 
 
@@ -941,10 +941,10 @@ struct FormVariadicPackWithCastedElementVariadic[
     element_trait: _CollectionElementMetaType, //,
     *element_types: element_trait]:
 
-    fn __init__(out self, owned *args: *element_types):
+    fn __init__(out self, var *args: *element_types):
         # This should work.
         self.foo(args^)
-    fn foo(self, owned storage: VariadicPack[_, _, element_trait, *element_types]):
+    fn foo(self, var storage: VariadicPack[_, _, element_trait, *element_types]):
         pass
 
 # This tests that we can take UnsafePointer (which has an AnyType bound for T)

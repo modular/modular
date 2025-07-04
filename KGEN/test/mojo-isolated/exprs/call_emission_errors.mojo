@@ -305,7 +305,7 @@ fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     mutate_pack(s, s)
 
 
-fn capture_exclusivity(owned x: MemExample):
+fn capture_exclusivity(var x: MemExample):
     @parameter
     fn capture_and_read(y: MemExample):
         _ = x^
@@ -346,7 +346,7 @@ struct MyRPStruct2:
         pass
 
 
-fn take_owned_and_mutate_rp(owned a: MyRPStruct2, mut b: MyRPStruct2):
+fn take_owned_and_mutate_rp(var a: MyRPStruct2, mut b: MyRPStruct2):
     pass
 fn rp_exclusivity(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}

@@ -33,6 +33,6 @@ fn foo(x: Index, y: MemType, z: MemType):
 
 
 # CHECK-LABEL: lit.fn @"makes_escaping_closure_3
-fn makes_escaping_closure_3(owned x: Index, owned y: MemType, mut z: MemType):
+fn makes_escaping_closure_3(var x: Index, var y: MemType, mut z: MemType):
     fn take_owned_and_escape():
         foo(x, y, z)

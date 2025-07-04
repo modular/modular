@@ -24,7 +24,7 @@ fn use(y: Thing):
 
 
 # CHECK-LABEL: lit.fn @"capture_implicit_origin
-fn capture_implicit_origin(owned x: Foo, y: Thing[__origin_of(x)]):
+fn capture_implicit_origin(var x: Foo, y: Thing[__origin_of(x)]):
     # CHECK: lit.var.decl "anonymous*" synth : !lit.ref<{{.*}}<:origin<1> *"x`">
     fn capture_it():
         use(y)
