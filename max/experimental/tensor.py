@@ -18,6 +18,7 @@ import max.graph
 from max import _core as mlir
 from max._core.dialects import builtin, mo
 from max.graph import TensorType, TensorValueLike, ops
+from max.graph.graph import _location
 
 _SESSION: ContextVar[max.engine.api.InferenceSession] = ContextVar("_SESSION")
 
@@ -222,9 +223,7 @@ class ComputeGraph:
             type = driver_tensor_type(tensor.driver_tensor).to_mlir()
             inputs = op.function_type.inputs
             op.function_type = builtin.FunctionType([*inputs, type])
-            tensor._mlir_value = block.add_argument(
-                type, self.graph._location()
-            )
+            tensor._mlir_value = block.add_argument(type, _location())
         self.sources[tensor._mlir_value] = tensor
 
 
