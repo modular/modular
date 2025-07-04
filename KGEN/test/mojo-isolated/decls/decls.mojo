@@ -399,7 +399,7 @@ struct MutatingAdd:
 
 
 # CHECK-LABEL: lit.fn @"testMutatingAdd
-fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
+fn testMutatingAdd(var a: MutatingAdd, b: MutatingAdd):
     # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%a, %b)
     a + b
 

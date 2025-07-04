@@ -455,7 +455,7 @@ void ParsedArgument::print(raw_indented_ostream &os) const {
       return "Unspec";
     case ParsedArgument::kConventionMut:
       return "Mut";
-    case ParsedArgument::kConventionOwned:
+    case ParsedArgument::kConventionVar:
       return "Owned";
     case ParsedArgument::kConventionRead:
       return "Borrowed";

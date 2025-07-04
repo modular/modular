@@ -76,7 +76,7 @@ struct ParsedArgument {
   enum PAArgConvention {
     kConventionUnspec = 0,      // Nothing specified
     kConventionMut = 1,         // mut x
-    kConventionOwned = 2,       // owned x
+    kConventionVar = 2,         // owned x
     kConventionRead = 3,        // read x
     kConventionRef = 4,         // ref [origin, addrspace] x
     kConventionOut = 5,         // __init__(out self) argument
