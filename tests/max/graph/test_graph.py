@@ -23,6 +23,7 @@ from max import mlir
 from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph.graph import _location
 from max.mlir.dialects import rmo
 
 empty_graphs = st.builds(
@@ -112,7 +113,7 @@ def test_location() -> None:
     with Graph("location") as graph:
 
         def elided():
-            return graph._location()
+            return _location(ignore_frames=1)
 
         def foo():
             return elided()
@@ -129,7 +130,7 @@ def test_location_no_stack() -> None:
         with mock.patch("traceback.extract_stack") as mock_stack:
             mock_stack.return_value = []
 
-            loc = graph._location()
+            loc = _location()
             assert loc == mlir.Location.unknown()
 
 

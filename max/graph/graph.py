@@ -164,6 +164,72 @@ class _GraphWeight:
     value: TensorValue
 
 
+def _location(ignore_frames: int = 1):
+    """Creates an MLIR Location with the current Python call stack."""
+    if not mlir.Context.current:
+        raise RuntimeError("Can't create location: No MLIR context active")
+
+    # Extract the stack into summaries
+    # - Avoids reference cycles
+    # - Doesn't keep references to closures
+
+    # Always remove at least _location
+    tb = traceback.extract_stack()[: -(ignore_frames + 1)]
+    if not tb:
+        return mlir.Location.unknown()
+
+    return _graph.frame_loc(mlir.Context.current, tb)
+
+
+def _to_mlir(o):
+    # Convert args from instances of Python graph-api Value() to mlir.Value
+    if hasattr(o, "to_mlir"):
+        return o.to_mlir()
+    elif isinstance(o, (list, tuple)):
+        return type(o)(_to_mlir(ov) for ov in o)
+    elif isinstance(o, dict):
+        return {k: _to_mlir(v) for k, v in o.items()}
+    return o
+
+
+def _set_output_param_decls(op: Operation, params: dict[str, None]):
+    # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
+    # - nanobind doesn't allow custom metaclasses, but __instancecheck__
+    #   must be defined on a metaclass
+    # - Interfaces are protocols even though we know when they are explicitly
+    #   implemented so that attrs/types/ops may implement them without declaring
+    #   it in the stub files
+    # - it's not trivial to define our own `isa`-like check. Such a check needs
+    #   to name the template parameter for `mlir::isa<T>` explicitly in C++, but
+    #   if `isa` is defined as a staticmethod it interferes with protocol type
+    #   checking.
+    if not hasattr(op, "output_param_decls"):
+        return
+    op: Operation & _mo.ParamDeclarationInterface  # type: ignore
+    # Add symbolic dims of tensor results to the list of graph params and
+    # declared output params of the op
+    # Use a dict as an ordered set for new param decls. Maps keys to None.
+    result_parameters = dict.fromkeys(
+        itertools.chain.from_iterable(
+            value.type.parameters
+            for result in op.results
+            if isinstance(
+                value := Value.from_mlir(result), (TensorValue, BufferValue)
+            )
+        )
+    )
+    names = [parameter.name for parameter in result_parameters]
+    # Track any newly declared parameters.
+    if new_params := dict.fromkeys(names - params.keys()):
+        params.update(new_params)
+        si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
+        # We can't overload the setter yet, so the interface annotation is wrong
+        # TODO(MAXPLAT-306): See https://github.com/wjakob/nanobind/discussions/1063
+        op.output_param_decls = kgen.ParamDeclArrayAttr(
+            [kgen.ParamDeclAttr(name, si64) for name in new_params]
+        )
+
+
 class Graph:
     """Represents a single MAX graph.
 
@@ -271,7 +337,7 @@ class Graph:
         context = context or mlir.Context()
         self._should_verify_ops = True
 
-        with context, self._location() as loc:
+        with context, _location() as loc:
             # Create the top level module op.
             self._module = module or mlir.Module.create()
             _module: builtin.ModuleOp = Operation._from_cmlir(  # type: ignore
@@ -516,67 +582,19 @@ class Graph:
         self, op_type: type[Operation], *args, **kwargs
     ) -> list[Value]:
         """Wrapper for clients that only require the op results."""
-        with self._context, self._location() as location:
+        with self._context, _location() as location:
             builder = OpBuilder(Block._from_cmlir(self._current_block).end)
             op = builder.create(op_type, location)(
-                *self._to_mlir(args), **self._to_mlir(kwargs)
+                *_to_mlir(args), **_to_mlir(kwargs)
             )
             assert op.verify()
-        self._set_output_param_decls(op)
+        _set_output_param_decls(op, self._params)
         return [Value.from_mlir(result) for result in op.results]
 
     def _add_op(self, op, *args, **kwargs) -> list[Value]:
         """Wrapper for clients that only require the op results."""
         results, _ = self._add_op_get_op_with_results(op, *args, **kwargs)
         return results
-
-    @classmethod
-    def _to_mlir(cls, o):
-        # Convert args from instances of Python graph-api Value() to mlir.Value
-        if hasattr(o, "to_mlir"):
-            return o.to_mlir()
-        elif isinstance(o, (list, tuple)):
-            return type(o)(cls._to_mlir(ov) for ov in o)
-        elif isinstance(o, dict):
-            return {k: cls._to_mlir(v) for k, v in o.items()}
-        return o
-
-    def _set_output_param_decls(self, op: Operation) -> None:
-        # Interfaces don't yet support isinstance checks, so this is a cheap proxy.
-        # - nanobind doesn't allow custom metaclasses, but __instancecheck__
-        #   must be defined on a metaclass
-        # - Interfaces are protocols even though we know when they are explicitly
-        #   implemented so that attrs/types/ops may implement them without declaring
-        #   it in the stub files
-        # - it's not trivial to define our own `isa`-like check. Such a check needs
-        #   to name the template parameter for `mlir::isa<T>` explicitly in C++, but
-        #   if `isa` is defined as a staticmethod it interferes with protocol type
-        #   checking.
-        if not hasattr(op, "output_param_decls"):
-            return
-        op: Operation & _mo.ParamDeclarationInterface  # type: ignore
-        # Add symbolic dims of tensor results to the list of graph params and
-        # declared output params of the op
-        # Use a dict as an ordered set for new param decls. Maps keys to None.
-        result_parameters = set(
-            itertools.chain.from_iterable(
-                value.type.parameters
-                for result in op.results
-                if isinstance(
-                    value := Value.from_mlir(result), (TensorValue, BufferValue)
-                )
-            )
-        )
-        names = [parameter.name for parameter in result_parameters]
-        # Track any newly declared parameters.
-        if new_params := dict.fromkeys(names - self._params.keys()):
-            self._params.update(new_params)
-            si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
-            # We can't overload the setter yet, so the interface annotation is wrong
-            # TODO(MAXPLAT-306): See https://github.com/wjakob/nanobind/discussions/1063
-            op.output_param_decls = kgen.ParamDeclArrayAttr(
-                [kgen.ParamDeclAttr(name, si64) for name in new_params]
-            )
 
     def _add_op_get_op_with_results(
         self, op, *args, _ip: Optional[mlir.InsertionPoint] = None, **kwargs
@@ -604,7 +622,7 @@ class Graph:
         # Construct and insert an op in the body of the graph
         # Insertion point is where the op is to be created in the IR structure
         # location contains info about the source of the op (e.g. file, line)
-        with _ip or mlir.InsertionPoint(self._body), self._location():
+        with _ip or mlir.InsertionPoint(self._body), _location():
             try:
                 with self._capturing_mlir_diagnostics():
                     results = op(*unwrapped_args, **unwrapped_kwargs)
@@ -647,7 +665,7 @@ class Graph:
                     # Intentionally suppress extra stack traces from max._mlir.
                 ) from None
 
-        self._set_output_param_decls(Operation._from_cmlir(staged_op))
+        _set_output_param_decls(Operation._from_cmlir(staged_op), self._params)
         if isinstance(results, (mlir.Operation, mlir.OpView)):
             return [], staged_op
 
@@ -691,7 +709,7 @@ class Graph:
             It is the caller's responsibility to update the graph chain after
             the block is built.
         """
-        with self._block(block), self._location():
+        with self._block(block), _location():
             expected_output_types = expected_output_types or []
 
             results = block_fn() or []
@@ -780,7 +798,7 @@ class Graph:
     def _load_mlir(self, path: Path) -> None:
         self._context_state = []
         with open(path) as f:
-            with mlir.Context() as ctx, self._location() as loc:
+            with mlir.Context() as ctx, _location() as loc:
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
@@ -878,26 +896,6 @@ class Graph:
 
     def __repr__(self) -> str:
         return str(self._mlir_op)
-
-    def _location(self):
-        """Creates an MLIR Location with the current Python call stack."""
-        if not mlir.Context.current:
-            raise RuntimeError("Can't create location: No MLIR context active")
-
-        # Originally this was capturing the current stack frame. It was really
-        # fast, but lead to some major issues due to the current frame keeping
-        # local variables alive. Instead we extract the stack into summaries.
-        # This is a bit slower, but still plenty fast (3s llama3 graph build
-        # time vs 2s with current frame). It also avoids any references cycles
-        # and is cleaned up properly.
-
-        # Remove the last 2 elements from the stack to get rid of `_location()`
-        # and `_add_op()`.
-        tb = traceback.extract_stack()[:-2]
-        if not tb:
-            return mlir.Location.unknown()
-
-        return _graph.frame_loc(mlir.Context.current, tb)
 
     def _import_kernels(self, paths: Iterable[Path]) -> None:
         with self._context:
