@@ -120,9 +120,9 @@ class PipelineConfig(MAXConfig):
     pad_to_multiple_of: int = 2
     """Pad input tensors to be a multiple of value provided."""
 
-    target_num_new_tokens: Optional[int] = None
+    target_num_new_tokens: int = 8192
     """The target number of un-encoded tokens to include in each batch.
-    If not set, this will be set to a best-guess optimal value based on model, hardware, and available memory."""
+    This value is used for chunked prefill and memory estimation."""
 
     enable_echo: bool = False
     """Whether the model should be built with echo capabilities."""

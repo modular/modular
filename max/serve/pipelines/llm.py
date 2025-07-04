@@ -314,14 +314,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             os.kill(os.getpid(), signal.SIGTERM)
 
 
-def get_target_ce_batch_tokens(pipeline_config: PipelineConfig) -> int:
-    if pipeline_config.target_num_new_tokens is not None:
-        return pipeline_config.target_num_new_tokens
-
-    # TODO(E2EOPT-23) temporary hard-coded default. We'll make this smarter later.
-    return 8192
-
-
 def batch_config_from_pipeline_config(
     pipeline_config: PipelineConfig,
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
@@ -337,7 +329,6 @@ def batch_config_from_pipeline_config(
             pipeline_role=pipeline_config.pipeline_role,
         )
 
-    target_ce_batch_tokens = get_target_ce_batch_tokens(pipeline_config)
     assert pipeline_config.max_ce_batch_size is not None
     kv_cache_config = pipeline_config.model_config.kv_cache_config
     cache_strategy = kv_cache_config.cache_strategy
@@ -349,7 +340,7 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_ce_batch_size,
             ),
             max_forward_steps=pipeline_config.max_num_steps,
-            target_ce_batch_tokens=target_ce_batch_tokens,
+            target_ce_batch_tokens=pipeline_config.target_num_new_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
@@ -362,7 +353,7 @@ def batch_config_from_pipeline_config(
                 pipeline_config.max_ce_batch_size,
             ),
             max_forward_steps=pipeline_config.max_num_steps,
-            target_ce_batch_tokens=target_ce_batch_tokens,
+            target_ce_batch_tokens=pipeline_config.target_num_new_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             pipeline_role=pipeline_config.pipeline_role,
@@ -392,9 +383,7 @@ def batch_config_from_pipeline_config(
     log_str += f"\tBatch Size: {pipeline_config.max_batch_size}\n"
     log_str += f"\tChunked Prefill: {'Enabled' if pipeline_config.enable_chunked_prefill else 'Disabled'}\n"
     if pipeline_config.enable_chunked_prefill:
-        log_str += (
-            f"\tChunked Prefill Chunk Size: {target_ce_batch_tokens} Tokens\n"
-        )
+        log_str += f"\tChunked Prefill Chunk Size: {pipeline_config.target_num_new_tokens} Tokens\n"
     logger.info(log_str)
 
     return batch_config
