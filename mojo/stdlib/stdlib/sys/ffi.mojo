@@ -229,7 +229,7 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
         """
         return self
 
-    fn check_symbol(self, owned name: String) -> Bool:
+    fn check_symbol(self, var name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
 
         Args:
@@ -273,7 +273,7 @@ struct DLHandle(Boolable, Copyable, ExplicitlyCopyable, Movable):
     @always_inline
     fn get_function[
         result_type: AnyTrivialRegType
-    ](self, owned name: String) -> result_type:
+    ](self, var name: String) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 

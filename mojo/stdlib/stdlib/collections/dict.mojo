@@ -219,7 +219,7 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable](
     var value: V
     """The value associated with the key."""
 
-    fn __init__(out self, owned key: K, owned value: V):
+    fn __init__(out self, var key: K, var value: V):
         """Create an entry from a key and value, computing the hash.
 
         Args:
@@ -238,7 +238,7 @@ struct DictEntry[K: KeyElement, V: Copyable & Movable](
         """
         return self
 
-    fn reap_value(owned self, out result: V):
+    fn reap_value(var self, out result: V):
         """Take the value from an owned entry.
 
         Returns:
@@ -616,7 +616,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         """
         return self._find_ref(key)
 
-    fn __setitem__(mut self, owned key: K, owned value: V):
+    fn __setitem__(mut self, var key: K, var value: V):
         """Set a value in the dictionary by key.
 
         Args:
@@ -817,7 +817,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         """
         return self.find(key).or_else(default)
 
-    fn pop(mut self, key: K, owned default: V) -> V:
+    fn pop(mut self, key: K, var default: V) -> V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -949,7 +949,7 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
         self._index = _DictIndex(self._reserved())
 
     fn setdefault(
-        mut self, key: K, owned default: V
+        mut self, key: K, var default: V
     ) -> ref [self._entries[0].value().value] V:
         """Get a value from the dictionary by key, or set it to a default if it
         doesn't exist.
@@ -981,12 +981,12 @@ struct Dict[K: KeyElement, V: Copyable & Movable](
             entries.append(None)
         return entries
 
-    fn _insert(mut self, owned key: K, owned value: V):
+    fn _insert(mut self, var key: K, var value: V):
         self._insert(DictEntry[K, V](key^, value^))
 
     fn _insert[
         safe_context: Bool = False
-    ](mut self, owned entry: DictEntry[K, V]):
+    ](mut self, var entry: DictEntry[K, V]):
         @parameter
         if not safe_context:
             self._maybe_resize()
@@ -1199,7 +1199,7 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         return self._dict.find(key)
 
     @always_inline
-    fn pop(mut self, key: self.key_type, owned default: V) -> V:
+    fn pop(mut self, key: self.key_type, var default: V) -> V:
         """Remove a value from the dictionary by key.
 
         Args:
@@ -1289,9 +1289,9 @@ struct OwnedKwargsDict[V: Copyable & Movable](
         return _DictEntryIter(0, 0, self._dict)
 
     @always_inline
-    fn _insert(mut self, owned key: Self.key_type, owned value: V):
+    fn _insert(mut self, var key: Self.key_type, var value: V):
         self._dict._insert(key^, value^)
 
     @always_inline
-    fn _insert(mut self, key: StringLiteral, owned value: V):
+    fn _insert(mut self, key: StringLiteral, var value: V):
         self._insert(String(key), value^)

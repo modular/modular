@@ -1107,7 +1107,7 @@ Then we'll update `main()` to create a random initial `Grid` and pass it to
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def run_display(owned grid: Grid) -> None:
+def run_display(var grid: Grid) -> None:
     while True:
         print(String(grid))
         print()

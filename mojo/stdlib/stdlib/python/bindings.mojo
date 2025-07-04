@@ -58,7 +58,7 @@ that Mojo type to this CPython interpreter instance."""
 
 
 fn _register_py_type_object(
-    type_id: StaticString, owned type_obj: PythonObject
+    type_id: StaticString, var type_obj: PythonObject
 ) raises:
     """Register a Python type object for the identified Mojo type.
 

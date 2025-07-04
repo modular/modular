@@ -1317,7 +1317,7 @@ struct CPython(Copyable, Defaultable, Movable):
         self._inc_total_rc()
         return r
 
-    fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
+    fn PyImport_AddModule(self, var name: String) -> PyObjectPtr:
         """[Reference](
         https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule).
         """
@@ -1435,7 +1435,7 @@ struct CPython(Copyable, Defaultable, Movable):
     # Python Evaluation
     # ===-------------------------------------------------------------------===#
 
-    fn PyRun_SimpleString(self, owned str: String) -> Bool:
+    fn PyRun_SimpleString(self, var str: String) -> Bool:
         """Executes the given Python code.
 
         Args:

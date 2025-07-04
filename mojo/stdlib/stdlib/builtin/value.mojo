@@ -35,7 +35,7 @@ trait Movable:
     it inside generic functions:
 
     ```mojo
-    fn return_foo[T: Movable](owned foo: T) -> T:
+    fn return_foo[T: Movable](var foo: T) -> T:
         return foo^
 
     var foo = Foo()

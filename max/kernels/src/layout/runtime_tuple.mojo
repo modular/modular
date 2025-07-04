@@ -40,7 +40,7 @@ from layout.int_tuple import shape_div as shape_div_int_tuple
 from utils import IndexList
 
 
-fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
+fn concat(var lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     """Concatenates two `IntTuple` instances into a single `IntTuple`.
 
     This function appends all elements from the right-hand side tuple to the
@@ -48,7 +48,7 @@ fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     the hierarchical structure of both tuples.
 
     Args:
-        lhs: The left-hand side `IntTuple` that will be modified (owned parameter).
+        lhs: The left-hand side `IntTuple` that will be modified (var parameter).
         rhs: The right-hand side `IntTuple` whose elements will be appended.
 
     Returns:

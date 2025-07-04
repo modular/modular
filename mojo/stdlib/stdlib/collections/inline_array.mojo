@@ -237,7 +237,7 @@ struct InlineArray[
 
     @always_inline
     fn __init__(
-        out self, owned *elems: Self.ElementType, __list_literal__: () = ()
+        out self, var *elems: Self.ElementType, __list_literal__: () = ()
     ):
         """Constructs an array from a variadic list of elements.
 

@@ -214,7 +214,7 @@ object type had not previously been registered using
 {/*
 TODO: How to distinguish this constructor from the converting constructor?
 TODO: Maybe `PythonObject.mojo()` / `PythonObject(mojo_object=)`?
-TODO: `PythonObject.__init__[T: AnyType](out self, *, owned alloc: T)
+TODO: `PythonObject.__init__[T: AnyType](out self, *, var alloc: T)
 */}
 
 
@@ -230,7 +230,7 @@ TODO: What is this directory, when is it created, what artifacts are stored in
 Within any Mojo code that is handling a
 [`PythonObject`](/mojo/stdlib/python/python_object/PythonObject), but
 especially within Mojo functions called from Python, it's common to expect an
-argument of a particular type. 
+argument of a particular type.
 
 There are two scenarios where a `PythonObject` can be "converted" into a native
 Mojo value:

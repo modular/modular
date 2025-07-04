@@ -127,7 +127,7 @@ struct Context(Copyable, Defaultable, Movable):
         self.c = _c.IR.mlirContextCreateWithThreading(threading_enabled)
 
     fn __init__(
-        out self, owned registry: DialectRegistry, threading_enabled: Bool
+        out self, var registry: DialectRegistry, threading_enabled: Bool
     ):
         self.c = _c.IR.mlirContextCreateWithRegistry(
             registry.c, threading_enabled
@@ -146,7 +146,7 @@ struct Context(Copyable, Defaultable, Movable):
     fn __eq__(self, other: Self) -> Bool:
         return _c.IR.mlirContextEqual(self.c, other.c)
 
-    fn append(mut self, owned registry: DialectRegistry):
+    fn append(mut self, var registry: DialectRegistry):
         return _c.IR.mlirContextAppendDialectRegistry(self.c, registry.c)
 
     fn register(mut self, handle: DialectHandle):
@@ -275,7 +275,7 @@ struct Module(Copyable, Movable, Stringable, Writable):
     # TODO: The lifetime of module appears to be iffy in the current codebase.
     # For now, this is manually called when known to be safe to prevent ASAN
     # from complaining for certain tests.
-    fn destroy(owned self):
+    fn destroy(var self):
         _c.IR.mlirModuleDestroy(self.c)
 
     @staticmethod
@@ -321,7 +321,7 @@ struct _OpBuilderList[T: Copyable & Movable](Defaultable):
         self.elements = []
 
     @implicit
-    fn __init__(out self, owned elements: List[T]):
+    fn __init__(out self, var elements: List[T]):
         self.elements = elements^
 
     @implicit
@@ -484,7 +484,7 @@ struct Operation(Copyable, Movable, Stringable, Writable):
             raise "Operation.parse failed"
         return Self(result)
 
-    fn destroy(owned self):
+    fn destroy(var self):
         _c.IR.mlirOperationDestroy(self.c)
 
     fn context(self) -> Context:

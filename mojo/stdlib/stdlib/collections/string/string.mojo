@@ -923,7 +923,7 @@ struct String(
         """
         return self
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1100,7 +1100,7 @@ struct String(
             return self._ptr_or_data.origin_cast[False, __origin_of(self)]()
 
     fn unsafe_ptr_mut(
-        mut self, owned capacity: UInt = 0
+        mut self, var capacity: UInt = 0
     ) -> UnsafePointer[Byte, mut=True, origin = __origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if

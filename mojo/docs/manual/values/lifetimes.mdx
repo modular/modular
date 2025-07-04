@@ -307,7 +307,7 @@ def take_str_ref[
     else:
         print("Immutable: " + s)
 
-def pass_refs(s1: String, owned s2: String):
+def pass_refs(s1: String, var s2: String):
     take_str_ref(s1)
     take_str_ref(s2)
 

@@ -432,7 +432,7 @@ struct NamedTemporaryFile:
         """
         self._file_handle.write_bytes(bytes)
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         """The function to call when entering the context.
 
         Returns:

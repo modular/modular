@@ -91,7 +91,7 @@ struct Path(
         self.path = String(path)
 
     @implicit
-    fn __init__(out self, owned path: String):
+    fn __init__(out self, var path: String):
         """Initializes a path with the provided path.
 
         Args:

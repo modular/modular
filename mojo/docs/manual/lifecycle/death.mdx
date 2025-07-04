@@ -251,7 +251,7 @@ that it will be overwritten below. You can also see this behavior when using the
 transfer sigil:
 
 ```mojo
-fn consume(owned arg: String):
+fn consume(var arg: String):
     pass
 
 fn use(arg: MyPet):
@@ -336,7 +336,7 @@ destructor, we can still pass ownership of a field value to another function,
 and there's no infinite loop to destroy `self`):
 
 ```mojo
-fn consume(owned str: String):
+fn consume(var str: String):
     print('Consumed', str)
 
 struct TwoStrings:

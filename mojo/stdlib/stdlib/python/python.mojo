@@ -108,7 +108,7 @@ struct Python(Defaultable):
     fn _cpython_ptr(self) -> Pointer[CPython, StaticConstantOrigin]:
         return self._impl
 
-    fn eval(self, owned code: String) -> Bool:
+    fn eval(self, var code: String) -> Bool:
         """Executes the given Python code.
 
         Args:
@@ -216,7 +216,7 @@ struct Python(Defaultable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn import_module(owned module: String) raises -> PythonObject:
+    fn import_module(var module: String) raises -> PythonObject:
         """Imports a Python module.
 
         This provides you with a module object you can use just like you would
@@ -508,7 +508,7 @@ struct Python(Defaultable):
     @staticmethod
     fn list[
         *Ts: PythonConvertible & Copyable
-    ](owned *values: *Ts) raises -> PythonObject:
+    ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python list of objects.
 
         Parameters:
@@ -553,7 +553,7 @@ struct Python(Defaultable):
     @staticmethod
     fn tuple[
         *Ts: PythonConvertible & Copyable
-    ](owned *values: *Ts) raises -> PythonObject:
+    ](var *values: *Ts) raises -> PythonObject:
         """Construct an Python tuple of objects.
 
         Parameters:

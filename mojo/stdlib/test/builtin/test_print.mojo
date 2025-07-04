@@ -50,7 +50,7 @@ struct PrintChecker:
         self.call_location = __call_location()
         self.cursor = 0
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         return self^
 
     fn __moveinit__(out self, owned existing: Self):

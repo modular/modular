@@ -196,7 +196,7 @@ fn incr_int(mut arg: Int):
     arg += 1
 
 
-fn add_to_int(mut arg: Int, owned value: Int):
+fn add_to_int(mut arg: Int, var value: Int):
     arg += value
 
 

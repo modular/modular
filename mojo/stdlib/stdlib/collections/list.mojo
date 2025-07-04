@@ -151,7 +151,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self.resize(length, fill)
 
     @always_inline
-    fn __init__(out self, owned *values: T, __list_literal__: () = ()):
+    fn __init__(out self, var *values: T, __list_literal__: () = ()):
         """Constructs a list from the given values.
 
         Args:
@@ -160,7 +160,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, owned elements: VariadicListMem[T, _]):
+    fn __init__(out self, *, var elements: VariadicListMem[T, _]):
         """Constructs a list from the given values.
 
         Args:
@@ -349,7 +349,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         for _ in range(x - 1):
             self.extend(orig)
 
-    fn __add__(self, owned other: Self) -> Self:
+    fn __add__(self, var other: Self) -> Self:
         """Concatenates self with other and returns the result as a new list.
 
         Args:
@@ -363,7 +363,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         result.extend(other^)
         return result^
 
-    fn __iadd__(mut self, owned other: Self):
+    fn __iadd__(mut self, var other: Self):
         """Appends the elements of other into self.
 
         Args:
@@ -519,7 +519,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         self.data = new_data
         self.capacity = new_capacity
 
-    fn append(mut self, owned value: T):
+    fn append(mut self, var value: T):
         """Appends a value to this list.
 
         Args:
@@ -557,7 +557,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
                 UnsafePointer(to=self[i]).init_pointee_copy(elt)
                 i += 1
 
-    fn insert(mut self, i: Int, owned value: T):
+    fn insert(mut self, i: Int, var value: T):
         """Inserts a value to the list at the given index.
         `a.insert(len(a), value)` is equivalent to `a.append(value)`.
 
@@ -586,7 +586,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
             earlier_idx -= 1
             later_idx -= 1
 
-    fn extend(mut self, owned other: List[T, *_]):
+    fn extend(mut self, var other: List[T, *_]):
         """Extends this list by consuming the elements of `other`.
 
         Args:
@@ -992,7 +992,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
         return (self.data + idx)[]
 
     @always_inline
-    fn unsafe_set(mut self, idx: Int, owned value: T):
+    fn unsafe_set(mut self, idx: Int, var value: T):
         """Write a value to a given location without checking index bounds.
 
         Args:
@@ -1126,7 +1126,7 @@ struct List[T: Copyable & Movable, hint_trivial_type: Bool = False](
 
     fn _cast_hint_trivial_type[
         hint_trivial_type: Bool
-    ](owned self) -> List[T, hint_trivial_type]:
+    ](var self) -> List[T, hint_trivial_type]:
         var result = List[T, hint_trivial_type]()
         result.data = self.data
         result._len = self._len

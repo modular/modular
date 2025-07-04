@@ -216,7 +216,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         value.__hash__(self)
 
     @always_inline
-    fn finish(owned self) -> UInt64:
+    fn finish(var self) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
         Returns:

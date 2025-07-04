@@ -52,7 +52,7 @@ struct _OwnedStringRef(Boolable, Defaultable):
         if self.data:
             self.data.free()
 
-    fn consume_as_error(owned self) -> Error:
+    fn consume_as_error(var self) -> Error:
         result = Error()
         result.data = self.data
         result.loaded_length = -self.length
@@ -470,7 +470,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         if err_msg:
             raise err_msg^.consume_as_error()
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         """The function to call when entering the context.
 
         Returns:

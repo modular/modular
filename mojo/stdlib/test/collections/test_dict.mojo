@@ -475,7 +475,7 @@ def test_dict():
     test["test dict popitem", test_dict_popitem]()
 
 
-def test_taking_owned_kwargs_dict(owned kwargs: OwnedKwargsDict[Int]):
+def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)

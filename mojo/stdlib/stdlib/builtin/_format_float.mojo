@@ -708,7 +708,7 @@ fn _is_finite[exp_bits: Int](exponent: Int) -> Bool:
 
 fn _count_factors[
     CarrierDType: DType
-](owned n: Scalar[CarrierDType], a: Int) -> Int:
+](var n: Scalar[CarrierDType], a: Int) -> Int:
     debug_assert(a > 1)
     var c = 0
     while n % a == 0:

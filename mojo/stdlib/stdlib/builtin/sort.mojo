@@ -399,7 +399,7 @@ fn _partition[
     T: Copyable & Movable,
     origin: MutableOrigin, //,
     cmp_fn: fn (_SortWrapper[T], _SortWrapper[T]) capturing [_] -> Bool,
-](owned span: Span[T, origin], owned k: Int):
+](var span: Span[T, origin], var k: Int):
     while True:
         var pivot = _partition[cmp_fn](span)
         if pivot == k:

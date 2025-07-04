@@ -101,7 +101,7 @@ struct Optional[T: Copyable & Movable](
         self._value = Self._type(_NoneType())
 
     @implicit
-    fn __init__(out self, owned value: T):
+    fn __init__(out self, var value: T):
         """Construct an `Optional` containing a value.
 
         Args:
@@ -565,7 +565,7 @@ struct OptionalReg[T: AnyTrivialRegType](Boolable, Defaultable):
         """
         return __mlir_op.`kgen.variant.get`[index = Int(0).value](self._value)
 
-    fn or_else(owned self, owned default: T) -> T:
+    fn or_else(var self, var default: T) -> T:
         """Return the underlying value contained in the Optional or a default
         value if the Optional's underlying value is not present.
 

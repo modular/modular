@@ -42,7 +42,7 @@ struct DummyHasher(Hasher):
     fn update[T: Hashable](mut self, value: T):
         value.__hash__(self)
 
-    fn finish(owned self) -> UInt64:
+    fn finish(var self) -> UInt64:
         return self._dummy_value
 
 

@@ -55,7 +55,7 @@ struct Tuple[*element_types: Copyable & Movable](Copyable, Movable, Sized):
         )
 
     @always_inline("nodebug")
-    fn __init__(out self, owned *args: *element_types):
+    fn __init__(out self, var *args: *element_types):
         """Construct the tuple.
 
         Args:

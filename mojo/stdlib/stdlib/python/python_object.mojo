@@ -33,7 +33,7 @@ trait PythonConvertible:
     """A trait that indicates a type can be converted to a PythonObject, and
     that specifies the behavior with a `to_python_object` method."""
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert a value to a PythonObject.
 
         Returns:
@@ -238,7 +238,7 @@ struct PythonObject(
         self = PythonObject(from_owned_ptr=from_borrowed_ptr)
 
     @always_inline
-    fn __init__[T: Movable](out self, *, owned alloc: T) raises:
+    fn __init__[T: Movable](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -391,7 +391,7 @@ struct PythonObject(
     @always_inline
     fn __init__[
         *Ts: PythonConvertible & Copyable
-    ](out self, owned *values: *Ts, __list_literal__: ()) raises:
+    ](out self, var *values: *Ts, __list_literal__: ()) raises:
         """Construct an Python list of objects.
 
         Parameters:
@@ -409,7 +409,7 @@ struct PythonObject(
     @always_inline
     fn __init__[
         *Ts: PythonConvertible & Copyable
-    ](out self, owned *values: *Ts, __set_literal__: ()) raises:
+    ](out self, var *values: *Ts, __set_literal__: ()) raises:
         """Construct an Python set of objects.
 
         Parameters:
@@ -514,7 +514,7 @@ struct PythonObject(
             raise cpython.get_error()
         return _PyIter(PythonObject(from_owned_ptr=iter_ptr))
 
-    fn __getattr__(self, owned name: String) raises -> PythonObject:
+    fn __getattr__(self, var name: String) raises -> PythonObject:
         """Return the value of the object attribute with the given name.
 
         Args:
@@ -529,7 +529,7 @@ struct PythonObject(
             raise cpython.get_error()
         return PythonObject(from_owned_ptr=result)
 
-    fn __setattr__(self, owned name: String, new_value: PythonObject) raises:
+    fn __setattr__(self, var name: String, new_value: PythonObject) raises:
         """Set the given value for the object attribute with the given name.
 
         Args:
@@ -675,7 +675,7 @@ struct PythonObject(
 
     @doc_private
     fn __call_single_arg_inplace_method__(
-        mut self, owned method_name: String, rhs: PythonObject
+        mut self, var method_name: String, rhs: PythonObject
     ) raises:
         var callable_obj: PythonObject
         try:
@@ -1355,7 +1355,7 @@ struct PythonObject(
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1375,7 +1375,7 @@ struct PythonObject(
         """
         return self.py_object
 
-    fn steal_data(owned self) -> PyObjectPtr:
+    fn steal_data(var self) -> PyObjectPtr:
         """Take ownership of the underlying pointer from the Python object.
 
         Returns:
@@ -1462,7 +1462,7 @@ struct PythonObject(
 
     fn _try_downcast_value[
         T: AnyType
-    ](owned self) raises -> Optional[UnsafePointer[T]]:
+    ](var self) raises -> Optional[UnsafePointer[T]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
         None will be returned if the type of this object does not match the
@@ -1513,9 +1513,7 @@ struct PythonObject(
         return UnsafePointer[T](to=obj_ptr[].mojo_value)
 
     @always_inline
-    fn _unchecked_downcast_object_ptr[
-        T: AnyType
-    ](owned self) -> UnsafePointer[T]:
+    fn _unchecked_downcast_object_ptr[T: AnyType](var self) -> UnsafePointer[T]:
         """Assume that this Python object contains a wrapped Mojo value."""
         return self.py_object.unsized_obj_ptr.bitcast[T]()
 
@@ -1556,7 +1554,7 @@ fn _unsafe_alloc[
 
 fn _unsafe_init[
     T: Movable
-](obj_py_ptr: PyObjectPtr, owned mojo_value: T) raises -> PythonObject:
+](obj_py_ptr: PyObjectPtr, var mojo_value: T) raises -> PythonObject:
     """Initialize a Python object pointer with a Mojo value.
 
     Parameters:
@@ -1576,7 +1574,7 @@ fn _unsafe_init[
 fn _unsafe_alloc_init[
     T: Movable, //,
 ](
-    type_obj_ptr: UnsafePointer[PyTypeObject], owned mojo_value: T
+    type_obj_ptr: UnsafePointer[PyTypeObject], var mojo_value: T
 ) raises -> PythonObject:
     """Allocate a new `PythonObject` and store a Mojo value in it.
 

@@ -177,7 +177,7 @@ alias SIGNIFICANT_CODEPOINTS = List[Tuple[Int, List[Byte]]](
 )
 
 
-fn assert_utf8_bytes(codepoint: UInt32, owned expected: List[Byte]) raises:
+fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char_opt = Codepoint.from_u32(codepoint)
     var char = char_opt.value()
 

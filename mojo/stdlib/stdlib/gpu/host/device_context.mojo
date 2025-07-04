@@ -2729,7 +2729,7 @@ struct DeviceContext(Copyable, Movable):
             _DeviceContextPtr,
         ](self._handle)
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         """Enables the use of DeviceContext in a 'with' statement context manager.
 
         This method allows DeviceContext to be used with Python-style context managers,

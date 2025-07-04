@@ -558,7 +558,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
         self._store = IntArray(non_owned=non_owned)
 
     @always_inline("nodebug")
-    fn __init__(out self, *, owned _owned: IntArray):
+    fn __init__(out self, *, var _owned: IntArray):
         """Initialize an `IntTuple` taking the values of an `IntArray`.
 
         Args:
@@ -820,7 +820,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
                 count += self[i].count_values()
         return count
 
-    fn _fill(mut self, src: IntTuple, owned i: Int = 1) -> Int:
+    fn _fill(mut self, src: IntTuple, var i: Int = 1) -> Int:
         for j in range(len(src)):
             if src.is_value(j):
                 self._store[i] = src.value(j)
@@ -1373,7 +1373,7 @@ struct IntTuple[origin: ImmutableOrigin = __origin_of()](
     @always_inline("nodebug")
     fn __merge_with__[
         other_type: __type_of(IntTuple[_]),
-    ](owned self) -> IntTuple[__origin_of(origin, other_type.origin)]:
+    ](var self) -> IntTuple[__origin_of(origin, other_type.origin)]:
         """Returns an IntTuple with merged origins.  Used for if/then and
         list literals.
 
