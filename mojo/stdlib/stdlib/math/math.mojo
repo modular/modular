@@ -911,6 +911,12 @@ fn copysign[
     if dtype.is_unsigned():
         return magnitude
     elif dtype.is_integral():
+
+        @parameter
+        if width == 1:
+            alias sign_mask = 1 << dtype.bitwidth()
+            alias mag_mask = ~sign_mask
+            return magnitude & mag_mask | sign & sign_mask
         var mag_abs = abs(magnitude)
         return (sign < 0).select(-mag_abs, mag_abs)
     return llvm_intrinsic[
