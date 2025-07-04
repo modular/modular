@@ -290,7 +290,7 @@ struct InlineArray[
         # Do not destroy the elements when their backing storage goes away.
         __disable_del storage
 
-    fn copy(self) -> Self:
+    fn copy(self, out copy: Self):
         """Creates a deep copy of the array.
 
         Returns:
@@ -304,13 +304,14 @@ struct InlineArray[
         ```
         """
 
-        var copy = Self(uninitialized=True)
+        copy = Self(uninitialized=True)
 
+        @parameter
         for idx in range(size):
             var ptr = copy.unsafe_ptr() + idx
-            ptr.init_pointee_copy(self[idx])
+            ptr.init_pointee_copy(self.unsafe_get(idx))
 
-        return copy^
+        return copy
 
     fn __copyinit__(out self, other: Self):
         """Copy constructs the array from another array.
@@ -336,9 +337,10 @@ struct InlineArray[
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
+        @parameter
         for idx in range(size):
-            var ptr = self.unsafe_ptr() + idx
-            ptr.init_pointee_move(other[idx])
+            var other_ptr = other.unsafe_ptr() + idx
+            other_ptr.move_pointee_into(self.unsafe_ptr() + idx)
 
     fn __del__(owned self):
         """Deallocates the array and destroys its elements.
