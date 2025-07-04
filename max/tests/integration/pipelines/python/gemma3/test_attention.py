@@ -45,7 +45,11 @@ MAX_SEQ_LEN = 1152
 @pytest.fixture
 def input_tensor(text_config: Gemma3TextConfig) -> torch.Tensor:
     torch.manual_seed(42)
-    return torch.randn(1, 11, 1152).to(torch.bfloat16).to("cuda")
+    return (
+        torch.randn(1, 11, text_config.hidden_size)
+        .to(torch.bfloat16)
+        .to("cuda")
+    )
 
 
 def _get_position_embeddings(
