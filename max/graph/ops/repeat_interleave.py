@@ -15,9 +15,12 @@
 from typing import Optional, Union
 
 import numpy as np
+from max.dtype import DType
 
-from ..type import DeviceRef, Dim, DType
-from ..value import DimLike, Shape, TensorType, TensorValue, TensorValueLike
+from ..dim import Dim, DimLike
+from ..shape import Shape
+from ..type import DeviceRef, TensorType
+from ..value import TensorValue, TensorValueLike
 from .broadcast_to import broadcast_to
 from .constant import constant
 from .custom import custom

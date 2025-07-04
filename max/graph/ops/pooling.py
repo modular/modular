@@ -16,8 +16,9 @@ from __future__ import annotations
 
 from max.mlir.dialects import rmo
 
+from ..dim import DimLike
 from ..graph import Graph
-from ..type import DimLike, Shape
+from ..shape import Shape
 from ..value import TensorValue, TensorValueLike
 
 

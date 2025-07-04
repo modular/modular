@@ -19,8 +19,9 @@ from typing import Optional, get_args
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
+from ..dim import DimLike
 from ..graph import Graph
-from ..type import DeviceRef, DimLike
+from ..type import DeviceRef
 from ..value import Numeric, TensorType, TensorValue, TensorValueLike
 from .constant import constant
 

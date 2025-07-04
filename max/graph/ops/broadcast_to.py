@@ -18,8 +18,10 @@ from collections.abc import Iterable
 
 from max.mlir.dialects import rmo
 
+from ..dim import DimLike
 from ..graph import Graph
-from ..type import DimLike, Shape, ShapeLike, TensorType
+from ..shape import Shape, ShapeLike
+from ..type import TensorType
 from ..value import TensorValue
 
 

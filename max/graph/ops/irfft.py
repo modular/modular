@@ -20,7 +20,8 @@ from typing import Any
 
 from max.dtype import DType
 
-from ..type import DeviceKind, Dim, StaticDim, TensorType
+from ..dim import Dim, StaticDim
+from ..type import DeviceKind, TensorType
 from ..value import TensorValue
 from .concat import concat
 from .constant import constant

@@ -17,8 +17,10 @@ from collections.abc import Iterable
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
+from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
-from ..type import DeviceRef, Dim, DimLike, Shape, StaticDim, TensorType
+from ..shape import Shape
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 
 

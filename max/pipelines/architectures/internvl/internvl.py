@@ -22,14 +22,15 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     DeviceRef,
+    Dim,
     ShardingStrategy,
+    StaticDim,
     TensorValue,
     Weight,
     ops,
 )
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
-from max.graph.type import Dim, StaticDim
 from max.graph.weight import _compute_shard_range
 from max.nn import (
     Allreduce,

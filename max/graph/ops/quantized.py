@@ -16,8 +16,9 @@ from typing import Callable, Literal, Optional, Union
 
 from max.dtype import DType
 
+from ..dim import StaticDim
 from ..quantization import QuantizationConfig, QuantizationEncoding
-from ..type import StaticDim, TensorType
+from ..type import TensorType
 from ..value import TensorValue
 from .custom import custom
 

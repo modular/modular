@@ -24,8 +24,8 @@ from conftest import (
 )
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import TensorType, ops
-from max.graph.type import DeviceRef, Dim, DType, StaticDim
+from max.dtype import DType
+from max.graph import DeviceRef, Dim, StaticDim, TensorType, ops
 
 shared_shapes = st.shared(shapes())
 

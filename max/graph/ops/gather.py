@@ -16,8 +16,9 @@ from max import mlir
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
+from ..dim import StaticDim
 from ..graph import Graph
-from ..type import DeviceRef, StaticDim, TensorType
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 

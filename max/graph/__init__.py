@@ -12,20 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """APIs to build inference graphs for MAX."""
 
-# Types must be imported first to avoid circular dependencies.
 from . import dtype_promotion, ops
+from .dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
 from .graph import Graph, KernelLibrary
 from .type import (
-    AlgebraicDim,
     BufferType,
     DeviceKind,
     DeviceRef,
-    Dim,
-    DimLike,
     Shape,
     ShapeLike,
-    StaticDim,
-    SymbolicDim,
     TensorType,
     Type,
     _ChainType,

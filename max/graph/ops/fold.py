@@ -14,8 +14,10 @@
 
 from __future__ import annotations
 
-from ..type import DimLike, Shape, StaticDim
-from ..value import TensorType, TensorValue, TensorValueLike
+from ..dim import DimLike, StaticDim
+from ..shape import Shape
+from ..type import TensorType
+from ..value import TensorValue, TensorValueLike
 from .custom import custom
 from .shape_to_tensor import shape_to_tensor
 

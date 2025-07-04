@@ -29,14 +29,12 @@ from max._core.dialects import mo
 from max.dtype import DType
 
 from . import ops
+from .dim import Dim, DimLike
+from .shape import Shape, ShapeLike
 from .type import (
     BufferType,
     DeviceRef,
-    Dim,
-    DimLike,
     FilterLayout,
-    Shape,
-    ShapeLike,
     TensorType,
     Type,
     _ChainType,

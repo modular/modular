@@ -26,8 +26,7 @@ from conftest import (
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, ops
-from max.graph.type import Dim, StaticDim
+from max.graph import DeviceRef, Dim, Graph, StaticDim, TensorType, ops
 
 
 @given(input_types=broadcastable_tensor_types(3))

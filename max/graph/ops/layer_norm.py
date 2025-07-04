@@ -15,8 +15,9 @@
 from max.mlir.dialects import mo
 
 from .. import dtype_promotion
+from ..dim import StaticDim
 from ..graph import Graph
-from ..type import DeviceRef, StaticDim
+from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 

@@ -20,8 +20,10 @@ import numpy as np
 from max.dtype import DType
 from max.mlir.dialects import mo
 
+from ..dim import Dim, DimLike
 from ..graph import Graph
-from ..type import DeviceRef, Dim, DimLike, Shape
+from ..shape import Shape
+from ..type import DeviceRef
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 

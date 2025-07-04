@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Complex ops."""
 
-from ..type import StaticDim
+from ..dim import StaticDim
 from ..value import TensorValue, TensorValueLike
 from .reshape import reshape
 

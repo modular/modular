@@ -16,8 +16,9 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
+from ..dim import DimLike
 from ..graph import Graph
-from ..type import DeviceRef, DimLike, TensorType
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 from .nonzero import nonzero

@@ -34,8 +34,10 @@ if TYPE_CHECKING:
 import numpy as np
 from max.dtype import DType
 
+from ..dim import Dim, DimLike, StaticDim
 from ..graph import Graph
-from ..type import DeviceRef, Dim, DimLike, Shape, StaticDim, TensorType
+from ..shape import Shape
+from ..type import DeviceRef, TensorType
 from ..value import BufferValue, TensorValue
 from .constant import constant
 from .where import where
