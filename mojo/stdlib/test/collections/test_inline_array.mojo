@@ -268,7 +268,8 @@ def test_sizeof_array[current_type: Copyable & Movable, capacity: Int]():
 def test_move():
     """Test that moving an InlineArray works correctly."""
 
-    # 1. Check that the move constructor is called correctly.
+    # === 1. Check that the move constructor is called correctly. ===
+
     var arr = InlineArray[MoveCounter[Int], 3]({1}, {2}, {3})
     var copied_arr = arr.copy()
 
@@ -284,7 +285,7 @@ def test_move():
         # Check that the move constructor was called again for each element
         assert_equal(moved_arr[i].move_count, 2)
 
-    # 2. Check that the copy constructor is not called when moving.
+    # === 2. Check that the copy constructor is not called when moving. ===
 
     var arr2 = InlineArray[CopyCounter, 3]({}, {}, {})
     for i in range(len(arr2)):
@@ -297,7 +298,8 @@ def test_move():
         # Check that the copy constructor was not called
         assert_equal(moved_arr2[i].copy_count, 0)
 
-    # 3. Check that the destructor is not called when moving.
+    # === 3. Check that the destructor is not called when moving. ===
+
     var destructor_counter = List[Int]()
     var pointer_to_destructor_counter = UnsafePointer(to=destructor_counter)
     var del_recorder = DelRecorder(0, pointer_to_destructor_counter)
