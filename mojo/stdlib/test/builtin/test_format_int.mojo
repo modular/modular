@@ -26,27 +26,39 @@ fn test_format_int() raises:
     assert_equal(_format_int[DType.index](-123, 10), "-123")
     assert_equal(_format_int[DType.index](-999_999_999, 10), "-999999999")
 
-    #
-    # Max and min i64 values in base 10
-    #
-
+    # i64
     assert_equal(_format_int(Int64.MAX_FINITE, 10), "9223372036854775807")
-
     assert_equal(_format_int(Int64.MIN_FINITE, 10), "-9223372036854775808")
+    assert_equal(_format_int(Int64.MAX_FINITE, 2), "1" * 63)
+    assert_equal(_format_int(Int64.MIN_FINITE, 2), "-1" + "0" * 63)
 
-    #
-    # Max and min i64 values in base 2
-    #
-
+    # i128
+    alias int128_max = Int128(UInt128(1) << 127) - 1
+    alias int128_min = Int128(UInt128(1) << 127)
     assert_equal(
-        _format_int(Int64.MAX_FINITE, 2),
-        "111111111111111111111111111111111111111111111111111111111111111",
+        _format_int(int128_max, 10),
+        "170141183460469231731687303715884105727",
     )
-
     assert_equal(
-        _format_int(Int64.MIN_FINITE, 2),
-        "-1000000000000000000000000000000000000000000000000000000000000000",
+        _format_int(int128_min, 10),
+        "-170141183460469231731687303715884105728",
     )
+    assert_equal(_format_int(int128_max, 2), "1" * 127)
+    assert_equal(_format_int(int128_min, 2), "-1" + "0" * 127)
+
+    # i256
+    alias int256_max = Int256(UInt256(1) << 255) - 1
+    alias int256_min = Int256(UInt256(1) << 255)
+    assert_equal(
+        _format_int(int256_max, 10),
+        "57896044618658097711785492504343953926634992332820282019728792003956564819967",
+    )
+    assert_equal(
+        _format_int(int256_min, 10),
+        "-57896044618658097711785492504343953926634992332820282019728792003956564819968",
+    )
+    assert_equal(_format_int(int256_max, 2), "1" * 255)
+    assert_equal(_format_int(int256_min, 2), "-1" + "0" * 255)
 
 
 fn test_hex() raises:
