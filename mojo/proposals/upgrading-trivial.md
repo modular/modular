@@ -139,19 +139,19 @@ trait AnyType:
   # Existing
   fn __del__(owned self, /): ...
   # New
-  alias __del_is_trivial: Bool = False
+  alias __del__is_trivial_unsafe: Bool = False
 
 trait Movable:
    # Existing
    fn __moveinit__(out self, owned existing: Self, /): ...
    # New
-   alias __moveinit__is_trivial: Bool = False
+   alias __moveinit__is_trivial_unsafe: Bool = False
 
 trait Copyable:
    # Existing
    fn __copyinit__(out self, existing: Self, /): ...
    # New
-   alias __copyinit__is_trivial: Bool = False
+   alias __copyinit__is_trivial_unsafe: Bool = False
 ```
 
 These aliases allow containers to use custom logic with straight-forward
@@ -162,7 +162,7 @@ struct List[T: Copyable & Movable]: # Look, no hint_trivial_type!
     ...
     fn __del__(owned self):
         @parameter
-        if not T.__del_is_trivial:
+        if not T.__del__is_trivial_unsafe:
             for i in range(len(self)):
                 (self.data + i).destroy_pointee()
         self.data.free()
@@ -170,7 +170,7 @@ struct List[T: Copyable & Movable]: # Look, no hint_trivial_type!
     fn __copyinit__(out self, existing: Self):
         self = Self(capacity=existing.capacity)
         @parameter
-        if T.__copyinit_is_trivial:
+        if T.__copyinit__is_trivial_unsafe:
             # ... memcpy ...
         else:
             # ... append copies...
@@ -194,7 +194,7 @@ struct MyStruct(Copyable):
   #    self.x = other.x
 
   # Compiler newly synthesizes:
-  # alias __copyinit_is_trivial = True.
+  # alias __copyinit__is_trivial_unsafe = True.
 ```
 
 However, the compiler doesn't have to know anything about the types, it actually
@@ -210,8 +210,8 @@ struct MyStruct2[EltTy: Copyable](Copyable):
   #    self.y = other.y
 
   # Compiler newly synthesizes:
-  # alias __copyinit_is_trivial =
-  #     Int.__copyinit_is_trivial & EltTy.__copyinit_is_trivial
+  # alias __copyinit__is_trivial_unsafe =
+  #     Int.__copyinit__is_trivial_unsafe & EltTy.__copyinit__is_trivial_unsafe
 ```
 
 This builds on Mojo's powerful comptime metaprogramming features naturally.
@@ -223,7 +223,7 @@ method would be handled correctly by default:
 
 ```mojo
 struct MyStruct:
-  # __del_is_trivial defaults to false.
+  # __del__is_trivial_unsafe defaults to false.
   fn __del__(owned self):
     print("hi")
 ```
@@ -237,18 +237,18 @@ smart custom behavior:
 struct InlineArray[ElementType: Copyable & Movable]:
     fn __copyinit__(out self, other: Self):
         @parameter
-        if ElementType.__copyinit_is_trivial:
+        if ElementType.__copyinit__is_trivial_unsafe:
             # ... memcpy ...
         else:
             # ... append copies...
 
     # InlineArray's copy is itself trivial if the element is.
-    alias __copyinit_is_trivial = T.__copyinit_is_trivial
+    alias __copyinit__is_trivial_unsafe = T.__copyinit__is_trivial_unsafe
 ```
 
 Note that a type author getting this wrong could introduce memory unsafety
-problems, on both the definition and use-side of things.  We may want to put the
-"unsafe" word into the names of these aliases.
+problems, on both the definition and use-side of things. This is why the aliases
+have the word "unsafe" in them.
 
 ### Removing `@register_passable("trivial")`
 
@@ -278,6 +278,29 @@ Here are a couple design and implementation challenges that may come up:
 
 3) We don't actually have defaulted aliases yet.  Mitigation: we can hack the
    compiler to know about this, since these traits already have synthesis magic.
+
+## Alternatives Considered
+
+The chief alternative that was previously discussed was to introduce one or more
+subtraits like:
+
+```mojo
+trait TriviallyCopyable(Copyable): pass
+```
+
+There are a few reasons why the proposed approach is nicer than this one:
+
+1) Being "trivial" is a property of a copy constructor, so it seems like it
+   should be modeled as an aspect of its conformance (as proposed here), not
+   as a separate trait.
+2) That would require doubling the number of traits in the standard library.
+3) In the short term, we don't have conditional conformance or comptime trait
+   downcasting, so we couldn't implement the behavior we need to use these.
+4) Even if we did have those, we could do custom conditional implementation
+   like shown above for `InlinedArray`.
+
+As such, the proposed approach is more pragmatic in the short term, but also
+seems like the right approach in the long term.
 
 ## Conclusion
 
