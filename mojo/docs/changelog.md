@@ -189,3 +189,6 @@ mutation.
 
 - [#3927](https://github.com/modular/modular/issues/3927) - `InlineArray`
   now can be constructed with a size of 0.
+
+- [#4954](https://github.com/modular/modular/issues/4954) - `InlineArray` 
+  now does not call the copy constructor when being moved.
