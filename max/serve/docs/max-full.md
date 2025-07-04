@@ -22,6 +22,7 @@ Run the container on an AMD GPU:
 docker run \
   # HuggingFace configs
   -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
   --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
   --env "HF_TOKEN=$HF_TOKEN" \
   # AMD configs
@@ -44,6 +45,7 @@ docker run \
   --gpus 1 \
   # HuggingFace configs
   -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
   --env "HF_HUB_ENABLE_HF_TRANSFER=1" \
   --env "HF_TOKEN=<secret>" \
   # MAX configs
