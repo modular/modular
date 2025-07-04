@@ -89,8 +89,16 @@ struct PyGILState_STATE:
 
 
 struct PyThreadState:
-    """Opaque struct."""
+    """This data structure represents the state of a single thread.
 
+    It's an opaque struct.
+
+    References:
+    - https://docs.python.org/3/c-api/init.html#c.PyThreadState
+    """
+
+    # TODO: add this public data member
+    # PyInterpreterState *interp
     pass
 
 
@@ -750,6 +758,28 @@ alias Py_DecRef = ExternalFunction[
     fn (PyObjectPtr) -> None,
 ]
 
+# Initialization, Finalization, and Threads
+alias PyEval_SaveThread = ExternalFunction[
+    "PyEval_SaveThread",
+    # PyThreadState *PyEval_SaveThread()
+    fn () -> UnsafePointer[PyThreadState],
+]
+alias PyEval_RestoreThread = ExternalFunction[
+    "PyEval_RestoreThread",
+    # void PyEval_RestoreThread(PyThreadState *tstate)
+    fn (UnsafePointer[PyThreadState]) -> None,
+]
+alias PyGILState_Ensure = ExternalFunction[
+    "PyGILState_Ensure",
+    # PyGILState_STATE PyGILState_Ensure()
+    fn () -> PyGILState_STATE,
+]
+alias PyGILState_Release = ExternalFunction[
+    "PyGILState_Release",
+    # void PyGILState_Release(PyGILState_STATE)
+    fn (PyGILState_STATE) -> None,
+]
+
 # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
 alias PyLong_FromSsize_t = ExternalFunction[
     "PyLong_FromSsize_t",
@@ -877,6 +907,11 @@ struct CPython(Copyable, Defaultable, Movable):
     # Reference Counting
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
+    # Initialization, Finalization, and Threads
+    var _PyEval_SaveThread: PyEval_SaveThread.type
+    var _PyEval_RestoreThread: PyEval_RestoreThread.type
+    var _PyGILState_Ensure: PyGILState_Ensure.type
+    var _PyGILState_Release: PyGILState_Release.type
 
     var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
@@ -952,6 +987,11 @@ struct CPython(Copyable, Defaultable, Movable):
 
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
+
+        self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
+        self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
+        self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
+        self._PyGILState_Release = PyGILState_Release.load(self.lib)
 
         self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
@@ -1131,35 +1171,46 @@ struct CPython(Copyable, Defaultable, Movable):
         return ptr.unsized_obj_ptr.bitcast[Py_ssize_t]()[]
 
     # ===-------------------------------------------------------------------===#
-    # Python GIL and threading
+    # Initialization, Finalization, and Threads
+    # ref: https://docs.python.org/3/c-api/init.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyGILState_Ensure(self) -> PyGILState_STATE:
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyGILState_Ensure).
-        """
-        return self.lib.call["PyGILState_Ensure", PyGILState_STATE]()
-
-    fn PyGILState_Release(self, state: PyGILState_STATE):
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyGILState_Release).
-        """
-        self.lib.call["PyGILState_Release"](state)
-
     fn PyEval_SaveThread(self) -> UnsafePointer[PyThreadState]:
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyEval_SaveThread).
-        """
+        """Release the global interpreter lock (if it has been created) and
+        reset the thread state to `NULL`, returning the previous thread state
+        (which is not `NULL`).
 
-        return self.lib.call[
-            "PyEval_SaveThread", UnsafePointer[PyThreadState]
-        ]()
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyEval_SaveThread
+        """
+        return self._PyEval_SaveThread()
 
     fn PyEval_RestoreThread(self, state: UnsafePointer[PyThreadState]):
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyEval_RestoreThread).
+        """Acquire the global interpreter lock (if it has been created) and
+        set the thread state to tstate, which must not be `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyEval_RestoreThread
         """
-        self.lib.call["PyEval_RestoreThread"](state)
+        self._PyEval_RestoreThread(state)
+
+    fn PyGILState_Ensure(self) -> PyGILState_STATE:
+        """Ensure that the current thread is ready to call the Python C API
+        regardless of the current state of Python, or of the global interpreter
+        lock.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Ensure
+        """
+        return self._PyGILState_Ensure()
+
+    fn PyGILState_Release(self, state: PyGILState_STATE):
+        """Release any resources previously acquired.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Release
+        """
+        self._PyGILState_Release(state)
 
     # ===-------------------------------------------------------------------===#
     # Python Set operations
