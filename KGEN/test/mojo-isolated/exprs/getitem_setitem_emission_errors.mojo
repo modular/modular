@@ -13,7 +13,7 @@ struct WeirdArray:
         return x
 
 
-fn test_getitem(owned a: WeirdArray, f: float, x: Index):
+fn test_getitem(var a: WeirdArray, f: float, x: Index):
     # expected-error @+1 {{invalid call to '__getitem__': index cannot be converted from 'scalar<f64>' to 'index'}}
     _ = a[f]
 

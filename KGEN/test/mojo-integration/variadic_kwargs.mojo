@@ -40,7 +40,7 @@ struct MemOnly(Resettable):
         self.value = 0
 
 
-fn takes_mem_only_variadic_kwargs[T: Resettable](owned **kwargs: T) raises:
+fn takes_mem_only_variadic_kwargs[T: Resettable](var **kwargs: T) raises:
     var key = "fizzbuzz"
     # CHECK: fizzbuzz 13
     print(key, kwargs[key].get())

@@ -238,7 +238,7 @@ struct CMWithoutExit:
         pass
 
     # This context manager consumes itself and returns it as the value.
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         return self^
 
     fn method(self):

@@ -15,11 +15,11 @@ fn get_number() -> Int:
     return 8
 
 
-fn take_string(owned s: String):
+fn take_string(var s: String):
     print(s)  # breakpoint
 
 
-fn take_number(owned i: Int):
+fn take_number(var i: Int):
     print(i)
 
 

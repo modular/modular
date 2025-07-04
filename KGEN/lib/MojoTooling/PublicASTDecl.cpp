@@ -671,7 +671,7 @@ llvm::json::Object PublicParameterDecl::toJSON(MojoParserContext &ctx) const {
 //===----------------------------------------------------------------------===//
 
 static StringRef getConventionString(PublicArgumentDecl::Convention conv) {
-  StringRef conventions[] = {"read", "mut", "owned", "ref", "out"};
+  StringRef conventions[] = {"read", "mut", "var", "ref", "out"};
   auto convIdx = static_cast<size_t>(conv);
   assert(convIdx < sizeof(conventions) / sizeof(conventions[0]) &&
          "enums added");
@@ -705,7 +705,7 @@ std::string PublicArgumentDecl::getMarkdownDocString() const {
 }
 
 llvm::json::Object PublicArgumentDecl::toJSON(MojoParserContext &ctx) const {
-  [[maybe_unused]] StringRef conventions[] = {"read", "mut", "owned", "ref",
+  [[maybe_unused]] StringRef conventions[] = {"read", "mut", "var", "ref",
                                               "out"};
   assert(static_cast<size_t>(convention) <
              sizeof(conventions) / sizeof(conventions[0]) &&

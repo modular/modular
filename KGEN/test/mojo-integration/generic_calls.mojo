@@ -19,7 +19,7 @@ struct MemOnly(Copyable, Movable):
     var b: Int
 
 
-fn owned_generic[T: AnyType](owned x: T):
+fn owned_generic[T: AnyType](var x: T):
     pass
 
 
@@ -31,7 +31,7 @@ fn borrowed_generic[T: AnyType](x: T):
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)> owned,
 # CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> owned_in_mem)
 @export
-fn test_owned(owned x: RegPassable, owned y: MemOnly):
+fn test_owned(var x: RegPassable, var y: MemOnly):
     # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%arg0)
     borrowed_generic(x)
 

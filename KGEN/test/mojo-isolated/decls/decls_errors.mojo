@@ -52,7 +52,7 @@ def top_level_fn(a: Int):
 def use_non_copyable_type(a: ThingWithStaticMethod):
   pass
 
-def test_use_non_copyable_type(owned b: ThingWithStaticMethod):
+def test_use_non_copyable_type(var b: ThingWithStaticMethod):
   use_non_copyable_type(b^)
 
 # Issue #14191
@@ -167,9 +167,9 @@ fn exampleByRefVariadic(a: FloatLiteral, mut *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
-fn ownedPack[*Ts: AnyType](owned *args: *Ts): pass
-fn ownedVariadic(owned *args: Inner): pass
-fn ownedVariadicReg(owned *args: WrongType): pass
+fn ownedPack[*Ts: AnyType](var *args: *Ts): pass
+fn ownedVariadic(var *args: Inner): pass
+fn ownedVariadicReg(var *args: WrongType): pass
 
 
 # expected-note @+1 {{struct declared here}}
@@ -252,7 +252,7 @@ fn invalidParameterPack[*Ts: AnyType]():
 fn invalidArgumentUnpack[*Ts: AnyType](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
-fn invalidOwned(owned owned x: Int): pass
+fn invalidOwned(var owned x: Int): pass
 
 # expected-note @+1 {{function declared here}}
 fn examplePack[*Ts: AnyType](*args: *Ts):

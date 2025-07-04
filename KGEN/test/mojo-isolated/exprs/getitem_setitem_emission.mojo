@@ -99,7 +99,7 @@ struct IndexArrayArray:
     fn __getitem__(mut self, x: Index) -> IndexArray:
         pass
 
-    fn __setitem__(mut self, x: Index, owned value: IndexArray):
+    fn __setitem__(mut self, x: Index, var value: IndexArray):
         pass
 
 
@@ -221,10 +221,10 @@ struct RefResultInOverloaded:
   fn __getitem__(self) raises -> ref[self.x] String:
     return self.x
 
-  fn __setitem__(mut self, owned x: String): pass
+  fn __setitem__(mut self, var x: String): pass
 
 # CHECK-LABEL: lit.fn @"testRefResultInOverloaded
-fn testRefResultInOverloaded(mut rrio: RefResultInOverloaded, owned str: String) raises:
+fn testRefResultInOverloaded(mut rrio: RefResultInOverloaded, var str: String) raises:
   # CHECK: lit.call {{.*}}__getitem__
   # CHECK: lit.call {{.*}}unsafe_ptr
   _ = rrio[].unsafe_ptr()

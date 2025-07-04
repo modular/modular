@@ -42,7 +42,7 @@ struct DtorExample2(AnyType):
 @register_passable
 struct DtorExample3(AnyType):
   var a: Int
- 
+
   fn __del__(owned self):
     pass
 
@@ -79,7 +79,7 @@ struct IntPairWrapper(Copyable, Movable, ExplicitlyCopyable):
 # CHECK-NEXT: lit.call {{.*}}IntPairWrapper::@"__copyinit__{{.*}}(%existing, %__result__)
 
 # CHECK-LABEL: lit.fn @"testCopyMoveSynth
-fn testCopyMoveSynth(owned a: IntPair, owned b: IntPairWrapper):
+fn testCopyMoveSynth(var a: IntPair, var b: IntPairWrapper):
   # CHECK: lit.call {{.*}}IntPair::@"__copyinit__{{.*}}({{.*}}, %aCopy)
   var aCopy = a
 
@@ -114,15 +114,15 @@ struct FieldwiseInitExample1[T: Movable]:
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[x]
 # CHECK-NEXT: lit.ref.store %x, [[TMP]]
 # CHECK-NEXT: [[TMP:%.*]] = lit.ref.struct.ger %self[y]
-# CHECK-NEXT: lit.call{{.*}}"__moveinit__"{{.*}}(%y, [[TMP]]) 
-# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none> 
+# CHECK-NEXT: lit.call{{.*}}"__moveinit__"{{.*}}(%y, [[TMP]])
+# CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 
 
 # CHECK-LABEL: lit.struct.decl @FieldwiseInitExample2
 @fieldwise_init("implicit")
 struct FieldwiseInitExample2:
   var x: Int
-  
+
 # CHECK-LABEL: lit.fn @"testFieldwiseInitExample2
 # CHECK: FieldwiseInitExample2::@"__init__{{.*}}(%a, %b)
 fn testFieldwiseInitExample2(a: Int):
@@ -134,4 +134,3 @@ fn testFieldwiseInitExample2(a: Int):
 @register_passable
 struct FieldwiseInitExample3:
   var x: Int
-

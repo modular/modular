@@ -274,7 +274,7 @@ struct MyStringReturningCtx:
     fn __init__(out self):
         self.s = "hey"
 
-    fn __enter__(owned self) -> Self:
+    fn __enter__(var self) -> Self:
         return self^
 
     fn __moveinit__(out self, owned existing: Self):
@@ -362,7 +362,7 @@ fn use(err: Error):
 
 
 # CHECK-LABEL: lit.fn @"raising_use
-fn raising_use(owned value: MemExample):
+fn raising_use(var value: MemExample):
     try:
         # CHECK:      [[BORROW:%.*]] = lit.ref.immut %value
         # CHECK-NEXT: [[VAL:%.*]] = lit.var.decl "anonymous*"

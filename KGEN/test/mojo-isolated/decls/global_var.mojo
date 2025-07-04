@@ -77,7 +77,7 @@ fn mutGlobalReg(mut x: RegType):
     pass
 
 
-fn copyGlobalMem(owned x: ConvertibleFromInt):
+fn copyGlobalMem(var x: ConvertibleFromInt):
     pass
 
 

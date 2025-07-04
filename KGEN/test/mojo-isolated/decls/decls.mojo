@@ -427,7 +427,7 @@ fn testContextSensitiveKeyword(out x: Int, out2: Int):
 # CHECK-LABEL: lit.fn @"ownedConventionMem
 # CHECK-SAME: (%a: !lit.ref<!StructWithInit, mut {{.*}}> owned_in_mem,
 # CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> read_mem)
-fn ownedConventionMem(owned a: StructWithInit, b: StructWithInit):
+fn ownedConventionMem(var a: StructWithInit, b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
     _ = a.x
@@ -458,7 +458,7 @@ struct RPStructWithInitTrivial:
 # CHECK-SAME:  %b: !lit.ref<!RPStructWithInit, imm *"b`1"> read_mem,
 # CHECK-SAME:  %triv: !RPStructWithInitTrivial)
 fn ownedConventionReg(
-    owned a: RPStructWithInit,
+    var a: RPStructWithInit,
     b: RPStructWithInit,
     triv: RPStructWithInitTrivial,
 ):
@@ -1230,7 +1230,7 @@ struct LifetimeAccess[origin: __mlir_type.`!lit.origin<1>`]:
     pass
 
 
-async fn lifetime_access(owned x: LifetimeAccess[_]):
+async fn lifetime_access(var x: LifetimeAccess[_]):
     pass
 
 

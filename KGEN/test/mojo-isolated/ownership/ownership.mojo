@@ -27,7 +27,7 @@ struct MemExample:
   fn __del__(owned self):
     self.noop()
 
-fn consume(owned a: MemExample): pass
+fn consume(var a: MemExample): pass
 
 struct MemPair:
   var a: MemExample
@@ -63,11 +63,11 @@ struct RegExample:
   fn mutate(mut self):
     pass
 
-fn consume(owned a: RegExample): pass
+fn consume(var a: RegExample): pass
 
 # CHECK-LABEL: lit.fn @"destructors
 # CHECK-SAME: (%arg0: !lit.ref<!MemExample, mut {{.*}}> owned_in_mem)
-fn destructors(owned arg0: MemExample):
+fn destructors(var arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%arg0)
 
   # CHECK-NEXT: %mem1 = lit.var.decl "mem1" var
@@ -314,7 +314,7 @@ struct FieldSensitiveMemExample:
 
 # This disables the destructor of 'x' which causes the fields to be destroyed.
 # CHECK-LABEL: lit.fn @"disableDtor
-fn disableDtor(owned x: FieldSensitiveMemExample):
+fn disableDtor(var x: FieldSensitiveMemExample):
   # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
   # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
@@ -324,7 +324,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
   __disable_del x
 
 # CHECK-LABEL: lit.fn @"regpassable_owned_args_mutable
-fn regpassable_owned_args_mutable(owned x: RegExample):
+fn regpassable_owned_args_mutable(var x: RegExample):
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
   x.mutate()
 
@@ -450,7 +450,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     return example2  # copy/del -> move optimization.
 
 # CHECK: lit.fn @"consumeMem
-fn consumeMem(owned x: MemExample):
+fn consumeMem(var x: MemExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
   # CHECK-NEXT: kgen.param.constant: none
   pass
@@ -827,7 +827,7 @@ fn call_variadic_inout_mems():
   # CHECK-NEXT: kgen.return
 
 # CHECK-LABEL: lit.fn @"variadic_owned_mems
-fn variadic_owned_mems(owned *mems: MemExample):
+fn variadic_owned_mems(var *mems: MemExample):
     # CHECK: lit.call @{{.*}}::@VariadicListMem::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
     # CHECK-SAME: !lit.generator<[1]("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>, ?,
     # CHECK-SAME: "self": !lit.ref<@{{.*}}::@VariadicListMem<:!Bool {:i1 1},
@@ -835,7 +835,7 @@ fn variadic_owned_mems(owned *mems: MemExample):
 
 
 # CHECK-LABEL: lit.fn @"call_variadic_owned_mems
-fn call_variadic_owned_mems(owned c: MemExample, owned d: MemExample):
+fn call_variadic_owned_mems(var c: MemExample, var d: MemExample):
     variadic_owned_mems(c^, d^)
     # COM: Ensure owned convention of callee is honored.
     # CHECK:  lit.call @{{.*}}::@"variadic_owned_mems{{.*}}
@@ -952,7 +952,7 @@ struct List(Copyable, Movable):
 struct DoNotPropagateErrorStateIntoContinueSet:
   var dims: List
   # CHECK-LABEL: lit.fn @"__init__(
-  fn __init__(out self, cond: __mlir_type.`i1`, owned list: List) raises:
+  fn __init__(out self, cond: __mlir_type.`i1`, var list: List) raises:
     # CHECK:     hlcf.loop "_loop_0" {
     # CHECK-NEXT:  hlcf.if %cond {
     # CHECK-NEXT:    hlcf.yield
@@ -1002,7 +1002,7 @@ fn overwrite(y: MemExample, x: Bool) raises:
 # CHECK-LABEL: lit.fn @"test_if_ownership
 # MOCO-721: Test that ownership is transferred and all the move optimizations are
 # done.
-fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegExample:
+fn test_if_ownership(x: Bool, var a: RegExample, var b: RegExample) -> RegExample:
     # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
     # CHECK-NEXT: [[RES:%.*]] = hlcf.if
     # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
@@ -1029,7 +1029,7 @@ struct MyStructWithMarkDestroyed[T: Copyable & Movable]:
     var b: T
 
 # CHECK-LABEL: lit.fn @{{.*}}reap
-    fn reap(owned self, out result: T):
+    fn reap(var self, out result: T):
         # "a" field is never used here so it is destroyed early.
         # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: lit.call{{.*}}__del__{{.*}}([[AREF]]
@@ -1051,7 +1051,7 @@ struct MyStructWithMarkDestroyed[T: Copyable & Movable]:
 
 
 # CHECK-LABEL: lit.fn @"field_sensitive_ref_last_use
-fn field_sensitive_ref_last_use(owned write_state : IntAndOptional):
+fn field_sensitive_ref_last_use(var write_state : IntAndOptional):
     # should destroy ALL OF write_state after the copy into msg.
     var msg = write_state.error.value()
 
@@ -1119,7 +1119,7 @@ fn caught_eh_cleanup():
 
 # CHECK-LABEL: lit.fn @"test_ref_field
 # https://linear.app/modularml/issue/MOCO-1251
-fn test_ref_field(owned mem: MemPair):
+fn test_ref_field(var mem: MemPair):
   # Pointer to subfield.
   r = Pointer(to=mem.a)
 
@@ -1302,8 +1302,8 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   return a if cond else b
 
 # CHECK-LABEL: lit.fn @"testConds3
-fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
-              owned m: RegExample, owned n: RegExample):
+fn testConds3(cond: __mlir_type.i1, var a: MemExample, var b: MemExample,
+              owned m: RegExample, var n: RegExample):
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    lit.ownership.use %a
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
@@ -1438,10 +1438,10 @@ struct SomeValue[T: Copyable & Movable]:
 struct Task[T1: Movable, T2: Movable](Movable):
     var t1: T1
     var t2: T2
-    fn __init__(out self, owned t1: T1, owned t2: T2):
+    fn __init__(out self, var t1: T1, var t2: T2):
         self.t1 = t1^
         self.t2 = t2^
-    fn concat(owned self, owned other: Self) -> Task[Self, Self]:
+    fn concat(var self, var other: Self) -> Task[Self, Self]:
         return Task(self^, other^)
 
 # https://github.com/modular/modular/issues/4518

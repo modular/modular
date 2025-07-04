@@ -67,7 +67,7 @@ TEST(HoverTest, testHoverFunctionDecls) {
                EXPECT_EQ(hover.range, rangeInit);
                EXPECT_EQ(hover.contents.value,
                          R"(```mojo
-(function) fn __init__(out self, borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int)
+(function) fn __init__(out self, borrowed_input: Int, init_arg: Int, var owned_input: Int, *init_kargs: Int)
 ```
 ---
 
@@ -370,7 +370,7 @@ Multiple arguments.
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeOwnedInput);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(argument) owned owned_input: Int
+(argument) var owned_input: Int
 ```
 ---
 
@@ -587,7 +587,7 @@ TEST(HoverTest, testHover) {
 trait ATrait:
     """Some documentation."""
 
-    fn print(owned self, x: StringRef):
+    fn print(var self, x: StringRef):
         pass
 
 
@@ -595,7 +595,7 @@ struct Foo(ATrait):
     fn __init__(out self):
         pass
 
-    fn print(owned self, x: StringRef):
+    fn print(var self, x: StringRef):
         pass
   )");
 

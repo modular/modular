@@ -72,7 +72,7 @@ struct ConvertibleFromInt(Copyable, Movable):
 
 
 @fieldwise_init
-# expected-note @below {{candidate generated with type 'fn(owned a: ConvertibleFromInt, b: Int) -> AmbiguousCtor'}}
+# expected-note @below {{candidate generated with type 'fn(var a: ConvertibleFromInt, b: Int) -> AmbiguousCtor'}}
 struct AmbiguousCtor:
     var a: ConvertibleFromInt
     var b: Int

@@ -97,7 +97,7 @@ struct MemoryMovableCopyable:
 
 
 # CHECK-LABEL: lit.fn @"result_mem1
-fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
+fn result_mem1(var a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__)
     # CHECK-NEXT: kgen.param.constant: none
@@ -106,7 +106,7 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 
 
 # CHECK-LABEL: lit.fn @"result_mem3
-fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
+fn result_mem3(var a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__){{.*}} owned_in_mem{{.*}}byref_result
     # CHECK-NEXT: kgen.param.constant: none
@@ -144,7 +144,7 @@ struct RegMovableCopyable:
 
 
 # CHECK-LABEL: lit.fn @"result_reg1
-fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
+fn result_reg1(var a: RegUniqueMovable) -> RegUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[AVAL]]
@@ -152,14 +152,14 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 
 # CHECK-LABEL: lit.fn @"result_reg2
-fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
+fn result_reg2(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[A]]
     return a
 
 
 # CHECK-LABEL: lit.fn @"result_reg3
-fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
+fn result_reg3(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[A]]
@@ -167,7 +167,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 
 # CHECK-LABEL: lit.fn @"result_reg4
-fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
+fn result_reg4(var a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
     # CHECK-NEXT: %x = lit.var.decl "x"
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
@@ -182,12 +182,12 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
     return x^
 
 
-fn takeOwnedInt(owned x: Int):
+fn takeOwnedInt(var x: Int):
     pass
 
 
 # CHECK-LABEL: lit.fn @"passFieldToOwnedInt
-fn passFieldToOwnedInt(owned a: MemExample):
+fn passFieldToOwnedInt(var a: MemExample):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
     # CHECK-NEXT: %1 = lit.ref.load %0
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
@@ -210,11 +210,11 @@ struct MyGenericType[Type: AnyTrivialRegType]:
         self.value = v
 
 
-fn takeTwo(owned x: RegExample, owned y: RegExample):
+fn takeTwo(var x: RegExample, var y: RegExample):
     pass
 
 
-fn takeTwo(owned x: MemExample, owned y: MemExample):
+fn takeTwo(var x: MemExample, var y: MemExample):
     pass
 
 
@@ -268,12 +268,12 @@ fn optimizeCopyElision():
     # CHECK-NEXT: kgen.param.constant: none
 
 
-fn consume(owned value: MemExample):
+fn consume(var value: MemExample):
     pass
 
 
 # CHECK-LABEL: lit.fn @"copyElisionArgument
-fn copyElisionArgument(owned value: MemExample):
+fn copyElisionArgument(var value: MemExample):
     # CHECK-NEXT: %0 = lit.ref.immut %value
     # CHECK-NEXT: kgen.param.declare
     # CHECK-NEXT: %1 = kgen.rebind %value

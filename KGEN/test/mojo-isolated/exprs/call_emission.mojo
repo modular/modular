@@ -339,7 +339,7 @@ struct Struct1:
 
 struct Struct2:
     @implicit
-    fn __init__(out self, owned foo: Struct1):
+    fn __init__(out self, var foo: Struct1):
         pass
 
 
@@ -377,7 +377,7 @@ fn test_byref_slot_with_references():
 
 
 # CHECK-LABEL: lit.fn @"test_byref_slot_closure_capture
-fn test_byref_slot_closure_capture(owned x: String):
+fn test_byref_slot_closure_capture(var x: String):
     # CHECK: lit.fn *"capture
     @parameter
     fn capture() -> String:
@@ -444,7 +444,7 @@ struct ViewOfHeavy:
   @implicit
   fn __init__(out self, h: Heavy): pass
 
-fn takeOwnedValue(owned view: ViewOfHeavy): pass
+fn takeOwnedValue(var view: ViewOfHeavy): pass
 
 # CHECK-LABEL: lit.fn @"testUnneededCopy
 fn testUnneededCopy(heavy: Heavy):

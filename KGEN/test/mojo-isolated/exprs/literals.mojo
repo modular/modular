@@ -161,7 +161,7 @@ fn test_list_comprehension():
 # ===----------------------------------------------------------------------=== #
 
 struct MyDict[K: Movable, V: AnyType]:
-    fn __init__(out self, owned keys: List[K], owned values: List[V], __dict_literal__: ()):
+    fn __init__(out self, var keys: List[K], var values: List[V], __dict_literal__: ()):
         pass
 
 struct IntDict:
@@ -208,7 +208,7 @@ fn test_dict_comprehension():
 # ===----------------------------------------------------------------------=== #
 
 struct MySet[T: AnyType]:
-    fn __init__(out self, owned *values: T, __set_literal__: ()):
+    fn __init__(out self, var *values: T, __set_literal__: ()):
         pass
 
 fn param_infer_equal[T: AnyType](a: T, b: T): pass
@@ -285,9 +285,9 @@ struct AnyCollection:
         pass
     fn __init__(out self, value: AnyType):
         pass
-    fn __init__(out self, owned *values: Int, __list_literal__: ()):
+    fn __init__(out self, var *values: Int, __list_literal__: ()):
         pass
-    fn __init__(out self, owned *values: Int, __set_literal__: ()):
+    fn __init__(out self, var *values: Int, __set_literal__: ()):
         pass
     fn __init__(out self, keys: IntList, values: IntList, __dict_literal__: ()):
         pass

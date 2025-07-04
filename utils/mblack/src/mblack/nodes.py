@@ -127,7 +127,7 @@ TEST_DESCENDANTS: Final = {
     syms.power,
 }
 TYPED_NAMES: Final = {syms.tname, syms.tname_star}
-CONVENTIONS: Final = {token.OWNED, token.READ, token.MUT, token.OUT, token.REF}
+CONVENTIONS: Final = {token.VAR, token.OWNED, token.READ, token.MUT, token.OUT, token.REF}
 ASSIGNMENTS: Final = {
     "=",
     "+=",

@@ -12,7 +12,7 @@ from runtime.asyncrt import _run
 
 
 @no_inline
-fn takeClosure(owned writer: Coroutine[Int]) -> Int:
+fn takeClosure(var writer: Coroutine[Int]) -> Int:
     return _run(writer^)
 
 

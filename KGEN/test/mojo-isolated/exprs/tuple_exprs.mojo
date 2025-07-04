@@ -118,7 +118,7 @@ trait CollectionType(Copyable, Movable):
 struct Container[T: CollectionType]:
     var x: T
 
-    fn __setitem__(mut self, i: Int, owned value: T):
+    fn __setitem__(mut self, i: Int, var value: T):
         self.x = value
 
     fn __getitem__(self, i: Int) -> T:

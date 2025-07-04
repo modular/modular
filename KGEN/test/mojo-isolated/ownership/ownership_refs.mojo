@@ -41,7 +41,7 @@ fn implicit_inout(mut a: MemExample):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_owned
-fn implicit_owned(owned a: MemExample):
+fn implicit_owned(var a: MemExample):
   pass
 
 # This preserves reference mutability
@@ -444,7 +444,7 @@ fn test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) rai
   # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[TEMP]], [[FIELDREF:%.*]]) :
 
 # CHECK-LABEL: lit.fn @"test_parameter_closure_captures
-fn test_parameter_closure_captures(owned x: MemExample, owned y: MemExample):
+fn test_parameter_closure_captures(var x: MemExample, var y: MemExample):
   # CHECK: lit.fn *"capture
   @parameter
   fn capture():
@@ -460,7 +460,7 @@ fn higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: fn() capturi
   pass
 
 # CHECK-LABEL: lit.fn @"test_higher_order_capture
-fn test_higher_order_capture(owned x: MemExample, owned y: MemExample):
+fn test_higher_order_capture(var x: MemExample, var y: MemExample):
   # CHECK: lit.fn *"capture
   @parameter
   fn capture():

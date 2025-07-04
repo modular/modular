@@ -1032,7 +1032,7 @@ struct ClosureParam[lt: MutableOrigin, f: fn () capturing [lt] -> None]:
 
 
 # CHECK-LABEL: lit.fn @"infer_implicit_params
-fn infer_implicit_params(owned p: ClosureParam):
+fn infer_implicit_params(var p: ClosureParam):
     # CHECK: call {{.*}}ClosureParam::@"__moveinit__{{.*}}<:origin<1> *"lt`", :!lit.generator<:{mut *"lt`"}:() capturing -> !kgen.none> *"f`1">
     var tmp = p^
     _ = tmp^
@@ -1495,7 +1495,7 @@ struct StructWithSpecificSelfInitTypes[size: Int]:
 
 struct DependentSpecificInitSelf[T: AnyType]:
     @implicit
-    fn __init__[U: Movable](out self: DependentSpecificInitSelf[U], owned value: U):
+    fn __init__[U: Movable](out self: DependentSpecificInitSelf[U], var value: U):
         pass
 
 fn implicit_convert_specific_Self(value: StructWithSpecificSelfInitTypes[1]):

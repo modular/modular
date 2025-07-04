@@ -148,7 +148,7 @@ fn test_owned_varargs():
     var v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
     var v3 = TalkativeMem(3)  # CHECK-NEXT: initializing 3
 
-    fn handle_owned_mem(owned *strs: TalkativeMem):
+    fn handle_owned_mem(var *strs: TalkativeMem):
         # owned arguments are mutable and live as long as they are used.
         for i in range(len(strs)):
             strs[i].state *= 2
@@ -175,7 +175,7 @@ fn test_owned_reg_varargs():
     var v2 = TalkativeReg(2)  # CHECK-NEXT: initializing 2
     var v3 = TalkativeReg(3)  # CHECK-NEXT: initializing 3
 
-    fn handle_owned_reg(owned *strs: TalkativeReg):
+    fn handle_owned_reg(var *strs: TalkativeReg):
         # owned arguments are mutable and live as long as they are used.
         for ref s in strs:
             s.state *= 2
@@ -232,7 +232,7 @@ fn test_non_trivial_reg_varargs():
 # ===----------------------------------------------------------------------=== #
 
 
-fn owned_variadic_pack[*Ts: Writable](owned *pack: *Ts):
+fn owned_variadic_pack[*Ts: Writable](var *pack: *Ts):
     print("-- testing owned variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.

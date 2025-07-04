@@ -34,7 +34,7 @@ struct MemoryOnlyInt:
   fn variadic(*value: MemoryOnlyInt):
     pass
 
-fn consume(owned a: MemoryOnlyInt): pass
+fn consume(var a: MemoryOnlyInt): pass
 
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyFloat64:
@@ -64,7 +64,7 @@ struct MemoryOnlyPair:
   # CHECK: lit.fn @"method{{.*}}(
   # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> owned_in_mem,
   # CHECK-SAME: %arg: !lit.ref<!MemoryOnlyInt, mut {{.*}}> owned_in_mem)
-  fn method(owned self, owned arg: MemoryOnlyInt):
+  fn method(var self, var arg: MemoryOnlyInt):
     # CHECK: %0 = lit.ref.struct.ger %self[y]
     # CHECK: %1 = lit.ref.struct.ger %arg[x]
     # CHECK: %2 = lit.ref.load %0
@@ -554,7 +554,7 @@ z
   return x
 
 # CHECK-LABEL: lit.fn @"test_if_cond
-fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
+fn test_if_cond(var cond: Bool, memCond: MemBoolish):
     # CHECK: %i = lit.var.decl "i"
     # CHECK: %[[COND:.*]] = lit.ref.load %cond
     # CHECK: %[[LIT_BOOLI1:.*]] = lit.call {{.*}}__mlir_i1__{{.*}}(%[[COND]])
@@ -864,10 +864,10 @@ world"
 # This is an array that has elements of MemoryOnlyInt.
 struct MemoryOnlyIntArray:
   fn __getitem__(mut self, x: Int) -> MemoryOnlyInt: pass
-  fn __setitem__(mut self, x: Int, owned value: MemoryOnlyInt): pass
+  fn __setitem__(mut self, x: Int, var value: MemoryOnlyInt): pass
 
 # CHECK-LABEL: lit.fn @"testMemoryOnlyIntArray
-fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
+fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, var moi: MemoryOnlyInt):
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
@@ -992,10 +992,10 @@ fn function_types[
   float1: fn(MemoryType) -> MemoryType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
-  float2: fn(owned RegType) -> RegType,
+  float2: fn(var RegType) -> RegType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
-  float3: fn(owned MemoryType) -> None,
+  float3: fn(var MemoryType) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
   float4: fn(mut Int) -> None,

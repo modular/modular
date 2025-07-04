@@ -63,7 +63,7 @@ enum class ArgListKind {
 /// argument           ::= "/" | "*"
 /// argument           ::= [argument_convention] [argument_variadic] identifier
 ///                        [argument_type] ["=" expression]
-/// argument_convention ::= "owned" | "read" | "mut"
+/// argument_convention ::= "var" | "read" | "mut" | "out"
 /// argument_variadic  ::= "*" | "**"
 /// argument_type      ::= ":" star_expression
 ///

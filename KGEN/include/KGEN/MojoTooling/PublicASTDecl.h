@@ -416,7 +416,7 @@ public:
   ///    "kind": "argument",
   ///    "name": string,
   ///    "description": string,
-  ///    "convention": string, // "read", "mut", "owned"
+  ///    "convention": string, // "read", "mut", "var"
   ///    "type": string
   ///    "passingKind": string,
   ///    "defaultValue": string?

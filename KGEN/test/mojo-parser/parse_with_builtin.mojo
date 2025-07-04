@@ -35,7 +35,7 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
 # CHECK-LABEL: lit.fn @"testSIMDGetter
 fn testSIMDGetter[
     type: DType
-](owned a: SIMD[type, 2]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
+](var a: SIMD[type, 2]) -> __mlir_type[`!pop.scalar<`, type.value, `>`]:
     # CHECK: %[[AVAL:.*]] = lit.ref.load %a
     # CHECK: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
     # CHECK: %[[GOT:.*]] = lit.call {{.*}}__getitem__{{.*}}(%[[AVAL]], %[[ZERO]])
