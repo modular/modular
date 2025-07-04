@@ -85,6 +85,12 @@ mutation.
 - Implicit trait conformance is removed. All conformances must be explicitly
   declared.
 
+- The `owned` argument convention is being renamed to `var`. This reflects that
+  `var` is used consistently for a "named, scoped, owning of a value" already
+  which is exactly what the `owned` convention does.  In this release, both
+  `var` and `owned` are allowed in an argument list, but `owned` will be removed
+  in a subsequent release, so please move your code over.
+
 ### Standard library changes
 
 - The `Hashable` trait has been updated to use a new data flow strategy.

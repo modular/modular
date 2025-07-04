@@ -135,7 +135,8 @@ struct _VariadicListMemIter[
         elt_type: The type of the elements in the list.
         elt_origin: The origin of the elements.
         list_origin: The origin of the VariadicListMem.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias variadic_list_type = VariadicListMem[
@@ -183,7 +184,8 @@ struct VariadicListMem[
                         mut or owned argument.
         element_type: The type of the elements in the list.
         origin: The origin of the underlying elements.
-        is_owned: Whether the elements are owned by the list.
+        is_owned: Whether the elements are owned by the list because they are
+                  passed as an 'var' argument.
     """
 
     alias reference_type = Pointer[element_type, origin]
