@@ -311,8 +311,6 @@ struct InlineArray[
             var ptr = copy.unsafe_ptr() + idx
             ptr.init_pointee_copy(self.unsafe_get(idx))
 
-        return copy
-
     fn __copyinit__(out self, other: Self):
         """Copy constructs the array from another array.
 
