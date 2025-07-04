@@ -250,9 +250,9 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   };
 
-  // Any owned/read/mut/ref keyword sets convention.
-  if (p.consumeIf(Token::kw_owned))
-    convention = kConventionOwned;
+  // Any var/read/mut/ref keyword sets convention.
+  if (p.consumeIf(Token::kw_var) || p.consumeIf(Token::kw_owned))
+    convention = kConventionVar;
   else if (p.getToken().is(Token::kw_ref)) {
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
@@ -264,7 +264,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     handleContextualArgConvention("read", kConventionRead);
   }
 
-  while (p.getToken().isAny(Token::kw_owned, Token::kw_ref)) {
+  while (p.getToken().isAny(Token::kw_owned, Token::kw_var, Token::kw_ref)) {
     p.emitTokenError("argument already has a convention specified");
     p.consumeToken();
   }
@@ -590,7 +590,7 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
                            "variadic keyword parameters not supported yet");
       }
       if (arg.convention != ParsedArgument::kConventionUnspec &&
-          arg.convention != ParsedArgument::kConventionOwned) {
+          arg.convention != ParsedArgument::kConventionVar) {
         return p.emitError(
             arg.loc,
             "non-owned variadic keyword arguments are not supported yet");
@@ -1067,7 +1067,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // The reference is immutable when borrowing, mutable otherwise.
   bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
                    arg.convention != ParsedArgument::kConventionUnspec;
-  bool isOwned = arg.convention == ParsedArgument::kConventionOwned;
+  bool isVar = arg.convention == ParsedArgument::kConventionVar;
 
   // Arguments passed by memory need an associated origin parameter, and need
   // to be passed by reference.
@@ -1111,10 +1111,10 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 #endif
 
   auto isMutType = typeSig.getParamTypes()[0];
-  auto isOwnedType = typeSig.getParamTypes()[1];
+  auto isVarType = typeSig.getParamTypes()[1];
   auto originType = typeSig.getParamTypes()[2];
   auto traitMetaType = typeSig.getParamTypes()[3];
-  if (!isa<LIT::StructType>(isMutType) || !isa<LIT::StructType>(isOwnedType) ||
+  if (!isa<LIT::StructType>(isMutType) || !isa<LIT::StructType>(isVarType) ||
       !isa<LIT::StructType>(originType) || !isa<AnyTraitType>(traitMetaType) ||
       !isa<VariadicType>(typeSig.getParamTypes()[4])) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
@@ -1130,12 +1130,12 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   evaluator.addInputValue(isMut);
 
-  auto isOwnedAttr = BoolAttr::get(emitter.getContext(), isOwned);
-  PValue isOwnedVal =
-      emitter.emitPValue({isOwnedAttr, arg.typeExpr}, EC_Type, isOwnedType);
-  if (!isOwnedVal)
+  auto isVarAttr = BoolAttr::get(emitter.getContext(), isVar);
+  PValue isVarVal =
+      emitter.emitPValue({isVarAttr, arg.typeExpr}, EC_Type, isVarType);
+  if (!isVarVal)
     return {};
-  evaluator.addInputValue(isOwnedVal);
+  evaluator.addInputValue(isVarVal);
 
   PValue origin =
       emitter.emitPValue({refType.getOrigin(), arg.typeExpr}, EC_Type,
@@ -1158,8 +1158,8 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 
   // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.
-  return packStruct.bindReference({isMut.get(), isOwnedVal.get(), origin.get(),
-                                   traitMT.get(), param.get()});
+  return packStruct.bindReference(
+      {isMut.get(), isVarVal.get(), origin.get(), traitMT.get(), param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default
@@ -1234,7 +1234,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
   if (arg.convention == ParsedArgument::kConventionUnspec) {
     // TODO: enable other conventions for **kwargs.
     arg.convention = arg.variadicKind == VariadicKind::KwVarArg
-                         ? ParsedArgument::kConventionOwned
+                         ? ParsedArgument::kConventionVar
                          : ParsedArgument::kConventionRead;
   }
 
@@ -1266,7 +1266,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
     llvm_unreachable("should be resolved by now");
   case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
-  case ParsedArgument::kConventionOwned:
+  case ParsedArgument::kConventionVar:
     // Owned arguments are always passed in memory, allowing us to check for
     // exclusivity and other requirements.  Register passable arguments are
     // promoted to being passed in registers after elaboration.
@@ -1333,7 +1333,7 @@ static void typeCheckOneArgument(size_t idx, bool isStaticMethod,
     case ParsedArgument::kConventionByRefResult:
     case ParsedArgument::kConventionOut:
       llvm_unreachable("not a pack arg convention");
-    case ParsedArgument::kConventionOwned:
+    case ParsedArgument::kConventionVar:
       arg.kgenVariadicConvention = ArgConvention::OwnedMem;
       arg.kgenConvention = ArgConvention::OwnedMem;
       break;
@@ -1924,7 +1924,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
         emitError("special method may not be a static method");
     } else if (fnInfo.requiresOwnedSelfInstMethod() &&
                parsedArgs[kSelfArgNo].convention !=
-                   ParsedArgument::kConventionOwned) {
+                   ParsedArgument::kConventionVar) {
       emitErrorLoc(parsedArgs[kSelfArgNo].loc, "self argument must be 'owned'")
           << FixIt::insertBeforeToken(parsedArgs[kSelfArgNo].loc, "owned ");
     }
@@ -1970,7 +1970,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
         emitErrorLoc(parsedArgs[0].loc,
                      "existing value argument must be passed as 'read'");
     } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
-      if (parsedArgs[0].convention != ParsedArgument::kConventionOwned)
+      if (parsedArgs[0].convention != ParsedArgument::kConventionVar)
         emitErrorLoc(parsedArgs[0].loc,
                      "existing value argument must be passed as 'owned'");
     }
