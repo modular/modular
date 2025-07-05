@@ -38,6 +38,35 @@ def test_Py_IncRef_DecRef(mut python: Python):
     assert_equal(cpy._Py_REFCNT(n), 1)
 
 
+def test_PyErr(python: Python):
+    var cpy = python.cpython()
+
+    var ValueError = cpy.get_error_global("PyExc_ValueError")
+    var msg = "some error message"
+
+    assert_false(cpy.PyErr_Occurred())
+
+    cpy.PyErr_SetNone(ValueError)
+    assert_true(cpy.PyErr_Occurred())
+    cpy.PyErr_Clear()
+
+    cpy.PyErr_SetString(ValueError, msg.unsafe_cstr_ptr())
+    assert_true(cpy.PyErr_Occurred())
+    # PyErr_GetRaisedException clears the error indicator
+    assert_true(cpy.PyErr_GetRaisedException())
+
+    _ = msg
+
+
+def test_PyThread(python: Python):
+    var cpy = python.cpython()
+
+    var gstate = cpy.PyGILState_Ensure()
+    var save = cpy.PyEval_SaveThread()
+    cpy.PyEval_RestoreThread(save)
+    cpy.PyGILState_Release(gstate)
+
+
 def test_PyObject_HasAttrString(mut python: Python):
     var cpython_env = python.cpython()
 
@@ -128,6 +157,12 @@ def main():
 
     # Reference Counting
     test_Py_IncRef_DecRef(python)
+
+    # Exception Handling
+    test_PyErr(python)
+
+    # Initialization, Finalization, and Threads
+    test_PyThread(python)
 
     test_PyObject_HasAttrString(python)
     test_PyDict(python)

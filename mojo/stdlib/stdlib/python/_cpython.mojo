@@ -89,8 +89,16 @@ struct PyGILState_STATE:
 
 
 struct PyThreadState:
-    """Opaque struct."""
+    """This data structure represents the state of a single thread.
 
+    It's an opaque struct.
+
+    References:
+    - https://docs.python.org/3/c-api/init.html#c.PyThreadState
+    """
+
+    # TODO: add this public data member
+    # PyInterpreterState *interp
     pass
 
 
@@ -750,6 +758,101 @@ alias Py_DecRef = ExternalFunction[
     fn (PyObjectPtr) -> None,
 ]
 
+# Exception Handling
+# - Printing and clearing
+alias PyErr_Clear = ExternalFunction[
+    "PyErr_Clear",
+    # void PyErr_Clear()
+    fn () -> None,
+]
+# - Raising exceptions
+alias PyErr_SetString = ExternalFunction[
+    "PyErr_SetString",
+    # void PyErr_SetString(PyObject *type, const char *message)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False]) -> None,
+]
+alias PyErr_SetNone = ExternalFunction[
+    "PyErr_SetNone",
+    # void PyErr_SetNone(PyObject *type)
+    fn (PyObjectPtr) -> None,
+]
+# - Querying the error indicator
+alias PyErr_Occurred = ExternalFunction[
+    "PyErr_Occurred",
+    # PyObject *PyErr_Occurred()
+    fn () -> PyObjectPtr,
+]
+alias PyErr_GetRaisedException = ExternalFunction[
+    "PyErr_GetRaisedException",
+    # PyObject *PyErr_GetRaisedException()
+    fn () -> PyObjectPtr,
+]
+alias PyErr_Fetch = ExternalFunction[
+    "PyErr_Fetch",
+    # void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback)
+    fn (
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+    ) -> None,
+]
+
+# Initialization, Finalization, and Threads
+alias PyEval_SaveThread = ExternalFunction[
+    "PyEval_SaveThread",
+    # PyThreadState *PyEval_SaveThread()
+    fn () -> UnsafePointer[PyThreadState],
+]
+alias PyEval_RestoreThread = ExternalFunction[
+    "PyEval_RestoreThread",
+    # void PyEval_RestoreThread(PyThreadState *tstate)
+    fn (UnsafePointer[PyThreadState]) -> None,
+]
+alias PyGILState_Ensure = ExternalFunction[
+    "PyGILState_Ensure",
+    # PyGILState_STATE PyGILState_Ensure()
+    fn () -> PyGILState_STATE,
+]
+alias PyGILState_Release = ExternalFunction[
+    "PyGILState_Release",
+    # void PyGILState_Release(PyGILState_STATE)
+    fn (PyGILState_STATE) -> None,
+]
+
+# Importing Modules
+alias PyImport_ImportModule = ExternalFunction[
+    "PyImport_ImportModule",
+    # PyObject *PyImport_ImportModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+alias PyImport_AddModule = ExternalFunction[
+    "PyImport_AddModule",
+    # PyObject *PyImport_AddModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+
+# Module Objects
+alias PyModule_GetDict = ExternalFunction[
+    "PyModule_GetDict",
+    # PyObject *PyModule_GetDict(PyObject *module)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyModule_Create2 = ExternalFunction[
+    "PyModule_Create2",
+    # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
+    fn (UnsafePointer[PyModuleDef], c_int) -> PyObjectPtr,
+]
+alias PyModule_AddFunctions = ExternalFunction[
+    "PyModule_AddFunctions",
+    # int PyModule_AddFunctions(PyObject *module, PyMethodDef *functions)
+    fn (PyObjectPtr, UnsafePointer[PyMethodDef]) -> c_int,
+]
+alias PyModule_AddObjectRef = ExternalFunction[
+    "PyModule_AddObjectRef",
+    # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
+]
+
 # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
 alias PyLong_FromSsize_t = ExternalFunction[
     "PyLong_FromSsize_t",
@@ -877,6 +980,26 @@ struct CPython(Copyable, Defaultable, Movable):
     # Reference Counting
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
+    # Exception Handling
+    var _PyErr_Clear: PyErr_Clear.type
+    var _PyErr_SetString: PyErr_SetString.type
+    var _PyErr_SetNone: PyErr_SetNone.type
+    var _PyErr_Occurred: PyErr_Occurred.type
+    var _PyErr_GetRaisedException: PyErr_GetRaisedException.type
+    var _PyErr_Fetch: PyErr_Fetch.type
+    # Initialization, Finalization, and Threads
+    var _PyEval_SaveThread: PyEval_SaveThread.type
+    var _PyEval_RestoreThread: PyEval_RestoreThread.type
+    var _PyGILState_Ensure: PyGILState_Ensure.type
+    var _PyGILState_Release: PyGILState_Release.type
+    # Import Modules
+    var _PyImport_ImportModule: PyImport_ImportModule.type
+    var _PyImport_AddModule: PyImport_AddModule.type
+    # Module Objects
+    var _PyModule_GetDict: PyModule_GetDict.type
+    var _PyModule_Create2: PyModule_Create2.type
+    var _PyModule_AddFunctions: PyModule_AddFunctions.type
+    var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
 
     var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
@@ -952,6 +1075,26 @@ struct CPython(Copyable, Defaultable, Movable):
 
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
+
+        self._PyErr_Clear = PyErr_Clear.load(self.lib)
+        self._PyErr_SetString = PyErr_SetString.load(self.lib)
+        self._PyErr_SetNone = PyErr_SetNone.load(self.lib)
+        self._PyErr_Occurred = PyErr_Occurred.load(self.lib)
+        self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(self.lib)
+        self._PyErr_Fetch = PyErr_Fetch.load(self.lib)
+
+        self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
+        self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
+        self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
+        self._PyGILState_Release = PyGILState_Release.load(self.lib)
+
+        self._PyImport_ImportModule = PyImport_ImportModule.load(self.lib)
+        self._PyImport_AddModule = PyImport_AddModule.load(self.lib)
+
+        self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
+        self._PyModule_Create2 = PyModule_Create2.load(self.lib)
+        self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
+        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
 
         self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
@@ -1131,35 +1274,252 @@ struct CPython(Copyable, Defaultable, Movable):
         return ptr.unsized_obj_ptr.bitcast[Py_ssize_t]()[]
 
     # ===-------------------------------------------------------------------===#
-    # Python GIL and threading
+    # Exception Handling
+    # ref: https://docs.python.org/3/c-api/exceptions.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyGILState_Ensure(self) -> PyGILState_STATE:
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyGILState_Ensure).
-        """
-        return self.lib.call["PyGILState_Ensure", PyGILState_STATE]()
+    # ===-------------------------------------------------------------------===#
+    # - Printing and clearing
+    # ===-------------------------------------------------------------------===#
 
-    fn PyGILState_Release(self, state: PyGILState_STATE):
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyGILState_Release).
+    fn PyErr_Clear(self):
+        """Clear the error indicator. If the error indicator is not set, there
+        is no effect.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Clear
         """
-        self.lib.call["PyGILState_Release"](state)
+        self._PyErr_Clear()
+
+    # ===-------------------------------------------------------------------===#
+    # - Raising exceptions
+    # ===-------------------------------------------------------------------===#
+
+    fn PyErr_SetString(
+        self,
+        type: PyObjectPtr,
+        message: UnsafePointer[c_char],
+    ):
+        """This is the most common way to set the error indicator. The first
+        argument specifies the exception type; it is normally one of the
+        standard exceptions, e.g. `PyExc_RuntimeError`. You need not create a
+        new strong reference to it (e.g. with `Py_INCREF()`). The second
+        argument is an error message; it is decoded from `'utf-8'`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
+        """
+        self._PyErr_SetString(type, message)
+
+    fn PyErr_SetNone(self, type: PyObjectPtr):
+        """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetNone
+        """
+        self._PyErr_SetNone(type)
+
+    # ===-------------------------------------------------------------------===#
+    # - Querying the error indicator
+    # ===-------------------------------------------------------------------===#
+
+    # TODO: fix the return type
+    fn PyErr_Occurred(self) -> Bool:
+        """Test whether the error indicator is set. If set, return the exception
+        type (the first argument to the last call to one of the `PyErr_Set*`
+        functions or to `PyErr_Restore()`). If not set, return `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred
+        """
+        return Bool(self._PyErr_Occurred())
+
+    fn PyErr_GetRaisedException(self) -> PyObjectPtr:
+        """Return the exception currently being raised, clearing the error
+        indicator at the same time. Return `NULL` if the error indicator is not
+        set.
+
+        Return value: New reference. Part of the Stable ABI since version 3.12.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException
+        """
+        var r = self._PyErr_GetRaisedException()
+        self.log(
+            r, " NEWREF PyErr_GetRaisedException, refcnt:", self._Py_REFCNT(r)
+        )
+        self._inc_total_rc()
+        return r
+
+    # TODO: fix the type
+    fn PyErr_Fetch(self) -> PyObjectPtr:
+        """Retrieve the error indicator into three variables whose addresses
+        are passed.
+
+        Deprecated since version 3.12.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Fetch
+        """
+        var type = PyObjectPtr()
+        var value = PyObjectPtr()
+        var traceback = PyObjectPtr()
+
+        self._PyErr_Fetch(
+            UnsafePointer(to=type),
+            UnsafePointer(to=value),
+            UnsafePointer(to=traceback),
+        )
+
+        var r = value
+        self.log(r, " NEWREF PyErr_Fetch, refcnt:", self._Py_REFCNT(r))
+        self._inc_total_rc()
+        return r
+
+    # ===-------------------------------------------------------------------===#
+    # Initialization, Finalization, and Threads
+    # ref: https://docs.python.org/3/c-api/init.html
+    # ===-------------------------------------------------------------------===#
 
     fn PyEval_SaveThread(self) -> UnsafePointer[PyThreadState]:
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyEval_SaveThread).
-        """
+        """Release the global interpreter lock (if it has been created) and
+        reset the thread state to `NULL`, returning the previous thread state
+        (which is not `NULL`).
 
-        return self.lib.call[
-            "PyEval_SaveThread", UnsafePointer[PyThreadState]
-        ]()
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyEval_SaveThread
+        """
+        return self._PyEval_SaveThread()
 
     fn PyEval_RestoreThread(self, state: UnsafePointer[PyThreadState]):
-        """[Reference](
-        https://docs.python.org/3/c-api/init.html#c.PyEval_RestoreThread).
+        """Acquire the global interpreter lock (if it has been created) and
+        set the thread state to tstate, which must not be `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyEval_RestoreThread
         """
-        self.lib.call["PyEval_RestoreThread"](state)
+        self._PyEval_RestoreThread(state)
+
+    fn PyGILState_Ensure(self) -> PyGILState_STATE:
+        """Ensure that the current thread is ready to call the Python C API
+        regardless of the current state of Python, or of the global interpreter
+        lock.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Ensure
+        """
+        return self._PyGILState_Ensure()
+
+    fn PyGILState_Release(self, state: PyGILState_STATE):
+        """Release any resources previously acquired.
+
+        References:
+        - https://docs.python.org/3/c-api/init.html#c.PyGILState_Release
+        """
+        self._PyGILState_Release(state)
+
+    # ===-------------------------------------------------------------------===#
+    # Importing Modules
+    # ref: https://docs.python.org/3/c-api/import.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyImport_ImportModule(self, owned name: String) -> PyObjectPtr:
+        """This is a wrapper around `PyImport_Import()` which takes a `const char*`
+        as an argument instead of a `PyObject*`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
+        """
+        var r = self._PyImport_ImportModule(name.unsafe_cstr_ptr())
+        self.log(
+            r,
+            " NEWREF PyImport_ImportModule, str:",
+            name,
+            ", refcnt:",
+            self._Py_REFCNT(r),
+        )
+        self._inc_total_rc()
+        return r
+
+    fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
+        """Return the module object corresponding to a module name.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
+        """
+        return self._PyImport_AddModule(name.unsafe_cstr_ptr())
+
+    # ===-------------------------------------------------------------------===#
+    # Module Objects
+    # ref: https://docs.python.org/3/c-api/module.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyModule_GetDict(self, module: PyObjectPtr) -> PyObjectPtr:
+        """Return the dictionary object that implements `module`'s namespace;
+        this object is the same as the `__dict__` attribute of the module
+        object.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
+        """
+        return self._PyModule_GetDict(module)
+
+    fn PyModule_Create(self, name: StaticString) -> PyObjectPtr:
+        """Create a new module object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_Create
+        """
+
+        # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
+        # for what we want to do here.
+        var module_def_ptr = UnsafePointer[PyModuleDef].alloc(1)
+        module_def_ptr.init_pointee_move(PyModuleDef(name))
+
+        # TODO: set gil stuff
+        # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
+        # after the caller imports said module.
+
+        # TODO: it would be nice to programmatically call a CPython API to get the value here
+        # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
+        # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
+        # docs.
+        alias module_api_version: c_int = 1013
+        return self._PyModule_Create2(module_def_ptr, module_api_version)
+
+    fn PyModule_AddFunctions(
+        self,
+        module: PyObjectPtr,
+        functions: UnsafePointer[PyMethodDef],
+    ) -> c_int:
+        """Add the functions from the `NULL` terminated `functions` array to
+        module.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions
+        """
+        return self._PyModule_AddFunctions(module, functions)
+
+    fn PyModule_AddObjectRef(
+        self,
+        module: PyObjectPtr,
+        name: UnsafePointer[c_char],
+        value: PyObjectPtr,
+    ) -> c_int:
+        """Add an object to `module` as `name`.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
+        """
+        return self._PyModule_AddObjectRef(module, name, value)
 
     # ===-------------------------------------------------------------------===#
     # Python Set operations
@@ -1289,99 +1649,6 @@ struct CPython(Copyable, Defaultable, Movable):
             self._Py_REFCNT(value[]),
         )
         return r
-
-    # ===-------------------------------------------------------------------===#
-    # Python Module operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyImport_ImportModule(
-        self,
-        owned name: String,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule).
-        """
-
-        var r = self.lib.call["PyImport_ImportModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
-
-        self.log(
-            r,
-            " NEWREF PyImport_ImportModule, str:",
-            name,
-            ", refcnt:",
-            self._Py_REFCNT(r),
-        )
-
-        self._inc_total_rc()
-        return r
-
-    fn PyImport_AddModule(self, owned name: String) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule).
-        """
-        return self.lib.call["PyImport_AddModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
-
-    fn PyModule_Create(
-        self,
-        name: StaticString,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_Create).
-        """
-
-        # TODO: See https://docs.python.org/3/c-api/module.html#c.PyModule_Create
-        # and https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
-        # for what we want to do essentially here.
-        var module_def_ptr = UnsafePointer[PyModuleDef].alloc(1)
-        var module_def = PyModuleDef(name)
-        module_def_ptr.init_pointee_move(module_def^)
-
-        # TODO: set gil stuff
-        # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
-        # after the caller imports said module.
-
-        # TODO: it would be nice to programmatically call a CPython API to get the value here
-        # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
-        # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
-        # docs.
-        var module_api_version = 1013
-        return self.lib.call["PyModule_Create2", PyObjectPtr](
-            module_def_ptr, module_api_version
-        )
-
-    fn PyModule_AddFunctions(
-        self,
-        mod: PyObjectPtr,
-        functions: UnsafePointer[PyMethodDef],
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions).
-        """
-        return self.lib.call["PyModule_AddFunctions", c_int](mod, functions)
-
-    fn PyModule_AddObjectRef(
-        self,
-        module: PyObjectPtr,
-        name: UnsafePointer[c_char, **_],
-        value: PyObjectPtr,
-    ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef).
-        """
-
-        return self.lib.call["PyModule_AddObjectRef", c_int](
-            module, name, value
-        )
-
-    fn PyModule_GetDict(self, name: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
-        """
-        return self.lib.call["PyModule_GetDict", PyObjectPtr](name)
 
     # ===-------------------------------------------------------------------===#
     # Python Type operations
@@ -2116,104 +2383,6 @@ struct CPython(Copyable, Defaultable, Movable):
         return StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)](
             ptr=ptr, length=length
         )
-
-    # ===-------------------------------------------------------------------===#
-    # Python Error operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyErr_Clear(self):
-        """Clear the error indicator. If the error indicator is not set, there
-        is no effect.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Clear
-        """
-        # void PyErr_Clear()
-        self.lib.call["PyErr_Clear"]()
-
-    # TODO: fix the return type
-    fn PyErr_Occurred(self) -> Bool:
-        """Test whether the error indicator is set. If set, return the exception
-        type (the first argument to the last call to one of the `PyErr_Set*`
-        functions or to `PyErr_Restore()`). If not set, return NULL.
-
-        Return value: Borrowed reference.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred
-        """
-        # PyObject *PyErr_Occurred()
-        return Bool(self.lib.call["PyErr_Occurred", PyObjectPtr]())
-
-    # TODO: fix the type
-    fn PyErr_Fetch(self) -> PyObjectPtr:
-        """Retrieve the error indicator into three variables whose addresses
-        are passed.
-
-        Deprecated since version 3.12.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Fetch
-        """
-        var type = PyObjectPtr()
-        var value = PyObjectPtr()
-        var traceback = PyObjectPtr()
-
-        # void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback)
-        self.lib.call["PyErr_Fetch"](
-            UnsafePointer(to=type),
-            UnsafePointer(to=value),
-            UnsafePointer(to=traceback),
-        )
-
-        var r = value
-        self.log(r, " NEWREF PyErr_Fetch, refcnt:", self._Py_REFCNT(r))
-        self._inc_total_rc()
-        return r
-
-    fn PyErr_GetRaisedException(self) -> PyObjectPtr:
-        """Return the exception currently being raised, clearing the error
-        indicator at the same time. Return `NULL` if the error indicator is not
-        set.
-
-        Return value: New reference. Part of the Stable ABI since version 3.12.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException
-        """
-        # PyObject *PyErr_GetRaisedException(void)
-        var r = self.lib.call["PyErr_GetRaisedException", PyObjectPtr]()
-        self.log(
-            r, " NEWREF PyErr_GetRaisedException, refcnt:", self._Py_REFCNT(r)
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyErr_SetNone(self, type: PyObjectPtr):
-        """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetNone
-        """
-        # void PyErr_SetNone(PyObject *type)
-        self.lib.call["PyErr_SetNone"](type)
-
-    fn PyErr_SetString(
-        self,
-        type: PyObjectPtr,
-        message: UnsafePointer[c_char],
-    ):
-        """This is the most common way to set the error indicator. The first
-        argument specifies the exception type; it is normally one of the
-        standard exceptions, e.g. `PyExc_RuntimeError`. You need not create a
-        new strong reference to it (e.g. with `Py_INCREF()`). The second
-        argument is an error message; it is decoded from `'utf-8'`.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
-        """
-        # void PyErr_SetString(PyObject *type, const char *message)
-        self.lib.call["PyErr_SetString"](type, message)
 
     # ===-------------------------------------------------------------------===#
     # Python Error types
