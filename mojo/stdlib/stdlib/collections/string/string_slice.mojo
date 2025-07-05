@@ -74,7 +74,7 @@ from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from python import Python, PythonConvertible, PythonObject
 
-from utils.write import _WriteBufferStack
+from utils.write import _WriteBufferStack, _TotalWritableBytes
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -2189,7 +2189,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: Copyable & Movable & Writable
+        T: Copyable & Movable & Writable, //,
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
@@ -2202,15 +2202,32 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             The joined string.
+
+        Notes:
+            - Defaults to writing directly to the string if the bytes
+            fit in an inline `String`, otherwise will process it by chunks.
         """
-        var string = String()
-        var buffer = _WriteBufferStack(string)
-        for i in range(len(elems)):
-            buffer.write(elems[i])
-            if i < len(elems) - 1:
-                buffer.write(self)
+        if len(elems) == 0:
+            return String()
+
+        var sep = StaticString(ptr=self.unsafe_ptr(), length=self.byte_length())
+        var total_bytes = _TotalWritableBytes(elems, sep=sep).size
+        var result = String(capacity=total_bytes)
+
+        if result._is_inline():
+            # Write directly to the stack address
+            result.write(elems[0])
+            for i in range(1, len(elems)):
+                result.write(self, elems[i])
+            return result^
+
+        var buffer = _WriteBufferStack(result)
+
+        buffer.write(elems[0])
+        for i in range(1, len(elems)):
+            buffer.write(self, elems[i])
         buffer.flush()
-        return string
+        return result^
 
     # TODO(MOCO-1791): The corresponding String.__init__ is limited to
     # StaticString. This is because default arguments and param inference aren't

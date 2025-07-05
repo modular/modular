@@ -976,7 +976,7 @@ struct String(
             The joined string.
         """
         var sep = rebind[StaticString](  # FIXME(#4414): this should not be so
-            StringSlice(ptr=self.unsafe_ptr(), length=len(self))
+            StringSlice(ptr=self.unsafe_ptr(), length=self.byte_length())
         )
         return String(elems, sep=sep)
 
@@ -998,17 +998,16 @@ struct String(
 
         Returns:
             The joined string.
+
+        Notes:
+            - Defaults to writing directly to the string if the bytes
+            fit in an inline `String`, otherwise will process it by chunks.
+            - The `buffer_size` defaults to 4096 bytes to match the default
+            page size on arm64 and x86-64, but you can increase this if you're
+            joining a very large `List` of elements to write into the stack
+            instead of the heap.
         """
-        var result = String()
-        if not len(elems):
-            return result^
-        var buffer = _WriteBufferStack(result)
-        buffer.write(elems[0])
-        for i in range(1, len(elems)):
-            buffer.write(self)
-            buffer.write(elems[i])
-        buffer.flush()
-        return result^
+        return self.as_string_slice().join(elems)
 
     fn codepoints(self) -> CodepointsIter[__origin_of(self)]:
         """Returns an iterator over the `Codepoint`s encoded in this string slice.
