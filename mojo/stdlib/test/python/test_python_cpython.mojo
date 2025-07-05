@@ -14,7 +14,7 @@
 # RUN: %mojo %s
 
 from python import Python, PythonObject
-from python._cpython import Py_ssize_t, PyObjectPtr
+from python._cpython import Py_ssize_t, PyMethodDef, PyObjectPtr
 from testing import (
     assert_false,
     assert_equal,
@@ -73,6 +73,33 @@ def test_PyThread(python: Python):
     var save = cpy.PyEval_SaveThread()
     cpy.PyEval_RestoreThread(save)
     cpy.PyGILState_Release(gstate)
+
+
+def test_PyImport(python: Python):
+    var cpy = python.cpython()
+
+    assert_true(cpy.PyImport_ImportModule("builtins"))
+    assert_true(cpy.PyImport_AddModule("test"))
+
+
+def test_PyModule(python: Python):
+    var cpy = python.cpython()
+
+    var mod = cpy.PyModule_Create("module")
+    assert_true(mod)
+
+    assert_true(cpy.PyModule_GetDict(mod))
+
+    var funcs = InlineArray[PyMethodDef, 1](fill={})
+    # returns 0 on success, -1 on failure
+    assert_equal(cpy.PyModule_AddFunctions(mod, funcs.unsafe_ptr()), 0)
+    _ = funcs
+
+    var n = cpy.PyLong_FromSsize_t(0)
+    var name = "n"
+    # returns 0 on success, -1 on failure
+    assert_equal(cpy.PyModule_AddObjectRef(mod, name.unsafe_cstr_ptr(), n), 0)
+    _ = name
 
 
 def test_PyObject_HasAttrString(mut python: Python):
@@ -171,6 +198,12 @@ def main():
 
     # Initialization, Finalization, and Threads
     test_PyThread(python)
+
+    # Importing Modules
+    test_PyImport(python)
+
+    # Module Objects
+    test_PyModule(python)
 
     test_PyObject_HasAttrString(python)
     test_PyDict(python)

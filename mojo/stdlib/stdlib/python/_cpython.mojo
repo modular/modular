@@ -819,6 +819,40 @@ alias PyGILState_Release = ExternalFunction[
     fn (PyGILState_STATE) -> None,
 ]
 
+# Importing Modules
+alias PyImport_ImportModule = ExternalFunction[
+    "PyImport_ImportModule",
+    # PyObject *PyImport_ImportModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+alias PyImport_AddModule = ExternalFunction[
+    "PyImport_AddModule",
+    # PyObject *PyImport_AddModule(const char *name)
+    fn (UnsafePointer[c_char, mut=False]) -> PyObjectPtr,
+]
+
+# Module Objects
+alias PyModule_GetDict = ExternalFunction[
+    "PyModule_GetDict",
+    # PyObject *PyModule_GetDict(PyObject *module)
+    fn (PyObjectPtr) -> PyObjectPtr,
+]
+alias PyModule_Create2 = ExternalFunction[
+    "PyModule_Create2",
+    # PyObject *PyModule_Create2(PyModuleDef *def, int module_api_version)
+    fn (UnsafePointer[PyModuleDef], c_int) -> PyObjectPtr,
+]
+alias PyModule_AddFunctions = ExternalFunction[
+    "PyModule_AddFunctions",
+    # int PyModule_AddFunctions(PyObject *module, PyMethodDef *functions)
+    fn (PyObjectPtr, UnsafePointer[PyMethodDef]) -> c_int,
+]
+alias PyModule_AddObjectRef = ExternalFunction[
+    "PyModule_AddObjectRef",
+    # int PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False], PyObjectPtr) -> c_int,
+]
+
 # PyObject *PyLong_FromSsize_t(Py_ssize_t v)
 alias PyLong_FromSsize_t = ExternalFunction[
     "PyLong_FromSsize_t",
@@ -964,6 +998,14 @@ struct CPython(Copyable, Defaultable, Movable):
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
     var _PyGILState_Ensure: PyGILState_Ensure.type
     var _PyGILState_Release: PyGILState_Release.type
+    # Import Modules
+    var _PyImport_ImportModule: PyImport_ImportModule.type
+    var _PyImport_AddModule: PyImport_AddModule.type
+    # Module Objects
+    var _PyModule_GetDict: PyModule_GetDict.type
+    var _PyModule_Create2: PyModule_Create2.type
+    var _PyModule_AddFunctions: PyModule_AddFunctions.type
+    var _PyModule_AddObjectRef: PyModule_AddObjectRef.type
 
     var PyLong_FromSsize_t_func: PyLong_FromSsize_t.type
     var PyList_SetItem_func: PyList_SetItem.type
@@ -1056,6 +1098,14 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
         self._PyGILState_Ensure = PyGILState_Ensure.load(self.lib)
         self._PyGILState_Release = PyGILState_Release.load(self.lib)
+
+        self._PyImport_ImportModule = PyImport_ImportModule.load(self.lib)
+        self._PyImport_AddModule = PyImport_AddModule.load(self.lib)
+
+        self._PyModule_GetDict = PyModule_GetDict.load(self.lib)
+        self._PyModule_Create2 = PyModule_Create2.load(self.lib)
+        self._PyModule_AddFunctions = PyModule_AddFunctions.load(self.lib)
+        self._PyModule_AddObjectRef = PyModule_AddObjectRef.load(self.lib)
 
         self.PyLong_FromSsize_t_func = PyLong_FromSsize_t.load(self.lib)
         self.PyList_SetItem_func = PyList_SetItem.load(self.lib)
@@ -1509,21 +1559,20 @@ struct CPython(Copyable, Defaultable, Movable):
         return r
 
     # ===-------------------------------------------------------------------===#
-    # Python Module operations
+    # Importing Modules
+    # ref: https://docs.python.org/3/c-api/import.html
     # ===-------------------------------------------------------------------===#
 
-    fn PyImport_ImportModule(
-        self,
-        owned name: String,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule).
+    fn PyImport_ImportModule(self, owned name: String) -> PyObjectPtr:
+        """This is a wrapper around `PyImport_Import()` which takes a `const char*`
+        as an argument instead of a `PyObject*`.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_ImportModule
         """
-
-        var r = self.lib.call["PyImport_ImportModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
-
+        var r = self._PyImport_ImportModule(name.unsafe_cstr_ptr())
         self.log(
             r,
             " NEWREF PyImport_ImportModule, str:",
@@ -1531,32 +1580,49 @@ struct CPython(Copyable, Defaultable, Movable):
             ", refcnt:",
             self._Py_REFCNT(r),
         )
-
         self._inc_total_rc()
         return r
 
     fn PyImport_AddModule(self, var name: String) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule).
-        """
-        return self.lib.call["PyImport_AddModule", PyObjectPtr](
-            name.unsafe_cstr_ptr()
-        )
+        """Return the module object corresponding to a module name.
 
-    fn PyModule_Create(
-        self,
-        name: StaticString,
-    ) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_Create).
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/import.html#c.PyImport_AddModule
+        """
+        return self._PyImport_AddModule(name.unsafe_cstr_ptr())
+
+    # ===-------------------------------------------------------------------===#
+    # Module Objects
+    # ref: https://docs.python.org/3/c-api/module.html
+    # ===-------------------------------------------------------------------===#
+
+    fn PyModule_GetDict(self, module: PyObjectPtr) -> PyObjectPtr:
+        """Return the dictionary object that implements `module`'s namespace;
+        this object is the same as the `__dict__` attribute of the module
+        object.
+
+        Return value: Borrowed reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
+        """
+        return self._PyModule_GetDict(module)
+
+    fn PyModule_Create(self, name: StaticString) -> PyObjectPtr:
+        """Create a new module object.
+
+        Return value: New reference.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_Create
         """
 
-        # TODO: See https://docs.python.org/3/c-api/module.html#c.PyModule_Create
-        # and https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
-        # for what we want to do essentially here.
+        # NOTE: See https://github.com/pybind/pybind11/blob/a1d00916b26b187e583f3bce39cd59c3b0652c32/include/pybind11/pybind11.h#L1326
+        # for what we want to do here.
         var module_def_ptr = UnsafePointer[PyModuleDef].alloc(1)
-        var module_def = PyModuleDef(name)
-        module_def_ptr.init_pointee_move(module_def^)
+        module_def_ptr.init_pointee_move(PyModuleDef(name))
 
         # TODO: set gil stuff
         # Note: Python automatically calls https://docs.python.org/3/c-api/module.html#c.PyState_AddModule
@@ -1566,40 +1632,34 @@ struct CPython(Copyable, Defaultable, Movable):
         # but I think it's only defined via the `PYTHON_API_VERSION` macro that ships with Python.
         # if this mismatches with the user's Python, then a `RuntimeWarning` is emitted according to the
         # docs.
-        var module_api_version = 1013
-        return self.lib.call["PyModule_Create2", PyObjectPtr](
-            module_def_ptr, module_api_version
-        )
+        alias module_api_version: c_int = 1013
+        return self._PyModule_Create2(module_def_ptr, module_api_version)
 
     fn PyModule_AddFunctions(
         self,
-        mod: PyObjectPtr,
+        module: PyObjectPtr,
         functions: UnsafePointer[PyMethodDef],
     ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions).
+        """Add the functions from the `NULL` terminated `functions` array to
+        module.
+
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddFunctions
         """
-        return self.lib.call["PyModule_AddFunctions", c_int](mod, functions)
+        return self._PyModule_AddFunctions(module, functions)
 
     fn PyModule_AddObjectRef(
         self,
         module: PyObjectPtr,
-        name: UnsafePointer[c_char, **_],
+        name: UnsafePointer[c_char],
         value: PyObjectPtr,
     ) -> c_int:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef).
-        """
+        """Add an object to `module` as `name`.
 
-        return self.lib.call["PyModule_AddObjectRef", c_int](
-            module, name, value
-        )
-
-    fn PyModule_GetDict(self, name: PyObjectPtr) -> PyObjectPtr:
-        """[Reference](
-        https://docs.python.org/3/c-api/module.html#c.PyModule_GetDict).
+        References:
+        - https://docs.python.org/3/c-api/module.html#c.PyModule_AddObjectRef
         """
-        return self.lib.call["PyModule_GetDict", PyObjectPtr](name)
+        return self._PyModule_AddObjectRef(module, name, value)
 
     # ===-------------------------------------------------------------------===#
     # Python Type operations
