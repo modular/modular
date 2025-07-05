@@ -32,8 +32,8 @@ def test_SM80_16x8x8_F16F16F16F16_TN():
     var asm = _compile_code_asm[SM80_16x8x8_F16F16F16F16_TN]()
     assert_true("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16" in asm)
     assert_true("{%r6, %r7}," in asm)
-    assert_true("{%r2, %r3}," in asm)
-    assert_true("{%r1}," in asm)
+    assert_true("{%r1, %r2}," in asm)
+    assert_true("{%r3}," in asm)
     assert_true("{%r4, %r5};" in asm)
 
 

@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 """Test the shape_to_tensor operation."""
@@ -14,7 +21,7 @@ from max.dtype import DType
 from max.graph import Graph, ops
 
 
-def test_shape_to_tensor_invalid_type():
+def test_shape_to_tensor_invalid_type() -> None:
     """Test that shape_to_tensor fails with non-shape inputs."""
     with Graph("shape_to_tensor_invalid") as graph:
         with pytest.raises(TypeError):
@@ -31,7 +38,7 @@ shared_static_shapes = st.shared(shapes(dims=static_dims()))
 
 
 @given(shape=shared_static_shapes)
-def test_shape_to_tensor_valid(shape: list[int]):
+def test_shape_to_tensor_valid(shape: list[int]) -> None:
     """Test that shape_to_tensor works with valid shape inputs."""
     with Graph("shape_to_tensor_valid") as graph:
         out = ops.shape_to_tensor(shape)

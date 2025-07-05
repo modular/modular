@@ -17,14 +17,16 @@ from __future__ import annotations
 
 import math
 import time
+import uuid
 from collections.abc import Sequence
 from typing import Any, Optional, Protocol, runtime_checkable
 
 import msgspec
 import numpy as np
 import numpy.typing as npt
+from max.interfaces import LogProbabilities
 
-from .interfaces import LogProbabilities, SamplingParams, TextGenerationStatus
+from .interfaces import SamplingParams, TextGenerationStatus
 
 CHUNK_SIZE = 128
 
@@ -47,6 +49,9 @@ class InputContext(Protocol):
     - preallocated: The token slots that have been preallocated. The token array
                     resizes to multiples of CHUNK_SIZE to accommodate the new tokens.
     """
+
+    @property
+    def id(self) -> str: ...
 
     def set_draft_offset(self, idx: int) -> None: ...
 
@@ -264,6 +269,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
     caching, and generation parameters.
 
     Configuration:
+        request_id: A unique identifier for this sequence.
         prompt: The input prompt as either a string or sequence of token IDs
         max_length: Maximum allowed length of the generated sequence
         tokens: NumPy array containing the token IDs
@@ -290,6 +296,7 @@ class TextContext(msgspec.Struct, tag=True, kw_only=True, omit_defaults=True):
         _draft_offset: Offset for draft decoding
     """
 
+    request_id: str = msgspec.field(default_factory=lambda: str(uuid.uuid4()))
     prompt: str | Sequence[int]
     max_length: int
     tokens: np.ndarray
@@ -852,10 +859,17 @@ class TextAndVisionContext(
         default_factory=dict
     )
 
+    # HACK: We store a copy of the pixel value in case we need to reset the context
+    # in the event of a request preemption.
+    _saved_pixel_values: tuple[np.ndarray, ...] = msgspec.field(
+        default_factory=tuple
+    )
+
     def __post_init__(self) -> None:
         super().__post_init__()
         if len(self.pixel_values) > 1:
             raise ValueError("only one image supported in Llama Vision")
+        self._saved_pixel_values = self.pixel_values
 
     def update(
         self,
@@ -868,6 +882,11 @@ class TextAndVisionContext(
         # Update context not to re-encode the same image in next steps. There are no image tokens
         # expected after context encoding.
         self.pixel_values = tuple()
+
+    def reset(self) -> None:
+        """Resets the context's state by combining all tokens into a new prompt."""
+        super().reset()
+        self.pixel_values = self._saved_pixel_values
 
 
 SPEECH_TOKEN_audio_chunk_size = 128

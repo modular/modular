@@ -20,13 +20,13 @@ from testing import assert_equal, assert_true
 
 fn load_value[
     *,
-    type: DType = DType.uint32,
+    dtype: DType = DType.uint32,
     width: Int = 1,
     read_only: Bool = False,
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
+](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
     return load[
         width=width,
         read_only=read_only,
@@ -78,7 +78,7 @@ def test_load():
         "ld.global.lu.v2.u32 "
         in _compile_code_asm[
             load_value[
-                type = DType.uint32,
+                dtype = DType.uint32,
                 width=2,
                 prefetch_size=None,
                 cache_policy = CacheOperation.LAST_USE,
@@ -90,7 +90,7 @@ def test_load():
     assert_true(
         "ld.global.nc.v2.u32 "
         in _compile_code_asm[
-            load_value[type = DType.uint32, width=2, read_only=True],
+            load_value[dtype = DType.uint32, width=2, read_only=True],
             emission_kind="asm",
         ]()
     )

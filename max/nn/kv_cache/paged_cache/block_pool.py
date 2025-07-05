@@ -51,7 +51,7 @@ class BlockPool:
         enable_prefix_caching: bool,
         enable_parent_to_child_mapping: bool = False,
         enable_runtime_checks: bool = False,
-    ):
+    ) -> None:
         self.memory_tier = memory_tier
         self.total_num_blocks = total_num_blocks
         self.enable_prefix_caching = enable_prefix_caching

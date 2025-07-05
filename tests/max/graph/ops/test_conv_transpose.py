@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.conv_transpose tests."""
 
@@ -48,7 +55,7 @@ output_padding_type = st.tuples(sized_int, sized_int)
 )
 def test_conv_transpose_valid(
     x_type: TensorType, filter_type: TensorType, stride, padding, output_padding
-):
+) -> None:
     assume(filter_type.shape[0] <= x_type.shape[1])
     assume(filter_type.shape[1] <= x_type.shape[2])
 
@@ -95,7 +102,7 @@ def test_conv_transpose_valid(
         graph.output(out)
 
 
-def test_conv_dtype_promote_np():
+def test_conv_dtype_promote_np() -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -111,7 +118,7 @@ def test_conv_dtype_promote_np():
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight():
+def test_conv_dtype_promote_weight() -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -132,7 +139,7 @@ def test_conv_dtype_promote_weight():
         graph.output(out)
 
 
-def test_conv_dtype_promote_weight_success():
+def test_conv_dtype_promote_weight_success() -> None:
     x_type = TensorType(
         DType.bfloat16, [1, 128, 128, 4], device=DeviceRef.CPU()
     )
@@ -152,7 +159,7 @@ def test_conv_dtype_promote_weight_success():
         assert out.dtype == DType.float32
 
 
-def test_conv_dtype_promote_weight_failed():
+def test_conv_dtype_promote_weight_failed() -> None:
     x_type = TensorType(DType.int32, [1, 128, 128, 4], device=DeviceRef.CPU())
     filter_shape = [3, 3, 5, 4]
     filter = Weight(
@@ -176,7 +183,7 @@ def test_conv_dtype_promote_weight_failed():
             )
 
 
-def test_conv_symbolic_shapes():
+def test_conv_symbolic_shapes() -> None:
     input_type = TensorType(
         DType.bfloat16,
         [1, "height", "width", "channels"],

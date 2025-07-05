@@ -722,7 +722,7 @@ copied. Named result syntax lets you specify a named, uninitialized variable to
 return to the caller using the `out` argument convention:
 
 ```mojo
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     name_tag = NameTag(name^)
 ```
 
@@ -746,9 +746,9 @@ The fact that a function uses a named result is transparent to the caller. That
 is, these two signatures are interchangeable to the caller:
 
 ```mojo
-def get_name_tag(owned name: String) -> NameTag:
+def get_name_tag(var name: String) -> NameTag:
     ...
-def get_name_tag(owned name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag):
     ...
 ```
 
@@ -767,10 +767,10 @@ which takes several steps to initialize:
 struct ImmovableObject:
     var name: String
 
-    fn __init__(out self, owned name: String):
+    fn __init__(out self, var name: String):
         self.name = name^
 
-def create_immovable_object(owned name: String, out obj: ImmovableObject):
+def create_immovable_object(var name: String, out obj: ImmovableObject):
     obj = ImmovableObject(name^)
     obj.name += "!"
     # obj is implicitly returned
@@ -782,7 +782,7 @@ def main():
 By contrast, the following function with a standard return value doesn't work:
 
 ```mojo
-def create_immovable_object2(owned name: String) -> ImmovableObject:
+def create_immovable_object2(var name: String) -> ImmovableObject:
     obj = ImmovableObject(name^)
     obj.name += "!"
     return obj^ # Error: ImmovableObject is not copyable or movable
@@ -794,7 +794,7 @@ or copied to the callee. This isn't an issue if the newly-created value is
 returned immediately:
 
 ```mojo
-def create_immovable_object3(owned name: String) -> ImmovableObject:
+def create_immovable_object3(var name: String) -> ImmovableObject:
     return ImmovableObject(name^) # OK
 ```
 

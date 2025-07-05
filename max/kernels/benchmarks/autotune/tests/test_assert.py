@@ -13,5 +13,5 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def test_start_basic():
+def test_start_basic() -> None:
     assert True

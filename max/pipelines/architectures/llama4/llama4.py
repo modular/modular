@@ -52,7 +52,7 @@ class Llama4DecoderLayer(Module):
         config: Llama4Config,
         layer_idx: int,
         devices: list[DeviceRef],
-    ):
+    ) -> None:
         super().__init__()
         is_nope_layer = (layer_idx + 1) % config.no_rope_layer_interval == 0
         use_rope = not is_nope_layer
@@ -139,7 +139,7 @@ class Llama4DecoderLayer(Module):
 class Llama4TextModel(Module):
     """The Llama4 text transformer model."""
 
-    def __init__(self, config: Llama4Config):
+    def __init__(self, config: Llama4Config) -> None:
         super().__init__()
         self.rope = Llama3RotaryEmbedding(
             dim=config.hidden_size,
@@ -222,14 +222,17 @@ class Llama4TextModel(Module):
         last_token_h = ops.gather(h0, last_token_indices, axis=0)
         last_token_distributed = distribute_value(last_token_h, self.devices)
         last_logits = ops.cast(
-            self.lm_head(self.norm(last_token_distributed))[0], DType.float32
+            self.lm_head(self.norm(last_token_distributed), signal_buffers)[0],
+            DType.float32,
         )
 
         logits = None
         offsets = None
 
         if self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(self.lm_head(self.norm(h))[0], DType.float32)
+            logits = ops.cast(
+                self.lm_head(self.norm(h), signal_buffers)[0], DType.float32
+            )
             offsets = cast(TensorValue, kwargs["input_row_offsets"])
 
         if logits is not None and offsets is not None:
@@ -241,7 +244,7 @@ class Llama4TextModel(Module):
 class Llama4(Module):
     """The Llama4 model (currently text-only)."""
 
-    def __init__(self, config: Llama4Config):
+    def __init__(self, config: Llama4Config) -> None:
         self.language_model = Llama4TextModel(config)
 
     def __call__(

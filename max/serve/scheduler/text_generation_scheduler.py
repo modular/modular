@@ -29,9 +29,8 @@ from max.pipelines.core import (
     msgpack_numpy_decoder,
 )
 from max.pipelines.lib.pipeline import get_paged_manager
-from max.profiler import Trace, traced
+from max.profiler import Tracer, traced
 from max.serve.config import Settings
-from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
@@ -46,7 +45,7 @@ class BatchType(Enum):
     ContextEncoding = 1
     TokenGeneration = 2
 
-    def concise_name(self):
+    def concise_name(self) -> str:
         if self == BatchType.ContextEncoding:
             return "CE"
         else:
@@ -109,7 +108,7 @@ class GenericSchedulerOutput(Generic[T]):
         batch_inputs: dict[str, T] = {},
         input_tokens: Optional[int] = None,
         cached_tokens: Optional[int] = None,
-    ):
+    ) -> None:
         self.batch_type = batch_type
         self.num_steps = num_steps
         self.batch_inputs = batch_inputs
@@ -152,7 +151,6 @@ class SchedulerOutput(
 class TokenGenerationScheduler(Scheduler):
     def __init__(
         self,
-        process_control: ProcessControl,
         scheduler_config: TokenGenerationSchedulerConfig,
         pipeline: TokenGenerator,
         *,
@@ -161,12 +159,9 @@ class TokenGenerationScheduler(Scheduler):
         cancel_zmq_endpoint: str,
         zmq_ctx: zmq.Context,
         paged_manager: Optional[PagedKVCacheManager] = None,
-    ):
+    ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
-
-        # Multiprocessing resources.
-        self.pc = process_control
 
         self.request_q = ZmqPullSocket[
             tuple[str, Union[TextContext, TextAndVisionContext]]
@@ -200,8 +195,6 @@ class TokenGenerationScheduler(Scheduler):
         self.paged_manager = paged_manager
         self.total_preemption_count = 0
         self.last_preemption_logging_time: float = 0.0
-
-        # TODO health check
 
     def _should_schedule_ce(self) -> bool:
         # No CE to schedule if queue is empty
@@ -346,7 +339,7 @@ class TokenGenerationScheduler(Scheduler):
     @traced
     def _return_to_request_queue(
         self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
-    ):
+    ) -> None:
         """Resets a request and returns it to the request queue"""
         self.available_cache_indices.add(data.cache_seq_id)
         self.pipeline.release(data)
@@ -356,7 +349,7 @@ class TokenGenerationScheduler(Scheduler):
     @traced
     def _preempt_request(
         self, req_id: Any, data: Union[TextContext, TextAndVisionContext]
-    ):
+    ) -> None:
         """Preempts the most recently received request from active batch"""
         self._return_to_request_queue(req_id, data)
         # Limit logging about preemptions to at most once per second
@@ -645,52 +638,42 @@ class TokenGenerationScheduler(Scheduler):
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
-    def run(self):
-        """The Scheduler loop that creates batches and schedules them on GPU"""
-        i = 0
-        while i % 10 or not self.pc.is_canceled():
-            self.pc.beat()
-            i += 1
-            try:
-                # Construct the batch to execute
-                t0 = time.monotonic()
-                batch_to_execute = self._create_batch_to_execute()
-                t1 = time.monotonic()
-                batch_creation_time_s = t1 - t0
+    def run_iteration(self) -> None:
+        """The Scheduler routine that creates batches and schedules them on GPU"""
 
-                # If the batch is empty, skip
-                batch_size = batch_to_execute.batch_size
-                if batch_size == 0:
-                    continue
+        # Construct the batch to execute
+        t0 = time.monotonic()
+        batch_to_execute = self._create_batch_to_execute()
+        t1 = time.monotonic()
+        batch_creation_time_s = t1 - t0
 
-                # Schedule the batch
-                t0 = time.monotonic()
-                self._schedule(batch_to_execute)
-                t1 = time.monotonic()
-                batch_execution_time_s = t1 - t0
+        # If the batch is empty, skip
+        batch_size = batch_to_execute.batch_size
+        if batch_size == 0:
+            return
 
-                # Log batch metrics
-                self._log_metrics(
-                    batch_to_execute,
-                    batch_creation_time_s,
-                    batch_execution_time_s,
-                )
+        # Schedule the batch
+        t0 = time.monotonic()
+        self._schedule(batch_to_execute)
+        t1 = time.monotonic()
+        batch_execution_time_s = t1 - t0
 
-                # occasionally handle cancelled requests
-                if i % 20 == 0:
-                    self._handle_cancelled_requests()
+        # Log batch metrics
+        self._log_metrics(
+            batch_to_execute,
+            batch_creation_time_s,
+            batch_execution_time_s,
+        )
 
-            except Exception as e:
-                logger.exception("An error occurred during scheduling ")
-                # TODO try to recover
-                raise e
+        # handle cancelled requests
+        self._handle_cancelled_requests()
 
     @traced
     def _handle_terminated_responses(
         self,
         batch_executed: dict[str, Any],
         batch_responses: dict[str, TextGenerationResponse],
-    ):
+    ) -> None:
         """Task that handles responses"""
         if batch_responses is None:
             return
@@ -712,7 +695,7 @@ class TokenGenerationScheduler(Scheduler):
         self,
         batch_executed: dict[str, Any],
         batch_responses: dict[str, TextGenerationResponse],
-    ):
+    ) -> None:
         """Handle chunked requests"""
         # Only the last request in a batch could be chunked. We discard its response
         # and put it back into the request queue if it is chunked.
@@ -724,7 +707,7 @@ class TokenGenerationScheduler(Scheduler):
             batch_responses.pop(req_id)
 
     @traced
-    def _handle_cancelled_requests(self):
+    def _handle_cancelled_requests(self) -> None:
         try:
             while not self.cancel_q.empty():
                 try:
@@ -749,7 +732,7 @@ class TokenGenerationScheduler(Scheduler):
     @traced
     def _stream_responses_to_frontend(
         self, batch_responses: dict[str, TextGenerationResponse]
-    ):
+    ) -> None:
         if not batch_responses:
             return
 
@@ -772,7 +755,7 @@ class TokenGenerationScheduler(Scheduler):
 
         self.response_q.put_nowait(responses)
 
-    def _schedule_ce(self, sch_output: SchedulerOutput):
+    def _schedule_ce(self, sch_output: SchedulerOutput) -> None:
         batch_to_execute = sch_output.batch_inputs
 
         # execute the batch
@@ -792,7 +775,7 @@ class TokenGenerationScheduler(Scheduler):
         # send the responses to the API process
         self._stream_responses_to_frontend(batch_responses)
 
-    def _schedule_tg(self, sch_output: SchedulerOutput):
+    def _schedule_tg(self, sch_output: SchedulerOutput) -> None:
         batch_to_execute = sch_output.batch_inputs
 
         METRICS.batch_size(len(batch_to_execute))
@@ -806,10 +789,10 @@ class TokenGenerationScheduler(Scheduler):
         # send the responses to the API process
         self._stream_responses_to_frontend(batch_responses)
 
-    def _schedule(self, sch_output: SchedulerOutput):
+    def _schedule(self, sch_output: SchedulerOutput) -> None:
         assert sch_output.batch_size > 0
 
-        with Trace(f"_schedule({sch_output})"):
+        with Tracer(f"_schedule({sch_output})"):
             if sch_output.batch_type == BatchType.ContextEncoding:
                 self._schedule_ce(sch_output)
             else:
@@ -821,7 +804,6 @@ def load_text_generation_scheduler(
     zmq_ctx: zmq.Context,
     settings: Settings,
     pipeline: TokenGenerator,
-    pc: ProcessControl,
     max_batch_size_tg: int,
     max_forward_steps_tg: int,
     target_tokens_per_batch_tg: Optional[int],
@@ -848,7 +830,6 @@ def load_text_generation_scheduler(
 
     # Return Scheduler
     return TokenGenerationScheduler(
-        process_control=pc,
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         paged_manager=paged_manager,

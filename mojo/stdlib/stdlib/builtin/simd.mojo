@@ -46,8 +46,7 @@ from collections.string.string import (
     _calc_format_buffer_size,
     _calc_initial_buffer_size,
 )
-from hashlib._hasher import _HashableWithHasher, _Hasher
-from hashlib.hash import _hash_simd
+from hashlib.hasher import Hasher
 from math import Ceilable, CeilDivable, Floorable, Truncable
 from math.math import _call_ptx_intrinsic
 from os import abort
@@ -231,10 +230,7 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
 
 @always_inline("nodebug")
 fn _unchecked_zero[dtype: DType, size: Int]() -> SIMD[dtype, size]:
-    var zero = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](
-        __mlir_attr.`#pop.simd<0> : !pop.scalar<index>`
-    )
-    return Scalar[dtype](zero)
+    return SIMD[dtype, size](__mlir_attr.`0 : index`)
 
 
 @always_inline("nodebug")
@@ -277,7 +273,6 @@ struct SIMD[dtype: DType, size: Int](
     Stringable,
     Truncable,
     Writable,
-    _HashableWithHasher,
 ):
     """Represents a small vector that is backed by a hardware vector element.
 
@@ -432,11 +427,12 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The input value.
         """
+        _simd_construction_checks[dtype, size]()
 
         @parameter
         if bitwidthof[dtype]() > bitwidthof[DType.index]():
             alias dt = _unsigned_integral_type_of[DType.index]()
-            self = Self(bitcast[dt](Scalar[DType.index](value)))
+            self = bitcast[dt](Scalar[DType.index](value.value)).cast[dtype]()
         else:
             self = Self(value.value)
 
@@ -451,18 +447,23 @@ struct SIMD[dtype: DType, size: Int](
         Args:
             value: The input value.
         """
+        _simd_construction_checks[dtype, size]()
         self = Self(value.value)
 
     @doc_private
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: __mlir_type.index, /):
-        _simd_construction_checks[dtype, size]()
-        var t0 = __mlir_op.`pop.cast_from_builtin`[
+        var index = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<index>`
         ](value)
-        var casted = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](t0)
-        self = Scalar[dtype](casted)
+        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](index)
+
+        @parameter
+        if size == 1:
+            self.value = rebind[Self._mlir_type](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
 
     @always_inline
     fn __init__[T: Floatable, //](out self: Float64, value: T, /):
@@ -533,15 +534,19 @@ struct SIMD[dtype: DType, size: Int](
             value: The input value.
         """
         _simd_construction_checks[dtype, size]()
-
-        var tn1 = __mlir_attr[
+        var si128_ = __mlir_attr[
             `#pop<int_literal_convert<`, value.value, `, 0>> : si128`
         ]
-        var t0 = __mlir_op.`pop.cast_from_builtin`[
+        var si128 = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<si128>`
-        ](tn1)
-        var casted = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](t0)
-        self = Scalar[dtype](casted)
+        ](si128_)
+        var s = __mlir_op.`pop.cast`[_type = Scalar[dtype]._mlir_type](si128)
+
+        @parameter
+        if size == 1:
+            self.value = rebind[Self._mlir_type](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](s)
 
     @always_inline("nodebug")
     @implicit
@@ -554,12 +559,19 @@ struct SIMD[dtype: DType, size: Int](
             value: The bool value.
         """
         _simd_construction_checks[dtype, size]()
-
-        var casted = __mlir_op.`pop.cast_from_builtin`[
+        var s = __mlir_op.`pop.cast_from_builtin`[
             _type = __mlir_type.`!pop.scalar<bool>`
         ](value.value)
-        self = Scalar[DType.bool](casted)
 
+        @parameter
+        if size == 1:
+            self.value = rebind[Self._Mask._mlir_type](s)
+        else:
+            self.value = __mlir_op.`pop.simd.splat`[
+                _type = Self._Mask._mlir_type
+            ](s)
+
+    @doc_private
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: Self._mlir_type, /):
@@ -582,8 +594,6 @@ struct SIMD[dtype: DType, size: Int](
             value: The value to splat to the elements of the vector.
         """
         _simd_construction_checks[dtype, size]()
-
-        # Construct by broadcasting a scalar.
         self.value = __mlir_op.`pop.simd.splat`[_type = Self._mlir_type](
             value.value
         )
@@ -636,13 +646,8 @@ struct SIMD[dtype: DType, size: Int](
         constrained[
             dtype.is_floating_point(), "the SIMD type must be floating point"
         ]()
-
-        # float_literal_convert implicitly splats to !pop.simd as needed.
         return __mlir_attr[
-            `#pop<float_literal_convert<`,
-            value.value,
-            `>> : `,
-            Self._mlir_type,
+            `#pop<float_literal_convert<`, value.value, `>> : `, Self._mlir_type
         ]
 
     @staticmethod
@@ -1477,7 +1482,7 @@ struct SIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -1693,17 +1698,7 @@ struct SIMD[dtype: DType, size: Int](
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
 
-    fn __hash__(self) -> UInt:
-        """Hash the value using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return _hash_simd(self)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this SIMD value.
 
         Parameters:

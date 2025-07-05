@@ -60,19 +60,19 @@ are valid or either representation:
   flags, so it is important that it is fast.  Being the top bit allows hardware
   to just check to see if the 3rd word is negative.
 
-- `UNUSED_FLAG` is the next bit, which is unused for now.
+- `FLAG_IS_REF_COUNTED` is the next bit, which indicates if the string is
+  pointing to a reference counted mutable buffer. This allows checks in methods
+  such as `__del__` to quickly skip reference counting logic.
 
 - `FLAG_HAS_NUL_TERMINATOR` is the next bit, which indicates if the string is
   known to have an accessible "NUL" byte just beyond its declared length.  This
   allows inter-operating with C APIs that want nul-terminated strings. This bit
   is valid for both representations.
 
-In the implementation, the multiplexing of the representation is handled and
-mostly encapsulated by the `_StringCapacityField` struct, which is the type of
-the `_capacity_or_data` word.  Please keep implementation details inside of this
-type.  The `String` type makes sure to access each word as a whole using loads
-and shifts and masking to allow LLVM to fold accesses to the bitfields in
-`_capacity_or_data` effectively.
+In the implementation, switching between representations is handled and mostly
+encapsulated by the `_capacity_or_data` field, which is a `UInt` type. There are
+several helper methods in the source code (under the `# Capacity Field Helpers`
+section) that manage the implementation details for working with this field.
 
 Given the common flags, we'll now look at the meaning of the other bytes in both
 representations.
@@ -121,17 +121,19 @@ capacity string, the `String` type does a trick: it guarantees the actual
 capacity will be a multiple of 8, which allows it to shift the capacity down by
 three bits, making room for the flags.
 
-In this representation, the capacity may be 0 - this
-indicates that the pointer is to something that can never change and will never
-be deallocated - things like a string literal or a slice from a `StaticString`.
-The `String` type uses this form to avoid having to make a heap allocation or
-copy of string literals.  See below for more details.
+If the string is pointing to static constant memory, the `_capacity_or_data`
+field can be one of two bitpatterns: 0 with no flags set, or 0 with
+`FLAG_HAS_NULL_TERMINATOR` set. When attempting to get a mutable pointer to
+static constant memory the implementation will decide wether to inline the
+string, or reallocate it to the heap based on the requested capacity. This
+avoids having to alloacte when iniitializing from a `StringLiteral` or
+`StaticString`.
 
 ### Mutable Indirect String Representation
 
 When a string is indirect and not mutable, the pointer field points to the
 string data corresponding to the string, but there is an additional
-`_StringOutOfLineHeader` header *before* the string data the pointer points to.
+`Atomic[Index]` header *before* the string data the pointer points to.
 This header contains a reference count for the mutable string buffer.
 
 This design allows the `__copyinit__` for the String type to guarantee that it
@@ -153,17 +155,13 @@ non-obvious.
 ### References to constant strings
 
 As mentioned in the "indirect" representation section, the pointer of an
-indirect string may refer to static constant data when the
-capacity is 0.  This optimization is important because
-string literals are very common, and we don't want users to have to worry about
-use of `String` vs `StaticString` for optimization purposes: most APIs should
-just take `String` for consistency and generality.
+indirect string may refer to static constant data. This optimization is
+important because string literals are very common, and we don't want users to
+have to worry about use of `String` vs `StaticString` for optimization purposes:
+most APIs should just take `String` for consistency and generality.
 
-There is another reason we set the capacity to 0.
-This ensures that any attempt to append or access will
-immediately reallocate without extra checks.  This is a minor optimization and
-simplification of code, but it means that static constant strings will have
-`capacity=0` but have `length=n` where `n > 0`.
+The capacity is the length of the constant string, when requesting a mutable
+pointer it will reallocate the string with a capcity based on that length.
 
 Construction from short constant strings (like "foo") loads the string data at
 `String` construction time, which keeps usage of the string direct where
@@ -184,15 +182,22 @@ explicit mutable access with `_mut` suffixed version of these:
 
 ```mojo
 def test_copy():
-    var s0 = String("find")
-    var s1 = String(s0)       # Maintains a pointer to immutable memory
+    var s0 = "find"
+    var s1 = s0       # Maintains a pointer to immutable memory
     s1.unsafe_ptr_mut()[3] = ord("e")
     assert_equal("find", s0)
     assert_equal("fine", s1)
 ```
 
 This keeps the common case fast and simple and avoids allocating memory in many
-cases.  See the `test_string.mojo` unit test for more details.
+cases.
+
+All mutation of the string is routed through `str.unsafe_ptr_mut(capacity=128)`
+where you can optionally request a larger capacity. This is where all the logic
+to make the string mutable occurs, for example inlining or reallocating a static
+constant string.
+
+See the `test_string.mojo` unit test for more details.
 
 ### 'nul' terminated string support
 

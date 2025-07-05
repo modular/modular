@@ -1,8 +1,17 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from typing import NoReturn
+
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -11,10 +20,10 @@ def test_conditional_no_results() -> None:
     with Graph("conditional", input_types=()) as graph:
         cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn() -> None:
             ops.print("then")
 
-        def else_fn():
+        def else_fn() -> None:
             ops.print("else")
 
         ops.cond(cond, None, then_fn, else_fn)
@@ -80,10 +89,10 @@ def test_conditional_with_raising() -> None:
         chain = graph._current_chain
         cond = ops.constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
-        def then_fn():
+        def then_fn() -> None:
             return
 
-        def else_fn():
+        def else_fn() -> NoReturn:
             raise Exception("else")
 
         try:

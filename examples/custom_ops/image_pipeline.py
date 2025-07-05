@@ -27,7 +27,7 @@ from max.graph import (
 from PIL import Image
 
 
-def main():
+def main() -> None:
     device = CPU() if accelerator_count() == 0 else Accelerator()
     img = np.array(Image.open(Path(__file__).parent / "dogs.jpg"))
 

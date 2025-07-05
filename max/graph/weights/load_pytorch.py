@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Function for importing a PyTorch checkpoint into a MAX Graph."""
 
@@ -38,7 +45,7 @@ class TensorInfo:
 
 
 class WeightUnpickler(pickle.Unpickler):
-    def __init__(self, pkl_file, zip_file):
+    def __init__(self, pkl_file, zip_file) -> None:
         super().__init__(pkl_file)
         self.zip_file = zip_file
 
@@ -84,7 +91,7 @@ class PytorchWeights:
         tensor_infos: Optional[dict[str, Any]] = None,
         prefix: str = "",
         allocated=None,
-    ):
+    ) -> None:
         if torch is None:
             raise ImportError(
                 "Unable to import torch. Please make sure that PyTorch is"

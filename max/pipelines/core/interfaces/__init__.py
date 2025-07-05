@@ -21,7 +21,6 @@ from .embeddings_generation import EmbeddingsGenerator
 from .response import (
     AudioGenerationResponse,
     EmbeddingsResponse,
-    LogProbabilities,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
@@ -47,7 +46,6 @@ __all__ = [
     "AudioGeneratorOutput",
     "EmbeddingsGenerator",
     "EmbeddingsResponse",
-    "LogProbabilities",
     "PipelineTask",
     "PipelineTokenizer",
     "SamplingParams",

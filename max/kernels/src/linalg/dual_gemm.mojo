@@ -40,7 +40,7 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_dram,
@@ -652,7 +652,10 @@ fn multistage_dual_gemm_kernel[
             .view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * HWN)
         )
 
-        copy[thread_layout = Layout.row_major(8, 4), swizzle=swizzle,](
+        copy_local_to_shared[
+            thread_layout = Layout.row_major(8, 4),
+            swizzle=swizzle,
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             c0_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -692,7 +695,7 @@ fn multistage_dual_gemm_kernel[
                 )
 
                 alias dst_static_idx = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_layout.all_dims_known():
@@ -737,7 +740,7 @@ fn multistage_dual_gemm_kernel[
             for i in range(__type_of(c_gmem_frag).layout.size()):
                 alias src_idx = c_reg_frag.layout(i)
                 alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
+                var dst_idx: Int
 
                 @parameter
                 if c_layout.all_dims_known():
@@ -1379,7 +1382,7 @@ fn swishGLU[
     @parameter
     fn description_fn() -> String:
         var shape = GemmShape.get[True](c, a, b0)
-        return String(";").join(
+        return ";".join(
             String(target),
             trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
             trace_arg("B0", IndexList[2](shape.K, shape.N), b0.type),

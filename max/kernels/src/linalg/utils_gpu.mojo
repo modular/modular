@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._hasher import _Hasher
+from hashlib.hasher import Hasher
 from math import ceildiv
 from sys import (
     env_get_bool,
@@ -242,7 +242,7 @@ struct MatmulConfig[
     fn __repr__(self) -> String:
         return String.write(self)
 
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -578,7 +578,7 @@ fn get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     """Get Hilbert lookup table using global cache (no struct needed)."""
-    var key_str = String("hilbert_lut_") + String(grid_x) + "_" + String(grid_y)
+    var key_str = String("hilbert_lut_", grid_x, "_", grid_y)
 
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[

@@ -56,7 +56,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         """Create a new, empty Counter object."""
         self._data = Dict[V, Int]()
 
-    fn __init__(out self, owned *values: V):
+    fn __init__(out self, var *values: V):
         """Create a new Counter from a list of values.
 
         Args:
@@ -482,7 +482,7 @@ struct Counter[V: KeyElement](Boolable, Copyable, Defaultable, Movable, Sized):
         """
         return self._data.pop(value)
 
-    fn pop(mut self, value: V, owned default: Int) raises -> Int:
+    fn pop(mut self, value: V, var default: Int) raises -> Int:
         """Remove a value from the Counter by value.
 
         Args:

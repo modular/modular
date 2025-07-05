@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
@@ -22,7 +29,7 @@ shared_shapes = st.shared(shapes())
 )
 def test_permute_success(
     graph_builder, input_type: TensorType, dims: list[int]
-):
+) -> None:
     target_shape = [input_type.shape[d] for d in dims]
     expected_type = TensorType(
         input_type.dtype, target_shape, input_type.device
@@ -44,7 +51,7 @@ rank_sized_list_ints = shared_shapes.flatmap(
 @given(input_type=tensor_types(shapes=shared_shapes), dims=rank_sized_list_ints)
 def test_permute_out_of_range(
     graph_builder, input_type: TensorType, dims: list[int]
-):
+) -> None:
     rank = input_type.rank
     assume(any(d >= rank or d < -rank for d in dims))
     with graph_builder(input_types=[input_type]) as graph:
@@ -55,7 +62,7 @@ def test_permute_out_of_range(
 @given(input_type=..., dims=...)
 def test_permute_wrong_rank(
     graph_builder, input_type: TensorType, dims: list[int]
-):
+) -> None:
     rank = input_type.rank
     assume(len(dims) != rank)
     with graph_builder(input_types=[input_type]) as graph:
@@ -76,7 +83,7 @@ shared_nontrivial_shapes = st.shared(shapes(min_rank=2))
 )
 def test_permute_duplicates(
     graph_builder, input_type: TensorType, dims: list[int]
-):
+) -> None:
     assume(len(set(dims)) < len(dims))
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError):

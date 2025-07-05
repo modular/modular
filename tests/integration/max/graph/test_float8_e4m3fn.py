@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test float8_e4m3fn dtype support."""
 
@@ -17,7 +24,7 @@ from test_common.graph_utils import is_h100_h200
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
-def test_f8_upcast(session, cast_dtype):
+def test_f8_upcast(session, cast_dtype) -> None:
     with Graph(
         "f8",
         input_types=[
@@ -51,7 +58,7 @@ def test_f8_upcast(session, cast_dtype):
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
-def test_f8_downcast(session, cast_dtype):
+def test_f8_downcast(session, cast_dtype) -> None:
     with Graph(
         "f8",
         input_types=[
@@ -83,7 +90,7 @@ def test_f8_downcast(session, cast_dtype):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_matmul(session):
+def test_f8_matmul(session) -> None:
     with Graph(
         "f8",
         input_types=[
@@ -133,7 +140,7 @@ def test_f8_matmul(session):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_constant(session):
+def test_f8_constant(session) -> None:
     y_data = np.array([5.0, 6.0])
     with Graph(
         "f8",
@@ -180,7 +187,7 @@ def test_f8_constant(session):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_weight_cpu(session):
+def test_f8_weight_cpu(session) -> None:
     y_data = np.array([5.0, 6.0])
     with Graph(
         "f8",
@@ -233,7 +240,7 @@ def test_f8_weight_cpu(session):
 
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
-def test_f8_weight_gpu(session):
+def test_f8_weight_gpu(session) -> None:
     y_data = np.array([5.0, 6.0])
     with Graph(
         "f8",

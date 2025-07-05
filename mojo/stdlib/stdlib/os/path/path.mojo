@@ -47,7 +47,7 @@ fn _constrain_unix():
 
 
 @always_inline
-fn _get_stat_st_mode(owned path: String) raises -> Int:
+fn _get_stat_st_mode(var path: String) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_stat_macos(path^).st_mode)
@@ -58,7 +58,7 @@ fn _get_stat_st_mode(owned path: String) raises -> Int:
 
 
 @always_inline
-fn _get_lstat_st_mode(owned path: String) raises -> Int:
+fn _get_lstat_st_mode(var path: String) raises -> Int:
     @parameter
     if os_is_macos():
         return Int(_lstat_macos(path^).st_mode)
@@ -335,7 +335,7 @@ fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # TODO(MOCO-1532):
 #   Use StringSlice here once param inference bug for empty variadic
 #   list of parameterized types is fixed.
-fn join(owned path: String, *paths: String) -> String:
+fn join(var path: String, *paths: String) -> String:
     """Join two or more pathname components, inserting '/' as needed.
     If any component is an absolute path, all previous path components
     will be discarded.  An empty last part will result in a path that
@@ -480,7 +480,7 @@ fn _split_extension(
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 
-    return String(path), String("")
+    return String(path), ""
 
 
 fn split_extension[
@@ -524,7 +524,7 @@ fn splitroot[
         A tuple containing three strings: (drive, root, tail).
     """
     var p = path.__fspath__()
-    alias empty = String("")
+    alias empty = ""
 
     # Relative path, e.g.: 'foo'
     if p[:1] != sep:

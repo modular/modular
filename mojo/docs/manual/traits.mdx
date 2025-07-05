@@ -371,7 +371,7 @@ own types. These standard library traits include:
 * [`Indexer`](/mojo/stdlib/builtin/int/Indexer)
 * [`Intable`](/mojo/stdlib/builtin/int/Intable)
 * [`IntableRaising`](/mojo/stdlib/builtin/int/IntableRaising)
-* [`KeyElement`](/mojo/stdlib/collections/dict/KeyElement)
+* [`KeyElement`](/mojo/stdlib/collections/dict/#keyelement)
 * [`Movable`](/mojo/stdlib/builtin/value/Movable)
 * [`PathLike`](/mojo/stdlib/os/pathlike/PathLike)
 * [`Powable`](/mojo/stdlib/builtin/math/Powable)
@@ -507,7 +507,7 @@ var dog = Dog("Rex", 5)
 print(repr(dog))
 print(dog)
 
-var dog_info = StaticString("String: {!s}\nRepresentation: {!r}").format(dog, dog)
+var dog_info = "String: {!s}\nRepresentation: {!r}".format(dog, dog)
 print(dog_info)
 ```
 
@@ -617,7 +617,7 @@ generic methods on the trait:
 trait Stacklike:
     alias EltType: Copyable & Movable
 
-    fn push(mut self, owned item: Self.EltType):
+    fn push(mut self, var item: Self.EltType):
         pass
 
     fn pop(mut self) -> Self.EltType:
@@ -638,7 +638,7 @@ struct MyStack[type: Copyable & Movable](Stacklike):
     fn __init__(out self):
         self.list = Self.list_type()
 
-    fn push(mut self, owned item: Self.EltType):
+    fn push(mut self, var item: Self.EltType):
         self.list.append(item)
 
     fn pop(mut self) -> Self.EltType:

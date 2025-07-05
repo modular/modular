@@ -129,7 +129,7 @@ fn _project_on_axis[
     return p_t
 
 
-alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
+alias _swizzle_signature = fn[dtype: DType] (Scalar[dtype]) -> Scalar[dtype]
 
 
 fn _get_len[*values: Int]() -> Int:
@@ -333,22 +333,26 @@ struct LayoutTensor[
     This pointer respects the specified address space, alignment, mutability,
     and origin tracking for memory safety and performance optimization."""
 
-    var runtime_layout: RuntimeLayout[
+    alias RuntimeLayoutType = RuntimeLayout[
         layout,
         element_type=layout_int_type,
         linear_idx_type=linear_idx_type,
     ]
+
+    var runtime_layout: Self.RuntimeLayoutType
     """Runtime representation of the tensor's memory layout.
 
     Handles both compile-time and runtime-determined dimensions, enabling
     efficient mapping between logical tensor coordinates and physical memory
     locations."""
 
-    var runtime_element_layout: RuntimeLayout[
+    alias RuntimeElementLayoutType = RuntimeLayout[
         element_layout,
         element_type = DType.int32,
         linear_idx_type=linear_idx_type,
     ]
+
+    var runtime_element_layout: Self.RuntimeElementLayoutType
     """Runtime representation of each element's internal layout.
 
     Used when elements themselves have structure, such as in blocked or tiled
@@ -557,20 +561,22 @@ struct LayoutTensor[
             DType.int32, linear_idx_type=linear_idx_type
         ]()
 
+    alias GenericLayoutTensorType = LayoutTensor[
+        dtype,
+        layout,
+        origin,
+        address_space = AddressSpace.GENERIC,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+        alignment=alignment,
+    ]
+
     @always_inline
     @implicit
     fn __init__(
-        out self: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space = AddressSpace.GENERIC,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
+        out self: Self.GenericLayoutTensorType,
         ref [origin]device_buffer: DeviceBuffer[dtype],
     ):
         """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
@@ -616,22 +622,12 @@ struct LayoutTensor[
         Args:
             device_buffer: Contains the underlying data to point to.
         """
-        self = __type_of(self)(device_buffer._unsafe_ptr())
+        self = Self.GenericLayoutTensorType(device_buffer._unsafe_ptr())
 
     @always_inline
     @implicit
     fn __init__(
-        out self: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space = AddressSpace.GENERIC,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
+        out self: Self.GenericLayoutTensorType,
         ref [origin]host_buffer: HostBuffer[dtype],
     ):
         """Create a `LayoutTensor` from a `HostBuffer`. The layout must have
@@ -658,21 +654,11 @@ struct LayoutTensor[
         Args:
             host_buffer: Contains the underlying data to point to.
         """
-        self = __type_of(self)(host_buffer.unsafe_ptr())
+        self = Self.GenericLayoutTensorType(host_buffer.unsafe_ptr())
 
     @always_inline
     fn __init__(
-        out self: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space = AddressSpace.GENERIC,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
+        out self: Self.GenericLayoutTensorType,
         ref [origin]device_buffer: DeviceBuffer[dtype],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
@@ -689,21 +675,13 @@ struct LayoutTensor[
             device_buffer: The `DeviceBuffer` containing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
-        self = __type_of(self)(device_buffer._unsafe_ptr(), runtime_layout)
+        self = Self.GenericLayoutTensorType(
+            device_buffer._unsafe_ptr(), runtime_layout
+        )
 
     @always_inline
     fn __init__(
-        out self: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space = AddressSpace.GENERIC,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
+        out self: Self.GenericLayoutTensorType,
         ref [origin]host_buffer: HostBuffer[dtype],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
@@ -720,21 +698,13 @@ struct LayoutTensor[
             host_buffer: The `HostBuffer` containing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
         """
-        self = __type_of(self)(host_buffer.unsafe_ptr(), runtime_layout)
+        self = Self.GenericLayoutTensorType(
+            host_buffer.unsafe_ptr(), runtime_layout
+        )
 
     @always_inline
     fn __init__(
-        out self: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space = AddressSpace.GENERIC,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
+        out self: Self.GenericLayoutTensorType,
         ref [origin]device_buffer: DeviceBuffer[dtype],
         runtime_layout: RuntimeLayout[layout, **_],
         element_runtime_layout: RuntimeLayout[element_layout, **_],
@@ -750,23 +720,13 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
-        self = __type_of(self)(
+        self = Self.GenericLayoutTensorType(
             device_buffer._unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
     @always_inline
     fn __init__(
-        out self: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space = AddressSpace.GENERIC,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
+        out self: Self.GenericLayoutTensorType,
         ref [origin]host_buffer: HostBuffer[dtype],
         runtime_layout: RuntimeLayout[layout, **_],
         element_runtime_layout: RuntimeLayout[element_layout, **_],
@@ -782,7 +742,7 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
-        self = __type_of(self)(
+        self = Self.GenericLayoutTensorType(
             host_buffer.unsafe_ptr(), runtime_layout, element_runtime_layout
         )
 
@@ -794,29 +754,33 @@ struct LayoutTensor[
         """
         return self
 
-    @always_inline
-    fn bitcast[
-        new_type: DType,
+    alias BitcastType[
+        new_dtype: DType,
         /,
         address_space: AddressSpace = Self.address_space,
         element_layout: Layout = Self.element_layout,
-    ](
-        self,
-        out result: LayoutTensor[
-            new_type,
-            layout,
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-        ],
-    ):
+    ] = LayoutTensor[
+        new_dtype,
+        layout,
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+    ]
+
+    @always_inline
+    fn bitcast[
+        new_dtype: DType,
+        /,
+        address_space: AddressSpace = Self.address_space,
+        element_layout: Layout = Self.element_layout,
+    ](self) -> Self.BitcastType[new_dtype, address_space, element_layout]:
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
-            new_type: The new data type it is casting to.
+            new_dtype: The new data type it is casting to.
             address_space: The address space of the returned `LayoutTensor`.
             element_layout: The element layout of the returned `LayoutTensor`.
 
@@ -824,31 +788,33 @@ struct LayoutTensor[
             A new `LayoutTensor` with the same memory location but with the
             specified data type, address space, and element layout.
         """
-        return __type_of(result)(
-            self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
+        return Self.BitcastType[new_dtype, address_space, element_layout](
+            self.ptr.bitcast[Scalar[new_dtype]]().address_space_cast[
                 address_space
             ](),
             self.runtime_layout,
         )
 
+    alias OriginCastType[
+        mut: Bool,
+        origin: Origin[mut],
+    ] = LayoutTensor[
+        dtype,
+        layout,
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+        alignment=alignment,
+    ]
+
     @always_inline("nodebug")
     fn origin_cast[
         mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
-    ](
-        self,
-        out result: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
-    ):
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin],
+    ](self) -> Self.OriginCastType[mut, origin]:
         """Changes the origin or mutability of a pointer.
 
         Parameters:
@@ -860,29 +826,30 @@ struct LayoutTensor[
             as the original `LayoutTensor`, and the new specified mutability and
             origin.
         """
-        result = __type_of(result)(
+        return Self.OriginCastType[mut, origin](
             self.ptr.origin_cast[mut, origin](),
             self.runtime_layout,
             self.runtime_element_layout,
         )
 
+    alias AddressSpaceCastType[
+        address_space: AddressSpace = Self.address_space,
+    ] = LayoutTensor[
+        dtype,
+        layout,
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+        alignment=alignment,
+    ]
+
     @always_inline("nodebug")
     fn address_space_cast[
         address_space: AddressSpace = Self.address_space,
-    ](
-        self,
-        out result: LayoutTensor[
-            dtype,
-            layout,
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
-    ):
+    ](self) -> Self.AddressSpaceCastType[address_space]:
         """Changes the origin or mutability of a pointer.
 
         Parameters:
@@ -892,7 +859,7 @@ struct LayoutTensor[
             A new `LayoutTensor` object with the same type and origin
             as the original `LayoutTensor`, and the new specified address_space.
         """
-        result = __type_of(result)(
+        return Self.AddressSpaceCastType[address_space](
             self.ptr.address_space_cast[address_space](),
             self.runtime_layout,
             self.runtime_element_layout,
@@ -904,7 +871,7 @@ struct LayoutTensor[
     ) -> LayoutTensor[
         dtype,
         layout,
-        ImmutableOrigin.cast_from[origin].result,
+        ImmutableOrigin.cast_from[origin],
         address_space=address_space,
         element_layout=element_layout,
         layout_int_type=layout_int_type,
@@ -921,7 +888,7 @@ struct LayoutTensor[
         return LayoutTensor[
             dtype,
             layout,
-            ImmutableOrigin.cast_from[origin].result,
+            ImmutableOrigin.cast_from[origin],
             address_space=address_space,
             element_layout=element_layout,
             layout_int_type=layout_int_type,
@@ -1120,7 +1087,7 @@ struct LayoutTensor[
     @always_inline
     fn __add__(
         self, other: Scalar[dtype]
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Add a scalar value to each element of the tensor.
 
         Performs an elementwise addition operation, adding the scalar value to
@@ -1179,7 +1146,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Add another tensor to this tensor elementwise.
 
         Performs an elementwise addition between this tensor and another tensor.
@@ -1260,7 +1227,7 @@ struct LayoutTensor[
     @always_inline
     fn __mul__(
         self, other: Scalar[dtype]
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Multiply each element of the tensor by a scalar value.
 
         Performs an elementwise multiplication operation, multiplying each
@@ -1298,7 +1265,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Multiply this tensor with another tensor elementwise.
 
         Performs an elementwise multiplication (Hadamard product) between this tensor
@@ -1407,7 +1374,7 @@ struct LayoutTensor[
     @always_inline
     fn __sub__(
         self, other: Scalar[dtype]
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Subtract a scalar value from each element of the tensor.
 
         Performs an elementwise subtraction operation, subtracting the scalar
@@ -1445,7 +1412,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Subtract another tensor from this tensor elementwise.
 
         Performs an elementwise subtraction between this tensor and another
@@ -1547,7 +1514,7 @@ struct LayoutTensor[
     @always_inline
     fn __truediv__(
         self, other: Scalar[dtype]
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Divide each element of the tensor by a scalar value.
 
         Performs an elementwise division operation, dividing each element in the
@@ -1591,7 +1558,7 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout, **_,
         ],
-    ) -> __type_of(self.origin_cast[True, MutableAnyOrigin]()):
+    ) -> Self.OriginCastType[True, MutableAnyOrigin]:
         """Divide this tensor by another tensor elementwise.
 
         Performs an elementwise division between this tensor and another tensor.
@@ -2481,17 +2448,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn stack_allocation[
         *, alignment: Int = Self.alignment
-    ]() -> LayoutTensor[
-        dtype,
-        layout,
-        MutableAnyOrigin,
-        address_space=address_space,
-        element_layout=element_layout,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
-        masked=masked,
-        alignment=alignment,
-    ]:
+    ]() -> Self.StackTensorType:
         """Allocates stack memory for a `LayoutTensor` with a fully static
         layout.
 
@@ -2540,35 +2497,34 @@ struct LayoutTensor[
             String(Self.alignment),
         ]()
 
-        var ptr = stack_allocation[
+        return stack_allocation[
             layout.size() * element_layout.size(),
             dtype,
             alignment=alignment,
             address_space=address_space,
         ]()
 
-        return ptr
+    alias StackTensorType = LayoutTensor[
+        dtype,
+        layout,
+        MutableAnyOrigin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+        alignment=alignment,
+    ]
 
     @always_inline("nodebug")
     fn _stack_copy(
         self,
-        out result: LayoutTensor[
-            dtype,
-            layout,
-            MutableAnyOrigin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
-    ):
+    ) -> Self.StackTensorType:
         @parameter
         if Self.layout.all_dims_known():
             copy = self.stack_allocation()
         else:
-            copy = __type_of(result)(self.ptr, self.runtime_layout)
+            copy = Self.StackTensorType(self.ptr, self.runtime_layout)
 
         fn self_value(
             lhs: Self.element_type, rhs: Self.element_type
@@ -2581,8 +2537,8 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn _to_static[
         t: IntTuple[__origin_of()], element_type: DType
-    ](out result: IndexList[len(t), element_type=element_type]):
-        var st = __type_of(result)()
+    ]() -> IndexList[len(t), element_type=element_type]:
+        var st = IndexList[len(t), element_type=element_type]()
 
         @parameter
         for i in range(len(t)):
@@ -2781,17 +2737,16 @@ struct LayoutTensor[
         else:
             return shape[idx]
 
+    alias CoalesceType[element_layout: Layout] = LayoutTensor[
+        dtype,
+        coalesce(layout),
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+    ]
+
     @always_inline
-    fn coalesce(
-        self,
-        out result: LayoutTensor[
-            dtype,
-            coalesce(layout),
-            origin,
-            address_space=address_space,
-            element_layout = self.element_layout,
-        ],
-    ):
+    fn coalesce(self) -> Self.CoalesceType[Self.element_layout]:
         """Creates a tensor with a coalesced memory layout from this tensor.
 
         Coalescing a tensor's layout means reorganizing its memory
@@ -2821,7 +2776,7 @@ struct LayoutTensor[
             is optimized.
         - For already optimally coalesced tensors, this operation has no effect.
         """
-        return __type_of(result)(self.ptr)
+        return Self.CoalesceType[Self.element_layout](self.ptr)
 
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
@@ -2914,57 +2869,22 @@ struct LayoutTensor[
             i += 1
         return zipped_divide(layout, tiler)
 
-    # FIXME: Workaround while we wait for parametrized aliases. What we're trying to do is:
-    # alias tile_type[*tile_sizes: Int] = LayoutTensor[
-    #     dtype,
-    #     Self._compute_tile_layout[*tile_sizes]()[0],
-    #     origin,
-    #     address_space=address_space,
-    #     element_layout=element_layout,
-    # ]
-
-    @always_inline
-    @staticmethod
-    fn tile_type[
-        *tile_sizes: Int,
-    ](
-        *tile_coords: Int,
-        out result: LayoutTensor[
-            dtype,
-            Self._compute_tile_layout[*tile_sizes]()[0],
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked = masked or _tile_is_masked[layout, *tile_sizes](),
-        ],
-    ):
-        """Returns a the type of a tile view of the tensor with specified
-        dimensions and coordinates.
-
-        Parameters:
-            tile_sizes: The dimensions of each tile along each axis of the
-                tensor.
-
-        Args:
-            tile_coords: The coordinates of the specific tile to extract.
-
-        Returns:
-            The type of a view into the original tensor representing the
-                specified tile.
-        """
-        while True:
-            pass
+    alias TileType[*tile_sizes: Int] = LayoutTensor[
+        dtype,
+        Self._compute_tile_layout[*tile_sizes]()[0],
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked = masked or _tile_is_masked[layout, *tile_sizes](),
+        alignment=alignment,
+    ]
 
     @always_inline
     fn tile[
-        *tile_sizes: Int,
-    ](
-        self,
-        *tile_coords: Int,
-        out result: __type_of(self.tile_type[*tile_sizes]()),
-    ):
+        *tile_sizes: Int
+    ](self, *tile_coords: Int) -> self.TileType[*tile_sizes]:
         """Extract a tile (sub-tensor) from this tensor with specified
         dimensions and position.
 
@@ -3031,42 +2951,40 @@ struct LayoutTensor[
             "Number of tiles should match the rank",
         ]()
 
+        alias tile_type = self.TileType[*tile_sizes]
+
+        var offset = 0
+        var runtime_shape = tile_type.RuntimeLayoutType.ShapeType()
+        var runtime_stride = tile_type.RuntimeLayoutType.StrideType()
+
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
-        if result.layout.all_dims_known():
-            var offset = 0
-
-            var runtime_shape = __type_of(result.runtime_layout.shape)()
-            var runtime_stride = __type_of(result.runtime_layout.stride)()
+        if tile_type.layout.all_dims_known():
 
             @parameter
             for i in range(num_tiles):
                 alias stride = Int(_tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
-            var runtime_layout = __type_of(result.runtime_layout)(
+            var runtime_layout = tile_type.RuntimeLayoutType(
                 runtime_shape, runtime_stride
             )
 
             # Adjust runtime layout, so the shape is clipped to the unmasked sizes.
             @parameter
-            if result.masked:
+            if tile_type.masked:
 
                 @parameter
-                for i in range(result.layout.rank()):
+                for i in range(tile_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                     shape_i = max(0, min(tile_sizes[i], cur_dim))
                     runtime_layout.shape.value[i] = shape_i
 
-            return __type_of(result)(self.ptr.offset(offset), runtime_layout)
+            return tile_type(self.ptr.offset(offset), runtime_layout)
 
         else:
             # Dynamic layout, use strides
-            var offset = 0
-
-            var runtime_shape = __type_of(result.runtime_layout.shape)()
-            var runtime_stride = __type_of(result.runtime_layout.stride)()
 
             @parameter
             for i in range(num_tiles):
@@ -3074,18 +2992,18 @@ struct LayoutTensor[
                 runtime_stride.value[i] = self.runtime_layout.stride.value[i]
                 offset += tile_coords[i] * stride
 
-            var runtime_layout = __type_of(result.runtime_layout)(
+            var runtime_layout = tile_type.RuntimeLayoutType(
                 runtime_shape, runtime_stride
             )
 
             # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
             @parameter
-            for i in range(result.layout.rank()):
+            for i in range(tile_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                 shape_i = max(0, min(tile_sizes[i], cur_dim))
                 runtime_layout.shape.value[i] = shape_i
 
-            return __type_of(result)(self.ptr.offset(offset), runtime_layout)
+            return tile_type(self.ptr.offset(offset), runtime_layout)
 
     @always_inline
     fn tile_with_offset[
@@ -3093,15 +3011,14 @@ struct LayoutTensor[
     ](
         self,
         *tile_coords: Int,
-        out result: Tuple[
-            __type_of(self.tile_type[*tile_sizes]()),
-            IndexList[
-                len(flatten(self.layout.shape)),
-                element_type = Self.layout_int_type,
-            ],
-            Scalar[Self.linear_idx_type],
+    ) -> Tuple[
+        self.TileType[*tile_sizes],
+        IndexList[
+            len(flatten(self.layout.shape)),
+            element_type = Self.layout_int_type,
         ],
-    ):
+        Scalar[Self.linear_idx_type],
+    ]:
         """Similar to `tile`, but also returns the corner coordinates of the
         tile as well as the offset.
 
@@ -3128,7 +3045,7 @@ struct LayoutTensor[
             "Number of tiles should match the rank",
         ]()
 
-        alias tile_type = self.tile_type[*tile_sizes]()
+        alias tile_type = self.TileType[*tile_sizes]
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
@@ -3136,8 +3053,8 @@ struct LayoutTensor[
             len(flatten(self.layout.shape)), element_type = Self.layout_int_type
         ]()
         var offset: Scalar[Self.linear_idx_type] = 0
-        var runtime_shape = __type_of(tile_type.runtime_layout.shape)()
-        var runtime_stride = __type_of(tile_type.runtime_layout.stride)()
+        var runtime_shape = tile_type.RuntimeLayoutType.ShapeType()
+        var runtime_stride = tile_type.RuntimeLayoutType.StrideType()
 
         @parameter
         if tile_type.layout.all_dims_known():
@@ -3148,7 +3065,7 @@ struct LayoutTensor[
                 offset += tile_coords[i] * stride
                 corner_coords[i] = tile_coords[i] * tile_sizes[i]
 
-            var runtime_layout = __type_of(tile_type.runtime_layout)(
+            var runtime_layout = tile_type.RuntimeLayoutType(
                 runtime_shape, runtime_stride
             )
 
@@ -3163,7 +3080,7 @@ struct LayoutTensor[
                     runtime_layout.shape.value[i] = shape_i
 
             return (
-                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr.offset(offset), runtime_layout),
                 corner_coords,
                 offset,
             )
@@ -3177,7 +3094,7 @@ struct LayoutTensor[
                 runtime_stride.value[i] = self.runtime_layout.stride.value[i]
                 offset += self.runtime_layout.stride.value[i] * corner_coord
 
-            var runtime_layout = __type_of(tile_type.runtime_layout)(
+            var runtime_layout = tile_type.RuntimeLayoutType(
                 runtime_shape, runtime_stride
             )
 
@@ -3189,30 +3106,33 @@ struct LayoutTensor[
                 runtime_layout.shape.value[i] = shape_i
 
             return (
-                __type_of(tile_type)(self.ptr.offset(offset), runtime_layout),
+                tile_type(self.ptr.offset(offset), runtime_layout),
                 corner_coords,
                 offset,
             )
+
+    alias TiledIteratorType[
+        *tile_sizes: Int,
+        axis: Int = 0,
+    ] = LayoutTensorIter[
+        dtype,
+        Self._compute_tile_layout[*tile_sizes]()[0],
+        origin,
+        address_space=address_space,
+        circular=False,
+        axis=axis,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked = masked or _tile_is_masked[layout, *tile_sizes](),
+    ]
 
     @always_inline
     fn tiled_iterator[
         *tile_sizes: Int,
         axis: Int = 0,
-    ](
-        self,
-        *tile_coords: Int,
-        out result: LayoutTensorIter[
-            dtype,
-            Self._compute_tile_layout[*tile_sizes]()[0],
-            origin,
-            address_space=address_space,
-            circular=False,
-            axis=axis,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked = masked or _tile_is_masked[layout, *tile_sizes](),
-        ],
-    ):
+    ](self, *tile_coords: Int) -> Self.TiledIteratorType[
+        *tile_sizes, axis=axis
+    ]:
         """Create an iterator that traverses tiles along a specified axis.
 
         This method creates an iterator that allows efficient traversal of tiles
@@ -3276,12 +3196,20 @@ struct LayoutTensor[
             "Number of tiles should match the rank",
         ]()
 
+        alias tiled_iterator_type = Self.TiledIteratorType[
+            *tile_sizes, axis=axis
+        ]
+
         var ptr_offset = 0
 
         @parameter
         if layout.all_dims_known():
-            var runtime_shape = __type_of(result.runtime_layout.shape)()
-            var runtime_stride = __type_of(result.runtime_layout.stride)()
+            var runtime_shape = (
+                tiled_iterator_type.RuntimeLayoutType.ShapeType()
+            )
+            var runtime_stride = (
+                tiled_iterator_type.RuntimeLayoutType.StrideType()
+            )
 
             @parameter
             for i in range(tiles_rank):
@@ -3304,18 +3232,18 @@ struct LayoutTensor[
             # fmt: on
 
             @parameter
-            if result.masked:
+            if tiled_iterator_type.masked:
 
                 @parameter
-                for i in range(result.layout.rank()):
+                for i in range(tiled_iterator_type.layout.rank()):
                     cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                     shape_i = max(0, min(tile_sizes[i], cur_dim))
                     runtime_shape.value[i] = shape_i
 
-                return __type_of(result)(
+                return tiled_iterator_type(
                     self.ptr + ptr_offset,
                     bound,
-                    __type_of(result.runtime_layout)(
+                    tiled_iterator_type.RuntimeLayoutType(
                         runtime_shape, runtime_stride
                     ),
                     stride=stride,
@@ -3324,7 +3252,7 @@ struct LayoutTensor[
                     idx=tile_coords[axis],
                 )
             else:
-                return __type_of(result)(
+                return tiled_iterator_type(
                     self.ptr + ptr_offset,
                     bound,
                     stride=stride,
@@ -3332,8 +3260,12 @@ struct LayoutTensor[
                 )
 
         else:
-            var runtime_shape = __type_of(result.runtime_layout.shape)()
-            var runtime_stride = __type_of(result.runtime_layout.stride)()
+            var runtime_shape = (
+                tiled_iterator_type.RuntimeLayoutType.ShapeType()
+            )
+            var runtime_stride = (
+                tiled_iterator_type.RuntimeLayoutType.StrideType()
+            )
 
             @parameter
             for i in range(tiles_rank):
@@ -3347,43 +3279,50 @@ struct LayoutTensor[
             var iter_stride = tile_sizes[axis] * axis_stride
 
             @parameter
-            for i in range(result.layout.rank()):
+            for i in range(tiled_iterator_type.layout.rank()):
                 cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
                 shape_i = max(0, min(tile_sizes[i], cur_dim))
                 runtime_shape.value[i] = shape_i
 
-            return __type_of(result)(
+            return tiled_iterator_type(
                 self.ptr + ptr_offset,
                 iter_bound,
                 stride=iter_stride,
                 offset=0,
-                runtime_layout=__type_of(result.runtime_layout)(
+                runtime_layout=tiled_iterator_type.RuntimeLayoutType(
                     runtime_shape, runtime_stride
                 ),
                 dimension_bound=self.dim[axis](),
                 idx=tile_coords[axis],
             )
 
+    alias SplitElementType[
+        count: Int,
+        axis: Int = 0,
+    ] = LayoutTensor[
+        dtype,
+        Self._compute_tile_layout[layout.shape[axis].value() // count, axis]()[
+            0
+        ],
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        alignment=alignment,
+    ]
+
+    alias StaticSplitType[
+        count: Int,
+        axis: Int = 0,
+    ] = StaticTuple[
+        Self.SplitElementType[count, axis],
+        count,
+    ]
+
     @always_inline
     fn split[
         count: Int,
         axis: Int = 0,
-    ](
-        self,
-        out result: StaticTuple[
-            LayoutTensor[
-                dtype,
-                Self._compute_tile_layout[
-                    layout.shape[axis].value() // count, axis
-                ]()[0],
-                origin,
-                address_space=address_space,
-                element_layout=element_layout,
-                alignment=alignment,
-            ],
-            count,
-        ],
-    ):
+    ](self) -> Self.StaticSplitType[count, axis]:
         """Split the `LayoutTensor` along a axis and return a `StaticTuple` of
         `LayoutTensor`.
 
@@ -3410,7 +3349,7 @@ struct LayoutTensor[
         ]()
 
         alias stride = layout.stride[axis].value()
-        var tiles = __type_of(result)()
+        var tiles = Self.StaticSplitType[count, axis]()
 
         @parameter
         for i in range(count):
@@ -3432,24 +3371,23 @@ struct LayoutTensor[
 
         return tiles
 
+    alias DynamicSplitType[
+        axis: Int = 0,
+    ] = LayoutTensor[
+        dtype,
+        layout.make_shape_unknown[axis](),
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
+
     @always_inline
     fn split[
         axis: Int = 0,
         alignment: Int = 1,
-    ](
-        self,
-        count: Int,
-        idx: Int,
-        out result: LayoutTensor[
-            dtype,
-            layout.make_shape_unknown[axis](),
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    ](self, count: Int, idx: Int) -> Self.DynamicSplitType[axis]:
         """Retrieve a specific partition of the tensor after splitting along a
         specified axis.
 
@@ -3513,7 +3451,9 @@ struct LayoutTensor[
         alias flatten_rank = len(flatten(layout.shape))
         alias axis_in_flatten_tuple = runtime_shape.offset_until[axis]()
 
-        var runtime_shape = __type_of(result.runtime_layout.shape)()
+        var runtime_shape = Self.DynamicSplitType[
+            axis
+        ].RuntimeLayoutType.ShapeType()
         var axis_partition_dim = align_up(axis_dim // count, alignment)
 
         @parameter
@@ -3528,14 +3468,14 @@ struct LayoutTensor[
             else:
                 runtime_shape.value[i] = shape_i
 
-        return __type_of(result)(
+        return Self.DynamicSplitType[axis](
             # Only the last partition can have size other than axis_partition_dim.
             self.ptr + idx * axis_partition_dim * axis_stride,
-            __type_of(result.runtime_layout)(
+            Self.DynamicSplitType[axis].RuntimeLayoutType(
                 runtime_shape,
-                rebind[__type_of(result.runtime_layout.stride)](
-                    self.runtime_layout.stride
-                ),
+                rebind[
+                    Self.DynamicSplitType[axis].RuntimeLayoutType.StrideType
+                ](self.runtime_layout.stride),
             ),
         )
 
@@ -3569,42 +3509,29 @@ struct LayoutTensor[
 
         return tile_shape
 
-    @staticmethod
-    fn distribute_type[
-        threads_layout: Layout, axis: OptionalReg[Int] = None
-    ](
-        out result: LayoutTensor[
-            dtype,
-            _compute_distribute_layout[
-                layout,
-                threads_layout,
-                axis,
-            ]()[1],
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            # TODO: This is a workaround as we don't need masking support for AMD GPU
-            # if we use buffer stores and loads. Probably need a better solution
-            # in the long term, if someone ends up using global loads and stores
-            # it may lead to out of bounds access.
-            masked = (
-                masked or _distribute_is_masked[layout, threads_layout, axis]()
-            ) if is_nvidia_gpu() else False,
-        ],
-    ):
-        """Returns the type of the distributed tensor.
-
-        Parameters:
-            threads_layout: The layout of the threads.
-            axis: The axis to distribute along.
-
-        Returns:
-            The type of the distributed tensor.
-        """
-        while True:
-            pass
+    alias DistributeType[
+        threads_layout: Layout,
+        axis: OptionalReg[Int] = None,
+    ] = LayoutTensor[
+        dtype,
+        _compute_distribute_layout[
+            layout,
+            threads_layout,
+            axis,
+        ]()[1],
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        # TODO: This is a workaround as we don't need masking support for AMD GPU
+        # if we use buffer stores and loads. Probably need a better solution
+        # in the long term, if someone ends up using global loads and stores
+        # it may lead to out of bounds access.
+        masked = (
+            masked or _distribute_is_masked[layout, threads_layout, axis]()
+        ) if is_nvidia_gpu() else False,
+    ]
 
     @always_inline
     fn distribute[
@@ -3612,11 +3539,7 @@ struct LayoutTensor[
         axis: OptionalReg[Int] = None,
         swizzle: OptionalReg[Swizzle] = None,
         submode_axis: OptionalReg[Int] = None,
-    ](
-        self,
-        thread_id: UInt,
-        out result: __type_of(self.distribute_type[threads_layout, axis]()),
-    ):
+    ](self, thread_id: UInt,) -> Self.DistributeType[threads_layout, axis]:
         """Distribute tensor workload across multiple threads in a structured
         pattern.
 
@@ -3684,21 +3607,28 @@ struct LayoutTensor[
             are organized in structured grids.
         """
 
+        alias distribute_type = Self.DistributeType[threads_layout, axis]
+        alias runtime_layout_type = distribute_type.RuntimeLayoutType
+        alias runtime_shape_type = runtime_layout_type.ShapeType
+        alias runtime_stride_type = runtime_layout_type.StrideType
+
         alias distributed_layout = _compute_distribute_layout[
             layout,
             threads_layout,
             axis,
         ]()
 
+        var runtime_shape: runtime_shape_type
+
         @parameter
-        if result.masked:
-            runtime_shape = __type_of(result.runtime_layout.shape)(
+        if distribute_type.masked:
+            runtime_shape = runtime_shape_type(
                 self._clamp_distribute_shape[threads_layout](thread_id)
             )
         else:
-            runtime_shape = __type_of(result.runtime_layout.shape)()
+            runtime_shape = runtime_shape_type()
 
-        var runtime_stride = __type_of(result.runtime_layout.stride)()
+        var runtime_stride = runtime_stride_type()
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
@@ -3746,15 +3676,13 @@ struct LayoutTensor[
                 )
 
             @parameter
-            if result.masked:
-                return __type_of(result)(
+            if distribute_type.masked:
+                return distribute_type(
                     self.ptr.offset(Int(swizzled_offset)),
-                    __type_of(result.runtime_layout)(
-                        runtime_shape, runtime_stride
-                    ),
+                    runtime_layout_type(runtime_shape, runtime_stride),
                 )
             else:
-                return __type_of(result)(
+                return distribute_type(
                     self.ptr.offset(Int(swizzled_offset)),
                 )
 
@@ -3811,18 +3739,14 @@ struct LayoutTensor[
 
             @parameter
             if self.element_layout.all_dims_known():
-                return __type_of(result)(
+                return distribute_type(
                     self.ptr.offset(Int(swizzled_offset)),
-                    __type_of(result.runtime_layout)(
-                        runtime_shape, runtime_stride
-                    ),
+                    runtime_layout_type(runtime_shape, runtime_stride),
                 )
             else:
-                return __type_of(result)(
+                return distribute_type(
                     self.ptr.offset(Int(swizzled_offset)),
-                    __type_of(result.runtime_layout)(
-                        runtime_shape, runtime_stride
-                    ),
+                    runtime_layout_type(runtime_shape, runtime_stride),
                     self.runtime_element_layout,
                 )
 
@@ -3835,12 +3759,11 @@ struct LayoutTensor[
     ](
         self,
         thread_id: UInt,
-        out result: Tuple[
-            __type_of(self.distribute_type[threads_layout, axis]()),
-            IndexList[threads_layout.rank(), element_type=layout_int_type],
-            Scalar[linear_idx_type],
-        ],
-    ):
+    ) -> Tuple[
+        Self.DistributeType[threads_layout, axis],
+        IndexList[threads_layout.rank(), element_type=layout_int_type],
+        Scalar[linear_idx_type],
+    ]:
         """Similar to `distribute`, but also returns the corner coordinates of
         the tile as well as the offset.
 
@@ -3859,7 +3782,7 @@ struct LayoutTensor[
                 - The corner coordinates of the tile.
                 - The offset of the tile.
         """
-        alias ret_tensor_type = self.distribute_type[threads_layout, axis]()
+        alias ret_tensor_type = Self.DistributeType[threads_layout, axis]
         alias distributed_layout = _compute_distribute_layout[
             layout,
             threads_layout,
@@ -3868,13 +3791,13 @@ struct LayoutTensor[
 
         @parameter
         if ret_tensor_type.masked:
-            runtime_shape = __type_of(ret_tensor_type.runtime_layout.shape)(
+            runtime_shape = ret_tensor_type.RuntimeLayoutType.ShapeType(
                 self._clamp_distribute_shape[threads_layout](thread_id)
             )
         else:
-            runtime_shape = __type_of(ret_tensor_type.runtime_layout.shape)()
+            runtime_shape = ret_tensor_type.RuntimeLayoutType.ShapeType()
 
-        var runtime_stride = __type_of(ret_tensor_type.runtime_layout.stride)()
+        var runtime_stride = ret_tensor_type.RuntimeLayoutType.StrideType()
         var offset_coords = IndexList[
             threads_layout.rank(), element_type=layout_int_type
         ]()
@@ -3927,9 +3850,9 @@ struct LayoutTensor[
             @parameter
             if ret_tensor_type.masked:
                 return (
-                    __type_of(ret_tensor_type)(
+                    ret_tensor_type(
                         self.ptr.offset(Int(swizzled_offset)),
-                        __type_of(ret_tensor_type.runtime_layout)(
+                        ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
                     ),
@@ -3938,7 +3861,7 @@ struct LayoutTensor[
                 )
             else:
                 return (
-                    __type_of(ret_tensor_type)(
+                    ret_tensor_type(
                         self.ptr.offset(Int(swizzled_offset)),
                     ),
                     offset_coords,
@@ -3998,9 +3921,9 @@ struct LayoutTensor[
             @parameter
             if self.element_layout.all_dims_known():
                 return (
-                    __type_of(ret_tensor_type)(
+                    ret_tensor_type(
                         self.ptr.offset(Int(swizzled_offset)),
-                        __type_of(ret_tensor_type.runtime_layout)(
+                        ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
                     ),
@@ -4009,9 +3932,9 @@ struct LayoutTensor[
                 )
             else:
                 return (
-                    __type_of(ret_tensor_type)(
+                    ret_tensor_type(
                         self.ptr.offset(Int(swizzled_offset)),
-                        __type_of(ret_tensor_type.runtime_layout)(
+                        ret_tensor_type.RuntimeLayoutType(
                             runtime_shape, runtime_stride
                         ),
                         self.runtime_element_layout,
@@ -4020,54 +3943,35 @@ struct LayoutTensor[
                     swizzled_offset,
                 )
 
-    @always_inline
-    @staticmethod
-    fn _vectorize_type_2[
+    alias ShapeVectorizedType[
         origin: ImmutableOrigin,
         vector_shape: IntTuple[origin],
         linear_vectorize: Bool,
-    ](
-        out result: LayoutTensor[
-            dtype,
-            coalesce(
-                Self._tuple_divide_tiles(vector_shape, linear_vectorize)[1],
-                keep_rank=True,
-            ),
-            origin,
-            address_space=address_space,
-            element_layout = Self._tuple_divide_tiles(
-                vector_shape, linear_vectorize
-            )[0],
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-        ],
-    ):
-        """Returns the type of a vectorized view using IntTuple.
-
-        Parameters:
-            origin: The origin type for the IntTuple.
-            vector_shape: The dimensions of each vector unit as an IntTuple.
-            linear_vectorize: Whether to vectorize in a linear manner. Defaults to True.
-
-        Returns:
-            The type of a view into the original tensor with a vectorized layout.
-        """
-        while True:
-            pass
+    ] = LayoutTensor[
+        dtype,
+        coalesce(
+            Self._tuple_divide_tiles(vector_shape, linear_vectorize)[1],
+            keep_rank=True,
+        ),
+        origin,
+        address_space=address_space,
+        element_layout = Self._tuple_divide_tiles(
+            vector_shape, linear_vectorize
+        )[0],
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+    ]
 
     @always_inline
     fn _vectorize_2[
         vector_len: Int,
         linear_vectorize: Bool = True,
-    ](
-        self,
-        out result: __type_of(
-            Self._vectorize_type_2[
-                __origin_of(), IntTuple(vector_len), linear_vectorize
-            ]()
-        ),
-    ):
+    ](self) -> Self.ShapeVectorizedType[
+        __origin_of(),
+        IntTuple(vector_len),
+        linear_vectorize=linear_vectorize,
+    ]:
         """Wrap the integer `vector_len` in an `IntTuple` and call the
         `_vectorize_2` function.
 
@@ -4091,12 +3995,7 @@ struct LayoutTensor[
         vector_shape: IntTuple[origin],
         check_rank: Bool = True,
         linear_vectorize: Bool = vector_shape.is_value(),
-    ](
-        self,
-        out result: __type_of(
-            Self._vectorize_type_2[origin, vector_shape, linear_vectorize]()
-        ),
-    ):
+    ](self) -> Self.ShapeVectorizedType[origin, vector_shape, linear_vectorize]:
         """Experimental implementation of the generalized vectorize operation
         using IntTuple.
 
@@ -4122,8 +4021,12 @@ struct LayoutTensor[
                 " congruent shape is supported!"
             ),
         ]()
-        runtime_shape = __type_of(result.runtime_layout.shape)()
-        runtime_stride = __type_of(result.runtime_layout.stride)()
+
+        alias vectorized_type = Self.ShapeVectorizedType[
+            origin, vector_shape, linear_vectorize
+        ]
+        runtime_shape = vectorized_type.RuntimeLayoutType.ShapeType()
+        runtime_stride = vectorized_type.RuntimeLayoutType.StrideType()
 
         @parameter
         if check_rank:
@@ -4137,7 +4040,7 @@ struct LayoutTensor[
         alias flat_vector_shape = flatten(tiler.shape)
 
         @parameter
-        if result.masked or not layout.all_dims_known():
+        if vectorized_type.masked or not layout.all_dims_known():
 
             @parameter
             for i in range(len(flat_vector_shape)):
@@ -4153,72 +4056,58 @@ struct LayoutTensor[
         if layout.all_dims_known():
 
             @parameter
-            if result.masked:
-                return __type_of(result)(
+            if vectorized_type.masked:
+                return vectorized_type(
                     self.ptr,
-                    __type_of(result.runtime_layout)(
+                    vectorized_type.RuntimeLayoutType(
                         runtime_shape, runtime_stride
                     ),
                 )
             else:
-                return __type_of(result)(self.ptr)
+                return vectorized_type(self.ptr)
         else:
             constrained[
-                coalesce(result.element_layout).known_shape(),
+                coalesce(vectorized_type.element_layout).known_shape(),
                 "Result element layout should have known shape",
             ]()
 
-            runtime_element_layout_shape = __type_of(
-                result.runtime_element_layout.shape
-            )()
-            runtime_element_layout_stride = __type_of(
-                result.runtime_element_layout.stride
-            )(self.runtime_layout.stride.value)
+            runtime_element_layout_shape = (
+                vectorized_type.RuntimeElementLayoutType.ShapeType()
+            )
+            runtime_element_layout_stride = (
+                vectorized_type.RuntimeElementLayoutType.StrideType(
+                    self.runtime_layout.stride.value
+                )
+            )
 
-            return __type_of(result)(
+            return Self.ShapeVectorizedType[
+                origin, vector_shape, linear_vectorize
+            ](
                 self.ptr,
-                __type_of(result.runtime_layout)(runtime_shape, runtime_stride),
-                __type_of(result.runtime_element_layout)(
+                vectorized_type.RuntimeLayoutType(
+                    runtime_shape, runtime_stride
+                ),
+                vectorized_type.RuntimeElementLayoutType(
                     runtime_element_layout_shape,
                     runtime_element_layout_stride,
                 ),
             )
 
-    @always_inline
-    @staticmethod
-    fn vectorize_type[
-        *vector_shape: Int
-    ](
-        out result: LayoutTensor[
-            dtype,
-            coalesce(
-                Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True
-            ),
-            origin,
-            address_space=address_space,
-            element_layout = Self._divide_tiles[*vector_shape]()[0],
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-        ],
-    ):
-        """Returns the type of a vectorized view of the tensor with specified
-        vector dimensions.
-
-        Parameters:
-            vector_shape: The dimensions of each vector unit along each axis of
-                the tensor.
-
-        Returns:
-            The type of a view into the original tensor with a vectorized layout.
-        """
-        while True:
-            pass
+    alias VectorizedType[*vector_shape: Int] = LayoutTensor[
+        dtype,
+        coalesce(Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True),
+        origin,
+        address_space=address_space,
+        element_layout = Self._divide_tiles[*vector_shape]()[0],
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+    ]
 
     @always_inline
     fn vectorize[
         *vector_shape: Int
-    ](self, out result: __type_of(Self.vectorize_type[*vector_shape]()),):
+    ](self) -> Self.VectorizedType[*vector_shape]:
         """Reshape a tensor into a vectorized form for efficient SIMD
         operations.
 
@@ -4278,7 +4167,8 @@ struct LayoutTensor[
             check_rank=False,
             linear_vectorize=False,
         ]()
-        return rebind[__type_of(result)](ret)
+        # FIXME: this is ugly, is there a simpler way to do this?
+        return rebind[Self.VectorizedType[*vector_shape]](ret)
 
     @staticmethod
     fn _compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
@@ -4323,25 +4213,26 @@ struct LayoutTensor[
             sliced_layout.stride[0],
         )
 
-    @always_inline
-    fn slice[
+    alias SliceType[
         d0_slice: Slice,
         d1_slice: Slice,
-    ](
-        self,
-        out result: LayoutTensor[
-            dtype,
-            Self._compute_slice_layout(
-                d0_slice,
-                d1_slice,
-            ),
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    ] = LayoutTensor[
+        dtype,
+        Self._compute_slice_layout(
+            d0_slice,
+            d1_slice,
+        ),
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
+
+    @always_inline
+    fn slice[
+        d0_slice: Slice, d1_slice: Slice
+    ](self) -> Self.SliceType[d0_slice, d1_slice]:
         """Extract a slice from a rank-2 tensor using slice objects.
 
         This method creates a view into a subset of the tensor defined by the
@@ -4406,15 +4297,34 @@ struct LayoutTensor[
             d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
         ]()
-        alias stride_m = Int(result.layout.stride[0])
-        alias stride_n = Int(result.layout.stride[1])
+
+        alias return_type = Self.SliceType[d0_slice, d1_slice]
+        alias stride_m = Int(return_type.layout.stride[0])
+        alias stride_n = Int(return_type.layout.stride[1])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
         alias d1_slice_start = d1_slice.start.or_else(0)
 
         var offset = d0_slice_start * stride_m + d1_slice_start * stride_n
 
-        return __type_of(result)(self.ptr.offset(offset))
+        return Self.SliceType[d0_slice, d1_slice](self.ptr.offset(offset))
+
+    alias SliceType2D[
+        d0_slice: Slice,
+        d1_slice: Slice,
+        slice_indices: IndexList[2],
+        __offset_dims: Int = Self.rank - 2,
+    ] = LayoutTensor[
+        dtype,
+        Self._compute_slice_layout(
+            d0_slice, d1_slice, slice_indices[0], slice_indices[1]
+        ),
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
 
     @always_inline
     fn slice[
@@ -4425,18 +4335,9 @@ struct LayoutTensor[
     ](
         self,
         offsets: IndexList[__offset_dims],
-        out result: LayoutTensor[
-            dtype,
-            Self._compute_slice_layout(
-                d0_slice, d1_slice, slice_indices[0], slice_indices[1]
-            ),
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    ) -> Self.SliceType2D[
+        d0_slice, d1_slice, slice_indices, __offset_dims
+    ]:
         """Extract a 2D slice from a higher-rank tensor at specific indices.
 
         This method creates a view into a 2D subset of a higher-rank tensor:
@@ -4499,8 +4400,12 @@ struct LayoutTensor[
             slice_indices[0] < slice_indices[1],
             "Slice indices should be ordered",
         ]()
-        alias stride_0 = Int(result.layout.stride[0])
-        alias stride_1 = Int(result.layout.stride[1])
+        alias slice_type = Self.SliceType2D[
+            d0_slice, d1_slice, slice_indices, __offset_dims
+        ]
+
+        alias stride_0 = Int(slice_type.layout.stride[0])
+        alias stride_1 = Int(slice_type.layout.stride[1])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
         alias d1_slice_start = d1_slice.start.or_else(0)
@@ -4520,7 +4425,23 @@ struct LayoutTensor[
                 slice_offset += offsets[idx] * stride_i
                 idx += 1
 
-        return __type_of(result)(self.ptr.offset(slice_offset))
+        return Self.SliceType2D[
+            d0_slice, d1_slice, slice_indices, __offset_dims
+        ](self.ptr.offset(slice_offset))
+
+    alias SliceType1D[
+        d0_slice: Slice,
+        slice_indices: IndexList[1],
+        __offset_dims: Int = Self.rank - 1,
+    ] = LayoutTensor[
+        dtype,
+        Self._compute_slice_layout(d0_slice, slice_indices[0]),
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
 
     # FIXME: Can't overload slice, hitting compiler issue.
     # https://linear.app/modularml/issue/MOCO-174
@@ -4532,16 +4453,9 @@ struct LayoutTensor[
     ](
         self,
         offsets: IndexList[__offset_dims],
-        out result: LayoutTensor[
-            dtype,
-            Self._compute_slice_layout(d0_slice, slice_indices[0]),
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    ) -> Self.SliceType1D[
+        d0_slice, slice_indices, __offset_dims
+    ]:
         """Extract a 1D slice from a higher-rank tensor at a specific index.
 
         This method creates a view into a 1D subset of a higher-rank tensor by:
@@ -4597,7 +4511,11 @@ struct LayoutTensor[
             "Slice should have no gaps",
         ]()
 
-        alias stride_0 = Int(result.layout.stride[0])
+        alias slice_type = Self.SliceType1D[
+            d0_slice, slice_indices, __offset_dims
+        ]
+
+        alias stride_0 = Int(slice_type.layout.stride[0])
 
         alias d0_slice_start = d0_slice.start.or_else(0)
 
@@ -4616,24 +4534,28 @@ struct LayoutTensor[
                 slice_offset += offsets[idx] * stride_i
                 idx += 1
 
-        return __type_of(result)(self.ptr.offset(slice_offset))
+        return Self.SliceType1D[d0_slice, slice_indices, __offset_dims](
+            self.ptr.offset(slice_offset)
+        )
+
+    alias TransposeType[
+        M: Int = Self.shape[0](),
+        N: Int = Self.shape[1](),
+    ] = LayoutTensor[
+        dtype,
+        composition(layout, Layout([N, M], [M, 1])),
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
 
     @always_inline
     fn transpose[
         M: Int = Self.shape[0](),
         N: Int = Self.shape[1](),
-    ](
-        self,
-        out result: LayoutTensor[
-            dtype,
-            composition(layout, Layout([N, M], [M, 1])),
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    ](self) -> Self.TransposeType[M, N]:
         """Create a transposed view of a rank-2 tensor.
 
         This method creates a view of the tensor with its dimensions swapped, effectively
@@ -4686,25 +4608,26 @@ struct LayoutTensor[
         - For optimal performance when repeatedly accessing the transposed data,
             consider creating a physical copy with the transposed layout.
         """
-        return __type_of(result)(self.ptr)
+        return Self.TransposeType[M, N](self.ptr)
+
+    alias ReshapeType[
+        dst_layout: Layout,
+    ] = LayoutTensor[
+        dtype,
+        dst_layout,
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+        alignment=alignment,
+    ]
 
     @always_inline
     fn reshape[
         dst_layout: Layout,
-    ](
-        self,
-        out result: LayoutTensor[
-            dtype,
-            dst_layout,
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-            alignment=alignment,
-        ],
-    ):
+    ](self) -> Self.ReshapeType[dst_layout]:
         """Create a view of the tensor with a different shape.
 
         This method creates a view of the tensor with a new shape, without changing
@@ -4745,24 +4668,26 @@ struct LayoutTensor[
         - Masked tensors cannot be reshaped.
         """
         constrained[not masked, "Masked tensor does not support reshape."]()
-        return __type_of(result)(self.ptr)
+        return Self.ReshapeType[dst_layout](self.ptr)
+
+    alias CompositionType[
+        rhs_layout: Layout,
+        dst_layout: Layout = composition(layout, rhs_layout),
+    ] = LayoutTensor[
+        dtype,
+        dst_layout,
+        origin,
+        address_space=address_space,
+        element_layout=element_layout,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
 
     @always_inline
     fn composition[
         rhs_layout: Layout,
         dst_layout: Layout = composition(layout, rhs_layout),
-    ](
-        self,
-        out result: LayoutTensor[
-            dtype,
-            dst_layout,
-            origin,
-            address_space=address_space,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    ](self, out result: self.CompositionType[rhs_layout, dst_layout]):
         """Create a view of the tensor with a composed layout.
 
         This method creates a view of the tensor with a new layout that is the
@@ -4805,7 +4730,7 @@ struct LayoutTensor[
         - Understanding the mathematical properties of layout composition is
             important for correctly using this function.
         """
-        return __type_of(result)(self.ptr)
+        return self.CompositionType[rhs_layout, dst_layout](self.ptr)
 
     @always_inline
     fn distance(
@@ -5679,14 +5604,13 @@ fn stack_allocation_like[
     target_address_space: AddressSpace = AddressSpace.GENERIC,
 ](
     in_tensor: LayoutTensor[dtype, layout, address_space=address_space, **_],
-    out result: LayoutTensor[
-        dtype,
-        layout,
-        MutableAnyOrigin,
-        address_space=target_address_space,
-        masked = in_tensor.masked,
-    ],
-):
+) -> LayoutTensor[
+    dtype,
+    layout,
+    MutableAnyOrigin,
+    address_space=target_address_space,
+    masked = in_tensor.masked,
+]:
     """Create a stack-allocated tensor with the same layout as an existing
     tensor.
 
@@ -5745,7 +5669,13 @@ fn stack_allocation_like[
     - Stack allocations are automatically freed when they go out of scope.
     - The function uses the stack_allocation method of the result tensor type.
     """
-    return __type_of(result).stack_allocation()
+    return LayoutTensor[
+        dtype,
+        layout,
+        MutableAnyOrigin,
+        address_space=target_address_space,
+        masked = in_tensor.masked,
+    ].stack_allocation()
 
 
 @register_passable("trivial")
@@ -6142,14 +6072,14 @@ fn copy_dram_to_sram[
 
 @always_inline("nodebug")
 fn cp_async_k_major[
-    type: DType,
+    dtype: DType,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
     ],
     src: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
     ],
 ):
     """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
@@ -6173,7 +6103,7 @@ fn cp_async_k_major[
         - Source and destination tensors must be 2D.
 
     Parameters:
-        type: The data type of the tensor elements.
+        dtype: The data type of the tensor elements.
         eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
 
     Args:
@@ -6214,7 +6144,7 @@ fn cp_async_k_major[
     alias src_shape1 = src_layout.shape[1].value()
 
     alias desc_layout = _tma_desc_tile_layout[
-        type,
+        dtype,
         2,
         Index(src_shape0, src_shape1),
         is_k_major=True,
@@ -6229,7 +6159,7 @@ fn cp_async_k_major[
     ]()
 
     alias num_tiles = src_shape1 // desc_shape1
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
     # single warp group
     alias thread_layout = Layout.row_major(
         128 * simd_size // desc_shape1, desc_shape1 // simd_size
@@ -6239,7 +6169,7 @@ fn cp_async_k_major[
     for tile_id in range(num_tiles):
         src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
         dst_tile = LayoutTensor[
-            type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
+            dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)
 
         copy_dram_to_sram_async[
@@ -6252,14 +6182,14 @@ fn cp_async_k_major[
 
 @always_inline("nodebug")
 fn cp_async_mn_major[
-    type: DType,
+    dtype: DType,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.SHARED, *_, **_
     ],
     src: LayoutTensor[
-        type, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
+        dtype, _, address_space = gpu_memory.AddressSpace.GENERIC, *_, **_
     ],
 ):
     """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
@@ -6283,7 +6213,7 @@ fn cp_async_mn_major[
         - Source and destination tensors must be 2D.
 
     Parameters:
-        type: The data type of the tensor elements.
+        dtype: The data type of the tensor elements.
         eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
 
     Args:
@@ -6322,7 +6252,7 @@ fn cp_async_mn_major[
     alias src_shape1 = src_layout.shape[1].value()
 
     alias desc_layout = _tma_desc_tile_layout[
-        type,
+        dtype,
         2,
         Index(src_shape0, src_shape1),
         is_k_major=False,
@@ -6337,7 +6267,7 @@ fn cp_async_mn_major[
     alias num_warps = 4  # single warp group
     alias num_tiles_per_warp = (num_tiles0 * num_tiles1) // num_warps
 
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
     alias thread_layout_per_warp = Layout.row_major(
         gpu_memory.WARP_SIZE * simd_size // desc_shape1,
         desc_shape1 // simd_size,
@@ -6351,7 +6281,7 @@ fn cp_async_mn_major[
         tile_coord0, tile_coord1 = divmod(tile_id, UInt(num_tiles1))
         src_tile = src.tile[desc_shape0, desc_shape1](tile_coord0, tile_coord1)
         dst_tile = LayoutTensor[
-            type, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
+            dtype, desc_layout, address_space = gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)
 
         copy_dram_to_sram_async[
@@ -6699,9 +6629,9 @@ fn copy_dram_to_sram_async[
     ](dst, src)
 
 
-alias binary_op_type = fn[type: DType, width: Int] (
-    lhs: SIMD[type, width], rhs: SIMD[type, width]
-) -> SIMD[type, width]
+alias binary_op_type = fn[dtype: DType, width: Int] (
+    lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
+) -> SIMD[dtype, width]
 """
 Type alias for binary operations on SIMD vectors.
 
@@ -6709,7 +6639,7 @@ This type represents a function that takes two SIMD vectors of the same type and
 width and returns a SIMD vector of the same type and width.
 
 Args:
-    type: The data type of the SIMD vector elements.
+    dtype: The data type of the SIMD vector elements.
     width: The width of the SIMD vector.
     lhs: Left-hand side SIMD vector operand.
     rhs: Right-hand side SIMD vector operand.
@@ -7455,7 +7385,7 @@ fn copy_dram_to_local[
 
 
 @always_inline("nodebug")
-fn copy[
+fn copy_local_to_shared[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
     thread_scope: ThreadScope = ThreadScope.BLOCK,
@@ -7753,13 +7683,13 @@ fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
 @register_passable("trivial")
 struct LayoutTensorIter[
     mut: Bool, //,
-    type: DType,
+    dtype: DType,
     layout: Layout,
     origin: Origin[mut],
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = alignof[type]() if is_nvidia_gpu() else 1,
+    alignment: Int = alignof[dtype]() if is_nvidia_gpu() else 1,
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
     layout_int_type: DType = _get_index_type(address_space),
@@ -7775,7 +7705,7 @@ struct LayoutTensorIter[
 
     Parameters:
         mut: Whether the iterator allows mutation of the underlying data.
-        type: The data type of the tensor elements.
+        dtype: The data type of the tensor elements.
         layout: The memory layout pattern to follow during iteration.
         origin: Origin tracking for memory safety.
         address_space: The memory address space (`GLOBAL`, `SHARED`, etc.).
@@ -7799,7 +7729,7 @@ struct LayoutTensorIter[
     """The unsigned integer type used for indexing into memory."""
 
     var ptr: UnsafePointer[
-        Scalar[type],
+        Scalar[dtype],
         address_space=address_space,
         alignment=alignment,
         mut=mut,
@@ -7816,9 +7746,11 @@ struct LayoutTensorIter[
     var bound: Self.linear_uint_type
     """Upper bound of the memory region, limiting the iteration range."""
 
-    var runtime_layout: RuntimeLayout[
+    alias RuntimeLayoutType = RuntimeLayout[
         layout, element_type=layout_int_type, linear_idx_type=linear_idx_type
     ]
+
+    var runtime_layout: Self.RuntimeLayoutType
     """Runtime representation of the layout pattern used for mapping logical indices to memory locations."""
 
     var dimension_bound: Self.layout_uint_type
@@ -7854,7 +7786,7 @@ struct LayoutTensorIter[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[type],
+            Scalar[dtype],
             address_space=address_space,
             alignment=alignment,
             mut=mut,
@@ -7901,7 +7833,7 @@ struct LayoutTensorIter[
     fn __init__(
         out self,
         ptr: UnsafePointer[
-            Scalar[type],
+            Scalar[dtype],
             address_space=address_space,
             alignment=alignment,
             mut=mut,
@@ -7909,7 +7841,9 @@ struct LayoutTensorIter[
         ],
         bound: Self.linear_uint_type,
         runtime_layout: RuntimeLayout[layout, **_],
-        stride: Self.linear_uint_type = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
+        stride: Self.linear_uint_type = (
+            layout.size() if layout.all_dims_known() else UNKNOWN_VALUE
+        ),
         offset: Self.linear_uint_type = 0,
         dimension_bound: Self.layout_uint_type = 0,
         idx: Self.linear_uint_type = 0,
@@ -7966,26 +7900,23 @@ struct LayoutTensorIter[
             runtime_layout.size() if stride == UNKNOWN_VALUE else stride
         )
         self.bound = bound
-        self.runtime_layout = rebind[__type_of(self.runtime_layout)](
-            runtime_layout
-        )
+        self.runtime_layout = rebind[Self.RuntimeLayoutType](runtime_layout)
         self.dimension_bound = dimension_bound
         self.idx = idx
 
+    alias LayoutTensorType = LayoutTensor[
+        dtype,
+        layout,
+        origin,
+        address_space=address_space,
+        masked=masked,
+        alignment=alignment,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+    ]
+
     @always_inline
-    fn get(
-        self,
-        out result: LayoutTensor[
-            type,
-            layout,
-            origin,
-            address_space=address_space,
-            masked=masked,
-            alignment=alignment,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-        ],
-    ):
+    fn get(self) -> Self.LayoutTensorType:
         """Get the layout tensor at the current iterator position.
 
         Returns a layout tensor representing the data at the current position
@@ -7998,24 +7929,15 @@ struct LayoutTensorIter[
         """
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
-        return __type_of(result)(
+        return Self.LayoutTensorType(
             self.ptr + Int(self.offset),
-            rebind[__type_of(self.runtime_layout)](self.runtime_layout),
+            self.runtime_layout,
         )
 
     @always_inline
     fn __getitem__(
         self,
-    ) -> LayoutTensor[
-        type,
-        layout,
-        origin,
-        address_space=address_space,
-        masked=masked,
-        alignment=alignment,
-        layout_int_type=layout_int_type,
-        linear_idx_type=linear_idx_type,
-    ]:
+    ) -> Self.LayoutTensorType:
         """Get the layout tensor at the current iterator position.
 
         Operator overload that returns a layout tensor representing the data
@@ -8027,7 +7949,7 @@ struct LayoutTensorIter[
         return self.get()
 
     @always_inline
-    fn _clip_shape(self) -> __type_of(self.runtime_layout):
+    fn _clip_shape(self) -> Self.RuntimeLayoutType:
         """Clip the shape based on dimension bounds.
 
         Internal method that adjusts the shape of the layout tensor based on
@@ -8041,9 +7963,7 @@ struct LayoutTensorIter[
         new_shape.value[axis.value()] = max(
             0, min(Int(Int(self.dimension_bound) - self.idx * cur_dim), cur_dim)
         )
-        return __type_of(self.runtime_layout)(
-            new_shape, self.runtime_layout.stride
-        )
+        return Self.RuntimeLayoutType(new_shape, self.runtime_layout.stride)
 
     @always_inline
     fn __iadd__[T: Intable](mut self, rhs: T):
@@ -8206,23 +8126,20 @@ struct LayoutTensorIter[
             offset=next_offset,
         )
 
+    alias ReshapeType[dst_layout: Layout] = LayoutTensorIter[
+        dtype,
+        dst_layout,
+        origin,
+        address_space=address_space,
+        alignment=alignment,
+        circular=circular,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+    ]
+
     @always_inline
-    fn reshape[
-        dst_layout: Layout,
-    ](
-        self,
-        out result: LayoutTensorIter[
-            type,
-            dst_layout,
-            origin,
-            address_space=address_space,
-            alignment=alignment,
-            circular=circular,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-        ],
-    ):
+    fn reshape[dst_layout: Layout](self) -> Self.ReshapeType[dst_layout]:
         """Reshape the iterator to a new layout.
 
         This method creates a new iterator with a different layout while
@@ -8256,15 +8173,32 @@ struct LayoutTensorIter[
             "Iterator reshape only supports compile time layout.",
         ]()
 
-        return __type_of(result)(
+        return Self.ReshapeType[dst_layout](
             self.ptr,
             Int(self.bound),
-            __type_of(result.runtime_layout)(),
+            Self.ReshapeType[dst_layout].RuntimeLayoutType(),
             Int(self.stride),
             Int(self.offset),
             dimension_bound=Int(self.dimension_bound),
             idx=Int(self.idx),
         )
+
+    alias BitcasType[
+        new_type: DType,
+        *,
+        address_space: AddressSpace = Self.address_space,
+        alignment: Int = Self.alignment,
+    ] = LayoutTensorIter[
+        new_type,
+        layout,
+        origin,
+        address_space=address_space,
+        alignment=alignment,
+        circular = Self.circular,
+        layout_int_type=layout_int_type,
+        linear_idx_type=linear_idx_type,
+        masked=masked,
+    ]
 
     @always_inline
     fn bitcast[
@@ -8272,20 +8206,9 @@ struct LayoutTensorIter[
         *,
         address_space: AddressSpace = Self.address_space,
         alignment: Int = Self.alignment,
-    ](
-        self,
-        out result: LayoutTensorIter[
-            new_type,
-            layout,
-            origin,
-            address_space=address_space,
-            alignment=alignment,
-            circular = Self.circular,
-            layout_int_type=layout_int_type,
-            linear_idx_type=linear_idx_type,
-            masked=masked,
-        ],
-    ):
+    ](self) -> Self.BitcasType[
+        new_type, address_space=address_space, alignment=alignment
+    ]:
         """Reinterpret the iterator's underlying pointer as a different data
         type.
 
@@ -8303,7 +8226,9 @@ struct LayoutTensorIter[
         Returns:
             A new LayoutTensorIter with the same layout but different data type.
         """
-        return __type_of(result)(
+        return Self.BitcasType[
+            new_type, address_space=address_space, alignment=alignment
+        ](
             self.ptr.bitcast[Scalar[new_type]]()
             .address_space_cast[address_space]()
             .static_alignment_cast[alignment](),

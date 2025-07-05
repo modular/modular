@@ -225,27 +225,27 @@ def test_dunder_methods(mut python: Python):
 
     # __lt__
     c = a < b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __le__
     c = a <= b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __gt__
     c = a > b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __ge__
     c = a >= b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __eq__
     c = a == b
-    assert_false(c)
+    assert_equal_pyobj(c, PythonObject(False))
 
     # __ne__
     c = a != b
-    assert_true(c)
+    assert_equal_pyobj(c, PythonObject(True))
 
     # __pos__
     c = +a
@@ -298,8 +298,8 @@ fn test_string_conversions(mut python: Python) raises -> None:
     assert_true(mojo_capitalized == "Mojo")
 
     # string object
-    var mo_str = String("mo")
-    var jo_str = String("jo")
+    var mo_str = "mo"
+    var jo_str = "jo"
     var mojo_str = mo_str + jo_str
     py_str = PythonObject(mojo_str)
     py_capitalized = py_str.capitalize()

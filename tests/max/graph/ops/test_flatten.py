@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
@@ -33,7 +40,7 @@ def test_flatten_success(
     negative_index_start: bool,
     normalized_end: int,
     negative_index_end: bool,
-):
+) -> None:
     assume(normalized_start <= normalized_end)
 
     rank = input_type.rank
@@ -70,7 +77,9 @@ def test_flatten_success(
     start=...,
     end=...,
 )
-def test_flatten_failure_indexing(input_type: TensorType, start: int, end: int):
+def test_flatten_failure_indexing(
+    input_type: TensorType, start: int, end: int
+) -> None:
     rank = input_type.rank
     assume(not ((-rank <= start < rank) and (-rank <= end < rank)))
 
@@ -93,7 +102,7 @@ def test_flatten_failure_start_greater_end(
     negative_index_start: bool,
     normalized_end: int,
     negative_index_end: bool,
-):
+) -> None:
     assume(normalized_start > normalized_end)
 
     rank = input_type.rank

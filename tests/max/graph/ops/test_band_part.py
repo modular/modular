@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Tests for ops.band_part."""
 
@@ -13,7 +20,7 @@ from max.graph import Dim, StaticDim, TensorType, ops
 
 
 @given(base_type=tensor_types(shapes=shapes(min_rank=2)))
-def test_band_part__trivial(graph_builder, base_type: TensorType):
+def test_band_part__trivial(graph_builder, base_type: TensorType) -> None:
     """Test band_part with no lower or upper bounds, corresponding to the full matrix."""
     with graph_builder(input_types=[base_type]) as graph:
         out = ops.band_part(graph.inputs[0])
@@ -22,7 +29,7 @@ def test_band_part__trivial(graph_builder, base_type: TensorType):
 
 
 @given(base_type=tensor_types(shapes=shapes(min_rank=2)))
-def test_band_part__main_diagonal(graph_builder, base_type: TensorType):
+def test_band_part__main_diagonal(graph_builder, base_type: TensorType) -> None:
     """Test band_part with only the main diagonal (num_lower=0, num_upper=0)."""
     *_, m, n = base_type.shape
     assume(m != 0 and n != 0)
@@ -33,7 +40,9 @@ def test_band_part__main_diagonal(graph_builder, base_type: TensorType):
 
 
 @given(base_type=tensor_types(shapes=shapes(min_rank=2)))
-def test_band_part__lower_triangle(graph_builder, base_type: TensorType):
+def test_band_part__lower_triangle(
+    graph_builder, base_type: TensorType
+) -> None:
     """Test band_part with lower triangle (num_lower=None, num_upper=0)."""
     *_, m, n = base_type.shape
     assume(n != 0)
@@ -44,7 +53,9 @@ def test_band_part__lower_triangle(graph_builder, base_type: TensorType):
 
 
 @given(base_type=tensor_types(shapes=shapes(min_rank=2)))
-def test_band_part__upper_triangle(graph_builder, base_type: TensorType):
+def test_band_part__upper_triangle(
+    graph_builder, base_type: TensorType
+) -> None:
     """Test band_part with upper triangle (num_lower=0, num_upper=None)."""
     *_, m, n = base_type.shape
     assume(m != 0)
@@ -85,7 +96,7 @@ def test_band_part__general(
     num_lower: int,
     num_upper: int,
     exclude: bool,
-):
+) -> None:
     """Test band_part with valid inputs."""
     assert base_type.rank >= 2
     *_, m, n = base_type.shape
@@ -104,7 +115,9 @@ def test_band_part__general(
 
 
 @given(base_type=tensor_types(shapes=shapes(max_rank=1)))
-def test_band_part__error__low_rank(graph_builder, base_type: TensorType):
+def test_band_part__error__low_rank(
+    graph_builder, base_type: TensorType
+) -> None:
     """Test that band_part raises an error for tensors with rank < 2."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(ValueError, match="must have at least 2 dimensions"):
@@ -118,7 +131,7 @@ def test_band_part__error__low_rank(graph_builder, base_type: TensorType):
 )
 def test_band_part__error__negative_num_lower(
     graph_builder, base_type: TensorType, num_lower: int
-):
+) -> None:
     """Test that band_part raises an error for num_lower < -1."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(ValueError, match="must be non-negative"):
@@ -132,7 +145,7 @@ def test_band_part__error__negative_num_lower(
 )
 def test_band_part__error__negative_num_upper(
     graph_builder, base_type: TensorType, num_upper: int
-):
+) -> None:
     """Test that band_part raises an error for num_upper < -1."""
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(ValueError, match="must be non-negative"):
@@ -151,7 +164,7 @@ shared_static_dim = st.shared(static_dims())
 )
 def test_band_part__error__out_of_bounds_num_lower(
     graph_builder, base_type: TensorType, static_dim: StaticDim, num_lower: int
-):
+) -> None:
     """Test that band_part raises an error when num_lower is out of bounds."""
     *broadcast, n = base_type.shape
     input_type = TensorType(
@@ -171,7 +184,7 @@ def test_band_part__error__out_of_bounds_num_lower(
 )
 def test_band_part__error__out_of_bounds_num_upper(
     graph_builder, base_type: TensorType, static_dim: StaticDim, num_upper: int
-):
+) -> None:
     """Test that band_part raises an error when num_upper is out of bounds."""
     *broadcast, m = base_type.shape
     input_type = TensorType(

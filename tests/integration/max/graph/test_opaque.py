@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 import os
@@ -101,11 +108,11 @@ def test_opaque_simple(
 
 
 class PythonCounter:
-    def __init__(self, a=0, b=0):
+    def __init__(self, a=0, b=0) -> None:
         self.a = a
         self.b = b
 
-    def bump(self):
+    def bump(self) -> None:
         self.a += 1
         self.b += self.a
 
@@ -150,7 +157,7 @@ def test_opaque_type_parameterization(
     session: InferenceSession,
     custom_ops_mojopkg: Path,
     monkeypatch,
-):
+) -> None:
     # Opaque parameterization is only supported using the new MOGG dialect based
     # compilation path.
     monkeypatch.setenv("MOGG_USE_EXP_KERNELS", "1")

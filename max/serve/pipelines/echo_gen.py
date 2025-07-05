@@ -116,6 +116,7 @@ class EchoPipelineTokenizer(
 
         # Create TextContext manually
         context = TextContext(
+            request_id=request.id,
             prompt=prompt,
             max_length=max_length,
             tokens=encoded_prompt,
@@ -135,7 +136,7 @@ class EchoPipelineTokenizer(
 class EchoTokenGenerator(TokenGenerator[TextContext]):
     """Token generator that echoes the prompt tokens in their original order."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[str, int] = {}
 

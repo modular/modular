@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
@@ -131,5 +138,22 @@ def test_weight_is_placeholder() -> None:
         gen_mlir = str(graph._mlir_op)
         assert re.search(
             r"mo.constant.external.*isPlaceholder = true.*!mo.tensor<\[\], f32",
+            gen_mlir,
+        )
+
+
+def test_weight_has_alias() -> None:
+    with Graph("graph_with_weights", input_types=()) as graph:
+        w = Weight(
+            "w",
+            dtype=DType.float32,
+            shape=[],
+            device=DeviceRef.CPU(),
+            _has_alias=True,
+        )
+        graph.output(w)
+        gen_mlir = str(graph._mlir_op)
+        assert re.search(
+            r"mo.constant.external.*hasAlias = true.*!mo.tensor<\[\], f32",
             gen_mlir,
         )

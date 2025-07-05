@@ -643,7 +643,7 @@ struct QueuedTileScheduler[
             # producer needs to sync before loading
             @parameter
             if sync == MHASchedulerSynchronization.PRODUCER:
-                named_barrier[128, id=1]()
+                named_barrier[128,](id=1)
 
         @parameter
         if sync == MHASchedulerSynchronization.ALL:

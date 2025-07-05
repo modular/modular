@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.fold tests."""
 
@@ -37,7 +44,7 @@ def test_fold(
     stride: tuple[int, int],
     dilation: tuple[int, int],
     padding: tuple[int, int],
-):
+) -> None:
     """Padding by nothing does not change the type."""
     # Create valid input shape from input values.
     L = 1
@@ -91,7 +98,7 @@ def test_fold_invalid_inputs(
     stride: tuple[int, int],
     dilation: tuple[int, int],
     padding: tuple[int, int],
-):
+) -> None:
     """Padding by nothing does not change the type."""
     # Create valid input shape from input values.
     L = 1

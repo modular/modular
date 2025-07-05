@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.outer tests."""
 
@@ -28,7 +35,7 @@ valid_repeats = shared_shapes.flatmap(
 
 
 @given(input_type=tensor_types_nd, repeats=valid_repeats)
-def test_tile__valid(input_type: TensorType, repeats: list[int]):
+def test_tile__valid(input_type: TensorType, repeats: list[int]) -> None:
     with Graph("tiles", input_types=[input_type]) as graph:
         out = ops.tile(graph.inputs[0], repeats)
         expected_shape = [dim * r for r, dim in zip(repeats, input_type.shape)]
@@ -44,7 +51,7 @@ valid_symbolic_repeats = shared_shapes.flatmap(
 @given(input_type=tensor_types_nd, repeats=valid_symbolic_repeats)
 def test_tile__valid_symbolic(
     input_type: TensorType, repeats: list[SymbolicDim]
-):
+) -> None:
     with Graph("tiles", input_types=[input_type]) as graph:
         out = ops.tile(graph.inputs[0], repeats)
         expected_shape = [dim * r for r, dim in zip(repeats, input_type.shape)]
@@ -71,7 +78,7 @@ invalid_repeats = st.one_of(invalid_static_repeats, invalid_len)
 
 
 @given(input_type=tensor_types_nd, repeats=invalid_repeats)
-def test_tile__invalid(input_type: TensorType, repeats: list[int]):
+def test_tile__invalid(input_type: TensorType, repeats: list[int]) -> None:
     assume(len(input_type.shape) != 0)
     with Graph("tiles", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):

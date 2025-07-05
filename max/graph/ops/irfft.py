@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 """Op implementation for irfft."""
@@ -13,7 +20,8 @@ from typing import Any
 
 from max.dtype import DType
 
-from ..type import DeviceKind, Dim, StaticDim, TensorType
+from ..dim import Dim, StaticDim
+from ..type import DeviceKind, TensorType
 from ..value import TensorValue
 from .concat import concat
 from .constant import constant

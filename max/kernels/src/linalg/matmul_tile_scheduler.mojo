@@ -157,13 +157,13 @@ struct TileScheduler[
             var n = UInt(n_block_idx * tile_shape[1])
 
             return WorkInfo(
-                m, n, 0, problem_shape[2] // tile_shape[2], is_valid
+                m, n, 0, ceildiv(problem_shape[2], tile_shape[2]), is_valid
             )
         else:
             m, n = self._index_to_mn()
             is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
             return WorkInfo(
-                m, n, 0, self.prob_shape[2] // tile_shape[2], is_valid
+                m, n, 0, ceildiv(self.prob_shape[2], tile_shape[2]), is_valid
             )
 
     @always_inline
@@ -247,7 +247,9 @@ struct TileScheduler[
         var m = UInt(m_block_idx * tile_shape[0])
         var n = UInt(n_block_idx * tile_shape[1])
         # Only support K starting from 0 for now.
-        return WorkInfo(m, n, 0, problem_shape[2] // tile_shape[2], is_valid)
+        return WorkInfo(
+            m, n, 0, ceildiv(problem_shape[2], tile_shape[2]), is_valid
+        )
 
     # Calculates swizzled M and N block indices for better cache utilization
     @always_inline

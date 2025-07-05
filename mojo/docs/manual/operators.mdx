@@ -473,34 +473,26 @@ As discussed in [Strings](/mojo/manual/types#strings), the
 [`String`](/mojo/stdlib/collections/string/string/String) type represents a
 mutable string value. In contrast, the
 [`StringLiteral`](/mojo/stdlib/builtin/string_literal/StringLiteral) type
-represents a literal string that is embedded into your compiled program. At
-run-time a `StringLiteral` is loaded into memory as a constant that persists for
-the duration of your program's execution.
-
-The `String` type has a constructor that accepts a `StringLiteral` value, which
-means that a `StringLiteral` can be implicitly converted to a `String` at
-run-time if you pass it as an argument to a function or assign it to a `String`
-type variable. You also can use the [`String`
-constructor](/mojo/stdlib/collections/string/string/String#__init__) to
-explicitly convert the `StringLiteral` to a `String` value at run-time.
-
-Additionally, the
-[`StringSlice`](/mojo/stdlib/collections/string/string_slice/StringSlice) type
-is a non-copying view of a `String` or `StringLiteral` value. It provides some
-additional methods for string manipulation. A common use case is to create a
-`StringSlice` from a `StringLiteral` using the `StaticString` alias so that you
-can then invoke the `format()` method on it. For example:
+represents a literal string that is embedded into your compiled program, but
+at run-time it materializes to a `String`, allowing you to mutate it:
 
 ```mojo
-alias message = StaticString('{} says, "{}"')
-name = "Pat"
-greeting = "Good day!"
-print(message.format(name, greeting))
+message = "Hello"       # type = String
+alias name = " Pat"       # type = StringLiteral
+greeting = " good Day!"  # type = String
+
+# Mutate the original `message` String
+message += name
+message += greeting
+print(message)
 ```
 
 ```output
-Pat says, "Good day!"
+Hello Pat good day!
 ```
+
+This means that `StringLiteral` values can be intermixed with `String` values in
+any runtime expression without having to convert between types.
 
 #### String concatenation
 
@@ -514,36 +506,9 @@ alias last_name = "Curie"
 alias marie = "Marie " + last_name
 print(marie)
 
-# Compile-time concatenation assigned to a run-time StringLiteral type variable
+# Compile-time concatenation before materializing to a run-time `String`
 pierre = "Pierre " + last_name
 print(pierre)
-```
-
-```output
-Marie Curie
-Pierre Curie
-```
-
-With the `String` type the `+` operator performs run-time string concatenation
-to produce a new `String` value. You can also concatenate a `String` and a
-`StringLiteral` to produce a new `String` result.
-
-```mojo
-var first_name: String = "Grace"
-var last_name: String = " Hopper"
-
-# String type result
-programmer = first_name + last_name
-print(programmer)
-
-# String type result
-singer = first_name + " Slick"
-print(singer)
-```
-
-```output
-Grace Hopper
-Grace Slick
 ```
 
 :::tip
@@ -561,6 +526,9 @@ you can write:
 ```mojo
 result = String("The point at (", x, ", ", y, ")")
 ```
+
+This will write the underlying data using a stack buffer, and will only allocate
+and memcpy to the heap once.
 
 :::
 
@@ -684,7 +652,7 @@ by index -1. Specifying an index beyond the bounds of the string results in a
 run-time error.
 
 ```mojo
-alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # StringLiteral type value
+var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  # String type value
 print(alphabet[0], alphabet[-1])
 
 # The following would produce a run-time error
@@ -704,7 +672,7 @@ end values. Omitting `start` is the same as specifying `0`, and omitting `end`
 is the same as specifying 1 plus the length of the string.
 
 ```mojo
-var alphabet: String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" # String type value
 print(alphabet[1:4])  # The 2nd through 4th characters
 print(alphabet[:6])   # The first 6 characters
 print(alphabet[-6:])  # The last 6 characters
@@ -1211,7 +1179,7 @@ real and imaginary fields.
 
 ```mojo
 c1 = Complex(-1.2, 6.5)
-print(StaticString("c1: Real: {}; Imaginary: {}").format(c1.re, c1.im))
+print("c1: Real: {}; Imaginary: {}".format(c1.re, c1.im))
 ```
 
 ```output
@@ -1236,7 +1204,7 @@ Now we can create a `Complex` instance and provide just a real component.
 
 ```mojo
 c2 = Complex(3.14159)
-print(StaticString("c2: Real: {}; Imaginary: {}").format(c2.re, c2.im))
+print("c2: Real: {}; Imaginary: {}".format(c2.re, c2.im))
 ```
 
 ```output
@@ -1332,7 +1300,7 @@ Now let's try getting and setting the real and imaginary components of a
 
 ```mojo
 c2 = Complex(3.14159)
-print(StaticString("c2[0]: {}; c2[1]: {}").format(c2[0], c2[1]))
+print("c2[0]: {}; c2[1]: {}".format(c2[0], c2[1]))
 c2[0] = 2.71828
 c2[1] = 42
 print("c2[0] = 2.71828; c2[1] = 42; c2:", c2)

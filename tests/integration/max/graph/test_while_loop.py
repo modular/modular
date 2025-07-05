@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test while loop."""
 
@@ -18,7 +25,7 @@ from max.graph import BufferType, BufferValue, DeviceRef, Graph, TensorType, ops
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
 
-def test_while_loop(session: InferenceSession):
+def test_while_loop(session: InferenceSession) -> None:
     with Graph(
         "while_loop",
         input_types=[TensorType(DType.int32, [], device=device_ref)],
@@ -40,7 +47,7 @@ def test_while_loop(session: InferenceSession):
     assert result[0].to_numpy() == 10
 
 
-def test_while_loop_lambda(session: InferenceSession):
+def test_while_loop_lambda(session: InferenceSession) -> None:
     with Graph(
         "while_loop_lambda",
         input_types=[TensorType(DType.int32, [], device=device_ref)],
@@ -55,7 +62,7 @@ def test_while_loop_lambda(session: InferenceSession):
     assert result[0].to_numpy() == 10
 
 
-def test_while_loop_body_with_multiple_args(session: InferenceSession):
+def test_while_loop_body_with_multiple_args(session: InferenceSession) -> None:
     with Graph(
         "while_loop_lambda_with_multiple_args",
         input_types=[
@@ -89,7 +96,7 @@ def custom_ops_path() -> Path:
 )
 def test_while_loop_inplace_user_supplied(
     custom_ops_path, session: InferenceSession
-):
+) -> None:
     bt = BufferType(DType.float32, [2, 2], DeviceRef.CPU())
 
     with Graph("basic", input_types=[bt]) as graph:

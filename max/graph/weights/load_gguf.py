@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Function for importing a GGUF checkpoint into a MAX Graph."""
 
@@ -35,11 +42,11 @@ _FROM_QUANTIZED_GGML_DTYPES = {}
 _TO_QUANTIZED_GGML_DTYPES = {}
 
 
-def _install(package):
+def _install(package) -> None:
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
 
-def _check_gguf():
+def _check_gguf() -> None:
     global \
         gguf, \
         _GGML_TO_DTYPE, \
@@ -103,7 +110,7 @@ class GGUFWeights(Weights):
         tensors=None,
         prefix: str = "",
         allocated=None,
-    ):
+    ) -> None:
         """Creates a GGUF weights reader.
 
         Args:

@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
@@ -49,7 +56,9 @@ def torch_conv2d(
         ),
     ],
 )
-def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
+def test_conv2d(
+    session, input_type: TensorType, filter_type: TensorType
+) -> None:
     with Graph("conv2d", input_types=[input_type, filter_type]) as graph:
         x, filter = graph.inputs
         stride = (16, 16)
@@ -60,7 +69,7 @@ def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
         graph.output(conv)
 
         @modular_graph_test(session, graph)
-        def test_correctness(execute, inputs, torch_inputs):
+        def test_correctness(execute, inputs, torch_inputs) -> None:
             result = execute(inputs).to_numpy()
             x, w = torch_inputs
             expected = (

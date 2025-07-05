@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Op implementation for range."""
 
@@ -12,8 +19,9 @@ from typing import Optional, get_args
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
+from ..dim import DimLike
 from ..graph import Graph
-from ..type import DeviceRef, DimLike
+from ..type import DeviceRef
 from ..value import Numeric, TensorType, TensorValue, TensorValueLike
 from .constant import constant
 

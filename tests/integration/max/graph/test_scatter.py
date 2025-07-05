@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
@@ -36,7 +43,7 @@ device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 )
 def test_scatter(
     session: InferenceSession, input, updates, indices, axis, expected
-):
+) -> None:
     input = np.array(input, dtype=np.float32)
     input_type = TensorType(DType.float32, input.shape, device_ref)
     with Graph("scatter", input_types=[input_type]) as graph:
@@ -94,7 +101,7 @@ def test_scatter(
 )
 def test_scatter_nd(
     session: InferenceSession, input_data, updates_data, indices_data, expected
-):
+) -> None:
     """Test scatter_nd operation with various input configurations."""
     input_array = np.array(input_data, dtype=np.float32)
     input_type = TensorType(DType.float32, input_array.shape, device_ref)

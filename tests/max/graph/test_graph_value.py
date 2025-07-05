@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
@@ -15,7 +22,7 @@ from max.graph.value import TensorValue, _is_strong_tensor_value_like
 
 
 @given(input_type=...)
-def test_tensor_value__T(input_type: TensorType):
+def test_tensor_value__T(input_type: TensorType) -> None:
     assume(input_type.rank >= 2)
     with Graph("transpose", input_types=[input_type]) as graph:
         out = graph.inputs[0].T
@@ -27,7 +34,7 @@ def test_tensor_value__T(input_type: TensorType):
 
 
 @given(input_type=...)
-def test_buffer__not_tensorvalue(input_type: BufferType):
+def test_buffer__not_tensorvalue(input_type: BufferType) -> None:
     assert not _is_strong_tensor_value_like(input_type)
     with Graph("buffer", input_types=[input_type]) as graph:
         with pytest.raises(TypeError):
@@ -35,21 +42,21 @@ def test_buffer__not_tensorvalue(input_type: BufferType):
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
-def test_tensor_value__operator_logical_and(tensor_type: TensorType):
+def test_tensor_value__operator_logical_and(tensor_type: TensorType) -> None:
     with Graph("and", input_types=[tensor_type]) as graph:
         (x,) = graph.inputs
         assert (x & x).type == ops.logical_and(x, x).type
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
-def test_tensor_value__operator_logical_or(tensor_type: TensorType):
+def test_tensor_value__operator_logical_or(tensor_type: TensorType) -> None:
     with Graph("or", input_types=[tensor_type]) as graph:
         (x,) = graph.inputs
         assert (x | x).type == ops.logical_or(x, x).type
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
-def test_tensor_value__operator_logical_xor(tensor_type: TensorType):
+def test_tensor_value__operator_logical_xor(tensor_type: TensorType) -> None:
     with Graph("xor", input_types=[tensor_type]) as graph:
         (x,) = graph.inputs
         assert (x ^ x).type == ops.logical_xor(x, x).type

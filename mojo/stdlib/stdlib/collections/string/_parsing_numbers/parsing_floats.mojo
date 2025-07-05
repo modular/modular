@@ -210,7 +210,7 @@ fn create_float64(m: UInt64, p: Int64) -> Float64:
     return memory.bitcast[DType.float64](representation_as_int)
 
 
-fn lemire_algorithm(owned w: UInt64, owned q: Int64) -> Float64:
+fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # This algorithm has 22 steps described
     # in https://arxiv.org/pdf/2101.11408 (algorithm 1)
     # Step 1

@@ -72,20 +72,20 @@ fn test_fused_reductions_inner() raises:
     @__copy_capture(vector)
     @parameter
     fn input_fn[
-        type: DType, width: Int, rank: Int
-    ](indices: IndexList[rank]) -> SIMD[type, width]:
+        dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.load[width=width](indices[0])
-        return loaded_val._refine[type]()
+        return loaded_val._refine[dtype]()
 
     var out = StaticTuple[Scalar[test_type], num_reductions]()
 
     @always_inline
     @parameter
     fn output_fn[
-        type: DType, width: Int, rank: Int
+        dtype: DType, width: Int, rank: Int
     ](
         indices: IndexList[rank],
-        val: StaticTuple[SIMD[type, width], num_reductions],
+        val: StaticTuple[SIMD[dtype, width], num_reductions],
     ):
         constrained[
             width == 1,
@@ -157,10 +157,10 @@ fn test_fused_reductions_outer() raises:
     @__copy_capture(vector)
     @parameter
     fn input_fn[
-        type: DType, width: Int, rank: Int
-    ](indices: IndexList[rank]) -> SIMD[type, width]:
+        dtype: DType, width: Int, rank: Int
+    ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.load[width=width](indices[0] * 2 + indices[1])
-        return loaded_val._refine[type]()
+        return loaded_val._refine[dtype]()
 
     @always_inline
     @parameter
@@ -189,10 +189,10 @@ fn test_fused_reductions_outer() raises:
     @always_inline
     @parameter
     fn output_fn[
-        type: DType, width: Int, rank: Int
+        dtype: DType, width: Int, rank: Int
     ](
         indices: IndexList[rank],
-        val: StaticTuple[SIMD[type, width], num_reductions],
+        val: StaticTuple[SIMD[dtype, width], num_reductions],
     ):
         # CHECK: Column: 0  min:  1.0  max:  99.0  sum:  2500.0
         # CHECK: Column: 1  min:  2.0  max:  100.0  sum:  2550.0

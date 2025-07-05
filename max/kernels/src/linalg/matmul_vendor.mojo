@@ -52,7 +52,9 @@ fn matmul[
     if not elementwise_lambda_fn:
         if not c.data:
             raise "c must be allocated"
-        vendor_matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
+        vendor_matmul[use_tf32=True](
+            ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
+        )
         return
     else:
         alias epilogue = elementwise_lambda_fn.value()
@@ -76,7 +78,7 @@ fn matmul[
 
             # For D = alpha * A * B + beta * C, vendor matmul currently sets
             # C to null, i.e don't fuse linear operations into gemm, KERN-1774.
-            vendor_matmul(
+            vendor_matmul[use_tf32=True](
                 ctx, c, a, b, c_row_major=True, transpose_b=transpose_b
             )
             elementwise[epilogue_wrapper, simd_size, target="gpu"](

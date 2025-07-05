@@ -40,7 +40,7 @@ from .model_config import Llama3Config, create_rope_embedding
 
 
 class DistributedLlama3(DistributedTransformer):
-    def __init__(self, config: Llama3Config):
+    def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) > 1
 
         if config.quantization_config:
@@ -132,6 +132,7 @@ class DistributedLlama3(DistributedTransformer):
                             if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
                             else None
                         ),
+                        dist_gemm_config=config.dist_gemm_config,
                     ),
                     attention_norm=create_distributed_norm(),
                     mlp_norm=create_distributed_norm(),

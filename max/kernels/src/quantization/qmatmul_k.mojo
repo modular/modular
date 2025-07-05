@@ -95,7 +95,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     """
 
     @always_inline
-    fn _pack_int4(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
+    fn _pack_int4(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -122,7 +122,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             src_ptr += Self._packed_stride
 
     @always_inline
-    fn _unpack_int4(mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
+    fn _unpack_int4(mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 4]()
         constrained[(block_m % (2 * Self._tuple_width)) == 0]()
 
@@ -151,7 +151,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     #     [ d5 d6 c5 c4 c3 c2 c1 c0 ]
 
     @always_inline
-    fn _pack_int6(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
+    fn _pack_int6(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -183,7 +183,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn _unpack_int6[
         zero_point: UInt8
-    ](mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
+    ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
         constrained[bit_width == 6]()
         constrained[(block_m % (4 * Self._tuple_width)) == 0]()
 
@@ -216,7 +216,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             dst_ptr += Self._packed_stride * 4
 
     @always_inline
-    fn pack(mut self, owned src_ptr: UnsafePointer[UInt8, **_]):
+    fn pack(mut self, var src_ptr: UnsafePointer[UInt8, **_]):
         """Packs the supplied external buffer to local storage."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
@@ -231,7 +231,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
     @always_inline
     fn unpack[
         *, zero_point: UInt8 = 0
-    ](mut self, owned dst_ptr: UnsafePointer[UInt8, **_]):
+    ](mut self, var dst_ptr: UnsafePointer[UInt8, **_]):
         """Unpacks the local storage to the supplied external buffer."""
         constrained[(Self._packed_stride % Self._simd_width) == 0]()
 
@@ -269,8 +269,8 @@ struct _block_Q8_K_packed[group_size: Int, tile_m: Int = 1]:
 
 
 fn _quantize_a_Q8_K[
-    group_size: Int, type: DType, *, interleave_group_sums: Bool = False
-](a: NDBuffer[type, 2, **_]) -> UnsafePointer[
+    group_size: Int, dtype: DType, *, interleave_group_sums: Bool = False
+](a: NDBuffer[dtype, 2, **_]) -> UnsafePointer[
     _block_Q8_K_packed[group_size], mut = a.mut, origin = a.origin
 ]:
     alias quantized_k = _block_QK_K.quantized_k
@@ -302,7 +302,7 @@ fn _quantize_a_Q8_K[
             var q_bits_ptr = block_ptr[].q_bits.unsafe_ptr()
 
             for row in range(tile_m):
-                var max_value_simd = SIMD[type, group_size](Scalar[type].MIN)
+                var max_value_simd = SIMD[dtype, group_size](Scalar[dtype].MIN)
 
                 for g in range(group_count):
                     var fp_data = am_ptr.load[width=group_size](g * group_size)

@@ -1,9 +1,11 @@
 """Define the Mojo toolchain"""
 
-MOJO_VERSION = "25.5.0.dev2025062505"
+MOJO_VERSION = "25.5.0.dev2025070505"
 
 # NOTE: Used internally when pushing new releases
 URL_OVERRIDE = ""
+
+MBLACK_URL_OVERRIDE = ""
 
 mojo = use_extension("@rules_mojo//mojo:extensions.bzl", "mojo")
 mojo.toolchain(
@@ -39,3 +41,13 @@ _PLATFORM_MAPPINGS = {
         "macos_arm64",
     ]
 ]
+
+http_file(
+    name = "mblack_wheel",
+    downloaded_file_path = "mblack-{}-py3-none-any.whl".format(
+        MOJO_VERSION,
+    ),
+    url = MBLACK_URL_OVERRIDE or "https://dl.modular.com/public/nightly/python/mblack-{}-py3-none-any.whl".format(
+        MOJO_VERSION,
+    ),
+)

@@ -49,7 +49,7 @@ fn keep(val: Int):
 
 
 @always_inline
-fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
+fn keep[dtype: DType, simd_width: Int](val: SIMD[dtype, simd_width]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -57,7 +57,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
     manner.
 
     Parameters:
-      type: The `dtype` of the input and output SIMD vector.
+      dtype: The `dtype` of the input and output SIMD vector.
       simd_width: The width of the input and output SIMD vector.
 
     Args:
@@ -79,8 +79,8 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
 
     @parameter
     if (
-        sizeof[type]()
-        <= sizeof[UnsafePointer[SIMD[type, simd_width]]._mlir_type]()
+        sizeof[dtype]()
+        <= sizeof[UnsafePointer[SIMD[dtype, simd_width]]._mlir_type]()
     ):
         inlined_assembly[
             "",
@@ -98,7 +98,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
 
 
 @always_inline
-fn keep[type: AnyType](val: UnsafePointer[type]):
+fn keep[dtype: AnyType](val: UnsafePointer[dtype]):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -106,7 +106,7 @@ fn keep[type: AnyType](val: UnsafePointer[type]):
     manner.
 
     Parameters:
-      type: The type of the input.
+      dtype: The type of the input.
 
     Args:
       val: The value to not optimize away.
@@ -122,7 +122,7 @@ fn keep[type: AnyType](val: UnsafePointer[type]):
 
 
 @always_inline
-fn keep[type: AnyTrivialRegType](mut val: type):
+fn keep[dtype: AnyTrivialRegType](mut val: dtype):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -130,7 +130,7 @@ fn keep[type: AnyTrivialRegType](mut val: type):
     manner.
 
     Parameters:
-      type: The type of the input.
+      dtype: The type of the input.
 
     Args:
       val: The value to not optimize away.

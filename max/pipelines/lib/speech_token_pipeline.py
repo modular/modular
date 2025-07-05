@@ -120,6 +120,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
             ).to(self._devices[0])
 
         else:
+            self._check_need_penalties(context_batch)
             frequency_data = None
             frequency_penalty = None
             presence_penalty = None
@@ -153,7 +154,10 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
         ).to(self._devices[0])
         seed = Tensor.from_numpy(
             np.array(
-                [context.sampling_params.seed for context in context_batch],
+                [
+                    context.sampling_params.seed + context.current_length
+                    for context in context_batch
+                ],
                 dtype=np.uint64,
             )
         ).to(self._devices[0])
@@ -185,7 +189,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
             # Sample next token.
             tracer.next("sample_next_token")
-            new_tokens, new_generated_tokens = self.sample_logits(
+            new_tokens, new_generated_tokens, new_seed = self.sample_logits(
                 model_outputs.logits,
                 generated_tokens,
                 top_k,
@@ -206,7 +210,9 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline):
 
             assert isinstance(new_tokens, Tensor)
             assert isinstance(new_generated_tokens, Tensor)
+            assert isinstance(new_seed, Tensor)
             generated_tokens = new_generated_tokens
+            seed = new_seed
 
             # Check if we're on our last iteration. If so, skip preparing the next batch
             if i == num_steps - 1 or seq_has_eos.all():

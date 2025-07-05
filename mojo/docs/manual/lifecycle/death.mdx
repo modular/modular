@@ -241,7 +241,7 @@ fn use_two_strings():
     # pet.name.__del__() runs here, because this instance is
     # no longer used; it's replaced below
 
-    pet.name = String("Lola") # Overwrite pet.name
+    pet.name = "Lola" # Overwrite pet.name
     print(pet.name)
     # pet.__del__() runs here
 ```
@@ -251,7 +251,7 @@ that it will be overwritten below. You can also see this behavior when using the
 transfer sigil:
 
 ```mojo
-fn consume(owned arg: String):
+fn consume(var arg: String):
     pass
 
 fn use(arg: MyPet):
@@ -265,7 +265,7 @@ fn consume_and_use():
 
     # use(pet)  # This fails because pet.name is uninitialized
 
-    pet.name = String("Jasper")  # All together now
+    pet.name = "Jasper"          # All together now
     use(pet)                     # This is ok
     # pet.__del__() runs here (and only if the object is whole)
 ```
@@ -336,7 +336,7 @@ destructor, we can still pass ownership of a field value to another function,
 and there's no infinite loop to destroy `self`):
 
 ```mojo
-fn consume(owned str: String):
+fn consume(var str: String):
     print('Consumed', str)
 
 struct TwoStrings:
@@ -345,7 +345,7 @@ struct TwoStrings:
 
     fn __init__(out self, one: String):
         self.str1 = one
-        self.str2 = String("bar")
+        self.str2 = "bar"
 
     fn __moveinit__(out self, owned existing: Self):
         self.str1 = existing.str1

@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -127,7 +134,7 @@ def test_advanced_indexing_get_item(
     num_indexing_tensors,
     indexing_tensor_rank,
     use_unknown_shape,
-):
+) -> None:
     data_generator = StandardInputAndIndexTensors(
         input_tensor_shape=[INPUT_DIM_LENGTH] * RANK,
         index_tensor_shape=list(range(3, 3 + indexing_tensor_rank)),
@@ -182,7 +189,7 @@ def test_advanced_indexing_get_item(
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
 def test_advanced_indexing_set_item(
     session, start_axis, num_indexing_tensors, indexing_tensor_rank
-):
+) -> None:
     # NOTE: it is possible to have multiple redundant indices which map to same memory.
     # This results in undefined behavior in assignment. Make sure the index_tensors are small
     # enough where this is not a problem to keep test reproducible.
@@ -243,7 +250,7 @@ def test_advanced_indexing_set_item(
 @pytest.mark.parametrize("indexing_tensor_rank", [1, 2])
 def test_advanced_indexing_set_item_inplace(
     session, start_axis, num_indexing_tensors, indexing_tensor_rank
-):
+) -> None:
     # NOTE: it is possible to have multiple redundant indices which map to same memory.
     # This results in undefined behavior in assignment. Make sure the index_tensors are small
     # enough where this is not a problem to keep test reproducible.

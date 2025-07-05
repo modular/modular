@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
@@ -11,7 +18,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.ops import fold
 
 
-def test_fold(session):
+def test_fold(session) -> None:
     input_shape = (1, 6, 15)
     output_size = (5, 6)
     kernel_size = (3, 2)
@@ -60,7 +67,7 @@ def test_fold(session):
     np.testing.assert_equal(actual, expected)
 
 
-def test_fold_dynamic_shape(session):
+def test_fold_dynamic_shape(session) -> None:
     """Test with dynamic kernel size and output size."""
     input_shape = (1, 6, 15)
     output_size = (5, 6)

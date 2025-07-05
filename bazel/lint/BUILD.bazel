@@ -4,6 +4,8 @@ load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_multirun//:defs.bzl", "multirun", command = "command_force_opt")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
+exports_files(["mblack-wrapper.py"])
+
 npm_link_all_packages(
     name = "node_modules",
 )
@@ -92,11 +94,34 @@ command(
     visibility = ["//visibility:public"],
 )
 
+command(
+    name = "mblack.check",
+    arguments = [
+        "--quiet",
+        "--check",
+        "--diff",
+        ".",
+    ],
+    command = "@mblack",
+    visibility = ["//visibility:public"],
+)
+
+command(
+    name = "mblack.fix",
+    arguments = [
+        "--quiet",
+        ".",
+    ],
+    command = "@mblack",
+    visibility = ["//visibility:public"],
+)
+
 multirun(
     name = "lint",
     buffer_output = True,
     commands = [
         ":markdownlint.check",
+        ":mblack.check",
         ":ruff-format.check",
         ":ruff-lint.check",
     ],
@@ -109,6 +134,7 @@ multirun(
     buffer_output = True,
     commands = [
         ":markdownlint.fix",
+        ":mblack.fix",
         ":ruff-format.fix",
         ":ruff-lint.fix",
     ],

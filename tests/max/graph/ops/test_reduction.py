@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.reduction tests."""
 
@@ -24,7 +31,7 @@ ALL_REDUCTIONS = SAME_TYPE_REDUCTIONS + INDEX_REDUCTIONS
     input_type=tensor_types(shapes=shared_shapes),
     axis=axes(shared_shapes),
 )
-def test_reduction__same_type(op, input_type, axis):
+def test_reduction__same_type(op, input_type, axis) -> None:
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = op(x, axis=axis)
@@ -39,7 +46,7 @@ def test_reduction__same_type(op, input_type, axis):
     input_type=tensor_types(shapes=shared_shapes),
     axis=axes(shared_shapes),
 )
-def test_reduction__index(op, input_type, axis):
+def test_reduction__index(op, input_type, axis) -> None:
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         result = op(x, axis=axis)
@@ -54,7 +61,7 @@ def test_reduction__index(op, input_type, axis):
     input_type=tensor_types(shapes=shapes(min_rank=0, max_rank=0)),
     axis=st.integers(),
 )
-def test_reduction_fails__zero_rank_input(op, input_type, axis):
+def test_reduction_fails__zero_rank_input(op, input_type, axis) -> None:
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         with pytest.raises(ValueError):
@@ -66,7 +73,7 @@ def test_reduction_fails__zero_rank_input(op, input_type, axis):
     input_type=tensor_types(shapes=shared_shapes),
     axis=st.integers(),
 )
-def test_reduction_fails__axis_out_of_bounds(op, input_type, axis):
+def test_reduction_fails__axis_out_of_bounds(op, input_type, axis) -> None:
     assume(not -input_type.rank <= axis < input_type.rank)
     with Graph("test_reduction", input_types=[input_type]) as graph:
         (x,) = graph.inputs

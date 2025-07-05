@@ -61,7 +61,7 @@ class Olmo2Attention(Module):
         scale: float | None = None,
         has_bias: bool = False,
         rms_norm_eps: float = 1e-6,
-    ):
+    ) -> None:
         """Initializes the attention layer.
         Args:
             rope: The rope layer to borrow the freq_cis value from.

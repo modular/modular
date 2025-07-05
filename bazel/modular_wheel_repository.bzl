@@ -3,6 +3,7 @@
 def _modular_wheel_repository_impl(rctx):
     rctx.file("BUILD.bazel", """
 load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
+load("@@//bazel:api.bzl", "requirement")
 
 alias(
     name = "wheel",
@@ -44,6 +45,27 @@ pycross_wheel_library(
     install_exclude_globs = _OPEN_SOURCE_GLOBS,
     tags = ["manual"],
     wheel = "@modular_macos_arm64//file",
+)
+
+pycross_wheel_library(
+    name = "mblack-lib",
+    tags = ["manual"],
+    wheel = "@mblack_wheel//file",
+)
+
+py_binary(
+    name = "mblack",
+    srcs = ["@@//bazel/lint:mblack-wrapper.py"],
+    main = "@@//bazel/lint:mblack-wrapper.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mblack-lib",
+        requirement("click"),
+        requirement("mypy-extensions"),
+        requirement("pathspec"),
+        requirement("platformdirs"),
+        requirement("tomli"),
+    ],
 )
 """)
 

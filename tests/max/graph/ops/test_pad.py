@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.pad tests."""
 
@@ -41,7 +48,7 @@ def paddings_for(input_types, low=0, high=16):
 @given(input_type=input_types, paddings=paddings_for(input_types, low=-16))
 def test_negative_paddings(
     graph_builder, input_type: TensorType, paddings: list[int]
-):
+) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.rank > 0)
     assume(any(x < 0 for x in paddings))
@@ -52,7 +59,7 @@ def test_negative_paddings(
 
 
 @given(input_type=input_types)
-def test_no_padding(graph_builder, input_type: TensorType):
+def test_no_padding(graph_builder, input_type: TensorType) -> None:
     """Padding by nothing does not change the type."""
     assume(input_type.rank > 0)
     paddings = [0] * (2 * input_type.rank)
@@ -66,7 +73,7 @@ def test_no_padding(graph_builder, input_type: TensorType):
 @given(input_type=input_types, paddings=paddings_for(input_types))
 def test_positive_paddings(
     graph_builder, input_type: TensorType, paddings: list[int]
-):
+) -> None:
     """Test random paddings."""
 
     assume(0 < input_type.rank)

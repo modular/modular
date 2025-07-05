@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -11,7 +18,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 
 
-def test_shape_to_tensor_static(session):
+def test_shape_to_tensor_static(session) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=[2, 4], device=DeviceRef.CPU()
     )
@@ -29,7 +36,7 @@ def test_shape_to_tensor_static(session):
     np.testing.assert_equal(output[0].to_numpy(), np.array([2, 4]))
 
 
-def test_shape_to_tensor_dynamic(session):
+def test_shape_to_tensor_dynamic(session) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )
@@ -47,7 +54,7 @@ def test_shape_to_tensor_dynamic(session):
     np.testing.assert_equal(output[0].to_numpy(), np.array([7, 3]))
 
 
-def test_shape_to_tensor_solo_dim(session):
+def test_shape_to_tensor_solo_dim(session) -> None:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=DeviceRef.CPU()
     )

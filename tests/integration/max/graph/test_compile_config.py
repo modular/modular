@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 import os
@@ -23,7 +30,7 @@ def compile_config_ops_path() -> Path:
 
 def test_compile_config_split_k_reduction_scheme(
     session: InferenceSession, compile_config_ops_path: Path
-):
+) -> None:
     tensor_type = TensorType(
         dtype=DType.int32, shape=[1], device=DeviceRef.CPU()
     )
@@ -56,7 +63,7 @@ def test_compile_config_split_k_reduction_scheme(
 
 def test_compile_config_use_logger(
     capfd, session: InferenceSession, compile_config_ops_path: Path
-):
+) -> None:
     tensor_type = TensorType(
         dtype=DType.int32, shape=[1], device=DeviceRef.CPU()
     )
@@ -93,7 +100,7 @@ def test_compile_config_use_logger(
 )
 def test_compile_config_dump_asm(
     session: InferenceSession, compile_config_ops_path: Path
-):
+) -> None:
     rows = 5
     columns = 10
     dtype = DType.float32

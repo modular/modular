@@ -24,12 +24,12 @@ from utils import IndexList, StaticTuple
 
 
 fn _tuple_to_list[
-    type: DType,
+    dtype: DType,
     rank: Int,
-](elems: StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], *_]) -> List[
-    NDBuffer[type, rank, MutableAnyOrigin]
+](elems: StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], *_]) -> List[
+    NDBuffer[dtype, rank, MutableAnyOrigin]
 ]:
-    var output = List[NDBuffer[type, rank, MutableAnyOrigin]](
+    var output = List[NDBuffer[dtype, rank, MutableAnyOrigin]](
         capacity=len(elems)
     )
     for i in range(len(elems)):
@@ -40,7 +40,7 @@ fn _tuple_to_list[
 def test_concat():
     print("== test_concat")
 
-    alias type = DType.float32
+    alias dtype = DType.float32
     alias rank = 4
     alias concat_axis = 2
 
@@ -48,34 +48,34 @@ def test_concat():
     alias s2 = DimList(2, 2, 2, 2, 0)
     alias s3 = DimList(2, 2, 3, 2, 0)
 
-    var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
+    var x1_stack = InlineArray[Scalar[dtype], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, _, s1](x1_stack)
-    var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
+    var x1 = NDBuffer[dtype, rank, _, s1](x1_stack)
+    var x2_stack = InlineArray[Scalar[dtype], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, _, s2](x2_stack)
-    var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
+    var x2 = NDBuffer[dtype, rank, _, s2](x2_stack)
+    var x3_stack = InlineArray[Scalar[dtype], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, _, s3](x3_stack)
+    var x3 = NDBuffer[dtype, rank, _, s3](x3_stack)
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
-    var x1_dyn = NDBuffer[type, rank](x1.data, s1)
-    var x2_dyn = NDBuffer[type, rank](x2.data, s2)
-    var x3_dyn = NDBuffer[type, rank](x3.data, s3)
+    var x1_dyn = NDBuffer[dtype, rank](x1.data, s1)
+    var x2_dyn = NDBuffer[dtype, rank](x2.data, s2)
+    var x3_dyn = NDBuffer[dtype, rank](x3.data, s3)
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
-    var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
+    var out_stack = InlineArray[Scalar[dtype], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, _, out_shape](out_stack)
+    var output = NDBuffer[dtype, rank, _, out_shape](out_stack)
     output.fill(-1)
-    var output_dyn = NDBuffer[type, rank](output.data, out_shape)
+    var output_dyn = NDBuffer[dtype, rank](output.data, out_shape)
 
-    var input_tuple = StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], 3](
+    var input_tuple = StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -86,10 +86,10 @@ def test_concat():
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         output.store[width=width](
             rebind[IndexList[rank]](indices),
-            rebind[SIMD[type, width]](val + 1),
+            rebind[SIMD[dtype, width]](val + 1),
         )
 
-    concat[rank, type, False, epilogue_fn=epilogue_plus_one](
+    concat[rank, dtype, False, epilogue_fn=epilogue_plus_one](
         output_dyn, concat_axis, input_tuple
     )
 
@@ -110,7 +110,7 @@ def test_concat():
 def test_concat_parallel():
     print("== test_concat_parallel")
 
-    alias type = DType.float32
+    alias dtype = DType.float32
     alias rank = 4
     alias concat_axis = 2
 
@@ -118,34 +118,34 @@ def test_concat_parallel():
     alias s2 = DimList(2, 2, 2, 2, 0)
     alias s3 = DimList(2, 2, 3, 2, 0)
 
-    var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
+    var x1_stack = InlineArray[Scalar[dtype], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, _, s1](x1_stack)
-    var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
+    var x1 = NDBuffer[dtype, rank, _, s1](x1_stack)
+    var x2_stack = InlineArray[Scalar[dtype], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, _, s2](x2_stack)
-    var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
+    var x2 = NDBuffer[dtype, rank, _, s2](x2_stack)
+    var x3_stack = InlineArray[Scalar[dtype], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, _, s3](x3_stack)
+    var x3 = NDBuffer[dtype, rank, _, s3](x3_stack)
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
-    var x1_dyn = NDBuffer[type, rank](x1.data, s1)
-    var x2_dyn = NDBuffer[type, rank](x2.data, s2)
-    var x3_dyn = NDBuffer[type, rank](x3.data, s3)
+    var x1_dyn = NDBuffer[dtype, rank](x1.data, s1)
+    var x2_dyn = NDBuffer[dtype, rank](x2.data, s2)
+    var x3_dyn = NDBuffer[dtype, rank](x3.data, s3)
 
     alias out_shape = DimList(2, 2, 6, 2, 0)
-    var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
+    var out_stack = InlineArray[Scalar[dtype], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, _, out_shape](out_stack)
+    var output = NDBuffer[dtype, rank, _, out_shape](out_stack)
     output.fill(-1)
-    var output_dyn = NDBuffer[type, rank](output.data, out_shape)
+    var output_dyn = NDBuffer[dtype, rank](output.data, out_shape)
 
-    var input_tuple = StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], 3](
+    var input_tuple = StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -156,11 +156,11 @@ def test_concat_parallel():
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         output.store[width=width](
             rebind[IndexList[rank]](indices),
-            rebind[SIMD[type, width]](val + 1),
+            rebind[SIMD[dtype, width]](val + 1),
         )
 
     var input_vec = _tuple_to_list(input_tuple)
-    _concat_parallel[rank, type, epilogue_plus_one](
+    _concat_parallel[rank, dtype, epilogue_plus_one](
         output_dyn, concat_axis, input_vec
     )
 
@@ -182,7 +182,7 @@ def test_concat_parallel():
 def test_concat_inner():
     print("== test_concat_inner")
 
-    alias type = DType.float32
+    alias dtype = DType.float32
     alias rank = 5
     alias concat_axis = 2
 
@@ -190,34 +190,34 @@ def test_concat_inner():
     alias s2 = DimList(1, 1, 2, 2, 2)
     alias s3 = DimList(1, 1, 3, 2, 2)
 
-    var x1_stack = InlineArray[Scalar[type], Int(s1.product())](
+    var x1_stack = InlineArray[Scalar[dtype], Int(s1.product())](
         uninitialized=True
     )
-    var x1 = NDBuffer[type, rank, _, s1](x1_stack)
-    var x2_stack = InlineArray[Scalar[type], Int(s2.product())](
+    var x1 = NDBuffer[dtype, rank, _, s1](x1_stack)
+    var x2_stack = InlineArray[Scalar[dtype], Int(s2.product())](
         uninitialized=True
     )
-    var x2 = NDBuffer[type, rank, _, s2](x2_stack)
-    var x3_stack = InlineArray[Scalar[type], Int(s3.product())](
+    var x2 = NDBuffer[dtype, rank, _, s2](x2_stack)
+    var x3_stack = InlineArray[Scalar[dtype], Int(s3.product())](
         uninitialized=True
     )
-    var x3 = NDBuffer[type, rank, _, s3](x3_stack)
+    var x3 = NDBuffer[dtype, rank, _, s3](x3_stack)
     x1.fill(0)
     x2.fill(1)
     x3.fill(2)
-    var x1_dyn = NDBuffer[type, rank](x1.data, s1)
-    var x2_dyn = NDBuffer[type, rank](x2.data, s2)
-    var x3_dyn = NDBuffer[type, rank](x3.data, s3)
+    var x1_dyn = NDBuffer[dtype, rank](x1.data, s1)
+    var x2_dyn = NDBuffer[dtype, rank](x2.data, s2)
+    var x3_dyn = NDBuffer[dtype, rank](x3.data, s3)
 
     alias out_shape = DimList(1, 1, 6, 2, 2)
-    var out_stack = InlineArray[Scalar[type], Int(out_shape.product())](
+    var out_stack = InlineArray[Scalar[dtype], Int(out_shape.product())](
         uninitialized=True
     )
-    var output = NDBuffer[type, rank, _, out_shape](out_stack)
+    var output = NDBuffer[dtype, rank, _, out_shape](out_stack)
     output.fill(-1)
-    var output_dyn = NDBuffer[type, rank](output.data, out_shape)
+    var output_dyn = NDBuffer[dtype, rank](output.data, out_shape)
 
-    var input_list = StaticTuple[NDBuffer[type, rank, MutableAnyOrigin], 3](
+    var input_list = StaticTuple[NDBuffer[dtype, rank, MutableAnyOrigin], 3](
         x1_dyn, x2_dyn, x3_dyn
     )
 
@@ -230,10 +230,10 @@ def test_concat_inner():
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         output.store[width=width](
             rebind[IndexList[rank]](indices),
-            rebind[SIMD[type, width]](val + 1),
+            rebind[SIMD[dtype, width]](val + 1),
         )
 
-    _concat_serial[rank, type, epilogue_plus_one](
+    _concat_serial[rank, dtype, epilogue_plus_one](
         output_dyn, concat_axis, input_vec
     )
 

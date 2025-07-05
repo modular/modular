@@ -3,6 +3,8 @@ load(":custom_op_example.bzl", "custom_op_example_py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
+# NOTE: The custom_op_example_py_binary macro automatically creates a test
+
 filegroup(
     name = "kernel_sources",
     srcs = glob(["kernels/*.mojo"]),
@@ -60,8 +62,6 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "histogram",
     srcs = ["histogram.py"],
-    # TODO(DEVA-433): Fix failing histogram test
-    create_test = False,
 )
 
 mojo_binary(

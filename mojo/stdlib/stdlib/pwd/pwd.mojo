@@ -107,7 +107,7 @@ fn getpwuid(uid: Int) raises -> Passwd:
         return _getpw_linux(UInt32(uid))
 
 
-fn getpwnam(owned name: String) raises -> Passwd:
+fn getpwnam(var name: String) raises -> Passwd:
     """
     Retrieves the user ID in the password database for the given user name.
 

@@ -381,7 +381,7 @@ a type that can be converted to a string. Use `String(value)` to
 explicitly convert a value to a string:
 
 ```mojo
-var s = String("Items in list: ") + String(5)
+var s = "Items in list: " + String(5)
 print(s)
 ```
 
@@ -411,7 +411,7 @@ Adjacent literals are concatenated together, so you can define a long string
 using a series of literals broken up over several lines:
 
 ```
-var s = "A very long string which is "
+alias s = "A very long string which is "
         "broken into two literals for legibility."
 ```
 
@@ -419,7 +419,7 @@ To define a multi-line string, enclose the literal in three single or double
 quotes:
 
 ```
-var s = """
+alias s = """
 Multi-line string literals let you
 enter long blocks of text, including
 newlines."""
@@ -428,19 +428,12 @@ newlines."""
 Note that the triple double quote form is also used for API documentation
 strings.
 
-Unlike `IntLiteral` and `FloatLiteral`, `StringLiteral` doesn't automatically
-materialize to a runtime type. In some cases, you may need to explicitly convert
-`StringLiteral` values to `String`.
+A `StringLiteral` will materialize to a `String` when used at run-time:
 
 ```mojo
-# Variable is type `StringLiteral`
-var s1 = "Example"
-
-# Variable is type `String`
-var s2: String = "Example"
-
-# Variable is type `String`
-var s3 = String("Example")
+alias param = "foo"        # type = StringLiteral
+var runtime_value = "bar"  # type = String
+var runtime_value2 = param # type = String
 ```
 
 ## Booleans
@@ -489,12 +482,10 @@ print(s)
 Example
 ```
 
-You can also create a tuple without explicit typing. Note that if we declare the
-same tuple from the previous example with implicit typing instead of explicit,
-we must also convert `"Example"` from type `StringLiteral` to type `String`.
+You can also create a tuple without explicit typing.
 
 ```mojo
-example_tuple = (1, String("Example"))
+example_tuple = (1, "Example")
 s = example_tuple[1]
 print(s)
 ```
@@ -675,7 +666,7 @@ var values = Dict[String, Float64]()
 ```
 
 The dictionary's key type must conform to the
-[`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait, and value
+[`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait, and value
 elements must conform to the [`Copyable`](/mojo/stdlib/builtin/value/Copyable)
 and [`Movable`](/mojo/stdlib/builtin/value/Movable) traits.
 
@@ -714,13 +705,13 @@ exists in the set, and perform set algebra operations, like unions and
 intersections between two sets.
 
 Sets are generic and the element type must conform to the
-[`KeyElement`](/mojo/stdlib/collections/dict/KeyElement) trait. Like lists and
+[`KeyElement`](/mojo/stdlib/collections/dict/#keyelement) trait. Like lists and
 dictionaries, sets support standard literal syntax, as well as generator
 comprehensions:
 
 ```mojo
-i_like = {String("sushi"), "ice cream", "tacos", "pho"}
-you_like = {String("burgers"), "tacos", "salad", "ice cream"}
+i_like = {"sushi", "ice cream", "tacos", "pho"}
+you_like = {"burgers", "tacos", "salad", "ice cream"}
 we_like = i_like.intersection(you_like)
 
 print("We both like:")
@@ -758,7 +749,7 @@ results in undefined behavior, so you should always guard a call to `value()`
 inside a conditional that checks whether a value exists.
 
 ```mojo
-var opt: Optional[String] = String("Testing")
+var opt: Optional[String] = "Testing"
 if opt:
     var value_ref = opt.value()
     print(value_ref)
@@ -775,7 +766,7 @@ value if there is one, or a user-specified default value otherwise:
 var custom_greeting: Optional[String] = None
 print(custom_greeting.or_else("Hello"))
 
-custom_greeting = String("Hi")
+custom_greeting = "Hi"
 print(custom_greeting.or_else("Hello"))
 
 ```

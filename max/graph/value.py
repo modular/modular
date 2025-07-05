@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
@@ -22,14 +29,12 @@ from max._core.dialects import mo
 from max.dtype import DType
 
 from . import ops
+from .dim import Dim, DimLike
+from .shape import Shape, ShapeLike
 from .type import (
     BufferType,
     DeviceRef,
-    Dim,
-    DimLike,
     FilterLayout,
-    Shape,
-    ShapeLike,
     TensorType,
     Type,
     _ChainType,
@@ -79,7 +84,7 @@ class Value(Generic[MlirType]):
 
     _mlir_value: _Value[MlirType]
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Value is abstract, it shouldn't be constructed directly."""
         raise NotImplementedError
 
@@ -100,7 +105,7 @@ class Value(Generic[MlirType]):
             return BufferValue.from_mlir(cast(_Value[mo.BufferType], value))
         raise TypeError(f"Invalid mlir value {value=}")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Returns a string representation of the :obj:`Value`."""
         return str(self._mlir_value.type)
 
@@ -147,7 +152,7 @@ class Value(Generic[MlirType]):
 
 
 class _ChainValue(Value[mo.ChainType]):
-    def __init__(self, value: Value | _Value[mo.ChainType]):
+    def __init__(self, value: Value | _Value[mo.ChainType]) -> None:
         if isinstance(value, _Value):
             assert isinstance(value.type, mo.ChainType)
             self._mlir_value = value
@@ -248,7 +253,7 @@ class BufferValue(Value[mo.BufferType]):
         """Returns the rank (number of dims) of the buffer."""
         return self.type.rank
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Returns a string representation of the :obj:`BufferValue`."""
         dtype = self.dtype
         shape = self.shape
@@ -288,7 +293,7 @@ class BufferValue(Value[mo.BufferType]):
             index if isinstance(index, Iterable) else (index,),  # type: ignore
         )
 
-    def print(self, label: str = "debug_buffer"):
+    def print(self, label: str = "debug_buffer") -> None:
         """Prints detailed information about the buffer."""
         ops.print(self[...], label=label)
 
@@ -391,7 +396,7 @@ class TensorValue(Value[mo.TensorType]):
         ans.type.device = DeviceRef.CPU()
         return ans
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Returns a string representation of the :obj:`TensorValue`."""
         dtype = self.dtype
         shape = self.shape
@@ -483,7 +488,7 @@ class TensorValue(Value[mo.TensorType]):
         """
         return self.type.rank
 
-    def print(self, label: str = "debug_tensor"):
+    def print(self, label: str = "debug_tensor") -> None:
         """Prints detailed information about the tensor.
 
         Args:

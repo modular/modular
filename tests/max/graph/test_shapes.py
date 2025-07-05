@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Hypothesis infrastructure test for shape."""
 
@@ -12,7 +19,7 @@ from max.graph import DeviceRef, Dim, Graph, StaticDim, TensorType, ops
 
 
 @given(shape=shapes())
-def test_shape_product_fits_in_int64(shape):
+def test_shape_product_fits_in_int64(shape) -> None:
     cumulative_product = 1
     for dim in shape:
         if isinstance(dim, StaticDim):

@@ -41,7 +41,7 @@ fn _sign(x: Int) -> Int:
 
 
 @register_passable("trivial")
-struct _ZeroStartingRange(IteratorTrait, Movable, ReversibleRange, Sized):
+struct _ZeroStartingRange(Iterator, Movable, ReversibleRange, Sized):
     alias Element = Int
     var curr: Int
     var end: Int
@@ -82,7 +82,7 @@ struct _ZeroStartingRange(IteratorTrait, Movable, ReversibleRange, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _SequentialRange(IteratorTrait, ReversibleRange, Sized):
+struct _SequentialRange(Iterator, ReversibleRange, Sized):
     alias Element = Int
     var start: Int
     var end: Int
@@ -117,7 +117,7 @@ struct _SequentialRange(IteratorTrait, ReversibleRange, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRangeIterator(IteratorTrait, Sized):
+struct _StridedRangeIterator(Iterator, Sized):
     alias Element = Int
     var start: Int
     var end: Int
@@ -145,7 +145,7 @@ struct _StridedRangeIterator(IteratorTrait, Sized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _StridedRange(IteratorTrait, ReversibleRange, Sized):
+struct _StridedRange(Iterator, ReversibleRange, Sized):
     alias Element = Int
     var start: Int
     var end: Int
@@ -385,7 +385,7 @@ fn range(
 
 
 @register_passable("trivial")
-struct _UIntZeroStartingRange(IteratorTrait, UIntSized):
+struct _UIntZeroStartingRange(Iterator, UIntSized):
     alias Element = UInt
     var curr: UInt
     var end: UInt
@@ -422,7 +422,7 @@ struct _UIntZeroStartingRange(IteratorTrait, UIntSized):
 
 @fieldwise_init
 @register_passable("trivial")
-struct _UIntStridedRangeIterator(IteratorTrait, UIntSized):
+struct _UIntStridedRangeIterator(Iterator, UIntSized):
     alias Element = UInt
     var start: UInt
     var end: UInt
@@ -444,7 +444,7 @@ struct _UIntStridedRangeIterator(IteratorTrait, UIntSized):
 
 
 @register_passable("trivial")
-struct _UIntStridedRange(IteratorTrait, UIntSized):
+struct _UIntStridedRange(Iterator, UIntSized):
     alias Element = UInt
     var start: UInt
     var end: UInt

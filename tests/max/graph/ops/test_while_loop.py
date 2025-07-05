@@ -1,9 +1,18 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test while loop operations."""
+
+from typing import NoReturn
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -105,7 +114,7 @@ def test_while_loop_with_raising() -> None:
         def pred(x):
             return x < 10
 
-        def body(x):
+        def body(x) -> NoReturn:
             raise Exception("raising")
 
         try:

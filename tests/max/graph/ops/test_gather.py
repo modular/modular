@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.gather tests."""
 
@@ -28,7 +35,9 @@ input_types = tensor_types(shapes=st.lists(dims, min_size=1))
     indices_type=tensor_types(dtypes=st.just(DType.int64)),
     axis=axes(st.shared(input_types, key="input")),
 )
-def test_gather(input_type: TensorType, indices_type: TensorType, axis: int):
+def test_gather(
+    input_type: TensorType, indices_type: TensorType, axis: int
+) -> None:
     assume(indices_type.rank > 0)
     with Graph("gather", input_types=[input_type, indices_type]) as graph:
         input, indices = graph.inputs
@@ -43,7 +52,7 @@ def test_gather(input_type: TensorType, indices_type: TensorType, axis: int):
 
 
 @given(input=..., indices=tensor_types(dtypes=st.just(DType.uint64)))
-def test_gather_nd(input: TensorType, indices: TensorType):
+def test_gather_nd(input: TensorType, indices: TensorType) -> None:
     assume(isinstance(indices.shape[-1], StaticDim))
     index_size = int(indices.shape[-1])
     assume(index_size <= input.rank)
@@ -81,7 +90,7 @@ indices_types = st.shared(
 @given(input=input_types, indices=indices_types, batch_dims=n_batch_dims)
 def test_gather_nd__batch_dims(
     input: TensorType, indices: TensorType, batch_dims: int
-):
+) -> None:
     assert isinstance(indices.shape[-1], StaticDim)
     index_size = int(indices.shape[-1])
     assert 0 <= batch_dims < min(input.rank, indices.rank - 1)
@@ -101,7 +110,7 @@ def test_gather_nd__batch_dims(
 @given(input=input_types, indices=indices_types, batch_dims=...)
 def test_gather_nd__invalid_batch_dims(
     input: TensorType, indices: TensorType, batch_dims: int
-):
+) -> None:
     assert isinstance(indices.shape[-1], StaticDim)
     index_size = int(indices.shape[-1])
 
@@ -127,7 +136,7 @@ def test_gather_nd__mismatching_batch_dims(
     indices: TensorType,
     input_batch: Shape,
     indices_batch: Shape,
-):
+) -> None:
     # We require that len(input_batch) >= len(indices_batch), but using assume
     # to enforce that constraint results in a high rejection rate, so we just
     # swap the two.
@@ -162,7 +171,7 @@ def test_gather_nd__mismatching_batch_dims(
 )
 def test_gather_nd__symbolic_index(
     input: TensorType, indices: TensorType, batch_shape: Shape
-):
+) -> None:
     input = TensorType(input.dtype, [*batch_shape, *input.shape], input.device)
     indices = TensorType(
         indices.dtype, [*batch_shape, *indices.shape], indices.device
@@ -176,7 +185,7 @@ def test_gather_nd__symbolic_index(
 @given(input=input_types, indices=indices_types, batch_dims=n_batch_dims)
 def test_gather_nd__index_too_long(
     input: TensorType, indices: TensorType, batch_dims: int
-):
+) -> None:
     assert isinstance(indices.shape[-1], StaticDim)
     assert 0 <= batch_dims < min(input.rank, indices.rank - 1)
 
@@ -200,7 +209,7 @@ def test_gather_nd__non_int_indices(
     indices: TensorType,
     batch_dims: int,
     dtype: DType,
-):
+) -> None:
     assert isinstance(indices.shape[-1], StaticDim)
     assert 0 <= batch_dims < min(input.rank, indices.rank - 1)
     index_size = int(indices.shape[-1])

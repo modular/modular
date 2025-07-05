@@ -261,6 +261,33 @@ struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
             args[i].write_to(self)
 
 
+struct _TotalWritableBytes(Writer):
+    var size: Int
+
+    fn __init__(out self):
+        self.size = 0
+
+    fn __init__[
+        T: Copyable & Movable & Writable, //
+    ](out self, values: List[T, *_], sep: String = String()):
+        self.size = 0
+        var length = len(values)
+        if length == 0:
+            return
+        self.write(values[0])
+        if length > 1:
+            for i in range(1, length):
+                self.write(sep, values[i])
+
+    fn write_bytes(mut self, bytes: Span[UInt8, _]):
+        self.size += len(bytes)
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
+
+
 # ===-----------------------------------------------------------------------===#
 # Utils
 # ===-----------------------------------------------------------------------===#
@@ -301,16 +328,9 @@ fn _hex_digits_to_hex_chars(ptr: UnsafePointer[Byte], decimal: Scalar):
     ```
     .
     """
-
     alias size = decimal.dtype.sizeof()
-    var data: SIMD[DType.uint8, size]
-
-    @parameter
-    if size == 1:
-        data = bitcast[DType.uint8, size](decimal)
-    else:
-        data = bitcast[DType.uint8, size](byte_swap(decimal))
-    var nibbles = (data >> 4).interleave(data & 0xF)
+    var bytes = bitcast[DType.uint8, size](byte_swap(decimal))
+    var nibbles = (bytes >> 4).interleave(bytes & 0xF)
     ptr.store(_hex_table._dynamic_shuffle(nibbles))
 
 

@@ -53,7 +53,7 @@ class MaxMoEGate(Module):
         n_group: int = 1,
         topk_group: int = 1,
         gating_dim: int = 2048,  # equal to config.hidden_size
-    ):
+    ) -> None:
         """
         Args:
             device: The device this layer's weights are on.

@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """test the max.graph python bindings."""
 
@@ -15,7 +22,7 @@ from max.graph.ops import logical_xor
 
 
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)))
-def test_logical_xor__same_type(graph_builder, tensor_type: TensorType):
+def test_logical_xor__same_type(graph_builder, tensor_type: TensorType) -> None:
     with graph_builder(input_types=[tensor_type, tensor_type]) as graph:
         x, y = graph.inputs
         op = logical_xor(x, y)
@@ -23,7 +30,9 @@ def test_logical_xor__same_type(graph_builder, tensor_type: TensorType):
 
 
 @given(tensor_type=...)
-def test_logical_xor__invalid_dtype(graph_builder, tensor_type: TensorType):
+def test_logical_xor__invalid_dtype(
+    graph_builder, tensor_type: TensorType
+) -> None:
     assume(tensor_type.dtype != DType.bool)
     with graph_builder(input_types=[tensor_type, tensor_type]) as graph:
         x, y = graph.inputs
@@ -32,7 +41,7 @@ def test_logical_xor__invalid_dtype(graph_builder, tensor_type: TensorType):
 
 
 @given(shapes=broadcastable_shapes(2))
-def test_logical_xor__broadcast(graph_builder, shapes: list[Shape]):
+def test_logical_xor__broadcast(graph_builder, shapes: list[Shape]) -> None:
     s1, s2 = shapes
     broadcast_shape = broadcast_shapes(s1, s2)
     with graph_builder(
@@ -48,7 +57,9 @@ def test_logical_xor__broadcast(graph_builder, shapes: list[Shape]):
 
 @pytest.mark.skip("MSDK-1158")
 @given(s1=..., s2=...)
-def test_logical_xor__invalid_broadcast(graph_builder, s1: Shape, s2: Shape):
+def test_logical_xor__invalid_broadcast(
+    graph_builder, s1: Shape, s2: Shape
+) -> None:
     try:
         broadcast_shapes(s1, s2)
     except ValueError:
@@ -72,7 +83,7 @@ def test_logical_xor__invalid_broadcast(graph_builder, s1: Shape, s2: Shape):
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)), b=...)
 def test_logical_xor__python_bool(
     graph_builder, tensor_type: TensorType, b: bool
-):
+) -> None:
     with graph_builder(input_types=[tensor_type]) as graph:
         (x,) = graph.inputs
         assert logical_xor(x, b).type == tensor_type

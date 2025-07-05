@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph dtype promotion."""
 
@@ -16,7 +23,7 @@ from max.graph import Graph, TensorType, dtype_promotion
 @given(graph_type=..., scalar=...)
 def test_promote_weak_dtypes__python_float(
     graph_type: TensorType, scalar: float
-):
+) -> None:
     with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
         if graph_type.dtype in [
             DType.bfloat16,
@@ -40,7 +47,9 @@ def test_promote_weak_dtypes__python_float(
 
 
 @given(graph_type=..., scalar=...)
-def test_promote_weak_dtypes__python_int(graph_type: TensorType, scalar: int):
+def test_promote_weak_dtypes__python_int(
+    graph_type: TensorType, scalar: int
+) -> None:
     with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
         try:
             v1, v2 = dtype_promotion._promote_weak_dtypes(
@@ -62,7 +71,7 @@ float_dtype = st.sampled_from([DType.float16, DType.float32, DType.float64])
 @given(graph_type=..., np_dtype=float_dtype, value=...)
 def test_promote_weak_dtypes__np_float(
     graph_type: TensorType, np_dtype: DType, value: float
-):
+) -> None:
     with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
         np_const = np.array(value).astype(np_dtype.to_numpy())
         if graph_type.dtype in [
@@ -108,7 +117,7 @@ int_dtype = st.sampled_from(
 )
 def test_promote_weak_dtypes__np_int(
     graph_type: TensorType, np_dtype: DType, value: int
-):
+) -> None:
     with Graph("promote_weak_dtypes", input_types=[graph_type]) as graph:
         np_const = np.array(value).astype(np_dtype.to_numpy())
         try:

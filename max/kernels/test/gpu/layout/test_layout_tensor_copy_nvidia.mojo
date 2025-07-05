@@ -28,7 +28,7 @@ from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
-    copy,
+    copy_local_to_shared,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
@@ -157,21 +157,21 @@ def run_dynamic_async_copy_tests(ctx: DeviceContext):
 
 
 fn swizzle_copy[
-    type: DType,
+    dtype: DType,
     layout: Layout,
     BM: Int,
     BK: Int,
     num_threads: Int,
 ](
-    a: LayoutTensor[type, layout, MutableAnyOrigin],
-    b: LayoutTensor[type, layout, MutableAnyOrigin],
+    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
-    alias simd_size = simdwidthof[type]()
+    alias simd_size = simdwidthof[dtype]()
 
     # Double buffer in shared memory.
     var a_smem_tile = (
         LayoutTensor[
-            type,
+            dtype,
             Layout.row_major(BM, BK),
             MutableAnyOrigin,
             address_space = AddressSpace.SHARED,

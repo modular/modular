@@ -93,7 +93,7 @@ def _mojo_env() -> dict[str, str]:
     return _sdk_default_env() | dict(os.environ)
 
 
-def exec_mojo():
+def exec_mojo() -> None:
     env = _mojo_env()
 
     os.execve(env["MODULAR_MOJO_MAX_DRIVER_PATH"], sys.argv, env)

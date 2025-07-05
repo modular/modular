@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
@@ -16,7 +23,7 @@ from max.graph.quantization import QuantizationEncoding
     accelerator_count() > 0,
     reason="Quantization only supported on cpu currently",
 )
-def test_qmatmul(session):
+def test_qmatmul(session) -> None:
     graph = Graph(
         "qmatmul",
         input_types=[
@@ -55,7 +62,7 @@ def test_qmatmul(session):
     accelerator_count() > 0,
     reason="Quantization only supported on cpu currently",
 )
-def test_dequantize(session):
+def test_dequantize(session) -> None:
     graph = Graph(
         "dequantize",
         input_types=[TensorType(DType.uint8, (1, 18), device=DeviceRef.CPU())],

@@ -62,7 +62,7 @@ from collections.string._utf8 import (
     _utf8_first_byte_sequence_length,
 )
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from hashlib._hasher import _HashableWithHasher, _Hasher
+from hashlib.hasher import Hasher
 from math import align_down
 from os import PathLike, abort
 from sys import bitwidthof, is_compile_time, simdwidthof
@@ -74,7 +74,7 @@ from memory import Span, memcmp, memcpy, pack_bits
 from memory.memory import _memcmp_impl_unconstrained
 from python import Python, PythonConvertible, PythonObject
 
-from utils.write import _WriteBufferStack
+from utils.write import _WriteBufferStack, _TotalWritableBytes
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -465,7 +465,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     Stringable,
     Writable,
     _CurlyEntryFormattable,
-    _HashableWithHasher,
 ):
     """A non-owning view to encoded string data.
 
@@ -486,9 +485,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     """
 
     # Aliases
-    alias Mutable = StringSlice[MutableOrigin.cast_from[origin].result]
+    alias Mutable = StringSlice[MutableOrigin.cast_from[origin]]
     """The mutable version of the `StringSlice`."""
-    alias Immutable = StringSlice[ImmutableOrigin.cast_from[origin].result]
+    alias Immutable = StringSlice[ImmutableOrigin.cast_from[origin]]
     """The immutable version of the `StringSlice`."""
     # Fields
     var _slice: Span[Byte, origin]
@@ -507,7 +506,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     @always_inline("nodebug")
     fn __init__(
         other: StringSlice,
-        out self: StringSlice[ImmutableOrigin.cast_from[other.origin].result],
+        out self: StringSlice[ImmutableOrigin.cast_from[other.origin]],
     ):
         """Implicitly cast the mutable origin of self to an immutable one.
 
@@ -718,11 +717,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         var len = self.byte_length()
         var result = String(unsafe_uninit_length=len)
-        memcpy(
-            result.unsafe_ptr_mut[is_unique_mut_ref=True](),
-            self.unsafe_ptr(),
-            len,
-        )
+        memcpy(result.unsafe_ptr_mut(), self.unsafe_ptr(), len)
         return result^
 
     fn __repr__(self) -> String:
@@ -823,17 +818,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         """
         return len(self._slice) > 0
 
-    fn __hash__(self) -> UInt:
-        """Hash the underlying buffer using builtin hash.
-
-        Returns:
-            A 64-bit hash value. This value is _not_ suitable for cryptographic
-            uses. Its intended usage is for data structures. See the `hash`
-            builtin documentation for more details.
-        """
-        return hash(self._slice._data, self._slice._len)
-
-    fn __hash__[H: _Hasher](self, mut hasher: H):
+    fn __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -872,7 +857,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         debug_assert(span.step.or_else(1) == 1, "Slice step must be 1")
         return Self(unsafe_from_utf8=self._slice[span])
 
-    fn to_python_object(owned self) raises -> PythonObject:
+    fn to_python_object(var self) raises -> PythonObject:
         """Convert this value to a PythonObject.
 
         Returns:
@@ -922,6 +907,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             If the `StringSlice` is equal to the input in length and contents.
         """
         return Self.__eq__(self, rhs=rhs_same)
+
+    fn __eq__(self, rhs: String) -> Bool:
+        """Verify if a `StringSlice` is equal to another `String`.
+
+        Args:
+            rhs: The `StringSlice` to compare against.
+
+        Returns:
+            If the `StringSlice` is equal to the input in length and contents.
+        """
+        return self == rhs.as_string_slice()
 
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.
@@ -1090,13 +1086,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             The string concatenated `n` times.
         """
-        var result = String()
-        if n <= 0:
-            return result
-        result.reserve(self.byte_length() * n)
+        var string = String()
+        var str_bytes = self.as_bytes()
+        var buffer = _WriteBufferStack(string)
         for _ in range(n):
-            result += self
-        return result
+            buffer.write_bytes(str_bytes)
+        buffer.flush()
+        return string
 
     @always_inline("nodebug")
     fn __merge_with__[
@@ -2193,7 +2189,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         return result
 
     fn join[
-        T: Copyable & Movable & Writable
+        T: Copyable & Movable & Writable, //,
     ](self, elems: List[T, *_]) -> String:
         """Joins string elements using the current string as a delimiter.
 
@@ -2206,15 +2202,32 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         Returns:
             The joined string.
+
+        Notes:
+            - Defaults to writing directly to the string if the bytes
+            fit in an inline `String`, otherwise will process it by chunks.
         """
-        var string = String()
-        var buffer = _WriteBufferStack(string)
-        for i in range(len(elems)):
-            buffer.write(elems[i])
-            if i < len(elems) - 1:
-                buffer.write(self)
+        if len(elems) == 0:
+            return String()
+
+        var sep = StaticString(ptr=self.unsafe_ptr(), length=self.byte_length())
+        var total_bytes = _TotalWritableBytes(elems, sep=sep).size
+        var result = String(capacity=total_bytes)
+
+        if result._is_inline():
+            # Write directly to the stack address
+            result.write(elems[0])
+            for i in range(1, len(elems)):
+                result.write(self, elems[i])
+            return result^
+
+        var buffer = _WriteBufferStack(result)
+
+        buffer.write(elems[0])
+        for i in range(1, len(elems)):
+            buffer.write(self, elems[i])
         buffer.flush()
-        return string
+        return result^
 
     # TODO(MOCO-1791): The corresponding String.__init__ is limited to
     # StaticString. This is because default arguments and param inference aren't

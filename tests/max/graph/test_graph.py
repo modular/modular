@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
@@ -16,6 +23,7 @@ from max import mlir
 from max._core import graph as _graph
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph.graph import _location
 from max.mlir.dialects import rmo
 
 empty_graphs = st.builds(
@@ -24,7 +32,7 @@ empty_graphs = st.builds(
 
 
 @given(graph=empty_graphs)
-def test_simple_graphs(graph: Graph):
+def test_simple_graphs(graph: Graph) -> None:
     assume(len(graph.inputs) > 0)
     with graph:
         graph.output(graph.inputs[0])
@@ -105,7 +113,7 @@ def test_location() -> None:
     with Graph("location") as graph:
 
         def elided():
-            return graph._location()
+            return _location(ignore_frames=1)
 
         def foo():
             return elided()
@@ -122,7 +130,7 @@ def test_location_no_stack() -> None:
         with mock.patch("traceback.extract_stack") as mock_stack:
             mock_stack.return_value = []
 
-            loc = graph._location()
+            loc = _location()
             assert loc == mlir.Location.unknown()
 
 

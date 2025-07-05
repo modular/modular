@@ -164,19 +164,20 @@ def token_sampler(
                 list(_input_dict).index("repetition_penalty")
             ].tensor
 
+            # repetition penalty needs to be applied first
+            apply_penalties_to_logits(
+                logits_buffer,
+                ops.buffer_load(repetition_freq_data),
+                repetition_freq_offsets,
+                repetition_penalty=repetition_penalty,
+            )
+
             apply_penalties_to_logits(
                 logits_buffer,
                 ops.buffer_load(penalty_freq_data),
                 penalty_freq_offsets,
                 frequency_penalty=frequency_penalty,
                 presence_penalty=presence_penalty,
-            )
-
-            apply_penalties_to_logits(
-                logits_buffer,
-                ops.buffer_load(repetition_freq_data),
-                repetition_freq_offsets,
-                repetition_penalty=repetition_penalty,
             )
 
         if sampling_config.enable_min_tokens:
@@ -249,6 +250,8 @@ def token_sampler(
             )
         # Concat tokens to previous tokens.
         all_tokens = ops.concat([prev_tokens, tokens], -1)
+        # increment the seed tensor by 1
+        seed = seed + 1
 
         # Gather logits if needed to return.
         if "existing_logits" in _input_dict:
@@ -277,10 +280,10 @@ def token_sampler(
 
             all_logits = ops.concat([existing_logits, new_logits], -1)
             tokens = ops.squeeze(tokens, -1)
-            graph.output(tokens, all_tokens, all_logits)
+            graph.output(tokens, all_tokens, all_logits, seed)
         else:
             tokens = ops.squeeze(tokens, -1)
-            graph.output(tokens, all_tokens)
+            graph.output(tokens, all_tokens, seed)
 
         return graph
 

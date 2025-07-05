@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 from __future__ import annotations
@@ -21,7 +28,7 @@ class Unity:
         return ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU())
 
 
-def test_load_rejects_non_contiguous_weights():
+def test_load_rejects_non_contiguous_weights() -> None:
     """Test that InferenceSession.load() raises ValueError for non-contiguous weight registry inputs."""
     graph = Graph(
         "unity",
@@ -42,7 +49,7 @@ def test_load_rejects_non_contiguous_weights():
         session.load(graph, weights_registry={"weight": weight_tensor.numpy()})
 
 
-def test_execute_rejects_non_contiguous_input():
+def test_execute_rejects_non_contiguous_input() -> None:
     """Test that model.execute() raises ValueError for non-contiguous input tensors."""
     graph = Graph(
         "unity",

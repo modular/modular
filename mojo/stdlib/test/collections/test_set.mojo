@@ -34,8 +34,8 @@ def test_set_construction():
     var s1 = {1, 2, 3}
     assert_equal(s1, {1, 2, 3})
 
-    var s2 = {String("1"), String("2")}
-    assert_equal(s2, {String("1"), String("2")})
+    var s2 = {"1", "2"}
+    assert_equal(s2, {"1", "2"})
 
 
 def test_set_move():
@@ -498,7 +498,7 @@ def test_set_str():
     var a = {1, 2, 3}
     AE(a.__str__(), "{1, 2, 3}")
     AE(a.__repr__(), "{1, 2, 3}")
-    var b = {String("a"), String("b")}
+    var b = {"a", "b"}
     AE(b.__str__(), "{'a', 'b'}")
     AE(Set[Int]().__str__(), "{}")
 

@@ -24,10 +24,7 @@ from typing import Generic, Optional, TypeVar
 
 import sentinel
 import zmq
-from max.pipelines.core import (
-    InputContext,
-    msgpack_numpy_encoder,
-)
+from max.pipelines.core import InputContext, msgpack_numpy_encoder
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -103,6 +100,13 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self, req_id: ReqId, data: ReqInput
     ) -> Generator[asyncio.Queue, None, None]:
         try:
+            if req_id in self.pending_out_queues:
+                raise RuntimeError(
+                    f"Detected multiple requests with `req_id` set to {req_id}. "
+                    "This WILL lead to unexpected behavior! "
+                    "Please ensure that the `req_id` is unique for each request."
+                )
+
             out_queue: asyncio.Queue = asyncio.Queue()
             self.pending_out_queues[req_id] = out_queue
             self.request_push_socket.put_nowait((req_id, data))

@@ -23,6 +23,7 @@ from gpu.cluster import (
     cluster_sync_relaxed,
     elect_one_sync,
 )
+from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from gpu.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -75,9 +76,9 @@ from linalg.matmul_sm90 import (
     _get_c_smem_layout,
     cluster_size,
     consumer_main_loop,
-    producer_main_loop,
     warp_specialized_gemm_output,
 )
+from linalg.matmul_loadop_sm90 import async_load_AB
 from memory.pointer import _GPUAddressSpace
 
 from utils.index import Index, IndexList
@@ -87,8 +88,7 @@ from utils.static_tuple import StaticTuple
 from .utils import elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, block_swizzle
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
+alias NumWarpPerWarpGroup = WARPGROUP_SIZE // WARP_SIZE
 
 # ===----------------------------------------------------------------------=== #
 # Naive grouped matmul
@@ -302,7 +302,7 @@ fn grouped_matmul_sm90[
         swizzle_mode=c_swizzle,
     ](ctx, c_tensor)
 
-    alias num_threads = WARP_GROUP_SIZE * config.num_consumer + WARP_GROUP_SIZE
+    alias num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     alias smem_size = Int(config.num_pipeline_stages) * (
         BM * BK * sizeof[a_type]()
         + BN * BK * sizeof[b_type]()
@@ -495,8 +495,8 @@ fn grouped_matmul_kernel[
     full = a_mbars_ptr.bitcast[SharedMemBarrier]()
     empty = b_mbars_ptr.bitcast[SharedMemBarrier]()
 
-    var warp_group_idx = thread_idx.x // WARP_GROUP_SIZE
-    var warp_group_thread_idx = thread_idx.x % WARP_GROUP_SIZE
+    var warp_group_idx = thread_idx.x // WARPGROUP_SIZE
+    var warp_group_thread_idx = thread_idx.x % WARPGROUP_SIZE
     alias num_k_iters = K // BK
 
     var rank_m = block_id_in_cluster.y
@@ -539,7 +539,7 @@ fn grouped_matmul_kernel[
                 + UInt(block_idx_swizzle[0]) * BN
             )
 
-            producer_main_loop[
+            async_load_AB[
                 block_tile_shape=block_tile_shape,
                 cluster_shape=cluster_shape,
                 partitioned_multicast=False,
@@ -652,7 +652,7 @@ fn grouped_matmul_kernel[
             c_reg_tile,
             warp_group_thread_idx,
             local_warp_group_idx,
-            thread_idx.x - WARP_GROUP_SIZE,
+            thread_idx.x - WARPGROUP_SIZE,
             block_idx_swizzle[1],
             block_idx_swizzle[0],
         )

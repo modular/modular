@@ -49,7 +49,7 @@ class MoE(Module):
         hidden_size: int = 2048,
         n_shared_experts: int = 2,
         dtype: DType = DType.bfloat16,
-    ):
+    ) -> None:
         """
         Args:
             device: The device the experts are on.

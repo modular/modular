@@ -64,6 +64,7 @@ _CONSTRAINTS = {
     mojo_test(
         name = src + ".test",
         srcs = [src],
+        target_compatible_with = _CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:internal_utils",
             "@mojo//:nn",

@@ -44,6 +44,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
+from max.interfaces import LogProbabilities
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -55,7 +56,6 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import (
     InputContext,
-    LogProbabilities,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
@@ -362,6 +362,7 @@ class PipelineModel(ABC, Generic[T]):
 
     def compute_log_probabilities(
         self,
+        session: InferenceSession,
         model_inputs: ModelInputs,
         model_outputs: ModelOutputs,
         next_tokens: Tensor,
@@ -371,6 +372,7 @@ class PipelineModel(ABC, Generic[T]):
         """Optional method that can be overridden to compute log probabilities.
 
         Args:
+            session: Inference session to compute log probabilities within.
             model_inputs: Inputs to the model returned by
                 `prepare_*_token_inputs()`.
             model_outputs: Outputs returned by `execute()`.
@@ -473,9 +475,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self._weight_adapters = weight_adapters
 
         # Expand eos tokens if more are provided in pipeline_config
-        if self._pipeline_config.ignore_eos:
-            self._eos_token_id = set([])
-        elif (
+        if (
             "eos_token_id"
             in self._pipeline_config.model_config.huggingface_config
         ):
@@ -534,6 +534,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
             raise ValueError("quantization_encoding must not be None")
 
         # Retrieve the weight id, if different than the model_path
+
+        # TODO: These should ideally not call _weights_repo_id directly. I believe
+        # huggingface_weight_repo_id property can be used here?
         weight_model_id = (
             self._pipeline_config.model_config._weights_repo_id
             if self._pipeline_config.model_config._weights_repo_id
@@ -570,6 +573,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 self._pipeline_config.lora_config.max_num_loras,
                 self._pipeline_config.lora_config.lora_paths,
             )
+            self._pipeline_config._lora_manager = self._lora_manager
 
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
@@ -578,7 +582,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             encoding=self._pipeline_config.model_config.quantization_encoding,
             devices=self._devices,
             kv_cache_config=self._pipeline_config.model_config.kv_cache_config,
-            weights=load_weights(weight_paths),
+            weights=weights,
             adapter=self._weight_adapters.get(
                 weights_format(weight_paths), None
             ),
@@ -734,7 +738,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
         tracer.next("build_token_frequency_csr_loop")
         for i, context in enumerate(batch):
             unique_tokens, counts = np.unique(
-                context.generated_tokens, return_counts=True
+                context.all_tokens
+                if include_prompt
+                else context.generated_tokens,
+                return_counts=True,
             )
             # Pad the tokens and counts to reserve space for new tokens
             unique_tokens = np.pad(
@@ -766,6 +773,19 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 self._devices[0]
             ),
         )
+
+    def _check_need_penalties(self, batch: list[T]) -> None:
+        """Check if the batch has penalties, but do_penalties is False."""
+        for context in batch:
+            if (
+                context.sampling_params.frequency_penalty != 0.0
+                or context.sampling_params.presence_penalty != 0.0
+                or context.sampling_params.repetition_penalty != 1.0
+            ):
+                logger.warning(
+                    "penalties are provided in the request, but the model was not configured with do_penalties=True, ignoring"
+                )
+                return
 
     @traced
     def _build_min_tokens_masks(
@@ -817,7 +837,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         frequency_penalty: Optional[Tensor] = None,
         presence_penalty: Optional[Tensor] = None,
         repetition_penalty: Optional[Tensor] = None,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> tuple[Tensor, Tensor, Tensor]:
         base_inputs = [logits, prev_tokens]
         opt_inputs = [logit_offsets, bitmask]
 
@@ -849,10 +869,13 @@ class TextGenerationPipeline(TokenGenerator[T]):
             tensor for tensor in opt_inputs if tensor is not None
         ]
 
-        a, b = self._sampler(*graph_inputs)[:2]
-        assert isinstance(a, Tensor)
-        assert isinstance(b, Tensor)
-        return (a, b)
+        sampler_output = self._sampler(*graph_inputs)
+        tokens, generated_tokens = sampler_output[:2]
+        new_seed = sampler_output[-1]
+        assert isinstance(tokens, Tensor)
+        assert isinstance(generated_tokens, Tensor)
+        assert isinstance(new_seed, Tensor)
+        return (tokens, generated_tokens, new_seed)
 
     @traced
     def next_token(
@@ -913,7 +936,10 @@ class TextGenerationPipeline(TokenGenerator[T]):
         ).to(self._devices[0])
         seed = Tensor.from_numpy(
             np.array(
-                [context.sampling_params.seed for context in context_batch],
+                [
+                    context.sampling_params.seed + context.current_length
+                    for context in context_batch
+                ],
                 dtype=np.uint64,
             )
         ).to(self._devices[0])
@@ -955,6 +981,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
             ).to(self._devices[0])
 
         else:
+            self._check_need_penalties(context_batch)
             frequency_data = None
             frequency_penalty = None
             presence_penalty = None
@@ -986,7 +1013,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
             # Sample next token.
             tracer.next("sample_next_token")
-            new_tokens, new_generated_tokens = self.sample_logits(
+            new_tokens, new_generated_tokens, new_seed = self.sample_logits(
                 model_outputs.logits,
                 generated_tokens,
                 top_k,
@@ -1007,13 +1034,16 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
             assert isinstance(new_tokens, Tensor)
             assert isinstance(new_generated_tokens, Tensor)
+            assert isinstance(new_seed, Tensor)
             generated_tokens = new_generated_tokens
+            seed = new_seed
 
             if compute_log_probabilities:
                 try:
                     tracer.next("compute_log_probabilities")
                     batch_log_probabilities.append(
                         self._pipeline_model.compute_log_probabilities(
+                            self.session,
                             curr_step_inputs,
                             model_outputs,
                             new_tokens,

@@ -22,7 +22,7 @@ For example, consider the following code:
 fn print_str(s: String):
     print(s)
 
-name = String("Joan")
+name = "Joan"
 print_str(name)
 ```
 
@@ -30,7 +30,7 @@ print_str(name)
 Joan
 ```
 
-The line `name = String("Joan")` declares a variable with an identifier (`name`)
+The line `name = "Joan"` declares a variable with an identifier (`name`)
 and logical storage space for a `String` value. When you pass `name` into the
 `print_str()` function, the function gets an immutable reference to the value.
 So both `name` and `s` refer to the same logical storage space, and have
@@ -307,7 +307,7 @@ def take_str_ref[
     else:
         print("Immutable: " + s)
 
-def pass_refs(s1: String, owned s2: String):
+def pass_refs(s1: String, var s2: String):
     take_str_ref(s1)
     take_str_ref(s2)
 

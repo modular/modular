@@ -297,12 +297,12 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> IndexList[3]:
 # Reduce helper when the input channel dimension is partitioned.
 @always_inline
 fn _reduce_output[
-    type: DType, //,
+    dtype: DType, //,
     simd_size: Int,
     elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
-    scratch: UnsafePointer[Scalar[type]],
-    output: UnsafePointer[Scalar[type]],
+    scratch: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype]],
     N: Int,
     output_space_dims: IndexList,
     F: Int,
@@ -2954,14 +2954,14 @@ fn conv_nhwc_direct[
     @always_inline
     @parameter
     fn description_fn() -> String:
-        return String(";").join(
+        return ";".join(
             trace_arg("input", input),
             trace_arg("filter", filter),
             trace_arg("output", output),
             "group=" + String(num_groups),
-            "stride=" + String("x").join(stride),
-            "padding_h=" + String("x").join(pad_h),
-            "padding_w=" + String("x").join(pad_w),
+            "stride=" + "x".join(stride),
+            "padding_h=" + "x".join(pad_h),
+            "padding_w=" + "x".join(pad_w),
         )
 
     with Trace[TraceLevel.OP, target = StaticString("cpu")](

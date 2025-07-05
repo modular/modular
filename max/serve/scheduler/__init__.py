@@ -49,7 +49,6 @@ __all__ = [
 
 
 def load_scheduler(
-    pc: ProcessControl,
     pipeline: TokenGenerator | EmbeddingsGenerator | AudioGenerator,
     zmq_ctx: zmq.Context,
     settings: Settings,
@@ -61,7 +60,6 @@ def load_scheduler(
             max_batch_size=config.token_generation.size
         )
         return EmbeddingsScheduler(
-            process_control=pc,
             scheduler_config=embeddings_scheduler_config,
             pipeline=pipeline,
             request_zmq_endpoint=settings.request_zmq_endpoint,
@@ -93,7 +91,6 @@ def load_scheduler(
         )
 
         return AudioGenerationScheduler(
-            process_control=pc,
             scheduler_config=token_gen_config,
             pipeline=pipeline,
             request_zmq_endpoint=settings.request_zmq_endpoint,
@@ -108,7 +105,6 @@ def load_scheduler(
             zmq_ctx,
             settings,
             pipeline,
-            pc,
             max_batch_size_tg=config.max_batch_size_tg,
             max_forward_steps_tg=config.max_forward_steps_tg,
             target_tokens_per_batch_tg=config.target_tokens_per_batch_tg,
@@ -124,7 +120,6 @@ def load_scheduler(
             zmq_ctx,
             settings,
             pipeline,
-            pc,
             max_batch_size_tg=config.max_batch_size_tg,
             max_forward_steps_tg=config.max_forward_steps_tg,
             dispatcher_client=dispatcher_client,
@@ -135,7 +130,6 @@ def load_scheduler(
             zmq_ctx,
             settings,
             pipeline,
-            pc=pc,
             max_batch_size_ce=config.max_batch_size_ce,
             target_tokens_per_batch_ce=config.target_tokens_per_batch_ce,
             enable_chunked_prefill=config.enable_chunked_prefill,

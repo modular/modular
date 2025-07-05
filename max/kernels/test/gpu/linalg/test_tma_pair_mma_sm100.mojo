@@ -293,7 +293,7 @@ fn tma_umma_kernel_pair_cta[
         datapaths=32,
         bits=32,
         repeat = BN if MMA_M == 128 else MMA_N,
-        type=accum_type,
+        dtype=accum_type,
         pack=False,
         width=c_frag_size,
     ](tmem_addr)

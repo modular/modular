@@ -63,7 +63,7 @@ fn tcgen05_st_ld_roundtrip_kernel[
         datapaths=16,
         bits=256,
         repeat=2,
-        type = DType.float32,
+        dtype = DType.float32,
         pack=False,
         width=width,
     ](tmem_addr)
@@ -215,7 +215,7 @@ fn tcgen05_cp_ld_roundtrip_kernel[
         datapaths=16,
         bits=bits,
         repeat=1,
-        type = DType.float32,
+        dtype = DType.float32,
         pack=False,
         width=width,
     ](tmem_addr)

@@ -35,7 +35,7 @@ trait Movable:
     it inside generic functions:
 
     ```mojo
-    fn return_foo[T: Movable](owned foo: T) -> T:
+    fn return_foo[T: Movable](var foo: T) -> T:
         return foo^
 
     var foo = Foo()
@@ -186,8 +186,8 @@ trait Defaultable:
         ...
 
 
-trait IteratorTrait(Movable):
-    """The `IteratorTrait` trait describes a type that can be used as an
+trait Iterator(Movable):
+    """The `Iterator` trait describes a type that can be used as an
     iterator, e.g. in a `for` loop.
     """
 

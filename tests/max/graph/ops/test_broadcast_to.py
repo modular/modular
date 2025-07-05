@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.broadcast_to tests."""
 
@@ -73,7 +80,7 @@ def test_broadcast_to_tensor_value(
     assert graph.output_types == [expected_type]
 
 
-def test_broadcast_to__error_message():
+def test_broadcast_to__error_message() -> None:
     input_shape = [6]
     output_shape = [6, 7]
 
@@ -94,7 +101,7 @@ def test_broadcast_to__error_message():
             ops.broadcast_to(graph.inputs[0].tensor, output_shape)
 
 
-def test_broadcast_to__error_message_symbolic_shapes():
+def test_broadcast_to__error_message_symbolic_shapes() -> None:
     input_shape = ["D0"]
     output_shape = ["D1", "D2"]
 

@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.engine Python bindings with Max Graph."""
 
@@ -10,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import pytest
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -25,7 +33,7 @@ def create_test_graph():
     return graph
 
 
-def test_max_graph(session):
+def test_max_graph(session) -> None:
     graph = create_test_graph()
     compiled = session.load(graph)
     a_np = np.ones((1, 1)).astype(np.float32)
@@ -36,7 +44,7 @@ def test_max_graph(session):
     assert np.allclose((a_np + b_np), output[0].to_numpy())
 
 
-def test_max_graph_export(session):
+def test_max_graph_export(session) -> None:
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     check to ensure that the file contents are non-empty."""
 
@@ -47,7 +55,7 @@ def test_max_graph_export(session):
         assert os.path.getsize(mef_file.name) > 0
 
 
-def test_max_graph_export_import_mef(session):
+def test_max_graph_export_import_mef(session) -> None:
     """Creates a graph via max-graph API, exports the mef to a tempfile, and
     loads the mef. Both the original model from the max-graph and the model
     from the mef are executed to ensure that they produce the same output."""
@@ -69,7 +77,7 @@ def test_max_graph_export_import_mef(session):
         assert np.allclose(output, output2)
 
 
-def test_max_graph_device(session):
+def test_max_graph_device(session) -> None:
     graph = create_test_graph()
     device = CPU()
     session = InferenceSession(devices=[device])
@@ -77,7 +85,7 @@ def test_max_graph_device(session):
     assert str(device) == str(compiled.devices[0])
 
 
-def test_identity(session):
+def test_identity(session) -> None:
     # Create identity graph.
     graph = Graph(
         "identity",
@@ -94,7 +102,7 @@ def test_identity(session):
     _ = output[0].to(CPU())[0]
 
 
-def test_max_graph_export_import_mlir(session):
+def test_max_graph_export_import_mlir(session) -> None:
     """Creates a graph via max-graph API, exports the mlir to a tempfile, and
     loads the mlir. Both the original model from the max-graph and the model
     from the mlir are executed to ensure that they produce the same output."""
@@ -118,3 +126,12 @@ def test_max_graph_export_import_mlir(session):
         output2 = compiled2.execute(a, b)[0].to_numpy()
         assert output2 == a_np + b_np
         assert output == output2
+
+
+def test_no_output_error_message(session) -> None:
+    with Graph("test", input_types=()) as graph:
+        pass
+
+    # TODO(MAXPLAT-331): Improve error message and test it here
+    with pytest.raises(Exception):
+        session.load(graph)

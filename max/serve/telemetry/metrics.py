@@ -174,7 +174,7 @@ class MaxMeasurement:
     attributes: Optional[OtelAttributes] = None
     time_unix_nano: int = field(default_factory=time.time_ns)
 
-    def commit(self):
+    def commit(self) -> None:
         # find the instrument
         try:
             instrument = SERVE_METRICS[self.instrument_name]
@@ -257,7 +257,7 @@ class NoopClient(MetricClient):
 
 
 class SyncClient(MetricClient):
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings) -> None:
         self.level = settings.metric_level
 
     def send_measurement(self, m: MaxMeasurement, level: MetricLevel) -> None:
@@ -277,7 +277,7 @@ class _AsyncMetrics:
     Produce metric measurements to be consumed elsewhere
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client: MetricClient = NoopClient()
 
     def configure(self, client: MetricClient) -> None:

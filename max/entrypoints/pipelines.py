@@ -32,11 +32,11 @@ class WithLazyPipelineOptions(click.Command):
     and should be removed when the pipeline_config_options decorator is fast.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         self._options_loaded = False
         super().__init__(*args, **kwargs)
 
-    def _ensure_options_loaded(self):
+    def _ensure_options_loaded(self) -> None:
         if not self._options_loaded:
             # Lazily load and apply pipeline_config_options decorator
             from max.entrypoints.cli import pipeline_config_options
@@ -82,8 +82,6 @@ class ModelGroup(click.Group):
     def get_command(self, ctx, cmd_name):
         rv = click.Group.get_command(self, ctx, cmd_name)
         if rv is not None:
-            if any(param.name == "task_flags" for param in rv.params):
-                rv.ignore_unknown_options = True
             return rv
         supported = ", ".join(self.list_commands(ctx))
         ctx.fail(
@@ -102,7 +100,7 @@ class ModelGroup(click.Group):
     help="Show the MAX version and exit.",
 )
 def main() -> None:
-    pass
+    configure_telemetry()
 
 
 def configure_telemetry() -> None:
@@ -161,7 +159,12 @@ def common_server_options(func):
 @click.option(
     "--task", type=str, default="text_generation", help="The task to run."
 )
-@click.argument("task_flags", nargs=-1, type=click.UNPROCESSED)
+@click.option(
+    "--task-arg",
+    multiple=True,
+    type=str,  # Take them all in as strings
+    help="Task-specific arguments to pass to the underlying model (can be used multiple times).",
+)
 def cli_serve(
     profile_serve: bool,
     performance_fake: str,
@@ -170,7 +173,7 @@ def cli_serve(
     experimental_enable_kvcache_agent: bool,
     port: int,
     task: str,
-    task_flags: list[str],
+    task_arg: tuple[str, ...],
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -188,12 +191,11 @@ def cli_serve(
     )
 
     # Initialize config, and serve.
-
     # Load tokenizer & pipeline.
     pipeline_config: PipelineConfig
     if task == PipelineTask.AUDIO_GENERATION:
         pipeline_config = AudioGenerationConfig.from_flags(
-            parse_task_flags(task_flags), **config_kwargs
+            parse_task_flags(task_arg), **config_kwargs
         )
     else:
         pipeline_config = PipelineConfig(**config_kwargs)
@@ -342,5 +344,4 @@ if __name__ == "__main__":
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
-    configure_telemetry()
     main()

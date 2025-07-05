@@ -71,7 +71,7 @@ def test_list():
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, owned *values: T, __list_literal__: ()):
+    fn __init__(out self, var *values: T, __list_literal__: ()):
         pass
 
 
@@ -252,7 +252,7 @@ def test_list_reverse():
     # Test reversing the list ["one", "two", "three"]
     #
 
-    vec2 = [String("one"), "two", "three"]
+    vec2 = ["one", "two", "three"]
 
     assert_equal(len(vec2), 3)
     assert_equal(vec2[0], "one")
@@ -741,7 +741,7 @@ def test_converting_list_to_string():
     var my_list = [1, 2, 3]
     assert_equal(my_list.__str__(), "[1, 2, 3]")
 
-    var my_list4 = [String("a"), "b", "c", "foo"]
+    var my_list4 = ["a", "b", "c", "foo"]
     assert_equal(my_list4.__str__(), "['a', 'b', 'c', 'foo']")
 
 
@@ -835,9 +835,9 @@ def test_list_eq_ne():
     assert_true(l4 == l5)
     assert_true(l1 != l4)
 
-    var l6 = [String("a"), "b", "c"]
-    var l7 = [String("a"), "b", "c"]
-    var l8 = [String("a"), "b"]
+    var l6 = ["a", "b", "c"]
+    var l7 = ["a", "b", "c"]
+    var l8 = ["a", "b"]
     assert_true(l6 == l7)
     assert_false(l6 != l7)
     assert_false(l6 == l8)

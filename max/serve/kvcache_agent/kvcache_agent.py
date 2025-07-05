@@ -17,6 +17,7 @@ import queue
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
 import grpc
 import zmq
@@ -60,9 +61,9 @@ class KVCacheAgentServerConfig:
 class KVCacheAgentServicer(KVCacheAgentServiceServicer):
     """Implementation of the KVCacheAgentService service."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the KVCacheAgentServicer."""
-        self._subscribers = set()
+        self._subscribers: set[Any] = set()
         self._cache_state: dict[MemoryTier, set[str]] = {}
         self._lock = threading.RLock()
 
@@ -206,7 +207,7 @@ class KVCacheAgentServer:
         config: KVCacheAgentServerConfig,
         zmq_ctx: zmq.Context,
         kv_cache_events_zmq_endpoint: str,
-    ):
+    ) -> None:
         """
         Initialize the KVCacheAgentServer.
 

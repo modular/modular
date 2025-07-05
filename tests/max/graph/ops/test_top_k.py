@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """ops.top_k tests."""
 
@@ -10,7 +17,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_top_k_output_tensor_types():
+def test_top_k_output_tensor_types() -> None:
     k = 4
 
     expected_weight_tensor_type = TensorType(
@@ -36,7 +43,7 @@ def test_top_k_output_tensor_types():
         assert idx_tensor.type == expected_idx_tensor_type
 
 
-def test_top_k_with_axis_greater_than_input_rank():
+def test_top_k_with_axis_greater_than_input_rank() -> None:
     input_shape = [0, 1, 2, 3, 4, 5]
     k = 4
 
@@ -56,7 +63,7 @@ def test_top_k_with_axis_greater_than_input_rank():
             )
 
 
-def test_top_k_with_k_greater_than_input_length():
+def test_top_k_with_k_greater_than_input_length() -> None:
     input_shape = [6]
     k_greater_than_input_length = input_shape[-1] + 1
 

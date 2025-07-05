@@ -20,19 +20,19 @@ from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
 
 
 fn vec_reduce[
-    N: Int, type: DType
-](x: UnsafePointer[Scalar[type]]) -> Scalar[type]:
-    var total: Scalar[type] = 0
+    N: Int, dtype: DType
+](x: UnsafePointer[Scalar[dtype]]) -> Scalar[dtype]:
+    var total: Scalar[dtype] = 0
     for i in range(N):
         total += x[i]
     return total
 
 
 fn vec_add[
-    N: Int, type: DType
+    N: Int, dtype: DType
 ](
-    x: UnsafePointer[Scalar[type]], y: UnsafePointer[Scalar[type]]
-) -> UnsafePointer[Scalar[type]]:
+    x: UnsafePointer[Scalar[dtype]], y: UnsafePointer[Scalar[dtype]]
+) -> UnsafePointer[Scalar[dtype]]:
     for i in range(N):
         x[i] += y[i]
     return x
@@ -291,16 +291,16 @@ fn test_mojo_math() raises:
 fn test_custom() raises:
     alias N = 1024
     alias alignment = 64
-    alias type = DType.int32
-    var x = UnsafePointer[Scalar[type], alignment=alignment].alloc(N)
-    var y = UnsafePointer[Scalar[type], alignment=alignment].alloc(N)
-    randint[type](x, N, 0, 255)
-    randint[type](y, N, 0, 255)
+    alias dtype = DType.int32
+    var x = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(N)
+    var y = UnsafePointer[Scalar[dtype], alignment=alignment].alloc(N)
+    randint[dtype](x, N, 0, 255)
+    randint[dtype](y, N, 0, 255)
 
     var qb = QuickBench()
 
     qb.run(
-        vec_reduce[N, type],
+        vec_reduce[N, dtype],
         x,
         bench_id=BenchId("vec_reduce"),
         measures=List[ThroughputMeasure](
@@ -309,7 +309,7 @@ fn test_custom() raises:
     )
 
     qb.run(
-        vec_add[N, type],
+        vec_add[N, dtype],
         x,
         y,
         bench_id=BenchId("vec_add"),

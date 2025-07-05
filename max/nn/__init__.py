@@ -33,6 +33,7 @@ from .linear import (
     MLP,
     MLPV1,
     ColumnParallelLinear,
+    DistributedGemmConfig,
     DistributedMLP,
     Float8Config,
     Float8InputScaleSpec,
@@ -42,6 +43,11 @@ from .linear import (
     GPTQLinear,
     Linear,
     LinearV1,
+)
+from .lora import (
+    AttentionWithRopeAndLoRA,
+    LinearLoRA,
+    SupportsLoRA,
 )
 from .norm import (
     DistributedRMSNorm,
@@ -110,6 +116,7 @@ __all__ = [
     "LinearV1",
     "Linear",
     "LinearScalingParams",
+    "LinearLoRA",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
     "LongRoPEScalingParams",
@@ -124,6 +131,7 @@ __all__ = [
     "Sequential",
     "Signals",
     "Shardable",
+    "SupportsLoRA",
     "Transformer",
     "TransformerBlock",
     "VocabParallelEmbedding",

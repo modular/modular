@@ -63,7 +63,7 @@ alias TestVariant = Variant[MoveCopyCounter, Poison]
 def test_basic():
     alias IntOrString = Variant[Int, String]
     var i = IntOrString(4)
-    var s = IntOrString(String("4"))
+    var s = IntOrString("4")
 
     # isa
     assert_true(i.isa[Int]())
@@ -171,7 +171,7 @@ def test_get_returns_mutable_reference():
     v1.set[String]("hello")
     assert_equal(100, x)  # the x reference is still valid
 
-    var v2: Variant[Int, String] = String("something")
+    var v2: Variant[Int, String] = "something"
     v2[String] = "something else"
     assert_equal(v2[String], "something else")
 

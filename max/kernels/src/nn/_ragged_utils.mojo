@@ -77,14 +77,14 @@ fn get_batch_from_row_offsets(
 
 fn merge_ragged_tensors[
     rank: Int,
-    type: DType, //,
+    dtype: DType, //,
     target: StaticString = "cpu",
 ](
-    c: NDBuffer[mut=True, type, rank],
+    c: NDBuffer[mut=True, dtype, rank],
     c_row_offsets: NDBuffer[mut=True, DType.uint32, 1],
-    a: NDBuffer[type, rank],
+    a: NDBuffer[dtype, rank],
     a_row_offsets: NDBuffer[DType.uint32, 1],
-    b: NDBuffer[type, rank],
+    b: NDBuffer[dtype, rank],
     b_row_offsets: NDBuffer[DType.uint32, 1],
     ctx: DeviceContextPtr,
 ) raises:
@@ -117,7 +117,7 @@ fn merge_ragged_tensors[
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
         # this `merge_fn`function with width = 1 for the last few elements.
-        var val: SIMD[type, width]
+        var val: SIMD[dtype, width]
         if is_tensor_a:
             val = a.load[width=width](src_idx)
         else:
@@ -146,7 +146,7 @@ fn merge_ragged_tensors[
     alias compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
-    alias target_simd_width = simdwidthof[type, target=compile_target]()
+    alias target_simd_width = simdwidthof[dtype, target=compile_target]()
     alias kernel_simd_width = 1 if rank == 1 else target_simd_width
 
     elementwise[

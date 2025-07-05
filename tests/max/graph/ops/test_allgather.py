@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
@@ -10,6 +17,7 @@ from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
+from max.nn import Signals
 
 shared_types = st.shared(tensor_types())
 
@@ -22,6 +30,7 @@ def test_allgather_rep_device() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = Signals(devices)
 
     with pytest.raises(
         ValueError,
@@ -45,9 +54,13 @@ def test_allgather_rep_device() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
+                *signals.input_types(),
             ],
         ) as graph:
-            allgather_outputs = ops.allgather(v.tensor for v in graph.inputs)
+            allgather_outputs = ops.allgather(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            )
             graph.output(
                 allgather_outputs[0],
                 allgather_outputs[1],
@@ -64,6 +77,7 @@ def test_allgather_wrong_shape() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = Signals(devices)
 
     with pytest.raises(
         ValueError,
@@ -87,9 +101,13 @@ def test_allgather_wrong_shape() -> None:
                 TensorType(
                     dtype=DType.float32, shape=[6, 5], device=devices[3]
                 ),
+                *signals.input_types(),
             ],
         ) as graph:
-            allgather_outputs = ops.allgather(v.tensor for v in graph.inputs)
+            allgather_outputs = ops.allgather(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            )
 
             graph.output(
                 allgather_outputs[0],
@@ -107,6 +125,7 @@ def test_allgather_uneven_shapes() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = Signals(devices)
 
     # Test with uneven shapes along dimension 0.
     with Graph(
@@ -124,9 +143,13 @@ def test_allgather_uneven_shapes() -> None:
             TensorType(
                 dtype=DType.float32, shape=[37918, 4096], device=devices[3]
             ),
+            *signals.input_types(),
         ],
     ) as graph:
-        allgather_outputs = ops.allgather(v.tensor for v in graph.inputs)
+        allgather_outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+        )
 
         # Check output shapes - should be sum of input shapes along axis 0.
         expected_dim0 = 37919 + 37919 + 37918 + 37918  # 151674
@@ -146,6 +169,7 @@ def test_allgather_bad_dim() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = Signals(devices)
 
     with Graph(
         "allgather",
@@ -154,13 +178,22 @@ def test_allgather_bad_dim() -> None:
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[1]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[3]),
+            *signals.input_types(),
         ],
     ) as graph:
         with pytest.raises(IndexError, match="Dimension out of range"):
-            _ = ops.allgather((v.tensor for v in graph.inputs), axis=-3)
+            _ = ops.allgather(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+                axis=-3,
+            )
 
         with pytest.raises(IndexError, match="Dimension out of range"):
-            _ = ops.allgather((v.tensor for v in graph.inputs), axis=-5)
+            _ = ops.allgather(
+                inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+                signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+                axis=-5,
+            )
 
 
 def test_allgather_basic() -> None:
@@ -171,6 +204,7 @@ def test_allgather_basic() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = Signals(devices)
 
     with Graph(
         "allgather",
@@ -179,9 +213,13 @@ def test_allgather_basic() -> None:
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[1]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[6, 5], device=devices[3]),
+            *signals.input_types(),
         ],
     ) as graph:
-        allgather_outputs = ops.allgather(v.tensor for v in graph.inputs)
+        allgather_outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+        )
         graph.output(
             allgather_outputs[0],
             allgather_outputs[1],
@@ -202,6 +240,7 @@ def test_allgather_nonzero_dim() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = Signals(devices)
 
     with Graph(
         "allgather",
@@ -210,17 +249,30 @@ def test_allgather_nonzero_dim() -> None:
             TensorType(dtype=DType.float32, shape=[6, 5, 4], device=devices[1]),
             TensorType(dtype=DType.float32, shape=[6, 5, 4], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[6, 5, 4], device=devices[3]),
+            *signals.input_types(),
         ],
     ) as graph:
-        outputs = ops.allgather((v.tensor for v in graph.inputs), axis=-2)
+        outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=-2,
+        )
         for output in outputs:
             assert output.shape == Shape((6, 20, 4))
 
-        outputs_dim_1 = ops.allgather((v.tensor for v in graph.inputs), axis=1)
+        outputs_dim_1 = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=1,
+        )
         for output in outputs_dim_1:
             assert output.shape == Shape((6, 20, 4))
 
-        outputs_dim_2 = ops.allgather((v.tensor for v in graph.inputs), axis=2)
+        outputs_dim_2 = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=2,
+        )
         for output in outputs_dim_2:
             assert output.shape == Shape((6, 5, 16))
 
@@ -233,6 +285,7 @@ def test_allgather_nonzero_dim_uneven() -> None:
         DeviceRef.GPU(id=2),
         DeviceRef.GPU(id=3),
     ]
+    signals = Signals(devices)
 
     # Test with uneven shapes along dimension 1.
     with Graph(
@@ -242,9 +295,14 @@ def test_allgather_nonzero_dim_uneven() -> None:
             TensorType(dtype=DType.float32, shape=[6, 5, 4], device=devices[1]),
             TensorType(dtype=DType.float32, shape=[6, 4, 4], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[6, 4, 4], device=devices[3]),
+            *signals.input_types(),
         ],
     ) as graph:
-        outputs = ops.allgather((v.tensor for v in graph.inputs), axis=1)
+        outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=1,
+        )
         for output in outputs:
             assert output.shape == Shape((6, 18, 4))  # 5+5+4+4=18
 
@@ -262,9 +320,14 @@ def test_allgather_nonzero_dim_uneven() -> None:
             ),
             TensorType(dtype=DType.float32, shape=[6, 5, 9], device=devices[2]),
             TensorType(dtype=DType.float32, shape=[6, 5, 9], device=devices[3]),
+            *signals.input_types(),
         ],
     ) as graph:
-        outputs = ops.allgather((v.tensor for v in graph.inputs), axis=2)
+        outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=2,
+        )
         for output in outputs:
             assert output.shape == Shape((6, 5, 38))  # 10+10+9+9=38
 
@@ -273,16 +336,62 @@ def test_allgather_nonzero_dim_uneven() -> None:
 
 def test_allgather_noop() -> None:
     """Tests that allgather is a noop if the number of inputs is 0 or 1."""
+    devices = [DeviceRef.GPU(id=0)]
+    signals = Signals(devices)
+
     with Graph(
         "allgather",
         input_types=[
-            TensorType(
-                dtype=DType.float32, shape=[6, 5], device=DeviceRef.GPU(id=0)
-            ),
+            TensorType(dtype=DType.float32, shape=[6, 5], device=devices[0]),
+            *signals.input_types(),
         ],
     ) as graph:
-        allgather_outputs = ops.allgather([graph.inputs[0].tensor])
+        allgather_outputs = ops.allgather(
+            inputs=[graph.inputs[0].tensor],
+            signal_buffers=[graph.inputs[1].buffer],
+        )
         assert allgather_outputs[0] is graph.inputs[0].tensor
 
-        allgather_outputs = ops.allgather([])
+        allgather_outputs = ops.allgather(inputs=[], signal_buffers=[])
         assert not allgather_outputs
+
+
+def test_allgather_signal_buffer_mismatch() -> None:
+    """Test error when number of inputs != number of signal buffers."""
+    devices = [
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
+    ]
+    signals = Signals(devices[:3])  # Only 3 signal buffers
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "expected number of inputs \\(4\\) and number of signal buffers \\(3\\) to match"
+        ),
+    ):
+        with Graph(
+            "allgather",
+            input_types=[
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[0]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[1]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[2]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[3]
+                ),
+                *signals.input_types(),
+            ],
+        ) as graph:
+            allgather_outputs = ops.allgather(
+                inputs=(v.tensor for v in graph.inputs[:4]),
+                signal_buffers=(v.buffer for v in graph.inputs[4:]),
+            )
+            graph.output(*allgather_outputs)

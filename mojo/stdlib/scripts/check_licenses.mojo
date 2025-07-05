@@ -40,10 +40,8 @@ def main():
         # Ignore #! in scripts
         has_license = False
         if file_text.startswith("#!"):
-            has_license = (
-                String("\n")
-                .join(file_text.splitlines()[1:])
-                .startswith(LICENSE)
+            has_license = "\n".join(file_text.splitlines()[1:]).startswith(
+                LICENSE
             )
         else:
             has_license = file_text.startswith(LICENSE)

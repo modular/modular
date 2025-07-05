@@ -77,7 +77,7 @@ keyword at the beginning of an argument declaration:
 * `mut`: The function receives a **mutable reference**. This means the
   function can read and mutate the original value (it is *not* a copy).
 
-* `owned`: The function takes **ownership** of a value. This means the function
+* `var`: The function takes **ownership** of a value. This means the function
   has exclusive ownership of the argument. The caller might choose to transfer
   ownership of an existing value to this function, but that's not always what
   happens. The callee might receive a newly-created value, or a copy of an
@@ -252,7 +252,7 @@ fn append_twice(mut s: String, other: String):
    s += other
 
 fn invalid_access():
-  var my_string = String("o")  # Create a run-time String value
+  var my_string = "o"  # Create a run-time String value
 
   # error: passing `my_string` mut is invalid since it is also passed
   # read.
@@ -270,8 +270,8 @@ reference (or need to pass the same value to two arguments) is to make a copy:
 
 ```mojo
 fn valid_access():
-  var my_string = String("o")           # Create a run-time String value
-  var other_string = String(my_string)  # Create a copy of the String value
+  var my_string = "o"           # Create a run-time String value
+  var other_string = my_string  # Create a copy of the String value
   append_twice(my_string, other_string)
   print(my_string)
 ```
@@ -281,16 +281,16 @@ types (like `Int` and `Bool`), because they are always passed by copy. When
 passing the same value into two `Int` arguments, the callee will receive two
 copies of the value.
 
-## Transfer arguments (`owned` and `^`)
+## Transfer arguments (`var` and `^`)
 
 And finally, if you'd like your function to receive value **ownership**, add the
-`owned` keyword in front of the argument name.
+`var` keyword in front of the argument name.
 
 This convention is often combined with use of the postfixed `^` "transfer"
 sigil on the variable that is passed into the function, which ends the
 lifetime of that variable.
 
-Technically, the `owned` keyword does not guarantee that the received value is
+Technically, the `var` keyword does not guarantee that the received value is
 *the original value*—it guarantees only that the function
 gets unique ownership of a value. This happens in one of
 three ways:
@@ -307,23 +307,23 @@ three ways:
   transferred directly to the callee. For example:
 
   ```mojo
-  def take(owned s: String):
+  def take(var s: String):
       pass
 
   def main():
-      take(String("A brand-new String!"))
+      take("A brand-new String!")
   ```
 
 The following code works by making a copy of the string, because `take_text()`
-uses the `owned` convention, and the caller does not include the transfer sigil:
+uses the `var` convention, and the caller does not include the transfer sigil:
 
 ```mojo
-fn take_text(owned text: String):
+fn take_text(var text: String):
     text += "!"
     print(text)
 
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message)
     print(message)
 ```
@@ -339,7 +339,7 @@ variable is no longer initialized. That is, this version does not compile:
 
 ```mojo
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message^)
     print(message)  # error: use of uninitialized value 'message'
 ```
@@ -350,12 +350,12 @@ not use the `message` variable after you end its lifetime with the `^` transfer
 operator. So here is the corrected code:
 
 ```mojo
-fn take_text(owned text: String):
+fn take_text(var text: String):
     text += "!"
     print(text)
 
 fn main():
-    var message = String("Hello")  # Create a run-time String value
+    var message = "Hello"  # Create a run-time String value
     take_text(message^)
 ```
 
@@ -364,22 +364,22 @@ Hello!
 ```
 
 Regardless of how it receives the value, when the function declares an argument
-as `owned`, it can be certain that it has unique mutable access to that value.
+as `var`, it can be certain that it has unique mutable access to that value.
 Because the value is owned, the value is destroyed when the function
 exits—unless the function transfers the value elsewhere.
 
 For example, in the following example, `add_to_list()` takes a string and
 appends it to the list. Ownership of the string is transferred to the list, so
 it's not destroyed when the function exits. On the other hand,
-`consume_string()` doesn't transfer its `owned` value out, so the value is
+`consume_string()` doesn't transfer its `var` value out, so the value is
 destroyed at the end of the function.
 
 ```mojo
-def add_to_list(owned name: String, mut list: List[String]):
+def add_to_list(var name: String, mut list: List[String]):
     list.append(name^)
     # name is uninitialized, nothing to destroy
 
-def consume_string(owned s: String):
+def consume_string(var s: String):
     print(s)
     # s is destroyed here
 ```
@@ -394,7 +394,7 @@ There are multiple ways that Mojo can transfer ownership of a value:
 * If a type implements the [move
   constructor](/mojo/manual/lifecycle/life#move-constructor),
   `__moveinit__()`, Mojo may invoke this method *if* a value of that type is
-  transferred into a function as an `owned` argument, *and* the original
+  transferred into a function as an `var` argument, *and* the original
   variable's lifetime ends at the same point (with or without use of the `^`
   transfer sigil).
 
@@ -407,5 +407,5 @@ There are multiple ways that Mojo can transfer ownership of a value:
   a value can be transferred without invoking either the `__copyinit__()` or
   `__moveinit__()` constructors.
 
-In order for the `owned` convention to work *without* the transfer
+In order for the `var` convention to work *without* the transfer
 sigil, the value type must be copyable (via `__copyinit__()`).

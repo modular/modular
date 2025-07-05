@@ -52,7 +52,7 @@ fn _getpw_linux(uid: UInt32) raises -> Passwd:
     return _build_pw_struct(passwd_ptr)
 
 
-fn _getpw_linux(owned name: String) raises -> Passwd:
+fn _getpw_linux(var name: String) raises -> Passwd:
     var passwd_ptr = external_call["getpwnam", UnsafePointer[_C_Passwd]](
         name.unsafe_cstr_ptr()
     )
