@@ -25,6 +25,7 @@ This module provides warp-level operations for NVIDIA and AMD GPUs, including:
   - max: Find maximum value across warp
   - min: Find minimum value across warp
   - broadcast: Broadcast value to all lanes
+  - rank: Find the rank of the thread given a mask
 
 The module handles both NVIDIA and AMD GPU architectures through architecture-specific
 implementations of the core operations. It supports various data types including
@@ -34,7 +35,9 @@ integers, floats, and half-precision floats, with SIMD vectorization.
 from sys import bitwidthof, is_nvidia_gpu, llvm_intrinsic, sizeof
 from sys._assembly import inlined_assembly
 from sys.info import _is_sm_100x_or_newer
+from sys.intrinsics import ballot, mbcnt, lanemask_lt
 
+from algorithm.functional import unswitch
 from bit import log2_floor
 from builtin.math import max as _max
 from builtin.math import min as _min
@@ -43,6 +46,7 @@ from gpu.globals import WARP_SIZE
 from memory import bitcast
 
 from .tensor_ops import tc_reduce
+from .amdgcn_dpp import *
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
@@ -394,11 +398,27 @@ fn _shuffle_down_amd[
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
-    # FIXME: Set the EXECute mask register to the mask
-    var lane = lane_id()
-    # set the offset to 0 if lane + offset >= WARP_SIZE
-    var dst_lane = (lane + offset > _WIDTH_MASK).select(0, offset) + lane
-    return _shuffle_amd_helper(dst_lane, val)
+    @parameter
+    fn generic_impl() -> SIMD[type, simd_width]:
+      # FIXME: Set the EXECute mask register to the mask
+      var lane = lane_id()
+      # set the offset to 0 if lane + offset >= WARP_SIZE
+      var dst_lane = (lane + offset > _WIDTH_MASK).select(0, offset) + lane
+      return _shuffle_amd_helper(dst_lane, val)
+
+    @parameter
+    if amdgcn_supports_shifts() and (type.bitwidth() % 32) == 0:
+      # sanity check - varying offset or partial participation is not supported (yet)
+      # TODO: should check for `min(UInt64(offset)) == max(UInt64(offset)):` but that causes infinite recursion
+      if mask == _FULL_MASK: 
+        # small shifts only
+        if offset <= 4:
+          var x = val
+          for _ in range(offset):
+            x = amdgcn_shift_left(x)
+          return x
+
+    return generic_impl()
 
 
 @always_inline
@@ -1179,3 +1199,49 @@ fn broadcast(val: UInt) -> UInt:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
     return Int(shuffle_idx(Int32(val), 0))
+
+
+# ===-----------------------------------------------------------------------===#
+# Warp Rank
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn rank(flag: Scalar[DType.bool]) -> Scalar[DType.uint32]:
+  """Computes the rank of the thread within a warp given the flag.
+
+  Equivalent to a warp-wide prefix sum where each thread can contribute either
+  zero or one to the sum.
+
+  Args:
+      flag: Whether this thread is enabled or not.
+
+  Returns:
+      The rank (index) of this thread among threads of this warp that had the
+      flag enabled.
+
+  Example:
+      To filter out odd elements and output them to a contiguous range, one
+      could use the following pattern:
+
+      ```mojo
+          from gpu.warp import rank
+
+          var condition = element % 2 == 0
+          var rank = rank(condition)
+
+          if condition:
+            output[rank] = element
+      ```
+  """
+
+  @parameter
+  if is_amd_gpu():
+    @parameter
+    if WARP_SIZE == 32:
+      return mbcnt(ballot[DType.int32](flag))
+    else:
+      return mbcnt(bitcast[DType.int32, 2](ballot[DType.int64](flag)))
+  else:
+    var b = ballot[DType.int32](flag).cast[DType.uint32]()
+    return (b & Scalar[DType.uint32](lanemask_lt())).reduce_bit_count()
