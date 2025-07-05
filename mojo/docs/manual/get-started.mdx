@@ -755,18 +755,18 @@ function](/mojo/manual/parameters/#parameters-and-generics).)
 
 In the case of `String()`, it requires a type to conform to either the
 [`Stringable`](/mojo/stdlib/builtin/str/Stringable) or
-[`Stringable`](/mojo/stdlib/builtin/str/Stringable) trait. Each
+[`StringableRaising`](/mojo/stdlib/builtin/str/StringableRaising) trait. Each
 trait requires a conforming type to implement a `__str__()` method that returns
 a `String` representation. The only difference between the two traits is that
 `Stringable` requires that the method *cannot* raise an error, whereas
-`Stringable` indicates that the method *might* raise an error. (To learn
+`StringableRaising` indicates that the method *might* raise an error. (To learn
 more, read [The `Stringable`, `Representable`, and `Writable`
 traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
 Our `grid_str()` method already returns a `String` representation, so it looks
 like we just have to rename it to `__str__()`. But we also need to indicate
 which trait `Grid` conforms to. In our case, it's `Stringable` because we
-used `def` to define the method. If you define a function or method with `def`,
+used `fn` to define the method. If you define a function or method with `def`,
 the compiler *always* assumes that the function *can* raise an error. In
 contrast, if you define a function or method with `fn` you must explicitly
 indicate with a `raises` keyword if it can raise an error.
