@@ -123,7 +123,10 @@ class LatentAttentionWithRope(Module):
                 device=self.devices[0],
             )
             self.q_a_layernorm = RMSNorm(
-                dim=self.q_lora_rank, dtype=dtype, eps=1e-6
+                dim=self.q_lora_rank,
+                dtype=dtype,
+                eps=1e-6,
+                multiply_before_cast=False,
             )
             self.q_b_proj = Weight(
                 name="q_b_proj.weight",
@@ -387,6 +390,7 @@ class LatentAttentionWithRope(Module):
             input_row_offsets=input_row_offsets,
             rms_norm_cols=self.kv_lora_rank,
             weight_offset=0.0,
+            multiply_before_cast=False,
         )
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))

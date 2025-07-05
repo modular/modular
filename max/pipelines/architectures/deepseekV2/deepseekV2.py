@@ -77,10 +77,16 @@ class DeepseekV2(Transformer):
                 ),
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNorm(
-                    config.hidden_size, config.dtype, config.rms_norm_eps
+                    config.hidden_size,
+                    config.dtype,
+                    config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
                 mlp_norm=RMSNorm(
-                    config.hidden_size, config.dtype, config.rms_norm_eps
+                    config.hidden_size,
+                    config.dtype,
+                    config.rms_norm_eps,
+                    multiply_before_cast=False,
                 ),
             )
             for i in range(config.num_hidden_layers)
@@ -105,7 +111,12 @@ class DeepseekV2(Transformer):
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
             layers=layers,
-            norm=RMSNorm(config.hidden_size, config.dtype, config.rms_norm_eps),
+            norm=RMSNorm(
+                config.hidden_size,
+                config.dtype,
+                config.rms_norm_eps,
+                multiply_before_cast=False,
+            ),
             output=lm_head,
             embedding=embedding_layer,
             kv_params=config.kv_params,
