@@ -223,7 +223,7 @@ struct PythonVersion(Copyable, Movable):
         The version string is parsed to extract major, minor, and patch numbers.
         If parsing fails for any component, it defaults to -1.
         """
-        var components = InlineArray[Int, 3](-1)
+        var components = InlineArray[Int, 3](fill=-1)
         var start = 0
         var next_idx = 0
         var i = 0

@@ -313,7 +313,7 @@ struct LayoutTensor[
     from layout import Layout, LayoutTensor
 
     # Create tensor on CPU using InlineArray to allocate storage space.
-    var storage = InlineArray[Scalar[DType.float32], 5 * 4](uninitialized = True)
+    var storage = InlineArray[Scalar[DType.float32], 5 * 4](uninitialized=True)
     var tensor_5x4 = LayoutTensor[DType.float32, Layout.row_major(5, 4)](storage)
     ```
     """

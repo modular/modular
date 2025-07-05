@@ -81,9 +81,7 @@ fn overlap_matmul_allreduce_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
     var mn = m.value * n.value
     var mk = m.value * k.value
@@ -133,16 +131,16 @@ fn overlap_matmul_allreduce_test[
     alias C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, A_static_shape]())
+    ](fill={})
     var Bs = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, B_static_shape]())
+    ](fill={})
     var Cs = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape]())
+    ](fill={})
     var out_bufs = InlineArray[
         NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape], ngpus
-    ](NDBuffer[dtype, 2, MutableAnyOrigin, C_static_shape]())
+    ](fill={})
 
     # Setup the kernel NDBuffers
     @parameter

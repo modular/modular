@@ -650,7 +650,7 @@ fn _matmul_group_stream_x86[
 ):
     var b_vals = InlineArray[
         SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
-    ](0)
+    ](fill=0)
 
     @parameter
     for k in range(0, group_size, tile_k * 4):
@@ -698,11 +698,11 @@ fn _matmul_group_stream_neon_dotprod[
 ):
     var b_vals = InlineArray[
         SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
-    ](0)
+    ](fill=0)
 
     @parameter
     for k in range(0, group_size, 16):
-        var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](0)
+        var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](uninitialized=True)
 
         @parameter
         for row in range(tile_m):

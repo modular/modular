@@ -116,7 +116,7 @@ struct BitSet[size: UInt](
 
     fn __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
-        self._words = __type_of(self._words)(0)
+        self._words = __type_of(self._words)(fill=0)
 
     fn __init__(init: SIMD[DType.bool], out self: BitSet[UInt(init.size)]):
         """Initializes a BitSet with the given SIMD vector of booleans.
@@ -124,7 +124,7 @@ struct BitSet[size: UInt](
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
-        self._words = __type_of(self._words)(0)
+        self._words = __type_of(self._words)(fill=0)
 
         @parameter
         for i in range(size):
