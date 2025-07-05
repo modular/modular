@@ -213,14 +213,16 @@ struct _WriteBufferHeap(Writable, Writer):
         )
 
 
-struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
-    var data: InlineArray[UInt8, STACK_BUFFER_BYTES]
+struct _WriteBufferStack[
+    origin: MutableOrigin, W: Writer, //, buffer_size: Int = STACK_BUFFER_BYTES
+](Writer):
+    var data: InlineArray[UInt8, buffer_size]
     var pos: Int
     var writer: Pointer[W, origin]
 
     @implicit
     fn __init__(out self, ref [origin]writer: W):
-        self.data = InlineArray[UInt8, STACK_BUFFER_BYTES](uninitialized=True)
+        self.data = InlineArray[UInt8, buffer_size](uninitialized=True)
         self.pos = 0
         self.writer = Pointer(to=writer)
 
@@ -244,12 +246,12 @@ struct _WriteBufferStack[origin: MutableOrigin, W: Writer, //](Writer):
     fn write_bytes(mut self, bytes: Span[Byte, _]):
         len_bytes = len(bytes)
         # If span is too large to fit in buffer, write directly and return
-        if len_bytes > STACK_BUFFER_BYTES:
+        if len_bytes > buffer_size:
             self.flush()
             self.writer[].write_bytes(bytes)
             return
         # If buffer would overflow, flush writer and reset pos to 0.
-        elif self.pos + len_bytes > STACK_BUFFER_BYTES:
+        elif self.pos + len_bytes > buffer_size:
             self.flush()
         # Continue writing to buffer
         memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
@@ -291,6 +293,21 @@ struct _TotalWritableBytes(Writer):
 # ===-----------------------------------------------------------------------===#
 # Utils
 # ===-----------------------------------------------------------------------===#
+
+
+struct _TotalWritableBytes(Writer):
+    var size: Int
+
+    fn __init__(out self):
+        self.size = 0
+
+    fn write_bytes(mut self, bytes: Span[UInt8, _]):
+        self.size += len(bytes)
+
+    fn write[*Ts: Writable](mut self, *args: *Ts):
+        @parameter
+        for i in range(args.__len__()):
+            args[i].write_to(self)
 
 
 # fmt: off
