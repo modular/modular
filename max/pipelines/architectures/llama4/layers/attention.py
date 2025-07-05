@@ -253,7 +253,7 @@ class _Llama4TextAttention(Module):
 
         if self.use_qk_norm:
             # Apply QK norm to query and key states.
-            xq = l2_norm(xq)
+            xq = l2_norm(xq, self.qk_norm_eps, multiply_before_cast=False)
             rms_norm_key_cache(
                 self.kv_params,
                 kv_collection=kv_collection,

@@ -97,12 +97,14 @@ class Llama4DecoderLayer(Module):
             eps=config.rms_norm_eps,
             dtype=config.dtype,
             devices=config.devices,
+            multiply_before_cast=False,
         )
         self.post_attention_layernorm = DistributedRMSNorm(
             config.hidden_size,
             eps=config.rms_norm_eps,
             dtype=config.dtype,
             devices=config.devices,
+            multiply_before_cast=False,
         )
         self.devices = devices
 
@@ -162,6 +164,7 @@ class Llama4TextModel(Module):
             eps=config.rms_norm_eps,
             dtype=config.dtype,
             devices=config.devices,
+            multiply_before_cast=False,
         )
         self.lm_head = ColumnParallelLinear(
             config.hidden_size,
