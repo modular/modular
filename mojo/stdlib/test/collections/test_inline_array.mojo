@@ -73,7 +73,7 @@ def test_array_int():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[Int, 3](5)
+    var arr2 = InlineArray[Int, 3](fill=5)
     assert_equal(arr2[0], 5)
     assert_equal(arr2[1], 5)
     assert_equal(arr2[2], 5)
@@ -145,7 +145,7 @@ def test_array_str():
     assert_equal(copy[2], move[2])
 
     # fill element initializer
-    var arr2 = InlineArray[String, 3]("hi")
+    var arr2 = InlineArray[String, 3](fill="hi")
     assert_equal(arr2[0], "hi")
     assert_equal(arr2[1], "hi")
     assert_equal(arr2[2], "hi")
