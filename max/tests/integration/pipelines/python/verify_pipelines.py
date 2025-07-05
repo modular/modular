@@ -738,9 +738,6 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama4-scout",
             encoding="bfloat16",
-            pregenerated_torch_goldens_rlocation=(
-                "torch_llama4_golden/torch_llama4_scout_bfloat16_golden.json"
-            ),
             # TODO (MODELS-480): Debug Llama-4 Accuracy.
             cos_dist_threshold=7.2e-1,
             kl_div_threshold=6.5,

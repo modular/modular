@@ -44,7 +44,7 @@ meta-llama/Llama-3.1-8B-Instruct	0e9e39f249a16976918f6564b8830bc894c89659
 meta-llama/Llama-3.2-11B-Vision-Instruct	9eb2daaa8597bf192a8b0e73f848f3a102794df5
 meta-llama/Llama-3.2-1B	4e20de362430cd3b72f300e6b0f18e50e7166e08
 meta-llama/Llama-3.3-70B-Instruct	6f6073b423013f6a7d4d9f39144961bfbfbc386b
-meta-llama/Llama-4-Scout-17B-16E-Instruct	4bd10c4dc905b4000d76640d07a552344146faec
+meta-llama/Llama-4-Scout-17B-16E-Instruct	92f3b1597a195b523d8d9e5700e57e4fbb8f20d3
 meta-llama/Meta-Llama-3-8B-Instruct	5f0b02c75b57c5855da9ae460ce51323ea669d8a
 microsoft/Phi-3.5-mini-instruct	3145e03a9fd4cdd7cd953c34d9bbf7ad606122ca
 microsoft/phi-4	187ef0342fff0eb3333be9f00389385e95ef0b61
