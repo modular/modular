@@ -283,40 +283,80 @@ fn memcpy[
 
 @always_inline("nodebug")
 fn _memset_impl[
-    address_space: AddressSpace
+    dtype: DType, address_space: AddressSpace, //
 ](
-    ptr: UnsafePointer[Byte, address_space=address_space],
-    value: Byte,
+    ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
+    value: Scalar[dtype],
     count: Int,
 ):
-    @parameter
-    fn fill[width: Int](offset: Int):
-        ptr.store(offset, SIMD[DType.uint8, width](value))
+    alias width = simdwidthof[Scalar[dtype]]()
+    var vector_end = align_down(count, width)
 
-    alias simd_width = simdwidthof[Byte]()
-    vectorize[fill, simd_width](count)
+    for i in range(0, vector_end, width):
+        ptr.store(i, SIMD[dtype, width](value))
+
+    for i in range(vector_end, count):
+        ptr.store(i, value)
 
 
 @always_inline
 fn memset[
-    type: AnyType, address_space: AddressSpace
-](
-    ptr: UnsafePointer[type, address_space=address_space],
-    value: Byte,
-    count: Int,
-):
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], count: Int):
     """Fills memory with the given value.
 
     Parameters:
-        type: The element dtype.
-        address_space: The address space of the pointer.
+        dtype: The element dtype.
 
     Args:
         ptr: UnsafePointer to the beginning of the memory block to fill.
         value: The value to fill with.
         count: Number of elements to fill (in elements, not bytes).
     """
-    _memset_impl(ptr.bitcast[Byte](), value, count * sizeof[type]())
+    _memset_impl(ptr, value, count)
+
+
+@always_inline
+fn memset[
+    dtype: DType, //
+](ptr: UnsafePointer[Scalar[dtype]], value: Int, count: Int):
+    """Fills memory with the given value.
+
+    Parameters:
+        dtype: The element dtype.
+
+    Args:
+        ptr: UnsafePointer to the beginning of the memory block to fill.
+        value: The value to fill with.
+        count: Number of elements to fill (in elements, not bytes).
+    """
+    _memset_impl(ptr, Scalar[dtype](value), count)
+
+
+# FIXME(#3581): this should only be for trivial types, but constraining it with
+# AnyTrivialRegType would make building generics on top of this harder
+@always_inline
+fn memset[
+    T: AnyType, dtype: DType, //
+](ptr: UnsafePointer[T], value: Scalar[dtype], count: Int):
+    """Fills memory with the given value.
+
+    Parameters:
+        T: The element type.
+        dtype: The value's dtype.
+
+    Args:
+        ptr: UnsafePointer to the beginning of the memory block to fill.
+        value: The value to fill with.
+        count: Number of elements to fill (in elements, not bytes).
+    """
+
+    alias size = sizeof[Scalar[dtype]]()
+    constrained[
+        sizeof[T]() == size,
+        "value to fill must be the same bitwidth as the type",
+    ]()
+    _memset_impl(ptr.bitcast[Scalar[dtype]](), value, count * size)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -338,7 +378,7 @@ fn memset_zero[
         ptr: UnsafePointer to the beginning of the memory block to fill.
         count: Number of elements to fill (in elements, not bytes).
     """
-    memset(ptr, 0, count)
+    _memset_impl(ptr.bitcast[UInt8](), UInt8(0), count * sizeof[type]())
 
 
 @always_inline
