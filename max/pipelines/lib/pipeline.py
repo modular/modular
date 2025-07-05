@@ -309,6 +309,28 @@ class PipelineModel(ABC, Generic[T]):
         # after we load the model
         return pipeline_config.model_config.weights_size()
 
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        """Estimates the activation memory required for model execution.
+
+        This accounts for temporary memory buffers used during model execution,
+        such as intermediate activations and working buffers.
+
+        The default implementation returns 0 for backward compatibility.
+        Models with significant activation memory requirements should override
+        this method to provide accurate estimates.
+
+        Args:
+            pipeline_config: Pipeline configuration
+            huggingface_config: HuggingFace model configuration
+
+        Returns:
+            Estimated activation memory in bytes
+        """
+        return 0
+
     @abstractmethod
     def execute(
         self,
