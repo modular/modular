@@ -749,14 +749,32 @@ fn frexp[
 # ===----------------------------------------------------------------------=== #
 
 
+fn _fp_type[bitwidth: Int]() -> DType:
+    @parameter
+    if bitwidth <= 16:
+        return DType.float16
+    elif bitwidth == 32:
+        return DType.float32
+    else:
+        return DType.float64
+
+
 @always_inline
 fn _log_base[
-    dtype: DType, width: Int, //, base: Int
-](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    input_dtype: DType, width: Int, //, base: Int
+](
+    x: SIMD[input_dtype, width],
+    out res: SIMD[
+        input_dtype if input_dtype.is_floating_point() else _fp_type[
+            bitwidthof[input_dtype]()
+        ](),
+        width,
+    ],
+):
     """Performs elementwise log of a SIMD vector with a specific base.
 
     Parameters:
-        dtype: The `dtype` of the input and output SIMD vector.
+        input_dtype: The `dtype` of the input SIMD vector.
         width: The width of the input and output SIMD vector.
         base: The logarithm base.
 
@@ -766,12 +784,13 @@ fn _log_base[
     Returns:
         Vector containing result of performing logarithm on x.
     """
+    alias dtype = res.dtype
     # Based on the Cephes approximation.
     alias sqrt2_div_2 = 0.70710678118654752440
 
     constrained[base == 2 or base == 27, "input base must be either 2 or 27"]()
 
-    var frexp_result = frexp(x)
+    var frexp_result = frexp(x.cast[dtype]())
     var x1 = frexp_result[0]
     var exp = frexp_result[1]
     exp = (x1 < sqrt2_div_2).select(exp - 1, exp)
@@ -838,7 +857,7 @@ fn log[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
                 * ln2
             )
 
-    return _log_base[27](x)
+    return _log_base[27](x).cast[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -874,7 +893,7 @@ fn log2[dtype: DType, width: Int, //](x: SIMD[dtype, width]) -> __type_of(x):
                     instruction="lg2.approx.f32", constraints="=f,f"
                 ](x)
 
-    return _log_base[2](x)
+    return _log_base[2](x).cast[dtype]()
 
 
 # ===----------------------------------------------------------------------=== #
