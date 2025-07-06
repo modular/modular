@@ -70,13 +70,13 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias small_divisor = pow(10, Self.kappa)
 
 fn _uint64s_to_uint128(hi: UInt64, lo: UInt64) -> UInt128:
-    return (UInt128(hi)() << 64) | UInt128(lo)()
+    return (UInt128(hi) << 64) | UInt128(lo)
 
 fn _uint128_high(x: UInt128) -> UInt64:
-    return (x >> 64).cast[UInt64]()
+    return (x >> 64).cast[DType.uint64]()
 
 fn _uint128_low(x: UInt128) -> UInt64:
-    return (x & UInt128(0xFFFF_FFFF_FFFF_FFFF)).cast[UInt64]()
+    return (x & UInt128(0xFFFF_FFFF_FFFF_FFFF)).cast[DType.uint64]()
 
 fn _write_float[
     W: Writer, dtype: DType, //
@@ -582,7 +582,7 @@ fn _compute_mul_parity[
         return _MulParity(
             ((_uint128_high(r) >> (64 - beta)) & 1) != 0,
             (
-                ((_uint128_high(r) << beta) & UInt64(0xFFFFFFFFFFFFFFFF))
+                ((_uint128_high(r) << beta) & 0xFFFFFFFFFFFFFFFF)
                 | (_uint128_low(r) >> (64 - beta))
             )
             == 0,
@@ -597,12 +597,12 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((r >> (64 - beta)) & 1) != 0,
-            (UInt32(0xFFFFFFFF).cast[DType.uint64]() & (r >> (32 - beta))) == 0,
+            (0xFFFFFFFF.cast[DType.uint64]() & (r >> (32 - beta))) == 0,
         )
 
 
 fn _umul96_lower64(x: UInt32, y: UInt64) -> UInt64:
-    return (x.cast[DType.uint64]() * y) & UInt64(0xFFFFFFFFFFFFFFFF)
+    return (x.cast[DType.uint64]() * y) & 0xFFFFFFFFFFFFFFFF
 
 
 fn _check_divisibility_and_divide_by_pow10[
@@ -673,7 +673,7 @@ fn _umul192_upper128[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
     var r = _umul128(x, _uint128_high(y))
-    r += _umul128_upper64(x, _uint128_low(y)).cast[UInt128]()
+    r += _umul128_upper64(x, _uint128_low(y)).cast[DType.uint128]()
     return r
 
 
