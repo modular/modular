@@ -76,7 +76,7 @@ fn _uint128_high(x: UInt128) -> UInt64:
     return (x >> 64).cast[DType.uint64]()
 
 fn _uint128_low(x: UInt128) -> UInt64:
-    return (x & UInt128(0xFFFF_FFFF_FFFF_FFFF)).cast[DType.uint64]()
+    return x.cast[DType.uint64]()
 
 fn _write_float[
     W: Writer, dtype: DType, //
@@ -581,7 +581,7 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((_uint128_high(r) >> (64 - beta)) & 1) != 0,
-            (0xFFFFFFFF.cast[DType.uint64]() & (r >> (32 - beta))) == 0
+            (_uint128_low(r) >> (32 - beta)) == 0
         )
     else:
         debug_assert(
@@ -593,7 +593,7 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((r >> (64 - beta)) & 1) != 0,
-            (0xFFFFFFFF.cast[DType.uint64]() & (r >> (32 - beta))) == 0
+            (r >> (32 - beta)) == 0
         )
 
 
