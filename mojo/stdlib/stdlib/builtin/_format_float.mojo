@@ -77,6 +77,7 @@ fn _uint128_high(x: UInt128) -> UInt64:
 
 fn _uint128_low(x: UInt128) -> UInt64:
     return x.cast[DType.uint64]()
+    
 
 fn _write_float[
     W: Writer, dtype: DType, //
