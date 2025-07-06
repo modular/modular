@@ -27,7 +27,6 @@ from collections import InlineArray
 from sys.info import sizeof
 
 from memory import bitcast
-from stdlib.builtin.integers import UInt128
 from utils.numerics import FPUtils, isinf, isnan
 
 alias U64_MAX = UInt64.MAX
@@ -595,9 +594,9 @@ fn _compute_mul_parity[
             two_f.cast[DType.uint64](), cache_f64[cache_index]
         )
         return _MulParity(
+            ((_uint128_high(r) >> (64 - beta)) & 1) != 0,
             ((_uint128_high(r) << beta) | (_uint128_low(r) >> (64 - beta)))
             == 0,
-            ((_uint128_high(r) >> (64 - beta)) & 1) != 0,
         )
     else:
         debug_assert(
@@ -609,7 +608,7 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((r >> (64 - beta)) & 1) != 0,
-            (UInt32(0xFFFFFFFF).cast[DType.uint64]() & (r >> (32 - beta))) == 0,
+            (r >> (32 - beta)) == 0,
         )
 
 
@@ -636,11 +635,13 @@ fn _check_divisibility_and_divide_by_pow10[
 
 
 @always_inline
-fn _truncate[dtype: DType](u) -> dtype:
-    """Cast to DType to truncate to the width of that type, then cast back to
-    original DType.
-    """
-    return u.cast[dtype]()
+fn _truncate[dtype: DType, S: Int](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
+    # Choose a narrower lane type when truncating uint64 SIMD values
+    @parameter
+    if dtype is DType.uint64:
+        return u.cast[DType.uint32]().cast[dtype]()
+    else:
+        return u.cast[dtype]().cast[dtype]()
 
 
 fn _umul96_upper64[
