@@ -581,11 +581,7 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((_uint128_high(r) >> (64 - beta)) & 1) != 0,
-            (
-                ((_uint128_high(r) << beta) & 0xFFFFFFFFFFFFFFFF)
-                | (_uint128_low(r) >> (64 - beta))
-            )
-            == 0,
+            (0xFFFFFFFF.cast[DType.uint64]() & (r >> (32 - beta))) == 0
         )
     else:
         debug_assert(
@@ -597,7 +593,7 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((r >> (64 - beta)) & 1) != 0,
-            (0xFFFFFFFF.cast[DType.uint64]() & (r >> (32 - beta))) == 0,
+            (0xFFFFFFFF.cast[DType.uint64]() & (r >> (32 - beta))) == 0
         )
 
 
