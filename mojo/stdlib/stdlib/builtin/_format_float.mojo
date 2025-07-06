@@ -27,8 +27,10 @@ from collections import InlineArray
 from sys.info import sizeof
 
 from memory import bitcast
-from stdlib.builtin.simd import UInt128
+from stdlib.builtin.integers import UInt128
 from utils.numerics import FPUtils, isinf, isnan
+
+alias U64_MAX = UInt64.MAX
 
 
 @fieldwise_init
@@ -69,15 +71,18 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias big_divisor = pow(10, Self.kappa + 1)
     alias small_divisor = pow(10, Self.kappa)
 
+
 fn _uint64s_to_uint128(hi: UInt64, lo: UInt64) -> UInt128:
     return (UInt128(hi) << 64) | UInt128(lo)
+
 
 fn _uint128_high(x: UInt128) -> UInt64:
     return (x >> 64).cast[DType.uint64]()
 
+
 fn _uint128_low(x: UInt128) -> UInt64:
     return x.cast[DType.uint64]()
-    
+
 
 fn _write_float[
     W: Writer, dtype: DType, //
@@ -366,12 +371,18 @@ fn _compute_endpoint[
         var cache = cache_f64[cache_index]
         if left_endpoint:
             return (
-                (_uint128_high(cache) - (_uint128_high(cache) >> (sig_bits + 2)))
+                (
+                    _uint128_high(cache)
+                    - (_uint128_high(cache) >> (sig_bits + 2))
+                )
                 >> (total_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
         else:
             return (
-                (_uint128_high(cache) + (_uint128_high(cache) >> (sig_bits + 1)))
+                (
+                    _uint128_high(cache)
+                    + (_uint128_high(cache) >> (sig_bits + 1))
+                )
                 >> (total_bits - sig_bits - 1 - beta)
             ).cast[CarrierDType]()
     else:
@@ -456,9 +467,7 @@ fn _umul64(x: UInt32, y: UInt32) -> UInt64:
     return x.cast[DType.uint64]() * y.cast[DType.uint64]()
 
 
-fn _umul128[
-    CarrierDType: DType
-](x: Scalar[CarrierDType], y: UInt64) -> UInt128:
+fn _umul128[CarrierDType: DType](x: Scalar[CarrierDType], y: UInt64) -> UInt128:
     var a = (x >> 32).cast[DType.uint32]()
     var b = x.cast[DType.uint32]()
     var c = (y >> 32).cast[DType.uint32]()
@@ -469,13 +478,11 @@ fn _umul128[
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (
-        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
-    )
+    var intermediate = (bd >> 32) + _truncate(ad) + _truncate(bc)
 
     return _uint64s_to_uint128(
         ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32),
-        (intermediate << 32) + _truncate[DType.uint32](bd),
+        (intermediate << 32) + _truncate(bd),
     )
 
 
@@ -543,9 +550,14 @@ fn _divide_by_pow10[
 
         @parameter
         if N == 1 and Bool(n_max <= 4611686018427387908):
-            return _umul128_upper64(n, 1844674407370955162)
+            return _umul128_upper64(
+                n.cast[DType.uint64](), 1844674407370955162
+            ).cast[CarrierDType]()
         elif N == 3 and Bool(n_max <= 15534100272597517998):
-            return _umul128_upper64(n, 4722366482869645214) >> 8
+            return (
+                _umul128_upper64(n.cast[DType.uint64](), 4722366482869645214)
+                >> 8
+            ).cast[CarrierDType]()
         else:
             return n / pow(10, N)
     else:
@@ -569,7 +581,9 @@ fn _umul192_lower128(x: UInt64, y: UInt128) -> UInt128:
     """
     var high = x * _uint128_high(y)
     var high_low = _umul128(x, _uint128_low(y))
-    return _uint64s_to_uint128((high + _uint128_high(high_low)) & UInt64.MAX, _uint128_low(high_low))
+    return _uint64s_to_uint128(
+        (high + _uint128_high(high_low)) & UInt64.MAX, _uint128_low(high_low)
+    )
 
 
 fn _compute_mul_parity[
@@ -581,8 +595,9 @@ fn _compute_mul_parity[
             two_f.cast[DType.uint64](), cache_f64[cache_index]
         )
         return _MulParity(
+            ((_uint128_high(r) << beta) | (_uint128_low(r) >> (64 - beta)))
+            == 0,
             ((_uint128_high(r) >> (64 - beta)) & 1) != 0,
-            (_uint128_low(r) >> (32 - beta)) == 0
         )
     else:
         debug_assert(
@@ -594,12 +609,12 @@ fn _compute_mul_parity[
         )
         return _MulParity(
             ((r >> (64 - beta)) & 1) != 0,
-            (r >> (32 - beta)) == 0
+            (UInt32(0xFFFFFFFF).cast[DType.uint64]() & (r >> (32 - beta))) == 0,
         )
 
 
 fn _umul96_lower64(x: UInt32, y: UInt64) -> UInt64:
-    return (x.cast[DType.uint64]() * y) & 0xFFFFFFFFFFFFFFFF
+    return (x.cast[DType.uint64]() * y) & U64_MAX
 
 
 fn _check_divisibility_and_divide_by_pow10[
@@ -621,13 +636,11 @@ fn _check_divisibility_and_divide_by_pow10[
 
 
 @always_inline
-fn _truncate[
-    dtype: DType, S: Int, //, TruncateType: DType
-](u: SIMD[dtype, S]) -> SIMD[dtype, S]:
+fn _truncate[dtype: DType](u) -> dtype:
     """Cast to DType to truncate to the width of that type, then cast back to
     original DType.
     """
-    return u.cast[TruncateType]().cast[dtype]()
+    return u.cast[dtype]()
 
 
 fn _umul96_upper64[
@@ -646,7 +659,9 @@ fn _compute_mul[
 ](u: Scalar[CarrierDType], cache_index: Int) -> _MulResult[CarrierDType]:
     if CarrierDType is DType.uint64:
         var r = _umul192_upper128(u, cache_f64[cache_index])
-        return _MulResult[CarrierDType](_uint128_high(r).cast[CarrierDType](), _uint128_low(r) == 0)
+        return _MulResult[CarrierDType](
+            _uint128_high(r).cast[CarrierDType](), _uint128_low(r) == 0
+        )
     else:
         var cache_value = cache_f32[cache_index]
         var r = _umul96_upper64(u, cache_value)
@@ -660,7 +675,9 @@ fn _compute_delta[
 ](cache_index: Int, beta: Int) -> Scalar[CarrierDType]:
     if CarrierDType is DType.uint64:
         var cache = cache_f64[cache_index]
-        return (_uint128_high(cache) >> (total_bits - 1 - beta)).cast[CarrierDType]()
+        return (_uint128_high(cache) >> (total_bits - 1 - beta)).cast[
+            CarrierDType
+        ]()
     else:
         var cache = cache_f32[cache_index]
         return (cache >> (cache_bits - 1 - beta)).cast[CarrierDType]()
@@ -670,13 +687,13 @@ fn _umul192_upper128[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
     var r = _umul128(x, _uint128_high(y))
-    r += _umul128_upper64(x, _uint128_low(y)).cast[DType.uint128]()
+    r += _umul128_upper64(x.cast[DType.uint64](), _uint128_low(y)).cast[
+        DType.uint128
+    ]()
     return r
 
 
-fn _umul128_upper64[
-    CarrierDType: DType
-](x: Scalar[CarrierDType], y: UInt64) -> Scalar[CarrierDType]:
+fn _umul128_upper64(x: UInt64, y: UInt64) -> UInt64:
     var a = (x >> 32).cast[DType.uint32]()
     var b = x.cast[DType.uint32]()
     var c = (y >> 32).cast[DType.uint32]()
@@ -687,12 +704,8 @@ fn _umul128_upper64[
     var ad = _umul64(a, d)
     var bd = _umul64(b, d)
 
-    var intermediate = (
-        (bd >> 32) + _truncate[DType.uint32](ad) + _truncate[DType.uint32](bc)
-    )
-    return (ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32)).cast[
-        CarrierDType
-    ]()
+    var intermediate = (bd >> 32) + _truncate(ad) + _truncate(bc)
+    return ac + (intermediate >> 32) + (ad >> 32) + (bc >> 32)
 
 
 fn _is_finite[exp_bits: Int](exponent: Int) -> Bool:
@@ -717,9 +730,9 @@ fn _compute_round_up_for_shorter_interval_case[
         var cache = cache_f64[cache_index]
         return (
             (
-                (_uint128_high(cache) >> (total_bits - sig_bits - 2 - beta)).cast[
-                    CarrierDType
-                ]()
+                (
+                    _uint128_high(cache) >> (total_bits - sig_bits - 2 - beta)
+                ).cast[CarrierDType]()
             )
             + 1
         ) / 2
