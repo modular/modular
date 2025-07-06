@@ -306,7 +306,6 @@ struct InlineArray[
 
         copy = Self(uninitialized=True)
 
-        @parameter
         for idx in range(size):
             var ptr = copy.unsafe_ptr() + idx
             ptr.init_pointee_copy(self.unsafe_get(idx))
@@ -335,7 +334,6 @@ struct InlineArray[
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        @parameter
         for idx in range(size):
             var other_ptr = other.unsafe_ptr() + idx
             other_ptr.move_pointee_into(self.unsafe_ptr() + idx)
