@@ -70,7 +70,7 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias small_divisor = pow(10, Self.kappa)
 
 fn _uint64s_to_uint128(hi: UInt64, lo: UInt64) -> UInt128:
-    return (hi.cast[UInt128]() << 64) | lo.cast[UInt128]()
+    return (UInt128(hi)() << 64) | UInt128(lo)()
 
 fn _uint128_high(x: UInt128) -> UInt64:
     return (x >> 64).cast[UInt64]()
