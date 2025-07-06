@@ -70,13 +70,13 @@ struct FP[dtype: DType, CarrierDType: DType = FPUtils[dtype].uint_type]:
     alias small_divisor = pow(10, Self.kappa)
 
 fn _uint64s_to_uint128(hi: UInt64, lo: UInt64) -> UInt128:
-    return bitcast[UInt64, 2, UInt128, 1](SIMD[UInt64, 2](lo, hi))
+    return (hi.cast[UInt128]() << 64) | lo.cast[UInt128]()
 
 fn _uint128_high(x: UInt128) -> UInt64:
-    return bitcast[UInt128, 1, UInt64, 2](x)[1]
+    return (x >> 64).cast[UInt64]()
 
 fn _uint128_low(x: UInt128) -> UInt64:
-    return bitcast[UInt128, 1, UInt64, 2](x)[0]
+    return (x & UInt128(0xFFFF_FFFF_FFFF_FFFF)).cast[UInt64]()
 
 fn _write_float[
     W: Writer, dtype: DType, //
@@ -673,7 +673,7 @@ fn _umul192_upper128[
     CarrierDType: DType
 ](x: Scalar[CarrierDType], y: UInt128) -> UInt128:
     var r = _umul128(x, _uint128_high(y))
-    r += _umul128_upper64(x, _uint128_low(y)).cast[DType.uint64]()
+    r += _umul128_upper64(x, _uint128_low(y)).cast[UInt128]()
     return r
 
 
