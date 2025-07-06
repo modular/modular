@@ -85,12 +85,12 @@ class Gemma3TextModel(Module):
             "Only single-device configuration is supported."
         )
 
-        # Use Llama3RotaryEmbedding for both cases (with and without scaling)
+        # Use scaling_params for both cases (with and without scaling)
         scaling_params = (
             Llama3RopeScalingParams(
                 factor=config.rope_scaling.factor,
-                low_freq_factor=1.0,  # No special scaling for low frequencies
-                high_freq_factor=1.0,  # No special scaling for high frequencies
+                low_freq_factor=1e38,  # This degenerates to linear scaling
+                high_freq_factor=1e38,
                 orig_max_position=config.max_position_embeddings,
             )
             if config.rope_scaling is not None
@@ -162,6 +162,7 @@ class Gemma3TextModel(Module):
                     dtype=config.dtype,
                     devices=config.devices,
                     qk_norm_eps=config.rms_norm_eps,
+                    local_window_size=config.sliding_window,
                 ),
                 mlp=MLP(
                     dtype=config.dtype,
