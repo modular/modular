@@ -24,7 +24,6 @@ modular_py_test(
     deps = [
         ":support",
         requirement("ruamel-yaml"),
-        requirement("torch"),
     ],
 )
 
