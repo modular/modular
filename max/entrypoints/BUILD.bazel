@@ -93,6 +93,7 @@ modular_py_binary(
         "//:linux_x86_64": {"MODULAR_NIXL_PLUGIN_DIR": "$(location //AsyncRT:plugin_ucx)/../"},
         "//conditions:default": {},
     }),
+    use_sitecustomize = True,
     deps = [
         ":_pipelines",
         requirement("click"),
