@@ -80,8 +80,8 @@ class InternVLInputs(ModelInputs):
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
 
-    # Vision inputs
-    pixel_values: Tensor | None = None
+    # Vision inputs.
+    pixel_values: list[Tensor] | None = None
     """Pixel values for vision inputs."""
 
     image_token_indices: list[Tensor] | None = None
@@ -96,7 +96,7 @@ class InternVLInputs(ModelInputs):
         input_row_offsets: list[Tensor],
         signal_buffers: list[Tensor],
         return_n_logits: Tensor,
-        pixel_values: Tensor | None = None,
+        pixel_values: list[Tensor] | None = None,
         kv_cache_inputs: KVCacheInputs | None = None,
         image_token_indices: list[Tensor] | None = None,
     ) -> None:
@@ -411,19 +411,21 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Expect pre-extracted patches from the tokenizer.
         # Use bfloat16 to match the tokenizer's output.
-        pixel_values_type = TensorType(
-            DType.bfloat16,
-            shape=[
-                "batch_size",
-                height_patches,
-                width_patches,
-                3,
-                patch_size,
-                patch_size,
-            ],
-            # Expect the input on device 0.
-            device=DeviceRef.GPU(),
-        )
+        pixel_values_types = [
+            TensorType(
+                DType.bfloat16,
+                shape=[
+                    "batch_size",
+                    height_patches,
+                    width_patches,
+                    3,
+                    patch_size,
+                    patch_size,
+                ],
+                device=DeviceRef.from_device(dev),
+            )
+            for dev in self.devices
+        ]
 
         # Create signal types for distributed communication
         signals = Signals(
@@ -433,7 +435,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Initialize graph with input types
         with Graph(
             "internvl_vision",
-            input_types=[pixel_values_type, *signals.input_types()],
+            input_types=[*pixel_values_types, *signals.input_types()],
         ) as graph:
             # Build vision model architecture.
             vision_model = InternVLVisionModel(config)
@@ -444,21 +446,18 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
                 strict=True,
             )
 
-            # Unpack inputs.
-            pixel_values, *signal_args = graph.inputs
+            # Unpack inputs (one per device).
+            pixel_values = [
+                inp.tensor for inp in graph.inputs[: len(self.devices)]
+            ]
 
-            # Extract signal buffers (one per device)
-            signal_buffers = [v.buffer for v in signal_args]
+            # Extract signal buffers (one per device).
+            signal_buffers = [
+                inp.buffer for inp in graph.inputs[len(self.devices) :]
+            ]
 
             # Execute vision model: pixel_values -> image_embeddings.
-            image_embeddings = vision_model(
-                [
-                    # Transfer pixel values to each device.
-                    pixel_values.tensor.to(DeviceRef.from_device(dev))
-                    for dev in self.devices
-                ],
-                signal_buffers,
-            )
+            image_embeddings = vision_model(pixel_values, signal_buffers)
 
             # Set graph outputs.
             graph.output(*image_embeddings)
@@ -617,7 +616,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
     def _prepare_vision_inputs(
         self, context_batch: Sequence[TextAndVisionContext]
-    ) -> Tensor | None:
+    ) -> list[Tensor] | None:
         """Batches up pixel_values for vision processing."""
         images = []
         for context in context_batch:
@@ -646,7 +645,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if final_images.dtype == np.uint16:
             tensor = tensor.view(DType.bfloat16, tensor.shape)
 
-        return tensor.to(self.devices[0])
+        return [tensor.to(dev) for dev in self.devices]
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]
@@ -682,14 +681,13 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             # Update running offset for next iteration.
             batch_offset += ctx.active_length
 
-        return (
-            [
-                Tensor.from_numpy(np.array(all_indices, dtype=np.int32)).to(dev)
-                for dev in self.devices
-            ]
-            if all_indices
-            else None
-        )
+        if not all_indices:
+            return None
+
+        np_indices = np.array(all_indices, dtype=np.int32)
+
+        # Create tensor and distribute to devices.
+        return [Tensor.from_numpy(np_indices).to(dev) for dev in self.devices]
 
     def _create_empty_image_embeddings(self) -> list[Tensor]:
         """Create empty image embeddings for text-only inputs."""
@@ -713,8 +711,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         assert model_inputs.kv_cache_inputs is not None, (
             "InternVL requires KV cache inputs"
         )
-
-        model_inputs = cast(InternVLInputs, model_inputs)
+        assert isinstance(model_inputs, InternVLInputs)
 
         # Process vision inputs if present.
         image_embeddings: list[Tensor]
@@ -725,7 +722,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
             # Execute vision model: pixel_values -> image_embeddings.
             vision_outputs = self.vision_model.execute(
-                model_inputs.pixel_values, *model_inputs.signal_buffers
+                *model_inputs.pixel_values, *model_inputs.signal_buffers
             )
             assert len(vision_outputs) == len(self.devices)
 
