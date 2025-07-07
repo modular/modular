@@ -80,6 +80,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
     create_tma_tile,
+    create_tma_tile_template,
 )
 from linalg.matmul_tile_scheduler import MatmulSchedule, TileScheduler
 from memory import bitcast, stack_allocation
@@ -368,12 +369,15 @@ fn warp_specialized_gemm_output[
     alias c_coord_type = __type_of(c_gmem_corner_coords)
     var warp_id = warp_group_thread_idx // WARP_SIZE
 
+    alias N = c_layout.shape[1].value()
+    alias is_N_multiple_of_16B = N * sizeof[c_type]() % 16 == 0
     alias WG_BM = c_smem_tile.layout.shape[0].value()
     alias WG_BN = c_smem_tile.layout.shape[1].value()
     alias TMA_BN = c_tma_op.layout.shape[1].value() if use_tma_store else WG_BN
     # fmt: off
     alias use_stmatrix = accum_type is DType.float32 \
             and c_type is DType.bfloat16 \
+            and is_N_multiple_of_16B \
             and c_frag_size % 8 == 0 \
             and wgmma_shape[1] % 16 == 0 \
             and BM % wgmma_shape[0] == 0 \
@@ -605,7 +609,8 @@ fn warp_specialized_gemm_output[
                     )
             named_barrier[num_consumer_threads,](10)
 
-    else:
+    # N dim doesn't need bound check.
+    elif N % BN == 0:
 
         @parameter
         if (
@@ -715,6 +720,97 @@ fn warp_specialized_gemm_output[
                         warp_tile.vectorize[1, 2](),
                         c_frag.vectorize[1, 2](),
                     )
+
+    else:
+        # Lane's coordinate is in 8x4 warp.
+        var lane_coord0 = UInt32(lane_id() // 4)
+        var lane_coord1 = UInt32(lane_id() % 4)
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                alias mma_id = n_mma * num_m_mmas + m_mma
+
+                # (m_mma, n_mma) is coordinates for a warp group's tile.
+                # A warp group is 4x1 warps.
+                var warp_tile_crd_idx = c_gmem_split.tile_with_offset[
+                    wgmma_shape[0] // 4, wgmma_shape[1]
+                ](m_mma * 4 + warp_id, n_mma, 0, 0)
+                var warp_tile = warp_tile_crd_idx[0]
+                var warp_tile_coords = rebind[c_coord_type](
+                    warp_tile_crd_idx[1]
+                )
+                warp_tile_coords = (
+                    warp_tile_coords
+                    + c_gmem_corner_coords
+                    + c_coord_type(wgmma_shape[0] * local_warp_group_idx, 0)
+                )
+
+                # A single fragment matrix is the 8x8 output shard by a warp.
+                alias num_n_frag_mat = wgmma_shape[1] // 8
+                alias num_m_frag_mat = wgmma_shape[0] // 4 // 8
+
+                @parameter
+                for n_frag in range(num_n_frag_mat):
+
+                    @parameter
+                    for m_frag in range(num_m_frag_mat):
+                        alias frag_mat_id = n_frag * num_m_frag_mat + m_frag
+
+                        var frag_mat_gmem = warp_tile.tile[8, 8](m_frag, n_frag)
+
+                        var bound0 = UInt32(
+                            frag_mat_gmem.runtime_layout.shape[0].value[0]
+                        )
+                        var bound1 = UInt32(
+                            frag_mat_gmem.runtime_layout.shape[1].value[0]
+                        )
+
+                        @parameter
+                        for i in range(2):
+                            if (
+                                lane_coord0 < bound0
+                                and lane_coord1 * 2 + i < bound1
+                            ):
+
+                                @parameter
+                                if elementwise_lambda_fn:
+                                    alias epilogue = elementwise_lambda_fn.value()
+
+                                    var frag_mat_coords = (
+                                        warp_tile_coords
+                                        + c_coord_type(
+                                            Int(m_frag * 8), Int(n_frag * 8)
+                                        )
+                                    )
+                                    var frag_coords = (
+                                        frag_mat_coords
+                                        + c_coord_type(
+                                            Int(lane_coord0),
+                                            Int(lane_coord1 * 2 + i),
+                                        )
+                                    )
+
+                                    epilogue[
+                                        alignment = alignof[Scalar[c_type]]()
+                                    ](
+                                        Index(frag_coords[0], frag_coords[1]),
+                                        c_reg_tile[
+                                            mma_id, frag_mat_id * 2 + i
+                                        ].cast[c_type](),
+                                    )
+
+                                else:
+                                    frag_mat_gmem[
+                                        Int(lane_coord0),
+                                        Int(lane_coord1 * 2 + i),
+                                    ] = rebind[frag_mat_gmem.element_type](
+                                        c_reg_tile[
+                                            mma_id, frag_mat_id * 2 + i
+                                        ].cast[c_type]()
+                                    )
 
 
 @always_inline
@@ -2164,13 +2260,23 @@ fn warp_specialize_gemm_with_multicasting[
         min(log2_floor(c_smem_tile[1] // 8), 3)
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
-    var c_tma_op = create_tma_tile[
+    var c_tma_op = create_tma_tile_template[
         c_type,
         2,
         c_smem_tile,
         swizzle_mode=c_swizzle,
         __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
-    ](ctx, c)
+    ]()
+
+    @parameter
+    if use_tma_store:
+        c_tma_op = create_tma_tile[
+            c_type,
+            2,
+            c_smem_tile,
+            swizzle_mode=c_swizzle,
+            __desc_layout = Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+        ](ctx, c)
 
     var lut_ptr = UnsafePointer[UInt32]()
 
@@ -2325,8 +2431,8 @@ fn warp_specialize_gemm_with_multicasting[
             __type_of(c_tma_op).desc_layout,
             __type_of(c_tma_op).layout,
             c_smem_layout,
-            c_swizzle=c_swizzle,
             cluster_shape=cluster_shape,
+            c_swizzle=c_swizzle,
             transpose_b=True,
             num_threads=num_threads,
             pipeline_stages = config.num_pipeline_stages,
@@ -2342,7 +2448,6 @@ fn warp_specialize_gemm_with_multicasting[
             a,
             b,
             c,
-            lut_ptr,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(num_threads),
             shared_mem_bytes=smem_size,

@@ -213,6 +213,10 @@ struct TMADescriptor:
     var data: StaticTuple[UInt8, 128]
 
     @always_inline
+    fn __init__(out self):
+        self.data = StaticTuple[UInt8, 128]()
+
+    @always_inline
     fn __copyinit__(out self, other: Self):
         self.data = other.data
 

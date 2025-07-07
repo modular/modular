@@ -145,7 +145,6 @@ fn matmul_dispatch_sm90[
         input_type_supported and \
         transpose_b and \
         has_static_NK and \
-        N_multiple_of_8 and \
         K_align_supported
     ):
         return DISPATCH_MISS
@@ -1463,8 +1462,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
 
     # `audio_decoder/test_residual_fsq.py::test_fsq` test fails if
     # we enable float32 here.
+    # Fallback path with vectorized output and cp.async.ca load if K
+    # is not multiple of 16B.
     @parameter
-    if a_type is DType.bfloat16 and BN != -1 and static_K % BK == 0:
+    if a_type is DType.bfloat16 and BN != -1:
         if m <= 128:
             alias default_bf16_config = MatmulConfig[
                 a_type,
@@ -1521,6 +1522,36 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 ctx,
             )
             return DISPATCH_HIT
+
+    # Fallback path, will use scalar 2B output and lots of OOB check.
+    @parameter
+    if a_type is DType.bfloat16:
+        alias BN = 256
+        alias default_bf16_config = MatmulConfig[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            mma_shape = Index(64, BN, mma_k),
+        ](
+            block_tile_shape=Index(128, BN, 64),
+            num_pipeline_stages=4,
+            num_consumer=2,
+            pdl_level=pdl_level,
+        )
+        warp_specialize_gemm_with_multicasting[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            config=default_bf16_config,
+            schedule = MatmulSchedule.NONE,
+        ](
+            rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
+            rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
+            rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
+            ctx,
+        )
+        return DISPATCH_HIT
 
     return DISPATCH_MISS
 

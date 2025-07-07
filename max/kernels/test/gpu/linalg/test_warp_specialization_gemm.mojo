@@ -89,13 +89,6 @@ def test_warp_specialize_gemm[
     # Initialize matmul operands
     random(a_host.tensor)
     random(b_host.tensor)
-    # at = a_host.tensor
-    # bt = b_host.tensor
-    # for i in range(M):
-    #     for j in range(K):
-    #         at[i, j] = i * K + j
-    #         bt[i, j] = i * K + j
-
     zero(c_host.tensor)
     zero(c_host_ref.tensor)
 
@@ -234,3 +227,11 @@ def main():
             DType.bfloat16,
             num_consumer=2,
         ](ctx, dynamic(90), static[256](), static[270]())
+
+        test_warp_specialize_gemm[
+            128,
+            DType.bfloat16,
+            DType.bfloat16,
+            DType.bfloat16,
+            num_consumer=2,
+        ](ctx, dynamic(213), static[1111](), static[128]())
