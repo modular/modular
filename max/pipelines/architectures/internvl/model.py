@@ -410,8 +410,9 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         width_patches = image_size // patch_size
 
         # Expect pre-extracted patches from the tokenizer.
+        # Use bfloat16 to match the tokenizer's output.
         pixel_values_type = TensorType(
-            DType.float32,
+            DType.bfloat16,
             shape=[
                 "batch_size",
                 height_patches,
@@ -638,8 +639,14 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Convert the list into a single NumPy array with shape
         # (total_patch_groups, height_patches, width_patches, channels, patch_size, patch_size).
         final_images = np.stack(images, axis=0)
+        tensor = Tensor.from_numpy(final_images)
 
-        return Tensor.from_numpy(final_images).to(self.devices[0])
+        # If uint16, interpret as bfloat16 to work around lack of NumPy
+        # bfloat16 support.
+        if final_images.dtype == np.uint16:
+            tensor = tensor.view(DType.bfloat16, tensor.shape)
+
+        return tensor.to(self.devices[0])
 
     def _batch_image_token_indices(
         self, context_batch: Sequence[TextAndVisionContext]

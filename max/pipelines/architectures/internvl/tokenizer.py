@@ -37,6 +37,42 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
+def float32_to_bfloat16_as_uint16(arr: np.ndarray) -> np.ndarray:
+    """Convert float32 array to bfloat16 representation stored as uint16.
+
+    BFloat16 is the upper 16 bits of float32 with proper rounding.
+    This allows us to halve memory usage while maintaining the exponent range.
+
+    Args:
+        arr: Float32 numpy array
+
+    Returns:
+        Uint16 array containing bfloat16 bit representation with same shape
+    """
+    assert arr.dtype == np.float32, f"Expected float32, got {arr.dtype}"
+
+    # Flatten for processing.
+    original_shape = arr.shape
+    flat = arr.ravel()
+
+    # View as uint32 for bit manipulation.
+    uint32_view = flat.view(np.uint32)
+
+    # Round to nearest even.
+    round_bit = (uint32_view >> 16) & 1
+    lower_half = uint32_view & 0xFFFF
+    round_up = (lower_half > 0x8000) | (
+        (lower_half == 0x8000) & (round_bit == 1)
+    )
+    uint32_rounded = uint32_view + (round_up.astype(np.uint32) * 0x8000)
+
+    # Extract upper 16 bits as bfloat16.
+    bfloat16_bits = (uint32_rounded >> 16).astype(np.uint16)
+
+    # Restore original shape.
+    return bfloat16_bits.reshape(original_shape)
+
+
 class InternVLImageConfig:
     """InternVL image-specific configuration values for processing and memory estimation."""
 
@@ -279,7 +315,10 @@ def preprocess_image_to_tensor(
 
     # Stack all images together - shape: (batch_size, num_patches, features)
     # batch_size = number of images (including thumbnail if applicable)
-    return np.stack(processed_images).astype(np.float32)
+    stacked = np.stack(processed_images).astype(np.float32)
+
+    # Convert to bfloat16 representation as uint16.
+    return float32_to_bfloat16_as_uint16(stacked)
 
 
 class InternVLProcessor:
@@ -428,6 +467,7 @@ class InternVLProcessor:
                 max_num=self.max_dynamic_patch,
                 patch_size=self.config.vision_config.patch_size,
             )
+            # Store the uint16 array (bfloat16 representation)
             raw_pixel_values.append(image_array)
 
         # Tokenize the processed text
