@@ -12,6 +12,7 @@
 ##===----------------------------------------------------------------------===##
 
 site_name: Modular Engineering Design Docs
+site_url: https://modular.github.io/modular/
 theme:
   name: material
 markdown_extensions:
