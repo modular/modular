@@ -758,6 +758,45 @@ alias Py_DecRef = ExternalFunction[
     fn (PyObjectPtr) -> None,
 ]
 
+# Exception Handling
+# - Printing and clearing
+alias PyErr_Clear = ExternalFunction[
+    "PyErr_Clear",
+    # void PyErr_Clear()
+    fn () -> None,
+]
+# - Raising exceptions
+alias PyErr_SetString = ExternalFunction[
+    "PyErr_SetString",
+    # void PyErr_SetString(PyObject *type, const char *message)
+    fn (PyObjectPtr, UnsafePointer[c_char, mut=False]) -> None,
+]
+alias PyErr_SetNone = ExternalFunction[
+    "PyErr_SetNone",
+    # void PyErr_SetNone(PyObject *type)
+    fn (PyObjectPtr) -> None,
+]
+# - Querying the error indicator
+alias PyErr_Occurred = ExternalFunction[
+    "PyErr_Occurred",
+    # PyObject *PyErr_Occurred()
+    fn () -> PyObjectPtr,
+]
+alias PyErr_GetRaisedException = ExternalFunction[
+    "PyErr_GetRaisedException",
+    # PyObject *PyErr_GetRaisedException()
+    fn () -> PyObjectPtr,
+]
+alias PyErr_Fetch = ExternalFunction[
+    "PyErr_Fetch",
+    # void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback)
+    fn (
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+        UnsafePointer[PyObjectPtr],
+    ) -> None,
+]
+
 # Initialization, Finalization, and Threads
 alias PyEval_SaveThread = ExternalFunction[
     "PyEval_SaveThread",
@@ -907,6 +946,13 @@ struct CPython(Copyable, Defaultable, Movable):
     # Reference Counting
     var _Py_IncRef: Py_IncRef.type
     var _Py_DecRef: Py_DecRef.type
+    # Exception Handling
+    var _PyErr_Clear: PyErr_Clear.type
+    var _PyErr_SetString: PyErr_SetString.type
+    var _PyErr_SetNone: PyErr_SetNone.type
+    var _PyErr_Occurred: PyErr_Occurred.type
+    var _PyErr_GetRaisedException: PyErr_GetRaisedException.type
+    var _PyErr_Fetch: PyErr_Fetch.type
     # Initialization, Finalization, and Threads
     var _PyEval_SaveThread: PyEval_SaveThread.type
     var _PyEval_RestoreThread: PyEval_RestoreThread.type
@@ -987,6 +1033,13 @@ struct CPython(Copyable, Defaultable, Movable):
 
         self._Py_IncRef = Py_IncRef.load(self.lib)
         self._Py_DecRef = Py_DecRef.load(self.lib)
+
+        self._PyErr_Clear = PyErr_Clear.load(self.lib)
+        self._PyErr_SetString = PyErr_SetString.load(self.lib)
+        self._PyErr_SetNone = PyErr_SetNone.load(self.lib)
+        self._PyErr_Occurred = PyErr_Occurred.load(self.lib)
+        self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(self.lib)
+        self._PyErr_Fetch = PyErr_Fetch.load(self.lib)
 
         self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
         self._PyEval_RestoreThread = PyEval_RestoreThread.load(self.lib)
@@ -1169,6 +1222,109 @@ struct CPython(Copyable, Defaultable, Movable):
         #   field.
         # TODO(MSTDL-950): Should use something like `addr_of!`
         return ptr.unsized_obj_ptr.bitcast[Py_ssize_t]()[]
+
+    # ===-------------------------------------------------------------------===#
+    # Exception Handling
+    # ref: https://docs.python.org/3/c-api/exceptions.html
+    # ===-------------------------------------------------------------------===#
+
+    # ===-------------------------------------------------------------------===#
+    # - Printing and clearing
+    # ===-------------------------------------------------------------------===#
+
+    fn PyErr_Clear(self):
+        """Clear the error indicator. If the error indicator is not set, there
+        is no effect.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Clear
+        """
+        self._PyErr_Clear()
+
+    # ===-------------------------------------------------------------------===#
+    # - Raising exceptions
+    # ===-------------------------------------------------------------------===#
+
+    fn PyErr_SetString(
+        self,
+        type: PyObjectPtr,
+        message: UnsafePointer[c_char],
+    ):
+        """This is the most common way to set the error indicator. The first
+        argument specifies the exception type; it is normally one of the
+        standard exceptions, e.g. `PyExc_RuntimeError`. You need not create a
+        new strong reference to it (e.g. with `Py_INCREF()`). The second
+        argument is an error message; it is decoded from `'utf-8'`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
+        """
+        self._PyErr_SetString(type, message)
+
+    fn PyErr_SetNone(self, type: PyObjectPtr):
+        """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetNone
+        """
+        self._PyErr_SetNone(type)
+
+    # ===-------------------------------------------------------------------===#
+    # - Querying the error indicator
+    # ===-------------------------------------------------------------------===#
+
+    # TODO: fix the return type
+    fn PyErr_Occurred(self) -> Bool:
+        """Test whether the error indicator is set. If set, return the exception
+        type (the first argument to the last call to one of the `PyErr_Set*`
+        functions or to `PyErr_Restore()`). If not set, return `NULL`.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred
+        """
+        return Bool(self._PyErr_Occurred())
+
+    fn PyErr_GetRaisedException(self) -> PyObjectPtr:
+        """Return the exception currently being raised, clearing the error
+        indicator at the same time. Return `NULL` if the error indicator is not
+        set.
+
+        Return value: New reference. Part of the Stable ABI since version 3.12.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException
+        """
+        var r = self._PyErr_GetRaisedException()
+        self.log(
+            r, " NEWREF PyErr_GetRaisedException, refcnt:", self._Py_REFCNT(r)
+        )
+        self._inc_total_rc()
+        return r
+
+    # TODO: fix the signature to take the type, value, and traceback as args
+    fn PyErr_Fetch(self) -> PyObjectPtr:
+        """Retrieve the error indicator into three variables whose addresses
+        are passed.
+
+        Deprecated since version 3.12.
+
+        References:
+        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Fetch
+        """
+        var type = PyObjectPtr()
+        var value = PyObjectPtr()
+        var traceback = PyObjectPtr()
+
+        self._PyErr_Fetch(
+            UnsafePointer(to=type),
+            UnsafePointer(to=value),
+            UnsafePointer(to=traceback),
+        )
+
+        var r = value
+        self.log(r, " NEWREF PyErr_Fetch, refcnt:", self._Py_REFCNT(r))
+        self._inc_total_rc()
+        return r
 
     # ===-------------------------------------------------------------------===#
     # Initialization, Finalization, and Threads
@@ -2167,104 +2323,6 @@ struct CPython(Copyable, Defaultable, Movable):
         return StringSlice[__origin_of(py_object.unsized_obj_ptr.origin)](
             ptr=ptr, length=length
         )
-
-    # ===-------------------------------------------------------------------===#
-    # Python Error operations
-    # ===-------------------------------------------------------------------===#
-
-    fn PyErr_Clear(self):
-        """Clear the error indicator. If the error indicator is not set, there
-        is no effect.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Clear
-        """
-        # void PyErr_Clear()
-        self.lib.call["PyErr_Clear"]()
-
-    # TODO: fix the return type
-    fn PyErr_Occurred(self) -> Bool:
-        """Test whether the error indicator is set. If set, return the exception
-        type (the first argument to the last call to one of the `PyErr_Set*`
-        functions or to `PyErr_Restore()`). If not set, return NULL.
-
-        Return value: Borrowed reference.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Occurred
-        """
-        # PyObject *PyErr_Occurred()
-        return Bool(self.lib.call["PyErr_Occurred", PyObjectPtr]())
-
-    # TODO: fix the type
-    fn PyErr_Fetch(self) -> PyObjectPtr:
-        """Retrieve the error indicator into three variables whose addresses
-        are passed.
-
-        Deprecated since version 3.12.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_Fetch
-        """
-        var type = PyObjectPtr()
-        var value = PyObjectPtr()
-        var traceback = PyObjectPtr()
-
-        # void PyErr_Fetch(PyObject **ptype, PyObject **pvalue, PyObject **ptraceback)
-        self.lib.call["PyErr_Fetch"](
-            UnsafePointer(to=type),
-            UnsafePointer(to=value),
-            UnsafePointer(to=traceback),
-        )
-
-        var r = value
-        self.log(r, " NEWREF PyErr_Fetch, refcnt:", self._Py_REFCNT(r))
-        self._inc_total_rc()
-        return r
-
-    fn PyErr_GetRaisedException(self) -> PyObjectPtr:
-        """Return the exception currently being raised, clearing the error
-        indicator at the same time. Return `NULL` if the error indicator is not
-        set.
-
-        Return value: New reference. Part of the Stable ABI since version 3.12.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_GetRaisedException
-        """
-        # PyObject *PyErr_GetRaisedException(void)
-        var r = self.lib.call["PyErr_GetRaisedException", PyObjectPtr]()
-        self.log(
-            r, " NEWREF PyErr_GetRaisedException, refcnt:", self._Py_REFCNT(r)
-        )
-        self._inc_total_rc()
-        return r
-
-    fn PyErr_SetNone(self, type: PyObjectPtr):
-        """This is a shorthand for `PyErr_SetObject(type, Py_None)`.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetNone
-        """
-        # void PyErr_SetNone(PyObject *type)
-        self.lib.call["PyErr_SetNone"](type)
-
-    fn PyErr_SetString(
-        self,
-        type: PyObjectPtr,
-        message: UnsafePointer[c_char],
-    ):
-        """This is the most common way to set the error indicator. The first
-        argument specifies the exception type; it is normally one of the
-        standard exceptions, e.g. `PyExc_RuntimeError`. You need not create a
-        new strong reference to it (e.g. with `Py_INCREF()`). The second
-        argument is an error message; it is decoded from `'utf-8'`.
-
-        References:
-        - https://docs.python.org/3/c-api/exceptions.html#c.PyErr_SetString
-        """
-        # void PyErr_SetString(PyObject *type, const char *message)
-        self.lib.call["PyErr_SetString"](type, message)
 
     # ===-------------------------------------------------------------------===#
     # Python Error types
