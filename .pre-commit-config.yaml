@@ -28,7 +28,7 @@ repos:
         stages: [pre-commit]
       - id: check-license
         name: check-license
-        entry: mojo mojo/stdlib/scripts/check_licenses.mojo
+        entry: mojo bazel/lint/check_licenses.mojo
         language: system
         files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
         stages: [pre-commit]
