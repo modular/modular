@@ -4,13 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+import concurrent.futures
+import threading
+from unittest import mock
 
 import numpy as np
 import pytest
 import torch
 from max import mlir
 from max.driver import accelerator_count
-from max.torch import CustomOpLibrary
+from max.dtype import DType
+from max.graph import TensorType, TensorValue, ops
+from max.torch import CustomOpLibrary, graph_op
+from max.torch.torch import max_device
 
 # Select device based on hardware availability
 device = torch.device(
@@ -69,6 +77,75 @@ def test_grayscale(op_library: CustomOpLibrary, backend: str) -> None:
         rtol=1e-4,
         atol=1,
     )
+
+
+@pytest.mark.parametrize("backend", ["eager", "inductor"])
+def test_graph_ops__grayscale(backend: str) -> None:
+    @graph_op
+    def max_grayscale(pic: TensorValue):
+        scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
+        grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)
+        # max reductions don't remove the dimension, need to squeeze
+        return ops.squeeze(grayscaled, axis=-1)
+
+    @torch.compile(backend=backend)
+    def grayscale(pic: torch.Tensor):
+        output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
+        max_grayscale(output, pic)  # Call as destination-passing style
+        return output
+
+    img = (torch.rand(64, 64, 3, device=device) * 255).to(torch.uint8)
+    result = grayscale(img)
+
+    # For some reason we differ by 1 in a small number of locations.
+    np.testing.assert_allclose(
+        result.cpu(),
+        torch_grayscale(img).cpu(),
+        equal_nan=True,
+        rtol=1e-4,
+        atol=1,
+    )
+
+
+@pytest.mark.parametrize("backend", ["eager", "inductor"])
+def test_graph_ops__specify_input_type(backend: str) -> None:
+    # For the test, only support square inputs
+    input_type = TensorType(
+        DType.uint8, ["x", "x", 3], device=max_device(device)
+    )
+    output_type = TensorType(DType.uint8, ["x", "x"], device=max_device(device))
+
+    @graph_op(input_types=[input_type], output_types=[output_type])
+    def max_grayscale(pic: TensorValue):
+        scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
+        grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)
+        # max reductions don't remove the dimension, need to squeeze
+        return ops.squeeze(grayscaled, axis=-1)
+
+    @torch.compile(backend=backend)
+    def grayscale(pic: torch.Tensor):
+        output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
+        max_grayscale(output, pic)  # Call as destination-passing style
+        return output
+
+    def test_tensor(*shape):
+        return (torch.rand(*shape, device=device) * 255).to(torch.uint8)
+
+    square_input = test_tensor(64, 64, 3)
+    another_square_input = test_tensor(64, 64, 3)
+    non_square_input = (torch.rand(16, 64, 3, device=device) * 255).to(
+        torch.uint8
+    )
+    input_with_alpha = (torch.rand(64, 64, 4, device=device) * 255).to(
+        torch.uint8
+    )
+
+    _ = grayscale(square_input)
+    _ = grayscale(another_square_input)
+    with pytest.raises(Exception):
+        grayscale(non_square_input)
+    with pytest.raises(Exception):
+        grayscale(input_with_alpha)
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
@@ -218,6 +295,36 @@ def test_scalar_add(op_library: CustomOpLibrary, backend: str) -> None:
 
     expected_int = a_int + b_int
     assert result_int.item() == expected_int.item()
+
+
+def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
+    def grayscale(pic):
+        result = pic.new_empty(pic.shape[:-1])
+        op_library.grayscale(result, pic)
+        return result
+
+    img = (torch.rand(64, 64, 3, device=device) * 255).to(torch.uint8)
+
+    load_count = 0
+    event = threading.Event()
+    real_load = op_library._session.load
+
+    def load(graph):
+        nonlocal load_count
+        load_count += 1
+        event.wait()
+        return real_load(graph)
+
+    with mock.patch.object(op_library._session, "load", load):
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            f1 = pool.submit(lambda: grayscale(img))
+            f2 = pool.submit(lambda: grayscale(img))
+
+            assert f1.running()
+            assert f2.running()
+            event.set()
+        torch.testing.assert_close(f1.result(), f2.result())
+        assert load_count == 1  # only one thread should have compiled the graph
 
 
 # This just gut-checks that we run other tests without an active MLIR context

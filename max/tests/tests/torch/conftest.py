@@ -34,7 +34,8 @@ def kernel_library() -> Generator[KernelLibrary]:
     yield KernelLibrary(mlir.Context(), [path])
 
 
-@pytest.fixture(scope="module")
+# Reset op cache between test functions
+@pytest.fixture(scope="function")
 def op_library(kernel_library: KernelLibrary) -> Generator[CustomOpLibrary]:
     """Set up the kernel library for the current system."""
     yield CustomOpLibrary(kernel_library)
