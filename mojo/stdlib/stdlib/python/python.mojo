@@ -119,7 +119,8 @@ struct Python(Defaultable):
             raised an exception.
         """
         var cpython = self.cpython()
-        return cpython.PyRun_SimpleString(code^)
+        # return 0 if the code executed successfully, -1 if it raised an exception.
+        return cpython.PyRun_SimpleString(code^) == 0
 
     @staticmethod
     fn evaluate(
@@ -181,7 +182,7 @@ struct Python(Defaultable):
             # all the globals/locals to be discarded. See above re: why the same
             # dictionary is being used here for both globals and locals.
             var result = cpython.PyRun_String(
-                expr^, dict_obj.py_object, dict_obj.py_object, Py_eval_input
+                expr^, Py_eval_input, dict_obj.py_object, dict_obj.py_object
             )
             if not result:
                 raise cpython.get_error()

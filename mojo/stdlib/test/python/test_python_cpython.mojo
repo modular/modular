@@ -14,7 +14,7 @@
 # RUN: %mojo %s
 
 from python import Python, PythonObject
-from python._cpython import Py_ssize_t, PyMethodDef, PyObjectPtr
+from python._cpython import Py_eval_input, Py_ssize_t, PyMethodDef, PyObjectPtr
 from testing import (
     assert_false,
     assert_equal,
@@ -22,6 +22,20 @@ from testing import (
     assert_raises,
     assert_true,
 )
+
+
+def test_very_high_level_api(python: Python):
+    var cpy = python.cpython()
+
+    assert_equal(cpy.PyRun_SimpleString("None"), 0)
+
+    var d = cpy.PyDict_New()
+    assert_true(cpy.PyRun_String("42", Py_eval_input, d, d))
+
+    var co = cpy.Py_CompileString("5", "test", Py_eval_input)
+    assert_true(co)
+
+    assert_true(cpy.PyEval_EvalCode(co, d, d))
 
 
 def test_Py_IncRef_DecRef(mut python: Python):
@@ -189,6 +203,9 @@ def test_PyCapsule(mut python: Python):
 def main():
     # initializing Python instance calls init_python
     var python = Python()
+
+    # The Very High Level Layer
+    test_very_high_level_api(python)
 
     # Reference Counting
     test_Py_IncRef_DecRef(python)
