@@ -1715,6 +1715,9 @@ struct OverloadedKwArgs:
     fn __getitem__(self, *, idx2: Int) -> Int:
         return self.val * 2
 
+    fn __getitem__(self, *, idx3: Int) -> Bool:
+        return self.val > 0
+
     fn __setitem__(mut self, idx: Int, val: Int):
         self.val = val
 

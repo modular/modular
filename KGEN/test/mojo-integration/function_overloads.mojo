@@ -40,6 +40,9 @@ struct OverloadedIndexers:
     fn __getitem__(self, *, idx2: Int) -> Int:
         return self.vals[idx2 * 2]
 
+    fn __getitem__(self, *, idx3: Int) -> Float32:
+        return Float32(self.vals[idx3 * 3])
+
     fn __setitem__(mut self, idx: Int, val: Int):
         self.vals[idx] = val
 
@@ -51,6 +54,7 @@ def test_indexer_overload():
     var x = OverloadedIndexers()
     assert_equal(x[1], 1)
     assert_equal(x[idx2=1], 2)
+    assert_equal(x[idx3=0], Float32(0))
 
     x[1] = 42
     x[idx2=1] = 84

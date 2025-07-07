@@ -1274,13 +1274,14 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       }
     }
 
-    auto existingResTy =
-        ASTType(existingFunc.getFuncTypeGenerator().getUserResultType());
-
-    if (!resTy.isEqualCanon(existingResTy))
-      errorMessage = " cannot overload on return type only";
-    else if (!overloadedKeywordArgName)
-      errorMessage = " with identical signature";
+    if (!overloadedKeywordArgName) {
+      auto existingResTy =
+          ASTType(existingFunc.getFuncTypeGenerator().getUserResultType());
+      if (!resTy.isEqualCanon(existingResTy))
+        errorMessage = " cannot overload on return type only";
+      else
+        errorMessage = " with identical signature";
+    }
 
     // On redefinition this is an overload of the same name.
     if (errorMessage) {

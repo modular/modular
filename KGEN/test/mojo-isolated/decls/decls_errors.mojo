@@ -367,6 +367,17 @@ struct TestOverloading:
     # expected-error @+1 {{no matching function in call}}
     overloadIntFloat32(a, b)
 
+@fieldwise_init
+struct OverloadedKwArgs:
+    var vals: List[Int]
+
+    # expected-note @below {{previous definition here}}
+    fn __getitem__(self, idx: Int) -> Int:
+        return self.vals[idx]
+
+    # expected-error @below {{redefinition of function '__getitem__' cannot overload on return type only}}
+    fn __getitem__(self, *, idx: Int) -> Bool:
+        return self.vals[idx] > 0
 
 # Test that static methods don't get dispatched if their first arg is self type.
 struct StructWithStaticMethod:
