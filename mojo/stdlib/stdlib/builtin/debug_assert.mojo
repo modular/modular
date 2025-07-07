@@ -19,7 +19,7 @@ These are Mojo built-ins, so you don't need to import them.
 from os import abort
 from sys import is_amd_gpu, is_gpu, is_nvidia_gpu
 from sys._build import is_debug_build
-from sys.intrinsics import block_idx, thread_idx
+from sys.intrinsics import block_idx, thread_idx, assume
 from sys.param_env import env_get_string
 from utils.write import _WriteBufferHeap
 from builtin.io import _printf
@@ -173,6 +173,7 @@ fn debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
+    _use_compiler_assume: Bool = False,
 ](cond: Bool, *messages: *Ts):
     """Asserts that the condition is true at run time.
 
@@ -249,6 +250,9 @@ fn debug_assert[
             - "safe": Turned on by default.
         Ts: The element types for the message arguments.
         cpu_only: If true, only run the assert on CPU.
+        _use_compiler_assume: If true, assume the condition is true for repeated checks,
+            to help the compiler optimize (default False).
+
 
     Args:
         cond: The bool value to assert.
@@ -277,11 +281,15 @@ fn debug_assert[
             message.data[message.pos] = 0
             _debug_assert_msg(message.data, __call_location())
 
+    elif _use_compiler_assume:
+        assume(cond)
+
 
 @always_inline
 fn debug_assert[
     assert_mode: StaticString = "none",
     cpu_only: Bool = False,
+    _use_compiler_assume: Bool = False,
 ](cond: Bool, message: StringLiteral):
     """Asserts that the condition is true at run time.
 
@@ -357,6 +365,8 @@ fn debug_assert[
             - default ("none"): Turned on when compiled with `-D ASSERT=all`.
             - "safe": Turned on by default.
         cpu_only: If true, only run the assert on CPU.
+        _use_compiler_assume: If true, assume the condition is true for repeated checks,
+            to help the compiler optimize (default False).
 
     Args:
         cond: The bool value to assert.
@@ -371,6 +381,8 @@ fn debug_assert[
         _debug_assert_msg(
             message.unsafe_cstr_ptr().bitcast[Byte](), __call_location()
         )
+    elif _use_compiler_assume:
+        assume(cond)
 
 
 @no_inline
