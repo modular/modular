@@ -32,6 +32,9 @@ class raw_xxhash_stream : public llvm::raw_ostream {
 public:
   raw_xxhash_stream();
 
+  raw_xxhash_stream(raw_xxhash_stream &&other)
+      : State(std::move(other.State)) {}
+
   std::array<uint8_t, 16> hash();
   std::string hashString();
 
@@ -43,7 +46,12 @@ public:
 ///
 /// This is useful for deduping operations in a stable way, without relying on
 /// in-memory values (e.g. pointers).
-FailureOr<std::string> getBytecodeHash(mlir::Operation *op);
+using ReplacementFunc = llvm::function_ref<mlir::Attribute(mlir::Attribute)>;
+FailureOr<std::string> getBytecodeHash(mlir::Operation *op,
+                                       ReplacementFunc replace = nullptr);
+
+LogicalResult writeBytecode(mlir::Operation *op, llvm::raw_ostream &os,
+                            ReplacementFunc replace = nullptr);
 
 /// This function computes the bytecode hash similar to getBytecodeHash, but
 /// does so by hashing each individual operation in the module in parallel
