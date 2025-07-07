@@ -1,8 +1,16 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
 """Shared memory utilities for zero-copy NumPy array transfer."""
 
 from __future__ import annotations
@@ -15,9 +23,8 @@ from multiprocessing import shared_memory
 from typing import Any
 
 import numpy as np
-import numpy.typing as npt
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("max.serve")
 
 
 def can_allocate(size: int) -> bool:
@@ -29,8 +36,9 @@ def can_allocate(size: int) -> bool:
     Returns:
         True if allocation is likely to succeed
     """
+    shm_dir = os.getenv("MODULAR_MAX_SHM_DIR", "/dev/shm")
     try:
-        stat = os.statvfs(path="/dev/shm")
+        stat = os.statvfs(shm_dir)
         available = stat.f_bsize * stat.f_bavail
     except OSError:
         # If we can't check capacity, assume we can allocate.
@@ -48,13 +56,13 @@ class SharedMemoryArray:
     array.
     """
 
-    def __init__(self, name: str, shape: tuple[int, ...], dtype: str) -> None:
+    def __init__(self, name: str, shape: tuple[int, ...], dtype: str):
         self.name = name
         self.shape = shape
         self.dtype = dtype
 
 
-def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
+def ndarray_to_shared_memory(arr: np.ndarray) -> SharedMemoryArray | None:
     """Convert a NumPy array to shared memory and return a reference descriptor.
 
     Includes capacity checking to prevent exhausting /dev/shm.
@@ -66,7 +74,7 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         SharedMemoryArray if successful, None if shared memory is full or creation fails
     """
     # Check shared memory capacity.
-    if not can_allocate(arr.nbytes) or arr.nbytes == 0:
+    if not can_allocate(arr.nbytes):
         return None
 
     try:
@@ -79,15 +87,8 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         )
 
         # Copy array data into shared memory.
-        shm_arr: npt.NDArray[Any] = np.ndarray(
-            arr.shape, arr.dtype, buffer=shm.buf
-        )
-
-        # Handle 0-dimensional arrays (scalars) differently
-        if arr.ndim == 0:
-            shm_arr[()] = arr
-        else:
-            shm_arr[:] = arr
+        shm_arr: np.ndarray = np.ndarray(arr.shape, arr.dtype, buffer=shm.buf)
+        shm_arr[:] = arr
 
         # Close our handle but don't unlink - let the consumer handle cleanup.
         shm.close()
@@ -101,7 +102,7 @@ def ndarray_to_shared_memory(arr: npt.NDArray[Any]) -> SharedMemoryArray | None:
         return None
 
 
-def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
+def open_shm_array(meta: dict[str, Any]) -> np.ndarray:
     """Open a shared memory array.
 
     Args:
@@ -113,7 +114,7 @@ def open_shm_array(meta: dict[str, Any]) -> npt.NDArray[Any]:
     shm = shared_memory.SharedMemory(name=meta["name"])
 
     # Create numpy array view into shared memory
-    arr: npt.NDArray[Any] = np.ndarray(
+    arr: np.ndarray = np.ndarray(
         shape=meta["shape"], dtype=np.dtype(meta["dtype"]), buffer=shm.buf
     )
 

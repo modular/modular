@@ -7,23 +7,21 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 from max._core.dtype import DType as DType
 
 
-def _missing(value: Any) -> DType | None:
+def _missing(value) -> DType | None:
     if isinstance(value, str):
         return _MLIR_TO_DTYPE[value]
     return None
 
 
-def _repr(self: DType) -> str:
+def _repr(self) -> str:
     return self.name
 
 
-def _mlir(self: DType) -> str:
+def _mlir(self) -> str:
     return _DTYPE_TO_MLIR[self]
 
 
@@ -62,7 +60,7 @@ _NUMPY_TO_DTYPE = {
 }
 
 
-def _to_numpy(self: DType) -> np.dtype[Any]:
+def _to_numpy(self) -> np.dtype:
     """Converts this ``DType`` to the corresponding NumPy dtype.
 
     Returns:
@@ -77,7 +75,7 @@ def _to_numpy(self: DType) -> np.dtype[Any]:
     raise ValueError(f"unsupported DType to convert to NumPy: {self}")
 
 
-def _from_numpy(dtype: np.dtype[Any]) -> DType:
+def _from_numpy(dtype: np.dtype) -> DType:
     """Converts a NumPy dtype to the corresponding DType.
 
     Args:
@@ -116,6 +114,7 @@ _DTYPE_TO_MLIR = {
     DType.float32: "f32",
     DType.float64: "f64",
     DType.bfloat16: "bf16",
+    DType._unknown: "invalid",
 }
 
 _MLIR_TO_DTYPE = {v: k for k, v in _DTYPE_TO_MLIR.items()}
@@ -146,31 +145,23 @@ try:
 
     _TORCH_TO_DTYPE = {v: k for k, v in _DTYPE_TO_TORCH.items()}
 
-    def _to_torch(dtype: DType, _error: Exception | None = None) -> torch.dtype:
+    def _to_torch(dtype: DType) -> torch.dtype:
         return _DTYPE_TO_TORCH[dtype]
 
-    def _from_torch(
-        dtype: torch.dtype, _error: Exception | None = None
-    ) -> DType:
+    def _from_torch(dtype: torch.dtype) -> DType:
         return _TORCH_TO_DTYPE[dtype]
 
-except Exception as e:
-    # Continue with torch disabled if there's any issue with the torch
-    # installation.
+except ImportError as e:
 
-    def _to_torch(dtype: DType, _error: Exception | None = e) -> torch.dtype:
-        raise RuntimeError(
-            f"torch integration unavailable: {_error}"
-        ) from _error
+    def _to_torch(dtype: DType) -> torch.dtype:
+        raise e
 
-    def _from_torch(dtype: torch.dtype, _error: Exception | None = e) -> DType:
-        raise RuntimeError(
-            f"torch integration unavailable: {_error}"
-        ) from _error
+    def _from_torch(dtype: torch.dtype) -> DType:
+        raise e
 
 
 DType._missing_ = _missing  # type: ignore[method-assign]
-DType.__repr__ = _repr  # type: ignore[method-assign, assignment]
+DType.__repr__ = _repr  # type: ignore[method-assign]
 DType._mlir = property(_mlir)  # type: ignore[assignment]
 DType.to_numpy = _to_numpy  # type: ignore[method-assign]
 DType.from_numpy = _from_numpy  # type: ignore[method-assign]

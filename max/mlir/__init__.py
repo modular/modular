@@ -11,7 +11,7 @@ from .._mlir._mlir_libs._mlir.ir import *
 def site_initialize() -> None:
     from max._core import graph  # type: ignore
 
-    from .._mlir._mlir_libs import get_dialect_registry  # type: ignore
+    from .._mlir._mlir_libs import get_dialect_registry
 
     graph.load_modular_dialects(get_dialect_registry())
 

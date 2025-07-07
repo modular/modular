@@ -7,39 +7,45 @@
 
 from __future__ import annotations
 
-import faulthandler
-import os
-import signal
-import sys
-import threading
 from collections.abc import Iterable, Mapping
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, Union, cast
 
 import numpy as np
+import numpy.typing as npt
+from max._core.engine import FrameworkFormat as _FrameworkFormat
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import MojoValue, PrintStyle
+from max._core.engine import TensorData as _TensorData
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import Device, DLPackArray, Tensor
-from max.profiler import traced
-from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
+from max._core_types.driver import DLPackArray
+from max.driver import CPU, Device, Tensor
+from max.dtype import DType
+from max.profiler import Tracer, traced
+from max.support.paths import (
+    _build_mojo_source_package,
+    is_mojo_source_package_path,
+)
 
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 
 # implements the protocol
 
-InputShape = list[int | str | None] | None
-CustomExtensionType = str | Path | Any
-CustomExtensionsType = list[CustomExtensionType] | CustomExtensionType
+DLPackCompatible = Union[DLPackArray, npt.NDArray]
+InputShape = Optional[list[Union[int, str, None]]]
+CustomExtensionType = Union[str, Path, Any]
+CustomExtensionsType = Union[list[CustomExtensionType], CustomExtensionType]
 
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
 ScalarType = (int, float, bool, np.generic)
-InputType = DLPackArray | Tensor | MojoValue | int | float | bool | np.generic
+InputType = Union[
+    DLPackCompatible, Tensor, MojoValue, int, float, bool, np.generic
+]
 
 
 class GPUProfilingMode(str, Enum):
@@ -72,10 +78,88 @@ def _raise_if_not_contiguous(x: InputType) -> None:
         )
 
 
+def _map_execute_kwarg(
+    input_value: Any, expected_dtype: DType, keep_referenced: dict[int, Any]
+) -> Any:
+    def _wrap_tensor(value: Any) -> _TensorData:
+        # NOTE: this only works if the tensor/array is contiguous.
+        if _is_torch_tensor(value):
+            keep_referenced[value.data_ptr()] = value
+            return _TensorData(
+                value.data_ptr(),
+                list(value.shape),
+                DType[str(value.dtype).removeprefix("torch.")],
+            )
+        if isinstance(value, np.ndarray):
+            keep_referenced[value.ctypes.data] = value
+            return _TensorData(
+                value.ctypes.data, list(value.shape), DType[str(value.dtype)]
+            )
+        # Just pass the value through if it's not a tensor/array.
+        return value
+
+    if expected_dtype == DType._unknown:
+        # This currently indicates that the value expected by the model
+        # internally is not a `M::Tensor`. We recursively try to wrap torch
+        # tensors and np arrays, and pass other values as-is, since no metadata
+        # is available to check the runtime values against.
+        # TODO(MSDK-43): Introduce input specs for non-tensor inputs.
+
+        def wrap_nested(value: Any) -> Any:
+            """Traverse a potentially nested python data structure (e.g. lists,
+            dictionaries, and tuples) containing `torch.tensor` and
+            `numpy.ndarray`s leaf nodes and wrap them.
+            """
+            if isinstance(value, list):
+                return [wrap_nested(v) for v in value]
+            if isinstance(value, dict):
+                return {
+                    wrap_nested(k): wrap_nested(v) for k, v in value.items()
+                }
+            if isinstance(value, tuple):
+                return tuple(wrap_nested(v) for v in value)
+            return _wrap_tensor(value)
+
+        return wrap_nested(input_value)
+
+    if not isinstance(input_value, np.ndarray) and not _is_torch_tensor(
+        input_value
+    ):
+        # Indicates that the model expects an ndarray (internally `M::Tensor`),
+        # but if the input isn't already an ndarray, then we can attempt to
+        # interpret it as a scalar primitive that needs to be converted to an
+        # ndarray.
+        return _wrap_tensor(np.array(input_value))
+    return _wrap_tensor(input_value)
+
+
 @traced
 def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
+    tracer = Tracer()
+
+    # Check if any inputs expect opaque types (DType._unknown)
+    has_opaque_inputs = any(
+        spec.dtype == DType._unknown for spec in self.input_metadata
+    )
+
+    if has_opaque_inputs:
+        # Use the kwargs-based execution path which can handle opaque types
+        kwargs = {
+            spec.name: arg for spec, arg in zip(self.input_metadata, args)
+        }
+        results_dict = self._execute(**kwargs)
+        # Convert dict results to list in the order of output metadata
+        opaque_results: list[Tensor | MojoValue] = []
+        for spec in self.output_metadata:
+            result = results_dict[spec.name]
+            # Ensure tensor results are wrapped as Tensor objects
+            if isinstance(result, np.ndarray):
+                result = Tensor.from_numpy(result)
+            opaque_results.append(result)
+        return opaque_results
+
     # Original tensor-only execution path
-    input_impls: list[Tensor | MojoValue] = []
+    input_impls: list[Union[Tensor, MojoValue]] = []
 
     for idx, arg in enumerate(args):
         _raise_if_not_contiguous(arg)
@@ -102,7 +186,19 @@ def _Model_execute(self: Model, *args: InputType) -> list[Tensor | MojoValue]:
             )
 
         input_impls.append(tensor)
-    return self._execute_device_tensors(input_impls)
+    results = self._execute_device_tensors(input_impls)
+
+    processed_results: list[Tensor | MojoValue] = []
+    for idx, result in enumerate(results):
+        tracer.push(f"process_result_{idx}")
+        # If the output is a MojoValue, we return it directly.
+        if not isinstance(result, Tensor):
+            processed_results.append(result)
+            tracer.pop()
+            continue
+        processed_results.append(result)
+        tracer.pop()
+    return processed_results
 
 
 def _Model_call(
@@ -131,7 +227,7 @@ Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
 
 
-def _TensorSpec_str(self: TensorSpec) -> str:
+def _TensorSpec_str(self) -> str:
     if self.shape is not None:
         mlir_shape = [
             str(dim) if dim is not None else "-1" for dim in self.shape
@@ -142,7 +238,7 @@ def _TensorSpec_str(self: TensorSpec) -> str:
         return f"None x {self.dtype.name}"
 
 
-def _TensorSpec_repr(self: TensorSpec) -> str:
+def _TensorSpec_repr(self) -> str:
     return (
         f"TensorSpec(shape={self.shape}, dtype={self.dtype}, name={self.name})"
     )
@@ -225,7 +321,7 @@ class PdlLevel(IntEnum):
 
 
 class AssertLevel(str, Enum):
-    """The AssertLevel specifies the assert level used by the Mojo Ops."""
+    """Internal use."""
 
     NONE = "none"
     WARN = "warn"
@@ -234,10 +330,9 @@ class AssertLevel(str, Enum):
 
 
 class LogLevel(str, Enum):
-    """The LogLevel specifies the log level used by the Mojo Ops."""
+    """Internal use."""
 
     NOTSET = "notset"
-    TRACE = "trace"
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
@@ -253,24 +348,21 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=[CPU()])
+        session = engine.InferenceSession()
         model_path = Path('bert-base-uncased')
         model = session.load(model_path)
     """
 
     _impl: _InferenceSession
-    # This is shared across sessions. Compilation is currently not thread safe.
-    _compilation_lock = threading.Lock()
 
     def __init__(
         self,
-        devices: Iterable[Device],
         num_threads: int | None = None,
+        devices: Iterable[Device] | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
     ) -> None:
-        """Construct an inference session.
-
+        """
         Args:
             num_threads: Number of threads to use for the inference session.
               This defaults to the number of physical cores on your machine.
@@ -285,14 +377,19 @@ class InferenceSession:
         if num_threads:
             config["num_threads"] = num_threads
 
-        # Process the provided iterable `devices`.
-        final_devices: list[Device] = []
-        seen_devices: set[Device] = set()
-        for device in devices:
-            if device not in seen_devices:
-                final_devices.append(device)
-                seen_devices.add(device)
-        # If the user provided an empty iterable, final_devices remains empty.
+        final_devices: list[Device]
+        if devices is None:
+            # Default case when `devices` argument is not provided.
+            final_devices = [CPU()]
+        else:
+            # Process the provided iterable `devices`.
+            final_devices = []
+            seen_devices: set[Device] = set()
+            for device in devices:
+                if device not in seen_devices:
+                    final_devices.append(device)
+                    seen_devices.add(device)
+            # If the user provided an empty iterable, final_devices remains empty.
 
         # Assign the ordered, unique list to the config.
         config["devices"] = final_devices
@@ -303,19 +400,6 @@ class InferenceSession:
             )
         self._impl = _InferenceSession(config)
 
-        # Register async-safe Python stack trace handler
-        # This enables Python stack traces in crash reports without GIL deadlocks
-        try:
-            faulthandler.register(
-                signal.SIGUSR2, file=sys.stderr, all_threads=True, chain=False
-            )
-        except (OSError, RuntimeError):
-            # Ignore errors if SIGUSR2 is already registered or unavailable
-            pass
-
-        if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
-            self.set_mojo_log_level(env_val)
-
     def __repr__(self) -> str:
         if self.num_threads:
             return f"<modular engine InferenceSession(num_threads={self.num_threads})>"
@@ -324,11 +408,11 @@ class InferenceSession:
 
     def load(
         self,
-        model: str | Path | Any,
+        model: Union[str, Path, Any],
         *,
         custom_extensions: CustomExtensionsType | None = None,
         custom_ops_path: str | None = None,
-        weights_registry: Mapping[str, DLPackArray] | None = None,
+        weights_registry: Mapping[str, DLPackCompatible] | None = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -353,7 +437,7 @@ class InferenceSession:
             RuntimeError: If the path provided is invalid.
         """
         options_dict: dict[str, Any] = {}
-        weights_registry_real: Mapping[str, DLPackArray] = (
+        weights_registry_real: Mapping[str, DLPackCompatible] = (
             weights_registry or {}
         )
 
@@ -374,7 +458,7 @@ class InferenceSession:
                 _process_custom_extensions_objects(model.kernel_libraries_paths)  # type: ignore
             )
 
-        if isinstance(model, str | bytes):
+        if isinstance(model, (str, bytes)):
             model = Path(str(model))
 
         if isinstance(model, Path):
@@ -404,11 +488,9 @@ class InferenceSession:
                             f"Mismatch in device type for weight '{weight_name}'. Expected {expected_device} but weight is {registered_weight}"
                         )
 
-            with self._compilation_lock:
-                _model = self._impl.compile_from_object(
-                    model._module._CAPIPtr,
-                    options_dict,
-                )
+            _model = self._impl.compile_from_object(
+                model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
+            )
         else:
             raise RuntimeError("The model is not a valid path or module.")
 
@@ -425,9 +507,9 @@ class InferenceSession:
 
     def set_debug_print_options(
         self,
-        style: str | PrintStyle = PrintStyle.COMPACT,
+        style: Union[str, PrintStyle] = PrintStyle.COMPACT,
         precision: int = 6,
-        output_directory: str | Path | None = None,
+        output_directory: str = "",
     ) -> None:
         """Sets the debug print options.
 
@@ -457,7 +539,9 @@ class InferenceSession:
                 output tensors.
         """
         if isinstance(style, str):
-            style = cast(str | PrintStyle, getattr(PrintStyle, style, style))
+            style = cast(
+                Union[str, PrintStyle], getattr(PrintStyle, style, style)
+            )
         if not isinstance(style, PrintStyle):
             raise TypeError(
                 "Invalid debug print style. Please use one of 'COMPACT',"
@@ -466,23 +550,17 @@ class InferenceSession:
         if style == PrintStyle.FULL and not isinstance(precision, int):
             raise TypeError("Debug print precision must be an int.")
         if style in (PrintStyle.BINARY, PrintStyle.BINARY_MAX_CHECKPOINT):
-            if output_directory is None:
-                output_directory = ""
-            elif isinstance(output_directory, str):
+            if isinstance(output_directory, str):
                 pass
             elif isinstance(output_directory, Path):
                 output_directory = str(output_directory)
             else:
-                raise TypeError(
-                    "Debug print output directory must be a str or Path."
-                )
+                raise TypeError("Debug print output directory must be a str.")
 
             if not output_directory:
                 raise ValueError(
                     "Debug print output directory cannot be empty."
                 )
-        else:
-            output_directory = ""
         self._impl.set_debug_print_options(style, precision, output_directory)
 
     def set_split_k_reduction_precision(
@@ -492,10 +570,9 @@ class InferenceSession:
         if not isinstance(precision, SplitKReductionPrecision):
             try:
                 precision = SplitKReductionPrecision[precision]
-            except Exception as e:
-                raise TypeError(
-                    f"Invalid precision ({precision}). Please use one of: {[x.name for x in SplitKReductionPrecision]}"
-                ) from e
+            except:
+                msg = f"Invalid precision ({precision}). Please use one of: {[x.name for x in SplitKReductionPrecision]}"
+                raise TypeError(msg)
 
         self._set_mojo_define("SPLITK_REDUCTION_SCHEME", precision)
 
@@ -504,10 +581,9 @@ class InferenceSession:
         if not isinstance(level, LogLevel):
             try:
                 level = LogLevel[level]
-            except Exception as e:
-                raise TypeError(
-                    f"Invalid log level ({level}). Please use one of: {[x.name for x in LogLevel]}"
-                ) from e
+            except:
+                msg = f"Invalid log level ({level}). Please use one of: {[x.name for x in LogLevel]}"
+                raise TypeError(msg)
 
         self._set_mojo_define("LOGGING_LEVEL", level)
 
@@ -516,10 +592,9 @@ class InferenceSession:
         if not isinstance(level, AssertLevel):
             try:
                 level = AssertLevel[level]
-            except Exception as e:
-                raise TypeError(
-                    f"Invalid assert level ({level}). Please use one of: {[x.name for x in AssertLevel]}"
-                ) from e
+            except:
+                msg = f"Invalid assert level ({level}). Please use one of: {[x.name for x in AssertLevel]}"
+                raise TypeError(msg)
 
         self._set_mojo_define("ASSERT", level)
 
@@ -546,9 +621,8 @@ class InferenceSession:
         """Level of overlap of kernel launch."""
         if not isinstance(level, PdlLevel):
             if level not in {"0", "1", "2"}:
-                raise TypeError(
-                    f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PdlLevel]}"
-                )
+                msg = f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PdlLevel]}"
+                raise TypeError(msg)
 
         self._set_mojo_define("PDL_LEVEL", int(level))
 

@@ -112,25 +112,6 @@ class Device:
         """
 
     @property
-    def architecture_name(self) -> str:
-        """
-        Returns the architecture name of the device.
-
-        Examples of possible values:
-
-        - ``gfx90a``, ``gfx942`` for AMD GPUs.
-        - ``sm_80``, ``sm_86`` for NVIDIA GPUs.
-        - CPU devices raise an exception.
-
-        .. code-block:: python
-
-            from max import driver
-
-            device = driver.Accelerator()
-            device.archname
-        """
-
-    @property
     def id(self) -> int:
         """
         Returns a zero-based device id. For a CPU device this is always 0.
@@ -178,42 +159,29 @@ class Device:
         """Creates a CPU device. The id is ignored currently."""
 
 class Accelerator(Device):
-    def __init__(self, id: int = -1, device_memory_limit: int = -1) -> None:
+    def __init__(self, id: int = -1) -> None:
         """
-        Creates an accelerator device with the specified ID and memory limit.
+        Creates an accelerator device with the specified ID.
 
-                Provides access to GPU or other hardware accelerators in the system.
+        Provides access to GPU or other hardware accelerators in the system.
 
-                Repeated instantiations with a previously-used device-id will still
-                refer to the first such instance that was created. This is especially
-                important when providing a different memory limit: only the value
-                (implicitly or explicitly) provided in the first such instantiation
-                is effective.
+        .. code-block:: python
 
-                .. code-block:: python
+            from max import driver
+            # Create default accelerator (usually first available GPU)
+            device = driver.Accelerator()
+            # Or specify GPU id
+            device = driver.Accelerator(id=0)  # First GPU
+            device = driver.Accelerator(id=1)  # Second GPU
+            # Get device id
+            device_id = device.id
 
-                  from max import driver
-                  # Create default accelerator (usually first available GPU)
-                  device = driver.Accelerator()
-                  # Or specify GPU id
-                  device = driver.Accelerator(id=0)  # First GPU
-                  device = driver.Accelerator(id=1)  # Second GPU
-                  # Get device id
-                  device_id = device.id
-                  # Optionally specify memory limit
-                  device = driver.Accelerator(id=0, device_memory_limit=256*MB)
-                  device2 = driver.Accelerator(id=0, device_memory_limit=512*MB)
-                  # ... device2 will use the memory limit of 256*MB
+        Args:
+            id (int, optional): The device ID to use. Defaults to -1, which selects
+                the first available accelerator.
 
-                Args:
-                    id (int, optional): The device ID to use. Defaults to -1, which selects
-                        the first available accelerator.
-                    device_memory_limit (int, optional): The maximum amount of memory
-                        in bytes that can be allocated on the device. Defaults to 99%
-                        of free memory.
-
-                Returns:
-                    Accelerator: A new Accelerator device object.
+        Returns:
+            Accelerator: A new Accelerator device object.
         """
 
 class CPU(Device):
@@ -611,18 +579,10 @@ class Tensor:
     def _aligned(self, alignment: int | None = None) -> bool:
         """Returns whether the tensor is aligned to the desired alignment."""
 
-    @overload
     @staticmethod
     def _from_dlpack(arg: object, /) -> Tensor: ...
-    @overload
-    @staticmethod
-    def _from_dlpack(
-        arg0: typing_extensions.CapsuleType, arg1: Device, arg2: int, /
-    ) -> Tensor: ...
     def _iterate_indices(self) -> Generator[Sequence[int]]: ...
     def _view(
         self, dtype: max._core.dtype.DType, shape: Sequence[int]
     ) -> Tensor: ...
     def _inplace_copy_from(self, src: Tensor) -> None: ...
-    def _data_ptr(self) -> int:
-        """Gets the memory address of the tensor data. Internal use only."""

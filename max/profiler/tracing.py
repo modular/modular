@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import functools
 import inspect
-from collections.abc import Callable
 from types import TracebackType
-from typing import Any, TypeVar, overload
+from typing import Callable, TypeVar, overload
 
 from max._core.profiler import Trace, is_profiling_enabled
 
-_FuncType = TypeVar("_FuncType", bound=Callable[..., Any])
+_FuncType = TypeVar("_FuncType", bound=Callable)
 
 # For the list of valid colors, take a look at the struct `Color` in:
 # `open-source/max/mojo/stdlib/stdlib/gpu/host/_tracing.mojo`
@@ -41,11 +40,11 @@ def traced(
 
 
 def traced(
-    func: _FuncType | None = None,
+    func: Callable | None = None,
     *,
     message: str | None = None,
     color: str = "modular_purple",
-) -> _FuncType | Callable[[_FuncType], _FuncType]:
+) -> Callable:
     """Decorator for creating a profiling span for `func`.
 
     Args:
@@ -77,7 +76,7 @@ def traced(
     if inspect.iscoroutinefunction(func):
 
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):  # noqa: ANN202
+        async def wrapper(*args, **kwargs):
             if is_profiling_enabled():
                 with Trace(message, color):
                     return await func(*args, **kwargs)
@@ -87,7 +86,7 @@ def traced(
     else:
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):  # noqa: ANN202
+        def wrapper(*args, **kwargs):
             if is_profiling_enabled():
                 with Trace(message, color):
                     return func(*args, **kwargs)

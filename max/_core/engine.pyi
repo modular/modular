@@ -9,16 +9,21 @@
 import enum
 import inspect
 import os
-from collections.abc import Mapping
-from typing import Any, overload
+from collections.abc import Mapping, Sequence
+from typing import Any, Union, overload
 
 import max._core.driver
 import max._core.dtype
 from max import mlir
 from max._core.driver import Tensor
 from max._core_types.driver import DLPackArray
+from numpy import typing as npt
 
-InputType = DLPackArray | Tensor | MojoValue | int | float | bool
+DLPackCompatible = Union[DLPackArray, npt.NDArray]
+InputType = Union[DLPackCompatible, Tensor, MojoValue, int, float, bool]
+
+class FrameworkFormat(enum.Enum):
+    max_graph = 0
 
 class TensorSpec:
     """
@@ -47,6 +52,11 @@ class TensorSpec:
 
     def __repr__(self) -> str: ...
     def __str__(self) -> str: ...
+
+class TensorData:
+    def __init__(
+        self, ptr: int, shape: Sequence[int], dtype: max._core.dtype.DType
+    ) -> None: ...
 
 class MojoValue:
     pass
@@ -210,9 +220,10 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
+    def _execute(self, **kwargs) -> dict[str, Any]: ...
     def _execute_device_tensors(
         self, *tensors: list[max._core.driver.Tensor | MojoValue]
-    ) -> list[max._core.driver.Tensor | MojoValue]: ...
+    ) -> list[max._core.driver.Tensor]: ...
     def _export_mef(self, path: str) -> None:
         """
         Exports the compiled model as a mef to a file.
@@ -229,7 +240,7 @@ class InferenceSession:
         self, model_path: str | os.PathLike, config: dict = {}
     ) -> Model: ...
     def compile_from_object(
-        self, model: object, config: dict = {}
+        self, model: object, format: FrameworkFormat, config: dict = {}
     ) -> Model: ...
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str

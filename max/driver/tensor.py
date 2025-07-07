@@ -9,25 +9,24 @@ import struct
 from collections.abc import Generator, Sequence
 from itertools import product
 from os import PathLike
-from typing import Any
+from typing import Any, Optional, Union
 
 import numpy as np
-import numpy.typing as npt
 from max._core.driver import Tensor as Tensor
 from max.dtype import DType
 
 from .driver import CPU
 
-_IdxElType = int | slice
-IndexType = Sequence[_IdxElType] | _IdxElType
+_IdxElType = Union[int, slice]
+IndexType = Union[Sequence[_IdxElType], _IdxElType]
 ShapeType = Sequence[int]
 
 
-def _iterate_indices(self: Tensor) -> Generator[ShapeType]:
+def _iterate_indices(self) -> Generator[ShapeType]:
     yield from product(*map(range, self.shape))
 
 
-def _contiguous(self: Tensor) -> Tensor:
+def _contiguous(self) -> Tensor:
     """Creates a contiguous copy of the parent tensor."""
     tensor_copy = Tensor(self.dtype, self.shape)
     for idx in self._iterate_indices():
@@ -35,12 +34,13 @@ def _contiguous(self: Tensor) -> Tensor:
     return tensor_copy
 
 
-def _repr(self: Tensor) -> str:
+def _repr(self) -> str:
     return f"max.driver.Tensor({self.dtype}, {self.shape}, {self.stream})"
 
 
-def _view(self: Tensor, dtype: DType, shape: ShapeType | None = None) -> Tensor:
-    """Return a new tensor with the given type and shape that shares the underlying memory.
+def _view(self, dtype: DType, shape: Optional[ShapeType] = None) -> Tensor:
+    """Return a new tensor with the given type and shape that shares the
+    underlying memory.
 
     If the shape is not given, it will be deduced if possible, or a
     ValueError is raised.
@@ -58,12 +58,11 @@ def _view(self: Tensor, dtype: DType, shape: ShapeType | None = None) -> Tensor:
     return self._view(dtype, shape)
 
 
-def inplace_copy_from(self: Tensor, src: Tensor) -> None:
-    """Copy the contents of another tensor into this one.
+def inplace_copy_from(self, src: Tensor) -> None:
+    """Copy the contents of another tensor into this one. These tensors may
+    be on different devices.
 
-    These tensors may be on different devices.
-    Requires that both tensors are contiguous and have same size.
-    """
+    Requires that both tensors are contiguous and have same size."""
     # check that both tensors are contiguous
     if not self.is_contiguous:
         raise ValueError("Cannot copy from non-contiguous tensor")
@@ -81,18 +80,18 @@ def inplace_copy_from(self: Tensor, src: Tensor) -> None:
     self._inplace_copy_from(src)
 
 
-def _from_numpy(arr: npt.NDArray[Any]) -> Tensor:
+def _from_numpy(arr: np.ndarray) -> Tensor:
     """Creates a tensor from a provided numpy array on the host device.
 
     The underlying data is not copied unless the array is noncontiguous. If
-    it is, a contiguous copy will be returned.
-    """
+    it is, a contiguous copy will be returned."""
+
     # NOTE: np.ascontiguousarray only copies if needed.
     # Skip np.contiguousarray for scalars since it converts them to rank-1.
     return Tensor.from_dlpack(np.ascontiguousarray(arr) if arr.shape else arr)
 
 
-def _to_numpy(self: Tensor) -> npt.NDArray[Any]:
+def _to_numpy(self) -> np.ndarray:
     """Converts the tensor to a numpy array.
 
     If the tensor is not on the host, an exception is raised.
@@ -108,12 +107,11 @@ def _to_numpy(self: Tensor) -> npt.NDArray[Any]:
         raise
 
 
-def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
+def _from_dlpack(array: Any, *, copy: Optional[bool] = None) -> Tensor:
     """Create a tensor from an object implementing the dlpack protocol.
 
     This usually does not result in a copy, and the producer of the object
-    retains ownership of the underlying memory.
-    """
+    retains ownership of the underlying memory."""
     if isinstance(array, np.ndarray):
         if not array.flags.c_contiguous:
             raise ValueError(
@@ -139,7 +137,7 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
         except BufferError as e:
             msg = str(e)
             if msg.startswith("Cannot export readonly array"):
-                raise type(e)(  # noqa: B904
+                raise type(e)(
                     msg
                     + " Consider passing `copy = True` to `Tensor.from_dlpack`."
                 )
@@ -154,7 +152,7 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
     # Check for torch tensors by looking for the is_contiguous method rather
     # than importing torch.
     if hasattr(array, "is_contiguous") and callable(
-        getattr(array, "is_contiguous")  # noqa: B009
+        getattr(array, "is_contiguous")
     ):
         if not array.is_contiguous():
             raise ValueError(
@@ -174,13 +172,13 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Tensor:
 # TODO(MAXPLAT-206): re-enable @wraps
 # @wraps(Tensor.mmap)
 def _mmap(
-    filename: PathLike[str] | str,
+    filename: PathLike | str,
     dtype: DType,
     shape: ShapeType | int,
     mode: np._MemMapModeKind = "copyonwrite",
-    offset: int = 0,
-) -> Tensor:
-    arr: np.memmap[Any, Any] = np.memmap(
+    offset=0,
+):
+    arr: np.memmap = np.memmap(
         filename,
         dtype.to_numpy(),
         mode,
@@ -195,7 +193,7 @@ def _mmap(
 
 Tensor._iterate_indices = _iterate_indices  # type: ignore[method-assign]
 Tensor.contiguous = _contiguous  # type: ignore[method-assign]
-Tensor.__repr__ = _repr  # type: ignore[method-assign, assignment]
+Tensor.__repr__ = _repr  # type: ignore[method-assign]
 Tensor.view = _view  # type: ignore[method-assign]
 Tensor.inplace_copy_from = inplace_copy_from  # type: ignore[method-assign]
 Tensor.from_numpy = _from_numpy  # type: ignore[method-assign]
@@ -204,7 +202,7 @@ Tensor.from_dlpack = _from_dlpack  # type: ignore[method-assign]
 Tensor.mmap = _mmap  # type: ignore[method-assign]
 
 
-def load_max_tensor(path: PathLike[str]) -> Tensor:
+def load_max_tensor(path: PathLike) -> Tensor:
     """Experimental method for loading serialized MAX tensors.
 
     Max tensors can be exported by creating a graph and calling `Value.print()`
@@ -220,6 +218,7 @@ def load_max_tensor(path: PathLike[str]) -> Tensor:
     Raises:
         ValueError if the file format is not the MAX checkpoint format.
     """
+
     with open(path, "rb") as f:
         header = f.read(8)
         if header != b"\x93\xf0\x9f\x94\xa5\x2b\x2b\x93":

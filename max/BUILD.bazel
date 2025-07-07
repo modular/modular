@@ -1,14 +1,15 @@
-load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
-load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "requirement")
-load("//bazel:config.bzl", "TOP_LEVEL_TAG")
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("//bazel:api.bzl", "modular_genrule", "modular_nanobind_extension", "modular_py_binary", "modular_py_library", "modular_python_binding_py_library", "requirement")
 
 modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["_core.cpp"],
     module_name = "_core",
-    new_link_root = "../modular/lib",
-    deps = [
+    nanobind_deps = [
         "//SDK/lib/API/python/max/_core/src:modules",
+    ],
+    new_link_root = "lib",
+    deps = [
         "@llvm-project//llvm:Support",
     ],
 )
@@ -18,22 +19,20 @@ modular_py_library(
     name = "_core.stubfile_generator_library",
     data = [
         ":_core.bindings",
-    ],
-    imports = [".."],
-    deps = [
         "//SDK/lib/API/python/max/mlir",
     ],
+    imports = [".."],
 )
 
 modular_py_binary(
     name = "_core.stubfile_generator",
     srcs = ["@nanobind//:src/stubgen.py"],
-    main = "@nanobind//:src/stubgen.py",
     tags = ["no-mypy"],
     deps = ["_core.stubfile_generator_library"],
 )
 
-stubfiles = glob(["**/*.pyi"])
+# Strip "_core/"
+stubfiles = [file[6:] for file in glob(["**/*.pyi"])]
 
 modular_genrule(
     name = "_core.stubfiles",
@@ -49,10 +48,9 @@ modular_genrule(
     # When profiling is enabled, it replaces the bound methods entirely, which causes weird things to
     # happen with the stubfiles. Avoid the issue entirely by just forcing it off when generating.
     export MODULAR_ENABLE_PROFILING=OFF
-    export BAZEL_TEST=1
 
-    export folder=$(dirname $(location stubfiles/_core/dtype.pyi))
-    $(execpath {stubgen}) -r -m max._core -O $folder/.. -p $(location :patterns.nb) --include-private --quiet
+    export folder=$(dirname $(location stubfiles/dtype.pyi))
+    $(execpath {stubgen}) -r -m max._core -O $folder -p $(location :patterns.nb) --include-private --quiet
 
     # Add copyright headers
     header="
@@ -69,7 +67,19 @@ modular_genrule(
     done
 
     # Lint and format the files
-    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) fix
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) format --quiet
+    BUILD_WORKSPACE_DIRECTORY=$folder $(execpath {ruff}) check --fix --quiet
+
+    # Fix file names
+    # foo/__init__.pyi -> foo.pyi
+    for file in $(find $folder -name __init__.pyi); do
+        mv $file $(dirname $file).pyi
+    done
+    mv $folder/_core.pyi $folder/__init__.pyi
+    mv $folder/dialects.pyi $folder/dialects/__init__.pyi
+    mv $folder/dialects/builtin.pyi $folder/dialects/builtin/__init__.pyi
+    mv $folder/dialects/mo.pyi $folder/dialects/mo/__init__.pyi
+    mv $folder/dialects/rmo.pyi $folder/dialects/rmo/__init__.pyi
     """.format(
         ruff = "//open-source/max/bazel/lint:ruff-wrapper",
         stubgen = ":_core.stubfile_generator",
@@ -80,12 +90,14 @@ modular_genrule(
     ],
 )
 
-modular_py_library(
+modular_python_binding_py_library(
     name = "_core",
-    srcs = glob(["_core_types/*.py"]),
-    data = [":_core.bindings"],
+    srcs = glob([
+        "_core/**/*.pyi",
+        "_core_types/*.py",
+    ]),
+    bindings_data = [":_core.bindings"],
     imports = [".."],
-    pyi_srcs = stubfiles,
     deps = [
         "//SDK/lib/API/python/max/mlir",
         requirement("numpy"),
@@ -97,36 +109,32 @@ modular_py_library(
 # 1. It is easier to see when they change
 # 2. For other tooling that uses them, such as docs or (perhaps in the future) copybara.
 
-write_source_files(
-    name = "sync-stubfiles",
-    additional_update_targets = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:sync-stubfiles"],
-    diff_test_failure_message = """
-        A stubfile is out of sync with its generated counterpart.
+# Can run `./utils/sync-stubfiles.py` to sync the committed ones to the generated ones.
+[
+    diff_test(
+        name = file + ".diff_test",
+        failure_message = """
+        {} is out of sync with its generated counterpart.
         If you modified just a .pyi file, you need to modify the corresponding .cpp file instead.
         When you modify a .cpp file in the _core/src directory, you can run
         `./utils/sync-stubfiles.py` and commit the results.
-        """,
-    files = {file: ":stubfiles/" + file for file in stubfiles},
-    tags = [
-        TOP_LEVEL_TAG,
-        "stubfiles",
-    ],
-)
+        """.format(file),
+        file1 = "//SDK/lib/API/python/max:stubfiles/{}".format(file),
+        file2 = "_core/{}".format(file),
+        tags = ["stubfiles"],
+    )
+    for file in stubfiles
+]
 
 modular_py_library(
     name = "max",
-    srcs = [],
+    srcs = ["experimental/tensor.py"],
     deps = [
         ":_core",
-        "//SDK/lib/API/python/max/_core_mojo",
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
-        "//SDK/lib/API/python/max/entrypoints:gpu-query",
-        "//SDK/lib/API/python/max/entrypoints:pipelines",
-        "//SDK/lib/API/python/max/entrypoints:replay_recording",
-        "//SDK/lib/API/python/max/experimental",
         "//SDK/lib/API/python/max/graph",
         "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/mlir",
@@ -135,7 +143,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/pipelines/architectures",
         "//SDK/lib/API/python/max/profiler",
         "//SDK/lib/API/python/max/serve",
-        "//SDK/lib/API/python/max/support",
         "//SDK/lib/API/python/max/torch",
     ],
 )

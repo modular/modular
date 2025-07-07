@@ -53,19 +53,18 @@ class MotrTrace:
     Context manager for creating profiling spans with explicit parent ID.
 
     Examples:
-        >>> with MotrTrace("foo", color="blue", parentId=123):
+        >>> with MotrTrace("foo", parentId=123):
         >>>   # Run `bar()` inside the profiling span.
         >>>   bar()
         >>> # The profiling span ends when the context manager exits.
     """
 
-    def __init__(self, message: str, color: str, parentId: int) -> None:
+    def __init__(self, message: str, parentId: int) -> None:
         """
         Constructs and initializes the underlying Motr Trace object.
 
         Args:
             message: name of the span.
-            color: color of the span.
             parentId: parent id of the span.
         """
 

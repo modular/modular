@@ -28,6 +28,14 @@ from max.mlir import Context, Location
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
+# This is a bug I haven't yet chased down in Nanobind's type renderings.
+# - In some circumstances, `max._core.dialicts.mosh.ShapeType` is being shortened
+#   to `h.ShapeType`, which obviously doesn't exist.
+# - I haven't figured out a clean repro or workaround, I suspect it's some awkward case
+#   with `nb_func_render_signature` because for instance adding garbage characters to the
+#   `const_name` in the type caster will cause it to repro in different places.
+# - For now, really hacky thing to work around.
+
 class ContextuallyEvaluatedAttrInterface(Protocol):
     """
     This interface describes parameter attributes whose evaluation may require
@@ -71,18 +79,11 @@ class GeneratorMetadataAttrInterface(Protocol):
         arg2: max._core.Type,
         /,
     ) -> bool: ...
-    def get_specialized_metadata(
-        self,
-        arg0: ParameterEvaluator,
-        arg1: max._core._BitVector,
-        arg2: DiagnosticHandler,
-        /,
+    def get_with_bound_params(
+        self, arg: max._core._BitVector, /
     ) -> GeneratorMetadataAttrInterface: ...
     def prepend_pos_params_from_ops(
-        self,
-        arg0: Sequence[ParamDeclAttr],
-        arg1: Sequence[max._core.Operation],
-        /,
+        self, arg: Sequence[max._core.Operation], /
     ) -> GeneratorMetadataAttrInterface: ...
 
 class IndexRefAttrInterface(Protocol):
@@ -219,10 +220,9 @@ class ClosureAttr(max._core.Attribute):
           kgen.return
         }
 
-        kgen.generator @consume<
-          x: type,
-          CAPTURE_INST: !kgen.param<get_witness(x, "closure_trait", "CAPTURE_TYPE")>
-        >(%arg0: !kgen.param<x>) -> index {
+        kgen.generator @consume<x: type,
+                            CAPTURE_INST: !kgen.param<get_vtable_entry(x, "CAPTURE_TYPE")>
+                            >(%arg0: !kgen.param<x>) -> index {
             // BODY OMITTED FOR BREVITY
         }
         ```
@@ -353,38 +353,6 @@ class CompileOffloadClosureAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
-class ConstraintAttr(max._core.Attribute):
-    """
-    The `#kgen.constraint` attribute represents a proposition that should hold
-    and a location for where this constraint was declared, which is useful for
-    error reporting.
-
-    The proposition is an i1-typed parameter expression.
-
-    Example:
-
-    ```mlir
-    #kgen.constraint<1, loc("file.mojo":10:5)>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        proposition: max._core.dialects.builtin.TypedAttr,
-        loc: max._core.LocationAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        proposition: max._core.dialects.builtin.TypedAttr,
-        loc: max._core.LocationAttr,
-    ) -> None: ...
-    @property
-    def proposition(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def loc(self) -> max._core.LocationAttr: ...
-
 class DTypeConstantAttr(max._core.Attribute):
     """
     This is constant value for a dtype, whose elements correspond to DType.
@@ -441,14 +409,9 @@ class EnvAttr(max._core.Attribute):
     """
     The `#kgen.env` attribute defines a generic dictionary of environment
     parameters that can be accessed through parameter operators. The values
-    contained can be:
-    - integers, represented with the `index` type
-    - strings, represented as `!kgen.string` types
-    - unit attributes, the presence of which indicates something
-
-    Note that EnvAttr does not support storing BoolAttr in it.
-    Instead, a boolean true is represented as a UnitAttr, and boolean false
-    is not represented at all (absence of a value evaluates to false).
+    contained can be integers, represented with the `index` type, unit, the
+    presence of which indicates something, and strings, represented as
+    `!kgen.string` types.
 
     Example:
 
@@ -496,12 +459,7 @@ class ExportKindAttr(max._core.Attribute):
 class GeneratorAttr(max._core.Attribute):
     """
     This is a generator constant attribute that represents a generator whose
-    body is a parameter expression. The GeneratorAttr natively encodes the input
-    parameter types and metadata, and computes the overall type on demand. This
-    encoding ensures that the type and the value of the body are always at the
-    same level of nesting. If we instead stored a GeneratorType in this
-    attribute, the body of the GeneratorType would be at a deeper level of
-    nesting than the body of the GeneratorAttr, leading to inconsistencies.
+    body is a parameter expression.
 
     Example:
 
@@ -516,24 +474,12 @@ class GeneratorAttr(max._core.Attribute):
     ) -> None: ...
     @overload
     def __init__(
-        self,
-        input_param_types: Sequence[max._core.Type],
-        body: max._core.dialects.builtin.TypedAttr,
-        metadata: GeneratorMetadataAttrInterface = ...,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        body: max._core.dialects.builtin.TypedAttr,
-        input_param_types: Sequence[max._core.Type],
-        metadata: GeneratorMetadataAttrInterface,
+        self, body: max._core.dialects.builtin.TypedAttr, type: GeneratorType
     ) -> None: ...
     @property
     def body(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def input_param_types(self) -> Sequence[max._core.Type]: ...
-    @property
-    def metadata(self) -> GeneratorMetadataAttrInterface: ...
+    def type(self) -> GeneratorType: ...
 
 class GetLinkageNameAttr(max._core.Attribute):
     """
@@ -578,13 +524,10 @@ class GetTypeNameAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        qualified_builtins: max._core.dialects.builtin.TypedAttr,
         type: max._core.Type,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @property
-    def qualified_builtins(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def type(self) -> max._core.Type | None: ...
 
@@ -628,53 +571,6 @@ class GetWitnessAttr(max._core.Attribute):
     def witness_name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
     def type(self) -> max._core.Type | None: ...
-
-class LLVMBitcodeLibArrayAttr(max._core.Attribute):
-    """
-    The `#kgen.llvm.bitcode.libs` attribute represents an array of LLVM
-    bitcode libraries, each with their own usage tracking. This is typically
-    attached to ModuleOp to store all bitcode libraries that should be
-    linked during compilation.
-    """
-
-    def __init__(self, value: Sequence[LLVMBitcodeLibAttr]) -> None: ...
-    @property
-    def value(self) -> Sequence[LLVMBitcodeLibAttr]: ...
-
-class LLVMBitcodeLibAttr(max._core.Attribute):
-    """
-    The `#kgen.llvm.bitcode.lib` attribute represents a single LLVM bitcode
-    library with usage tracking. It contains:
-    - `used`: A boolean flag indicating whether this library was used
-    - `library`: The actual bitcode library, which can be either:
-      - StringAttr: For bitcode libraries passed via command line
-      - DenseResourceElementsAttr: For bitcode libraries from packages
-
-    Example:
-    ```mlir
-    #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
-    #kgen.llvm.bitcode.lib<used = true, library = dense_resource<data> : ...>
-    ```
-    """
-
-    @overload
-    def __init__(self, used: bool, library: max._core.Attribute) -> None: ...
-    @overload
-    def __init__(
-        self,
-        used: max._core.dialects.builtin.BoolAttr,
-        library: max._core.Attribute,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        used: max._core.dialects.builtin.BoolAttr,
-        library: max._core.Attribute,
-    ) -> None: ...
-    @property
-    def used(self) -> max._core.dialects.builtin.BoolAttr: ...
-    @property
-    def library(self) -> max._core.Attribute | None: ...
 
 class LinkDependencyArrayAttr(max._core.Attribute):
     """
@@ -768,7 +664,6 @@ class MemSymbolTripleAttr(max._core.Attribute):
         copy: SymbolConstantAttr,
         move: SymbolConstantAttr,
         del_: SymbolConstantAttr,
-        is_move: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
     @property
     def copy(self) -> SymbolConstantAttr: ...
@@ -776,8 +671,6 @@ class MemSymbolTripleAttr(max._core.Attribute):
     def move(self) -> SymbolConstantAttr: ...
     @property
     def del_(self) -> SymbolConstantAttr: ...
-    @property
-    def is_move(self) -> max._core.dialects.builtin.UnitAttr: ...
 
 class PackAttr(max._core.Attribute):
     """
@@ -1304,9 +1197,17 @@ class TypeParamAttr(max._core.Attribute):
 
     ```mlir
     // Default asm format.
-    #kgen.type<!myTypeValue, !myMlirType> : !kgen.type
+    #kgen.type<!myTypeValue, !myMlirType, {
+      "method1" : <() -> index> = @method1,
+      "method2" : <() -> index> = @method2
+    }> : !kgen.type
 
     // MlirType is omitted if same as typeValue.
+    #kgen.type<!myTypeValue, {
+      "method1" : <() -> index> = @method1
+    }> : !kgen.type
+
+    // VTable is omitted if empty.
     #kgen.type<!myTypeValue> : !kgen.type
     ```
     """
@@ -1325,10 +1226,26 @@ class TypeParamAttr(max._core.Attribute):
     @overload
     def __init__(
         self,
+        mlir_type: max._core.Type,
+        type: max._core.Type,
+        vtable: VTableAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        type_value: max._core.Type,
+        mlir_type: max._core.Type,
+        type: max._core.Type,
+        vtable: VTableAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
         ctx: Context,
         type_value: max._core.Type,
         mlir_type: max._core.Type,
         type: max._core.Type,
+        vtable: VTableAttr,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.Type | None: ...
@@ -1336,6 +1253,8 @@ class TypeParamAttr(max._core.Attribute):
     def mlir_type(self) -> max._core.Type | None: ...
     @property
     def type(self) -> max._core.Type | None: ...
+    @property
+    def v_table(self) -> VTableAttr: ...
 
 class UnboundAttr(max._core.Attribute):
     """
@@ -1367,8 +1286,8 @@ class UnknownAttr(max._core.Attribute):
 
 class UpcastAttr(max._core.Attribute):
     """
-    The `#kgen.upcast` attribute is used to convert from a typeValue to a
-    typeValue of a less-derived trait.
+    The `#kgen.upcast` attribute is used to convert from a typeValue (which
+    carries a vtable and other metadate) to a typeValue of a less-derived trait.
     For example, this can represent a cast from Movable to AnyType, handling the
     rebind of the `__del__` member.
 
@@ -1378,7 +1297,9 @@ class UpcastAttr(max._core.Attribute):
     Example:
 
     ```mlir
-    #kgen.upcast<#kgen.param.decl.ref<"T"> : !lit.trait<Movable>> : !lit.trait<AnyType>
+    #kgen.upcast<#kgen.param.decl.ref<"T"> : !lit.trait<Movable>,
+        "__del__" : !lit.generator<("self": !lit.ref<:trait<Movable> T> owned_in_mem, |) -> !kgen.none>
+            = get_vtable_entry(:trait<Movable> T, "__del__")> : !lit.trait<AnyType>
     ```
     """
 
@@ -1387,17 +1308,66 @@ class UpcastAttr(max._core.Attribute):
         self,
         type: max._core.Type,
         input_type_value: max._core.dialects.builtin.TypedAttr,
+        v_table: VTableAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         type: max._core.Type,
         input_type_value: max._core.dialects.builtin.TypedAttr,
+        v_table: VTableAttr,
     ) -> None: ...
     @property
     def type(self) -> max._core.Type | None: ...
     @property
     def input_type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def v_table(self) -> VTableAttr: ...
+
+class VTableAttr(max._core.Attribute):
+    """
+    Static vtable for structs.  Used to implement traits.
+
+    Example:
+
+    ```mlir
+    #kgen<vtable "entry1" : <() -> index> = @entry1,
+                 "entry2" : <() -> index> = @entry2>
+    ```
+    """
+
+    def __init__(self, entries: Sequence[VTableEntryAttr]) -> None: ...
+    @property
+    def entries(self) -> Sequence[VTableEntryAttr]: ...
+
+class VTableEntryAttr(max._core.Attribute):
+    """
+    Entry for a VTableAttr.  The name and signature are keys in the
+    table, while the method is the lookup value.
+
+    Example:
+
+    ```mlir
+    #kgen<vtable.entry "methodName" : <() -> index> = @methodImpl>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        method: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: max._core.dialects.builtin.StringAttr,
+        method: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def name(self) -> max._core.dialects.builtin.StringAttr: ...
+    @property
+    def method(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class VariadicAttr(max._core.Attribute):
     """
@@ -1501,7 +1471,7 @@ class ArgConvention(enum.Enum):
 
     byref_result = 7
 
-    byref_error = 8
+    byref_error = 9
 
 class ArgConventionAttr(max._core.Attribute):
     def __init__(self, arg0: Context, arg1: ArgConvention, /) -> None: ...
@@ -1513,9 +1483,7 @@ class ClosureMemoryKind(enum.Enum):
 
     nonescaping = 1
 
-    trivial = 2
-
-    register_passable = 3
+    registerpassable = 2
 
 class ClosureMethod(enum.Enum):
     call = 0
@@ -1525,8 +1493,6 @@ class ClosureMethod(enum.Enum):
     move = 2
 
     copy = 3
-
-    none = 4
 
 class ExportKind(enum.Enum):
     not_exported = 0
@@ -1551,8 +1517,6 @@ class FnEffects(enum.Enum):
     refresult = 32
 
     unified = 64
-
-    register_passable = 128
 
 class InlineLevel(enum.Enum):
     automatic = 0
@@ -1629,6 +1593,8 @@ class POC(enum.Enum):
 
     variadic_get = 28
 
+    get_vtable_entry = 33
+
     ptr_bitcast = 34
 
     load_from_mem = 35
@@ -1691,7 +1657,7 @@ class CallIndirectOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         callee: max._core.Value[FuncTypeGeneratorType],
         arguments: Sequence[max._core.Value[max._core.Type]],
         tail_kind: TailKindAttr,
@@ -1727,7 +1693,7 @@ class CallParamOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         callee: max._core.dialects.builtin.TypedAttr,
         operands: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
@@ -1844,7 +1810,6 @@ class ClosureInitOp(max._core.Operation):
     ```
     """
 
-    @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
@@ -1856,20 +1821,6 @@ class ClosureInitOp(max._core.Operation):
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
-        nested_fn_scope: max._core.Attribute,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: max._core.Type,
-        func_type_generator: FuncTypeGeneratorType,
-        function_type: max._core.dialects.builtin.FunctionType,
-        captures: Sequence[max._core.Value[max._core.Type]],
-        move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
-        input_params: Sequence[ParamDeclAttr],
-        inline_level: InlineLevel,
     ) -> None: ...
     @property
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
@@ -1901,10 +1852,6 @@ class ClosureInitOp(max._core.Operation):
     def inline_level(self) -> InlineLevel: ...
     @inline_level.setter
     def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
-    @property
-    def nested_fn_scope(self) -> max._core.Attribute | None: ...
-    @nested_fn_scope.setter
-    def nested_fn_scope(self, arg: max._core.Attribute, /) -> None: ...
 
 class CompileOffloadOp(max._core.Operation):
     """
@@ -2202,7 +2149,7 @@ class DeferredOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         operands: Sequence[max._core.Value[max._core.Type]],
         op_name: max._core.dialects.builtin.StringAttr,
         op_attrs: max._core.dialects.builtin.DictionaryAttr,
@@ -2323,8 +2270,7 @@ class FuncOp(max._core.Operation):
         decorators: DecoratorsAttr,
         inline_level: InlineLevelAttr,
         export_kind: ExportKindAttr,
-        external: max._core.dialects.builtin.UnitAttr,
-        convergent: max._core.dialects.builtin.UnitAttr,
+        is_extern: max._core.dialects.builtin.UnitAttr,
         _llvm_metadata: max._core.dialects.builtin.DictionaryAttr,
         _llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr,
         cross_device_captures: max._core.dialects.m.StringArrayAttr,
@@ -2339,8 +2285,7 @@ class FuncOp(max._core.Operation):
         type: FuncType,
         inline_level: InlineLevel = InlineLevel.automatic,
         export_kind: ExportKind = ExportKind.not_exported,
-        external: bool = False,
-        convergent: bool = False,
+        is_extern: bool = False,
         decorators: Sequence[max._core.dialects.builtin.TypedAttr] = [],
         llvm_metadata: max._core.dialects.builtin.DictionaryAttr = ...,
         llvm_arg_metadata: max._core.dialects.builtin.ArrayAttr = ...,
@@ -2370,13 +2315,9 @@ class FuncOp(max._core.Operation):
     @export_kind.setter
     def export_kind(self, arg: ExportKindAttr, /) -> None: ...
     @property
-    def external(self) -> bool: ...
-    @external.setter
-    def external(self, arg: max._core.dialects.builtin.UnitAttr, /) -> None: ...
-    @property
-    def convergent(self) -> bool: ...
-    @convergent.setter
-    def convergent(
+    def is_extern(self) -> bool: ...
+    @is_extern.setter
+    def is_extern(
         self, arg: max._core.dialects.builtin.UnitAttr, /
     ) -> None: ...
     @property
@@ -2439,7 +2380,7 @@ class GeneratorOp(max._core.Operation):
         decorators: DecoratorsAttr,
         inline_level: InlineLevelAttr,
         export_kind: ExportKindAttr,
-        external: max._core.dialects.builtin.UnitAttr,
+        is_extern: max._core.dialects.builtin.UnitAttr,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
@@ -2499,9 +2440,11 @@ class GeneratorOp(max._core.Operation):
     @export_kind.setter
     def export_kind(self, arg: ExportKindAttr, /) -> None: ...
     @property
-    def external(self) -> bool: ...
-    @external.setter
-    def external(self, arg: max._core.dialects.builtin.UnitAttr, /) -> None: ...
+    def is_extern(self) -> bool: ...
+    @is_extern.setter
+    def is_extern(
+        self, arg: max._core.dialects.builtin.UnitAttr, /
+    ) -> None: ...
     @property
     def _llvm_metadata_array(self) -> max._core.dialects.builtin.ArrayAttr: ...
     @_llvm_metadata_array.setter
@@ -2516,6 +2459,106 @@ class GeneratorOp(max._core.Operation):
     def _llvm_arg_metadata_array(
         self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
+
+class GlobalAddressOp(max._core.Operation):
+    """
+    The `kgen.global.address` operation returns the address of a referenced
+    global variable. The type of the result is a `!kgen.pointer` to the global
+    type.
+
+    Example:
+
+    ```mlir
+    %ptr = kgen.global.address @foo : <i32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: PointerType,
+        global_: max._core.dialects.builtin.SymbolRefAttr,
+    ) -> None: ...
+    @property
+    def global_(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
+    @global_.setter
+    def global_(
+        self, arg: max._core.dialects.builtin.SymbolRefAttr, /
+    ) -> None: ...
+
+class GlobalOp(max._core.Operation):
+    """
+    The `kgen.global` operation declares a global variable bound to a symbol
+    name. It contains the type of the global variable, and optionally a
+    constructor function, a destructor function, and an initialization priority.
+    The initialization priority determines the order in which the constructors
+    of all the globals in the program will be invoked (lower is earlier) and
+    the reverse order in which the destructors are invoked.
+
+    The constructors and destructors are optional, and so a global variable
+    that does not require constructors and destructors can be defined by:
+
+    ```mlir
+    kgen.global @my_global : f32
+    ```
+
+    The optional constructor and destructor functions are expected to have
+    zero arguments and zero results.
+
+    Example:
+
+    ```mlir
+    kgen.global @foo : i32 [@foo_ctor, @foo_dtor](2)
+    ```
+
+    The global `@foo` with initialization priority `2` will be initialized
+    after a global with priority lower than `2` and destroyed before.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        sym_name: max._core.dialects.builtin.StringAttr,
+        type: max._core.dialects.builtin.TypeAttr,
+        priority: max._core.dialects.builtin.IntegerAttr,
+        ctor: max._core.dialects.builtin.SymbolRefAttr,
+        dtor: max._core.dialects.builtin.SymbolRefAttr,
+        export_kind: ExportKindAttr,
+    ) -> None: ...
+    @property
+    def sym_name(self) -> str: ...
+    @sym_name.setter
+    def sym_name(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @type.setter
+    def type(self, arg: max._core.dialects.builtin.TypeAttr, /) -> None: ...
+    @property
+    def priority(self) -> int | None: ...
+    @priority.setter
+    def priority(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def ctor(self) -> max._core.dialects.builtin.SymbolRefAttr | None: ...
+    @ctor.setter
+    def ctor(
+        self, arg: max._core.dialects.builtin.SymbolRefAttr, /
+    ) -> None: ...
+    @property
+    def dtor(self) -> max._core.dialects.builtin.SymbolRefAttr | None: ...
+    @dtor.setter
+    def dtor(
+        self, arg: max._core.dialects.builtin.SymbolRefAttr, /
+    ) -> None: ...
+    @property
+    def export_kind(self) -> ExportKind: ...
+    @export_kind.setter
+    def export_kind(self, arg: ExportKindAttr, /) -> None: ...
 
 class IsCompileTimeOp(max._core.Operation):
     """
@@ -2938,7 +2981,7 @@ class ParamForOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         initial: max._core.dialects.builtin.TypedAttr,
         has_next: max._core.dialects.builtin.TypedAttr,
         get_next_iter: max._core.dialects.builtin.TypedAttr,
@@ -3026,7 +3069,7 @@ class ParamIfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         cond: max._core.dialects.builtin.TypedAttr,
         then_isolated: max._core.dialects.builtin.UnitAttr,
         else_isolated: max._core.dialects.builtin.UnitAttr,
@@ -3563,7 +3606,7 @@ class WitnessOp(max._core.Operation):
     type for the trait being conformed to.
 
     TODO: Make this a Symbol by using the mangled name from the trait. At the
-    same time, get_witness should also be emitted with the mangled name.
+    same time, get_vtable_entry should also be emitted with the mangled name.
 
     Example:
 
@@ -3895,9 +3938,8 @@ class ParamClosureType(max._core.Type):
                        >(%arg0: !kgen.param<x>) -> index {
          %0 = kgen.call_param[(!kgen.param<x>) -> index:
                       bind_params(:<!kgen.param<CAPTURE_TYPE>>
-                        (!kgen.none, index) -> index
-                        get_witness(x, "closure_trait", "__call__"),
-                      CAPTURE_INST)](%arg0, %arg1)
+                     (!kgen.none, index) -> index
+                     get_vtable_entry(x, "__call__"), CAPTURE_INST)](%arg0, %arg1)
          kgen.return %0 : index
        }
     ```
@@ -4214,21 +4256,10 @@ class PointerType(max._core.Type):
     def address_space(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class FuncTypeGeneratorType(GeneratorType):
-    def __init__(
-        self,
-        input_param_types: Sequence[max._core.Type],
-        fn_type: max._core.dialects.builtin.FunctionType,
-        arg_convs: Sequence[ArgConvention] = [],
-        effects: FnEffects = FnEffects.none,
-        fn_metadata: max._core.Attribute = ...,
-        gen_metadata: max._core.Attribute = ...,
-    ) -> None: ...
+    pass
 
 class _KGENDType:
     pass
 
 class ParamDefValue:
-    pass
-
-class ParameterEvaluator:
     pass

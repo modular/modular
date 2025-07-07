@@ -28,6 +28,14 @@ from . import passes as passes
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
+# This is a bug I haven't yet chased down in Nanobind's type renderings.
+# - In some circumstances, `max._core.dialicts.mosh.ShapeType` is being shortened
+#   to `h.ShapeType`, which obviously doesn't exist.
+# - I haven't figured out a clean repro or workaround, I suspect it's some awkward case
+#   with `nb_func_render_signature` because for instance adding garbage characters to the
+#   `const_name` in the type caster will cause it to repro in different places.
+# - For now, really hacky thing to work around.
+
 class DenseElementsAttr(max._core.Attribute):
     pass
 
@@ -933,7 +941,7 @@ class UnrealizedConversionCastOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Type],
+        outputs: Sequence[max._core.Value[max._core.Type]],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property
@@ -1030,7 +1038,7 @@ class VectorElementTypeInterface(Protocol):
     This may change in the future, for example, to require types to provide
     their size or alignment given a data layout. Please post an RFC before
     adding this interface to additional types. Implementing this interface on
-    downstream types is discouraged, until we specified the exact properties of
+    downstream types is discourged, until we specified the exact properties of
     a vector element type in more detail.
     """
 
@@ -1280,40 +1288,6 @@ class FloatTF32Type(max._core.Type):
     def __init__(self) -> None: ...
 
 class FunctionType(max._core.Type):
-    """
-    Syntax:
-
-    ```
-    // Function types may have multiple results.
-    function-result-type ::= type-list-parens | non-function-type
-    function-type ::= type-list-parens `->` function-result-type
-    ```
-
-    The function type can be thought of as a function signature. It consists of
-    a list of formal parameter types and a list of formal result types.
-
-    #### Example:
-
-    ```mlir
-    func.func @add_one(%arg0 : i64) -> i64 {
-      %c1 = arith.constant 1 : i64
-      %0 = arith.addi %arg0, %c1 : i64
-      return %0 : i64
-    }
-    ```
-    """
-
-    def __init__(
-        self,
-        inputs: Sequence[max._core.Type] = [],
-        results: Sequence[max._core.Type] = [],
-    ) -> None: ...
-    @property
-    def inputs(self) -> Sequence[max._core.Type]: ...
-    @property
-    def results(self) -> Sequence[max._core.Type]: ...
-
-class GraphType(max._core.Type):
     """
     Syntax:
 

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from sys import size_of
+from sys import sizeof
 
 from python import Python, PythonObject
 from python.bindings import PythonModuleBuilder
@@ -31,7 +31,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct PyArrayObject[dtype: DType](ImplicitlyCopyable, Movable):
+struct PyArrayObject[dtype: DType](Copyable, Movable):
     """
     Container for a numpy array.
 
@@ -69,7 +69,7 @@ fn _mojo_block_hasher[
     var num_elts: Int = py_array_object_ptr[].num_elts()
     var num_hashes: Int = num_elts // block_size
 
-    ref cpython = Python().cpython()
+    var cpython = Python().cpython()
 
     # Create a list of NULL elements with the size needed to store the hash
     # results.
@@ -77,7 +77,7 @@ fn _mojo_block_hasher[
 
     # Performing hashing
     var prev_hash = parent_hash
-    var num_bytes = block_size * size_of[dtype]()
+    var num_bytes = block_size * sizeof[dtype]()
     var hash_ptr_base = py_array_object_ptr[].data
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
@@ -92,7 +92,7 @@ fn _mojo_block_hasher[
 
         prev_hash = Int(curr_hash)
 
-    return PythonObject(from_owned=result_py_list)
+    return PythonObject(from_owned_ptr=result_py_list)
 
 
 @export

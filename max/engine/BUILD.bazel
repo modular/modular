@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 modular_py_library(
     name = "engine",
     srcs = glob(["**/*.py"]),
+    data = ["py.typed"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
@@ -10,7 +11,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/profiler",
-        "//open-source/max/mojo/python/mojo",
+        "//SDK/lib/API/python/max/support",
         requirement("numpy"),
     ],
 )

@@ -32,6 +32,14 @@ from . import passes as passes
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
+# This is a bug I haven't yet chased down in Nanobind's type renderings.
+# - In some circumstances, `max._core.dialicts.mosh.ShapeType` is being shortened
+#   to `h.ShapeType`, which obviously doesn't exist.
+# - I haven't figured out a clean repro or workaround, I suspect it's some awkward case
+#   with `nb_func_render_signature` because for instance adding garbage characters to the
+#   `const_name` in the type caster will cause it to repro in different places.
+# - For now, really hacky thing to work around.
+
 class MOAnalogue(Protocol):
     """
     An RMO operation which maps 1-1 in semantics to an existing MO operation.
@@ -4790,7 +4798,7 @@ class MoSplitOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         input: max._core.Value[max._core.dialects.mo.TensorType],
         split_sizes: max._core.Value[max._core.dialects.mo.TensorType],
         axis: max._core.Value[max._core.dialects.mo.TensorType],

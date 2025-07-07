@@ -28,13 +28,6 @@ def accelerator_api() -> str:
     return CPU().api
 
 
-def accelerator_architecture_name() -> str:
-    """Returns the architecture name of the accelerator device."""
-    if accelerator_count() > 0:
-        return Accelerator().architecture_name
-    return CPU().architecture_name
-
-
 @dataclass(frozen=True)
 class DeviceSpec:
     """Specification for a device, containing its ID and type.
@@ -51,17 +44,16 @@ class DeviceSpec:
 
     def __post_init__(self) -> None:
         if self.device_type == "gpu" and self.id < 0:
-            raise ValueError(
-                f"id provided {self.id} for accelerator must always be greater than 0"
-            )
+            msg = f"id provided {self.id} for accelerator must always be greater than 0"
+            raise ValueError(msg)
 
     @staticmethod
-    def cpu(id: int = -1):  # noqa: ANN205
+    def cpu(id: int = -1):
         """Creates a CPU device specification."""
         return DeviceSpec(id, "cpu")
 
     @staticmethod
-    def accelerator(id: int = 0):  # noqa: ANN205
+    def accelerator(id: int = 0):
         """Creates an accelerator (GPU) device specification."""
         return DeviceSpec(id, "gpu")
 
@@ -75,13 +67,12 @@ def load_devices(device_specs: list[DeviceSpec]) -> list[Device]:
             devices.append(CPU(device_spec.id))
         else:
             if device_spec.id >= num_devices_available:
+                msg = f"Device {device_spec.id} was requested but "
                 if num_devices_available == 0:
-                    reason = "no devices were found."
+                    msg += "no devices were found."
                 else:
-                    reason = f"only found {num_devices_available} devices."
-                raise ValueError(
-                    f"Device {device_spec.id} was requested but {reason}"
-                )
+                    msg += f"only found {num_devices_available} devices."
+                raise ValueError(msg)
 
             devices.append(Accelerator(device_spec.id))
 

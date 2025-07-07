@@ -32,6 +32,15 @@ from . import passes as passes
 # This binding prevents errors in those cases.
 DiagnosticHandler = Callable
 
+# This is a bug I haven't yet chased down in Nanobind's type renderings.
+# - In some circumstances, `max._core.dialicts.mosh.ShapeType` is being shortened
+#   to `h.ShapeType`, which obviously doesn't exist.
+# - I haven't figured out a clean repro or workaround, I suspect it's some awkward case
+#   with `nb_func_render_signature` because for instance adding garbage characters to the
+#   `const_name` in the type caster will cause it to repro in different places.
+# - For now, really hacky thing to work around.
+import max._core.dialects.mosh as h
+
 class BufferType(max._core.Type):
     """
     This is a close analogue of the existing mo.tensor type but is meant
@@ -267,6 +276,9 @@ class ChainAttr(max._core.Attribute):
 class DTypeAttr(max._core.Attribute):
     """This attribute holds the data type of a tensor."""
 
+    @overload
+    def __init__(self, dtype: max._core.dtype.DType) -> None: ...
+    @overload
     def __init__(self, dtype: max._core.dtype.DType) -> None: ...
     @property
     def dtype(self) -> max._core.dtype.DType: ...
@@ -431,28 +443,6 @@ class MatmulLike(Protocol):
     def tensor_b(self) -> max._core.Value[TensorType]: ...
     @property
     def tensor_result(self) -> max._core.Value[TensorType]: ...
-
-class MOMultiChainMutableOpInterface(Protocol):
-    """
-    Extension of MOMutableOpInterface for ops that may thread multiple chain
-    operands/results, for example per-device sequencing plus primary chain.
-    Implementers must treat the first element returned by the single in/out
-    chain MOMutableOpInterface methods as the primary/global chain.
-    """
-
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
-    @property
-    def out_chain(self) -> max._core.Value[ChainType]: ...
-    @property
-    def in_chain_mutable(self) -> max._core.OpOperand: ...
-    @property
-    def all_in_chains(self) -> list[max._core.Value[ChainType]]: ...
-    @property
-    def all_out_chains(self) -> list[max._core.Value[ChainType]]: ...
-    def get_effects(
-        self, arg: Sequence[max._core._MemoryEffect], /
-    ) -> None: ...
 
 class MOMutableOpInterface(Protocol):
     """
@@ -1003,7 +993,7 @@ class IfOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         cond: max._core.Value,
     ) -> None: ...
     @property
@@ -1025,7 +1015,7 @@ class ShapeFromTensorOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: max._core.dialects.mosh.ShapeType,
+        result: h.ShapeType,
         input: max._core.Value[TensorType],
     ) -> None: ...
     @property
@@ -1048,10 +1038,10 @@ class ShapeToTensorOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
-        input: max._core.Value[max._core.dialects.mosh.ShapeType],
+        input: max._core.Value[h.ShapeType],
     ) -> None: ...
     @property
-    def input(self) -> max._core.Value[max._core.dialects.mosh.ShapeType]: ...
+    def input(self) -> max._core.Value[h.ShapeType]: ...
 
 class StaticBroadcastToOp(max._core.Operation):
     """
@@ -1087,6 +1077,53 @@ class StaticBroadcastToOp(max._core.Operation):
     ) -> None: ...
     @property
     def input(self) -> max._core.Value[TensorType]: ...
+
+class StaticRandomNormalOp(max._core.Operation):
+    """
+    Creates a tensor populated with random values from a normal distribution,
+    with the mean of the distribution equal to `mean` and the standard deviation
+    equal to `variance`. The shape of the result tensor must not be unknown or
+    contain unknown dimensions, but can be parametric.
+
+    Example:
+
+    ```mlir
+    %mean = mo.constant {
+      value = #M.dense_array<2.0> : tensor<1xf32> } : !mo.tensor<[], f32>
+    %variance = mo.constant {
+      value = #M.dense_array<0.5> : tensor<1xf32> } : !mo.tensor<[], f32>
+    %seed = mo.constant {
+      value = #M.dense_array<1> : tensor<1xsi64> } : !mo.tensor<[], si64>
+    %res = mo.static.random.normal(%size, %mean, %variance, %seed) :
+          (!mo.tensor<[4], si64>, !mo.tensor<[], f32>, !mo.tensor<[], f32>,
+          !mo.tensor<[], si64>) -> !mo.tensor<[1, 1, 7, 8], f32>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        mean: max._core.Value[TensorType],
+        variance: max._core.Value[TensorType],
+        seed: max._core.Value[TensorType],
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def mean(self) -> max._core.Value[TensorType]: ...
+    @property
+    def variance(self) -> max._core.Value[TensorType]: ...
+    @property
+    def seed(self) -> max._core.Value[TensorType]: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
 
 class StaticReshapeOp(max._core.Operation):
     """
@@ -1203,7 +1240,7 @@ class DistributedAllgatherOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Type],
+        outputs: Sequence[max._core.Value[max._core.Type]],
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
@@ -1220,23 +1257,18 @@ class DistributedAllreduceSumOp(max._core.Operation):
     """
     Allreduce takes in inputs each coming from a different device with
     the same shape as the final output and performs a sum reduction
-    across the devices. This op instance executes on a specific device
-    (specified by the device attribute) and produces the output for that device.
-
-    Multiple instances of this op are created (one per device) to enable
-    multi-threaded execution.
+    across the devices. The output is replicated across the same devices.
     """
 
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        output: TensorType,
+        outputs: Sequence[max._core.Value[max._core.Type]],
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
-        device: max._core.dialects.m.DeviceRefAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -1244,10 +1276,6 @@ class DistributedAllreduceSumOp(max._core.Operation):
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
-    @property
-    def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
-    @device.setter
-    def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
 
 class AndOp(max._core.Operation):
     """
@@ -2038,7 +2066,7 @@ class CallOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         operands: Sequence[max._core.Value[max._core.Type]],
         symbol: max._core.dialects.builtin.SymbolRefAttr,
         prefix: max._core.dialects.builtin.StringAttr,
@@ -2833,9 +2861,10 @@ class CustomOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         operands: Sequence[max._core.Value[max._core.Type]],
         symbol: max._core.dialects.builtin.StringAttr,
+        function: max._core.dialects.builtin.StringAttr,
         device: max._core.dialects.m.DeviceRefAttr,
         parameters: max._core.dialects.builtin.DictionaryAttr,
         output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
@@ -2846,6 +2875,12 @@ class CustomOp(max._core.Operation):
     def symbol(self) -> str: ...
     @symbol.setter
     def symbol(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
+    @property
+    def function(self) -> str: ...
+    @function.setter
+    def function(
+        self, arg: max._core.dialects.builtin.StringAttr, /
+    ) -> None: ...
     @property
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
@@ -3401,7 +3436,7 @@ class GuardOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         chain: max._core.Value[ChainType],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
@@ -3930,7 +3965,7 @@ class DistributedMatmulAllreduceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        outputs: Sequence[max._core.Type],
+        outputs: Sequence[max._core.Value[max._core.Type]],
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         weights: Sequence[max._core.Value[max._core.Type]],
@@ -6510,7 +6545,7 @@ class SplitOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         input: max._core.Value[TensorType],
         split_sizes: max._core.Value[TensorType],
         axis: max._core.Value[TensorType],
@@ -6770,10 +6805,8 @@ class TransferOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         result: TensorType,
-        out_chain: ChainType,
         input: max._core.Value[TensorType],
         always_elide_same_device_copy: max._core.dialects.builtin.BoolAttr,
-        in_chain: max._core.Value[ChainType],
     ) -> None: ...
     @overload
     def __init__(
@@ -6782,7 +6815,6 @@ class TransferOp(max._core.Operation):
         location: Location,
         input: max._core.Value[TensorType],
         dest_device: max._core.dialects.m.DeviceRefAttr,
-        in_chain: max._core.Value[ChainType],
         always_elide_same_device_copy: bool = True,
     ) -> None: ...
     @property
@@ -6793,8 +6825,6 @@ class TransferOp(max._core.Operation):
     def always_elide_same_device_copy(
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
-    @property
-    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class TransposeOp(max._core.Operation):
     """
@@ -7026,7 +7056,7 @@ class WhileOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        results: Sequence[max._core.Type],
+        results: Sequence[max._core.Value[max._core.Type]],
         inputs: Sequence[max._core.Value[max._core.Type]],
     ) -> None: ...
     @property

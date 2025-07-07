@@ -16,7 +16,7 @@ from .. import Attribute, Block, FunctionType, Type, TypeAttr
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
-class GraphOp(GraphOp):  # type: ignore[no-redef, operator]
+class GraphOp(GraphOp):  # type: ignore[no-redef]
     """Extends mo.graph op with simpler builders."""
 
     def __init__(
@@ -37,15 +37,15 @@ class GraphOp(GraphOp):  # type: ignore[no-redef, operator]
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
-class IfOp(IfOp):  # type: ignore[no-redef, operator]
+class IfOp(IfOp):  # type: ignore[no-redef]
     """Extends mo.if op with simpler builders."""
 
     def __init__(
         self,
-        pred,  # noqa: ANN001
+        pred,
         out_types: Iterable[Type] | None,
-        loc=None,  # noqa: ANN001
-        ip=None,  # noqa: ANN001
+        loc=None,
+        ip=None,
     ) -> None:
         if out_types is None:
             out_types = []
@@ -55,10 +55,10 @@ class IfOp(IfOp):  # type: ignore[no-redef, operator]
 
 
 def if_(  # type: ignore[no-redef]
-    pred,  # noqa: ANN001
-    out_types,  # noqa: ANN001
-    loc=None,  # noqa: ANN001
-    ip=None,  # noqa: ANN001
+    pred,
+    out_types,
+    loc=None,
+    ip=None,
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
         # mypy doesn't see the IfOp definition above, but the one that is replaced
@@ -67,10 +67,10 @@ def if_(  # type: ignore[no-redef]
 
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
-class WhileOp(WhileOp):  # type: ignore[no-redef, operator]
+class WhileOp(WhileOp):  # type: ignore[no-redef]
     """Extends mo.while op with simpler builders."""
 
-    def __init__(self, results_, inputs, *, loc=None, ip=None) -> None:  # noqa: ANN001
+    def __init__(self, results_, inputs, *, loc=None, ip=None) -> None:
         if results_ is None:
             results_ = []
         super().__init__(results_=results_, inputs=inputs, loc=loc, ip=ip)
@@ -79,11 +79,7 @@ class WhileOp(WhileOp):  # type: ignore[no-redef, operator]
 
 
 def while_(  # type: ignore[no-redef]
-    results_,  # noqa: ANN001
-    inputs,  # noqa: ANN001
-    *,
-    loc=None,  # noqa: ANN001
-    ip=None,  # noqa: ANN001
+    results_, inputs, *, loc=None, ip=None
 ) -> _ods_common.VariadicResultValueT:
     return _ods_common.get_op_result_or_op_results(
         WhileOp(results_=results_, inputs=inputs, loc=loc, ip=ip)
@@ -91,13 +87,7 @@ def while_(  # type: ignore[no-redef]
 
 
 def call_(
-    symbol,  # noqa: ANN001
-    results,  # noqa: ANN001
-    operands,  # noqa: ANN001
-    *,
-    loc=None,  # noqa: ANN001
-    ip=None,  # noqa: ANN001
-    prefix: str = "",
+    symbol, results, operands, *, loc=None, ip=None, prefix: str = ""
 ) -> _ods_common.VariadicResultValueT:
     if results is None:
         results = []

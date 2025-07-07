@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 modular_py_library(
     name = "torch",
@@ -13,5 +13,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/graph",
         "//SDK/lib/API/python/max/mlir",
         "//SDK/lib/API/python/max/support",
+        requirement("torch"),
     ],
 )

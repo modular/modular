@@ -1,9 +1,16 @@
-load("//bazel:api.bzl", "copy_files", "modular_py_library")
+load("//bazel:api.bzl", "copy_files", "modular_py_library", "modular_python_binding_py_library")
 
 copy_files(
     name = "ir_py",
     srcs = ["@llvm-project//mlir/python:IRPyFiles"],
     outs = ["ir.py"],
+)
+
+modular_python_binding_py_library(
+    name = "_mlir_nanobind",
+    srcs = [],
+    bindings_data = ["//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir"],
+    visibility = ["//visibility:public"],
 )
 
 modular_py_library(
@@ -15,6 +22,7 @@ modular_py_library(
     tags = ["no-mypy"],  # Upstream files with violations
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/_mlir/_mlir_libs:_mlir",
+        ":_mlir_nanobind",
+        "//SDK/lib/API/python/max/_mlir/_mlir_libs",
     ],
 )

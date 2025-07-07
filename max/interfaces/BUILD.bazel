@@ -8,10 +8,6 @@ modular_py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//SDK/lib/API/python/max/driver",
-        "//SDK/lib/API/python/max/profiler",
         requirement("msgspec"),
-        requirement("numpy"),
-        requirement("typing-extensions"),
     ],
 )

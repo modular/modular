@@ -8,10 +8,12 @@
 
 import enum
 from collections.abc import Iterator, Sequence
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
-import max._mlir.ir
+from max.mlir import Attribute as MlirAttribute
+from max.mlir import Block as MlirBlock
 from max.mlir import Context, Location
+from max.mlir import Type as MlirType
 from max.mlir import Value as MlirValue
 
 from . import (
@@ -35,13 +37,10 @@ from . import (
 from . import (
     profiler as profiler,
 )
-from . import (
-    safetensors as safetensors,
-)
 
 class Attribute:
     @staticmethod
-    def _from_cmlir(arg: max._mlir.ir.Attribute, /) -> Attribute: ...
+    def _from_cmlir(arg: MlirAttribute, /) -> Attribute: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
     @property
@@ -65,7 +64,7 @@ class TypeID:
 
 class Type:
     @staticmethod
-    def _from_cmlir(arg: max._mlir.ir.Type, /) -> Type: ...
+    def _from_cmlir(arg: MlirType, /) -> Type: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
     @property
@@ -86,8 +85,6 @@ class Value(Generic[T]):
     @property
     def owner(self) -> Block | Operation: ...
     @property
-    def num_uses(self) -> int: ...
-    @property
     def _CAPIPtr(self) -> object: ...
 
 class OpOperand:
@@ -101,13 +98,8 @@ class InsertPoint:
 
 class Block:
     @staticmethod
-    def _from_cmlir(arg: max._mlir.ir.Block, /) -> Block: ...
-    @property
-    def arguments(self) -> Sequence[Value]: ...
-    @property
-    def parent_op(self) -> object: ...
+    def _from_cmlir(arg: MlirBlock, /) -> Block: ...
     def add_argument(self, arg0: Type, arg1: Location, /) -> Value: ...
-    def erase_argument(self, arg: int, /) -> None: ...
     @property
     def end(self) -> InsertPoint: ...
 
@@ -134,9 +126,7 @@ class Operation:
     def results(self) -> Sequence[Value[Type]]: ...
     @property
     def regions(self) -> Sequence[Region]: ...
-    @property
-    def parent_op(self) -> object: ...
-    def verify(self, verify_recursively: bool = True) -> None: ...
+    def verify(self, verify_recursively: bool = True) -> bool: ...
     def move_after(self, arg: Operation, /) -> None: ...
     @property
     def discardable_attributes(self) -> DiscardableAttributes: ...
@@ -149,14 +139,16 @@ class Operation:
 class OpBuilder:
     def __init__(self, arg: InsertPoint, /) -> None: ...
 
+    Op = TypeVar("Op", bound=Operation)
+    def create(
+        self, type: type[Op], location: Location
+    ) -> Callable[..., Op]: ...
+
 class Region:
     @property
     def front(self) -> Block: ...
     @property
     def back(self) -> Block: ...
-
-class LocationAttr:
-    pass
 
 class _BitVector:
     pass
@@ -164,7 +156,7 @@ class _BitVector:
 class _TargetTriple:
     pass
 
-class _RelocationModel(enum.Enum):  # type: ignore
+class _RelocationModel(enum.Enum):
     pass
 
 class _MemoryEffect:
