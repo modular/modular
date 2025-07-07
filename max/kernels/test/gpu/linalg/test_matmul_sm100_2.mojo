@@ -249,20 +249,22 @@ fn tma_umma_kernel_pair_cta[
                 + block_idx.y * MMA_N
             )
 
-            var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
-            var b_smem_reshape = b_smem_tile.reshape[Layout.row_major(BN, BK)]()
+            var a_smem_slice = __type_of(a_smem_tile)(
+                a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+            )
+            var b_smem_slice = __type_of(b_smem_tile)(
+                b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+            )
 
             a_tma_op.async_multicast_load[cta_group](
-                a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
+                a_smem_slice,
                 tma_mbar[0],
                 (UInt(i) * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
             b_tma_op.async_multicast_load[cta_group](
-                b_smem_reshape.split[CLUSTER_M // cta_group]()[
-                    peer_cta_coord[1]
-                ],
+                b_smem_slice,
                 tma_mbar[0],
                 (UInt(i) * BK, b_gmem_slice_coord),
                 b_multicast_mask,
