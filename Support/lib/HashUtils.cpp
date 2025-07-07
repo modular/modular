@@ -11,9 +11,6 @@
 #include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/Operation.h"
-#include "mlir/IR/OperationSupport.h"
-#include "mlir/IR/OwningOpRef.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -44,7 +41,16 @@ std::string M::raw_xxhash_stream::hashString() {
   return std::string(output);
 }
 
-FailureOr<std::string> M::getBytecodeHash(mlir::Operation *op) {
+FailureOr<std::string> M::getBytecodeHash(Operation *op,
+                                          ReplacementFunc replace) {
+  raw_xxhash_stream ostream;
+  if (failed(M::writeBytecode(op, ostream, replace)))
+    return op->emitError("Failed to write bytecode");
+  return ostream.hashString();
+}
+
+LogicalResult M::writeBytecode(Operation *op, llvm::raw_ostream &os,
+                               ReplacementFunc replacer) {
   auto unknownLoc = UnknownLoc::get(op->getContext());
 
   auto *builtin = op->getContext()->getLoadedDialect<mlir::BuiltinDialect>();
@@ -58,14 +64,13 @@ FailureOr<std::string> M::getBytecodeHash(mlir::Operation *op) {
         // Map all locations attributes to UnknownLoc.
         if (isa<LocationAttr>(entryValue))
           entryValue = unknownLoc;
+        else if (replacer)
+          if (auto replaced = replacer(entryValue))
+            entryValue = replaced;
         return iface->writeAttribute(entryValue, writer);
       });
 
-  raw_xxhash_stream ostream;
-  if (failed(mlir::writeBytecodeToFile(op, ostream, config)))
-    return op->emitError("Failed to write bytecode");
-
-  return ostream.hashString();
+  return mlir::writeBytecodeToFile(op, os, config);
 }
 
 FailureOr<std::string> M::getModuleBytecodeHash(mlir::ModuleOp module) {
