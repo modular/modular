@@ -498,7 +498,7 @@ def test_config__test_incompatible_quantization_encoding(
         max_batch_size=1,
         max_length=1,
         engine=PipelineEngine.MAX,
-        allow_dtype_casting=True,
+        allow_safetensors_weights_float32_to_bfloat16_cast=True,
     )
 
 
@@ -510,7 +510,7 @@ def test_config__test_quantization_encoding_with_dtype_casting(
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     with pytest.raises(ValueError):
-        # This should raise, as allow_dtype_casting defaults to False, which
+        # This should raise, as allow_safetensors_weights_float32_to_bfloat16_cast defaults to False, which
         # means it will not cast the (bfloat16) quantization encoding to
         # float32.
         config = PipelineConfig(
@@ -521,15 +521,27 @@ def test_config__test_quantization_encoding_with_dtype_casting(
             engine=PipelineEngine.MAX,
         )
 
-    # This should not raise, as allow_dtype_casting is set to True, which means
-    # it will safely cast the quantization encoding to float32.
+    with pytest.raises(ValueError):
+        # This should still raise. While allow_safetensors_weights_float32_to_bfloat16_cast is set to True,
+        # it will not cast the quantization encoding to float32.
+        config = PipelineConfig(
+            model_path=llama_3_1_8b_instruct_local_path,
+            quantization_encoding=SupportedEncoding.float32,
+            max_batch_size=1,
+            max_length=1,
+            engine=PipelineEngine.MAX,
+            allow_safetensors_weights_float32_to_bfloat16_cast=True,
+        )
+
+    # This should not raise, as allow_safetensors_weights_float32_to_bfloat16_cast is set to True,
+    # and the quantization encoding is set to bfloat16.
     config = PipelineConfig(
         model_path=llama_3_1_8b_instruct_local_path,
-        quantization_encoding=SupportedEncoding.float32,
+        quantization_encoding=SupportedEncoding.bfloat16,
         max_batch_size=1,
         max_length=1,
         engine=PipelineEngine.MAX,
-        allow_dtype_casting=True,
+        allow_safetensors_weights_float32_to_bfloat16_cast=True,
     )
 
 
