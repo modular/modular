@@ -585,10 +585,13 @@ def test_vision_context_reset() -> None:
     assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
     assert context.start_idx == 0
     assert context.active_length == 5
+    assert context.needs_vision_encoding is True
 
-    # The pixel values should be unset after update.
+    # The pixel values should remain set after update, but needs_vision_encoding should be False.
     context.update(5)
-    assert context.pixel_values == tuple()
+    assert len(context.pixel_values) == 1
+    assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
+    assert context.needs_vision_encoding is False
     assert context.start_idx == 5
     assert context.active_length == 1
 
@@ -598,3 +601,4 @@ def test_vision_context_reset() -> None:
     assert context.pixel_values[0].tolist() == [10, 11, 12, 13, 14]
     assert context.start_idx == 0
     assert context.active_length == 6
+    assert context.needs_vision_encoding is True
