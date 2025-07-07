@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable, Mapping
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
@@ -354,6 +355,8 @@ class InferenceSession:
     """
 
     _impl: _InferenceSession
+    # This is shared across sessions. Compilation is currently not thread safe.
+    _compilation_lock = threading.Lock()
 
     def __init__(
         self,
@@ -488,9 +491,12 @@ class InferenceSession:
                             f"Mismatch in device type for weight '{weight_name}'. Expected {expected_device} but weight is {registered_weight}"
                         )
 
-            _model = self._impl.compile_from_object(
-                model._module._CAPIPtr, _FrameworkFormat.max_graph, options_dict
-            )
+            with self._compilation_lock:
+                _model = self._impl.compile_from_object(
+                    model._module._CAPIPtr,
+                    _FrameworkFormat.max_graph,
+                    options_dict,
+                )
         else:
             raise RuntimeError("The model is not a valid path or module.")
 
