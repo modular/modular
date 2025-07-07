@@ -125,7 +125,13 @@ mojo_binary(
 
 command(
     name = "check_licenses.check",
-    # arguments = ["."],  # ???
+    command = ":check_licenses",
+    run_from_workspace_root = True,
+)
+
+command(
+    name = "check_licenses.fix",
+    arguments = ["--fix"],
     command = ":check_licenses",
     run_from_workspace_root = True,
 )
@@ -134,6 +140,7 @@ multirun(
     name = "lint",
     buffer_output = True,
     commands = [
+        ":check_licenses.check",
         ":markdownlint.check",
         ":mblack.check",
         ":ruff-format.check",
@@ -147,6 +154,7 @@ multirun(
     name = "fix",
     buffer_output = True,
     commands = [
+        ":check_licenses.fix",
         ":markdownlint.fix",
         ":mblack.fix",
         ":ruff-format.fix",
