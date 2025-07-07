@@ -597,6 +597,7 @@ overrides==7.7.0 ; sys_platform == 'linux'
     # via jupyter-server
 packaging==24.1 ; sys_platform == 'linux'
     # via
+    #   -r bazel/pip/requirements/requirements.in
     #   accelerate
     #   datasets
     #   evaluate

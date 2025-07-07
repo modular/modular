@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+
+import os
+
+import tomllib  # type: ignore
+from package import Package
+from template import TEMPLATE
+
+_ALLOWED_DUPLICATE_PACKAGES = {
+    "torch",
+    "torchvision",
+    "torchaudio",
+}
+
+
+def _should_ignore(package):
+    # Ignores pypi torch versions because uv is too aggressive about pulling
+    # those in even though a group will always be specified.
+    return package["name"] == "bazel-pyproject" or (
+        package["name"] in _ALLOWED_DUPLICATE_PACKAGES
+        and "https://pypi.org/simple" in package["source"].get("registry", "")
+    )
+
+
+def _main() -> None:
+    path = "./bazel/pip/requirements/uv.lock"
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+
+    package_names = set()
+    duplicate_packages = set()
+
+    all_versions = {}
+    for package in data["package"]:
+        if _should_ignore(package):
+            continue
+
+        all_versions[package["name"]] = package["version"]
+        if package["name"] in package_names:
+            duplicate_packages.add(package["name"])
+            all_versions[package["name"]] = "multiple"
+        package_names.add(package["name"])
+
+    unexpected_duplicates = duplicate_packages - _ALLOWED_DUPLICATE_PACKAGES
+    if unexpected_duplicates:
+        print("\nerror: Found duplicate packages that are not expected:")
+        for package in sorted(unexpected_duplicates):
+            print(f"  {package}")
+        exit(1)
+
+    targets = ""
+    all_downloads = set()
+    for package in data["package"]:
+        if _should_ignore(package):
+            continue
+
+        pkg, downloads = Package(package, all_versions).render()
+        targets += pkg
+        all_downloads |= downloads
+
+    output = TEMPLATE.format(
+        pins="\n".join(
+            f'    "{name}": "{name}@{target}",'
+            for name, target in sorted(all_versions.items())
+        ),
+        targets=targets,
+        repositories="\n".join(
+            download.render() for download in sorted(all_downloads)
+        ),
+    )
+
+    output_path = "./bazel/pip/requirements/pycross_lock_file.bzl"
+    with open(output_path, "w") as f:
+        f.write(output.strip() + "\n")
+
+
+if __name__ == "__main__":
+    if directory := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(directory)
+
+    _main()
