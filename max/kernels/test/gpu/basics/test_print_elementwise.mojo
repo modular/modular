@@ -42,6 +42,9 @@ fn test_elementwise_print[
     print("about to call elementwise, M=", M, "N=", N)
     elementwise[binary, simd_width, target="gpu"](IndexList[2](M, N), ctx)
     print("called elementwise")
+    # Avoid exiting in the middle of the call to the kernel that is printing the test messages.
+    ctx.synchronize()
+    print("finished elementwise")
 
 
 fn runtime_row_major[
