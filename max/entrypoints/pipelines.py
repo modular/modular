@@ -103,12 +103,12 @@ def main() -> None:
     configure_telemetry()
 
 
-def configure_telemetry() -> None:
+def configure_telemetry(color: str | None = None) -> None:
     from max.serve.config import Settings
     from max.serve.telemetry.common import configure_logging, configure_metrics
 
     settings = Settings()
-    configure_logging(settings)
+    configure_logging(settings, color)
     configure_metrics(settings)
 
 
