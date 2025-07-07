@@ -14,7 +14,9 @@ accelerate==1.0.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     #   peft
 aiofiles==24.1.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
-aiohttp==3.9.5 ; sys_platform == 'darwin' or sys_platform == 'linux'
+aiohappyeyeballs==2.6.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+    # via aiohttp
+aiohttp==3.10.5 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   datasets
@@ -53,7 +55,7 @@ async-lru==2.0.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via jupyterlab
 async-timeout==4.0.3 ; (python_full_version < '3.11' and sys_platform == 'darwin') or (python_full_version < '3.11' and sys_platform == 'linux')
     # via aiohttp
-attrs==23.2.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+attrs==24.2.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   aiohttp
     #   hypothesis
@@ -88,13 +90,13 @@ cachetools==5.4.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   google-auth
     #   nvitop
-certifi==2024.6.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
+certifi==2024.7.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   geventhttpclient
     #   httpcore
     #   httpx
     #   requests
-cffi==1.16.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+cffi==1.17.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   argon2-cffi-bindings
     #   pyzmq
@@ -135,7 +137,7 @@ dataproperty==1.0.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   pytablewriter
     #   tabledata
-datasets==2.19.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+datasets==2.21.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   evaluate
@@ -195,7 +197,7 @@ faster-whisper==1.1.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
 fastjsonschema==2.20.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via nbformat
-filelock==3.15.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
+filelock==3.16.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   datasets
@@ -226,7 +228,7 @@ frozenlist==1.4.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   aiohttp
     #   aiosignal
-fsspec[http]==2024.3.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+fsspec[http]==2024.6.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   datasets
     #   evaluate
@@ -310,7 +312,7 @@ hypothesis==6.108.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
 identify==2.6.3 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via pre-commit
-idna==3.7 ; sys_platform == 'darwin' or sys_platform == 'linux'
+idna==3.8 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   anyio
     #   httpx
@@ -376,7 +378,7 @@ jsonlines==4.0.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via lm-eval
 jsonpointer==3.0.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via jsonschema
-jsonschema[format-nongpl]==4.22.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+jsonschema[format-nongpl]==4.23.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   jupyter-events
     #   jupyterlab-server
@@ -551,7 +553,7 @@ numpy==2.0.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     #   torchmetrics
     #   torchvision
     #   transformers
-nvidia-ml-py==12.535.161 ; sys_platform == 'darwin' or sys_platform == 'linux'
+nvidia-ml-py==12.560.30 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via nvitop
 nvitop==1.4.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
@@ -633,7 +635,7 @@ peft==0.13.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via lm-eval
 pexpect==4.9.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via ipython
-pillow==10.3.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
+pillow==10.4.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   matplotlib
@@ -705,8 +707,6 @@ pyarrow==17.0.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   datasets
-pyarrow-hotfix==0.6 ; sys_platform == 'darwin' or sys_platform == 'linux'
-    # via datasets
 pyasn1==0.6.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
@@ -718,14 +718,14 @@ pybind11==2.10.3 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via lm-eval
 pycparser==2.22 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via cffi
-pydantic==2.8.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
+pydantic==2.10.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   fastapi
     #   mteb
     #   openai
     #   pydantic-settings
-pydantic-core==2.20.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+pydantic-core==2.27.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via pydantic
 pydantic-settings==2.3.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via -r bazel/pip/requirements/torch/../requirements.in
@@ -813,7 +813,7 @@ referencing==0.35.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     #   jsonschema
     #   jsonschema-specifications
     #   jupyter-events
-regex==2024.5.15 ; sys_platform == 'darwin' or sys_platform == 'linux'
+regex==2024.7.24 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   nltk
     #   sacrebleu
@@ -857,7 +857,7 @@ rouge-score==0.1.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via lm-eval
 roundrobin==0.0.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via locust
-rpds-py==0.18.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+rpds-py==0.20.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   jsonschema
     #   referencing
@@ -873,7 +873,7 @@ s3transfer==0.10.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via boto3
 sacrebleu==2.4.3 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via lm-eval
-safetensors==0.4.3 ; sys_platform == 'darwin' or sys_platform == 'linux'
+safetensors==0.4.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   accelerate
@@ -1066,7 +1066,7 @@ tornado==6.5.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     #   jupyterlab
     #   notebook
     #   terminado
-tqdm==4.66.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
+tqdm==4.66.5 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   datasets
@@ -1153,7 +1153,7 @@ urllib3==1.26.19 ; sys_platform == 'darwin' or sys_platform == 'linux'
     #   geventhttpclient
     #   requests
     #   responses
-uvicorn==0.30.5 ; sys_platform == 'darwin' or sys_platform == 'linux'
+uvicorn==0.30.6 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   -r bazel/pip/requirements/torch/../requirements.in
     #   sse-starlette
@@ -1181,13 +1181,13 @@ wrapt==1.16.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   deprecated
     #   prometheus-async
-xxhash==3.4.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
+xxhash==3.5.0 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   datasets
     #   evaluate
 yarl==1.9.4 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via aiohttp
-zipp==3.19.2 ; sys_platform == 'darwin' or sys_platform == 'linux'
+zipp==3.20.1 ; sys_platform == 'darwin' or sys_platform == 'linux'
     # via
     #   importlib-metadata
     #   importlib-resources
