@@ -620,10 +620,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         """Batches up pixel_values for vision processing."""
         images = []
         for context in context_batch:
-            if (
-                context.pixel_values is not None
-                and len(context.pixel_values) > 0
-            ):
+            if context.needs_vision_encoding:
                 # context.pixel_values is a list of numpy arrays containing pre-extracted patches
                 # TODO(MODELS-638): Support multiple images per request
                 image = context.pixel_values[
@@ -798,10 +795,10 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         # Batch image token indices, offsetting for position in the batch.
         image_token_indices = self._batch_image_token_indices(context_batch)
 
-        # Unset the context's pixel values so that subsequent next_token
-        # calls reusing the same context won't run the vision encoder.
+        # Mark that vision encoding is complete for all contexts in the batch.
+        # This prevents re-encoding on subsequent calls.
         for ctx in context_batch:
-            ctx.pixel_values = tuple()
+            ctx.needs_vision_encoding = False
 
         return InternVLInputs(
             input_ids=input_ids,

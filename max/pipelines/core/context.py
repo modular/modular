@@ -859,17 +859,28 @@ class TextAndVisionContext(
         default_factory=dict
     )
 
-    # HACK: We store a copy of the pixel value in case we need to reset the context
-    # in the event of a request preemption.
-    _saved_pixel_values: tuple[np.ndarray, ...] = msgspec.field(
-        default_factory=tuple
-    )
+    # Flag to track whether vision encoding is still needed.
+    _needs_vision_encoding: bool = msgspec.field(default=True)
 
     def __post_init__(self) -> None:
         super().__post_init__()
         if len(self.pixel_values) > 1:
-            raise ValueError("only one image supported in Llama Vision")
-        self._saved_pixel_values = self.pixel_values
+            raise ValueError("only one image supported in TextAndVisionContext")
+        self._needs_vision_encoding = bool(self.pixel_values)
+
+    @property
+    def needs_vision_encoding(self) -> bool:
+        """Gets whether vision encoding is needed for this context."""
+        return self._needs_vision_encoding and bool(self.pixel_values)
+
+    @needs_vision_encoding.setter
+    def needs_vision_encoding(self, value: bool) -> None:
+        """Sets whether vision encoding is needed.
+
+        Args:
+            value: True if vision encoding is needed, False if already complete.
+        """
+        self._needs_vision_encoding = value
 
     def update(
         self,
@@ -879,14 +890,14 @@ class TextAndVisionContext(
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
         super().update(new_token=new_token, log_probabilities=log_probabilities)
 
-        # Update context not to re-encode the same image in next steps. There are no image tokens
-        # expected after context encoding.
-        self.pixel_values = tuple()
+        # Vision encoding is no longer needed after token generation starts.
+        self.needs_vision_encoding = False
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
         super().reset()
-        self.pixel_values = self._saved_pixel_values
+        # Re-enable vision encoding on reset (e.g., after preemption).
+        self.needs_vision_encoding = bool(self.pixel_values)
 
 
 SPEECH_TOKEN_audio_chunk_size = 128
