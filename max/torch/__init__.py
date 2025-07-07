@@ -4,6 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .torch import (
-    CustomOpLibrary,
-)
+from .torch import CustomOpLibrary, graph_op
+
+__all__ = ["CustomOpLibrary", "graph_op"]

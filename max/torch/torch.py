@@ -7,27 +7,31 @@
 from __future__ import annotations
 
 import inspect
+import itertools
+import threading
 from collections.abc import Hashable, Iterable, Mapping, Sequence
+from concurrent import futures
+from functools import partial
 from pathlib import Path
-from typing import Union, cast
+from typing import Callable, Union
 
 from max import mlir
 from max._core import Attribute
 from max._core.dialects import builtin, kgen
 from max.driver import Accelerator, Tensor, accelerator_count
 from max.dtype import DType
-from max.engine import Model
-from max.engine.api import InferenceSession
+from max.engine.api import InferenceSession, Model
 from max.graph import (
     DeviceRef,
     Graph,
     KernelLibrary,
     Shape,
     TensorType,
+    TensorValue,
     Type,
+    Value,
     ops,
 )
-from max.mlir import Context
 
 try:
     import torch
@@ -90,10 +94,10 @@ class CustomOpLibrary:
     Mojo operation will be modified in-place.
     """
 
-    _context: Context
     _kernel_library: KernelLibrary
     _session: InferenceSession
     _ops: dict[str, CustomOp]
+    _ops_lock: threading.Lock
 
     def __init__(self, kernel_library: Path | KernelLibrary) -> None:
         """
@@ -104,32 +108,38 @@ class CustomOpLibrary:
         devices = [Accelerator(i) for i in range(accelerator_count())]
 
         if isinstance(kernel_library, KernelLibrary):
-            self._context = kernel_library._context
             self._kernel_library = kernel_library
         else:
-            self._context = mlir.Context()
-            self._kernel_library = KernelLibrary(self._context)
-            self._kernel_library.load_paths(self._context, [kernel_library])
+            context = mlir.Context()
+            self._kernel_library = KernelLibrary(context)
+            self._kernel_library.load_paths(context, [kernel_library])
 
         self._session = InferenceSession(devices=devices)
         self._ops = {}
+        self._ops_lock = threading.Lock()
+
+    @property
+    def _context(self) -> mlir.Context:
+        return self._kernel_library._context
 
     def __getattr__(self, attr: str) -> CustomOp:
+        """Get a custom op from the library registered with the given name."""
         compiled = self._ops
-        if not (result := compiled.get(attr)):
+        with self._ops_lock:
+            if not (result := compiled.get(attr)):
 
-            @torch.compiler.disable
-            def update_cache() -> None:
-                nonlocal result
-                if attr not in self._kernel_library:
-                    raise AttributeError(
-                        f"custom library does not register operation {attr}"
-                    )
+                @torch.compiler.disable
+                def update_cache() -> None:
+                    nonlocal result
+                    if attr not in self._kernel_library:
+                        raise AttributeError(
+                            f"custom library does not register operation {attr}"
+                        )
 
-                result = CustomOp(self, attr)
-                compiled[attr] = result
+                    result = CustomOp(self, attr)
+                    compiled[attr] = result
 
-            update_cache()
+                update_cache()
 
         assert result is not None
         return result
@@ -137,6 +147,12 @@ class CustomOpLibrary:
 
 ParametersDict = Mapping[str, Union[bool, int, str, DType]]
 ParameterKey = tuple[str, Union[bool, int, str, DType]]
+
+CompiledModelKey = tuple[Hashable, ...]
+
+
+def _model_key(args: Iterable[TensorType]) -> CompiledModelKey:
+    return tuple(arg.to_mlir() for arg in args)
 
 
 class CustomOp:
@@ -156,13 +172,22 @@ class CustomOp:
         self.library = library
         self.name = name
         self.parameters = parameters
+
+        if parameters:
+            suffix = "".join(
+                f"{key}_{value}" for key, value in sorted(parameters.items())
+            )
+            name = f"{name}_{suffix}"
+        op = MaxOp(self, name, self.library, num_outputs=self.num_outputs)
+        self._custom_op_def = op.custom_op_def()
+
         self._parameter_specializations = {}
-        self._custom_op_def = compile_custom_op(self)
 
     def __getitem__(self, parameters: ParametersDict) -> CustomOp:
-        assert self.parameters is None, (
-            "Only one set of parameters may be specified"
-        )
+        """Parameterizes the custom op Mojo function with the given parameters."""
+        if self.parameters is not None:
+            raise TypeError("Parameters already specified")
+
         normalized = tuple(sorted(parameters.items()))
 
         if not (result := self._parameter_specializations.get(normalized)):
@@ -171,21 +196,332 @@ class CustomOp:
 
         return result
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: torch.Tensor, **kwargs: torch.Tensor) -> None:
+        """Calls the PyTorch custom op with the given arguments."""
         return self._custom_op_def(*args, **kwargs)
 
     @property
-    def context(self) -> mlir.Context:
+    def kernel(self) -> kgen.GeneratorOp:
+        """Retrieves the op definition MLIR from the custom op library."""
+        analysis = self.library._kernel_library._analysis
+        return analysis.kernel(self.name)
+
+    @property
+    def num_outputs(self) -> int:
+        """Returns the number of outputs of the custom op."""
+        # TODO(GEX-2219): support non-dps outputs
+        attrs = self.kernel.discardable_attributes
+        num_dps_outputs = attrs["mogg.num_dps_outputs"]
+        assert isinstance(num_dps_outputs, builtin.IntegerAttr)
+        return num_dps_outputs.value
+
+    def op(self, *args: TensorValue, result_types: Sequence[TensorType]):
+        # Infer custom op device from inputs
+        device = next(
+            itertools.chain(
+                (arg.type.device for arg in args),
+                (type.device for type in result_types),
+                (DeviceRef.CPU(0),),
+            )
+        )
+        return ops.custom(
+            self.name,
+            device,
+            args,
+            out_types=result_types,
+            parameters=self.parameters,
+        )
+
+    @property
+    def torch_signature(self) -> inspect.Signature:
+        """Compute the Python-level signature of the provided custom op.
+
+        The computed signature is derived from the KGEN-level annotations on the
+        given MLIR operation. These annotations are attached to the KGEN function
+        at the MOGGPreElab stage of the compilation pipeline.
+
+        This function currently only supports tensor inputs and outputs. Computed
+        signature will have one torch.Tensor input/result for each DPS input/result
+        of the custom operation.
+
+        Args:
+            op: The MLIR operation representing the custom op (kgen.func op).
+
+        Returns:
+            inspect.Signature: The Python-level signature for the custom op.
+        """
+
+        op = self.kernel
+        num_dps_outputs = self.num_outputs
+
+        # TODO(GEX-2223): Expose more of MojoLibraryAnalysis so we don't need to
+        # hard code MLIR attributes.
+        arg_type_names = op.discardable_attributes["mogg.arg_type_names"]
+        assert isinstance(arg_type_names, builtin.ArrayAttr)
+        io_specs = _mogg_annotations(arg_type_names)
+
+        # Validate all argument types are supported
+        _validate_op_arg_types(io_specs, self.name)
+
+        # Filter to keep only tensor-like types
+        tensor_like_types = {
+            "tensor_internal::ManagedTensorSlice",
+            "stdlib::SIMD",
+        }
+        io_specs = [spec for spec in io_specs if spec in tensor_like_types]
+
+        arg_src_names = op.discardable_attributes["mogg.arg_src_names"]
+        assert isinstance(arg_src_names, builtin.ArrayAttr)
+        arg_names = _mogg_annotations(arg_src_names)
+
+        input_specs = io_specs[num_dps_outputs:]
+        nargs = len(input_specs)
+        args = [
+            inspect.Parameter(
+                name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=torch.Tensor,
+            )
+            for name in arg_names[: nargs + num_dps_outputs]
+        ]
+        return inspect.Signature(args, return_annotation=None)
+
+
+class MaxOp:
+    fn: Callable | CustomOp
+    name: str
+    library: CustomOpLibrary
+    # Specify explicit input types to eg. compile with symbolic dims
+    input_types: Sequence[TensorType] | None = None
+    output_types: Sequence[TensorType] | None = None
+    num_outputs: int
+
+    def __init__(
+        self,
+        fn: Callable | CustomOp,
+        name: str,
+        library: CustomOpLibrary,
+        # Specify explicit input types to eg. compile with symbolic dims
+        input_types: Sequence[TensorType] | None = None,
+        output_types: Sequence[TensorType] | None = None,
+        num_outputs: int | None = None,
+    ):
+        if num_outputs is None:
+            self.num_outputs = 1 if output_types is None else len(output_types)
+        elif output_types is not None and len(output_types) != num_outputs:
+            raise ValueError(f"{num_outputs=} does not match {output_types=}")
+        else:
+            self.num_outputs = num_outputs
+
+        self.fn = fn
+        self.name = name
+        self.library = library
+        self.input_types = input_types
+        self.output_types = output_types
+
+    @property
+    def _context(self) -> mlir.Context:
         return self.library._context
 
     @property
-    def kernel_library(self) -> KernelLibrary:
-        return self.library._kernel_library
+    def torch_signature(self) -> inspect.Signature:
+        """Computes the signature of the generated PyTorch custom op."""
+        if isinstance(self.fn, CustomOp):
+            return self.fn.torch_signature
 
-    @property
-    def kernel(self) -> kgen.GeneratorOp:
-        analysis = self.kernel_library._analysis
-        return analysis.kernel(self.name)
+        base_signature = inspect.signature(self.fn)
+        dps_args = [
+            inspect.Parameter(
+                f"__out{i}",
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=torch.Tensor,
+            )
+            for i in range(self.num_outputs)
+        ]
+        args = [
+            param.replace(annotation=torch.Tensor)
+            for param in base_signature.parameters.values()
+        ]
+        return inspect.Signature((*dps_args, *args), return_annotation=None)
+
+    def graph(
+        self,
+        input_types: Sequence[TensorType],
+        result_types: Sequence[TensorType],
+    ) -> Graph:
+        """Builds a MAX graph with the given input and output types.
+
+        The created graph will be destination-passing-style; the output
+        types will be converted to buffer types so that inputs may be
+        passed as mutable arguments to the compiled model.
+
+        Args:
+            input_types: The input types of the graph.
+            result_types: The output types of the graph.
+                Required for destination-passing-style.
+
+        Returns:
+            A MAX graph that executes the op.
+        """
+        output_types = [t.as_buffer() for t in result_types]
+        graph_types: list[Type] = [*output_types, *input_types]
+
+        with Graph(
+            self.name,
+            input_types=graph_types,
+            context=self._context,
+            kernel_library=self.library._kernel_library,
+        ) as graph:
+            # Awkward design, there's probably a better way here
+            fn: Callable = (
+                partial(self.fn.op, result_types=result_types)
+                if isinstance(self.fn, CustomOp)
+                else self.fn
+            )
+            args = (input.tensor for input in graph.inputs[self.num_outputs :])
+            results = fn(*args)
+            if isinstance(results, Value):
+                results = [results]
+            elif results is None:
+                results = []
+            for input, result in zip(graph.inputs, results):
+                input.buffer[...] = result.tensor
+
+            graph.output()
+
+        return graph
+
+    def custom_op_def(self) -> CustomOpDef:
+        """Builds and registers a PyTorch custom operation with this MAX graph."""
+        # This will hold the compiled model once the registered fake tensor function
+        # is invoked for the first time.
+        model_cache: dict[CompiledModelKey, futures.Future[Model]] = {}
+        model_cache_lock = threading.Lock()
+        executor = futures.ThreadPoolExecutor()
+
+        signature: inspect.Signature = self.torch_signature
+        mutated_args = list(signature.parameters.keys())[: self.num_outputs]
+
+        # Compile the model if it has not been compiled already.
+        def compiled_model(*args: torch.Tensor) -> Model:
+            arg_types = tuple(max_tensor_type(arg) for arg in args)
+            # args are destination-passing-style
+            output_types = self.output_types or arg_types[: self.num_outputs]
+            input_types = self.input_types or arg_types[self.num_outputs :]
+
+            # Creating types requires an MLIR context
+            with self._context:
+                key = _model_key((*input_types, *output_types))
+            # Only one thread can schedule model compilation for a given key
+            with model_cache_lock:
+                if not (model_future := model_cache.get(key)):
+                    graph = self.graph(input_types, output_types)
+                    model_cache[key] = model_future = executor.submit(
+                        self.library._session.load, graph
+                    )
+            return model_future.result()
+
+        # ops always have no return type! they assign their results to mutable buffers
+        def callable(*args: torch.Tensor) -> None:
+            # In eager mode, the fake_tensor function will not be called,
+            # so we call it here.
+            # registered_fake with real inputs will create buffers for the outputs
+            model = compiled_model(*args)
+            converted = map(Tensor.from_dlpack, args)
+            model(*converted)
+
+        name = f"max::torch.{self.name}"
+        callable.__signature__ = signature  # type: ignore
+        return torch.library.custom_op(
+            name, callable, mutates_args=mutated_args
+        )
+
+
+def graph_op(
+    fn=None,
+    name: str | None = None,
+    kernel_library: Path | KernelLibrary | None = None,
+    input_types: Sequence[TensorType] | None = None,
+    output_types: Sequence[TensorType] | None = None,
+    num_outputs: int | None = None,
+):
+    """A decorator to create PyTorch custom operations using MAX graph operations.
+
+    This decorator allows you to define larger graphs using MAX graph ops or `max.nn`
+    modules and call them with PyTorch tensors, or integrate them into PyTorch
+    modules. These custom ops can be called eagerly, and support compilation with
+    ``torch.compile`` and the Inductor backend.
+
+    The resulting custom operation uses destination-passing style, where output
+    tensors are passed as the first arguments and modified in-place. This
+    allows PyTorch to manage the memory and streams of the output tensors.
+    Tensors internal to the computation are managed via MAX's graph compiler
+    and memory planning.
+
+    The default behavior is to JIT-compile for the specific input and output
+    shapes needed. If you are passing variable-sized inputs, for instance a
+    batch size or sequence length which may take on many different values between
+    calls, you should specify this dimension as a symbolic dimension via
+    `input_types` and `output_types`. Otherwise you will end up compiling specialized
+    graphs for each possible variation of inputs, which may use a lot of memory.
+
+    If neither `output_types` nor `num_outputs` is specified, default to 1 output.
+
+    Example usage to create a functional-style PyTorch op backed by MAX:
+
+    .. code-block:: python
+
+        import torch
+        import numpy as np
+        import max
+        from max.dtype import DType
+        from max.graph import ops
+
+        @max.torch.graph_op
+        def max_grayscale(pic: max.graph.TensorValue):
+            scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
+            grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)
+            # max reductions don't remove the dimension, need to squeeze
+            return ops.squeeze(grayscaled, axis=-1)
+
+        @torch.compile
+        def grayscale(pic: torch.Tensor):
+            output = pic.new_empty(pic.shape[:-1])  # Remove color channel dimension
+            max_grayscale(output, pic)  # Call as destination-passing style
+            return output
+
+        img = (torch.rand(64, 64, 3, device=device) * 255).to(torch.uint8)
+        result = grayscale(img)
+
+    Args:
+        fn: The function to decorate. If None, returns a decorator.
+        name: Optional name for the custom operation. Defaults to the function name.
+        kernel_library: Optional kernel library to use for compilation. Useful
+            for creating graphs with custom Mojo ops.
+        input_types: Optional sequence of input tensor types for compilation.
+            If None, types are inferred from runtime arguments.
+        output_types: Optional sequence of output tensor types for compilation.
+            If None, types are inferred from runtime arguments.
+        num_outputs: The number of outputs of the graph. We need to know this ahead
+            of time to register with PyTorch before we've compiled the final kernels.
+
+    Returns:
+        A PyTorch custom operation that can be called with torch.Tensor arguments.
+    """
+
+    def decorator(fn):
+        library = kernel_library or KernelLibrary(mlir.Context())
+        op = MaxOp(
+            fn,
+            name or fn.__name__,
+            CustomOpLibrary(library),
+            input_types=input_types,
+            output_types=output_types,
+            num_outputs=num_outputs,
+        )
+        return op.custom_op_def()
+
+    return decorator if fn is None else decorator(fn)
 
 
 ###############################################################################
@@ -195,11 +531,13 @@ class CustomOp:
 ###############################################################################
 
 
-def convert_shape(shape: torch.Size) -> Shape:
+def max_shape(shape: torch.Size) -> Shape:
+    """Returns the equivalent MAX shape for a PyTorch shape."""
     return Shape([int(dim) for dim in shape])
 
 
-def convert_device(device: torch.device) -> DeviceRef:
+def max_device(device: torch.device) -> DeviceRef:
+    """Returns the equivalent MAX device for a PyTorch device."""
     type = device.type
     index = device.index or 0
     if type == "cpu":
@@ -210,10 +548,11 @@ def convert_device(device: torch.device) -> DeviceRef:
         raise TypeError(f"Unable to convert {type} to a MAX device type.")
 
 
-def torch_tensor_to_type(tensor: torch.Tensor) -> TensorType:
+def max_tensor_type(tensor: torch.Tensor) -> TensorType:
+    """Returns the equivalent MAX tensor type for a PyTorch tensor."""
     dtype = DType.from_torch(tensor.dtype)
-    shape = convert_shape(tensor.shape)
-    device = convert_device(tensor.device)
+    shape = max_shape(tensor.shape)
+    device = max_device(tensor.device)
     return TensorType(dtype, shape, device=device)
 
 
@@ -224,76 +563,7 @@ def torch_tensor_to_type(tensor: torch.Tensor) -> TensorType:
 ###############################################################################
 
 
-def to_torch_tensors(tensor: Sequence[Tensor]) -> TorchTensors:
-    """Convert a MAX tensor to a torch.Tensor.
-
-    This function handles the special case of most Torch operations which
-    return a single tensor value.
-    """
-    torch_tensors = [torch.from_dlpack(t) for t in tensor]
-    return torch_tensors[0] if len(torch_tensors) == 1 else torch_tensors
-
-
-def custom_op_graph(
-    context: mlir.Context,
-    op: CustomOp,
-    input_types: Iterable[TensorType],
-    result_types: Iterable[TensorType],
-    parameters: ParametersDict,
-) -> Graph:
-    """Construct the Graph API graph representing a call to a Mojo CustomOp.
-
-    This function builds a graph which invokes the given Mojo CustomOp through
-    a Max custom operation. The generated custom op is in destination passing
-    style, where the outputs are mutable buffers passed to the graph.o
-
-    Args:
-        op: The custom operation to be called.
-        result_types: The tensors which serve as a specification of the output
-            types of the graph.
-
-    Returns:
-        Graph: The MAX graph calling the provided custom op.
-    """
-
-    output_types = [t.as_buffer() for t in result_types]
-    graph_types: list[Type] = [*output_types, *input_types]
-
-    device = None
-    for type in input_types:
-        device = type.device
-        break
-
-    if device is None:
-        for type in result_types:
-            device = type.device
-            break
-
-    if device is None:
-        device = DeviceRef.CPU(0)
-
-    with Graph(
-        op.name,
-        input_types=graph_types,
-        context=context,
-        kernel_library=op.kernel_library,
-    ) as graph:
-        results = ops.custom(
-            op.name,
-            device,
-            list(graph.inputs[len(output_types) :]),
-            out_types=list(result_types),
-            parameters=parameters,
-        )
-        for input, result in zip(graph.inputs, results):
-            input.buffer[...] = result.tensor
-
-        graph.output()
-
-    return graph
-
-
-def mogg_annotations(array_attr: builtin.ArrayAttr) -> list[str]:
+def _mogg_annotations(array_attr: builtin.ArrayAttr) -> list[str]:
     def string_value(x: Attribute) -> str:
         if isinstance(x, builtin.StringAttr):
             return x.value
@@ -303,13 +573,7 @@ def mogg_annotations(array_attr: builtin.ArrayAttr) -> list[str]:
     return [string_value(s) for s in array_attr.value]
 
 
-def num_outputs(op: kgen.GeneratorOp) -> int:
-    return cast(
-        builtin.IntegerAttr, op.discardable_attributes["mogg.num_dps_outputs"]
-    ).value
-
-
-def validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
+def _validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
     """Validate that all argument types in a custom op are supported.
 
     Args:
@@ -340,138 +604,3 @@ def validate_op_arg_types(io_specs: list[str], op_name: str) -> None:
             raise ValueError(
                 f"Unsupported argument type '{spec}' in custom op '{op_name}'."
             )
-
-
-def op_signature(custom_op: CustomOp) -> inspect.Signature:
-    """Compute the Python-level signature of the provided custom op.
-
-    The computed signature is derived from the KGEN-level annotations on the
-    given MLIR operation. These annotations are attached to the KGEN function
-    at the MOGGPreElab stage of the compilation pipeline.
-
-    This function currently only supports tensor inputs and outputs. Computed
-    signature will have one torch.Tensor input/result for each DPS input/result
-    of the custom operation.
-
-    Args:
-        op: The MLIR operation representing the custom op (kgen.func op).
-
-    Returns:
-        inspect.Signature: The Python-level signature for the custom op.
-    """
-
-    op = custom_op.kernel
-
-    # TODO(GEX-2219): support non-dps outputs
-    num_dps_outputs = num_outputs(op)
-
-    # TODO(GEX-2223): Expose more of MojoLibraryAnalysis so we don't need to
-    # hard code MLIR attributes.
-    io_specs = mogg_annotations(
-        cast(
-            builtin.ArrayAttr, op.discardable_attributes["mogg.arg_type_names"]
-        )
-    )
-
-    # Validate all argument types are supported
-    validate_op_arg_types(io_specs, custom_op.name)
-
-    # Filter to keep only tensor-like types
-    tensor_like_types = {
-        "tensor_internal::ManagedTensorSlice",
-        "stdlib::SIMD",
-    }
-    io_specs = [spec for spec in io_specs if spec in tensor_like_types]
-
-    arg_names = mogg_annotations(
-        cast(builtin.ArrayAttr, op.discardable_attributes["mogg.arg_src_names"])
-    )
-
-    input_specs = io_specs[num_dps_outputs:]
-    nargs = len(input_specs)
-    args = [
-        inspect.Parameter(
-            name,
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=torch.Tensor,
-        )
-        for name in arg_names[: nargs + num_dps_outputs]
-    ]
-    return inspect.Signature(args, return_annotation=None)
-
-
-TorchTensors = Union[torch.Tensor, Sequence[torch.Tensor]]
-
-CompiledModelKey = tuple[Hashable, ...]
-ModelSignature = tuple[tuple[TensorType, ...], tuple[TensorType, ...]]
-
-
-def model_signature(
-    args: Iterable[torch.Tensor],
-    results: TorchTensors,
-) -> ModelSignature:
-    results = (results,) if isinstance(results, torch.Tensor) else results
-
-    input_types = tuple(torch_tensor_to_type(arg) for arg in args)
-    result_types = tuple(torch_tensor_to_type(result) for result in results)
-    return (input_types, result_types)
-
-
-def model_key(
-    args: Iterable[torch.Tensor], parameters: ParametersDict
-) -> CompiledModelKey:
-    args_key = tuple(torch_tensor_to_type(arg).to_mlir() for arg in args)
-    params_key = tuple(sorted(parameters.items()))
-    return args_key + params_key
-
-
-def compile_custom_op(op: CustomOp) -> CustomOpDef:
-    # This will hold the compiled model once the registered fake tensor function
-    # is invoked for the first time.
-    model_cache: dict[CompiledModelKey, Model] = {}
-
-    signature: inspect.Signature = op_signature(op)
-
-    num_dps_outputs = num_outputs(op.kernel)
-    mutated_args = list(signature.parameters.keys())[:num_dps_outputs]
-
-    parameters = op.parameters or {}
-
-    # Keep the mlir context around for sharing graphs between op models
-    context = op.context
-
-    # Compile the model if it has not been compiled already.
-    def compile_model(*args: torch.Tensor) -> Model:
-        # Computing the key requires an active mlir context
-        with context:
-            key = model_key(args, parameters)
-
-        if not (model := model_cache.get(key)):
-            sig = model_signature(
-                args[num_dps_outputs:], args[:num_dps_outputs]
-            )
-            graph = custom_op_graph(context, op, sig[0], sig[1], parameters)
-            model = op.library._session.load(graph)
-            model_cache[key] = model
-
-        return model
-
-    def callable(*args: torch.Tensor) -> None:
-        # In eager mode, the fake_tensor function will not be called,
-        # so we call it here.
-        # registered_fake with real inputs will create buffers for the outputs
-        model = compile_model(*args)
-        converted = map(Tensor.from_dlpack, args)
-        model(*converted)
-        return None
-
-    suffix = "".join(
-        f"{key}_{value}" for key, value in sorted(parameters.items())
-    )
-    name = f"max::torch.{op.name}_{suffix}"
-    callable.__signature__ = signature  # type: ignore
-    custom_op = torch.library.custom_op(
-        name, callable, mutates_args=mutated_args
-    )
-
-    return custom_op
