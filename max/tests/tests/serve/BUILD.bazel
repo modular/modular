@@ -76,6 +76,7 @@ modular_py_test(
         requirement("opentelemetry-sdk"),
         requirement("pytest-asyncio"),
         requirement("pytest-grpc"),
+        requirement("pytest-mock"),
         requirement("sse-starlette"),
         requirement("sseclient-py"),
         requirement("transformers"),
