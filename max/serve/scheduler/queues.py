@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -24,7 +25,11 @@ from typing import Generic, Optional, TypeVar
 
 import sentinel
 import zmq
-from max.pipelines.core import InputContext, msgpack_numpy_encoder
+from max.pipelines.core.context import InputContext
+from max.pipelines.core.serialization import (
+    SharedMemoryEncoder,
+    msgpack_numpy_encoder,
+)
 from max.serve.process_control import ProcessControl
 from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
@@ -60,7 +65,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
 
         # Create Queues
         self.request_push_socket = ZmqPushSocket[tuple[ReqId, ReqOutput]](
-            zmq_ctx, request_zmq_endpoint, serialize=msgpack_numpy_encoder()
+            zmq_ctx,
+            request_zmq_endpoint,
+            serialize=SharedMemoryEncoder(),
         )
         self.response_pull_socket = ZmqPullSocket[list[dict[ReqId, ReqOutput]]](
             zmq_ctx, response_zmq_endpoint
@@ -109,6 +116,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
 
             out_queue: asyncio.Queue = asyncio.Queue()
             self.pending_out_queues[req_id] = out_queue
+
             self.request_push_socket.put_nowait((req_id, data))
             yield out_queue
         finally:
