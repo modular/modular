@@ -1872,9 +1872,10 @@ fn ascii(value: StringSlice) -> String:
     alias ord_squote = ord("'")
     var result = String()
     var use_dquote = False
+    var data = value.as_bytes()
 
-    for idx in range(len(value._slice)):
-        var char = value._slice[idx]
+    for idx in range(len(data)):
+        var char = data[idx]
         result += _repr_ascii(char)
         use_dquote = use_dquote or (char == ord_squote)
 
