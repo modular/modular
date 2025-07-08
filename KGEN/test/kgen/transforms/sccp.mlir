@@ -451,3 +451,36 @@ kgen.func @indirect_loop_break(%cond: index) -> index {
   %1 = kgen.call @f(%0) : (index) -> index
   kgen.return %1: index
 }
+
+
+// CHECK-LABEL: @single_unreachable_indirect_loop_break
+kgen.func @single_unreachable_indirect_loop_break(%cond: index) -> index {
+  // CHECK-DAG: %idx0 = index.constant 0
+  // CHECK-DAG: %idx1 = index.constant 1
+  // CHECK-DAG: %idx100000 = index.constant 100000
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  // MOCO-1318: A large enough trip count such that `else` branch would never be
+  // processed by sccp.
+  %idx100000 = index.constant 100000
+
+  // CHECK: hlcf.loop
+  %0 = hlcf.loop "inlined_cf_scope" () -> index {
+    hlcf.loop "_loop_0" (%arg2 = %idx100000 : index, %arg3 = %idx0 : index) {
+      %18 = index.cmp sgt(%arg2, %idx0)
+      hlcf.if %18 {
+        hlcf.yield
+      } else {
+        hlcf.break "inlined_cf_scope" %idx1 : index
+      }
+      %19 = index.sub %arg2, %idx1
+      hlcf.continue %19, %arg3 : index, index
+    }
+    kgen.unreachable
+  }
+
+  // CHECK: kgen.call @f([[V0]])
+  %1 = kgen.call @f(%0) : (index) -> index
+  kgen.return %1: index
+}

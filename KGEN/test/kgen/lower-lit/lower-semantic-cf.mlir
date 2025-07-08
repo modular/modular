@@ -152,6 +152,23 @@ lit.fn @if_false_raise() throws -> i1 {
   lit.end_fn
 }
 
+// CHECK-LABEL: lit.fn @for_else_raise
+lit.fn @for_else_raise() throws -> i1 {
+  lit.loop cond {
+    %cond = "foo"() : () -> i1
+    lit.loop.condition %cond : i1
+  } body {
+    lit.loop.continue
+  // CHECK: else
+  } else {
+    // CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+    // CHECK-NEXT: lit.error_return [[TRUE]]
+    lit.raise
+    lit.loop.yield
+  }
+  lit.end_fn
+}
+
 // CHECK-LABEL: lit.fn @raise_raise
 lit.fn @raise_raise() throws {
   // CHECK: lit.try

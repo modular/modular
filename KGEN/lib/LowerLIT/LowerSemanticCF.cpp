@@ -750,7 +750,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
   // These are not fallthroughs.
   if (isa<KGEN::ReturnOp, HLCF::ContinueOp, ParamForContinueOp,
-          KGEN::UnreachableOp>(terminator))
+          KGEN::UnreachableOp, LIT::ErrorReturnOp>(terminator))
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
