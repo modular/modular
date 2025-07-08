@@ -9,11 +9,11 @@ from typing import Union
 
 import numpy as np
 import pytest
+from max.interfaces import TextGenerationStatus
 from max.pipelines.core import (
     SamplingParams,
     TextAndVisionContext,
     TextContext,
-    TextGenerationStatus,
     TTSContext,
     msgpack_numpy_decoder,
     msgpack_numpy_encoder,

@@ -8,8 +8,9 @@
 import time
 
 import pytest
+from max.interfaces import TextGenerationResponse
 from max.pipelines import PIPELINE_REGISTRY, PipelineTask
-from max.pipelines.core import TextContext, TextGenerationResponse
+from max.pipelines.core import TextContext
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import (
