@@ -13,7 +13,7 @@
 
 from math import align_up
 from sys import sizeof
-
+from hashlib import default_comp_time_hasher
 from gpu import WARP_SIZE, barrier
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._nvidia_cuda import TensorMapSwizzle
@@ -603,7 +603,7 @@ def test_tma_umma_pair_cta[
 
 
 fn get_dic_of_shapes(
-    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int]]
+    index: Int, dic_bro: Dict[Int, Tuple[Int, Int, Int], *_, **_]
 ) -> Tuple[Int, Int, Int]:
     try:
         return dic_bro[index]
@@ -612,8 +612,10 @@ fn get_dic_of_shapes(
         return (128, 128, 128)
 
 
-fn make_dic_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
-    var dic = Dict[Int, Tuple[Int, Int, Int]]()
+fn make_dic_of_shapes() -> (
+    Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]
+):
+    var dic = Dict[Int, Tuple[Int, Int, Int], default_comp_time_hasher]()
     dic[0] = (8192, 2560, 8192)
     dic[1] = (4096, 2560, 8192)
     dic[2] = (512, 2560, 8192)
