@@ -20,7 +20,6 @@ from max._core.engine import FrameworkFormat as _FrameworkFormat
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import MojoValue, PrintStyle
-from max._core.engine import TensorData as _TensorData
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
 from max._core_types.driver import DLPackArray
@@ -77,61 +76,6 @@ def _raise_if_not_contiguous(x: InputType) -> None:
             " using `.contiguous()` before feeding them into the"
             " `execute` or `load` APIs."
         )
-
-
-def _map_execute_kwarg(
-    input_value: Any, expected_dtype: DType, keep_referenced: dict[int, Any]
-) -> Any:
-    def _wrap_tensor(value: Any) -> _TensorData:
-        # NOTE: this only works if the tensor/array is contiguous.
-        if _is_torch_tensor(value):
-            keep_referenced[value.data_ptr()] = value
-            return _TensorData(
-                value.data_ptr(),
-                list(value.shape),
-                DType[str(value.dtype).removeprefix("torch.")],
-            )
-        if isinstance(value, np.ndarray):
-            keep_referenced[value.ctypes.data] = value
-            return _TensorData(
-                value.ctypes.data, list(value.shape), DType[str(value.dtype)]
-            )
-        # Just pass the value through if it's not a tensor/array.
-        return value
-
-    if expected_dtype == DType._unknown:
-        # This currently indicates that the value expected by the model
-        # internally is not a `M::Tensor`. We recursively try to wrap torch
-        # tensors and np arrays, and pass other values as-is, since no metadata
-        # is available to check the runtime values against.
-        # TODO(MSDK-43): Introduce input specs for non-tensor inputs.
-
-        def wrap_nested(value: Any) -> Any:
-            """Traverse a potentially nested python data structure (e.g. lists,
-            dictionaries, and tuples) containing `torch.tensor` and
-            `numpy.ndarray`s leaf nodes and wrap them.
-            """
-            if isinstance(value, list):
-                return [wrap_nested(v) for v in value]
-            if isinstance(value, dict):
-                return {
-                    wrap_nested(k): wrap_nested(v) for k, v in value.items()
-                }
-            if isinstance(value, tuple):
-                return tuple(wrap_nested(v) for v in value)
-            return _wrap_tensor(value)
-
-        return wrap_nested(input_value)
-
-    if not isinstance(input_value, np.ndarray) and not _is_torch_tensor(
-        input_value
-    ):
-        # Indicates that the model expects an ndarray (internally `M::Tensor`),
-        # but if the input isn't already an ndarray, then we can attempt to
-        # interpret it as a scalar primitive that needs to be converted to an
-        # ndarray.
-        return _wrap_tensor(np.array(input_value))
-    return _wrap_tensor(input_value)
 
 
 @traced
