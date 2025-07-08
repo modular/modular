@@ -864,10 +864,7 @@ fn gemv_gpu[
     b: NDBuffer[rank=2, *_, **_],
     ctx: DeviceContext,
 ) raises:
-    alias DEFAULT_LEVEL = Level._from_str(
-        env_get_string["LOGGING_LEVEL", "WARNING"]()
-    )
-    var logger = Logger[DEFAULT_LEVEL]()
+    var logger = Logger()
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
