@@ -492,10 +492,11 @@ struct SIMD[dtype: DType, size: Int](
         """
         self = value.__float__()
 
+    # TODO(MSTDL-1587): Remove the dummy parameter.
     @always_inline
     fn __init__[
         *, `_`: Int = 0
-    ](out self: Float64, value: PythonObject, /) raises:
+    ](out self: Float64, obj: PythonObject, /) raises:
         """Initialize a Float64 from a PythonObject.
 
         Parameters:
@@ -503,24 +504,15 @@ struct SIMD[dtype: DType, size: Int](
                 the others. Its value is ignored.
 
         Args:
-            value: The PythonObject to convert.
+            obj: The PythonObject to convert.
 
         Raises:
             If the conversion to double fails.
         """
-        # TODO(MSTDL-1587): Remove the dummy parameter.
-        var float_obj = value.__float__()
-        var cpython = Python().cpython()
-        self = Float64(cpython.PyFloat_AsDouble(float_obj.py_object))
-        if self == -1.0 and cpython.PyErr_Occurred():
-            # Note that -1.0 does not guarantee an error, it just means we need
-            # to check if there was an exception. This is also very unlikely,
-            # since the __float__ call above will throw if the underlying Python
-            # method fails. Therefore this can only happen if a custom __float__
-            # implementation is incorrect, and returns a non-double value.
-            raise cpython.get_error()
-
-        _ = float_obj
+        var cpy = Python().cpython()
+        self = cpy.PyFloat_AsDouble(obj.py_object)
+        if self == -1.0 and cpy.PyErr_Occurred():
+            raise cpy.unsafe_get_error()
 
     @always_inline("nodebug")
     @implicit
