@@ -20,4 +20,4 @@ def create_text_context(
         tokens=tokens,
     )
     ctx.assign_to_cache(cache_seq_id)
-    return ctx
+    return ctx  # type: ignore

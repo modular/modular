@@ -77,7 +77,7 @@ def retrieve_mock_text_generation_pipeline(
     )
 
     try:
-        pipeline: TextGenerationPipeline[TextContext] = TextGenerationPipeline(
+        pipeline: TextGenerationPipeline[TextContext] = TextGenerationPipeline(  # type: ignore
             pipeline_config=mock_config,
             pipeline_model=MockPipelineModel,
             eos_token_id=eos_token,

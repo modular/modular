@@ -312,7 +312,7 @@ async def test_multiple_clients_multiple_servers() -> None:
             for received_msg in received_messages:
                 client_id = received_msg.message.payload["client_id"]
 
-                reply = TransportMessage[dict[str, str]](
+                reply = TransportMessage[dict[str, Union[int, str]]](
                     message_id=f"reply_from_server_{server_idx}_to_client_{client_id}",
                     message_type=MessageType.PREFILL_RESPONSE.value,
                     payload={
