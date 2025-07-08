@@ -8,8 +8,13 @@ sh_binary(
     srcs = ["uv-wrapper.sh"],
     data = [
         "//bazel/internal:uv",
+        "@python_3_9//:py3_runtime",
+        "@python_3_9//:python3",
     ],
-    env = {"UV": "$(rlocationpath //bazel/internal:uv)"},
+    env = {
+        "UV": "$(rlocationpath //bazel/internal:uv)",
+        "PYTHON": "$(rlocationpath @python_3_9//:python3)",
+    },
     deps = [
         "@bazel_tools//tools/bash/runfiles",
     ],

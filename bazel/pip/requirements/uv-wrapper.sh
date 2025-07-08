@@ -26,5 +26,7 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 # --- end runfiles.bash initialization v3 ---
 
 uv=$(rlocation "$UV")
+python=$(rlocation "$PYTHON")
+export UV_PYTHON="$python"
 
 "$uv" --directory "$BUILD_WORKSPACE_DIRECTORY/bazel/pip/requirements" "$@"
