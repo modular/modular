@@ -1,0 +1,9 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+modular_py_test(
+    name = "tests",
+    srcs = glob(["*.py"]),
+    deps = [
+        "//SDK/lib/API/python/max/experimental",
+    ],
+)
