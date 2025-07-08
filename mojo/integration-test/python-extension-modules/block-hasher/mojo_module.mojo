@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from hashlib import default_comp_time_hasher
 from os import abort
 from sys import sizeof
 
@@ -82,7 +83,7 @@ fn _mojo_block_hasher[
     var result_py_list = cpython.PyList_New(num_hashes)
 
     # Initial hash seed value
-    alias initial_hash = hash("None")
+    alias initial_hash = hash[HasherType=default_comp_time_hasher]("None")
 
     # Performing hashing
     var prev_hash = initial_hash
@@ -91,9 +92,11 @@ fn _mojo_block_hasher[
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.offset(block_idx * block_size)
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
-        var token_hash = hash(hash_ptr_bytes, num_bytes)
+        var token_hash = hash[HasherType=default_comp_time_hasher](
+            hash_ptr_bytes, num_bytes
+        )
         var pair_to_hash = SIMD[DType.uint64, 2](prev_hash, token_hash)
-        var curr_hash = hash(pair_to_hash)
+        var curr_hash = hash[HasherType=default_comp_time_hasher](pair_to_hash)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.
         var curr_hash_obj = cpython.PyLong_FromSsize_t(Int(curr_hash))
