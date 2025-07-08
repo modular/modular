@@ -291,19 +291,22 @@ bool JitUserExpression::prepareToExecuteJITExpression(
 
   if (m_jit_start_addr != LLDB_INVALID_ADDRESS) {
     if (materializedAddress == LLDB_INVALID_ADDRESS) {
-      Status allocError;
-      materializedAddress = executionUnit->Malloc(
-          materializer->GetStructByteSize(), materializer->GetStructAlignment(),
-          lldb::ePermissionsReadable | lldb::ePermissionsWritable,
-          IRMemoryMap::eAllocationPolicyMirror, /*zero_memory=*/false,
-          allocError);
-      if (!allocError.Success()) {
+      llvm::Expected<lldb::addr_t> materializedAddressOr =
+          executionUnit->Malloc(
+              materializer->GetStructByteSize(),
+              materializer->GetStructAlignment(),
+              lldb::ePermissionsReadable | lldb::ePermissionsWritable,
+              IRMemoryMap::eAllocationPolicyMirror, /*zero_memory=*/false,
+              /*used_policy=*/nullptr);
+      if (auto error = materializedAddressOr.takeError()) {
+        auto errorStr = llvm::toString(std::move(error));
         diagnosticManager.Printf(
             lldb::eSeverityError,
             "Couldn't allocate space for materialized struct: %s",
-            allocError.AsCString());
+            errorStr.c_str());
         return false;
       }
+      materializedAddress = std::move(materializedAddressOr.get());
     }
     structAddress = materializedAddress;
 

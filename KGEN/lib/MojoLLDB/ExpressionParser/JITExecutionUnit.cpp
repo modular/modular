@@ -647,9 +647,16 @@ bool JITExecutionUnit::commitOneAllocation(lldb::ProcessSP &process,
     error.Clear();
     break;
   default:
-    record.processAddress =
+    llvm::Expected<lldb::addr_t> processAddressOr =
         Malloc(record.size, record.alignment, record.permissions,
-               eAllocationPolicyProcessOnly, /*zero_memory=*/false, error);
+               eAllocationPolicyProcessOnly, /*zero_memory=*/false,
+               /*used_policy=*/nullptr);
+    if (auto err = processAddressOr.takeError()) {
+      record.processAddress = LLDB_INVALID_ADDRESS;
+      error = Status::FromErrorString("Failed to allocate");
+    } else {
+      record.processAddress = processAddressOr.get();
+    }
     break;
   }
 

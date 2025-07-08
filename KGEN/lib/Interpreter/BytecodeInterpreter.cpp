@@ -42,11 +42,9 @@ public:
   BCRegion(unsigned numArgs, uint32_t firstOpOffset)
       : numArgs(numArgs), firstOpOffset(firstOpOffset) {}
 
-  BCArgument *getArgument(unsigned i) {
-    return getTrailingObjects<BCArgument>() + i;
-  }
+  BCArgument *getArgument(unsigned i) { return getTrailingObjects() + i; }
   const BCArgument *getArgument(unsigned i) const {
-    return getTrailingObjects<BCArgument>() + i;
+    return getTrailingObjects() + i;
   }
 
   /// The number of region arguments.
