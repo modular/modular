@@ -236,11 +236,9 @@ class _Llama4TextAttention(Module):
 
         if self.use_rope:
             if xq.device is not None:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(
-                    xq.device
-                )
+                freqs_cis = self.rope.freqs_cis.to(xq.device)
             else:
-                freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+                freqs_cis = self.rope.freqs_cis
             xq = fused_qk_ragged_rope(
                 self.kv_params,
                 xq,

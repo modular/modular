@@ -27,11 +27,15 @@ from utils import IndexList
 
 
 @always_inline
-fn _rope(val: SIMD, freq: __type_of(val)) -> __type_of(val):
-    x_re, x_im = val.deinterleave()
+fn _rope[
+    dtype: DType,
+    freq_dtype: DType,
+    width: Int,
+](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
+    x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
     var r = ComplexSIMD(x_re, x_im) * ComplexSIMD(f_re, f_im)
-    return rebind[__type_of(val)](r.re.interleave(r.im))
+    return rebind[SIMD[dtype, width]](r.re.interleave(r.im).cast[dtype]())
 
 
 # In GGUF, weights are organized as real, imag, real, imag, real, imag, …,
@@ -53,12 +57,17 @@ fn get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
 
 @always_inline
 fn rope_q_proj[
-    dtype: DType, rank: Int, width: Int, //, *, interleaved: Bool
+    dtype: DType,
+    freq_dtype: DType,
+    rank: Int,
+    width: Int, //,
+    *,
+    interleaved: Bool,
 ](
     q_proj: NDBuffer[dtype, rank, *_],
     output: NDBuffer[mut=True, dtype, rank, *_],
     idx: IndexList[rank],
-    freq_val: SIMD[dtype, width],
+    freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
     var indices = get_safetensors_idx(idx[rank - 1], head_size)
@@ -93,36 +102,27 @@ fn rope_q_proj[
 
 @always_inline
 fn rope_k_cache[
-    dtype: DType, cache_t: KVCacheT, width: Int, //, *, interleaved: Bool
+    freq_dtype: DType, cache_t: KVCacheT, width: Int, //, *, interleaved: Bool
 ](
     k_cache: cache_t,
     b_idx: Int,
     h_idx: Int,
     s_idx: Int,
     d_idx: Int,
-    freq_val: SIMD[dtype, width],
+    freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
     h_re, h_im = get_safetensors_idx(d_idx, head_size)
     alias width_2 = width // 2
     alias cache_type = cache_t.dtype
 
-    constrained[
-        cache_type == dtype,
-        String(
-            "Expected cache dtype ", cache_type, " to match input dtype ", dtype
-        ),
-    ]()
-
-    var val: SIMD[dtype, width]
+    var val: SIMD[cache_type, width]
 
     @parameter
     if interleaved:
-        val = rebind[SIMD[dtype, width]](
-            k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx)
-        )
+        val = k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx)
     else:
-        val = rebind[SIMD[dtype, width]](
+        val = rebind[SIMD[cache_type, width]](
             k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re).interleave(
                 k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im)
             )
@@ -132,25 +132,11 @@ fn rope_k_cache[
 
     @parameter
     if interleaved:
-        k_cache.store(
-            b_idx, h_idx, s_idx, d_idx, rebind[SIMD[cache_type, width]](res)
-        )
+        k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
     else:
         output_re, output_im = res.deinterleave()
-        k_cache.store(
-            b_idx,
-            h_idx,
-            s_idx,
-            h_re,
-            rebind[SIMD[cache_type, width_2]](output_re),
-        )
-        k_cache.store(
-            b_idx,
-            h_idx,
-            s_idx,
-            h_im,
-            rebind[SIMD[cache_type, width_2]](output_im),
-        )
+        k_cache.store(b_idx, h_idx, s_idx, h_re, output_re)
+        k_cache.store(b_idx, h_idx, s_idx, h_im, output_im)
 
 
 @always_inline
@@ -246,6 +232,7 @@ fn fused_qk_rope[
 @always_inline
 fn fused_qk_rope_ragged[
     dtype: DType,
+    freq_dtype: DType,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
@@ -255,7 +242,7 @@ fn fused_qk_rope_ragged[
     q_proj: NDBuffer[dtype, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
-    freqs_cis: NDBuffer[dtype, 2, *_],
+    freqs_cis: NDBuffer[freq_dtype, 2, *_],
     layer_idx: UInt32,
     output: NDBuffer[mut=True, dtype, 3, *_],
     context: Optional[DeviceContext],
@@ -296,6 +283,13 @@ fn fused_qk_rope_ragged[
         (rope_dim == q_head_size and rope_dim == k_head_size) or interleaved,
         "Partial RoPE operation only supported for interleaved pattern",
     ]()
+    constrained[
+        collection_t.dtype == dtype,
+        "Expected cache dtype "
+        + String(collection_t.dtype)
+        + " to match input dtype "
+        + String(dtype),
+    ]()
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -327,12 +321,12 @@ fn fused_qk_rope_ragged[
             var is_q_proj = head_idx < num_q_heads
             var is_unroped_region = head_dim_idx < unroped_dim
 
-            var f_c_temp: SIMD[dtype, width]
+            var f_c_temp: SIMD[freq_dtype, width]
 
             @parameter
             if has_nope:
                 if is_unroped_region:
-                    f_c_temp = get_identity_rope_coeff[width, dtype]()
+                    f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     var f_idx = IndexList[2](
                         post_seq_idx, head_dim_idx - unroped_dim
