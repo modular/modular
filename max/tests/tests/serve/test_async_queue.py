@@ -26,7 +26,7 @@ async def test_basic_usage() -> None:
     # Getting a client for a non-started controller should not work
     # we need to be able to serialize clients & still connect
     with pytest.raises(NotStarted):
-        atc.Client(Settings())
+        atc.Client(Settings())  # type: ignore
 
     assert not spy2.commit.called
 
@@ -38,7 +38,7 @@ async def test_basic_usage() -> None:
 
     # Consumer is stopped.  call() doesn't work
     with pytest.raises(NotStarted):
-        atc.Client(Settings()).send_measurement(spy2, level=MetricLevel.BASIC)
+        atc.Client(Settings()).send_measurement(spy2, level=MetricLevel.BASIC)  # type: ignore
     assert not spy2.commit.called
 
 

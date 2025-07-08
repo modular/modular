@@ -43,7 +43,7 @@ def test_recording(include_responses: bool) -> None:
     recorder = ListRecorder()
     app = FastAPI()
     app.add_middleware(
-        middleware.RecorderMiddleware,
+        middleware.RecorderMiddleware,  # type: ignore
         recorder=recorder,
         include_responses=include_responses,
     )
@@ -202,7 +202,7 @@ def test_lifespan() -> None:
         exit_mock(recorder_mock)
 
     app = FastAPI()
-    app.add_middleware(middleware.RecorderMiddleware, recorder_factory=factory)
+    app.add_middleware(middleware.RecorderMiddleware, recorder_factory=factory)  # type: ignore
     enter_mock.assert_not_called()
 
     # We manually manage the lifetimes of exit_stack1 and exit_stack2 below,
@@ -248,7 +248,7 @@ def test_lifespan() -> None:
 
 def test_not_required_lifespan() -> None:
     app = FastAPI()
-    app.add_middleware(middleware.RecorderMiddleware, recorder=ListRecorder())
+    app.add_middleware(middleware.RecorderMiddleware, recorder=ListRecorder())  # type: ignore
 
     @app.get("/hello")
     def hello_handler() -> str:
@@ -266,7 +266,7 @@ def test_not_required_lifespan() -> None:
 def test_required_lifespan() -> None:
     app = FastAPI()
     app.add_middleware(
-        middleware.RecorderMiddleware,
+        middleware.RecorderMiddleware,  # type: ignore
         recorder_factory=ListRecorder,
     )
 
