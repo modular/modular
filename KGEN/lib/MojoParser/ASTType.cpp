@@ -621,6 +621,80 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
           operandsToPrint = operandsToPrint.drop_front();
         }
 
+        // Special case: struct __init__ constructor calls for literal types
+        if (name.starts_with("__init__") && diagShared &&
+            operands.size() >= 2) {
+
+          // Helper function to check if this is a literal wrapper by name
+          auto isLiteralWrapperName = [](StringRef structName) {
+            return structName == "StringLiteral" ||
+                   structName == "IntLiteral" || structName == "FloatLiteral";
+          };
+
+          // Helper function to try printing just the literal value
+          auto tryPrintLiteralValue = [&](ArrayRef<TypedAttr> args) -> bool {
+            if (args.size() == 1) {
+              printDemangledParam(os, args[0], diagShared);
+              return true;
+            }
+            return false;
+          };
+
+          // Primary approach: Use symbol structure to get struct name
+          StringRef structName = tryGetTypeNameFromSymbolRef(nameAttr);
+          if (isLiteralWrapperName(structName)) {
+            if (tryPrintLiteralValue(operandsToPrint))
+              return;
+          }
+
+          // Fallback: Check if the symbol name contains type suffixes
+          if (name.contains("[__mlir_type.!kgen.string]") ||
+              name.contains("[__mlir_type.!pop.int_literal]") ||
+              name.contains("[__mlir_type.!pop.float_literal]")) {
+            if (tryPrintLiteralValue(operandsToPrint))
+              return;
+          }
+
+          // Helper to check if an argument is a literal constructor
+          auto tryPrintAsLiteral = [&](TypedAttr arg) -> bool {
+            auto op = dyn_cast<ParamOperatorAttr>(arg);
+            if (!op || op.getOpcode() != POC::Apply)
+              return false;
+
+            ArrayRef<TypedAttr> argOperands = op.getOperands();
+            if (argOperands.size() < 2)
+              return false;
+
+            SymbolRefAttr argNameAttr = tryGetSymbolName(argOperands.front());
+            if (!argNameAttr)
+              return false;
+
+            StringRef argName =
+                getNameFromSymbolRef(argNameAttr, /*isFunc=*/true);
+            if (!argName.starts_with("__init__"))
+              return false;
+
+            StringRef innerStructName =
+                tryGetTypeNameFromSymbolRef(argNameAttr);
+            if (!isLiteralWrapperName(innerStructName))
+              return false;
+
+            ArrayRef<TypedAttr> innerArgs = argOperands.drop_front();
+            return tryPrintLiteralValue(innerArgs);
+          };
+
+          // For non-literal structs, handle nested literal constructors
+          if (!structName.empty()) {
+            os << structName << '(';
+            llvm::interleaveComma(operandsToPrint, os, [&](TypedAttr arg) {
+              if (!tryPrintAsLiteral(arg))
+                printDemangledParam(os, arg, diagShared);
+            });
+            os << ')';
+            return;
+          }
+        }
+
         // Otherwise, print the symbol and go through the normal argument list.
         printSymbol(os, nameAttr, diagShared, /*isFunc=*/true);
 

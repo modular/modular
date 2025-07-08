@@ -605,7 +605,7 @@ fn optional_default_arg_none(input: Optional[Int64] = None):
     pass
 
 
-# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional(__init__[__mlir_type.!pop.int_literal](13)))"
+# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional(13))"
 fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
     pass
 

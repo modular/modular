@@ -7,7 +7,7 @@
 # RUN: mojo doc %s | FileCheck %s
 
 
-# CHECK: "default": "__init__[__mlir_type.!kgen.string](\"\\n\")",
+# CHECK: "default": "\"\\n\"",
 fn testFn(stringArgument: StaticString = "\n"):
     """Function description text.
 
