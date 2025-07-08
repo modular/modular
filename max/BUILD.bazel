@@ -128,13 +128,14 @@ modular_python_binding_py_library(
 
 modular_py_library(
     name = "max",
-    srcs = ["experimental/tensor.py"],
+    srcs = [],
     deps = [
         ":_core",
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/entrypoints",
+        "//SDK/lib/API/python/max/experimental",
         "//SDK/lib/API/python/max/graph",
         "//SDK/lib/API/python/max/interfaces",
         "//SDK/lib/API/python/max/mlir",

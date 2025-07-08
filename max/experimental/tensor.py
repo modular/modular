@@ -9,34 +9,37 @@ from __future__ import annotations
 import asyncio
 import functools
 import weakref
+from collections.abc import Iterable
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from itertools import chain
 
-import max.driver
-import max.engine
-import max.graph
-from max import _core as mlir
-from max._core.dialects import builtin, mo
-from max.graph import TensorType, TensorValueLike, ops
-from max.graph.graph import _location
+import numpy as np
 
-_SESSION: ContextVar[max.engine.api.InferenceSession] = ContextVar("_SESSION")
+# For clarity, since there are several Tensor and Device types
+# around, only directly import types which are concretely used
+# by max.Tensor.
+from .. import _core, driver, engine, graph, mlir
+from .._core.dialects import builtin, mo
+from ..driver import CPU, Device
+from ..dtype import DType
+from ..graph import TensorType, TensorValueLike, ops
+from ..graph.graph import _location
+
+_SESSION: ContextVar[engine.api.InferenceSession] = ContextVar("_SESSION")
 
 
-def _session() -> max.engine.api.InferenceSession:
+def _session() -> engine.api.InferenceSession:
     """A single global inference session for compiling and running kernels on tensors."""
-    device_specs = max.driver.scan_available_devices()
-    if (cpu := max.driver.DeviceSpec.cpu()) not in device_specs:
+    device_specs = driver.scan_available_devices()
+    if (cpu := driver.DeviceSpec.cpu()) not in device_specs:
         device_specs.append(cpu)
-    devices = max.driver.load_devices(device_specs)
+    devices = driver.load_devices(device_specs)
     if not (session := _SESSION.get(None)):
-        _SESSION.set(
-            session := max.engine.api.InferenceSession(devices=devices)
-        )
+        _SESSION.set(session := engine.api.InferenceSession(devices=devices))
     return session
 
 
-class Tensor(max.graph.TensorValue):
+class Tensor(graph.TensorValue):
     """A Tensor object with numerics.
 
     A Tensor type that can do the kinds of things people expect
@@ -63,16 +66,16 @@ class Tensor(max.graph.TensorValue):
     """
 
     #: Underlying memory for a realized tensor.
-    _storage: max.driver.Tensor | None
+    _storage: driver.Tensor | None
     #: - For a realized tensor this is a graph input value
     #: - For an unrealized tensor this is a node in the graph
-    _mlir_value: mlir.Value[mo.TensorType]
+    _mlir_value: _core.Value[mo.TensorType]
 
     def __init__(
         self,
         *,
-        storage: max.driver.Tensor | None = None,
-        mlir_value: mlir.Value[mo.TensorType] | None = None,
+        storage: driver.Tensor | None = None,
+        mlir_value: _core.Value[mo.TensorType] | None = None,
     ):
         self._storage = storage
         if mlir_value is not None:
@@ -82,8 +85,22 @@ class Tensor(max.graph.TensorValue):
             GRAPH.add_source(self)
 
     @classmethod
-    def from_tensor_value(cls, value: max.graph.TensorValue) -> Tensor:
+    def from_tensor_value(cls, value: graph.TensorValue) -> Tensor:
         return cls(mlir_value=value._mlir_value)
+
+    @classmethod
+    def constant(cls, value, dtype, device) -> Tensor:
+        if hasattr(value, "__iter__") and not isinstance(value, np.ndarray):
+            value = np.array(value, dtype.to_numpy())
+
+        return functional(ops.constant)(
+            value, dtype, graph.DeviceRef.from_device(device)
+        )
+
+    @property
+    def device_(self) -> Device:
+        """The tensor's device."""
+        return super().device.to_device()
 
     @property
     def real(self) -> bool:
@@ -91,7 +108,7 @@ class Tensor(max.graph.TensorValue):
         return self._storage is not None
 
     @property
-    def driver_tensor(self) -> max.driver.Tensor:
+    def driver_tensor(self) -> driver.Tensor:
         """A pointer to the underlying memory.
 
         Raises if the tensor is unrealized.
@@ -112,15 +129,85 @@ class Tensor(max.graph.TensorValue):
         """Force the tensor to realize if it is not already."""
         return await self
 
-    # Hmm yuck. Would rather type everything as `TensorLike` and `Tensor`
-    def __add__(self, other: TensorValueLike) -> Tensor | max.graph.TensorValue:
+    def _sync_realize(self):
+        if not self.real:
+            asyncio.run(self.realize)
+
+    def __add__(self, other: TensorValueLike) -> Tensor:
         return functional(ops.add)(self, other)
+
+    def __sub__(self, other: TensorValueLike) -> Tensor:
+        return functional(ops.sub)(self, other)
+
+    def __truediv__(self, other: TensorValueLike) -> Tensor:
+        return functional(ops.div)(self, other)
+
+    def __eq__(self, other: TensorValueLike) -> Tensor:  # type: ignore
+        return functional(ops.equal)(self, other)
+
+    def __gt__(self, other: TensorValueLike) -> Tensor:
+        return functional(ops.greater)(self, other)
+
+    def __abs__(self) -> Tensor:
+        return functional(ops.abs)(self)
+
+    def __bool__(self) -> bool:
+        return bool(self.item())
+
+    def __getitem__(self, idx):
+        return functional(graph.TensorValue.__getitem__)(self, idx)
+
+    def _values(self):
+        self._sync_realize()
+        dt = self.driver_tensor.to(CPU())
+        for idx in dt._iterate_indices():
+            yield dt[idx].item()
+
+    def __repr__(self):
+        # Janky repr for bootstrapping, we can do much better.
+        return f"{self.type}: [{', '.join(str(v) for v in self._values())}]"
+
+    def item(self):
+        if self.num_elements() != 1:
+            raise TypeError()
+        self._sync_realize()
+        return self.driver_tensor.to(CPU()).item()
+
+    def num_elements(self) -> int:
+        elts = 1
+        for dim in self.shape:
+            elts *= int(dim)
+        return elts
+
+    def argmax(self) -> Tensor:
+        return functional(ops.argmax)(self)
+
+    def max(self) -> Tensor:
+        return functional(ops.max)(self)
 
     def __hash__(self):
         return id(self)
 
+    @classmethod
+    def arange(
+        cls,
+        start: int = 0,
+        stop: int | None = None,
+        step: int = 1,
+        dtype: DType = DType.float32,
+        device: Device = CPU(),
+    ):
+        if stop is None:
+            start, stop = 0, start
+        return functional(ops.range)(
+            start,
+            stop,
+            step,
+            dtype=dtype,
+            device=graph.DeviceRef.from_device(device),
+        )
 
-@dataclass
+
 class ComputeGraph:
     """Compute graph storage for unrealized tensors.
 
@@ -148,12 +235,30 @@ class ComputeGraph:
     detail and is subject to change.
     """
 
-    graph: max.graph.Graph
+    graph: graph.Graph
     #: Keeps a strong reference to tensor data that we need to compute graph values
-    sources: dict[mlir.Value, Tensor] = field(default_factory=dict)
+    sources: dict[_core.Value, Tensor]
     #: Keeps weak references to intermediate unrealized tensor values, which may
     #: never need to be realized.
-    unrealized: weakref.WeakSet[Tensor] = field(default_factory=weakref.WeakSet)
+    unrealized: weakref.WeakSet[Tensor]
+
+    def __init__(
+        self,
+        context: mlir.Context | None = None,
+        sources: Iterable[Tensor] = (),
+        seed: int = 0,
+    ):
+        self.context = context or mlir.Context()
+        self.sources = {}
+
+        self.unrealized = weakref.WeakSet()
+        self.graph = graph.Graph("main", input_types=[], context=self.context)
+
+        with self.graph:
+            ops.random.set_seed(seed)
+
+        for source in sources:
+            self.add_source(source)
 
     async def evaluate(self, tensor: Tensor):
         """Realize the input tensor object.
@@ -170,54 +275,50 @@ class ComputeGraph:
         # create strong references during execution
         unrealized = list(self.unrealized)
         with self.graph:
-            # We need to remove sources that no longer exist from the graph
-            self.graph.output(*unrealized)
+            self.graph.output(ops.random._next_seed(), *unrealized)
         # Remove dead values and inputs
-        module: builtin.ModuleOp = mlir.Operation._from_cmlir(
+        module: builtin.ModuleOp = _core.Operation._from_cmlir(
             self.graph._module.operation
         )  # type: ignore
-        mlir.lower(module, [builtin.passes.RemoveDeadValues()])
+        # Remove sources that no longer exist from the graph
+        _core.lower(module, [builtin.passes.RemoveDeadValues()])
+        # Handling seeds is really awkward, and might have some catastrophic failures
+        # mixing calls to random between a hand-constructed graph and usage of max.Tensor.
+        # First output is always seed:
         inputs = [
             self.sources[input._mlir_value] for input in self.graph.inputs
         ]
-        weak_sources = weakref.WeakSet(self.sources.values())
-        # Drop dead, unused sources
-        self.sources = {}
 
         try:
             model = _session().load(self.graph)
             # This will become an await when `model` supports it
-            results = model(*(input.driver_tensor for input in inputs))
+            seed, *results = model(*(input.driver_tensor for input in inputs))
+            assert isinstance(seed, driver.Tensor)
         except:
-            # Reset graph to a sane state.
-            self.sources = {
-                input._mlir_value: tensor
-                for input, tensor in zip(self.graph.inputs, inputs)
-            }
             # If we've tried and failed to compile the graph, remove its
             # terminator so future ops can modify the graph.
             #  - Can failed lowerings leave the module in a partially lowered state?
             self.graph._erase_output_if_present()
             raise
 
-        # Drop dead used sources
-        del inputs
-
-        self.unrealized = weakref.WeakSet()
-        self.graph = max.graph.Graph("main", input_types=[])
-
-        for live_source in weak_sources:
-            self.add_source(live_source)
-
-        # all evaluated unrealized become realized, sources of a new graph
         for tensor, storage in zip(unrealized, results):
             # This will eventually support Mojo values also.
-            assert isinstance(storage, max.driver.Tensor)
+            assert isinstance(storage, driver.Tensor)
             tensor._storage = storage
-            self.add_source(tensor)
+
+        # Reset the graph to a new empty graph with only inputs
+        ComputeGraph.__init__(
+            self,
+            context=self.graph._context,
+            # - Re-add any sources that still have live references
+            # - All evaluated tensors become realized sources of a new graph
+            sources=chain(inputs, unrealized),
+            seed=seed.item(),
+        )
 
     def add_source(self, tensor: Tensor):
-        op: mo.GraphOp = mlir.Operation._from_cmlir(self.graph._mlir_op)  # type: ignore
+        op = _core.Operation._from_cmlir(self.graph._mlir_op)
+        assert isinstance(op, mo.GraphOp)
         block = op.regions[0].front
         with self.graph:
             type = driver_tensor_type(tensor.driver_tensor).to_mlir()
@@ -225,9 +326,6 @@ class ComputeGraph:
             op.function_type = builtin.FunctionType([*inputs, type])
             tensor._mlir_value = block.add_argument(type, _location())
         self.sources[tensor._mlir_value] = tensor
-
-
-GRAPH = ComputeGraph(max.graph.Graph("main", input_types=[]))
 
 
 def functional(op):
@@ -238,14 +336,15 @@ def functional(op):
     def wrapped(*args, **kwargs):
         with GRAPH.graph:
             results = op(*args, **kwargs)
-        if isinstance(results, max.graph.TensorValue):
+        if isinstance(results, graph.TensorValue):
             return Tensor.from_tensor_value(results)
         return [Tensor.from_tensor_value(result) for result in results]
 
     return wrapped
 
 
-def driver_tensor_type(t: max.driver.Tensor) -> TensorType:
-    return TensorType(
-        t.dtype, t.shape, max.graph.DeviceRef.from_device(t.device)
-    )
+def driver_tensor_type(t: driver.Tensor) -> TensorType:
+    return TensorType(t.dtype, t.shape, graph.DeviceRef.from_device(t.device))
+
+
+GRAPH = ComputeGraph()
