@@ -389,19 +389,17 @@ struct PythonModuleBuilder:
 
     fn def_function[
         func_type: AnyTrivialRegType, //,
-        func: PyObjectFunction[func_type, has_self=False],
+        func: PyObjectFunction[func_type, NoneType],
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
-        """Declare a binding for a function with PythonObject signature in the
-        module.
+        """Declare a binding for a module-level function.
 
-        These signatures can have any number of positional PythonObject
-        arguments up to 6, can optionally return a PythonObject, and can raise.
+        Accepts functions with PythonObject arguments (up to 6), can optionally
+        return a PythonObject, and can raise.
 
-        Example signature types:
+        Example signatures:
         ```mojo
-        alias F1 = fn (mut PythonObject) raises -> PythonObject
-        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
-        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        fn func(arg1: PythonObject) -> PythonObject
+        fn func(arg1: PythonObject, arg2: PythonObject) raises
         ```
 
         Parameters:
@@ -699,7 +697,10 @@ struct PythonTypeBuilder(Copyable, Movable):
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a method with PyObject signature for the type.
+        """Declare a binding for a method with PyFunction signature.
+
+        Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) -> PythonObject`
+        where the first arg is self and the second is a tuple of arguments.
 
         Parameters:
             method: The method to declare a binding for.
@@ -728,7 +729,14 @@ struct PythonTypeBuilder(Copyable, Movable):
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a method with PyObject signature for the type.
+        """Declare a binding for a method with PyFunctionRaising signature.
+
+        Accepts methods with signature: `fn (mut PythonObject, mut PythonObject) raises -> PythonObject`
+        where the first arg is self and the second is a tuple of arguments.
+
+        Parameters:
+            method: The method to declare a binding for.
+            static_method: Whether the method is exposed as a staticmethod.
 
         Args:
             method_name: The name with which the method will be exposed on the
@@ -745,24 +753,21 @@ struct PythonTypeBuilder(Copyable, Movable):
 
     fn def_method[
         method_type: AnyTrivialRegType, //,
-        method: PyObjectFunction[method_type, has_self=True],
+        method: PyObjectFunction[method_type, PythonObject],
     ](
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a method with PythonObject signature for the
-        type.
+        """Declare a binding for a method that receives self as PythonObject.
 
-        These signatures can have any number of positional PythonObject
-        arguments up to 6 (including self), can optionally return a
-        PythonObject, and can raise.
+        Use this when you need generic Python object access. For direct access to the wrapped
+        Mojo type, use the typed self `def_method` overload instead.
 
-        Example signature types:
+        Example signatures:
         ```mojo
-        alias F1 = fn (mut PythonObject) raises -> PythonObject
-        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
-        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        fn method(mut self: PythonObject) -> PythonObject
+        fn method(mut self: PythonObject, arg1: PythonObject) raises
         ```
 
         Parameters:
@@ -788,25 +793,65 @@ struct PythonTypeBuilder(Copyable, Movable):
 
         return self.def_py_method[wrapper](method_name, docstring)
 
-    fn def_staticmethod[
+    fn def_method[
+        method_self: AnyType,
         method_type: AnyTrivialRegType, //,
-        method: PyObjectFunction[method_type, has_self=False],
+        method: PyObjectFunction[method_type, method_self],
     ](
         mut self: Self,
         method_name: StaticString,
         docstring: StaticString = StaticString(),
     ) -> ref [self] Self:
-        """Declare a binding for a staticmethod with PythonObject signature for
-        the type.
+        """Declare a binding for a method that takes a typed self as first argument.
 
-        These signatures can have any number of positional PythonObject
-        arguments up to 6, can optionally return a PythonObject, and can raise.
+        This method automatically handles the downcasting of the Python self object
+        to the specified Mojo type. To receive a generic PythonObject as self, use
+        the generic self `def_method` overload instead.
 
-        Example signature types:
+        Example usage:
         ```mojo
-        alias F1 = fn (mut PythonObject) raises -> PythonObject
-        alias F2 = fn (mut PythonObject, PythonObject) -> PythonObject
-        alias F3 = fn (mut PythonObject, PythonObject, mut PythonObject)
+        fn my_method(self: UnsafePointer[Self], arg: PythonObject) -> PythonObject
+        ```
+
+        Parameters:
+            method_self: The type of the self parameter (inferred from the method).
+            method_type: The type signature of the method to declare a binding for.
+            method: The method to declare a binding for. The first parameter should
+                be the typed self parameter.
+
+        Args:
+            method_name: The name with which the method will be exposed on the type.
+            docstring: The docstring for the method of the type.
+
+        Returns:
+            The builder with the method binding declared.
+        """
+
+        @always_inline
+        fn wrapper(
+            mut py_self: PythonObject, mut py_args: PythonObject
+        ) raises -> PythonObject:
+            return method._call_method(py_self, py_args)
+
+        return self.def_py_method[wrapper](method_name, docstring)
+
+    fn def_staticmethod[
+        method_type: AnyTrivialRegType, //,
+        method: PyObjectFunction[method_type, NoneType],
+    ](
+        mut self: Self,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref [self] Self:
+        """Declare a binding for a static method (no self parameter).
+
+        Accepts functions with PythonObject arguments (up to 6), can optionally
+        return a PythonObject, and can raise.
+
+        Example signatures:
+        ```mojo
+        fn static_method(arg1: PythonObject) -> PythonObject
+        fn static_method(arg1: PythonObject, arg2: PythonObject) raises
         ```
 
         Parameters:

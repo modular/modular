@@ -103,6 +103,30 @@ class TestPythonTypeBuilderDefMethod(unittest.TestCase):
         person._set_age_from_dates(1991, 2025)
         self.assertEqual(person.get_age(), 34)
 
+    def test_set_name_auto(self) -> None:
+        person = def_method.Person()
+        person.set_name_auto("Alice Auto")
+        self.assertEqual(person.get_name_auto(), "Alice Auto")
+
+    def test_get_name_auto(self) -> None:
+        person = def_method.Person()
+        self.assertEqual(person.get_name_auto(), "John Smith")
+
+    def test_increment_age_auto(self) -> None:
+        person = def_method.Person()
+        new_age = person.increment_age_auto(7)
+        self.assertEqual(new_age, 130)
+        self.assertEqual(person.get_age(), 130)
+
+    def test_reset_auto(self) -> None:
+        person = def_method.Person()
+        person.set_name_auto("Modified Name")
+        person.increment_age_auto(50)
+
+        person.reset_auto()
+        self.assertEqual(person.get_name_auto(), "Auto Reset Person")
+        self.assertEqual(person.get_age(), 999)
+
 
 if __name__ == "__main__":
     unittest.main()
