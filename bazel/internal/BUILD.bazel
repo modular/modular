@@ -4,3 +4,13 @@ filegroup(
     srcs = ["mojo-filecheck-test.sh"],
     visibility = ["//visibility:public"],
 )
+
+alias(
+    name = "uv",
+    actual = select({
+        "//:linux_aarch64": "@uv_linux_aarch64//:uv",
+        "//:linux_x86_64": "@uv_linux_x86_64//:uv",
+        "@platforms//os:macos": "@uv_darwin_aarch64//:uv",
+    }),
+    visibility = ["//visibility:public"],
+)
