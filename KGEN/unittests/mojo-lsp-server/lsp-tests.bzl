@@ -28,9 +28,6 @@ def lsp_test(name, pattern):
             "@mojo//:compiler_internal",
         ],
         py_deps = [],
-        tags = [
-            "no-sandbox",  # The LSP server currently has issues with symlinks and non-canonical paths
-        ],
         deps = [
             ":Support",
             "//Support:Globals",
