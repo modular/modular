@@ -738,9 +738,11 @@ PIPELINES = {
         run=_make_pipeline_runner(
             pipeline="llama4-scout",
             encoding="bfloat16",
-            # TODO (MODELS-480): Debug Llama-4 Accuracy.
-            cos_dist_threshold=7.2e-1,
-            kl_div_threshold=6.5,
+            pregenerated_torch_goldens_rlocation=(
+                "torch_llama4_golden/torch_llama4_scout_bfloat16_golden.json"
+            ),
+            cos_dist_threshold=5.0e-3,
+            kl_div_threshold=4.0e-1,
         ),
     ),
     "mistralai/Mistral-Nemo-Instruct-2407-bfloat16": PipelineDef(
