@@ -921,6 +921,12 @@ struct GILReleased(Movable):
         self.cpython.PyEval_RestoreThread(self.thread_state)
 
 
+fn _PyErr_GetRaisedException_dummy() -> PyObjectPtr:
+    return abort[PyObjectPtr](
+        "PyErr_GetRaisedException is not available in this Python version"
+    )
+
+
 @fieldwise_init
 struct CPython(Copyable, Defaultable, Movable):
     """Handle to the CPython interpreter present in the current process."""
@@ -1038,7 +1044,12 @@ struct CPython(Copyable, Defaultable, Movable):
         self._PyErr_SetString = PyErr_SetString.load(self.lib)
         self._PyErr_SetNone = PyErr_SetNone.load(self.lib)
         self._PyErr_Occurred = PyErr_Occurred.load(self.lib)
-        self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(self.lib)
+        if self.version.minor >= 12:
+            self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(
+                self.lib
+            )
+        else:
+            self._PyErr_GetRaisedException = _PyErr_GetRaisedException_dummy
         self._PyErr_Fetch = PyErr_Fetch.load(self.lib)
 
         self._PyEval_SaveThread = PyEval_SaveThread.load(self.lib)
