@@ -72,9 +72,7 @@ fn bench_reduce[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
     var temp_buffer_num_bytes = ngpus * num_bytes
@@ -111,10 +109,10 @@ fn bench_reduce[
 
     # Create and initialize input and output buffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[dtype, rank, MutableAnyOrigin]()
+        fill={}
     )
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[dtype, rank, MutableAnyOrigin]()
+        fill={}
     )
 
     for i in range(ngpus):

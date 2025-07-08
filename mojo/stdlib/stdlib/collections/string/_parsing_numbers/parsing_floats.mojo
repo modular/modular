@@ -78,8 +78,8 @@ fn _get_w_and_q_from_float_string(
     exponent_multiplier = 1
 
     # We'll assume that we'll never go over 24 digit for each number.
-    exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
-    significand = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+    exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
+    significand = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
     prt_to_array = UnsafePointer(to=exponent)
     array_index = CONTAINER_SIZE
@@ -117,7 +117,7 @@ fn _get_w_and_q_from_float_string(
             if prt_to_array == UnsafePointer(to=exponent):
                 # We thought we were writing the exponent, but we were writing the significand.
                 significand = exponent
-                exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+                exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
                 prt_to_array = UnsafePointer(to=significand)
 
             additional_exponent = CONTAINER_SIZE - array_index - 1
@@ -144,7 +144,7 @@ fn _get_w_and_q_from_float_string(
     if not dot_or_e_found:
         # We were reading the significand
         significand = exponent
-        exponent = InlineArray[Byte, CONTAINER_SIZE](ord("0"))
+        exponent = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
 
     exponent_as_integer = (
         exponent_multiplier * to_integer(exponent) - additional_exponent

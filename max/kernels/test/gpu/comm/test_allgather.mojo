@@ -37,9 +37,7 @@ def all_gather_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-        UnsafePointer[Signal]()
-    )
+    var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
     # Calculate temp buffer size for signals.
     var max_length = 0
@@ -89,7 +87,7 @@ def all_gather_test[
 
     # Create input NDBuffers.
     var in_bufs = InlineArray[NDBuffer[dtype, rank, MutableAnyOrigin], ngpus](
-        NDBuffer[dtype, rank, MutableAnyOrigin]()
+        fill={}
     )
 
     for i in range(ngpus):
@@ -100,7 +98,7 @@ def all_gather_test[
     # Create flat output buffer array (ngpus * ngpus).
     var out_bufs = InlineArray[
         NDBuffer[dtype, rank, MutableAnyOrigin], ngpus * ngpus
-    ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+    ](fill={})
 
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):

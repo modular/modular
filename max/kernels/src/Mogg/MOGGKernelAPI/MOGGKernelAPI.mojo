@@ -8905,7 +8905,7 @@ struct DistributedAllReduceSum:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -8913,15 +8913,13 @@ struct DistributedAllReduceSum:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -8995,7 +8993,7 @@ struct DistributedAllGather:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], inputs.size
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(inputs.size):
@@ -9003,15 +9001,13 @@ struct DistributedAllGather:
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutableAnyOrigin], num_devices * num_devices
-        ](NDBuffer[dtype, rank, MutableAnyOrigin]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices * num_devices):
             out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9091,10 +9087,10 @@ struct DistributedMatmulAllReduce:
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
             NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape], num_devices
-        ](NDBuffer[a_type, 2, MutableAnyOrigin, A_static_shape]())
+        ](fill={})
         var weight_bufs = InlineArray[
             NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape], num_devices
-        ](NDBuffer[b_type, 2, MutableAnyOrigin, B_static_shape]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
@@ -9105,7 +9101,7 @@ struct DistributedMatmulAllReduce:
 
         var out_bufs = InlineArray[
             NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
-        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+        ](fill={})
 
         @parameter
         for i in range(num_devices):
@@ -9113,9 +9109,7 @@ struct DistributedMatmulAllReduce:
                 NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]
             ](managed_tensor_slice_to_ndbuffer(outputs[i]))
 
-        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](
-            UnsafePointer[Signal]()
-        )
+        var rank_sigs = InlineArray[UnsafePointer[Signal], MAX_GPUS](fill={})
 
         @parameter
         for i in range(signal_buffers.size):
@@ -9141,7 +9135,7 @@ struct DistributedMatmulAllReduce:
         # Allocate temporarie buffers to store the matmul outputs
         var c_temp_bufs = InlineArray[
             NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape], num_devices
-        ](NDBuffer[c_type, 2, MutableAnyOrigin, C_static_shape]())
+        ](uninitialized=True)
 
         @parameter
         for i in range(num_devices):

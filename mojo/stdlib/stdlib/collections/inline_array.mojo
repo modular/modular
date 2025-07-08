@@ -176,7 +176,7 @@ struct InlineArray[
             )
 
     @always_inline
-    fn __init__[batch_size: Int = 64](out self, fill: Self.ElementType):
+    fn __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
