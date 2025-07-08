@@ -156,7 +156,7 @@ class _BitVector:
 class _TargetTriple:
     pass
 
-class _RelocationModel(enum.Enum):
+class _RelocationModel(enum.Enum):  # type: ignore
     pass
 
 class _MemoryEffect:
