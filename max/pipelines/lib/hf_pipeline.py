@@ -213,11 +213,11 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
                     status = TextGenerationStatus.MAXIMUM_LENGTH
                     res[request_id].update_status(status)
                 elif context.current_length == max_length:
-                    res[request_id].append_token(TextResponse(next_token))
+                    res[request_id].append_token(TextResponse(next_token))  # type: ignore
                     status = TextGenerationStatus.MAXIMUM_LENGTH
                     res[request_id].update_status(status)
                 else:
-                    res[request_id].append_token(TextResponse(next_token))
+                    res[request_id].append_token(TextResponse(next_token))  # type: ignore
 
                 if status.is_done:
                     break

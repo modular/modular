@@ -30,7 +30,7 @@ class StopDetector:
             if type(stop) == str:
                 self.stop = [stop]
             else:
-                self.stop = list(stop)  # type: ignore
+                self.stop = list(stop)
 
         if len(self.stop) > 0:
             self._max_stop_length = max(map(len, self.stop))

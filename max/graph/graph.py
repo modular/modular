@@ -353,7 +353,7 @@ class Graph:
 
             si64 = builtin.IntegerType(64, builtin.SignednessSemantics.signed)
             # TODO(MAXPLAT-306): Type annotations are wrong here
-            op.input_parameters = kgen.ParamDeclArrayAttr(  # type: ignore
+            op.input_parameters = kgen.ParamDeclArrayAttr(
                 [kgen.ParamDeclAttr(p, si64) for p in self._params]
             )
 

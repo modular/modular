@@ -175,7 +175,7 @@ def _slice_index_and_output(
         if start is None:
             start = where(step >= zero, zero, int64_max)
         if stop is None:
-            stop = where(step >= zero, int64_max, zero)
+            stop = where(step >= zero, int64_max, zero)  # type: ignore
         return (slice(start, stop, step), index[1])
 
     raise ValueError(f"Unsupported slice inputs {dim=}, {index=}")

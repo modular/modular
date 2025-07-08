@@ -32,7 +32,7 @@ dependencies = [
   "matplotlib",
   "msgspec",
   "munch",
-  "mypy==1.13.0",
+  "mypy",
   "notebook",
   "numpy",
   "nvitop",
