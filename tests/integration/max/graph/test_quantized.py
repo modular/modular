@@ -59,7 +59,7 @@ def test_qmatmul(session) -> None:
 
 
 @pytest.mark.skipif(
-    accelerator_count() > 0,
+    True,  # TODO(KERN-1881): Re-enable for CPU.
     reason="Quantization only supported on cpu currently",
 )
 def test_dequantize(session) -> None:

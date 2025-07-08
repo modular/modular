@@ -58,7 +58,16 @@ fn parameterized_on_cuda() -> Int:
 @always_inline
 fn _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
     assert_true("test_cuda_target_parameterized" in asm)
-    assert_true("mov.b64" in asm)
+
+    # Now make sure that we have something like this:
+    #     st.param.b64 	[func_retval0], 42;
+    instruction_start_loc = asm.find("st.param.b64")
+    assert_true(instruction_start_loc >= 0)  # Assert it's present
+    instruction_end_loc = asm.find(";", instruction_start_loc)
+    assert_true(instruction_end_loc >= 0)
+    instruction_str = asm[instruction_start_loc:instruction_end_loc]
+    # Make sure 42 appears somewhere in the instruction
+    assert_true("42" in instruction_str)
 
 
 def test_parameterized_on_cuda_sm80():

@@ -217,7 +217,7 @@ struct Q4sym[
             DType.uint16
         ]()
         upcast_bytes[1] = upcast_bytes[1] << 8
-        var final_result = upcast_bytes.reduce_add()
+        var final_result: SIMD[DType.uint16, 1] = upcast_bytes.reduce_add()
         var scale_decoded = bitcast[DType.float16, 1](final_result)
         return scale_decoded
 
