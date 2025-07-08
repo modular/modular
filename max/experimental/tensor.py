@@ -323,7 +323,7 @@ class ComputeGraph:
         with self.graph:
             type = driver_tensor_type(tensor.driver_tensor).to_mlir()
             inputs = op.function_type.inputs
-            op.function_type = builtin.FunctionType([*inputs, type])
+            op.function_type = builtin.FunctionType([*inputs, type])  # type: ignore
             tensor._mlir_value = block.add_argument(type, _location())
         self.sources[tensor._mlir_value] = tensor
 
