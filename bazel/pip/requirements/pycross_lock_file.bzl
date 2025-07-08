@@ -54,7 +54,6 @@ PINS = {
     "mypy-extensions": "mypy-extensions@1.0.0",
     "notebook": "notebook@7.2.1",
     "numpy": "numpy@2.0.2",
-    "nvidia-nvtx-cu12": "nvidia-nvtx-cu12@12.8.55",
     "nvitop": "nvitop@1.4.0",
     "nvtx": "nvtx@0.2.11",
     "onnxruntime": "onnxruntime@1.19.2",

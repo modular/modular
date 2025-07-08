@@ -171,7 +171,6 @@ nvidia = [
   "torchvision==0.22.0",
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "nvidia-nvtx-cu12; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "nvtx; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "xgrammar; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
