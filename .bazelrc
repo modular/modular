@@ -71,6 +71,9 @@ build --remote_upload_local_results
 build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
 build --remote_instance_name=modular-public
 
+build --disk_cache=~/.cache/bazel-disk-cache
+build --experimental_disk_cache_gc_max_size=100G
+
 build:public-cache --bes_results_url=https://modular-public.buildbuddy.io/invocation/
 build:public-cache --bes_backend=grpcs://modular-public.buildbuddy.io
 build:public-cache --remote_cache=grpcs://modular-public.buildbuddy.io
