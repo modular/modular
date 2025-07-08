@@ -14,8 +14,10 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import cast
 
 import numpy as np
@@ -64,6 +66,68 @@ from .weight_adapters import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+class _VisionStacker:
+    """Helper class for efficient parallel stacking of vision patches.
+
+    Uses ThreadPoolExecutor for thread management and bulk numpy operations
+    for optimal memory bandwidth utilization.
+    """
+
+    def __init__(self, max_workers: int = 24) -> None:
+        """Initialize the vision stacker with a thread pool.
+
+        Args:
+            max_workers: Maximum number of worker threads (default: 24).
+        """
+        self._pool = ThreadPoolExecutor(max_workers=max_workers)
+
+    def stack(self, images: list[np.ndarray]) -> np.ndarray:
+        """Stack images using parallel bulk copy operations.
+
+        Args:
+            images: List of numpy arrays to stack.
+
+        Returns:
+            Stacked numpy array.
+        """
+        n = len(images)
+        if n == 0:
+            return np.empty((0,), dtype=np.float32)
+
+        # Pre-allocate output.
+        out = np.empty((n, *images[0].shape), dtype=images[0].dtype)
+
+        # Divide work evenly among threads.
+        # ThreadPoolExecutor will handle cases where n < workers.
+        workers = self._pool._max_workers
+        step = math.ceil(n / workers)
+        slices = [slice(i, min(i + step, n)) for i in range(0, n, step)]
+
+        # Launch parallel bulk copy tasks.
+        futures = [
+            self._pool.submit(self._copy_block, out, images, sl)
+            for sl in slices
+        ]
+
+        # Wait for completion and propagate any exceptions.
+        for f in as_completed(futures):
+            f.result()
+
+        return out
+
+    @staticmethod
+    def _copy_block(
+        out: np.ndarray, images: list[np.ndarray], sl: slice
+    ) -> None:
+        """Copy a block of images using bulk numpy operations.
+
+        This method performs a C-level bulk copy that releases the GIL,
+        allowing true parallel execution.
+        """
+        # Convert slice of list to temporary array view and bulk copy.
+        np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
 class InternVLInputs(ModelInputs):
@@ -182,6 +246,9 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
             for dev in self.devices
         ]
+
+        # Initialize vision stacker for optimized parallel stacking.
+        self._stacker = _VisionStacker()
 
     @staticmethod
     def calculate_max_seq_len(
@@ -635,9 +702,8 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         if not images:
             return None
 
-        # Convert the list into a single NumPy array with shape
-        # (total_patch_groups, height_patches, width_patches, channels, patch_size, patch_size).
-        final_images = np.stack(images, axis=0)
+        final_images = self._stacker.stack(images)
+
         tensor = Tensor.from_numpy(final_images)
 
         # If uint16, interpret as bfloat16 to work around lack of NumPy
@@ -654,8 +720,7 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         position in batch.
 
         This method efficiently combines image token indices from multiple
-        contexts, adjusting each context's indices by its position in the
-        batch to maintain correct absolute positions.
+        contexts using vectorized operations.
 
         Args:
             context_batch: Sequence of contexts that may contain image token
@@ -664,27 +729,22 @@ class InternVLModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         Returns:
             Tensor containing all batched indices, or None if no indices found
         """
-        all_indices: list[int] = []
-
-        # Keep a running offset to avoid O(n²) computation of batch positions.
-        # Instead of summing all previous context lengths for each context,
-        # we maintain and update the offset incrementally.
+        # Collect indices and offsets.
+        indices_and_offsets = []
         batch_offset = 0
 
         for ctx in context_batch:
             if "image_token_indices" in ctx.extra_model_args:
                 indices = ctx.extra_model_args["image_token_indices"]
-                # Adjust indices for position in batch.
-                adjusted_indices = indices + batch_offset
-                all_indices.extend(adjusted_indices)
-
-            # Update running offset for next iteration.
+                indices_and_offsets.append(indices + batch_offset)
             batch_offset += ctx.active_length
 
-        if not all_indices:
+        if not indices_and_offsets:
             return None
 
-        np_indices = np.array(all_indices, dtype=np.int32)
+        np_indices = np.concatenate(indices_and_offsets).astype(
+            np.int32, copy=False
+        )
 
         # Create tensor and distribute to devices.
         return [Tensor.from_numpy(np_indices).to(dev) for dev in self.devices]
