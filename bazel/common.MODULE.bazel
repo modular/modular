@@ -33,6 +33,8 @@ single_version_override(
         "//bazel/public-patches:rules_pycross_deprecations.patch",
         # https://github.com/jvolkman/rules_pycross/pull/170
         "//bazel/public-patches:rules_pycross_linker.patch",
+        # https://github.com/jvolkman/rules_pycross/pull/171
+        "//bazel/public-patches:rules_pycross_watch.patch",
     ],
 )
 
