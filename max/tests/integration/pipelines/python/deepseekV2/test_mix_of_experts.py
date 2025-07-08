@@ -57,23 +57,24 @@ def generate_max_outputs(
 
     state_dict = {"gate.gate_score.weight": dummy_moe_weight.cpu()}
 
-    down_proj, gate_proj, up_proj = [], [], []
-    for i in range(len(expert_weights)):
-        down_proj.append(expert_weights[i]["down_proj.weight"])
-        gate_proj.append(expert_weights[i]["gate_proj.weight"])
-        up_proj.append(expert_weights[i]["up_proj.weight"])
+    for i, expert_weight in enumerate(expert_weights):
+        state_dict[f"experts.{i}.down_proj.weight"] = expert_weight[
+            "down_proj.weight"
+        ].cpu()
+        state_dict[f"experts.{i}.gate_proj.weight"] = expert_weight[
+            "gate_proj.weight"
+        ].cpu()
+        state_dict[f"experts.{i}.up_proj.weight"] = expert_weight[
+            "up_proj.weight"
+        ].cpu()
 
-    state_dict["experts.gate_proj.weight"] = torch.stack(gate_proj).cpu()
-    state_dict["experts.down_proj.weight"] = torch.stack(down_proj).cpu()
-    state_dict["experts.up_proj.weight"] = torch.stack(up_proj).cpu()
-
-    state_dict["shared_expert_gate_proj.weight"] = shared_expert_weights[
+    state_dict["shared_experts.gate_proj.weight"] = shared_expert_weights[
         "gate_proj.weight"
     ].cpu()
-    state_dict["shared_expert_down_proj.weight"] = shared_expert_weights[
+    state_dict["shared_experts.down_proj.weight"] = shared_expert_weights[
         "down_proj.weight"
     ].cpu()
-    state_dict["shared_expert_up_proj.weight"] = shared_expert_weights[
+    state_dict["shared_experts.up_proj.weight"] = shared_expert_weights[
         "up_proj.weight"
     ].cpu()
 
