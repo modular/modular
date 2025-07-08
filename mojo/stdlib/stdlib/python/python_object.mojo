@@ -492,10 +492,6 @@ struct PythonObject(
             self.py_object = PyObjectPtr()
 
     # ===-------------------------------------------------------------------===#
-    # Factory methods
-    # ===-------------------------------------------------------------------===#
-
-    # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
@@ -1466,7 +1462,7 @@ struct PythonObject(
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
         None will be returned if the type of this object does not match the
-        bound Python type of `T`.
+        bound Python type of `T`, or if the Mojo value has not been initialized.
 
         This function will raise if the provided Mojo type `T` has not been
         bound to a Python type using a `PythonTypeBuilder`.
@@ -1486,15 +1482,17 @@ struct PythonObject(
         var expected_type_obj = lookup_py_type_object[T]()
 
         if type == expected_type_obj.unsafe_as_py_object_ptr():
-            return self.unchecked_downcast_value_ptr[T]()
-        else:
-            return None
+            var obj_ptr = self._unchecked_downcast_object_ptr[PyMojoObject[T]]()
+            if obj_ptr[].is_initialized:
+                return UnsafePointer[T](to=obj_ptr[].mojo_value)
+        return None
 
     fn unchecked_downcast_value_ptr[T: AnyType](self) -> UnsafePointer[T]:
         """Get a pointer to the expected Mojo value of type `T`.
 
         This function assumes that this Python object was allocated as an
-        instance of `PyMojoObject[T]`.
+        instance of `PyMojoObject[T]` and that the Mojo value has been
+        initialized.
 
         Parameters:
             T: The type of the Mojo value stored in this object.
@@ -1524,7 +1522,7 @@ struct PythonObject(
 
 
 fn _unsafe_alloc[
-    T: Movable
+    T: AnyType
 ](type_obj_ptr: UnsafePointer[PyTypeObject]) raises -> PyObjectPtr:
     """Allocate an uninitialized Python object for storing a Mojo value.
 
@@ -1553,8 +1551,8 @@ fn _unsafe_alloc[
 
 
 fn _unsafe_init[
-    T: Movable
-](obj_py_ptr: PyObjectPtr, var mojo_value: T) raises -> PythonObject:
+    T: Movable, //,
+](obj_py_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
 
     Parameters:
@@ -1564,11 +1562,15 @@ fn _unsafe_init[
         obj_py_ptr: The Python object pointer to initialize.
             The pointer must have been allocated using the correct type object.
         mojo_value: The Mojo value to store in the Python object.
+
+    # Safety
+     `obj_py_ptr` must be a Python object pointer allocated using the correct
+     type object. Use of any other pointer is invalid.
     """
     var obj_ptr = obj_py_ptr.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
     var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
-    __get_address_as_uninit_lvalue(obj_value_ptr.address) = mojo_value^
-    return PythonObject(from_owned_ptr=obj_py_ptr)
+    obj_value_ptr.init_pointee_move(mojo_value^)
+    obj_ptr[].is_initialized = True
 
 
 fn _unsafe_alloc_init[
@@ -1576,7 +1578,7 @@ fn _unsafe_alloc_init[
 ](
     type_obj_ptr: UnsafePointer[PyTypeObject], var mojo_value: T
 ) raises -> PythonObject:
-    """Allocate a new `PythonObject` and store a Mojo value in it.
+    """Allocate a Python object pointer and initialize it with a Mojo value.
 
     Parameters:
         T: The Mojo type of the value that the resulting Python object holds.
@@ -1592,55 +1594,12 @@ fn _unsafe_alloc_init[
         If the Python object allocation fails.
 
     # Safety
-
     `type_obj_ptr` must be a Python type object created by `PythonTypeBuilder`,
     whose underlying storage type is the `PyMojoObject` struct. Use of any other
     type object is invalid.
     """
     var obj_py_ptr = _unsafe_alloc[T](type_obj_ptr)
-    return _unsafe_init[T](obj_py_ptr, mojo_value^)
-
-
-fn _unsafe_alloc_init[
-    T: Movable, //,
-    create_func: fn (out self: T) raises capturing,
-](type_obj_ptr: UnsafePointer[PyTypeObject],) raises -> PythonObject:
-    """Allocate a new `PythonObject` and store a Mojo value in it.
-
-    Parameters:
-        T: The Mojo type of the value that the resulting Python object
-          holds.
-        create_func: A function that creates the Mojo value to store in the
-          new Python object.
-
-    Args:
-        type_obj_ptr: Must be the Python type object describing
-          `PyTypeObject[T]`.
-
-    Returns:
-        A new PythonObject containing the created Mojo value.
-
-    Raises:
-        If the Python object allocation fails or the create function raises.
-
-    # Safety
-
-    `type_obj_ptr` must be a Python type object created by
-    `PythonTypeBuilder`, whose underlying storage type is the `PyMojoObject`
-    struct. Use of any other type object is invalid.
-    """
-
-    var obj_py_ptr = _unsafe_alloc[T](type_obj_ptr)
-    var obj_ptr = obj_py_ptr.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-    var obj_value_ptr = UnsafePointer[T](to=obj_ptr[].mojo_value)
-
-    # Initialize the PyMojoObject[T] with the user-provided Mojo value.
-    # TODO(MOCO-2113): We can't use `T(args) directly because of a
-    # `(reference value) is uninitialized` error which arises from being
-    # in a `try` block.
-    var value = create_func()
-    __get_address_as_uninit_lvalue(obj_value_ptr.address) = value^
-
+    _unsafe_init(obj_py_ptr, mojo_value^)
     return PythonObject(from_owned_ptr=obj_py_ptr)
 
 

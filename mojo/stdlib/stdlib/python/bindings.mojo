@@ -41,7 +41,7 @@ from python._cpython import (
     Typed_newfunc,
 )
 from python._python_func import PyObjectFunction
-from python.python_object import _unsafe_alloc_init
+from python.python_object import _unsafe_alloc, _unsafe_init
 from builtin._startup import _ensure_current_or_global_runtime_init
 
 # ===-----------------------------------------------------------------------===#
@@ -160,6 +160,10 @@ struct PyMojoObject[T: AnyType]:
     the registered type methods and bindings.
     """
 
+    # TODO(MSTDL-467): Replace with Optional[T] when Optional doesn't require Copyable and Movable anymore.
+    var is_initialized: Bool
+    """Whether the Mojo value has been initialized."""
+
 
 fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
@@ -180,8 +184,8 @@ fn _tp_dealloc_wrapper[T: AnyType](py_self: PyObjectPtr):
     # TODO(MSTDL-633):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
-    # Destroy this `Person` instance.
-    self_ptr.destroy_pointee()
+    if self_obj_ptr[].is_initialized:
+        self_ptr.destroy_pointee()
 
     var cpython = Python().cpython()
 
@@ -207,14 +211,14 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
         or null pointer if an error occurs.
     """
     var self_obj_ptr = py_self.unsized_obj_ptr.bitcast[PyMojoObject[T]]()
-    var self_ptr = UnsafePointer(to=self_obj_ptr[].mojo_value)
+    var cpython = Python().cpython()
 
-    var repr_str = repr(self_ptr[])
+    var repr_str: String
+    if self_obj_ptr[].is_initialized:
+        repr_str = repr(self_obj_ptr[].mojo_value)
+    else:
+        repr_str = "<uninitialized " + get_type_name[T]() + ">"
 
-    # NOTE: it is possible that `repr` returns an invalid UTF-8 string, so we
-    # let Python decode it (which will return a null pointer and set an error
-    # if it is invalid).
-    cpython = Python().cpython()
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 
 
@@ -520,7 +524,8 @@ struct PythonTypeBuilder(Copyable, Movable):
             type_name,
             basicsize=sizeof[PyMojoObject[T]](),
         )
-        b._insert_slot(PyType_Slot.tp_new(_py_new_function_nonregistered))
+        b._insert_slot(PyType_Slot.tp_new(_py_new_function_wrapper[T]))
+        b._insert_slot(PyType_Slot.tp_init(_py_init_function_nonregistered))
         b._insert_slot(PyType_Slot.tp_dealloc(_tp_dealloc_wrapper[T]))
         b._insert_slot(PyType_Slot.tp_repr(_tp_repr_wrapper[T]))
 
@@ -631,7 +636,7 @@ struct PythonTypeBuilder(Copyable, Movable):
             self = T()
 
         self._insert_slot(
-            PyType_Slot.tp_new(_py_new_function_wrapper[T, default_init_func])
+            PyType_Slot.tp_init(_py_init_function_wrapper[T, default_init_func])
         )
         return self
 
@@ -655,7 +660,7 @@ struct PythonTypeBuilder(Copyable, Movable):
     ](mut self) raises -> ref [self] Self:
         """Declare a binding for the `__init__` method of the type."""
         self._insert_slot(
-            PyType_Slot.tp_new(_py_new_function_wrapper[T, init_func])
+            PyType_Slot.tp_init(_py_init_function_wrapper[T, init_func])
         )
         return self
 
@@ -887,9 +892,9 @@ struct PythonTypeBuilder(Copyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _py_new_function_nonregistered(
-    subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
-) -> PyObjectPtr:
+fn _py_init_function_nonregistered(
+    py_self_ptr: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> c_int:
     var cpython = Python().cpython()
     var error_type = cpython.get_error_global("PyExc_TypeError")
     cpython.PyErr_SetString(
@@ -897,39 +902,49 @@ fn _py_new_function_nonregistered(
         "No initializer registered for this type. Use def_py_init() or"
         " def_init_defaultable() to register an initializer.".unsafe_cstr_ptr(),
     )
-    return {}
+    return -1
 
 
 fn _py_new_function_wrapper[
-    T: Movable,
-    user_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+    T: AnyType
 ](
     subtype: PyTypeObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
 ) -> PyObjectPtr:
+    var cpython = Python().cpython()
+
+    try:
+        return _unsafe_alloc[T](subtype)
+    except e:
+        var error_type = cpython.get_error_global("PyExc_TypeError")
+        cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
+        return {}
+
+
+fn _py_init_function_wrapper[
+    T: Movable,
+    init_func: fn (out T, args: PythonObject, kwargs: PythonObject) raises,
+](
+    py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr
+) -> c_int:
     """Wrapper function that adapts a Mojo `PyInitFunction` to be callable from
     Python.
     """
 
-    var kwargs = PythonObject(from_owned_ptr=kwargs_ptr)
-    var args = PythonObject(from_owned_ptr=args_ptr)
-
-    __disable_del args
-    __disable_del kwargs
+    var kwargs = PythonObject(from_borrowed_ptr=kwargs_ptr)
+    var args = PythonObject(from_borrowed_ptr=args_ptr)
 
     var cpython = Python().cpython()
 
     try:
-
-        fn create_func(out self: T) raises capturing:
-            self = user_func(args, kwargs)
-
-        return _unsafe_alloc_init[create_func](subtype).steal_data()
+        var value = init_func(args, kwargs)
+        _unsafe_init(py_self, value^)
+        return 0
 
     except e:
         # TODO(MSTDL-933): Add custom 'MojoError' type, and raise it here.
         var error_type = cpython.get_error_global("PyExc_ValueError")
         cpython.PyErr_SetString(error_type, e.unsafe_cstr_ptr())
-        return {}
+        return -1
 
 
 fn _py_c_function_wrapper[
