@@ -44,6 +44,22 @@ def _should_ignore(package):
     )
 
 
+def _get_direct_deps(data: dict) -> set[str]:
+    direct_deps = set()
+
+    for package in data["package"]:
+        if package["name"] == "bazel-pyproject":
+            for dep in package["dependencies"]:
+                direct_deps.add(dep["name"].lower())
+
+            for group in package["dev-dependencies"].values():
+                for dep in group:
+                    direct_deps.add(dep["name"].lower())
+            break
+
+    return direct_deps
+
+
 def _main(uv_lock: str, output_path: str) -> None:
     with open(uv_lock, "rb") as f:
         data = tomllib.load(f)
@@ -79,10 +95,12 @@ def _main(uv_lock: str, output_path: str) -> None:
         targets += pkg
         all_downloads |= downloads
 
+    direct_deps = _get_direct_deps(data)
     output = TEMPLATE.format(
         pins="\n".join(
             f'    "{name}": "{name}@{target}",'
             for name, target in sorted(all_versions.items())
+            if name.lower() in direct_deps
         ),
         targets=targets,
         repositories="\n".join(
