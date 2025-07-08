@@ -450,6 +450,20 @@ IREvaluator::evaluateGetWitnessAttr(GetWitnessAttr getWitnessEntry) {
   return simplified;
 }
 
+static TypedAttr implicitConversion(Attribute stored, Type desired) {
+  if (!stored)
+    return {};
+
+  if (auto integerValue = dyn_cast<mlir::IntegerAttr>(stored)) {
+    if (auto desiredStringType = dyn_cast<StringType>(desired)) {
+      SmallString<32> strValue;
+      integerValue.getValue().toString(strValue, /*Radix=*/10, /*Signed=*/true);
+      return StringAttr::get(strValue, desiredStringType);
+    }
+  }
+  return {};
+}
+
 FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   // Grab the module from the elaborator. This is a read operation of memory
   // that is not modified during elaboration, so no synchronization is needed.
@@ -480,6 +494,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
   if (isa<StringType>(op.getType())) {
     if (auto strVal = dyn_cast<StringAttr>(value))
       return {strVal};
+    if (TypedAttr stringAttr = implicitConversion(value, op.getType()))
+      return {stringAttr};
     emitError({*errorLoc, "define '" + name.getValue() +
                               "' is not a string, got " +
                               mlir::debugString(value)});
