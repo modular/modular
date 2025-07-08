@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, Mock
 import numpy as np
 import pytest
 import zmq
+from max.interfaces import TextGenerationResponse
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
@@ -25,7 +26,6 @@ from max.serve.queue.zmq_queue import (
 from max.serve.scheduler.text_generation_scheduler import (
     BatchType,
     SchedulerOutput,
-    TextGenerationResponse,
     TokenGenerationScheduler,
     TokenGenerationSchedulerConfig,
 )

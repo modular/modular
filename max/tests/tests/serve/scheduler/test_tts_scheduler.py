@@ -19,12 +19,12 @@ import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.interfaces import TextGenerationStatus
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedKVCacheManager
 from max.pipelines.core import (
     AudioGenerationResponse,
     AudioGenerator,
     TextContext,
-    TextGenerationStatus,
     TTSContext,
     msgpack_numpy_encoder,
 )

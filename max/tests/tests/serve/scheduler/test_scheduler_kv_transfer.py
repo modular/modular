@@ -17,6 +17,7 @@ import zmq
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.interfaces import TextGenerationResponse, TextResponse
 from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
@@ -26,8 +27,6 @@ from max.nn.kv_cache import (
 from max.pipelines.core import (
     InputContext,
     TextContext,
-    TextGenerationResponse,
-    TextResponse,
     msgpack_numpy_encoder,
 )
 from max.serve.kvcache_agent.dispatcher_factory import (
