@@ -298,8 +298,8 @@ bool JitUserExpression::prepareToExecuteJITExpression(
               lldb::ePermissionsReadable | lldb::ePermissionsWritable,
               IRMemoryMap::eAllocationPolicyMirror, /*zero_memory=*/false,
               /*used_policy=*/nullptr);
-      if (auto error = materializedAddressOr.takeError()) {
-        auto errorStr = llvm::toString(std::move(error));
+      if (llvm::Error error = materializedAddressOr.takeError()) {
+        std::string errorStr = llvm::toString(std::move(error));
         diagnosticManager.Printf(
             lldb::eSeverityError,
             "Couldn't allocate space for materialized struct: %s",
