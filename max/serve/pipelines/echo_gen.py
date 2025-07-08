@@ -16,12 +16,14 @@ from dataclasses import dataclass
 from typing import Union, cast
 
 import numpy as np
-from max.pipelines.core import (
-    PipelineTokenizer,
-    TextContext,
+from max.interfaces import (
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
+)
+from max.pipelines.core import (
+    PipelineTokenizer,
+    TextContext,
     TokenGenerator,
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,

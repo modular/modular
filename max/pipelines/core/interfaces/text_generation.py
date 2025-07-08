@@ -28,9 +28,8 @@ from typing import (
     runtime_checkable,
 )
 
+from max.interfaces import TextGenerationResponse
 from typing_extensions import TypeVar
-
-from .response import TextGenerationResponse
 
 
 class TokenGeneratorRequestFunction(TypedDict):

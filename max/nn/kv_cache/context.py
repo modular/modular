@@ -13,12 +13,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 import numpy as np
-
-if TYPE_CHECKING:
-    from max.pipelines.core import TextGenerationStatus
+from max.interfaces import TextGenerationStatus
 
 
 @runtime_checkable

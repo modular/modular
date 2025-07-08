@@ -16,37 +16,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
 import numpy as np
-from max.interfaces import LogProbabilities
-
-
-class TextResponse:
-    """A base class for model response, specifically for Text model variants.
-
-    Attributes:
-        next_token (int | str): Encoded predicted next token.
-        log_probabilities (LogProbabilities | None): Log probabilities of each output token.
-
-    """
-
-    def __init__(
-        self,
-        next_token: int | str,
-        log_probabilities: LogProbabilities | None = None,
-    ) -> None:
-        self.next_token = next_token
-        self.log_probabilities = log_probabilities
-
-    def __eq__(self, value: object) -> bool:
-        if not isinstance(value, TextResponse):
-            return False
-
-        return (
-            self.next_token == value.next_token
-            and self.log_probabilities == value.log_probabilities
-        )
+from max.interfaces import TextGenerationStatus
 
 
 @dataclass
@@ -54,42 +26,6 @@ class EmbeddingsResponse:
     """Container for the response from embeddings pipeline."""
 
     embeddings: np.ndarray
-
-
-class TextGenerationStatus(str, Enum):
-    ACTIVE = "active"
-    END_OF_SEQUENCE = "end_of_sequence"
-    MAXIMUM_LENGTH = "maximum_length"
-
-    @property
-    def is_done(self) -> bool:
-        return self is not TextGenerationStatus.ACTIVE
-
-
-class TextGenerationResponse:
-    def __init__(
-        self, tokens: list[TextResponse], final_status: TextGenerationStatus
-    ) -> None:
-        self._tokens = tokens
-        self._final_status = final_status
-
-    @property
-    def is_done(self) -> bool:
-        return self._final_status.is_done
-
-    @property
-    def tokens(self) -> list[TextResponse]:
-        return self._tokens
-
-    @property
-    def final_status(self) -> TextGenerationStatus:
-        return self._final_status
-
-    def append_token(self, token: TextResponse) -> None:
-        self._tokens.append(token)
-
-    def update_status(self, status: TextGenerationStatus) -> None:
-        self._final_status = status
 
 
 class AudioGenerationResponse:

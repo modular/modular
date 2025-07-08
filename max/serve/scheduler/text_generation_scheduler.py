@@ -19,12 +19,11 @@ from enum import Enum
 from typing import Any, Generic, Optional, TypeVar, Union, cast
 
 import zmq
+from max.interfaces import TextGenerationResponse, TextResponse
 from max.nn.kv_cache import PagedKVCacheManager
 from max.pipelines.core import (
     TextAndVisionContext,
     TextContext,
-    TextGenerationResponse,
-    TextResponse,
     TokenGenerator,
     msgpack_numpy_decoder,
 )

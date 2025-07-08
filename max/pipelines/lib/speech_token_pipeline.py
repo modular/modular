@@ -21,11 +21,13 @@ import torch
 from max.driver import DeviceStream, Tensor
 from max.dtype import DType
 from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.nn.kv_cache import KVCacheInputsSequence
-from max.pipelines.core import (
+from max.interfaces import (
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
+)
+from max.nn.kv_cache import KVCacheInputsSequence
+from max.pipelines.core import (
     TTSContext,
 )
 from max.profiler import Tracer, traced

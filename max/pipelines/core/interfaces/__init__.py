@@ -21,9 +21,6 @@ from .embeddings_generation import EmbeddingsGenerator
 from .response import (
     AudioGenerationResponse,
     EmbeddingsResponse,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
 )
 from .tasks import PipelineTask
 from .text_generation import (
@@ -49,9 +46,6 @@ __all__ = [
     "PipelineTask",
     "PipelineTokenizer",
     "SamplingParams",
-    "TextGenerationResponse",
-    "TextGenerationStatus",
-    "TextResponse",
     "TokenGenerator",
     "TokenGeneratorContext",
     "TokenGeneratorRequest",

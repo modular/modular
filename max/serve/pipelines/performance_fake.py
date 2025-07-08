@@ -22,10 +22,12 @@ from time import sleep, time
 from typing import Literal, Optional, Union
 
 import numpy as np
-from max.pipelines.core import (
+from max.interfaces import (
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
+)
+from max.pipelines.core import (
     TokenGenerator,
     TokenGeneratorRequest,
 )

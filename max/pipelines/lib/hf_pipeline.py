@@ -32,13 +32,15 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
+from max.interfaces import (
+    TextGenerationResponse,
+    TextGenerationStatus,
+    TextResponse,
+)
 from max.pipelines.core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
     TextContext,
-    TextGenerationResponse,
-    TextGenerationStatus,
-    TextResponse,
     TokenGenerator,
 )
 
