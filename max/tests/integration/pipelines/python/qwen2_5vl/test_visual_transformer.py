@@ -616,11 +616,11 @@ def test_get_rope_index() -> None:
             video_token_id,
             vision_start_token_id,
             tokens_per_second,
-            input_ids=inputs["input_ids"],  # type: ignore
-            image_grid_thw=inputs["image_grid_thw"],  # type: ignore
-            video_grid_thw=inputs["video_grid_thw"],  # type: ignore
-            second_per_grid_ts=inputs["second_per_grid_ts"],  # type: ignore
-            attention_mask=inputs["attention_mask"],  # type: ignore
+            input_ids=inputs["input_ids"],
+            image_grid_thw=inputs["image_grid_thw"],
+            video_grid_thw=inputs["video_grid_thw"],
+            second_per_grid_ts=inputs["second_per_grid_ts"],
+            attention_mask=inputs["attention_mask"],
         )
     )
 
@@ -630,11 +630,11 @@ def test_get_rope_index() -> None:
         video_token_id,
         vision_start_token_id,
         tokens_per_second,
-        input_ids=inputs["input_ids"].numpy(),  # type: ignore
-        image_grid_thw=inputs["image_grid_thw"].numpy(),  # type: ignore
-        video_grid_thw=inputs["video_grid_thw"].numpy(),  # type: ignore
-        second_per_grid_ts=np.array(inputs["second_per_grid_ts"]),  # type: ignore
-        attention_mask=inputs["attention_mask"].numpy(),  # type: ignore
+        input_ids=inputs["input_ids"].numpy(),
+        image_grid_thw=inputs["image_grid_thw"].numpy(),
+        video_grid_thw=inputs["video_grid_thw"].numpy(),
+        second_per_grid_ts=np.array(inputs["second_per_grid_ts"]),
+        attention_mask=inputs["attention_mask"].numpy(),
     )
 
     np.testing.assert_array_equal(
