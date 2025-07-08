@@ -74,6 +74,13 @@ class Package:
                 unique_dependencies[dep.name] = dep
 
         self.dependencies = list(unique_dependencies.values())
+        # Hack around pytorch triton AMD dependency issue for now, just never use it
+        if self.name == "xgrammar":
+            self.dependencies = [
+                dep
+                for dep in self.dependencies
+                if not dep.name.startswith("triton@")
+            ]
 
     def render(self) -> tuple[str, set[Download]]:
         deps_by_constraints: dict[str, list[str]] = defaultdict(list)
@@ -140,7 +147,11 @@ class Package:
             "@platforms//os:linux": ["-Wl,-z,undefs"],
             "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
         }}),
-        tags = ["manual"],
+        tags = [
+            "manual",
+            "requires-network",
+        ],
+        exec_properties = {{"dockerNetwork": "bridge"}},
     )
 
 """
@@ -171,6 +182,11 @@ class Package:
             {",\n            ".join(sorted(f'"{k}": "{v}"' for k, v in select_values.items()))},
         }}),"""
 
+        tags_line = ""
+        if self.library_name.startswith("torch@"):
+            tags_line = """
+        tags = ["no-remote"],"""
+
         package += f"""\
     native.alias(
         name = "{self.wheel_target_name}",
@@ -179,7 +195,7 @@ class Package:
 
     pycross_wheel_library(
         name = "{self.library_name}",{deps_line}
-        wheel = ":{self.wheel_target_name}",
+        wheel = ":{self.wheel_target_name}",{tags_line}
     )
 
 """

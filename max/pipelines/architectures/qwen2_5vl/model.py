@@ -144,7 +144,7 @@ class Qwen2_5VLInputs(ModelInputs):
         return self.input_row_offsets_or_attn_mask
 
 
-class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):
+class Qwen2_5VLModel(PipelineModel[TextAndVisionContext]):  # type: ignore
     def __init__(
         self,
         pipeline_config: PipelineConfig,

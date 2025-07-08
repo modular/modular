@@ -205,7 +205,7 @@ def fastapi_app(
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file
         app.add_middleware(
-            RecorderMiddleware,
+            RecorderMiddleware,  # type: ignore
             recorder_factory=(
                 lambda: JSONLFileRecorder(transaction_recording_file)
             ),

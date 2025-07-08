@@ -14,6 +14,7 @@
 
 
 import os
+import sys
 
 import tomllib  # type: ignore
 from package import Package
@@ -31,13 +32,20 @@ def _should_ignore(package):
     # those in even though a group will always be specified.
     return package["name"] == "bazel-pyproject" or (
         package["name"] in _ALLOWED_DUPLICATE_PACKAGES
-        and "https://pypi.org/simple" in package["source"].get("registry", "")
+        and (
+            # Ignore torch versions from pypi that should not be in the lockfile
+            "https://pypi.org/simple" in package["source"].get("registry", "")
+            or (
+                # Ignore torch versions that are not GPU specific but are from the GPU registry and should not be in the lockfile
+                "+" not in package["version"]
+                and "cpu" not in package["source"].get("registry", "")
+            )
+        )
     )
 
 
-def _main() -> None:
-    path = "./bazel/pip/requirements/uv.lock"
-    with open(path, "rb") as f:
+def _main(uv_lock: str, output_path: str) -> None:
+    with open(uv_lock, "rb") as f:
         data = tomllib.load(f)
 
     package_names = set()
@@ -82,7 +90,6 @@ def _main() -> None:
         ),
     )
 
-    output_path = "./bazel/pip/requirements/pycross_lock_file.bzl"
     with open(output_path, "w") as f:
         f.write(output.strip() + "\n")
 
@@ -91,4 +98,4 @@ if __name__ == "__main__":
     if directory := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
-    _main()
+    _main(sys.argv[1], sys.argv[2])

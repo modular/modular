@@ -94,7 +94,7 @@ class PixtralInputs(ModelInputs):
         return self._attention_mask
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext]):
+class PixtralModel(PipelineModel[TextAndVisionContext]):  # type: ignore
     """The overall interface to the Pixtral model."""
 
     def __init__(

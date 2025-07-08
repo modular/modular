@@ -97,7 +97,7 @@ class Llama3Inputs(ModelInputs):
         self.return_n_logits = return_n_logits
 
 
-class LlamaModelBase(PipelineModel[TextContext]):
+class LlamaModelBase(PipelineModel[TextContext]):  # type: ignore
     """Base Llama pipeline model implementation."""
 
     model: Model

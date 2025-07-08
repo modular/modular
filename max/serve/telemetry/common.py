@@ -61,7 +61,7 @@ def _getCloudProvider() -> str:
 
 def _getGPUInfo() -> str:
     try:
-        import torch  # type: ignore
+        import torch
 
         device_properties = torch.cuda.get_device_properties(0)
         return f"{torch.cuda.device_count()}:{device_properties.total_memory}:{device_properties.name}"

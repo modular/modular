@@ -95,7 +95,7 @@ class Llama4Inputs(ModelInputs):
         self.kv_cache_inputs = kv_cache_inputs
 
 
-class Llama4Model(PipelineModel[TextContext], KVCacheMixin):
+class Llama4Model(PipelineModel[TextContext], KVCacheMixin):  # type: ignore
     """A Llama 4 pipeline model for text generation.
 
     This class integrates the Llama 4 architecture with the MAX Engine pipeline
