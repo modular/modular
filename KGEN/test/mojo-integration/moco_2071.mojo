@@ -7,6 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from collections import Dict
+from hashlib import default_comp_time_hasher
 
 # COM: testing MemoryBlob refCount in the interpreter
 # COM: where to create the alias of the Dict, we have
@@ -15,7 +16,9 @@ from collections import Dict
 # COM: one MemoryBlob for this memory type allocation due to
 # COM: mlir::Attribute uniquing. Use refCount to make sure we free
 # COM: these blobs correctly if needed in the interpreter.
-alias COUNTRY_CODE_TO_REGION_CODE: Dict[Int, List[String]] = {
+alias COUNTRY_CODE_TO_REGION_CODE: Dict[
+    Int, List[String], default_comp_time_hasher
+] = {
     800: ["001"],
     808: ["001"],
 }
