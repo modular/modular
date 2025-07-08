@@ -7,7 +7,6 @@ modular_py_binary(
         "mlp.py",
     ],
     imports = ["."],
-    use_sitecustomize = True,
     deps = [
         "//SDK/lib/API/python/max/entrypoints",
         "//SDK/lib/API/python/max/entrypoints:pipelines",
