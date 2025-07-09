@@ -10,8 +10,6 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "numpy",
-    "ruamel.yaml>=0.17",
-    "ruamel-yaml-clib",
 ]
 
 [project.optional-dependencies]
