@@ -37,6 +37,7 @@ import click
 import numpy as np
 import pandas as pd
 import rich
+import yaml
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -46,7 +47,7 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from utils import YAML, pretty_exception_handler
+from utils import pretty_exception_handler
 
 CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
@@ -515,7 +516,7 @@ class Spec:
             "params": [s.to_obj() for s in self.mesh],
         }
         with open(out_path, "w") as f:
-            YAML(typ="safe").dump(obj, f, sort=False)
+            yaml.dump(obj, f, sort_keys=False)
         logging.debug(f"dumped {len(self.mesh)} instances to [{out_path}]")
 
     @staticmethod
@@ -529,7 +530,7 @@ class Spec:
         Returns:
             Spec: a Spec loaded from the given yaml string
         """
-        obj = YAML(typ="safe").load(yaml_str)
+        obj = yaml.safe_load(yaml_str)
 
         if "name" not in obj.keys():
             logging.warning("Field [name] is not set in YAML")

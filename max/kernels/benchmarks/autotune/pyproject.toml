@@ -28,8 +28,8 @@ dependencies = [
     "pandas",
     "rich",
     "numpy",
-    "ruamel-yaml",
     "plotly",
+    "pyyaml",
 ]
 
 
@@ -43,7 +43,7 @@ dev = [
 
 [project.scripts]
 kbench = "kbench:main"
-kplot = "kplot:main"  
+kplot = "kplot:main"
 kprofile = "kprofile:main"
 kdiff = "kdiff:main"
 

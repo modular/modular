@@ -98,8 +98,6 @@ PINS = {
     "requests": "requests@2.32.3",
     "responses": "responses@0.25.3",
     "rich": "rich@13.7.1",
-    "ruamel-yaml": "ruamel-yaml@0.18.6",
-    "ruamel-yaml-clib": "ruamel-yaml-clib@0.2.8",
     "safetensors": "safetensors@0.4.4",
     "schema": "schema@0.7.5",
     "scipy": "scipy@1.13.1",
@@ -5544,102 +5542,6 @@ def targets():
         wheel = ":_wheel_rsa@4.9",
     )
 
-    _ruamel_yaml_0_18_6_deps = [
-    ] + select({
-        ":_env_python_3.10_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.11_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.12_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.9_aarch64-apple-darwin": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.9_aarch64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        ":_env_python_3.9_x86_64-unknown-linux-gnu": [
-            ":ruamel-yaml-clib@0.2.8",
-        ],
-        "//conditions:default": [],
-    })
-
-    native.alias(
-        name = "_wheel_ruamel-yaml@0.18.6",
-        actual = "@pycross_lock_file_wheel_ruamel.yaml_0.18.6_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "ruamel-yaml@0.18.6",
-        deps = _ruamel_yaml_0_18_6_deps,
-        wheel = ":_wheel_ruamel-yaml@0.18.6",
-    )
-
-    _ruamel_yaml_clib_0_2_8_build_deps = [
-        ":setuptools",
-        ":wheel",
-    ]
-
-    native.alias(
-        name = "_sdist_ruamel-yaml-clib@0.2.8",
-        actual = "@pycross_lock_file_sdist_ruamel.yaml.clib_0.2.8//file",
-    )
-
-    pycross_wheel_build(
-        name = "_build_ruamel-yaml-clib@0.2.8",
-        sdist = ":_sdist_ruamel-yaml-clib@0.2.8",
-        target_environment = _target,
-        deps = _ruamel_yaml_clib_0_2_8_build_deps,
-        **extra_build_args
-    )
-
-    native.alias(
-        name = "_wheel_ruamel-yaml-clib@0.2.8",
-        actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_macosx_10_9_universal2//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_24_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_macosx_10_9_universal2//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_24_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_macosx_10_9_universal2//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_24_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": ":_build_ruamel-yaml-clib@0.2.8",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": ":_build_ruamel-yaml-clib@0.2.8",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": ":_build_ruamel-yaml-clib@0.2.8",
-            ":_env_python_3.9_aarch64-apple-darwin": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_macosx_12_0_arm64//file",
-            ":_env_python_3.9_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_24_aarch64//file",
-            ":_env_python_3.9_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_5_x86_64.manylinux1_x86_64//file",
-        }),
-    )
-
-    pycross_wheel_library(
-        name = "ruamel-yaml-clib@0.2.8",
-        wheel = ":_wheel_ruamel-yaml-clib@0.2.8",
-    )
-
     _s3transfer_0_10_1_deps = [
         ":botocore@1.34.128",
     ]
@@ -7984,16 +7886,6 @@ def repositories():
         ],
         sha256 = "7e9d19a5bd6123d99993fb935fa86d25c88bb2096e493885f61737ed0f5e9abd",
         downloaded_file_path = "roundrobin-0.0.4.tar.gz",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_sdist_ruamel.yaml.clib_0.2.8",
-        urls = [
-            "https://files.pythonhosted.org/packages/46/ab/bab9eb1566cd16f060b54055dd39cf6a34bfa0240c53a7218c43e974295b/ruamel.yaml.clib-0.2.8.tar.gz",
-        ],
-        sha256 = "beb2e0404003de9a4cab9753a8805a8fe9320ee6673136ed7f04255fe60bb512",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8.tar.gz",
     )
 
     maybe(
@@ -16594,136 +16486,6 @@ def repositories():
         ],
         sha256 = "90260d9058e514786967344d0ef75fa8727eed8a7d2e43ce9f4bcf1b536174f7",
         downloaded_file_path = "rsa-4.9-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/ca/01/37ac131614f71b98e9b148b2d7790662dcee92217d2fb4bac1aa377def33/ruamel.yaml.clib-0.2.8-cp310-cp310-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "b42169467c42b692c19cf539c38d4602069d8c1505e97b86387fcf7afb766e1d",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp310-cp310-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/d3/62/c60b034d9a008bbd566eeecf53a5a4c73d191c8de261290db6761802b72d/ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-        ],
-        sha256 = "fff3573c2db359f091e1589c3d7c5fc2f86f5bdb6f24252c2d8e539d4e45f412",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp310_cp310_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/90/8c/6cdb44f548b29eb6328b9e7e175696336bc856de2ff82e5776f860f03822/ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "aa2267c6a303eb483de8d02db2871afb5c5fc15618d894300b88958f729ad74f",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp310-cp310-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/b1/15/971b385c098e8d0d170893f5ba558452bb7b776a0c90658b8f4dd0e3382b/ruamel.yaml.clib-0.2.8-cp311-cp311-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "bef08cd86169d9eafb3ccb0a39edb11d8e25f3dae2b28f5c52fd997521133069",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp311-cp311-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/a4/f7/22d6b620ed895a05d40802d8281eff924dc6190f682d933d4efff60db3b5/ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-        ],
-        sha256 = "25c515e350e5b739842fc3228d662413ef28f295791af5e5110b543cf0b57d9b",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp311_cp311_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/7c/e4/0d19d65e340f93df1c47f323d95fa4b256bb28320290f5fddef90837853a/ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "1707814f0d9791df063f8c19bb51b0d1278b8e9a2353abbb676c2f685dee6afe",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp311-cp311-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_macosx_10_9_universal2",
-        urls = [
-            "https://files.pythonhosted.org/packages/7a/a2/eb5e9d088cb9d15c24d956944c09dca0a89108ad6e2e913c099ef36e3f0d/ruamel.yaml.clib-0.2.8-cp312-cp312-macosx_10_9_universal2.whl",
-        ],
-        sha256 = "ebc06178e8821efc9692ea7544aa5644217358490145629914d8020042c24aa1",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp312-cp312-macosx_10_9_universal2.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/30/d3/5fe978cd01a61c12efd24d65fa68c6f28f28c8073a06cf11db3a854390ca/ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
-        ],
-        sha256 = "d176b57452ab5b7028ac47e7b3cf644bcfdc8cacfecf7e71759f7f51a59e5c92",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp312_cp312_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/55/b3/e2531a050758b717c969cbf76c103b75d8a01e11af931b94ba656117fbe9/ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "1dc67314e7e1086c9fdf2680b7b6c2be1c0d8e3a8279f2e993ca2a7545fecf62",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp312-cp312-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_macosx_12_0_arm64",
-        urls = [
-            "https://files.pythonhosted.org/packages/b2/ed/f221e60a4cdc7996aae23643da44b12ef33f457c2a52d590236a6950ac8e/ruamel.yaml.clib-0.2.8-cp39-cp39-macosx_12_0_arm64.whl",
-        ],
-        sha256 = "bba64af9fa9cebe325a62fa398760f5c7206b215201b0ec825005f1b18b9bccf",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp39-cp39-macosx_12_0_arm64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_24_aarch64",
-        urls = [
-            "https://files.pythonhosted.org/packages/57/e4/f572d7e2502854f15291dfa94eebdc687e04db387559f026995c7697af34/ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_24_aarch64.whl",
-        ],
-        sha256 = "a1a45e0bb052edf6a1d3a93baef85319733a888363938e1fc9924cb00c8df24c",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_24_aarch64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml.clib_0.2.8_cp39_cp39_manylinux_2_5_x86_64.manylinux1_x86_64",
-        urls = [
-            "https://files.pythonhosted.org/packages/7c/b2/389b345a60131593028b0263fddaa580edb4081697a3f3aa1f168f67519f/ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl",
-        ],
-        sha256 = "da09ad1c359a728e112d60116f626cc9f29730ff3e0e7db72b9a2dbc2e4beed5",
-        downloaded_file_path = "ruamel.yaml.clib-0.2.8-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_ruamel.yaml_0.18.6_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/73/67/8ece580cc363331d9a53055130f86b096bf16e38156e33b1d3014fffda6b/ruamel.yaml-0.18.6-py3-none-any.whl",
-        ],
-        sha256 = "57b53ba33def16c4f3d807c0ccbc00f8a6081827e81ba2491691b76882d0c636",
-        downloaded_file_path = "ruamel.yaml-0.18.6-py3-none-any.whl",
     )
 
     maybe(

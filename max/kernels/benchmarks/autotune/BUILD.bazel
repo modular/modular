@@ -30,7 +30,6 @@ modular_py_library(
         requirement("plotly"),
         requirement("kaleido"),
         requirement("pyyaml"),
-        requirement("ruamel-yaml"),
     ],
 )
 
@@ -75,12 +74,12 @@ modular_py_binary(
     main = "kbench_shim.py",
     toolchains = [":mojo_test_env"],
     deps = [
-        requirement("numpy"),
         requirement("click"),
+        requirement("numpy"),
         requirement("pandas"),
-        requirement("rich"),
-        requirement("ruamel-yaml"),
         requirement("pygments"),
+        requirement("pyyaml"),
+        requirement("rich"),
     ],
 )
 
