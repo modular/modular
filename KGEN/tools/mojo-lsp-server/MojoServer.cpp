@@ -526,7 +526,7 @@ private:
 
   /// Generates a new progress token.
   std::string generateToken() {
-    std::lock_guard<std::mutex> rngLock(rngMutex);
+    thread_local std::default_random_engine rng;
     // generate a 32-character ASCII string
     std::uniform_int_distribution<unsigned char> distribution('a', 'z');
     std::string id(32, 'a');
@@ -536,9 +536,6 @@ private:
 
     return id;
   }
-
-  std::default_random_engine rng;
-  std::mutex rngMutex;
 
   llvm::StringMap<llvm::unique_function<void(LogicalResult)>> responders;
   std::mutex respondersMutex;
