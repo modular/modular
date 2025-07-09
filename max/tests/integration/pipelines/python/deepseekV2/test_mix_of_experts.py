@@ -10,7 +10,10 @@ from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.deepseekV2.layers.mix_of_experts import MoE
+from max.nn.moe import MoE
+from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
+    DeepSeekV2MoEGate,
+)
 from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import DeepseekV2MoE
 
@@ -79,7 +82,16 @@ def generate_max_outputs(
     ].cpu()
 
     moe = MoE(
-        dtype=dtype, device=DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+        dtype=dtype,
+        devices=[DeviceRef.GPU()] if is_gpu else [DeviceRef.CPU()],
+        hidden_dim=config.hidden_size,
+        num_experts=config.n_routed_experts,
+        num_experts_per_token=config.num_experts_per_tok,
+        moe_dim=config.moe_intermediate_size,
+        gate_cls=DeepSeekV2MoEGate,
+        has_shared_experts=True,
+        shared_experts_dim=config.n_shared_experts
+        * config.moe_intermediate_size,
     )
     moe.load_state_dict(state_dict)
 
