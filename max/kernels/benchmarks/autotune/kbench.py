@@ -235,6 +235,10 @@ class SpecInstance:
         if mojo_path := os.environ.get("MOJO_BINARY_PATH"):
             if os.path.exists(mojo_path):
                 return mojo_path
+            else:
+                raise FileNotFoundError(
+                    f"MOJO_BINARY_PATH '{mojo_path}' does not exist."
+                )
         # Fall back to searching in PATH
         if mojo := shutil.which("mojo"):
             return mojo
@@ -562,7 +566,9 @@ class Spec:
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
         ).absolute()
-        assert file_abs_path.exists()
+        assert file_abs_path.exists(), (
+            f"error: '{file_abs_path}' does not exist."
+        )
         self.file = file_abs_path
 
         # setup mesh
