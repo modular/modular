@@ -104,6 +104,7 @@ PINS = {
     "sentence-transformers": "sentence-transformers@3.3.1",
     "sentinel": "sentinel@1.0.0",
     "setuptools": "setuptools@80.9.0",
+    "simpy": "simpy@4.1.1",
     "soundfile": "soundfile@0.12.1",
     "sphinx": "sphinx@7.4.7",
     "sse-starlette": "sse-starlette@2.1.2",
@@ -112,6 +113,7 @@ PINS = {
     "starlette": "starlette@0.41.2",
     "tabulate": "tabulate@0.9.0",
     "taskgroup": "taskgroup@0.2.2",
+    "termcolor": "termcolor@2.5.0",
     "threadpoolctl": "threadpoolctl@3.5.0",
     "timm": "timm@1.0.15",
     "tokenicer": "tokenicer@0.0.4",
@@ -5794,6 +5796,16 @@ def targets():
     pycross_wheel_library(
         name = "setuptools@80.9.0",
         wheel = ":_wheel_setuptools@80.9.0",
+    )
+
+    native.alias(
+        name = "_wheel_simpy@4.1.1",
+        actual = "@pycross_lock_file_wheel_simpy_4.1.1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "simpy@4.1.1",
+        wheel = ":_wheel_simpy@4.1.1",
     )
 
     native.alias(
@@ -17096,6 +17108,16 @@ def repositories():
         ],
         sha256 = "062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922",
         downloaded_file_path = "setuptools-80.9.0-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_simpy_4.1.1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/48/72/920ed1224c94a8a5a69e6c1275ac7fe4eb911ba8feffddf469f1629d47f3/simpy-4.1.1-py3-none-any.whl",
+        ],
+        sha256 = "7c5ae380240fd2238671160e4830956f8055830a8317edf5c05e495b3823cd88",
+        downloaded_file_path = "simpy-4.1.1-py3-none-any.whl",
     )
 
     maybe(
