@@ -142,8 +142,8 @@ def run_text_generation_with_custom_image_processing(
         if print_outputs:
             print(
                 "Prompt:",
-                f"{request.prompt[:100]}..."
-                if len(request.prompt) > 100
+                f"{request.prompt[:100]}...{request.prompt[-100:]}"
+                if len(request.prompt) > 200
                 else request.prompt,
             )
             print(
