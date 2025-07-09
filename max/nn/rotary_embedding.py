@@ -93,7 +93,7 @@ class RotaryEmbedding(Module):
         if self._freqs_cis is None:
             inv_freqs = self._compute_inv_freqs()
 
-            # Generate position ids [0, 1, ..., max_seq_len*2] for a a sequence of length (max_seq_len*2).
+            # Generate position ids [0, 1, ..., max_seq_len*2] for a sequence of length (max_seq_len*2).
             t = ops.range(
                 0,
                 self.max_seq_len * 2.0,
@@ -183,6 +183,102 @@ class RotaryEmbedding(Module):
         # Cast back to the activations dtype, which may differ from
         # freqs_cis's dtype.
         return ops.cast(ops.reshape(rope_complex, v.shape), v.dtype)
+
+
+class DynamicRotaryEmbedding(RotaryEmbedding):
+    """
+    RotaryEmbedding with dynamic scaling support for long-context inference.
+
+    Dynamically updates the inv_freq and corresponding freqs_cis buffer if the
+    current sequence length exceeds the original max, or resets to the original
+    high-precision version for short sequences.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        theta: float,
+        max_seq_len: int,
+        device: DeviceRef,
+        head_dim: Optional[int] = None,
+        _freqs_cis: Optional[TensorValueLike] = None,
+        interleaved: bool = True,
+    ) -> None:
+        super().__init__(
+            dim,
+            n_heads,
+            theta,
+            max_seq_len,
+            device,
+            head_dim,
+            _freqs_cis,
+            interleaved,
+        )
+
+        self.original_max_seq_len = max_seq_len
+        self.max_seq_len_cached = max_seq_len
+
+        # Save a copy of the original inv_freqs for restoration.
+        self.original_inv_freq = self._compute_inv_freqs()
+        self.inv_freq = self.original_inv_freq
+
+        # _freqs_cis is None so that freqs_cis_base() triggers recomputation.
+        self._freqs_cis = None
+
+    def maybe_update_freqs(self, position_ids: TensorValueLike) -> None:
+        """
+        Update freqs_cis if the sequence exceeds max_seq_len_cached, or revert
+        to the original version if back below the threshold.
+        """
+        position_ids = TensorValue(position_ids)
+
+        # Get the sequence length from the shape of position_ids. position_ids
+        # is typically [seq_len], so the first dimension is the sequence length.
+        if position_ids.rank > 0:
+            seq_len_dim = position_ids.shape[0]
+            try:
+                seq_len = int(seq_len_dim)
+            except TypeError:
+                seq_len = max(
+                    self.max_seq_len_cached, self.original_max_seq_len * 2
+                )
+        else:
+            seq_len = 1
+
+        if seq_len > self.max_seq_len_cached:
+            # Grow the RoPE buffer.
+            self.max_seq_len_cached = seq_len
+            # Force recomputation on next freqs_cis call.
+            self._freqs_cis = None
+        elif (
+            seq_len < self.original_max_seq_len
+            and self.max_seq_len_cached > self.original_max_seq_len
+        ):
+            # Reset to original high-precision version
+            self.inv_freq = self.original_inv_freq
+            self.max_seq_len_cached = self.original_max_seq_len
+            # Force recomputation on next freqs_cis call.
+            self._freqs_cis = None
+
+    def freqs_cis_base(self) -> TensorValue:
+        """
+        Computes freqs_cis dynamically using the current self.inv_freq.
+        """
+        if self._freqs_cis is None:
+            t = ops.range(
+                0,
+                self.max_seq_len_cached * 2.0,
+                1,
+                out_dim=self.max_seq_len_cached * 2,
+                device=self.device,
+                dtype=DType.float32,
+            )
+            freqs = ops.outer(t, self.inv_freq)  # [seq*2, dim/2]
+            self._freqs_cis = ops.stack(
+                [ops.cos(freqs), ops.sin(freqs)], axis=-1
+            )  # [seq*2, dim/2, 2]
+        return TensorValue(self._freqs_cis)
 
 
 @dataclass
