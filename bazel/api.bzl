@@ -109,7 +109,6 @@ def modular_py_binary(
 # buildifier: disable=function-docstring
 def mojo_library(
         validate_missing_docs = False,  # buildifier: disable=unused-variable
-        build_docs = False,  # buildifier: disable=unused-variable
         deps = [],
         **kwargs):
     if _has_internal_reference(deps):
