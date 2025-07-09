@@ -8,6 +8,8 @@ load("@rules_mojo//mojo/private:utils.bzl", "collect_mojoinfo")  # buildifier: d
 load("@rules_python//python:py_info.bzl", "PyInfo")
 
 def _mojo_test_environment_implementation(ctx):
+    mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
+
     _, transitive_mojopkgs = collect_mojoinfo(ctx.attr.data)
     if not transitive_mojopkgs:
         return [
@@ -33,7 +35,9 @@ def _mojo_test_environment_implementation(ctx):
 
     shared_libs = []
     transitive_libs = []
-    for lib in ctx.attr.libs:
+    for lib in mojo_toolchain.implicit_deps:
+        if CcInfo not in lib:
+            continue
         file = lib[DefaultInfo].files.to_list()[0]
         transitive_libs.append(file)
         path = file.path
@@ -64,8 +68,6 @@ mojo_test_environment = rule(
         "data": attr.label_list(
             providers = [MojoInfo],
         ),
-        "libs": attr.label_list(
-            providers = [CcInfo],
-        ),
     },
+    toolchains = ["@rules_mojo//:toolchain_type"],
 )

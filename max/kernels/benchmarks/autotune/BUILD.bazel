@@ -40,12 +40,6 @@ mojo_test_environment(
         "@mojo//:register",
         "@mojo//:stdlib",
     ],
-    libs = [
-        "//AsyncRT:RuntimeGlobals",
-        "//AsyncRT:DeviceContext",
-        "//Support:Globals",
-        "//KGEN:CompilerRT",
-    ],
 )
 
 modular_py_binary(
