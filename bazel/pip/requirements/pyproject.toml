@@ -65,6 +65,7 @@ dependencies = [
   "plotly",
   "qwen-vl-utils",
   "requests>=2.28",
+  "regex",
   "safetensors",
   "sentinel==1.0.0",
   "setuptools",
