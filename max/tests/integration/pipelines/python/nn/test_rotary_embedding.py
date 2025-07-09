@@ -15,6 +15,7 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
 from max.nn import (
+    DynamicRotaryEmbedding,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
@@ -84,6 +85,13 @@ def torch_llama3_freqs_cis(
     freqs = torch.outer(t, freqs)
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
+
+
+def torch_dynamic_rope_freqs_cis(dim: int, theta: float, max_seq_len: int):
+    inv_freq = 1.0 / (theta ** (torch.arange(0, dim, 2) / dim))
+    t = torch.arange(max_seq_len * 2.0, dtype=torch.float32)
+    freqs = torch.outer(t, inv_freq)
+    return torch.polar(torch.ones_like(freqs), freqs)
 
 
 @dataclass
@@ -208,6 +216,88 @@ def test_llama3_freqs_cis(
     )
     np.testing.assert_allclose(
         result_cis_complex,
+        expected,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "dim, n_heads, theta, short_seq_len, long_seq_len",
+    [
+        (64, 4, 1e4, 4096, 8192),
+        (512, 16, 5e5, 8192, 16384),
+    ],
+)
+def test_dynamic_rope_freqs_cis(
+    session,
+    dim: int,
+    n_heads: int,
+    theta: float,
+    short_seq_len: int,
+    long_seq_len: int,
+):
+    """Test that DynamicRotaryEmbedding behaves identically to RotaryEmbedding
+    for short sequences, and correctly expands the freqs_cis buffer for long
+    sequences."""
+    head_dim = dim // n_heads
+
+    # Test short sequence: should have the same behavior as default RoPE.
+    with Graph("dynamic_rope_short", input_types=[]) as graph:
+        rope = DynamicRotaryEmbedding(
+            dim=dim,
+            n_heads=n_heads,
+            theta=theta,
+            max_seq_len=short_seq_len,
+            head_dim=head_dim,
+            device=DeviceRef.CPU(),
+        )
+        graph.output(rope.freqs_cis)
+        model = session.load(graph)
+
+    # Manually reshape and recombine the real and imaginary components into a
+    # complex-valued array for comparison against the expected result.
+    result = model.execute()[0].to_numpy()
+    d0, d1 = result.shape
+    result = result.reshape((d0, d1 // 2, 2))
+    result_complex = result[:, :, 0] + 1j * result[:, :, 1]
+
+    expected = torch_dynamic_rope_freqs_cis(head_dim, theta, short_seq_len)
+    np.testing.assert_allclose(
+        result_complex,
+        expected,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
+
+    # Test long sequence: should dynamically expand.
+    with Graph("dynamic_rope_long", input_types=[]) as graph:
+        rope = DynamicRotaryEmbedding(
+            dim=dim,
+            n_heads=n_heads,
+            theta=theta,
+            max_seq_len=short_seq_len,
+            head_dim=head_dim,
+            device=DeviceRef.CPU(),
+        )
+        # Simulate runtime position_ids that require growing buffer.
+        dummy_position_ids = ops.range(0, long_seq_len, 1, dtype=DType.int64)
+        rope.maybe_update_freqs(dummy_position_ids)
+        graph.output(rope.freqs_cis)
+        model = session.load(graph)
+
+    # Manually reshape and recombine the real and imaginary components into a
+    # complex-valued array for comparison against the expected result.
+    result = model.execute()[0].to_numpy()
+    d0, d1 = result.shape
+    result = result.reshape((d0, d1 // 2, 2))
+    result_complex = result[:, :, 0] + 1j * result[:, :, 1]
+
+    expected = torch_dynamic_rope_freqs_cis(head_dim, theta, long_seq_len)
+    np.testing.assert_allclose(
+        result_complex,
         expected,
         atol=ACCURACY_ATOL,
         rtol=ACCURACY_RTOL,
