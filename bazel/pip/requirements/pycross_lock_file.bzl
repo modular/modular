@@ -179,6 +179,19 @@ def targets():
         }),
     )
 
+    extra_build_args = {
+        "copts": ["-fvisibility=default"],
+        "linkopts": select({
+            "@platforms//os:linux": ["-Wl,-z,undefs"],
+            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
+        }),
+        "tags": [
+            "manual",
+            "requires-network",
+        ],
+        "exec_properties": {"dockerNetwork": "bridge"},
+    }
+
     build_targets = {}
     for version in PYTHON_VERSIONS:
         version = version.replace("_", ".")
@@ -537,16 +550,7 @@ def targets():
         sdist = ":_sdist_async-asgi-testclient@1.4.11",
         target_environment = _target,
         deps = _async_asgi_testclient_1_4_11_deps + _async_asgi_testclient_1_4_11_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1122,16 +1126,7 @@ def targets():
         sdist = ":_sdist_device-smi@0.4.1",
         target_environment = _target,
         deps = _device_smi_0_4_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1352,16 +1347,7 @@ def targets():
         sdist = ":_sdist_fire@0.7.0",
         target_environment = _target,
         deps = _fire_0_7_0_deps + _fire_0_7_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1424,16 +1410,7 @@ def targets():
         sdist = ":_sdist_flask-basicauth@0.2.0",
         target_environment = _target,
         deps = _flask_basicauth_0_2_0_deps + _flask_basicauth_0_2_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -1596,16 +1573,7 @@ def targets():
         sdist = ":_sdist_gevent@24.2.1",
         target_environment = _target,
         deps = _gevent_24_2_1_deps + _gevent_24_2_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -2757,16 +2725,7 @@ def targets():
         sdist = ":_sdist_langdetect@1.0.9",
         target_environment = _target,
         deps = _langdetect_1_0_9_deps + _langdetect_1_0_9_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -2854,16 +2813,7 @@ def targets():
         sdist = ":_sdist_llvmlite@0.43.0",
         target_environment = _target,
         deps = _llvmlite_0_43_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -2976,16 +2926,7 @@ def targets():
         sdist = ":_sdist_logbar@0.0.3",
         target_environment = _target,
         deps = _logbar_0_0_3_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -3609,16 +3550,7 @@ def targets():
         sdist = ":_sdist_numba@0.60.0",
         target_environment = _target,
         deps = _numba_0_60_0_deps + _numba_0_60_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -3694,16 +3626,7 @@ def targets():
         sdist = ":_sdist_numpy@2.0.2",
         target_environment = _target,
         deps = _numpy_2_0_2_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -4163,16 +4086,7 @@ def targets():
         sdist = ":_sdist_nvtx@0.2.11",
         target_environment = _target,
         deps = _nvtx_0_2_11_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5253,16 +5167,7 @@ def targets():
         sdist = ":_sdist_pytrec-eval-terrier@0.5.6",
         target_environment = _target,
         deps = _pytrec_eval_terrier_0_5_6_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5316,16 +5221,7 @@ def targets():
         sdist = ":_sdist_pyyaml@6.0.1",
         target_environment = _target,
         deps = _pyyaml_6_0_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5564,16 +5460,7 @@ def targets():
         sdist = ":_sdist_rouge-score@0.1.2",
         target_environment = _target,
         deps = _rouge_score_0_1_2_deps + _rouge_score_0_1_2_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5602,16 +5489,7 @@ def targets():
         sdist = ":_sdist_roundrobin@0.0.4",
         target_environment = _target,
         deps = _roundrobin_0_0_4_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5732,16 +5610,7 @@ def targets():
         sdist = ":_sdist_ruamel-yaml-clib@0.2.8",
         target_environment = _target,
         deps = _ruamel_yaml_clib_0_2_8_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5899,16 +5768,7 @@ def targets():
         sdist = ":_sdist_scipy@1.13.1",
         target_environment = _target,
         deps = _scipy_1_13_1_deps + _scipy_1_13_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -5984,16 +5844,7 @@ def targets():
         sdist = ":_sdist_sentencepiece@0.2.0",
         target_environment = _target,
         deps = _sentencepiece_0_2_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -6281,16 +6132,7 @@ def targets():
         sdist = ":_sdist_sqlitedict@2.1.0",
         target_environment = _target,
         deps = _sqlitedict_2_1_0_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -6581,16 +6423,7 @@ def targets():
         sdist = ":_sdist_tokenicer@0.0.4",
         target_environment = _target,
         deps = _tokenicer_0_0_4_deps + _tokenicer_0_0_4_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -7735,16 +7568,7 @@ def targets():
         sdist = ":_sdist_word2number@1.1",
         target_environment = _target,
         deps = _word2number_1_1_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(
@@ -7839,16 +7663,7 @@ def targets():
         sdist = ":_sdist_xgrammar@0.1.16",
         target_environment = _target,
         deps = _xgrammar_0_1_16_deps + _xgrammar_0_1_16_build_deps,
-        copts = ["-fvisibility=default"],
-        linkopts = select({
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {"dockerNetwork": "bridge"},
+        **extra_build_args
     )
 
     native.alias(

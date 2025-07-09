@@ -142,16 +142,7 @@ class Package:
         sdist = ":{self.sdist_target_name}",
         target_environment = _target,
         {build_deps_line},
-        copts = ["-fvisibility=default"],
-        linkopts = select({{
-            "@platforms//os:linux": ["-Wl,-z,undefs"],
-            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
-        }}),
-        tags = [
-            "manual",
-            "requires-network",
-        ],
-        exec_properties = {{"dockerNetwork": "bridge"}},
+        **extra_build_args
     )
 
 """

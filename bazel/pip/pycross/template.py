@@ -70,6 +70,19 @@ def targets():
         }}),
     )
 
+    extra_build_args = {{
+        "copts": ["-fvisibility=default"],
+        "linkopts": select({{
+            "@platforms//os:linux": ["-Wl,-z,undefs"],
+            "@platforms//os:macos": ["-Wl,-undefined,dynamic_lookup"],
+        }}),
+        "tags": [
+            "manual",
+            "requires-network",
+        ],
+        "exec_properties": {{"dockerNetwork": "bridge"}},
+    }}
+
     build_targets = {{}}
     for version in PYTHON_VERSIONS:
         version = version.replace("_", ".")
