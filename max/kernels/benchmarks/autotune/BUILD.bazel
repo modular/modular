@@ -17,12 +17,7 @@ modular_py_library(
         "kprofile.py",
         "utils.py",
     ],
-    imports = ["autotune"],
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
     deps = [
-        "//Support/python:support",
-        # Deps required for kbench/kplot/kprofile
         requirement("numpy"),
         requirement("click"),
         requirement("pandas"),
