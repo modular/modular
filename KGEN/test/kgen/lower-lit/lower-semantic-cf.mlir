@@ -1183,3 +1183,31 @@ lit.fn @param_for_goto_else() {
   lit.return
   lit.end_fn
 }
+
+// Derived from MOCO-2119.
+// We had some weirdness where the outer kgen.param.if was incorrectly using
+// the hlcf.elif's doesFallThrough as its own doesFallThrough, and then that was
+// causing it to not replace the lit.end_fn with a kgen.unreachable.
+lit.fn @weird_fallthroughs<parambool: i1>(%runbool: i1) -> i1 {
+  kgen.param.if <parambool> {
+    lit.return %runbool : i1
+    kgen.param.yield
+  } else {
+    hlcf.elif {
+      hlcf.elif.yield %runbool
+    } then {
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    kgen.param.if <parambool> {
+      lit.return %runbool : i1
+      kgen.param.yield
+    } else {
+      lit.return %runbool : i1
+      kgen.param.yield
+    }
+    kgen.param.yield
+  }
+  lit.end_fn
+}
