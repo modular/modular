@@ -10,11 +10,13 @@ load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
 load("//bazel/internal:binary_test.bzl", "binary_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
 basic_py_test = py_test
 mojo_filecheck_test = _mojo_filecheck_test
 mojo_test = _mojo_test
+mojo_test_environment = _mojo_test_environment
 proto_library = _proto_library
 py_grpc_library = _py_grpc_library
 py_proto_library = _py_proto_library
