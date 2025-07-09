@@ -9,7 +9,6 @@ modular_py_library(
     deps = [
         requirement("numpy"),
         requirement("pyyaml"),
-        requirement("ruamel-yaml"),
     ],
 )
 
@@ -23,7 +22,6 @@ modular_py_test(
     tags = ["requires-network"],
     deps = [
         ":support",
-        requirement("ruamel-yaml"),
     ],
 )
 
