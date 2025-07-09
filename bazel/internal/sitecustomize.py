@@ -1,0 +1,43 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2025, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+import os
+
+
+def __absolutize_path(value: str) -> str:
+    if os.path.exists(value):
+        return os.path.abspath(value)
+
+    if execroot := os.getenv("BUILD_EXECROOT"):
+        rebased = os.path.join(execroot, value)
+        if os.path.exists(rebased):
+            return os.path.abspath(rebased)
+
+    return value
+
+
+def __absolutize_env() -> None:
+    for key in sorted(os.environ.keys()):
+        value = os.environ[key]
+        if key == "MODULAR_MOJO_MAX_IMPORT_PATH":
+            value = ",".join(
+                sorted(__absolutize_path(x) for x in value.split(","))
+            )
+        else:
+            value = __absolutize_path(value)
+
+        os.environ[key] = value
+
+
+if os.getenv("MODULAR_USE_SITECUSTOMIZE") == "True":
+    __absolutize_env()
