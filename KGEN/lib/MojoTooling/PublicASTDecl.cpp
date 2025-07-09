@@ -733,7 +733,8 @@ std::string PublicAliasDecl::getDeclarationSnippet(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
-  os << "alias " << getName();
+  os << "alias ";
+  dumpIdentifierWithType(os, getName(), type);
   if (!value.empty()) {
     if (!parameters.empty())
       printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
@@ -756,13 +757,20 @@ std::string PublicAliasDecl::getMarkdownDocString() const {
 }
 
 llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{{"deprecated", deprecated},
-                            {"description", description},
-                            {"kind", getKindAsString()},
-                            {"name", getName().str()},
-                            {"summary", summary},
-                            {"parameters", toJSONArray(ctx, parameters)},
-                            {"value", value}};
+  llvm::json::Object obj{{"deprecated", deprecated},
+                         {"description", description},
+                         {"kind", getKindAsString()},
+                         {"name", getName().str()},
+                         {"summary", summary},
+                         {"parameters", toJSONArray(ctx, parameters)},
+                         {"value", value}};
+
+  // Only include type if it's not empty
+  if (!type.empty()) {
+    obj["type"] = type;
+  }
+
+  return obj;
 }
 
 /// Return if the given alias decl is global, i.e. nested within a module,
@@ -779,6 +787,7 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
   auto &shared = *declRef.getShared();
+
   if (auto maybeValue = aliasOp.getValue()) {
     // If the value is a GeneratorAttr, we need to split it into a parameter
     // list and a body value for the alias representation.
@@ -789,6 +798,11 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
             shared, generatorType.getInputParamTypes(),
             generatorType.getParamListAttrs(), parameters);
         maybeValue = evaluator.getReboundAttribute(generator.getBody());
+      }
+
+      // Try to extract result type from the generator's body
+      if (auto valueType = maybeValue->getType()) {
+        type = generateTypeString(shared, valueType, VariadicKind::None);
       }
     }
 
