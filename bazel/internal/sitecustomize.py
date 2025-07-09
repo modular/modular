@@ -18,6 +18,9 @@ def __absolutize_path(value: str) -> str:
     if os.path.exists(value):
         return os.path.abspath(value)
 
+    if workspace := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        value = value.replace("$BUILD_WORKSPACE_DIRECTORY", workspace)
+
     if execroot := os.getenv("BUILD_EXECROOT"):
         rebased = os.path.join(execroot, value)
         if os.path.exists(rebased):
@@ -33,6 +36,8 @@ def __absolutize_env() -> None:
             value = ",".join(
                 sorted(__absolutize_path(x) for x in value.split(","))
             )
+        elif key == "MODULAR_MOJO_MAX_SHARED_LIBS":
+            value = ",".join(__absolutize_path(x) for x in value.split(","))
         else:
             value = __absolutize_path(value)
 

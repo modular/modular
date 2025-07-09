@@ -16,8 +16,10 @@ def _mojo_test_environment_implementation(ctx):
             CcInfo(),  # Requirement of py_test
             PyInfo(transitive_sources = depset()),  # Requirement of py_test
             platform_common.TemplateVariableInfo({
+                "COMPILER_RT_PATH": "",
                 "COMPUTED_IMPORT_PATH": "",
                 "COMPUTED_LIBS": "",
+                "MOJO_BINARY_PATH": "",
             }),
         ]
 
@@ -34,14 +36,25 @@ def _mojo_test_environment_implementation(ctx):
         transitive_runfiles.append(target[DefaultInfo].default_runfiles)
 
     shared_libs = []
-    transitive_libs = []
+    transitive_files = []
+
+    # TODO: This also contains runfiles, it probably should not.
+    for tool in mojo_toolchain.all_tools:
+        if type(tool) == type(depset()):
+            transitive_files.append(tool)
+
+    compilerrt = None
     for lib in mojo_toolchain.implicit_deps:
         if CcInfo not in lib:
             continue
 
         for linker_input in lib[CcInfo].linking_context.linker_inputs.to_list():
             for library in linker_input.libraries:
-                transitive_libs.append(library.dynamic_library)
+                transitive_files.append(depset([library.dynamic_library]))
+
+                if "CompilerRT" in lib.label.name:
+                    compilerrt = library.dynamic_library
+
                 path = library.dynamic_library.path
                 if ctx.attr.short_path:
                     path = library.dynamic_library.short_path
@@ -49,17 +62,22 @@ def _mojo_test_environment_implementation(ctx):
                 shared_libs.append(path)
                 shared_libs.append("-Xlinker,-rpath,-Xlinker,{}".format(paths.dirname(path)))
 
+    if not compilerrt:
+        fail("CompilerRT library not found")
+
     return [
         CcInfo(),  # Requirement of py_test
         PyInfo(transitive_sources = depset()),  # Requirement of py_test
         DefaultInfo(
             runfiles = ctx.runfiles(
-                transitive_files = depset(transitive = [transitive_mojopkgs] + [depset(transitive_libs)]),
+                transitive_files = depset(transitive = [transitive_mojopkgs] + transitive_files),
             ).merge_all(transitive_runfiles),
         ),
         platform_common.TemplateVariableInfo({
             "COMPUTED_IMPORT_PATH": ",".join(sorted(sets.to_list(import_paths))),
             "COMPUTED_LIBS": ",".join(sorted(shared_libs)),
+            "MOJO_BINARY_PATH": mojo_toolchain.mojo.short_path if ctx.attr.short_path else mojo_toolchain.mojo.path,
+            "COMPILER_RT_PATH": compilerrt.short_path if ctx.attr.short_path else compilerrt.path,
         }),
     ]
 

@@ -1,12 +1,4 @@
-load(
-    "//bazel:api.bzl",
-    "modular_py_binary",
-    "modular_py_library",
-    "modular_py_test",
-    "mojo_test_environment",
-    "pkg_files",
-    "requirement",
-)
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement")
 
 modular_py_library(
     name = "autotune",
@@ -28,9 +20,19 @@ modular_py_library(
     ],
 )
 
-mojo_test_environment(
-    name = "mojo_test_env",
-    data = [
+modular_py_binary(
+    name = "kbench",
+    srcs = [
+        "__init__.py",
+        "kbench.py",
+        "utils.py",
+    ],
+    env = {
+        "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
+    },
+    imports = ["."],
+    main = "kbench.py",
+    mojo_deps = [
         "@mojo//:internal_utils",
         "@mojo//:kv_cache",
         "@mojo//:layout",
@@ -40,28 +42,7 @@ mojo_test_environment(
         "@mojo//:register",
         "@mojo//:stdlib",
     ],
-)
-
-modular_py_binary(
-    name = "kbench",
-    srcs = [
-        "__init__.py",
-        "kbench.py",
-        "kbench_shim.py",
-        "utils.py",
-    ],
-    data = [
-        ":mojo_test_env",
-        "//KGEN/tools/mojo",
-    ],
-    env = {
-        "MOJO_BINARY_PATH": "$(rootpath //KGEN/tools/mojo)",
-        "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
-        "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
-    },
-    imports = ["."],
-    main = "kbench_shim.py",
-    toolchains = [":mojo_test_env"],
+    use_sitecustomize = True,
     deps = [
         requirement("click"),
         requirement("numpy"),
